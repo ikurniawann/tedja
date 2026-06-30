@@ -16,16 +16,16 @@ variables:
   NEXT_PUBLIC_APP_URL: https://sulu.within.ventures
   NEXT_PUBLIC_BASE_URL: https://sulu.within.ventures
 
+before_script:
+  - cd /mnt/hdd1tb/arkiv
+
 build:
   stage: build
   script:
-    - cd /mnt/hdd1tb/arkiv
     - git pull origin development
     - docker build -t $DOCKER_IMAGE:latest .
   only:
     - development
-  tags:
-    - shell
 
 deploy:
   stage: deploy
@@ -46,5 +46,3 @@ deploy:
     - docker system prune -f
   only:
     - development
-  tags:
-    - shell
