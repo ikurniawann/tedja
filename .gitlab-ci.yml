@@ -32,7 +32,8 @@ deploy:
   script:
     - docker stop $CONTAINER_NAME || true
     - docker rm $CONTAINER_NAME || true
-    - docker run -d \
+    - |
+      docker run -d \
         --name $CONTAINER_NAME \
         --restart unless-stopped \
         -p 127.0.0.1:$HOST_PORT:$CONTAINER_PORT \
