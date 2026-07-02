@@ -14,6 +14,7 @@ import { ProductWithCOGS } from "@/types/purchasing";
 import { useProductList, useProductCategoryOptions } from "../queries";
 import { useDeleteProduct, useUpdateProductStatus } from "../mutations";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { getProductUnitLabel } from "../product-unit";
 
 export function ProductsPage() {
   const [page, setPage] = useState(1);
@@ -195,6 +196,7 @@ export function ProductsPage() {
                       <th className="px-4 py-3 text-left font-semibold">Kode</th>
                       <th className="px-4 py-3 text-left font-semibold">Nama Produk</th>
                       <th className="px-4 py-3 text-left font-semibold">Kategori</th>
+                      <th className="px-4 py-3 text-left font-semibold">Satuan</th>
                       <th className="px-4 py-3 text-right font-semibold">HPP Estimasi</th>
                       <th className="px-4 py-3 text-right font-semibold">Harga Jual</th>
                       <th className="px-4 py-3 text-center font-semibold">Status</th>
@@ -218,6 +220,7 @@ export function ProductsPage() {
                           </Link>
                         </td>
                         <td className="px-4 py-3 text-gray-700">{getCategoryLabel(product.kategori)}</td>
+                        <td className="px-4 py-3 text-gray-700">{getProductUnitLabel(product)}</td>
                         <td className="px-4 py-3 text-right text-gray-700">
                           <div className="flex items-center justify-end gap-1">
                             <Calculator className="h-3 w-3 text-gray-400" />

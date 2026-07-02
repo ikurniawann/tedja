@@ -1,7 +1,7 @@
-import type { VendorPaymentListParams } from "./types";
+import type { PurchaseInvoiceListParams } from "./types";
 
 export const vendorPaymentsQueryKeys = {
-  all: ["purchasing", "vendor-payments"] as const,
-  list: (params: VendorPaymentListParams) =>
-    ["purchasing", "vendor-payments", "list", params] as const,
+  all: ["purchasing", "purchase-invoices"] as const,
+  list: (params: PurchaseInvoiceListParams) =>
+    ["purchasing", "purchase-invoices", "list", params] as const,
 };

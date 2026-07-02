@@ -43,6 +43,7 @@ export interface DeliveryPOOption {
   supplier_id: string;
   nama_supplier?: string | null;
   status?: string;
+  active_delivery_id?: string | null;
 }
 
 export interface DeliveryListParams {

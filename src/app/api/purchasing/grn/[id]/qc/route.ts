@@ -1,31 +1,81 @@
-import { NextRequest, NextResponse } from "next/server";
-import { createServerPgClient } from "@/lib/pg/create-client";
+import { NextRequest } from "next/server";
+import { z } from "zod";
+import { createPgClient } from "@/lib/pg/create-client";
+import {
+  requireApiRole,
+  ApiError,
+  successResponse,
+  createdResponse,
+} from "@/lib/api/auth";
+import { submitGrnQcInspection } from "@/lib/purchasing/grn-qc";
+import type { UserRole } from "@/types";
+
+const QC_ROLES: UserRole[] = [
+  "qc_staff",
+  "warehouse_staff",
+  "warehouse_admin",
+  "purchasing_admin",
+  "purchasing_staff",
+  "admin",
+  "super_admin",
+];
+
+const qcItemSchema = z.object({
+  grn_item_id: z.string().uuid(),
+  raw_material_id: z.string().uuid(),
+  qty_inspected: z.number().min(0),
+  qty_accepted: z.number().min(0),
+  qty_rejected: z.number().min(0),
+  catatan: z.string().optional().nullable(),
+});
+
+const createQcSchema = z.object({
+  status: z.enum(["approved", "rejected", "partial"]).optional(),
+  parameter_inspeksi: z.record(z.string(), z.unknown()).optional(),
+  hasil_inspeksi: z.record(z.string(), z.string()).optional(),
+  catatan: z.string().optional().nullable(),
+  rekomendasi: z.string().optional().nullable(),
+  items: z.array(qcItemSchema).min(1, "At least one item is required"),
+});
 
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const db = await createServerPgClient();
+    await requireApiRole(QC_ROLES);
+    const db = createPgClient();
     const { id } = await params;
+
     const { data, error } = await db
-      .from("qc_inspections")
-      .select(`
+      .from("grn_qc_inspections")
+      .select(
+        `
         *,
-        inspected_by_user:inspected_by(id,email)
-      `)
+        inspector:inspector_id(id, name, email),
+        items:grn_qc_inspection_items(
+          id,
+          grn_item_id,
+          raw_material_id,
+          qty_inspected,
+          qty_accepted,
+          qty_rejected,
+          item_status,
+          catatan,
+          raw_material:raw_materials!raw_material_id(id, nama, kode)
+        )
+      `
+      )
       .eq("grn_id", id)
       .maybeSingle();
 
     if (error) throw error;
 
-    return NextResponse.json({ data });
-  } catch (error: any) {
-    console.error("Error fetching QC inspection:", error);
-    return NextResponse.json(
-      { error: error.message || "Failed to fetch QC inspection" },
-      { status: 500 }
-    );
+    return successResponse(data, data ? "QC inspection retrieved" : "No QC inspection yet");
+  } catch (error) {
+    if (error instanceof ApiError) return error.toResponse();
+    console.error("Error fetching GRN QC:", error);
+    return ApiError.server("Failed to fetch QC inspection").toResponse();
   }
 }
 
@@ -34,67 +84,49 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const db = await createServerPgClient();
+    const user = await requireApiRole(QC_ROLES);
+    const db = createPgClient();
     const { id } = await params;
+
     const body = await request.json();
+    const validated = createQcSchema.parse(body);
 
-    // Check GRN status
-    const { data: grn } = await db
-      .from("goods_receipts")
-      .select("status")
-      .eq("id", id)
-      .single();
+    const result = await submitGrnQcInspection(db, {
+      grnId: id,
+      status: validated.status || "approved",
+      parameter_inspeksi: validated.parameter_inspeksi,
+      hasil_inspeksi: validated.hasil_inspeksi,
+      catatan: validated.catatan,
+      rekomendasi: validated.rekomendasi,
+      items: validated.items,
+      userId: user.id,
+    });
 
-    if (!grn) {
-      return NextResponse.json(
-        { error: "GRN not found" },
-        { status: 404 }
-      );
-    }
-
-    if (grn.status !== "DRAFT" && grn.status !== "QC_PENDING") {
-      return NextResponse.json(
-        { error: "GRN is not available for QC inspection" },
-        { status: 400 }
-      );
-    }
-
-    // Create QC inspection
-    const { data: qc, error: qcError } = await db
-      .from("qc_inspections")
-      .insert({
+    return createdResponse(
+      {
         grn_id: id,
-        ...body,
-        inspected_at: new Date().toISOString(),
-      })
-      .select(`
-        *,
-        inspected_by_user:inspected_by(id,email)
-      `)
-      .single();
-
-    if (qcError) throw qcError;
-
-    // Update GRN status based on QC result
-    let newStatus = "QC_PENDING";
-    if (body.status === "APPROVED") newStatus = "QC_APPROVED";
-    if (body.status === "REJECTED") newStatus = "QC_REJECTED";
-    if (body.status === "PARTIAL") newStatus = "QC_APPROVED";
-
-    await db
-      .from("goods_receipts")
-      .update({
-        status: newStatus,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", id);
-
-    return NextResponse.json({ data: qc });
-  } catch (error: any) {
-    console.error("Error creating QC inspection:", error);
-    return NextResponse.json(
-      { error: error.message || "Failed to create QC inspection" },
-      { status: 500 }
+        inspection_id: result.inspectionId,
+        grn_status: result.grnStatus,
+        totals: {
+          accepted: result.totalAccepted,
+          rejected: result.totalRejected,
+        },
+      },
+      "Quality control completed and stock updated"
     );
+  } catch (error) {
+    if (error instanceof ApiError) return error.toResponse();
+    if (error instanceof z.ZodError) {
+      return ApiError.badRequest("Validation failed", error.issues).toResponse();
+    }
+    const message = error instanceof Error ? error.message : "Failed to submit QC inspection";
+    if (message.includes("not found") || message.includes("awaiting")) {
+      return ApiError.badRequest(message).toResponse();
+    }
+    if (message.includes("already been completed")) {
+      return ApiError.badRequest(message).toResponse();
+    }
+    console.error("Error submitting GRN QC:", error);
+    return ApiError.server(message).toResponse();
   }
 }

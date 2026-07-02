@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { ApiError, requireApiRole } from "@/lib/api/auth";
 import { createPgClient } from "@/lib/pg/create-client";
+import {
+  branchScopeOr,
+  companyScopeOr,
+  getApiUserScope,
+} from "@/lib/api/scope";
 
 function toNumber(value: unknown) {
   const numeric = Number(value);
@@ -50,12 +55,21 @@ export async function GET() {
   try {
     await requireApiRole(["admin", "purchasing_admin", "purchasing_manager", "warehouse_admin", "warehouse_staff"]);
     const db = createPgClient();
+    const scope = await getApiUserScope();
 
-    const { data: wipRows, error: wipError } = await db
+    let wipQuery = db
       .from("v_raw_materials_stock")
       .select("*")
       .eq("material_type", "WIP")
-      .order("nama", { ascending: true });
+      .is("deleted_at", null);
+    const companyOr = companyScopeOr(scope);
+    if (companyOr) wipQuery = wipQuery.or(companyOr);
+    const branchOr = branchScopeOr(scope);
+    if (branchOr) wipQuery = wipQuery.or(branchOr);
+
+    const { data: wipRows, error: wipError } = await wipQuery.order("nama", {
+      ascending: true,
+    });
 
     if (wipError) throw wipError;
 

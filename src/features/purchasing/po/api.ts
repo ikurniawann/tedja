@@ -14,6 +14,10 @@ import {
   listRawMaterials,
   listUnits,
   listPriceLists,
+  updatePurchaseOrder,
+  createPOItem,
+  updatePOItem,
+  deletePOItem,
 } from "@/lib/purchasing";
 import type {
   Supplier,
@@ -34,6 +38,10 @@ export {
   deletePurchaseOrderPaymentTerm,
   createVendorPayment,
   listPriceLists,
+  updatePurchaseOrder,
+  createPOItem,
+  updatePOItem,
+  deletePOItem,
 };
 
 type SuppliersResponse = Supplier[] | { data?: Supplier[] };
@@ -71,10 +79,10 @@ export interface ApprovedPRForPO {
  * the PO creation form.
  */
 export async function listApprovedPRsForPO(): Promise<ApprovedPRForPO[]> {
-  const res = await fetch("/api/purchasing/pr?status=approved&limit=100");
+  const res = await fetch("/api/purchasing/pr/for-po");
   const json = await res.json();
   if (!res.ok) throw new Error(json.message || json.error || `HTTP ${res.status}`);
-  return ((json.data || []) as ApprovedPRForPO[]).filter((pr) => !pr.converted_po_id);
+  return (json.data || []) as ApprovedPRForPO[];
 }
 
 /**

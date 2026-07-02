@@ -22,10 +22,10 @@ import {
 // Validation schema
 const materialSchema = z.object({
   kode: z.string().max(20).optional().nullable(),
-  nama: z.string().min(1, "Nama bahan wajib diisi").max(100),
-  kategori: z.string().min(1, "Kategori wajib dipilih").max(30),
+  nama: z.string().min(1, "Material name is required").max(100),
+  kategori: z.string().min(1, "Category is required").max(30),
   deskripsi: z.string().optional().nullable(),
-  satuan_besar_id: z.string().uuid("Satuan besar wajib dipilih"),
+  satuan_besar_id: z.string().uuid("Large unit is required"),
   satuan_kecil_id: z.string().uuid().optional().nullable(),
   harga_beli: z.number().min(0).default(0),
   konversi_factor: z.number().min(0).default(1),
@@ -197,7 +197,7 @@ export async function POST(request: NextRequest) {
 
     if (existing) {
       return Response.json(
-        { success: false, message: "Kode bahan sudah digunakan" },
+        { success: false, message: "Material code is already in use" },
         { status: 400 }
       );
     }
@@ -252,7 +252,7 @@ export async function POST(request: NextRequest) {
     }
 
     return Response.json(
-      { success: true, data, message: "Bahan baku berhasil ditambahkan" },
+      { success: true, data, message: "Raw material added successfully" },
       { status: 201 }
     );
   } catch (error: unknown) {
@@ -262,7 +262,7 @@ export async function POST(request: NextRequest) {
       return Response.json(
         {
           success: false,
-          message: "Validasi gagal",
+          message: "Validation failed",
           errors: error.flatten().fieldErrors,
         },
         { status: 400 }
@@ -270,7 +270,7 @@ export async function POST(request: NextRequest) {
     }
 
     return Response.json(
-      { success: false, message: getErrorMessage(error, "Gagal menambahkan bahan baku") },
+      { success: false, message: getErrorMessage(error, "Failed to add raw material") },
       { status: 500 }
     );
   }

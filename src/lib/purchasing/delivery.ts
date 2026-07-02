@@ -8,6 +8,51 @@ import type { DbClient } from "@/lib/pg/types";
 
 export type DeliveryStatus = "pending" | "shipped" | "in_transit" | "delivered" | "cancelled";
 
+/** Delivery still in progress — blocks creating another shipment for the same PO. */
+export const OPEN_DELIVERY_STATUSES: DeliveryStatus[] = [
+  "pending",
+  "shipped",
+  "in_transit",
+];
+
+export const PO_DELIVERY_ELIGIBLE_STATUSES = [
+  "approved",
+  "sent",
+  "partially_received",
+] as const;
+
+type DeliverySummary = {
+  id?: string;
+  status?: string | null;
+  purchase_order_id?: string | null;
+  nomor_resi?: string | null;
+  no_surat_jalan?: string | null;
+};
+
+export function isOpenDeliveryStatus(status?: string | null) {
+  return OPEN_DELIVERY_STATUSES.includes(
+    (status?.toLowerCase() || "") as DeliveryStatus
+  );
+}
+
+export function findOpenDelivery(deliveries: DeliverySummary[]) {
+  return deliveries.find((delivery) => isOpenDeliveryStatus(delivery.status)) ?? null;
+}
+
+export function isPoStatusEligibleForDelivery(status?: string | null) {
+  return PO_DELIVERY_ELIGIBLE_STATUSES.includes(
+    (status?.toLowerCase() || "") as (typeof PO_DELIVERY_ELIGIBLE_STATUSES)[number]
+  );
+}
+
+export function isPoEligibleForNewDelivery(
+  poStatus: string | null | undefined,
+  deliveries: DeliverySummary[]
+) {
+  if (!isPoStatusEligibleForDelivery(poStatus)) return false;
+  return !findOpenDelivery(deliveries);
+}
+
 type DeliveryPO = {
   id: string;
   nomor_po?: string | null;
@@ -135,42 +180,48 @@ export async function validatePOCanDelivery(
 ): Promise<{ valid: boolean; errors: string[]; po?: DeliveryPO }> {
   const errors: string[] = [];
 
-  console.log("=== validatePOCanDelivery ===");
-  console.log("Looking for PO with id:", poId);
-
   const { data: po, error } = await db
     .from("purchase_orders")
     .select("id, nomor_po, status, supplier_id, is_active")
     .eq("id", poId)
     .single();
 
-  console.log("Query result:", { po, error });
-  
   if (error) {
-    console.error("Database query error:", error);
     errors.push(`Database error: ${error.message}`);
     return { valid: false, errors };
   }
 
   if (!po) {
-    errors.push("Purchase Order tidak ditemukan");
+    errors.push("Purchase order not found");
     return { valid: false, errors };
   }
 
   if (!po.is_active) {
-    errors.push("Purchase Order sudah tidak aktif");
+    errors.push("Purchase order is no longer active");
   }
 
   const statusLower = po.status?.toLowerCase();
-  if (
-    statusLower !== "sent" &&
-    statusLower !== "partial" &&
-    statusLower !== "partially_received" &&
-    statusLower !== "approved"
-  ) {
+  if (!isPoStatusEligibleForDelivery(statusLower)) {
     errors.push(
-      `PO berstatus "${po.status}" — harus berstatus APPROVED, SENT, PARTIAL, atau PARTIALLY_RECEIVED untuk dapat dibuatkan Delivery`
+      `Purchase order status is "${po.status}". It must be approved, sent, or partially received before creating a delivery.`
     );
+  }
+
+  const { data: existingDeliveries, error: deliveryError } = await db
+    .from("deliveries")
+    .select("id, status")
+    .eq("purchase_order_id", poId)
+    .eq("is_active", true)
+    .neq("status", "cancelled");
+
+  if (deliveryError) {
+    errors.push(`Database error: ${deliveryError.message}`);
+    return { valid: false, errors, po };
+  }
+
+  const openDelivery = findOpenDelivery(existingDeliveries || []);
+  if (openDelivery) {
+    errors.push("This purchase order already has an open delivery in progress.");
   }
 
   return { valid: errors.length === 0, errors, po };

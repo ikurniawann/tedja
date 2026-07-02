@@ -4,6 +4,7 @@
 
 import { NextRequest } from "next/server";
 import { createServerPgClient } from "@/lib/pg/create-client";
+import { getApiUserScope, isRowInBusinessScope } from "@/lib/api/scope";
 import { z } from "zod";
 
 const productSchema = z.object({
@@ -57,6 +58,7 @@ export async function GET(
   try {
     const { id } = await params;
     const db = await createServerPgClient();
+    const scope = await getApiUserScope();
 
     // Get product dengan HPP
     const { data: product, error: productError } = await db
@@ -73,6 +75,18 @@ export async function GET(
         );
       }
       throw productError;
+    }
+
+    if (
+      !isRowInBusinessScope(scope, {
+        company_id: product.company_id,
+        branch_id: product.branch_id,
+      })
+    ) {
+      return Response.json(
+        { success: false, message: "Produk tidak ditemukan" },
+        { status: 404 }
+      );
     }
 
     // Get BOM items

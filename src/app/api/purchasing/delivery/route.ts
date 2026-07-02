@@ -14,6 +14,7 @@ import {
   effectiveCompanyId,
   effectiveBranchId,
 } from "@/lib/api/scope";
+import { validatePOCanDelivery } from "@/lib/purchasing/delivery";
 
 // ========================
 // ZOD SCHEMAS
@@ -31,13 +32,13 @@ const deliveryQueryParamsSchema = z.object({
 });
 
 const createDeliverySchema = z.object({
-  po_id: z.string().uuid("PO ID harus valid"),
-  supplier_id: z.string().uuid("Supplier ID harus valid"),
-  tanggal_kirim: z.string().optional(),
-  no_surat_jalan: z.string().optional(),
+  po_id: z.string().uuid("Purchase order identifier must be valid"),
+  supplier_id: z.string().uuid("Supplier identifier must be valid"),
+  tanggal_kirim: z.string().min(1, "Shipment date is required"),
+  no_surat_jalan: z.string().min(1, "Delivery note number is required"),
   no_resi: z.string().optional(),
   kurir: z.string().optional(),
-  tanggal_estimasi_tiba: z.string().optional(),
+  tanggal_estimasi_tiba: z.string().min(1, "Estimated arrival date is required"),
   catatan: z.string().optional(),
 });
 
@@ -80,7 +81,35 @@ export async function GET(request: NextRequest) {
 
     if (error) throw error;
 
-    return paginatedResponse(data ?? [], {
+    const poIds = Array.from(
+      new Set((data || []).map((row) => row.purchase_order_id).filter(Boolean) as string[])
+    );
+    const { data: purchaseOrders, error: poError } = poIds.length
+      ? await db.from("purchase_orders").select("id, nomor_po").in("id", poIds)
+      : { data: [], error: null };
+
+    if (poError) throw poError;
+
+    const poNumberById = new Map(
+      (purchaseOrders || []).map((po) => [po.id as string, po.nomor_po as string])
+    );
+
+    const mappedData = (data || []).map((row) => ({
+      id: row.id,
+      delivery_number: row.nomor_resi || row.no_resi || "-",
+      po_id: row.purchase_order_id,
+      po_number: poNumberById.get(row.purchase_order_id as string) || "-",
+      no_surat_jalan: row.no_surat_jalan || "-",
+      ekspedisi: row.kurir || "-",
+      no_resi: row.no_resi || row.nomor_resi || "-",
+      tanggal_kirim: row.tanggal_kirim,
+      tanggal_estimasi_tiba: row.tanggal_estimasi_tiba,
+      tanggal_aktual_tiba: row.tanggal_aktual_tiba,
+      status: row.status,
+      created_at: row.created_at,
+    }));
+
+    return paginatedResponse(mappedData, {
       page,
       limit,
       total: count ?? 0,
@@ -109,8 +138,24 @@ export async function POST(request: NextRequest) {
 
     const validated = createDeliverySchema.parse(body);
 
-    const companyId = effectiveCompanyId(await getApiUserScope());
-    const branchId = effectiveBranchId(await getApiUserScope());
+    const poValidation = await validatePOCanDelivery(db, validated.po_id);
+    if (!poValidation.valid) {
+      return ApiError.badRequest(poValidation.errors.join(" ")).toResponse();
+    }
+
+    const scope = await getApiUserScope();
+    const { data: purchaseOrder, error: purchaseOrderError } = await db
+      .from("purchase_orders")
+      .select("company_id, branch_id")
+      .eq("id", validated.po_id)
+      .maybeSingle();
+
+    if (purchaseOrderError) throw purchaseOrderError;
+
+    const companyId =
+      purchaseOrder?.company_id ?? effectiveCompanyId(scope);
+    const branchId =
+      purchaseOrder?.branch_id ?? effectiveBranchId(scope);
 
     const { data: delivery, error: deliveryError } = await db
       .from("deliveries")
@@ -136,7 +181,7 @@ export async function POST(request: NextRequest) {
       return ApiError.server("Gagal membuat delivery").toResponse();
     }
 
-    return createdResponse(delivery, "Delivery berhasil dibuat");
+    return createdResponse(delivery, "Delivery created successfully");
   } catch (error) {
     if (error instanceof ApiError) return error.toResponse();
     if (error instanceof z.ZodError) {

@@ -24,7 +24,7 @@ function getUnitLabel(unit?: Unit) {
 }
 
 function formatQuantity(value?: number | null) {
-  return new Intl.NumberFormat("id-ID", {
+  return new Intl.NumberFormat("en-US", {
     maximumFractionDigits: 4,
   }).format(value ?? 0);
 }
@@ -54,9 +54,9 @@ export function RawMaterialUnitConversionsEditor({
     <div className="space-y-3 rounded-xl border border-gray-200/70 bg-gray-50/50 p-4">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h3 className="text-sm font-semibold text-gray-900">Konversi Satuan Lain</h3>
+          <h3 className="text-sm font-semibold text-gray-900">Other Unit Conversions</h3>
           <p className="mt-1 text-xs text-gray-500">
-            Tambahkan satuan pembelian alternatif, misalnya karung, dus, pack, atau botol.
+            Add alternative purchase units, such as sack, box, pack, or bottle.
           </p>
         </div>
         <Button
@@ -66,20 +66,20 @@ export function RawMaterialUnitConversionsEditor({
           onClick={() => onChange([...conversions, { key: crypto.randomUUID(), satuan_id: "", qty_in_base_unit: 1 }])}
         >
           <Plus className="mr-2 h-4 w-4" />
-          Tambah
+          Add
         </Button>
       </div>
 
       <div className="space-y-2 rounded-lg border border-gray-200/70 bg-white p-3">
         <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
           <div>
-            <p className="text-xs font-medium text-gray-600">Satuan dasar stok</p>
-            <p className="mt-1 text-sm font-semibold text-gray-900">{baseUnit?.nama || "Belum dipilih"}</p>
+            <p className="text-xs font-medium text-gray-600">Base stock unit</p>
+            <p className="mt-1 text-sm font-semibold text-gray-900">{baseUnit?.nama || "Not selected"}</p>
           </div>
           <div>
-            <p className="text-xs font-medium text-gray-600">Konversi utama</p>
+            <p className="text-xs font-medium text-gray-600">Primary conversion</p>
             <p className="mt-1 text-sm font-semibold text-gray-900">
-              {bigUnit ? `1 ${bigLabel} = ${formatQuantity(bigUnitFactor || 1)} ${baseLabel}` : "Belum dipilih"}
+              {bigUnit ? `1 ${bigLabel} = ${formatQuantity(bigUnitFactor || 1)} ${baseLabel}` : "Not selected"}
             </p>
           </div>
         </div>
@@ -87,7 +87,7 @@ export function RawMaterialUnitConversionsEditor({
 
       {conversions.length === 0 ? (
         <div className="rounded-lg border border-dashed border-gray-200 bg-white px-4 py-5 text-center text-sm text-gray-500">
-          Belum ada satuan alternatif. Tambahkan jika supplier menjual dengan satuan berbeda.
+          No alternative units yet. Add one if suppliers sell this material in a different unit.
         </div>
       ) : (
         <div className="space-y-3">
@@ -108,20 +108,20 @@ export function RawMaterialUnitConversionsEditor({
               <div key={conversion.id || conversion.key || index} className="rounded-lg border border-gray-200/70 bg-white p-3">
                 <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] md:items-end">
                   <div className="space-y-1.5">
-                    <Label className="text-xs">Satuan Alternatif</Label>
+                    <Label className="text-xs">Alternative Unit</Label>
                     <Combobox
                       options={options}
                       value={conversion.satuan_id}
                       onChange={(value) => updateConversion(index, { satuan_id: value })}
-                      placeholder="Pilih satuan..."
-                      searchPlaceholder="Cari satuan..."
-                      emptyMessage="Satuan tidak ditemukan"
+                      placeholder="Select unit..."
+                      searchPlaceholder="Search unit..."
+                      emptyMessage="No unit found"
                       allowClear
                       className="h-9 text-sm"
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-xs">Isi Dalam Satuan Dasar</Label>
+                    <Label className="text-xs">Quantity in Base Unit</Label>
                     <div className="flex rounded-lg border border-gray-300 bg-white focus-within:border-gray-400 focus-within:ring-2 focus-within:ring-gray-100">
                       <NumericInput
                         value={conversion.qty_in_base_unit}
@@ -139,7 +139,7 @@ export function RawMaterialUnitConversionsEditor({
                     variant="outline"
                     className="h-9 w-full border-red-200 px-3 text-red-600 hover:bg-red-50 md:w-9"
                     onClick={() => onChange(conversions.filter((_, currentIndex) => currentIndex !== index))}
-                    aria-label="Hapus konversi"
+                    aria-label="Remove conversion"
                   >
                     <Trash2 className="h-4 w-4" />
                   </Button>

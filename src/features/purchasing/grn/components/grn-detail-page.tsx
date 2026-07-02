@@ -2,19 +2,24 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useGrn, useGrnQC } from "../queries";
+import { toast } from "sonner";
+import { useGrn, useGrnQC, useGrnVendorCredits } from "../queries";
+import { useApproveVendorCredit } from "../mutations";
+import type { VendorCreditRow } from "../api";
+import { RM_ROUTES } from "@/modules/purchasing/constants/item-routes";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
-  ArrowLeft,
+  ArrowLeftIcon,
+  Banknote,
   ClipboardCheck,
   FileText,
+  Info,
+  Loader2Icon,
   Package,
   Printer,
-  RotateCcw,
-  Truck,
-  User,
+  TruckIcon,
 } from "lucide-react";
 
 type GrnDetailItem = {
@@ -32,7 +37,6 @@ type GrnDetailItem = {
   } | null;
   qty_diterima?: number | null;
   qty_ditolak?: number | null;
-  kondisi?: string | null;
   catatan?: string | null;
 };
 
@@ -42,7 +46,6 @@ type GrnDetail = {
   status?: string | null;
   po_number?: string | null;
   purchase_order_id?: string | null;
-  po_status?: string | null;
   tanggal_penerimaan?: string | null;
   supplier_name?: string | null;
   no_surat_jalan?: string | null;
@@ -77,60 +80,106 @@ type GrnDetail = {
 };
 
 type QcInspection = {
+  id?: string;
   status?: string | null;
   hasil?: string | null;
+  inventory_posted?: boolean | null;
   inspected_at?: string | null;
   tanggal_inspeksi?: string | null;
   catatan_qc?: string | null;
   catatan?: string | null;
+  items?: {
+    qty_accepted?: number | null;
+    qty_rejected?: number | null;
+    item_status?: string | null;
+    raw_material?: { nama?: string | null; kode?: string | null } | null;
+  }[];
   inspected_by_user?: { email?: string | null } | null;
   inspector?: { email?: string | null; name?: string | null } | null;
 };
 
 const STATUS_STYLES: Record<string, string> = {
-  pending: "bg-slate-100 text-slate-700 border-slate-200",
-  partially_received: "bg-amber-50 text-amber-700 border-amber-200",
-  received: "bg-emerald-50 text-emerald-700 border-emerald-200",
-  rejected: "bg-red-50 text-red-700 border-red-200",
+  pending: "border-slate-200 bg-slate-100 text-slate-700",
+  partially_received: "border-amber-200 bg-amber-50 text-amber-700",
+  received: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  rejected: "border-red-200 bg-red-50 text-red-700",
 };
 
 const STATUS_LABELS: Record<string, string> = {
-  pending: "Menunggu",
-  partially_received: "Diterima Sebagian",
-  received: "Diterima Penuh",
-  rejected: "Ditolak",
+  pending: "Awaiting QC",
+  partially_received: "Partially Received",
+  received: "Fully Received",
+  rejected: "Rejected",
 };
 
-const CONDITION_LABELS: Record<string, string> = {
-  baik: "Baik",
-  rusak: "Rusak",
-  cacat: "Cacat",
+const CREDIT_SOURCE_LABELS: Record<string, string> = {
+  receive_reject: "Receipt Reject",
+  qc_reject: "QC Reject",
+};
+
+const CREDIT_STATUS_STYLES: Record<string, string> = {
+  draft: "border-amber-200 bg-amber-50 text-amber-700",
+  pending_approval: "border-amber-200 bg-amber-50 text-amber-700",
+  approved: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  rejected: "border-red-200 bg-red-50 text-red-700",
+  cancelled: "border-gray-200 bg-gray-50 text-gray-600",
 };
 
 function formatDate(value?: string | null) {
   if (!value) return "-";
-  return new Intl.DateTimeFormat("id-ID", {
+  return new Intl.DateTimeFormat("en-US", {
     day: "2-digit",
-    month: "long",
+    month: "short",
     year: "numeric",
   }).format(new Date(value));
 }
 
 function formatNumber(value?: number | null) {
-  return Number(value || 0).toLocaleString("id-ID", { maximumFractionDigits: 4 });
+  return Number(value || 0).toLocaleString("en-US", { maximumFractionDigits: 4 });
 }
 
 function formatCurrency(value?: number | null) {
-  return `Rp ${Number(value || 0).toLocaleString("id-ID")}`;
+  return new Intl.NumberFormat("id-ID", {
+    style: "currency",
+    currency: "IDR",
+    maximumFractionDigits: 0,
+  }).format(Number(value || 0));
 }
 
 function statusBadge(status?: string | null) {
   const normalized = String(status || "").toLowerCase();
   return (
-    <Badge variant="outline" className={STATUS_STYLES[normalized] || "bg-gray-100 text-gray-800 border-gray-200"}>
+    <Badge variant="outline" className={STATUS_STYLES[normalized] || "border-gray-200 bg-gray-100 text-gray-800"}>
       {STATUS_LABELS[normalized] || status || "-"}
     </Badge>
   );
+}
+
+function DetailField({
+  label,
+  value,
+  href,
+  className,
+}: {
+  label: string;
+  value: string;
+  href?: string;
+  className?: string;
+}) {
+  const content = (
+    <div className={className}>
+      <dt className="text-xs text-gray-500">{label}</dt>
+      <dd className={`mt-0.5 text-sm font-medium text-gray-900 ${href ? "text-pink-700 hover:underline" : ""}`}>
+        {value}
+      </dd>
+    </div>
+  );
+
+  if (href) {
+    return <Link href={href}>{content}</Link>;
+  }
+
+  return content;
 }
 
 export function GRNDetailPage() {
@@ -139,9 +188,21 @@ export function GRNDetailPage() {
 
   const grnQuery = useGrn<GrnDetail>(grnId);
   const qcQuery = useGrnQC<QcInspection>(grnId);
+  const creditsQuery = useGrnVendorCredits(grnId);
+  const approveCreditMutation = useApproveVendorCredit();
   const grn = grnQuery.data;
   const qc = qcQuery.data ?? null;
+  const vendorCredits = creditsQuery.data ?? [];
   const loading = grnQuery.isLoading;
+
+  const handleApproveCredit = async (credit: VendorCreditRow) => {
+    try {
+      await approveCreditMutation.mutateAsync({ creditId: credit.id, grnId });
+      toast.success(`${credit.credit_number} approved — invoice payable reduced`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to approve vendor credit");
+    }
+  };
 
   const handlePrint = () => {
     window.print();
@@ -149,8 +210,9 @@ export function GRNDetailPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-20 text-sm text-gray-500">
-        Memuat detail penerimaan...
+      <div className="flex min-h-56 items-center justify-center text-sm text-gray-500">
+        <Loader2Icon className="mr-2 h-4 w-4 animate-spin" />
+        Loading goods receipt...
       </div>
     );
   }
@@ -159,16 +221,16 @@ export function GRNDetailPage() {
     return (
       <div className="space-y-4">
         <Link href="/dashboard/purchasing/grn">
-          <Button variant="outline" className="purchasing-secondary-button">
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Kembali
+          <Button variant="ghost" size="sm" className="h-9 gap-2 text-pink-700">
+            <ArrowLeftIcon className="h-4 w-4" />
+            Back
           </Button>
         </Link>
         <Card className="border-red-100">
           <CardContent className="py-12 text-center">
-            <p className="font-medium text-red-700">Gagal memuat detail penerimaan</p>
+            <p className="font-medium text-red-700">Failed to load goods receipt</p>
             <p className="mt-2 text-sm text-red-600">
-              {grnQuery.error instanceof Error ? grnQuery.error.message : "Terjadi kesalahan"}
+              {grnQuery.error instanceof Error ? grnQuery.error.message : "An error occurred"}
             </p>
           </CardContent>
         </Card>
@@ -180,15 +242,13 @@ export function GRNDetailPage() {
     return (
       <div className="space-y-4">
         <Link href="/dashboard/purchasing/grn">
-          <Button variant="outline" className="purchasing-secondary-button">
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Kembali
+          <Button variant="ghost" size="sm" className="h-9 gap-2 text-pink-700">
+            <ArrowLeftIcon className="h-4 w-4" />
+            Back
           </Button>
         </Link>
         <Card className="border-gray-200/70">
-          <CardContent className="py-12 text-center text-gray-500">
-            Data penerimaan tidak ditemukan
-          </CardContent>
+          <CardContent className="py-12 text-center text-gray-500">Goods receipt not found.</CardContent>
         </Card>
       </div>
     );
@@ -201,295 +261,370 @@ export function GRNDetailPage() {
   const totalChecked = totalAccepted + totalRejected;
   const acceptedPct = totalChecked > 0 ? Math.round((totalAccepted / totalChecked) * 100) : 0;
   const qcStatus = String(qc?.status || qc?.hasil || "").toLowerCase();
-  const canContinueReceive =
-    grn.status === "pending" || grn.status === "partially_received";
+  const canRunQc = grn.status === "pending" && !qc?.inventory_posted;
+  const canContinueReceive = grn.status === "partially_received";
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col items-start justify-between gap-4 border-b border-gray-200/70 pb-4 sm:flex-row sm:items-center">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-2xl font-bold text-gray-900">{grn.nomor_grn}</h1>
-            {statusBadge(grn.status)}
-          </div>
-          <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-gray-500">
-            <span>PO {poNumber}</span>
-            <span className="text-gray-300">•</span>
-            <span>{formatDate(grn.tanggal_penerimaan)}</span>
-            {grn.supplier_name && (
-              <>
-                <span className="text-gray-300">•</span>
-                <span>{grn.supplier_name}</span>
-              </>
-            )}
-          </div>
-        </div>
-
-        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap">
-          <Link href="/dashboard/purchasing/grn">
-            <Button variant="outline" className="purchasing-secondary-button w-full sm:w-auto">
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Kembali
+      <div className="flex flex-col gap-4 border-b border-gray-200/70 pb-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="flex items-start gap-3">
+          <Link href={RM_ROUTES.purchasingGrn}>
+            <Button variant="ghost" size="sm" className="h-9 gap-2 text-pink-700">
+              <ArrowLeftIcon className="h-4 w-4" />
+              Back
             </Button>
           </Link>
-          <Button variant="outline" onClick={handlePrint} className="purchasing-secondary-button w-full sm:w-auto">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-2xl font-bold text-gray-900">{grn.nomor_grn}</h1>
+              {statusBadge(grn.status)}
+            </div>
+            <p className="mt-1 text-sm text-gray-500">
+              Purchase Order {poNumber} · {formatDate(grn.tanggal_penerimaan)}
+              {grn.supplier_name ? ` · ${grn.supplier_name}` : ""}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+          <Button
+            variant="outline"
+            onClick={handlePrint}
+            className="purchasing-secondary-button w-full sm:w-auto"
+          >
             <Printer className="mr-2 h-4 w-4" />
-            Cetak
+            Print
           </Button>
+          {canRunQc && (
+            <Link href={RM_ROUTES.purchasingGrnQc(grn.id)}>
+              <Button className="purchasing-main-button w-full sm:w-auto">
+                <ClipboardCheck className="mr-2 h-4 w-4" />
+                Run Quality Control
+              </Button>
+            </Link>
+          )}
           {canContinueReceive && (
-            <Link href={`/dashboard/purchasing/grn/continue/${grn.id}`}>
+            <Link href={RM_ROUTES.purchasingGrnContinue(grn.id)}>
               <Button className="purchasing-main-button w-full sm:w-auto">
                 <Package className="mr-2 h-4 w-4" />
-                Lanjutkan Penerimaan
-              </Button>
-            </Link>
-          )}
-          {["received", "partially_received"].includes(String(grn.status || "")) && (
-            <Link href={`/dashboard/purchasing/returns/insert?grn_id=${grn.id}`}>
-              <Button variant="outline" className="purchasing-secondary-button w-full sm:w-auto">
-                <RotateCcw className="mr-2 h-4 w-4" />
-                Buat Retur
-              </Button>
-            </Link>
-          )}
-          {grn.status !== "rejected" && (
-            <Link href={`/dashboard/purchasing/grn/${grn.id}/qc`}>
-              <Button variant="outline" className="purchasing-secondary-button w-full sm:w-auto">
-                <ClipboardCheck className="mr-2 h-4 w-4" />
-                Proses QC
+                Continue Receipt
               </Button>
             </Link>
           )}
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        {[
-          { label: "Diterima", value: formatNumber(totalAccepted), className: "text-emerald-600" },
-          { label: "Ditolak", value: formatNumber(totalRejected), className: "text-red-600" },
-          { label: "Acceptance Rate", value: `${acceptedPct}%`, className: "text-gray-900" },
-          {
-            label: "Status QC",
-            value: qc ? qc.status || qc.hasil || "Selesai" : "Belum QC",
-            className: qc ? (qcStatus.includes("reject") ? "text-red-600" : "text-emerald-600") : "text-gray-500",
-          },
-        ].map((stat) => (
-          <Card key={stat.label} className="border-gray-200/70 shadow-xs">
-            <CardContent className="p-4">
-              <p className="text-xs font-medium text-gray-500">{stat.label}</p>
-              <p className={`mt-1 text-xl font-bold ${stat.className}`}>{stat.value}</p>
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
+        <div className="space-y-6 xl:col-span-8">
+          <Card className="border-gray-200/70 shadow-xs">
+            <CardHeader className="border-b border-gray-200/70 pb-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <FileText className="h-4 w-4 text-pink-600" />
+                Receipt Information
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="grid gap-4 p-4 md:grid-cols-2">
+              <DetailField label="Goods Receipt Number" value={grn.nomor_grn || "-"} />
+              <DetailField label="Receipt Date" value={formatDate(grn.tanggal_penerimaan)} />
+              <DetailField
+                label="Purchase Order"
+                value={poNumber}
+                href={poId ? `/dashboard/purchasing/po/${poId}` : undefined}
+              />
+              <DetailField
+                label="Delivery Note Number"
+                value={grn.no_surat_jalan || grn.delivery?.no_surat_jalan || "-"}
+              />
+              <DetailField
+                label="Supplier"
+                value={grn.supplier_name || grn.supplier?.nama_supplier || "-"}
+              />
+              <DetailField label="Supplier Code" value={grn.supplier?.kode || "-"} />
+              <DetailField label="Notes" value={grn.catatan || "-"} className="md:col-span-2" />
             </CardContent>
           </Card>
-        ))}
-      </div>
 
-      <div className="grid gap-4 lg:grid-cols-3">
-        <Card className="border-gray-200/70 lg:col-span-2">
-          <CardHeader className="border-b border-gray-200/70 px-4 py-3">
-            <CardTitle className="flex items-center gap-2 text-base font-semibold">
-              <FileText className="h-4 w-4 text-pink-600" />
-              Informasi Penerimaan
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-4 p-4 md:grid-cols-2">
-            <DetailField label="Nomor Penerimaan" value={grn.nomor_grn || "-"} />
-            <DetailField label="Tanggal Terima" value={formatDate(grn.tanggal_penerimaan)} />
-            <DetailField
-              label="Purchase Order"
-              value={poNumber}
-              href={poId ? `/dashboard/purchasing/po/${poId}` : undefined}
-            />
-            <DetailField
-              label="Surat Jalan"
-              value={grn.no_surat_jalan || grn.delivery?.no_surat_jalan || "-"}
-            />
-            <DetailField label="Catatan" value={grn.catatan || "-"} className="md:col-span-2" />
-          </CardContent>
-        </Card>
-
-        <Card className="border-gray-200/70">
-          <CardHeader className="border-b border-gray-200/70 px-4 py-3">
-            <CardTitle className="flex items-center gap-2 text-base font-semibold">
-              <User className="h-4 w-4 text-pink-600" />
-              Supplier
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3 p-4">
-            <DetailField label="Nama" value={grn.supplier_name || grn.supplier?.nama_supplier || "-"} compact />
-            <DetailField label="Kode" value={grn.supplier?.kode || "-"} compact />
-            <DetailField label="Email" value={grn.supplier?.email || "-"} compact />
-            <DetailField label="Telepon" value={grn.supplier?.telepon || "-"} compact />
-          </CardContent>
-        </Card>
-      </div>
-
-      {grn.delivery_id && (
-        <Card className="border-gray-200/70">
-          <CardHeader className="border-b border-gray-200/70 px-4 py-3">
-            <CardTitle className="flex items-center gap-2 text-base font-semibold">
-              <Truck className="h-4 w-4 text-pink-600" />
-              Informasi Pengiriman
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-4 p-4 md:grid-cols-4">
-            <DetailField
-              label="Nomor Delivery"
-              value={grn.delivery_number || grn.delivery?.nomor_resi || "-"}
-              href={`/dashboard/purchasing/delivery/${grn.delivery_id}`}
-            />
-            <DetailField label="Kurir" value={grn.delivery?.kurir || "-"} />
-            <DetailField label="Tanggal Kirim" value={formatDate(grn.delivery?.tanggal_kirim)} />
-            <DetailField label="Tiba Aktual" value={formatDate(grn.delivery?.tanggal_aktual_tiba)} />
-          </CardContent>
-        </Card>
-      )}
-
-      <Card className="border-gray-200/70">
-        <CardHeader className="border-b border-gray-200/70 px-4 py-3">
-          <CardTitle className="flex items-center gap-2 text-base font-semibold">
-            <Package className="h-4 w-4 text-pink-600" />
-            Item Diterima
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto px-4 pb-4">
-            <table className="min-w-full text-sm">
-              <thead className="border-b border-gray-200/70 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
-                <tr>
-                  {["Bahan Baku", "Satuan", "Qty PO", "Diterima", "Ditolak", "Kondisi", "Harga", "Catatan"].map(
-                    (heading) => (
-                      <th
-                        key={heading}
-                        className={`px-3 py-3 text-left font-semibold ${
-                          ["Qty PO", "Diterima", "Ditolak", "Harga"].includes(heading) ? "text-right" : ""
-                        }`}
-                      >
-                        {heading}
-                      </th>
-                    )
-                  )}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {(grn.items || []).length === 0 ? (
-                  <tr>
-                    <td colSpan={8} className="px-3 py-10 text-center text-gray-500">
-                      Belum ada item penerimaan.
-                    </td>
-                  </tr>
-                ) : (
-                  grn.items?.map((item) => (
-                    <tr key={item.id} className="hover:bg-gray-50/80">
-                      <td className="px-3 py-3">
-                        <div className="font-medium text-gray-900">{item.raw_material?.nama || "-"}</div>
-                        <div className="text-xs text-gray-500">{item.raw_material?.kode || "-"}</div>
-                      </td>
-                      <td className="px-3 py-3 text-gray-700">
-                        {item.satuan?.nama ||
-                          item.purchase_order_item?.satuan?.nama ||
-                          item.raw_material?.satuan_besar?.nama ||
-                          "-"}
-                      </td>
-                      <td className="px-3 py-3 text-right text-gray-700">
-                        {formatNumber(item.purchase_order_item?.qty_ordered)}
-                      </td>
-                      <td className="px-3 py-3 text-right font-semibold text-emerald-700">
-                        {formatNumber(item.qty_diterima)}
-                      </td>
-                      <td className="px-3 py-3 text-right font-semibold text-red-600">
-                        {formatNumber(item.qty_ditolak)}
-                      </td>
-                      <td className="px-3 py-3 text-gray-700">
-                        {CONDITION_LABELS[item.kondisi || ""] || item.kondisi || "-"}
-                      </td>
-                      <td className="px-3 py-3 text-right text-gray-700">
-                        {formatCurrency(item.purchase_order_item?.harga_satuan)}
-                      </td>
-                      <td className="max-w-[220px] px-3 py-3 text-gray-600">{item.catatan || "-"}</td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card className="border-gray-200/70">
-        <CardHeader className="border-b border-gray-200/70 px-4 py-3">
-          <CardTitle className="flex items-center gap-2 text-base font-semibold">
-            <ClipboardCheck className="h-4 w-4 text-pink-600" />
-            Quality Control
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-4">
-          {!qc ? (
-            <div className="rounded-lg border border-dashed border-gray-200/80 bg-gray-50/70 p-6 text-center">
-              <p className="font-medium text-gray-900">Belum ada inspeksi QC</p>
-              <p className="mt-1 text-sm text-gray-500">
-                Jalankan proses QC jika barang perlu diperiksa sebelum retur atau audit kualitas.
-              </p>
-              {grn.status !== "rejected" && (
-                <div className="mt-4">
-                  <Link href={`/dashboard/purchasing/grn/${grn.id}/qc`}>
-                    <Button variant="outline" className="purchasing-secondary-button">
-                      <ClipboardCheck className="mr-2 h-4 w-4" />
-                      Proses QC
-                    </Button>
-                  </Link>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="grid gap-4 md:grid-cols-2">
-              <DetailField label="Status" value={qc.status || qc.hasil || "-"} />
-              <DetailField
-                label="Inspector"
-                value={qc.inspected_by_user?.email || qc.inspector?.email || qc.inspector?.name || "-"}
-              />
-              <DetailField label="Tanggal QC" value={formatDate(qc.inspected_at || qc.tanggal_inspeksi)} />
-              <DetailField label="Catatan QC" value={qc.catatan_qc || qc.catatan || "-"} className="md:col-span-2" />
-            </div>
+          {grn.delivery_id && (
+            <Card className="border-gray-200/70 shadow-xs">
+              <CardHeader className="border-b border-gray-200/70 pb-3">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <TruckIcon className="h-4 w-4 text-pink-600" />
+                  Delivery Information
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="grid gap-4 p-4 md:grid-cols-2">
+                <DetailField
+                  label="Delivery Number"
+                  value={grn.delivery_number || grn.delivery?.nomor_resi || "-"}
+                  href={`/dashboard/purchasing/delivery/${grn.delivery_id}`}
+                />
+                <DetailField label="Courier" value={grn.delivery?.kurir || "-"} />
+                <DetailField label="Shipment Date" value={formatDate(grn.delivery?.tanggal_kirim)} />
+                <DetailField label="Actual Arrival" value={formatDate(grn.delivery?.tanggal_aktual_tiba)} />
+              </CardContent>
+            </Card>
           )}
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
 
-function DetailField({
-  label,
-  value,
-  href,
-  compact,
-  className,
-}: {
-  label: string;
-  value: string;
-  href?: string;
-  compact?: boolean;
-  className?: string;
-}) {
-  const content = (
-    <div className={compact ? "flex items-start justify-between gap-4 border-b border-gray-100 pb-2 last:border-0" : ""}>
-      <p className="text-xs font-medium text-gray-500">{label}</p>
-      <p
-        className={`break-words text-sm font-medium text-gray-900 ${
-          compact ? "max-w-[65%] text-right" : "mt-1"
-        } ${href ? "text-pink-700 hover:underline" : ""}`}
-      >
-        {value}
-      </p>
-    </div>
-  );
+          <Card className="border-gray-200/70 shadow-xs">
+            <CardHeader className="border-b border-gray-200/70 pb-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Package className="h-4 w-4 text-pink-600" />
+                Received Items
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="p-4">
+                <div className="overflow-x-auto rounded-xl border border-gray-200/70">
+                  <table className="w-full table-fixed border-collapse text-sm [&_td]:border [&_td]:border-gray-200/70 [&_th]:border [&_th]:border-gray-200/70">
+                    <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+                      <tr>
+                        <th className="px-4 py-3 text-left font-semibold">Raw Material</th>
+                        <th className="w-[72px] px-2 py-3 text-center font-semibold">Unit</th>
+                        <th className="w-[84px] px-2 py-3 text-center font-semibold">Ordered</th>
+                        <th className="w-[84px] px-2 py-3 text-center font-semibold">Good</th>
+                        <th className="w-[84px] px-2 py-3 text-center font-semibold">Reject</th>
+                        <th className="w-[120px] px-2 py-3 text-right font-semibold">Unit Price</th>
+                        <th className="px-4 py-3 text-left font-semibold">Notes</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(grn.items || []).length === 0 ? (
+                        <tr>
+                          <td colSpan={7} className="px-4 py-10 text-center text-gray-500">
+                            No receipt items found.
+                          </td>
+                        </tr>
+                      ) : (
+                        grn.items?.map((item) => (
+                          <tr key={item.id} className="bg-white hover:bg-gray-50/80">
+                            <td className="px-4 py-3 align-top">
+                              <div className="font-medium text-gray-900">{item.raw_material?.nama || "-"}</div>
+                              <div className="text-xs text-gray-500">{item.raw_material?.kode || "-"}</div>
+                            </td>
+                            <td className="px-2 py-3 text-center align-middle text-gray-700">
+                              {item.satuan?.nama ||
+                                item.purchase_order_item?.satuan?.nama ||
+                                item.raw_material?.satuan_besar?.nama ||
+                                "-"}
+                            </td>
+                            <td className="px-2 py-3 text-center align-middle text-gray-700">
+                              {formatNumber(item.purchase_order_item?.qty_ordered)}
+                            </td>
+                            <td className="px-2 py-3 text-center align-middle font-semibold text-emerald-700">
+                              {formatNumber(item.qty_diterima)}
+                            </td>
+                            <td className="px-2 py-3 text-center align-middle font-semibold text-red-600">
+                              {formatNumber(item.qty_ditolak)}
+                            </td>
+                            <td className="px-2 py-3 text-right align-middle text-gray-700">
+                              {formatCurrency(item.purchase_order_item?.harga_satuan)}
+                            </td>
+                            <td className="px-4 py-3 align-top text-gray-600">{item.catatan || "-"}</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
 
-  if (href) {
-    return (
-      <div className={className}>
-        <Link href={href}>{content}</Link>
+          {vendorCredits.length > 0 && (
+            <Card className="border-gray-200/70 shadow-xs">
+              <CardHeader className="border-b border-gray-200/70 pb-3">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Banknote className="h-4 w-4 text-pink-600" />
+                  Vendor Credits
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3 p-4">
+                <p className="text-xs leading-5 text-gray-600">
+                  Auto-generated from receipt or QC reject quantities. Approve each credit to reduce
+                  the purchase invoice net payable (no stock movement).
+                </p>
+                {vendorCredits.map((credit) => {
+                  const canApprove =
+                    credit.status === "draft" || credit.status === "pending_approval";
+                  return (
+                    <div
+                      key={credit.id}
+                      className="rounded-xl border border-gray-200/70 bg-gray-50/50 p-4"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <div className="font-medium text-gray-900">{credit.credit_number}</div>
+                          <div className="mt-1 text-xs text-gray-500">
+                            {CREDIT_SOURCE_LABELS[credit.source_type] || credit.source_type}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Badge
+                            variant="outline"
+                            className={
+                              CREDIT_STATUS_STYLES[credit.status] ||
+                              "border-gray-200 bg-gray-50 text-gray-700"
+                            }
+                          >
+                            {credit.status.replace(/_/g, " ")}
+                          </Badge>
+                          <span className="text-sm font-semibold text-gray-900">
+                            {formatCurrency(credit.total_amount)}
+                          </span>
+                        </div>
+                      </div>
+                      {(credit.items || []).length > 0 && (
+                        <ul className="mt-3 space-y-1 text-xs text-gray-600">
+                          {credit.items?.map((line) => (
+                            <li key={line.id} className="flex justify-between gap-2">
+                              <span>
+                                {line.raw_material?.nama || line.raw_material?.kode || "Item"} ·{" "}
+                                {formatNumber(line.qty)} × {formatCurrency(line.unit_price)}
+                              </span>
+                              <span className="font-medium text-gray-800">
+                                {formatCurrency(line.line_amount)}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      {canApprove && (
+                        <div className="mt-3 flex justify-end">
+                          <Button
+                            size="sm"
+                            className="purchasing-main-button h-8"
+                            disabled={approveCreditMutation.isPending}
+                            onClick={() => handleApproveCredit(credit)}
+                          >
+                            {approveCreditMutation.isPending ? (
+                              <Loader2Icon className="mr-2 h-3.5 w-3.5 animate-spin" />
+                            ) : null}
+                            Approve Credit
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </CardContent>
+            </Card>
+          )}
+        </div>
+
+        <div className="xl:col-span-4">
+          <Card className="border-gray-200/70 shadow-xs xl:sticky xl:top-6">
+            <CardHeader className="border-b border-gray-200/70 pb-3">
+              <CardTitle className="text-base">Summary</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4 pt-4">
+              <dl className="space-y-3 text-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <dt className="text-gray-500">Purchase Order</dt>
+                  <dd className="text-right font-medium text-gray-900">{poNumber}</dd>
+                </div>
+                <div className="flex items-start justify-between gap-3">
+                  <dt className="text-gray-500">Supplier</dt>
+                  <dd className="text-right font-medium text-gray-900">
+                    {grn.supplier_name || grn.supplier?.nama_supplier || "-"}
+                  </dd>
+                </div>
+                <div className="flex items-start justify-between gap-3">
+                  <dt className="text-gray-500">Items</dt>
+                  <dd className="text-right font-medium text-gray-900">{grn.items?.length || 0}</dd>
+                </div>
+                <div className="grid grid-cols-2 gap-2 border-t border-gray-200/70 pt-3">
+                  <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2">
+                    <p className="text-xs text-emerald-700">Good</p>
+                    <p className="mt-1 text-sm font-semibold text-emerald-800">{formatNumber(totalAccepted)}</p>
+                  </div>
+                  <div className="rounded-lg border border-red-100 bg-red-50 px-3 py-2">
+                    <p className="text-xs text-red-700">Reject</p>
+                    <p className="mt-1 text-sm font-semibold text-red-700">{formatNumber(totalRejected)}</p>
+                  </div>
+                </div>
+                <div className="flex items-start justify-between gap-3 border-t border-gray-200/70 pt-3">
+                  <dt className="font-medium text-gray-900">Acceptance Rate</dt>
+                  <dd className="text-right font-semibold text-gray-900">{acceptedPct}%</dd>
+                </div>
+              </dl>
+
+              <div className="rounded-xl border border-gray-200/70 bg-gray-50/60 p-4">
+                <div className="mb-2 flex items-center gap-2 text-sm font-medium text-gray-900">
+                  <ClipboardCheck className="h-4 w-4 text-pink-600" />
+                  Quality Control
+                </div>
+                {!qc ? (
+                  <div className="space-y-3">
+                    <p className="text-xs leading-5 text-gray-600">
+                      No quality inspection recorded yet. Complete QC to post accepted quantities to
+                      inventory stock.
+                    </p>
+                    {canRunQc && (
+                      <Link href={RM_ROUTES.purchasingGrnQc(grn.id)}>
+                        <Button size="sm" className="purchasing-main-button h-8">
+                          <ClipboardCheck className="mr-2 h-3.5 w-3.5" />
+                          Start Inspection
+                        </Button>
+                      </Link>
+                    )}
+                  </div>
+                ) : (
+                  <dl className="space-y-2 text-xs text-gray-600">
+                    <div className="flex items-start justify-between gap-3">
+                      <dt>Status</dt>
+                      <dd className="text-right font-medium text-gray-900">{qc.status || qc.hasil || "-"}</dd>
+                    </div>
+                    <div className="flex items-start justify-between gap-3">
+                      <dt>Inspector</dt>
+                      <dd className="text-right font-medium text-gray-900">
+                        {qc.inspected_by_user?.email || qc.inspector?.email || qc.inspector?.name || "-"}
+                      </dd>
+                    </div>
+                    <div className="flex items-start justify-between gap-3">
+                      <dt>Inspection Date</dt>
+                      <dd className="text-right font-medium text-gray-900">
+                        {formatDate(qc.inspected_at || qc.tanggal_inspeksi)}
+                      </dd>
+                    </div>
+                    {(qc.catatan_qc || qc.catatan) && (
+                      <div>
+                        <dt className="mb-1">Notes</dt>
+                        <dd className="rounded-lg border border-gray-200/70 bg-white px-3 py-2 text-gray-700">
+                          {qc.catatan_qc || qc.catatan}
+                        </dd>
+                      </div>
+                    )}
+                    <p
+                      className={`pt-1 font-medium ${
+                        qcStatus.includes("reject") ? "text-red-600" : "text-emerald-600"
+                      }`}
+                    >
+                      {qcStatus.includes("reject") ? "QC flagged issues" : "QC completed"}
+                    </p>
+                  </dl>
+                )}
+              </div>
+
+              <div className="rounded-xl border border-gray-200/70 bg-gray-50/60 p-4">
+                <div className="mb-2 flex items-center gap-2 text-sm font-medium text-gray-900">
+                  <Info className="h-4 w-4 text-pink-600" />
+                  Supplier Contact
+                </div>
+                <dl className="space-y-2 text-xs text-gray-600">
+                  <div className="flex items-start justify-between gap-3">
+                    <dt>Email</dt>
+                    <dd className="text-right font-medium text-gray-900">{grn.supplier?.email || "-"}</dd>
+                  </div>
+                  <div className="flex items-start justify-between gap-3">
+                    <dt>Phone</dt>
+                    <dd className="text-right font-medium text-gray-900">{grn.supplier?.telepon || "-"}</dd>
+                  </div>
+                </dl>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       </div>
-    );
-  }
-
-  return <div className={className}>{content}</div>;
+    </div>
+  );
 }

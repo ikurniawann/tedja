@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Combobox } from "@/components/ui/combobox";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Search, Filter, FileText, CheckCircle, Send, XCircle, Download, Trash2, Truck, Pencil, Eye, Loader2 } from "lucide-react";
+import { Plus, Search, Filter, FileText, CheckCircle, Send, XCircle, Download, Trash2, Pencil, Eye, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { PurchaseOrderWithStats, POStatus } from "@/types/purchasing";
 import { listPurchaseOrders } from "../api";
@@ -17,6 +17,7 @@ import {
   useCancelPurchaseOrder,
 } from "../mutations";
 import { convertToCSV, downloadCSV, formatDateForCSV, formatCurrencyForCSV } from "@/lib/utils/csv-export";
+import { formatAmount } from "@/lib/purchasing/utils";
 import {
   Dialog,
   DialogContent,
@@ -26,20 +27,22 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { PurchasingPageHeader } from "@/modules/purchasing/components/page/purchasing-page-header";
 import { PurchasingListSection } from "@/modules/purchasing/components/list/PurchasingListSection";
 import { PurchasingTablePagination } from "@/modules/purchasing/components/pagination/PurchasingTablePagination";
+import { RM_ROUTES } from "@/modules/purchasing/constants/item-routes";
 
 const STATUS_OPTIONS: { value: POStatus | "all"; label: string }[] = [
-  { value: "all", label: "Semua Status" },
+  { value: "all", label: "All Statuses" },
   { value: "draft", label: "Draft" },
-  { value: "pending_approval", label: "Menunggu Persetujuan" },
-  { value: "approved", label: "Disetujui" },
-  { value: "sent", label: "Terkirim" },
-  { value: "partial", label: "Diterima Sebagian" },
-  { value: "partially_received", label: "Diterima Sebagian" },
-  { value: "received", label: "Diterima Penuh" },
-  { value: "rejected", label: "Ditolak" },
-  { value: "cancelled", label: "Dibatalkan" },
+  { value: "pending_approval", label: "Pending Approval" },
+  { value: "approved", label: "Approved" },
+  { value: "sent", label: "Sent" },
+  { value: "partial", label: "Partially Received" },
+  { value: "partially_received", label: "Partially Received" },
+  { value: "received", label: "Fully Received" },
+  { value: "rejected", label: "Rejected" },
+  { value: "cancelled", label: "Cancelled" },
 ];
 
 function getErrorMessage(error: unknown, fallback: string) {
@@ -90,7 +93,7 @@ export function PurchaseOrdersPage() {
   useEffect(() => {
     if (listQuery.isError) {
       console.error("Error loading POs:", listQuery.error);
-      toast.error("Gagal memuat data PO");
+      toast.error("Failed to load purchase orders");
     }
   }, [listQuery.isError, listQuery.error]);
 
@@ -115,24 +118,25 @@ export function PurchaseOrdersPage() {
       });
 
       const columns = [
-        { key: "nomor_po", label: "Nomor PO" },
+        { key: "nomor_po", label: "Purchase Order Number" },
+        { key: "pr_number", label: "Purchase Request Number" },
         { key: "nama_supplier", label: "Supplier" },
-        { key: "supplier_kode", label: "Kode Supplier" },
-        { key: "tanggal_po", label: "Tanggal PO", format: formatDateForCSV },
+        { key: "supplier_kode", label: "Supplier Code" },
+        { key: "tanggal_po", label: "Purchase Order Date", format: formatDateForCSV },
         { key: "status", label: "Status" },
         { key: "subtotal", label: "Total Amount", format: (val: unknown) => val ? formatCurrencyForCSV(Number(val)) : "" },
         { key: "created_by", label: "Created By" },
-        { key: "catatan", label: "Catatan" },
+        { key: "catatan", label: "Notes" },
       ];
 
       const csvContent = convertToCSV(response.data, columns);
       const filename = `purchase-orders-${new Date().toISOString().split("T")[0]}.csv`;
       downloadCSV(csvContent, filename);
       
-      toast.success(`Berhasil export ${response.data.length} PO`);
+      toast.success(`Exported ${response.data.length} purchase orders`);
     } catch (error) {
       console.error("Error exporting CSV:", error);
-      toast.error("Gagal export data");
+      toast.error("Failed to export data");
     } finally {
       setIsExporting(false);
     }
@@ -185,18 +189,18 @@ export function PurchaseOrdersPage() {
       console.log(`Bulk approve completed: ${successCount} success, ${failCount} failed`);
       
       if (successCount > 0) {
-        toast.success(`Berhasil approve ${successCount} PO`);
+        toast.success(`Approved ${successCount} purchase order${successCount === 1 ? "" : "s"}`);
       }
       
       if (failCount > 0) {
-        toast.error(`${failCount} PO gagal diapprove: ${failedIds.slice(0, 3).join(', ')}${failedIds.length > 3 ? '...' : ''}`);
+        toast.error(`${failCount} purchase order${failCount === 1 ? "" : "s"} failed to approve: ${failedIds.slice(0, 3).join(', ')}${failedIds.length > 3 ? '...' : ''}`);
       }
 
       setSelectedIds(new Set());
       setIsBulkApproveDialogOpen(false);
     } catch (error) {
       console.error("Error bulk approve:", error);
-      toast.error("Terjadi kesalahan saat approve massal");
+      toast.error("An error occurred during bulk approval");
     } finally {
       setIsProcessingBulk(false);
     }
@@ -222,9 +226,9 @@ export function PurchaseOrdersPage() {
         }
       }
       
-      toast.success(`Berhasil hapus ${successCount} PO`);
+      toast.success(`Deleted ${successCount} purchase order${successCount === 1 ? "" : "s"}`);
       if (failCount > 0) {
-        toast.error(`${failCount} PO gagal dihapus`);
+        toast.error(`${failCount} purchase order${failCount === 1 ? "" : "s"} failed to delete`);
       }
 
       listQuery.refetch();
@@ -232,7 +236,7 @@ export function PurchaseOrdersPage() {
       setIsBulkDeleteDialogOpen(false);
     } catch (error) {
       console.error("Error bulk delete:", error);
-      toast.error("Gagal hapus massal");
+      toast.error("Bulk delete failed");
     } finally {
       setIsProcessingBulk(false);
     }
@@ -242,10 +246,10 @@ export function PurchaseOrdersPage() {
     try {
       setProcessingPoId(po.id);
       await approveMutation.mutateAsync(po.id);
-      toast.success("PO berhasil diapprove");
+      toast.success("Purchase order approved");
     } catch (error: unknown) {
       console.error("Error approving PO:", error);
-      toast.error(getErrorMessage(error, "Gagal mengapprove PO"));
+      toast.error(getErrorMessage(error, "Failed to approve purchase order"));
     } finally {
       setProcessingPoId(null);
     }
@@ -262,11 +266,11 @@ export function PurchaseOrdersPage() {
     try {
       setProcessingPoId(sendingPo.id);
       await sendMutation.mutateAsync({ id: sendingPo.id, sentVia: sendVia });
-      toast.success(`PO berhasil dikirim via ${sendVia}`);
+      toast.success(`Purchase order sent via ${sendVia}`);
       setIsSendDialogOpen(false);
     } catch (error: unknown) {
       console.error("Error sending PO:", error);
-      toast.error(getErrorMessage(error, "Gagal mengirim PO"));
+      toast.error(getErrorMessage(error, "Failed to send purchase order"));
     } finally {
       setProcessingPoId(null);
     }
@@ -282,11 +286,11 @@ export function PurchaseOrdersPage() {
     if (!cancellingPo || !cancelReason) return;
     try {
       await cancelMutation.mutateAsync({ id: cancellingPo.id, reason: cancelReason });
-      toast.success("PO berhasil dibatalkan");
+      toast.success("Purchase order cancelled");
       setIsCancelDialogOpen(false);
     } catch (error: unknown) {
       console.error("Error cancelling PO:", error);
-      toast.error(getErrorMessage(error, "Gagal membatalkan PO"));
+      toast.error(getErrorMessage(error, "Failed to cancel purchase order"));
     }
   };
 
@@ -307,14 +311,14 @@ export function PurchaseOrdersPage() {
     };
     const labels: Record<POStatus, string> = {
       draft: "Draft",
-      pending_approval: "Menunggu Persetujuan",
-      approved: "Disetujui",
-      sent: "Terkirim",
-      partial: "Diterima Sebagian",
-      partially_received: "Diterima Sebagian",
-      received: "Diterima Penuh",
-      rejected: "Ditolak",
-      cancelled: "Dibatalkan",
+      pending_approval: "Pending Approval",
+      approved: "Approved",
+      sent: "Sent",
+      partial: "Partially Received",
+      partially_received: "Partially Received",
+      received: "Fully Received",
+      rejected: "Rejected",
+      cancelled: "Cancelled",
     };
     return <Badge className={styles[normalized] || "bg-gray-100 text-gray-800"}>{labels[normalized] || status}</Badge>;
   };
@@ -331,22 +335,22 @@ export function PurchaseOrdersPage() {
     };
     const labels: Record<string, string> = {
       draft: "Draft",
-      in_progress: "Berjalan",
-      waiting_payment: "Menunggu Pembayaran",
-      waiting_receipt: "Menunggu Barang",
-      completed: "Selesai",
-      cancelled: "Dibatalkan",
+      in_progress: "In Progress",
+      waiting_payment: "Waiting for Payment",
+      waiting_receipt: "Waiting for Receipt",
+      completed: "Completed",
+      cancelled: "Cancelled",
     };
     return <Badge className={styles[lifecycle] || "bg-blue-100 text-blue-700"}>{labels[lifecycle] || lifecycle}</Badge>;
   };
 
-  const formatCurrency = (num: number) => {
-    return `Rp ${num.toLocaleString("id-ID")}`;
-  };
-
   const formatDate = (dateStr: string) => {
     if (!dateStr) return "-";
-    return new Date(dateStr).toLocaleDateString("id-ID");
+    return new Date(dateStr).toLocaleDateString("en-US", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    });
   };
 
   const handleResetFilters = () => {
@@ -360,37 +364,40 @@ export function PurchaseOrdersPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col items-start justify-between gap-4 border-b border-gray-200/70 pb-4 sm:flex-row sm:items-center">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Purchase Order</h1>
-          <p className="text-sm text-gray-500">
-            Kelola Purchase Order dari pembuatan hingga penerimaan — {total} total
-          </p>
-        </div>
-        <div className="flex gap-2 w-full sm:w-auto">
-          <Button variant="outline" onClick={handleExportCSV} disabled={isExporting} className="h-10 flex-1 gap-2 rounded-lg border-pink-200 bg-white px-3 text-sm font-medium text-pink-700 shadow-sm hover:!border-pink-200 hover:!bg-pink-50 hover:!text-pink-700 sm:flex-none">
-            <Download className="w-4 h-4 mr-2" />
-            {isExporting ? "Exporting..." : "Export CSV"}
-          </Button>
-          <Link href="/dashboard/purchasing/po/insert">
-            <Button className="h-10 w-full gap-2 rounded-lg bg-pink-600 px-3 text-sm font-semibold text-white shadow-sm hover:bg-pink-700 sm:w-auto">
-              <Plus className="w-4 h-4 mr-2" />
-              Buat PO dari PR
+      <PurchasingPageHeader
+        title="Purchase Order"
+        description={`Manage purchase orders from creation through receipt — ${total} total`}
+        actions={
+          <>
+            <Button
+              variant="outline"
+              onClick={handleExportCSV}
+              disabled={isExporting}
+              className="h-10 flex-1 gap-2 rounded-lg border-pink-200 bg-white px-3 text-sm font-medium text-pink-700 shadow-sm hover:!border-pink-200 hover:!bg-pink-50 hover:!text-pink-700 sm:flex-none"
+            >
+              <Download className="mr-2 h-4 w-4" />
+              {isExporting ? "Exporting..." : "Export CSV"}
             </Button>
-          </Link>
-        </div>
-      </div>
+            <Link href="/dashboard/purchasing/po/insert">
+              <Button className="h-10 w-full gap-2 rounded-lg bg-pink-600 px-3 text-sm font-semibold text-white shadow-sm hover:bg-pink-700 sm:w-auto">
+                <Plus className="mr-2 h-4 w-4" />
+                Create from Purchase Request
+              </Button>
+            </Link>
+          </>
+        }
+      />
 
       <PurchasingListSection
         icon={FileText}
-        title="Daftar Purchase Order"
-        description="Pantau PO, supplier, status approval, dan progress penerimaan."
+        title="Purchase Order List"
+        description="Track purchase orders, suppliers, approval status, and receipt progress."
         toolbar={
           <div className="flex w-full flex-col gap-3 sm:w-auto md:flex-row md:items-center">
             <label className="relative w-full md:w-80">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
                 <Input
-                  placeholder="Cari nomor PO atau supplier..."
+                  placeholder="Search purchase order number or supplier..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="h-10 bg-white pl-10 text-sm focus:border-pink-400 focus:ring-2 focus:ring-pink-100"
@@ -429,7 +436,7 @@ export function PurchaseOrdersPage() {
       {selectedIds.size > 0 && (
         <div className="flex items-center gap-2 p-3 bg-blue-50 border border-blue-200 rounded-md">
           <span className="text-sm font-medium text-blue-800">
-            {selectedIds.size} PO terpilih
+            {selectedIds.size} purchase order{selectedIds.size === 1 ? "" : "s"} selected
           </span>
           <Button
             size="sm"
@@ -476,8 +483,8 @@ export function PurchaseOrdersPage() {
                     setPage(1);
                   }}
                   placeholder="Filter status..."
-                  searchPlaceholder="Cari status..."
-                  emptyMessage="Status tidak ditemukan"
+                  searchPlaceholder="Search status..."
+                  emptyMessage="No status found"
                   className="!w-full h-9 text-sm"
                 />
               </div>
@@ -497,26 +504,27 @@ export function PurchaseOrdersPage() {
                   className="rounded border-gray-300"
                 />
               </th>
-              <th className="px-4 py-3 text-left font-semibold">Nomor PO</th>
+              <th className="px-4 py-3 text-left font-semibold">Purchase Order</th>
+              <th className="px-4 py-3 text-left font-semibold">Purchase Request</th>
               <th className="px-4 py-3 text-left font-semibold">Supplier</th>
-              <th className="px-4 py-3 text-left font-semibold">Tanggal</th>
+              <th className="px-4 py-3 text-left font-semibold">Date</th>
               <th className="px-4 py-3 text-right font-semibold">Total</th>
               <th className="px-4 py-3 text-center font-semibold">Status</th>
               <th className="px-4 py-3 text-left font-semibold">Progress</th>
-              <th className="px-4 py-3 text-right font-semibold">Aksi</th>
+              <th className="px-4 py-3 text-right font-semibold">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {loading ? (
               <tr>
-                <td colSpan={8} className="py-12 text-center text-sm text-gray-500">
-                  Memuat data...
+                <td colSpan={9} className="py-12 text-center text-sm text-gray-500">
+                  Loading purchase orders...
                 </td>
               </tr>
             ) : pos.length === 0 ? (
               <tr>
-                <td colSpan={8} className="py-14 text-center text-sm text-gray-500">
-                  Tidak ada data PO
+                <td colSpan={9} className="py-14 text-center text-sm text-gray-500">
+                  No purchase orders found
                 </td>
               </tr>
             ) : (
@@ -532,16 +540,28 @@ export function PurchaseOrdersPage() {
                   </td>
                   <td className="px-4 py-3 font-medium">
                     <Link
-                      href={`/dashboard/purchasing/po/${po.id}`}
-                      className="hover:underline text-pink-600"
+                      href={RM_ROUTES.purchasingPoDetail(po.id)}
+                      className="text-pink-600 hover:underline"
                     >
                       {po.nomor_po}
                     </Link>
                   </td>
+                  <td className="px-4 py-3 text-gray-700">
+                    {po.pr_id && po.pr_number ? (
+                      <Link
+                        href={RM_ROUTES.purchasingPrDetail(po.pr_id)}
+                        className="text-pink-600 hover:underline"
+                      >
+                        {po.pr_number}
+                      </Link>
+                    ) : (
+                      "-"
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-gray-700">{po.nama_supplier || po.supplier_kode}</td>
                   <td className="px-4 py-3 text-gray-700">{formatDate(po.tanggal_po)}</td>
                   <td className="px-4 py-3 text-right font-medium">
-                    {formatCurrency(po.grand_total || 0)}
+                    {formatAmount(po.grand_total || 0)}
                   </td>
                   <td className="px-4 py-3 text-center">
                     <div className="flex flex-col items-center gap-1">
@@ -570,7 +590,7 @@ export function PurchaseOrdersPage() {
                         </span>
                         </div>
                         <div className="text-xs text-muted-foreground">
-                          Barang {po.received_percentage || 0}% · Bayar {po.payment_progress_pct || 0}%
+                          Goods {po.received_percentage || 0}% · Payment {po.payment_progress_pct || 0}%
                         </div>
                       </div>
                     )}
@@ -578,14 +598,14 @@ export function PurchaseOrdersPage() {
                   <td className="px-4 py-3 text-right">
                     <div className="flex items-center justify-end gap-2">
                       <Link href={`/dashboard/purchasing/po/${po.id}`}>
-                        <Button variant="ghost" size="sm" className="cursor-pointer" title="Lihat detail">
+                        <Button variant="ghost" size="sm" className="cursor-pointer" title="View detail">
                           <Eye className="w-4 h-4" />
                         </Button>
                       </Link>
                       {normalizeStatus(po.status) === "draft" && (
                         <>
                           <Link href={`/dashboard/purchasing/po/edit/${po.id}`}>
-                            <Button variant="ghost" size="sm" className="cursor-pointer" title="Edit PO">
+                            <Button variant="ghost" size="sm" className="cursor-pointer" title="Edit purchase order">
                               <Pencil className="w-4 h-4" />
                             </Button>
                           </Link>
@@ -599,7 +619,7 @@ export function PurchaseOrdersPage() {
                         </>
                       )}
                       {normalizeStatus(po.status) === "approved" && (
-                        <Button variant="ghost" size="sm" onClick={() => handleOpenSend(po)} disabled={processingPoId === po.id} title="Kirim ke supplier">
+                        <Button variant="ghost" size="sm" onClick={() => handleOpenSend(po)} disabled={processingPoId === po.id} title="Send to supplier">
                           {processingPoId === po.id ? (
                             <Loader2 className="w-4 h-4 animate-spin text-pink-600" />
                           ) : (
@@ -607,20 +627,8 @@ export function PurchaseOrdersPage() {
                           )}
                         </Button>
                       )}
-                      {["approved", "sent", "partially_received"].includes(normalizeStatus(po.status)) && (
-                        <Link href={`/dashboard/purchasing/delivery?po_id=${po.id}`}>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="cursor-pointer"
-                            title="Lihat delivery untuk PO ini"
-                          >
-                            <Truck className="w-4 h-4 text-pink-600" />
-                          </Button>
-                        </Link>
-                      )}
                       {normalizeStatus(po.status) !== "received" && normalizeStatus(po.status) !== "cancelled" && (
-                        <Button variant="ghost" size="sm" onClick={() => handleOpenCancel(po)} title="Batalkan">
+                        <Button variant="ghost" size="sm" onClick={() => handleOpenCancel(po)} title="Cancel">
                           <XCircle className="w-4 h-4 text-red-600" />
                         </Button>
                       )}
@@ -647,36 +655,36 @@ export function PurchaseOrdersPage() {
       <Dialog open={isSendDialogOpen} onOpenChange={setIsSendDialogOpen}>
         <DialogContent className="gap-0 overflow-hidden rounded-2xl border border-gray-200/70 p-0 shadow-xl ring-1 ring-gray-200/60 sm:max-w-[460px]">
           <DialogHeader className="border-b border-gray-200/70 px-5 py-4">
-            <DialogTitle className="text-base font-semibold text-gray-900">Kirim PO ke Supplier</DialogTitle>
+            <DialogTitle className="text-base font-semibold text-gray-900">Send Purchase Order to Supplier</DialogTitle>
             <DialogDescription className="mt-1 text-sm leading-5 text-gray-500">
-              Pilih metode pengiriman untuk PO {sendingPo?.nomor_po}
+              Choose a delivery method for purchase order {sendingPo?.nomor_po}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 px-5 py-4">
             <div className="space-y-1.5">
-              <Label className="text-xs">Metode Pengiriman</Label>
+              <Label className="text-xs">Delivery Method</Label>
               <Combobox
                 options={[
                   { value: "EMAIL", label: "Email" },
                   { value: "WHATSAPP", label: "WhatsApp" },
                   { value: "PRINT", label: "Print / Manual" },
-                  { value: "OTHER", label: "Lainnya" },
+                  { value: "OTHER", label: "Other" },
                 ]}
                 value={sendVia}
                 onChange={(value) => setSendVia(value as "EMAIL" | "WHATSAPP" | "PRINT" | "OTHER")}
-                placeholder="Pilih metode..."
-                searchPlaceholder="Cari metode..."
-                emptyMessage="Metode tidak ditemukan"
+                placeholder="Select method..."
+                searchPlaceholder="Search method..."
+                emptyMessage="No method found"
                 className="!w-full h-9 text-sm"
               />
             </div>
           </div>
           <DialogFooter className="mx-0 mb-0 gap-2 border-t border-gray-200/70 bg-gray-50/60 px-5 py-4 sm:justify-end">
             <Button variant="outline" onClick={() => setIsSendDialogOpen(false)} disabled={isSending} className="purchasing-secondary-button">
-              Batal
+              Cancel
             </Button>
             <Button onClick={handleSend} disabled={isSending} className="purchasing-main-button">
-              {isSending ? "Mengirim..." : "Kirim"}
+              {isSending ? "Sending..." : "Send"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -686,25 +694,25 @@ export function PurchaseOrdersPage() {
       <Dialog open={isCancelDialogOpen} onOpenChange={setIsCancelDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Batalkan PO</DialogTitle>
+            <DialogTitle>Cancel Purchase Order</DialogTitle>
             <DialogDescription>
-              Apakah Anda yakin ingin membatalkan PO {cancellingPo?.nomor_po}?
-              Masukkan alasan pembatalan.
+              Are you sure you want to cancel purchase order {cancellingPo?.nomor_po}?
+              Enter a cancellation reason.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label>Alasan Pembatalan *</Label>
+              <Label>Cancellation Reason *</Label>
               <Input
                 value={cancelReason}
                 onChange={(e) => setCancelReason(e.target.value)}
-                placeholder="Contoh: Perubahan kebutuhan"
+                placeholder="Example: Requirement changed"
               />
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsCancelDialogOpen(false)} className="purchasing-secondary-button">
-              Batal
+              Cancel
             </Button>
             <Button
               variant="destructive"
@@ -712,7 +720,7 @@ export function PurchaseOrdersPage() {
               disabled={!cancelReason}
               className="purchasing-main-button"
             >
-              Batalkan PO
+              Cancel Purchase Order
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -724,7 +732,7 @@ export function PurchaseOrdersPage() {
           <DialogHeader>
             <DialogTitle>Approve Multiple PO</DialogTitle>
             <DialogDescription>
-              Anda akan approve {selectedIds.size} PO yang terpilih. Tindakan ini tidak dapat dibatalkan.
+              You are about to approve {selectedIds.size} selected purchase order{selectedIds.size === 1 ? "" : "s"}. This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -742,9 +750,9 @@ export function PurchaseOrdersPage() {
       <Dialog open={isBulkDeleteDialogOpen} onOpenChange={setIsBulkDeleteDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Hapus Multiple PO</DialogTitle>
+            <DialogTitle>Delete Multiple Purchase Orders</DialogTitle>
             <DialogDescription className="text-red-600">
-              ⚠️ Peringatan: Anda akan menghapus {selectedIds.size} PO yang terpilih. Tindakan ini tidak dapat dibatalkan!
+              Warning: You are about to delete {selectedIds.size} selected purchase order{selectedIds.size === 1 ? "" : "s"}. This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -752,7 +760,7 @@ export function PurchaseOrdersPage() {
               Cancel
             </Button>
             <Button variant="destructive" onClick={handleBulkDelete} disabled={isProcessingBulk} className="purchasing-main-button">
-              {isProcessingBulk ? "Processing..." : `Hapus ${selectedIds.size} PO`}
+              {isProcessingBulk ? "Processing..." : `Delete ${selectedIds.size} Purchase Order${selectedIds.size === 1 ? "" : "s"}`}
             </Button>
           </DialogFooter>
         </DialogContent>

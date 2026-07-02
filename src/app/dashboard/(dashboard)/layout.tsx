@@ -13,7 +13,13 @@ export default async function DashboardGroupLayout({
 
   return (
     <AppSidebar
-      user={{ full_name: user.full_name, role: user.role, email: user.email }}
+      user={{
+        full_name: user.full_name,
+        role: user.role,
+        email: user.email,
+        company_name: user.company_name,
+        branch_name: user.branch_name,
+      }}
       navItems={navItems}
     >
       {children}

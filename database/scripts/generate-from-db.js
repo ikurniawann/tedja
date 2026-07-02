@@ -32,6 +32,7 @@ const ROOT = path.join(__dirname, "..", "..");
 const MIGRATIONS_DIR =
   process.env.MIGRATIONS_DIR || path.join(ROOT, "database", "migrations");
 const SCHEMAS_DIR = path.join(MIGRATIONS_DIR, "schemas");
+const BOOTSTRAP_DIR = path.join(MIGRATIONS_DIR, "bootstrap");
 
 const SCHEMAS = ["public", "iam"]; // urutan: public dulu, lalu iam
 
@@ -92,12 +93,28 @@ function cleanGenerated() {
     return;
   }
   const re = /_(prelude|functions|foreign_keys|views|triggers)\.sql$/;
-  // Hapus band-files flat + sisa table_*.sql lama di root (struktur lama).
+  const manualBootstrap = new Set([
+    "00000000000000_app_auth.sql",
+    "00000000010000_strip_legacy_rls.sql",
+  ]);
+
+  // Hapus band-files generated di bootstrap/ (manual files tetap).
+  if (fs.existsSync(BOOTSTRAP_DIR)) {
+    for (const f of fs.readdirSync(BOOTSTRAP_DIR)) {
+      if (manualBootstrap.has(f)) continue;
+      if (re.test(f)) {
+        fs.unlinkSync(path.join(BOOTSTRAP_DIR, f));
+      }
+    }
+  }
+
+  // Legacy: band-files flat + table_*.sql di root migrasi (struktur lama).
   for (const f of fs.readdirSync(MIGRATIONS_DIR)) {
     if (re.test(f) || /_table_/.test(f)) {
       fs.unlinkSync(path.join(MIGRATIONS_DIR, f));
     }
   }
+
   // Hapus seluruh struktur schemas/ (akan ditulis ulang).
   if (fs.existsSync(SCHEMAS_DIR)) {
     fs.rmSync(SCHEMAS_DIR, { recursive: true, force: true });
@@ -391,7 +408,7 @@ async function main() {
     const labels = e.labels.map(sqlStr).join(", ");
     prelude += `CREATE TYPE ${q(e.schema)}.${q(e.name)} AS ENUM (${labels});\n`;
   }
-  write(`${PREFIX.prelude}_prelude.sql`, prelude);
+  write(`bootstrap/${PREFIX.prelude}_prelude.sql`, prelude);
 
   // 2) satu file per tabel
   let seq = PREFIX.tableBase;
@@ -418,7 +435,7 @@ async function main() {
     for (const fn of functions) {
       body += `-- ${fn.schema}.${fn.name}\n${ensureSemicolon(fn.def)}\n\n`;
     }
-    write(`${PREFIX.functions}_functions.sql`, rw(body));
+    write(`bootstrap/${PREFIX.functions}_functions.sql`, rw(body));
   }
 
   // 4) foreign keys
@@ -427,7 +444,7 @@ async function main() {
     for (const fk of fks) {
       body += `ALTER TABLE ONLY ${q(fk.schema)}.${q(fk.table)}\n    ADD CONSTRAINT ${q(fk.name)} ${fk.def};\n`;
     }
-    write(`${PREFIX.foreign_keys}_foreign_keys.sql`, rw(body));
+    write(`bootstrap/${PREFIX.foreign_keys}_foreign_keys.sql`, rw(body));
   }
 
   // 5) views (topo sorted)
@@ -439,7 +456,7 @@ async function main() {
       const create = v.kind === "m" ? `CREATE ${kw}` : `CREATE OR REPLACE ${kw}`;
       body += `-- ${v.schema}.${v.name}\n${create} ${q(v.schema)}.${q(v.name)} AS\n${ensureSemicolon(v.def)}\n\n`;
     }
-    write(`${PREFIX.views}_views.sql`, rw(body));
+    write(`bootstrap/${PREFIX.views}_views.sql`, rw(body));
   }
 
   // 6) triggers
@@ -448,7 +465,7 @@ async function main() {
     for (const tg of triggers) {
       body += `${ensureSemicolon(tg.def)}\n`;
     }
-    write(`${PREFIX.triggers}_triggers.sql`, rw(body));
+    write(`bootstrap/${PREFIX.triggers}_triggers.sql`, rw(body));
   }
 
   await c.end();

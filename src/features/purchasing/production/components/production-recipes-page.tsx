@@ -9,6 +9,7 @@ import {
   PencilSquareIcon,
   PlusIcon,
 } from "@heroicons/react/24/outline";
+import { PRODUCT_ROUTES } from "@/modules/purchasing/constants/item-routes";
 import { useRecipeProducts } from "../queries";
 
 function toNumber(value: unknown) {
@@ -66,7 +67,7 @@ export function ProductionRecipesPage() {
         </div>
         <div className="flex flex-wrap gap-2">
           <Link
-            href="/dashboard/items/products/insert"
+            href={PRODUCT_ROUTES.productsInsert}
             className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-pink-200 bg-white px-3 text-sm font-medium text-pink-700 shadow-sm hover:bg-pink-50"
           >
             <PlusIcon className="h-4 w-4" />
@@ -179,7 +180,7 @@ export function ProductionRecipesPage() {
                       <td className="px-4 py-3 text-right">{formatCurrency(product.harga_jual)}</td>
                       <td className="px-4 py-3 text-right">
                         <Link
-                          href={`/dashboard/items/products/bom/${product.id}?from=production`}
+                          href={`${PRODUCT_ROUTES.productsBom(product.id)}?from=production`}
                           className="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-pink-200 px-3 text-xs font-semibold text-pink-700 hover:bg-pink-50"
                         >
                           <PencilSquareIcon className="h-4 w-4" />

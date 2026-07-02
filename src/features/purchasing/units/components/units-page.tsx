@@ -14,6 +14,8 @@ import {
   formComboboxClassName,
   formInputClassName,
 } from "@/components/layout/form-field";
+import { PurchasingPageHeader } from "@/modules/purchasing/components/page/purchasing-page-header";
+import { PurchasingListSection } from "@/modules/purchasing/components/list/PurchasingListSection";
 import { PurchasingTablePagination } from "@/modules/purchasing/components/pagination/PurchasingTablePagination";
 import { Loader2, Pencil, Plus, Scale, Search, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
@@ -26,11 +28,23 @@ function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
 }
 
-const TIPE_OPTIONS = [
-  { value: "BESAR", label: "Satuan Besar" },
-  { value: "KECIL", label: "Satuan Kecil" },
-  { value: "KONVERSI", label: "Satuan Konversi" },
+const TYPE_OPTIONS = [
+  { value: "BESAR", label: "Large Unit" },
+  { value: "KECIL", label: "Small Unit" },
+  { value: "KONVERSI", label: "Conversion Unit" },
 ];
+
+const TYPE_BADGE_STYLES: Record<string, string> = {
+  BESAR: "border-blue-200 bg-blue-50 text-blue-700",
+  KECIL: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  KONVERSI: "border-purple-200 bg-purple-50 text-purple-700",
+};
+
+const TYPE_LABELS: Record<string, string> = {
+  BESAR: "Large Unit",
+  KECIL: "Small Unit",
+  KONVERSI: "Conversion Unit",
+};
 
 function normalizeUnitFormData(formData: UnitFormData): UnitFormData {
   return {
@@ -44,15 +58,11 @@ function normalizeUnitFormData(formData: UnitFormData): UnitFormData {
 export function UnitsPage() {
   const logger = useActivityLogger();
 
-  // Filters
   const [searchQuery, setSearchQuery] = useState("");
   const [search, setSearch] = useState("");
-
-  // Pagination
   const [page, setPage] = useState(1);
   const limit = 10;
 
-  // Dialog states
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [editingUnit, setEditingUnit] = useState<Unit | null>(null);
@@ -73,8 +83,6 @@ export function UnitsPage() {
     nextStatus: true,
   });
 
-  // ── Fetch ───────────────────────────────────────────────────
-
   const listQuery = useUnitList({ search: search || undefined, page, limit });
   const units = listQuery.data?.data ?? [];
   const total = listQuery.data?.pagination.total ?? 0;
@@ -94,7 +102,7 @@ export function UnitsPage() {
   useEffect(() => {
     if (listQuery.isError) {
       console.error("Error loading units:", listQuery.error);
-      toast.error("Gagal memuat data satuan");
+      toast.error(`Failed to load units: ${getErrorMessage(listQuery.error, "Unknown error")}`);
     }
   }, [listQuery.isError, listQuery.error]);
 
@@ -106,8 +114,6 @@ export function UnitsPage() {
 
     return () => window.clearTimeout(timeout);
   }, [searchQuery]);
-
-  // ── Actions ──────────────────────────────────────────────────
 
   const handleOpenAdd = () => {
     setEditingUnit(null);
@@ -142,176 +148,169 @@ export function UnitsPage() {
 
     const payload = normalizeUnitFormData(formData);
     if (!payload.kode) {
-      toast.error("Kode satuan wajib diisi");
+      toast.error("Unit code is required");
       return;
     }
     if (!payload.nama) {
-      toast.error("Nama satuan wajib diisi");
+      toast.error("Unit name is required");
       return;
     }
     if (!payload.tipe) {
-      toast.error("Tipe satuan wajib dipilih");
+      toast.error("Unit type is required");
       return;
     }
 
     try {
       if (editingUnit) {
         await updateMutation.mutateAsync({ id: editingUnit.id, payload });
-        logger.updateRawMaterial("Satuan Updated", payload.kode || "N/A", `Updated ${payload.nama}`);
-        toast.success("Satuan berhasil diupdate");
+        logger.updateRawMaterial("Unit Updated", payload.kode || "N/A", `Updated ${payload.nama}`);
+        toast.success("Unit updated successfully");
       } else {
         await createMutation.mutateAsync(payload);
-        logger.createRawMaterial("Satuan Created", payload.kode || "N/A", {
+        logger.createRawMaterial("Unit Created", payload.kode || "N/A", {
           nama: payload.nama,
           tipe: payload.tipe,
         });
-        toast.success("Satuan berhasil ditambahkan");
+        toast.success("Unit added successfully");
       }
       setIsDialogOpen(false);
     } catch (error: unknown) {
       console.error("Error saving unit:", error);
-      toast.error(getErrorMessage(error, "Gagal menyimpan satuan"));
+      toast.error(getErrorMessage(error, "Failed to save unit"));
     }
   };
 
   const handleDelete = async () => {
-    if (!deletingUnit) return;
-    if (isDeleting) return;
+    if (!deletingUnit || isDeleting) return;
 
     try {
       await deleteMutation.mutateAsync(deletingUnit.id);
-      toast.success("Satuan berhasil dihapus");
+      toast.success("Unit deleted successfully");
       setIsDeleteDialogOpen(false);
       setDeletingUnit(null);
     } catch (error: unknown) {
       console.error("Error deleting unit:", error);
-      toast.error(getErrorMessage(error, "Gagal menghapus satuan"));
+      toast.error(getErrorMessage(error, "Failed to delete unit"));
     }
   };
 
   const handleConfirmToggleStatus = async () => {
     const unit = statusDialog.unit;
-    if (!unit) return;
-    if (statusMutation.isPending) return;
+    if (!unit || statusMutation.isPending) return;
 
     try {
       await statusMutation.mutateAsync({ id: unit.id, isActive: statusDialog.nextStatus });
-      toast.success(`Satuan berhasil ${statusDialog.nextStatus ? "diaktifkan" : "dinonaktifkan"}`);
+      toast.success(`Unit ${statusDialog.nextStatus ? "activated" : "deactivated"} successfully`);
       setStatusDialog({ open: false, unit: null, nextStatus: true });
     } catch (error: unknown) {
       console.error("Error updating unit status:", error);
-      toast.error(getErrorMessage(error, "Gagal mengubah status satuan"));
+      toast.error(getErrorMessage(error, "Failed to update unit status"));
     }
   };
 
-  // ── Helpers ──────────────────────────────────────────────────
-
-  const getTipeBadge = (tipe: string) => {
-    switch (tipe) {
-      case "BESAR":
-        return <Badge className="bg-blue-100 text-blue-700">Satuan Besar</Badge>;
-      case "KECIL":
-        return <Badge className="bg-green-100 text-green-700">Satuan Kecil</Badge>;
-      case "KONVERSI":
-        return <Badge className="bg-purple-100 text-purple-700">Konversi</Badge>;
-      default:
-        return <Badge>{tipe}</Badge>;
-    }
+  const handleResetSearch = () => {
+    setSearchQuery("");
+    setSearch("");
+    setPage(1);
   };
-
-  // ── Render ──────────────────────────────────────────────────
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col items-start justify-between gap-4 border-b border-gray-200/70 pb-4 sm:flex-row sm:items-center">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Master Satuan</h1>
-          <p className="mt-1 text-sm text-gray-500">
-            Kelola satuan ukuran untuk bahan baku dan produk — {total} total
-          </p>
-        </div>
-        <Button onClick={handleOpenAdd} className="h-10 w-full gap-2 rounded-lg bg-pink-600 px-3 text-sm font-semibold text-white shadow-sm hover:bg-pink-700 sm:w-auto">
-          <Plus className="mr-2 h-4 w-4" />
-          Tambah Satuan
-        </Button>
-      </div>
+      <PurchasingPageHeader
+        title="Unit Master Data"
+        description={`Manage measurement units for raw materials and products — ${total} total`}
+        actions={
+          <Button onClick={handleOpenAdd} className="purchasing-main-button w-full sm:w-auto">
+            <Plus className="mr-2 h-4 w-4" />
+            Add Unit
+          </Button>
+        }
+      />
 
-      <section className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-        <div className="flex flex-col gap-3 border-b border-gray-100 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-pink-50 text-pink-600">
-              <Scale className="h-5 w-5" />
-            </span>
-            <div>
-              <h2 className="text-base font-semibold text-gray-950">Daftar Satuan</h2>
-              <p className="text-xs text-gray-500">Kelola satuan besar, kecil, dan konversi untuk pembelian dan stok.</p>
-            </div>
-          </div>
-          <label className="relative w-full sm:w-80">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-            <Input
-              placeholder="Cari satuan..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="h-10 bg-white pl-9 pr-9 text-sm focus:border-pink-400 focus:ring-2 focus:ring-pink-100"
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => setSearchQuery("")}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 transition-colors hover:text-gray-700"
-                aria-label="Hapus pencarian"
-              >
-                <X className="h-4 w-4" />
-              </button>
+      <PurchasingListSection
+        icon={Scale}
+        title="Unit List"
+        description="Review unit code, name, type, description, and active status."
+        toolbar={
+          <div className="flex w-full flex-col gap-3 sm:w-auto md:flex-row md:items-center">
+            <label className="relative w-full md:w-80">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+              <Input
+                placeholder="Search code or name..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="h-10 bg-white pl-10 pr-10 text-sm focus:border-pink-400 focus:ring-2 focus:ring-pink-100"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 transition-colors hover:text-gray-700"
+                  aria-label="Clear search"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+            </label>
+            {(search || page > 1) && (
+              <Button variant="outline" onClick={handleResetSearch} className="h-10 shrink-0 rounded-lg">
+                Reset
+              </Button>
             )}
-          </label>
-        </div>
-
+          </div>
+        }
+      >
         <div>
           {loading ? (
-            <div className="py-12 text-center">
-              <Loader2 className="mx-auto h-8 w-8 animate-spin text-pink-600" />
-              <p className="mt-2 text-sm text-gray-500">Memuat data...</p>
+            <div className="flex items-center justify-center py-12 text-sm text-gray-500">
+              <Loader2 className="mr-2 h-5 w-5 animate-spin text-pink-600" />
+              Loading units...
             </div>
           ) : units.length === 0 ? (
             <div className="py-14 text-center">
               <Scale className="mx-auto mb-4 h-12 w-12 text-gray-300" />
               <p className="text-gray-500">
-                {search ? "Tidak ada satuan yang cocok dengan pencarian" : "Belum ada data satuan"}
+                {search ? "No units match the current search" : "No units yet"}
               </p>
               {!search && (
-                <Button variant="outline" onClick={handleOpenAdd} className="mt-4">
-                  Tambah Satuan Pertama
+                <Button variant="outline" onClick={handleOpenAdd} className="purchasing-secondary-button mt-4">
+                  Add First Unit
                 </Button>
               )}
             </div>
           ) : (
             <>
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto px-4">
                 <table className="min-w-full text-sm">
-                  <thead className="border-b border-gray-100 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
-                    <tr>
-                      <th className="px-4 py-3 text-left font-semibold">Kode</th>
-                      <th className="px-4 py-3 text-left font-semibold">Nama</th>
-                      <th className="px-4 py-3 text-left font-semibold">Tipe</th>
-                      <th className="px-4 py-3 text-left font-semibold">Deskripsi</th>
-                      <th className="px-4 py-3 text-center font-semibold">Status</th>
-                      <th className="px-4 py-3 text-right font-semibold">Aksi</th>
+                  <thead>
+                    <tr className="border-b border-gray-200/70 text-xs uppercase tracking-wide text-gray-500">
+                      <th className="py-3 pr-4 text-left font-semibold">Code</th>
+                      <th className="px-3 py-3 text-left font-semibold">Name</th>
+                      <th className="px-3 py-3 text-left font-semibold">Type</th>
+                      <th className="px-3 py-3 text-left font-semibold">Description</th>
+                      <th className="px-3 py-3 text-center font-semibold">Active</th>
+                      <th className="py-3 pl-3 text-right font-semibold">Actions</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-100">
+                  <tbody className="divide-y divide-gray-200/70">
                     {units.map((unit) => (
-                      <tr key={unit.id} className="hover:bg-gray-50">
-                        <td className="px-4 py-3">
-                          <span className="font-medium text-gray-950">{unit.kode}</span>
+                      <tr key={unit.id} className="transition-colors hover:bg-gray-50/80">
+                        <td className="py-3 pr-4">
+                          <span className="font-medium text-gray-900">{unit.kode}</span>
                         </td>
-                        <td className="px-4 py-3 text-gray-700">{unit.nama}</td>
-                        <td className="px-4 py-3">{getTipeBadge(unit.tipe)}</td>
-                        <td className="max-w-[320px] truncate px-4 py-3 text-gray-600">
+                        <td className="px-3 py-3 text-gray-700">{unit.nama}</td>
+                        <td className="px-3 py-3">
+                          <Badge
+                            variant="outline"
+                            className={TYPE_BADGE_STYLES[unit.tipe] || "border-gray-200 bg-gray-50 text-gray-700"}
+                          >
+                            {TYPE_LABELS[unit.tipe] || unit.tipe}
+                          </Badge>
+                        </td>
+                        <td className="max-w-[320px] truncate px-3 py-3 text-gray-600">
                           {unit.deskripsi || "-"}
                         </td>
-                        <td className="px-4 py-3 text-center">
+                        <td className="px-3 py-3 text-center">
                           <div className="flex items-center justify-center">
                             <Switch
                               checked={unit.is_active}
@@ -319,24 +318,26 @@ export function UnitsPage() {
                               onCheckedChange={(checked) =>
                                 setStatusDialog({ open: true, unit, nextStatus: checked })
                               }
-                              aria-label={`Ubah status ${unit.nama}`}
+                              aria-label={`Toggle active status for ${unit.nama}`}
                             />
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-right">
-                          <div className="flex items-center justify-end gap-2">
+                        <td className="py-3 pl-3 text-right">
+                          <div className="flex items-center justify-end gap-1">
                             <Button
                               variant="ghost"
                               size="sm"
                               className="cursor-pointer"
+                              title="Edit"
                               onClick={() => handleOpenEdit(unit)}
                             >
-                              <Pencil className="h-4 w-4" />
+                              <Pencil className="h-4 w-4 text-gray-600" />
                             </Button>
                             <Button
                               variant="ghost"
                               size="sm"
                               className="cursor-pointer text-red-500 hover:text-red-600"
+                              title="Delete"
                               onClick={() => handleOpenDelete(unit)}
                             >
                               <Trash2 className="h-4 w-4" />
@@ -359,30 +360,32 @@ export function UnitsPage() {
             </>
           )}
         </div>
-      </section>
+      </PurchasingListSection>
 
-      {/* Add/Edit Dialog */}
       <FormModal
         open={isDialogOpen}
         onOpenChange={setIsDialogOpen}
-        title={editingUnit ? "Edit Satuan" : "Tambah Satuan"}
+        title={editingUnit ? "Edit Unit" : "Add Unit"}
         description={
           editingUnit
-            ? "Ubah data satuan yang sudah ada"
-            : "Tambahkan satuan baru untuk bahan baku"
+            ? "Update the selected unit record"
+            : "Add a new measurement unit for raw materials"
         }
         onSubmit={handleSubmit}
         loading={isSubmitting}
+        submitLabel={editingUnit ? "Save Changes" : "Save"}
+        cancelLabel="Cancel"
+        loadingLabel="Saving..."
       >
         <div>
           <FormFieldLabel htmlFor="kode" required>
-            Kode Satuan
+            Unit Code
           </FormFieldLabel>
           <Input
             id="kode"
             value={formData.kode}
             onChange={(e) => setFormData({ ...formData, kode: e.target.value })}
-            placeholder="Contoh: KG"
+            placeholder="Example: KG"
             maxLength={10}
             required
             className={formInputClassName}
@@ -390,13 +393,13 @@ export function UnitsPage() {
         </div>
         <div>
           <FormFieldLabel htmlFor="nama" required>
-            Nama Satuan
+            Unit Name
           </FormFieldLabel>
           <Input
             id="nama"
             value={formData.nama}
             onChange={(e) => setFormData({ ...formData, nama: e.target.value })}
-            placeholder="Contoh: Kilogram"
+            placeholder="Example: Kilogram"
             maxLength={50}
             required
             className={formInputClassName}
@@ -404,34 +407,33 @@ export function UnitsPage() {
         </div>
         <div>
           <FormFieldLabel htmlFor="tipe" required>
-            Tipe Satuan
+            Unit Type
           </FormFieldLabel>
           <Combobox
-            options={TIPE_OPTIONS}
+            options={TYPE_OPTIONS}
             value={formData.tipe}
             onChange={(value) =>
               setFormData({ ...formData, tipe: value as "BESAR" | "KECIL" | "KONVERSI" })
             }
-            placeholder="Pilih tipe satuan..."
-            searchPlaceholder="Cari tipe satuan..."
-            emptyMessage="Tipe satuan tidak ditemukan"
+            placeholder="Select unit type..."
+            searchPlaceholder="Search unit type..."
+            emptyMessage="No unit type found"
             className={formComboboxClassName}
           />
         </div>
         <div>
-          <FormFieldLabel htmlFor="deskripsi">Deskripsi</FormFieldLabel>
+          <FormFieldLabel htmlFor="deskripsi">Description</FormFieldLabel>
           <Textarea
             id="deskripsi"
             value={formData.deskripsi}
             onChange={(e) => setFormData({ ...formData, deskripsi: e.target.value })}
-            placeholder="Deskripsi opsional"
+            placeholder="Optional description"
             rows={3}
             className="min-h-24 resize-none bg-white text-sm focus:border-pink-400 focus:ring-2 focus:ring-pink-100"
           />
         </div>
       </FormModal>
 
-      {/* Status Confirmation Dialog */}
       <ConfirmDialog
         open={statusDialog.open}
         onOpenChange={(open) => {
@@ -440,24 +442,26 @@ export function UnitsPage() {
           }
         }}
         variant="default"
-        title={statusDialog.nextStatus ? "Aktifkan Satuan?" : "Nonaktifkan Satuan?"}
-        description={`Apakah Anda yakin ingin ${
-          statusDialog.nextStatus ? "mengaktifkan" : "menonaktifkan"
-        } satuan "${statusDialog.unit?.nama ?? ""}"?`}
-        confirmLabel={statusDialog.nextStatus ? "Aktifkan" : "Nonaktifkan"}
+        title={statusDialog.nextStatus ? "Activate Unit?" : "Deactivate Unit?"}
+        description={`Are you sure you want to ${
+          statusDialog.nextStatus ? "activate" : "deactivate"
+        } unit "${statusDialog.unit?.nama ?? ""}"?`}
+        confirmLabel={statusDialog.nextStatus ? "Activate" : "Deactivate"}
+        cancelLabel="Cancel"
         loading={Boolean(statusUpdatingId)}
         onConfirm={handleConfirmToggleStatus}
       />
 
-      {/* Delete Dialog */}
       <ConfirmDialog
         open={isDeleteDialogOpen}
         onOpenChange={setIsDeleteDialogOpen}
-        title="Hapus Satuan?"
-        description={`Apakah Anda yakin ingin menghapus satuan "${
+        title="Delete Unit?"
+        description={`Are you sure you want to delete unit "${
           deletingUnit?.nama ?? ""
-        }"? Data akan disembunyikan dari daftar. Satuan yang sudah digunakan di bahan baku tidak bisa dihapus.`}
-        confirmLabel="Hapus"
+        }"? The record will be hidden from the list. Units already used by raw materials cannot be deleted.`}
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        loadingLabel="Deleting..."
         loading={isDeleting}
         onConfirm={handleDelete}
       />

@@ -4,66 +4,51 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Combobox } from "@/components/ui/combobox";
-import { formatRupiah } from "@/lib/purchasing/utils";
+import { formatAmount } from "@/lib/purchasing/utils";
 import {
-  CubeIcon,
-  MagnifyingGlassIcon,
-  ChartBarIcon,
-  ExclamationTriangleIcon,
-  CheckCircleIcon,
-  XCircleIcon,
-} from "@heroicons/react/24/outline";
+  AlertCircle,
+  Eye,
+  Package,
+  Search,
+} from "lucide-react";
+import { RM_ROUTES } from "@/modules/purchasing/constants/item-routes";
+import { PurchasingListSection } from "@/modules/purchasing/components/list/PurchasingListSection";
+import { PurchasingTablePagination } from "@/modules/purchasing/components/pagination/PurchasingTablePagination";
 import { useRawMaterialStock } from "../queries";
 import { listStockWarehouses } from "../api";
 import type { RawStockStatus } from "../types";
 
-const STATUS_CONFIG: Record<
-  RawStockStatus,
-  { label: string; cls: string; icon: typeof CheckCircleIcon }
-> = {
-  AMAN: {
-    label: "Aman",
-    cls: "bg-green-100 text-green-700 border-green-200",
-    icon: CheckCircleIcon,
-  },
-  MENIPIS: {
-    label: "Menipis",
-    cls: "bg-yellow-100 text-yellow-700 border-yellow-200",
-    icon: ExclamationTriangleIcon,
-  },
-  HABIS: {
-    label: "Habis",
-    cls: "bg-red-100 text-red-700 border-red-200",
-    icon: XCircleIcon,
-  },
+const STATUS_STYLES: Record<string, string> = {
+  AMAN: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  MENIPIS: "border-amber-200 bg-amber-50 text-amber-700",
+  HABIS: "border-red-200 bg-red-50 text-red-700",
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  AMAN: "Safe",
+  MENIPIS: "Low Stock",
+  HABIS: "Out of Stock",
 };
 
 type UnitMode = "besar" | "kecil";
 
 const UNIT_OPTIONS = [
-  { value: "besar", label: "Satuan Besar" },
-  { value: "kecil", label: "Satuan Kecil" },
+  { value: "besar", label: "Large Unit" },
+  { value: "kecil", label: "Small Unit" },
 ];
 
 const STATUS_OPTIONS = [
-  { value: "all", label: "Semua Status" },
-  { value: "normal", label: "Aman" },
-  { value: "low_stock", label: "Menipis" },
-  { value: "out_of_stock", label: "Habis" },
+  { value: "all", label: "All Statuses" },
+  { value: "normal", label: "Safe" },
+  { value: "low_stock", label: "Low Stock" },
+  { value: "out_of_stock", label: "Out of Stock" },
 ];
 
 function formatQty(value: number | string | null | undefined) {
-  return new Intl.NumberFormat("id-ID", { maximumFractionDigits: 2 }).format(
-    Number(value) || 0
-  );
-}
-
-function formatUnitCost(value: number) {
-  return new Intl.NumberFormat("id-ID", { maximumFractionDigits: 2 }).format(
-    value || 0
-  );
+  return Number(value || 0).toLocaleString("en-US", { maximumFractionDigits: 4 });
 }
 
 function resolveDisplay(
@@ -78,11 +63,10 @@ function resolveDisplay(
   },
   mode: UnitMode
 ) {
-  const besarLabel = item.satuan_besar_nama || item.satuan || "—";
+  const largeLabel = item.satuan_besar_nama || item.satuan || "—";
   const factor = Number(item.konversi_factor) || 0;
   const hasSmall = Boolean(item.satuan_kecil_nama) && factor > 0;
 
-  // mode kecil hanya berlaku bila ada satuan kecil + faktor konversi
   if (mode === "kecil" && hasSmall) {
     return {
       qty: Number(item.qty_onhand) * factor,
@@ -95,13 +79,13 @@ function resolveDisplay(
     qty: Number(item.qty_onhand) || 0,
     min: Number(item.min_stock) || 0,
     unitCost: Number(item.unit_cost) || 0,
-    unitLabel: besarLabel,
+    unitLabel: largeLabel,
   };
 }
 
 export function RawMaterialStockTab() {
+  const [searchQuery, setSearchQuery] = useState("");
   const [search, setSearch] = useState("");
-  const [appliedSearch, setAppliedSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [warehouseFilter, setWarehouseFilter] = useState("all");
   const [warehouses, setWarehouses] = useState<
@@ -120,9 +104,17 @@ export function RawMaterialStockTab() {
       .finally(() => setLoadingWarehouses(false));
   }, []);
 
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      setSearch(searchQuery.trim());
+      setPage(1);
+    }, 300);
+    return () => window.clearTimeout(timeout);
+  }, [searchQuery]);
+
   const warehouseOptions = useMemo(
     () => [
-      { value: "all", label: "Semua Gudang" },
+      { value: "all", label: "All Warehouses (Branch Total)" },
       ...warehouses.map((w) => ({
         value: w.id,
         label: w.name,
@@ -133,15 +125,15 @@ export function RawMaterialStockTab() {
   );
 
   const selectedWarehouseLabel = useMemo(() => {
-    if (warehouseFilter === "all") return "Semua Gudang";
-    return warehouses.find((w) => w.id === warehouseFilter)?.name || "Gudang";
+    if (warehouseFilter === "all") return "All Warehouses (Branch Total)";
+    return warehouses.find((w) => w.id === warehouseFilter)?.name || "Warehouse";
   }, [warehouseFilter, warehouses]);
 
   const listQuery = useRawMaterialStock({
     page,
     limit,
     status: statusFilter,
-    search: appliedSearch || undefined,
+    search: search || undefined,
     warehouse_id: warehouseFilter,
   });
 
@@ -161,229 +153,183 @@ export function RawMaterialStockTab() {
     return { attention, totalValue };
   }, [items]);
 
-  const applySearch = () => {
-    setPage(1);
-    setAppliedSearch(search.trim());
+  const getStockStatusBadge = (status: RawStockStatus) => {
+    const normalized = status || "AMAN";
+    return (
+      <Badge variant="outline" className={STATUS_STYLES[normalized] || STATUS_STYLES.AMAN}>
+        {normalized === "MENIPIS" || normalized === "HABIS" ? (
+          <AlertCircle className="mr-1 inline h-3 w-3" />
+        ) : null}
+        {STATUS_LABELS[normalized] || normalized}
+      </Badge>
+    );
   };
 
   return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
-        <Card className="border-gray-200/70 shadow-sm">
-          <CardContent className="flex items-center gap-3 pt-4">
-            <CubeIcon className="h-8 w-8 text-blue-500" />
-            <div>
-              <p className="text-xs text-gray-500">Total Bahan Baku</p>
-              <p className="text-2xl font-bold text-gray-900">{total}</p>
-            </div>
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+        <Card className="border-gray-200/70 shadow-xs">
+          <CardContent className="p-4">
+            <p className="text-xs font-medium text-gray-500">Total Raw Materials</p>
+            <p className="mt-1 text-2xl font-bold text-gray-900">{total}</p>
           </CardContent>
         </Card>
-        <Card className="border-gray-200/70 shadow-sm">
-          <CardContent className="flex items-center gap-3 pt-4">
-            <ExclamationTriangleIcon className="h-8 w-8 text-yellow-500" />
-            <div>
-              <p className="text-xs text-gray-500">
-                Perlu Perhatian (Halaman Ini)
-              </p>
-              <p className="text-2xl font-bold text-gray-900">
-                {summary.attention}
-              </p>
-            </div>
+        <Card className="border-gray-200/70 shadow-xs">
+          <CardContent className="p-4">
+            <p className="text-xs font-medium text-gray-500">Needs Attention (This Page)</p>
+            <p className="mt-1 text-2xl font-bold text-amber-700">{summary.attention}</p>
           </CardContent>
         </Card>
-        <Card className="border-gray-200/70 shadow-sm">
-          <CardContent className="flex items-center gap-3 pt-4">
-            <ChartBarIcon className="h-8 w-8 text-green-500" />
-            <div>
-              <p className="text-xs text-gray-500">Nilai Stok (Halaman Ini)</p>
-              <p className="text-lg font-bold text-gray-900">
-                {formatRupiah(summary.totalValue)}
-              </p>
-            </div>
+        <Card className="border-gray-200/70 shadow-xs">
+          <CardContent className="p-4">
+            <p className="text-xs font-medium text-gray-500">Stock Value (This Page)</p>
+            <p className="mt-1 text-2xl font-bold text-gray-900">
+              {formatAmount(summary.totalValue)}
+            </p>
           </CardContent>
         </Card>
       </div>
 
-      <Card className="border-gray-200/70 shadow-sm">
-        <CardContent className="flex flex-wrap gap-3 pt-4">
-          <div className="relative min-w-[200px] flex-1">
-            <MagnifyingGlassIcon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-            <Input
-              placeholder="Cari kode atau nama bahan..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && applySearch()}
-              className="pl-9"
+      <PurchasingListSection
+        icon={Package}
+        title="Raw Material Stock List"
+        description="Review material code, category, on-hand quantity, minimum stock, unit cost, stock value, and stock status."
+        toolbar={
+          <div className="flex w-full flex-col gap-3 lg:flex-row lg:items-center">
+            <label className="relative w-full lg:w-80">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+              <Input
+                placeholder="Search code or material name..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="h-10 border-gray-200/80 pl-9"
+              />
+            </label>
+            <Combobox
+              options={UNIT_OPTIONS}
+              value={unitMode}
+              onChange={(v) => setUnitMode((v || "besar") as UnitMode)}
+              placeholder="Unit"
+              className="h-10 w-full lg:w-40"
+            />
+            <Combobox
+              options={STATUS_OPTIONS}
+              value={statusFilter}
+              onChange={(v) => {
+                setStatusFilter(v || "all");
+                setPage(1);
+              }}
+              placeholder="All Statuses"
+              className="h-10 w-full lg:w-44"
+            />
+            <Combobox
+              options={warehouseOptions}
+              value={warehouseFilter}
+              onChange={(v) => {
+                setWarehouseFilter(v || "all");
+                setPage(1);
+              }}
+              placeholder={loadingWarehouses ? "Loading warehouses..." : "All Warehouses"}
+              searchPlaceholder="Search warehouse..."
+              emptyMessage={loadingWarehouses ? "Loading..." : "No warehouse found"}
+              disabled={loadingWarehouses}
+              className="h-10 w-full lg:w-52"
             />
           </div>
-          <Combobox
-            options={UNIT_OPTIONS}
-            value={unitMode}
-            onChange={(v) => setUnitMode((v || "besar") as UnitMode)}
-            placeholder="Satuan"
-            className="w-[170px]"
-          />
-          <Combobox
-            options={STATUS_OPTIONS}
-            value={statusFilter}
-            onChange={(v) => {
-              setStatusFilter(v || "all");
-              setPage(1);
-            }}
-            placeholder="Semua Status"
-            className="w-[180px]"
-          />
-          <Combobox
-            options={warehouseOptions}
-            value={warehouseFilter}
-            onChange={(v) => {
-              setWarehouseFilter(v || "all");
-              setPage(1);
-            }}
-            placeholder={loadingWarehouses ? "Memuat gudang..." : "Semua Gudang"}
-            searchPlaceholder="Cari gudang..."
-            emptyMessage={loadingWarehouses ? "Memuat..." : "Gudang tidak ditemukan"}
-            disabled={loadingWarehouses}
-            className="w-[200px]"
-          />
-          <Button onClick={applySearch} variant="outline">
-            Cari
-          </Button>
-        </CardContent>
-      </Card>
+        }
+      >
+        {warehouseFilter === "all" ? (
+          <p className="border-b border-gray-200/70 px-5 py-2 text-xs text-gray-500">
+            Showing total stock across all warehouses in your branch (not per location).
+          </p>
+        ) : (
+          <p className="border-b border-gray-200/70 px-5 py-2 text-xs text-gray-500">
+            Showing stock per warehouse location:{" "}
+            <span className="font-medium text-gray-700">{selectedWarehouseLabel}</span>
+          </p>
+        )}
 
-      <Card className="border-gray-200/70 shadow-sm">
-        <CardContent className="px-4 py-2">
-          {warehouseFilter !== "all" && (
-            <p className="border-b border-gray-200/70 px-1 py-2 text-xs text-gray-500">
-              Menampilkan stok gudang:{" "}
-              <span className="font-medium text-gray-700">{selectedWarehouseLabel}</span>
-            </p>
-          )}
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-200/70">
-                  {[
-                    "Kode",
-                    "Nama Bahan",
-                    "Kategori",
-                    "Stok",
-                    "Min.",
-                    "Satuan",
-                    "Harga / Unit",
-                    "Nilai Stok",
-                    "Status",
-                    "",
-                  ].map((h) => (
-                    <th
-                      key={h}
-                      className="whitespace-nowrap px-3 py-3 text-left font-medium text-gray-500"
-                    >
-                      {h}
-                    </th>
-                  ))}
+        <div className="overflow-x-auto px-4">
+          <table className="min-w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-200/70 text-xs uppercase tracking-wide text-gray-500">
+                <th className="py-3 pr-4 text-left font-semibold">Code</th>
+                <th className="px-3 py-3 text-left font-semibold">Material Name</th>
+                <th className="px-3 py-3 text-left font-semibold">Category</th>
+                <th className="px-3 py-3 text-right font-semibold">On Hand</th>
+                <th className="px-3 py-3 text-right font-semibold">Minimum</th>
+                <th className="px-3 py-3 text-left font-semibold">Unit</th>
+                <th className="px-3 py-3 text-right font-semibold">Unit Cost</th>
+                <th className="px-3 py-3 text-right font-semibold">Stock Value</th>
+                <th className="px-3 py-3 text-center font-semibold">Stock Status</th>
+                <th className="py-3 pl-3 text-right font-semibold">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200/70">
+              {loading ? (
+                <tr>
+                  <td colSpan={10} className="py-12 text-center text-gray-400">
+                    Loading raw material stock...
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {loading ? (
-                  <tr>
-                    <td colSpan={10} className="py-12 text-center text-gray-400">
-                      Memuat...
-                    </td>
-                  </tr>
-                ) : items.length === 0 ? (
-                  <tr>
-                    <td colSpan={10} className="py-16 text-center text-gray-400">
-                      <CubeIcon className="mx-auto mb-3 h-12 w-12 opacity-30" />
-                      <p>Belum ada data bahan baku</p>
-                    </td>
-                  </tr>
-                ) : (
-                  items.map((item) => {
-                    const sc =
-                      STATUS_CONFIG[item.status_stok] || STATUS_CONFIG.AMAN;
-                    const disp = resolveDisplay(item, unitMode);
-                    return (
-                      <tr
-                        key={item.id}
-                        className="border-b border-gray-200/70 last:border-0 hover:bg-gray-50/60"
-                      >
-                        <td className="px-3 py-3 font-mono text-xs text-gray-600">
-                          {item.kode}
-                        </td>
-                        <td className="px-3 py-3 font-medium text-gray-900">
-                          {item.nama}
-                        </td>
-                        <td className="px-3 py-3 text-xs text-gray-500">
-                          {item.kategori || "—"}
-                        </td>
-                        <td className="px-3 py-3 font-semibold text-blue-700">
-                          {formatQty(disp.qty)}
-                        </td>
-                        <td className="px-3 py-3 text-gray-500">
-                          {formatQty(disp.min)}
-                        </td>
-                        <td className="px-3 py-3 text-gray-600">
-                          {disp.unitLabel}
-                        </td>
-                        <td className="px-3 py-3 text-gray-700">
-                          Rp {formatUnitCost(disp.unitCost)}
-                        </td>
-                        <td className="px-3 py-3 font-medium text-gray-800">
-                          {formatRupiah(Number(item.total_value) || 0)}
-                        </td>
-                        <td className="px-3 py-3">
-                          <span
-                            className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium ${sc.cls}`}
-                          >
-                            <sc.icon className="h-3 w-3" />
-                            {sc.label}
-                          </span>
-                        </td>
-                        <td className="px-3 py-3 text-right">
-                          <Link href={`/dashboard/items/raw-materials/${item.id}`}>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="text-xs"
-                            >
-                              Detail
-                            </Button>
-                          </Link>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-          {totalPages > 1 && (
-            <div className="flex items-center justify-center gap-2 border-t border-gray-200/70 py-3">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                disabled={page === 1}
-              >
-                Prev
-              </Button>
-              <span className="self-center text-sm text-gray-500">
-                Hal {page} / {totalPages}
-              </span>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                disabled={page === totalPages}
-              >
-                Next
-              </Button>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+              ) : items.length === 0 ? (
+                <tr>
+                  <td colSpan={10} className="py-16 text-center text-gray-400">
+                    <Package className="mx-auto mb-3 h-12 w-12 opacity-30" />
+                    <p>No raw material stock data found</p>
+                  </td>
+                </tr>
+              ) : (
+                items.map((item) => {
+                  const disp = resolveDisplay(item, unitMode);
+                  return (
+                    <tr key={item.id} className="transition-colors hover:bg-gray-50/80">
+                      <td className="py-3 pr-4 font-mono text-xs text-gray-600">
+                        {item.kode}
+                      </td>
+                      <td className="px-3 py-3 font-medium text-gray-900">{item.nama}</td>
+                      <td className="px-3 py-3 text-xs text-gray-500">
+                        {item.kategori || "—"}
+                      </td>
+                      <td className="px-3 py-3 text-right font-semibold text-blue-700">
+                        {formatQty(disp.qty)}
+                      </td>
+                      <td className="px-3 py-3 text-right text-gray-700">
+                        {formatQty(disp.min)}
+                      </td>
+                      <td className="px-3 py-3 text-gray-600">{disp.unitLabel}</td>
+                      <td className="px-3 py-3 text-right text-gray-700">
+                        {formatAmount(disp.unitCost, { maximumFractionDigits: 2 })}
+                      </td>
+                      <td className="px-3 py-3 text-right font-medium text-gray-800">
+                        {formatAmount(Number(item.total_value) || 0)}
+                      </td>
+                      <td className="px-3 py-3 text-center">
+                        {getStockStatusBadge(item.status_stok)}
+                      </td>
+                      <td className="py-3 pl-3 text-right">
+                        <Link href={RM_ROUTES.materialsDetail(item.id)}>
+                          <Button variant="ghost" size="sm" className="cursor-pointer" title="View Detail">
+                            <Eye className="h-4 w-4 text-pink-600" />
+                          </Button>
+                        </Link>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <PurchasingTablePagination
+          page={page}
+          totalPages={totalPages}
+          totalItems={total}
+          pageSize={limit}
+          onPageChange={setPage}
+        />
+      </PurchasingListSection>
     </div>
   );
 }

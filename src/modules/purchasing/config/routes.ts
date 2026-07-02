@@ -5,6 +5,7 @@
 // Consumed by: sidebar, breadcrumbs, protected routes, route guards.
 // ============================================================
 
+import { PRODUCT_ROUTES, RM_ROUTES } from "../constants/item-routes";
 import { ALLOWED_PURCHASING_ROLES, PurchasingRole } from "../constants";
 
 export interface RouteMeta {
@@ -101,49 +102,49 @@ export const ROUTES: RouteDefinition[] = [
   // ── Raw Materials ─────────────────────────────────────────
   {
     route: "raw-materials.list",
-    path: "/dashboard/items/raw-materials",
+    path: RM_ROUTES.materials,
     meta: { label: "Bahan Baku", icon: "CubeIcon" },
   },
   {
     route: "raw-materials.new",
-    path: "/dashboard/items/raw-materials/insert",
+    path: RM_ROUTES.materialsInsert,
     meta: { label: "Tambah Bahan", icon: "CubeIcon" },
   },
   {
     route: "raw-materials.edit",
-    path: "/dashboard/items/raw-materials/edit/[id]",
+    path: "/dashboard/raw-material/materials/edit/[id]",
     meta: { label: "Edit Bahan", icon: "CubeIcon" },
   },
   {
     route: "raw-materials.detail",
-    path: "/dashboard/items/raw-materials/[id]",
+    path: "/dashboard/raw-material/materials/[id]",
     meta: { label: "Detail Bahan", icon: "CubeIcon" },
   },
 
   // ── Products ──────────────────────────────────────────────
   {
     route: "products.list",
-    path: "/dashboard/items/products",
+    path: PRODUCT_ROUTES.products,
     meta: { label: "Produk", icon: "CubeTransparentIcon" },
   },
   {
     route: "products.new",
-    path: "/dashboard/items/products/insert",
+    path: PRODUCT_ROUTES.productsInsert,
     meta: { label: "Tambah Produk", icon: "CubeTransparentIcon" },
   },
   {
     route: "products.edit",
-    path: "/dashboard/items/products/edit/[id]",
+    path: "/dashboard/product/products/edit/[id]",
     meta: { label: "Edit Produk", icon: "CubeTransparentIcon" },
   },
   {
     route: "products.detail",
-    path: "/dashboard/items/products/[id]",
+    path: "/dashboard/product/products/[id]",
     meta: { label: "Detail Produk", icon: "CubeTransparentIcon" },
   },
   {
     route: "products.bom",
-    path: "/dashboard/items/products/bom/[id]",
+    path: "/dashboard/product/products/bom/[id]",
     meta: { label: "BOM Editor", icon: "CubeTransparentIcon" },
   },
 
@@ -178,29 +179,29 @@ export const ROUTES: RouteDefinition[] = [
   {
     route: "delivery.list",
     path: "/dashboard/purchasing/delivery",
-    meta: { label: "Pengiriman", icon: "TruckIcon" },
+    meta: { label: "Delivery", icon: "TruckIcon" },
   },
   {
     route: "delivery.detail",
     path: "/dashboard/purchasing/delivery/[id]",
-    meta: { label: "Detail Pengiriman", icon: "TruckIcon" },
+    meta: { label: "Delivery Detail", icon: "TruckIcon" },
   },
 
   // ── Receiving / GRN ────────────────────────────────────────
   {
     route: "receiving.list",
     path: "/dashboard/purchasing/grn",
-    meta: { label: "Receive", icon: "ArrowDownCircleIcon" },
+    meta: { label: "Goods Receipt", icon: "ArrowDownCircleIcon" },
   },
   {
     route: "receiving.grn-new",
     path: "/dashboard/purchasing/grn/insert",
-    meta: { label: "Terima Barang", icon: "ArrowDownCircleIcon" },
+    meta: { label: "Record Goods Receipt", icon: "ArrowDownCircleIcon" },
   },
   {
     route: "receiving.grn-detail",
     path: "/dashboard/purchasing/grn/[id]",
-    meta: { label: "Detail GRN", icon: "ArrowDownCircleIcon" },
+    meta: { label: "Goods Receipt Detail", icon: "ArrowDownCircleIcon" },
   },
 
   // ── QC ────────────────────────────────────────────────────

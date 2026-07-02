@@ -19,7 +19,7 @@ import {
   GrnStatus,
 } from "@/lib/purchasing/grn";
 import { toQty } from "@/lib/purchasing/utils";
-import { addInventoryFromGrn } from "@/lib/inventory";
+import { syncReceiveRejectCredits } from "@/lib/purchasing/vendor-credit-service";
 import {
   getApiUserScope,
   companyScopeOr,
@@ -374,27 +374,12 @@ export async function POST(request: NextRequest) {
     const receiveCount = (previousGrnCount || 0) + 1; // This is the Nth receive
     console.log(`GRN receive_count: ${receiveCount} (previous: ${previousGrnCount}, delivery: ${validated.delivery_id})`);
 
-    // Determine GRN status based on qty_diterima vs total qty_ordered
-    // FIX Issue #1: Status based on received vs ordered, not on reject count
-    const totalOrdered = effectivePoItems.reduce((s: number, i: any) => s + (i.qty_ordered || 0), 0);
-    const totalReceived = effectivePoItems.reduce((s: number, i: any) => s + (i.qty_received || 0), 0);
-    const newTotalReceived = totalReceived + totals.total_diterima;
-
+    // Goods are physically received; stock posts after QC. Status stays pending until QC completes.
     let grnStatus: GrnStatus = "pending";
-    
-    // Check if all items rejected (no good items at all)
+
     if (totals.total_diterima === 0 && totals.total_ditolak > 0) {
-      grnStatus = "rejected"; // Semua ditolak, tidak ada yang bagus
-    } 
-    // Check if we've received enough (regardless of rejects)
-    else if (totalOrdered > 0 && newTotalReceived >= totalOrdered) {
-      grnStatus = "received"; // Sudah cukup yang diterima (bisa ada reject)
-    } 
-    // Check if we received some good items but not enough
-    else if (totals.total_diterima > 0) {
-      grnStatus = "partially_received"; // Ada yang diterima tapi belum cukup
+      grnStatus = "rejected";
     }
-    // Otherwise stays pending (no good items received yet)
 
     // Scope mengikuti gudang penerimaan (mis. Company Sulu / Cabang Sulu Dago)
     const insertData: Record<string, unknown> = {
@@ -440,6 +425,7 @@ export async function POST(request: NextRequest) {
       kondisi: item.kondisi,
       catatan: item.catatan || null,
       warehouse_id: validated.warehouse_id,
+      qc_status: "pending",
     }));
 
     const { error: itemsError } = await adminDb.from("grn_items").insert(grnItems);
@@ -477,46 +463,32 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Update delivery status
-    await updateDeliveryStatusAfterGrn(adminDb, validated.delivery_id, grnStatus);
+    // Physical receipt recorded — mark delivery arrived; stock posts after QC.
+    if (grnStatus !== "rejected") {
+      await adminDb
+        .from("deliveries")
+        .update({ status: "delivered", updated_at: new Date().toISOString() })
+        .eq("id", validated.delivery_id);
+    } else {
+      await updateDeliveryStatusAfterGrn(adminDb, validated.delivery_id, grnStatus);
+    }
 
-    // Update PO status based on received quantities
     if (delivery?.purchase_order_id) {
       await updatePOStatusAfterGrn(adminDb, delivery.purchase_order_id);
     }
 
-    // Update inventory untuk setiap item yang diterima
-    console.log(`\n[GRN/${grn.id}] Updating inventory for ${validated.items.length} items...`);
-    for (const item of validated.items) {
-      if (item.qty_diterima > 0) {
-        const poItem = effectivePoItems.find((p: any) => p.id === item.purchase_order_item_id);
-        const unitCost = poItem?.harga_satuan || 0;
-        try {
-          console.log(`  ${item.raw_material_id}: +${item.qty_diterima} @ Rp ${unitCost}`);
-          await addInventoryFromGrn(
-            adminDb,
-            item.raw_material_id,
-            item.qty_diterima,
-            unitCost,
-            grn.id,
-            grnNumber,
-            user.id,
-            validated.warehouse_id
-          );
-          console.log(`  ✅ ${item.raw_material_id}: +${item.qty_diterima} units @ Rp ${unitCost}`);
-        } catch (invErr: unknown) {
-          const message =
-            invErr instanceof Error ? invErr.message : "Gagal memperbarui stok inventory";
-          console.error(`  ❌ Inventory update failed for ${item.raw_material_id}:`, message);
-          throw ApiError.server(
-            `GRN tersimpan tetapi stok gagal diperbarui untuk bahan ${item.raw_material_id}: ${message}`
-          );
-        }
-      }
+    try {
+      await syncReceiveRejectCredits(adminDb, grn.id, user.id);
+    } catch (creditErr) {
+      console.error("[GRN] Vendor credit sync error (non-fatal):", creditErr);
     }
-    console.log('[GRN/' + grn.id + '] Inventory update complete\n');
 
-    return createdResponse(grn, `GRN ${grnNumber} berhasil dibuat`);
+    return createdResponse(
+      grn,
+      grnStatus === "rejected"
+        ? `GRN ${grnNumber} created — all items rejected at receipt`
+        : `GRN ${grnNumber} created — proceed to quality control before stock is updated`
+    );
   } catch (error) {
     if (error instanceof ApiError) return error.toResponse();
     if (error instanceof z.ZodError) {

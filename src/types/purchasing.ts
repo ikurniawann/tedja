@@ -239,6 +239,7 @@ export interface ProductFormData {
   kode_produk?: string;
   category?: string;
   unit_id?: string;
+  satuan_id?: string | null;
   harga_jual?: number;
   notes?: string;
   // Legacy fields for compatibility
@@ -268,11 +269,14 @@ export interface ProductWithCOGS {
   
   // Legacy fields for compatibility
   nama?: string;
+  kode?: string;
   kategori?: string;
   deskripsi?: string;
   markup_persen?: number;
   is_active?: boolean;
   hpp_estimasi?: number;
+  satuan_id?: string | null;
+  satuan_nama?: string | null;
 }
 
 export type Product = ProductWithCOGS;
@@ -615,6 +619,13 @@ export interface PurchaseOrderWithStats extends PurchaseOrder {
   payment_status?: "unpaid" | "partial" | "paid" | "overdue";
   lifecycle_status?: "draft" | "in_progress" | "waiting_payment" | "waiting_receipt" | "completed" | "cancelled";
   overall_progress_pct?: number;
+  order_progress_pct?: number;
+  qc_progress_pct?: number;
+  return_progress_pct?: number;
+  fulfillment_progress_pct?: number;
+  total_qty_received_grn?: number;
+  total_qty_qc_posted?: number;
+  total_qty_returned?: number;
   active_delivery_id?: string | null;
   active_delivery_number?: string | null;
   active_delivery_status?: string | null;
@@ -678,6 +689,7 @@ export interface PurchaseReturn {
   id: string;
   return_number: string;
   grn_id: string | null;
+  grn_number?: string | null;
   supplier_id: string;
   return_date: string;
   reason_type: ReturnReasonType;
@@ -696,7 +708,7 @@ export interface PurchaseReturn {
   
   // Relations (optional, loaded separately)
   supplier?: { nama_supplier: string };
-  grn?: { grn_number: string };
+  grn?: { id?: string | null; grn_number?: string | null; nomor_grn?: string | null };
   items?: PurchaseReturnItem[];
 }
 
@@ -720,6 +732,10 @@ export interface PurchaseReturnItem {
     nama: string;
     satuan?: string;
   };
+  grn_item?: {
+    warehouse_id?: string | null;
+    warehouse?: { name?: string | null } | null;
+  };
 }
 
 export interface ReturnableItem {
@@ -738,6 +754,8 @@ export interface ReturnableItem {
   supplier_id: string;
   nama_supplier: string;
   satuan?: string;
+  warehouse_id?: string | null;
+  warehouse_name?: string;
 }
 
 export interface PurchaseReturnFormData {

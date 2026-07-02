@@ -31,7 +31,7 @@ type POItemForGrn = {
 
 export const GRN_TRANSITIONS: Record<GrnStatus, GrnStatus[]> = {
   pending: ["received", "partially_received", "rejected"],
-  partially_received: ["received"],
+  partially_received: ["received", "pending"],
   received: [],
   rejected: [],
 };

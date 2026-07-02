@@ -12,6 +12,7 @@ import {
   effectiveCompanyId,
   effectiveBranchId,
 } from "@/lib/api/scope";
+import { isOpenDeliveryStatus } from "@/lib/purchasing/delivery";
 
 const optionalDateSchema = z
   .union([z.string().regex(/^\d{4}-\d{2}-\d{2}$/), z.literal(""), z.null()])
@@ -146,20 +147,46 @@ export async function GET(request: NextRequest) {
 
     if (deliveriesError) throw deliveriesError;
 
-    const deliveryByPoId = new Map<string, (typeof deliveries)[number]>();
+    const prIds = Array.from(
+      new Set((data || []).map((po) => po.pr_id).filter(Boolean) as string[])
+    );
+    const { data: purchaseRequests, error: prError } = prIds.length
+      ? await db.from("purchase_requests").select("id, pr_number").in("id", prIds)
+      : { data: [], error: null };
+
+    if (prError) throw prError;
+
+    const prNumberById = new Map(
+      (purchaseRequests || []).map((pr) => [pr.id as string, pr.pr_number as string])
+    );
+
+    const openDeliveryByPoId = new Map<string, (typeof deliveries)[number]>();
+    const latestDeliveryByPoId = new Map<string, (typeof deliveries)[number]>();
     for (const delivery of deliveries || []) {
-      if (!deliveryByPoId.has(delivery.purchase_order_id)) {
-        deliveryByPoId.set(delivery.purchase_order_id, delivery);
+      const poId = delivery.purchase_order_id as string;
+      if (!latestDeliveryByPoId.has(poId)) {
+        latestDeliveryByPoId.set(poId, delivery);
+      }
+      if (!openDeliveryByPoId.has(poId) && isOpenDeliveryStatus(delivery.status)) {
+        openDeliveryByPoId.set(poId, delivery);
       }
     }
 
     const mappedData = (data || []).map((po) => {
-      const delivery = deliveryByPoId.get(po.id);
+      const openDelivery = openDeliveryByPoId.get(po.id);
+      const latestDelivery = latestDeliveryByPoId.get(po.id);
+      const prId = po.pr_id as string | null | undefined;
       return {
         ...po,
-        active_delivery_id: delivery?.id || null,
-        active_delivery_number: delivery?.nomor_resi || delivery?.no_surat_jalan || null,
-        active_delivery_status: delivery?.status || null,
+        pr_number: prId ? prNumberById.get(prId) ?? null : null,
+        active_delivery_id: openDelivery?.id || null,
+        active_delivery_number:
+          openDelivery?.nomor_resi ||
+          openDelivery?.no_surat_jalan ||
+          latestDelivery?.nomor_resi ||
+          latestDelivery?.no_surat_jalan ||
+          null,
+        active_delivery_status: openDelivery?.status || latestDelivery?.status || null,
       };
     });
 
@@ -191,8 +218,55 @@ export async function POST(request: NextRequest) {
     // Validasi input
     const validated = poSchema.parse(body);
     const scope = await getApiUserScope();
-    const companyId = effectiveCompanyId(scope);
-    const branchId = effectiveBranchId(scope);
+    let companyId = effectiveCompanyId(scope);
+    let branchId = effectiveBranchId(scope);
+
+    if (validated.pr_id) {
+      const { data: linkedPr } = await db
+        .from("purchase_requests")
+        .select("id, status, converted_po_id, company_id, branch_id")
+        .eq("id", validated.pr_id)
+        .maybeSingle();
+
+      if (!linkedPr) {
+        return Response.json(
+          { success: false, message: "PR tidak ditemukan" },
+          { status: 404 }
+        );
+      }
+      if (linkedPr.status !== "approved") {
+        return Response.json(
+          { success: false, message: "PR harus approved sebelum dibuatkan PO" },
+          { status: 400 }
+        );
+      }
+      if (linkedPr.converted_po_id) {
+        return Response.json(
+          { success: false, message: "PR sudah dibuatkan PO" },
+          { status: 400 }
+        );
+      }
+
+      companyId = linkedPr.company_id ?? companyId;
+      branchId = linkedPr.branch_id ?? branchId;
+    }
+
+    if (!companyId || !branchId) {
+      const { data: supplier, error: supplierError } = await db
+        .from("suppliers")
+        .select("company_id, branch_id")
+        .eq("id", validated.supplier_id)
+        .maybeSingle();
+
+      if (supplierError) throw supplierError;
+
+      companyId = companyId ?? supplier?.company_id ?? scope?.companyId ?? null;
+      branchId =
+        branchId ??
+        supplier?.branch_id ??
+        (scope?.businessScope === "branch" ? scope.branchId : null) ??
+        null;
+    }
 
     const { items, ...poPayload } = validated;
     const subtotal = items.reduce((sum, item) => sum + item.qty_ordered * item.harga_satuan, 0);
@@ -244,6 +318,21 @@ export async function POST(request: NextRequest) {
       .insert(poItems);
 
     if (itemError) throw itemError;
+
+    if (poPayload.pr_id) {
+      const { error: prUpdateError } = await db
+        .from("purchase_requests")
+        .update({
+          status: "converted",
+          converted_po_id: data.id,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", poPayload.pr_id)
+        .eq("status", "approved")
+        .is("converted_po_id", null);
+
+      if (prUpdateError) throw prUpdateError;
+    }
 
     return Response.json(
       { success: true, data, message: "PO berhasil dibuat" },

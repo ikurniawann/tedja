@@ -5,6 +5,12 @@
 import { NextRequest } from "next/server";
 import { createPgClient } from "@/lib/pg/create-client";
 import { adjustInventoryOnOrder } from "@/lib/inventory";
+import { recalculatePurchaseOrderTotals } from "@/lib/purchasing/po-totals";
+import {
+  computePoInvoiceAmounts,
+  getPoCreditBreakdown,
+} from "@/lib/purchasing/po-payments";
+import { computePoFulfillmentProgress } from "@/lib/purchasing/po-fulfillment-progress";
 import { z } from "zod";
 
 const poSchema = z.object({
@@ -99,10 +105,42 @@ export async function GET(
 
     if (deliveryError) throw deliveryError;
 
+    const creditBreakdown = await getPoCreditBreakdown(db, id);
+    const invoiceAmounts = computePoInvoiceAmounts({
+      grossPayable: Number(po.payable_amount ?? po.grand_total ?? po.total ?? 0),
+      returnCredit: creditBreakdown.return_credit_amount,
+      rejectCredit: creditBreakdown.reject_credit_amount,
+      paidAmount: Number(po.paid_amount || 0),
+      nextDueDate: po.next_due_date,
+    });
+
+    const fulfillmentProgress = await computePoFulfillmentProgress(
+      db,
+      id,
+      String(po.status || "draft"),
+      Number(po.received_percentage ?? po.receive_percentage ?? po.progress_pct ?? 0)
+    );
+
     return Response.json({
       success: true,
       data: {
         ...po,
+        gross_payable_amount: invoiceAmounts.gross_payable_amount,
+        return_credit_amount: invoiceAmounts.return_credit_amount,
+        reject_credit_amount: invoiceAmounts.reject_credit_amount,
+        total_credit_amount: invoiceAmounts.total_credit_amount,
+        payable_amount: invoiceAmounts.payable_amount,
+        paid_amount: invoiceAmounts.paid_amount,
+        outstanding_amount: invoiceAmounts.outstanding_amount,
+        payment_progress_pct: invoiceAmounts.payment_progress_pct,
+        payment_status: invoiceAmounts.payment_status,
+        order_progress_pct: fulfillmentProgress.order_progress_pct,
+        qc_progress_pct: fulfillmentProgress.qc_progress_pct,
+        return_progress_pct: fulfillmentProgress.return_progress_pct,
+        fulfillment_progress_pct: fulfillmentProgress.fulfillment_progress_pct,
+        total_qty_received_grn: fulfillmentProgress.total_qty_received_grn,
+        total_qty_qc_posted: fulfillmentProgress.total_qty_qc_posted,
+        total_qty_returned: fulfillmentProgress.total_qty_returned,
         active_delivery_id: activeDelivery?.id || null,
         active_delivery_number: activeDelivery?.nomor_resi || activeDelivery?.no_surat_jalan || null,
         active_delivery_status: activeDelivery?.status || null,
@@ -152,11 +190,18 @@ export async function PUT(
       );
     }
 
-    // Update data
+    // Update data + hitung ulang total dari item
+    const totals = await recalculatePurchaseOrderTotals(db, id, {
+      diskon_persen: validated.diskon_persen,
+      diskon_nominal: validated.diskon_nominal,
+      ppn_persen: validated.ppn_persen,
+    });
+
     const { data, error } = await db
       .from("purchase_orders")
       .update({
         ...validated,
+        ...totals,
         updated_at: new Date().toISOString(),
       })
       .eq("id", id)

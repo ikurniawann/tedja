@@ -1208,6 +1208,28 @@ BEGIN
 END;
 $function$;
 
+-- public.generate_vendor_credit_number
+CREATE OR REPLACE FUNCTION public.generate_vendor_credit_number()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  year_part text;
+  seq_num integer;
+  credit_num text;
+BEGIN
+  year_part := TO_CHAR(COALESCE(NEW.credit_date, CURRENT_DATE), 'YYYY');
+
+  SELECT COUNT(*) + 1 INTO seq_num
+  FROM purchasing.vendor_credits
+  WHERE credit_number LIKE 'VCR-' || year_part || '-%';
+
+  credit_num := 'VCR-' || year_part || '-' || LPAD(seq_num::text, 3, '0');
+  NEW.credit_number := credit_num;
+  RETURN NEW;
+END;
+$function$;
+
 -- public.generate_shift_number
 CREATE OR REPLACE FUNCTION public.generate_shift_number()
  RETURNS text

@@ -14,8 +14,8 @@ import {
   GrnStatus,
 } from "@/lib/purchasing/grn";
 import { toQty } from "@/lib/purchasing/utils";
-import { removeInventoryFromGrn, addInventoryFromGrn } from "@/lib/inventory";
 import type { UserRole } from "@/types";
+import { syncReceiveRejectCredits } from "@/lib/purchasing/vendor-credit-service";
 
 const GRN_VIEW_ROLES: UserRole[] = [
   "warehouse_staff",
@@ -284,20 +284,22 @@ export async function PATCH(
           throw ApiError.badRequest("Item PO tidak ditemukan untuk validasi penerimaan");
         }
 
-        const previousReceivedInThisGrn = Number(existingItem?.qty_diterima || 0);
-        const receivedOutsideThisGrn = Math.max(
-          0,
-          Number(poItem.qty_received || 0) - previousReceivedInThisGrn
-        );
+        const previousDiterima = Number(existingItem?.qty_diterima || 0);
+        const previousDitolak = Number(existingItem?.qty_ditolak || 0);
+        const cumulativeDiterima = Number(item.qty_diterima || 0);
+        const cumulativeDitolak = Number(item.qty_ditolak || 0);
+        const deltaDiterima = Math.max(0, cumulativeDiterima - previousDiterima);
+        const deltaDitolak = Math.max(0, cumulativeDitolak - previousDitolak);
+        const deltaProcessed = deltaDiterima + deltaDitolak;
+
         const remainingQty = Math.max(
           0,
-          Number(poItem.qty_ordered || 0) - receivedOutsideThisGrn
+          Number(poItem.qty_ordered || 0) - Number(poItem.qty_received || 0)
         );
-        const processedQty = Number(item.qty_diterima || 0) + Number(item.qty_ditolak || 0);
 
-        if (processedQty > remainingQty + QTY_EPSILON) {
+        if (deltaProcessed > remainingQty + QTY_EPSILON) {
           throw ApiError.badRequest(
-            `Qty ${getMaterialLabel(poItem)} melebihi sisa PO. Maksimal ${formatQty(remainingQty)}, tetapi diinput ${formatQty(processedQty)} (diterima + ditolak).`
+            `Qty ${getMaterialLabel(poItem)} melebihi sisa PO. Maksimal ${formatQty(remainingQty)} untuk penerimaan tambahan, tetapi diinput ${formatQty(deltaProcessed)} (diterima + ditolak).`
           );
         }
       }
@@ -333,27 +335,36 @@ export async function PATCH(
       updateData.total_item_diterima = totalDiterima;
       updateData.total_item_ditolak = totalDitolak;
 
-      // Auto-calculate status based on PO completion
-      const { data: poItems } = await db
-        .from("purchase_order_items")
-        .select("qty_ordered, qty_received")
-        .eq("purchase_order_id", currentGrn.purchase_order_id)
-        .eq("is_active", true);
+      if (validated.items.every((item) => item.qty_diterima === 0) && totalDitolak > 0) {
+        updateData.status = "rejected";
+      } else if (totalDiterima > 0) {
+        updateData.status = "pending";
+      }
+    }
 
-      if (poItems && poItems.length > 0) {
-        const totalOrdered = poItems.reduce((sum, item) => sum + (item.qty_ordered || 0), 0);
-        // Calculate new total received (existing + changes from this update)
-        const currentTotalReceived = poItems.reduce((sum, item) => sum + (item.qty_received || 0), 0);
-        const additionalReceived = qtyChanges.reduce((sum, change) => sum + (change.diff > 0 ? change.diff : 0), 0);
-        const newTotalReceived = currentTotalReceived + additionalReceived;
+    const hasItemChanges = qtyChanges.length > 0;
+    if (hasItemChanges && currentGrn.status !== "pending") {
+      const { data: existingQc } = await db
+        .from("grn_qc_inspections")
+        .select("id")
+        .eq("grn_id", id)
+        .maybeSingle();
 
-        if (validated.items.every(item => item.qty_diterima === 0) && totalDitolak > 0) {
-          updateData.status = "rejected";
-        } else if (newTotalReceived >= totalOrdered && totalDitolak === 0) {
-          updateData.status = "received";
-        } else if (newTotalReceived > 0) {
-          updateData.status = "partially_received";
-        }
+      if (existingQc?.id) {
+        await db.from("grn_qc_inspection_items").delete().eq("qc_inspection_id", existingQc.id);
+        await db.from("grn_qc_inspections").delete().eq("id", existingQc.id);
+      }
+
+      updateData.status = "pending";
+    }
+
+    if (validated.items && validated.items.length > 0 && !updateData.status) {
+      const totalDiterima = validated.items.reduce((sum, item) => sum + item.qty_diterima, 0);
+      const totalDitolak = validated.items.reduce((sum, item) => sum + item.qty_ditolak, 0);
+      if (validated.items.every((item) => item.qty_diterima === 0) && totalDitolak > 0) {
+        updateData.status = "rejected";
+      } else if (totalDiterima > 0) {
+        updateData.status = "pending";
       }
     }
 
@@ -383,17 +394,25 @@ export async function PATCH(
       }
       console.log(`[PATCH GRN/${id}] Deleted old items`);
 
-      // Insert new items
-      const grnItems = validated.items.map((item) => ({
-        grn_id: id,
-        delivery_id: currentGrn.delivery_id,
-        purchase_order_item_id: item.purchase_order_item_id,
-        raw_material_id: item.raw_material_id,
-        qty_diterima: item.qty_diterima,
-        qty_ditolak: item.qty_ditolak,
-        kondisi: item.kondisi,
-        catatan: item.catatan || null,
-      }));
+      // Insert new items (preserve warehouse + previously posted QC qty for delta stock posting)
+      const grnItems = validated.items.map((item) => {
+        const existingItem = existingItemsMap.get(
+          item.purchase_order_item_id || item.raw_material_id
+        );
+        return {
+          grn_id: id,
+          delivery_id: currentGrn.delivery_id,
+          purchase_order_item_id: item.purchase_order_item_id,
+          raw_material_id: item.raw_material_id,
+          qty_diterima: item.qty_diterima,
+          qty_ditolak: item.qty_ditolak,
+          kondisi: item.kondisi,
+          catatan: item.catatan || null,
+          warehouse_id: existingItem?.warehouse_id ?? null,
+          qc_status: "pending",
+          qty_qc_posted: existingItem?.qty_qc_posted ?? 0,
+        };
+      });
       
       console.log(`[PATCH GRN/${id}] Inserting items:`, JSON.stringify(grnItems, null, 2));
 
@@ -428,54 +447,13 @@ export async function PATCH(
         }
       }
       console.log(`[PATCH GRN/${id}] PO items updated`);
-
-      // Update inventory: REBUILD from scratch (remove old, add new)
-      console.log(`[PATCH GRN/${id}] Updating inventory...`);
-      
-      for (const change of qtyChanges) {
-        if (change.raw_material_id) {
-          try {
-            const oldQty = change.oldQtyDiterima || 0;
-            const newQty = change.newQtyDiterima || 0;
-            
-            console.log(`[PATCH GRN/${id}] Material ${change.raw_material_id}: ${oldQty} → ${newQty}`);
-            
-            // Step 1: Remove OLD qty from inventory
-            if (oldQty > 0) {
-              console.log(`[PATCH GRN/${id}]   Removing old qty: ${oldQty}`);
-              await removeInventoryFromGrn(
-                db,
-                change.raw_material_id,
-                oldQty,
-                id,
-                currentGrn.nomor_grn,
-                user.id
-              );
-            }
-            
-            // Step 2: Add NEW qty to inventory
-            if (newQty > 0) {
-              console.log(`[PATCH GRN/${id}]   Adding new qty: ${newQty}`);
-              await addInventoryFromGrn(
-                db,
-                change.raw_material_id,
-                newQty,
-                0, // unit cost - would need to fetch from PO
-                id,
-                currentGrn.nomor_grn,
-                user.id
-              );
-            }
-          } catch (invErr) {
-            console.error(`[PATCH GRN/${id}] Inventory update error for ${change.raw_material_id}:`, invErr);
-          }
-        }
-      }
-      console.log(`[PATCH GRN/${id}] Inventory rebuild complete`);
     }
 
-    // Update delivery status if GRN status changed
-    if (updateData.status && currentGrn.delivery_id) {
+    if (
+      updateData.status &&
+      updateData.status !== "pending" &&
+      currentGrn.delivery_id
+    ) {
       await updateDeliveryStatusAfterGrn(db, currentGrn.delivery_id, updateData.status as GrnStatus);
     }
 
@@ -484,6 +462,12 @@ export async function PATCH(
       console.log(`[PATCH GRN/${id}] Updating PO status...`);
       await updatePOStatusAfterGrn(db, currentGrn.purchase_order_id);
       console.log(`[PATCH GRN/${id}] PO status updated`);
+    }
+
+    try {
+      await syncReceiveRejectCredits(db, id, user.id);
+    } catch (creditErr) {
+      console.error(`[PATCH GRN/${id}] Vendor credit sync error (non-fatal):`, creditErr);
     }
 
     console.log(`[PATCH GRN/${id}] === SUCCESS ===\n`);

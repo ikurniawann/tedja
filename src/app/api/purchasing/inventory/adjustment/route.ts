@@ -5,10 +5,21 @@
 import { NextRequest } from "next/server";
 import { createServerPgClient } from "@/lib/pg/create-client";
 import { ApiError, requireApiRole } from "@/lib/api/auth";
+import {
+  effectiveBranchId,
+  getApiUserScope,
+  isRowInBusinessScope,
+  validateWarehouseForReceivingScope,
+} from "@/lib/api/scope";
+import {
+  ensureWarehouseInventoryId,
+  listWarehouseInventoryForOpname,
+} from "@/lib/inventory/stock-opname";
 import { z } from "zod";
 
 const adjustmentSchema = z.object({
   raw_material_id: z.string().uuid("Bahan baku wajib dipilih"),
+  warehouse_id: z.string().uuid("Gudang wajib dipilih"),
   qty_actual: z.number().min(0, "Stok aktual minimal 0"),
   notes: z.string().optional(),
 });
@@ -18,63 +29,116 @@ const ADJUST_ROLES = ["super_admin", "warehouse_admin", "purchasing_admin"] as c
 // POST /api/purchasing/inventory/adjustment
 export async function POST(request: NextRequest) {
   try {
-    await requireApiRole([...ADJUST_ROLES]);
+    const user = await requireApiRole([...ADJUST_ROLES]);
     const db = await createServerPgClient();
     const body = await request.json();
 
-    // Validasi input
     const validated = adjustmentSchema.parse(body);
+    const scope = await getApiUserScope();
 
-    // Get current inventory
-    const { data: currentInv, error: invError } = await db
-      .from("inventory")
-      .select("*")
-      .eq("raw_material_id", validated.raw_material_id)
-      .single();
-
-    if (invError || !currentInv) {
+    const warehouseCheck = await validateWarehouseForReceivingScope(
+      validated.warehouse_id,
+      scope,
+      null
+    );
+    if ("error" in warehouseCheck) {
       return Response.json(
-        { success: false, message: "Data inventory tidak ditemukan" },
+        { success: false, message: "Gudang tidak valid atau tidak diizinkan" },
+        { status: 400 }
+      );
+    }
+
+    const branchId = effectiveBranchId(scope) || warehouseCheck.branch_id;
+
+    const { data: material } = await db
+      .from("raw_materials")
+      .select("company_id, branch_id")
+      .eq("id", validated.raw_material_id)
+      .maybeSingle();
+
+    if (
+      material &&
+      !isRowInBusinessScope(scope, {
+        company_id: material.company_id,
+        branch_id: material.branch_id,
+      })
+    ) {
+      return Response.json(
+        { success: false, message: "Bahan baku tidak tersedia untuk cabang Anda" },
+        { status: 403 }
+      );
+    }
+
+    const previewRows = await listWarehouseInventoryForOpname(validated.warehouse_id);
+    const previewLine = previewRows.find(
+      (row) => row.raw_material_id === validated.raw_material_id
+    );
+    if (!previewLine) {
+      return Response.json(
+        { success: false, message: "Bahan baku tidak ditemukan di gudang ini" },
         { status: 404 }
       );
     }
 
-    // Hitung selisih
+    const inventoryId =
+      previewLine.inventory_id ??
+      (await ensureWarehouseInventoryId(db, {
+        rawMaterialId: validated.raw_material_id,
+        warehouseId: validated.warehouse_id,
+        branchId,
+        unitCost: previewLine.unit_cost,
+        userId: user.id,
+      }));
+
+    const { data: currentInv, error: invError } = await db
+      .from("inventory")
+      .select("*")
+      .eq("id", inventoryId)
+      .maybeSingle();
+
+    if (invError || !currentInv) {
+      return Response.json(
+        { success: false, message: "Data inventory tidak ditemukan untuk gudang ini" },
+        { status: 404 }
+      );
+    }
+
     const qtyBefore = Number(currentInv.qty_available || 0);
     const qtyDiff = validated.qty_actual - qtyBefore;
 
-    // Update inventory
     const { data: updatedInv, error: updateError } = await db
       .from("inventory")
       .update({
         qty_available: validated.qty_actual,
         last_movement_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
+        updated_by: user.id,
       })
-      .eq("raw_material_id", validated.raw_material_id)
+      .eq("id", inventoryId)
       .select()
       .single();
 
     if (updateError) throw updateError;
 
-    // Record movement jika ada perubahan
     if (qtyDiff !== 0) {
-      const { error: movementError } = await db
-        .from("inventory_movements")
-        .insert({
-          inventory_id: currentInv.id,
-          raw_material_id: validated.raw_material_id,
-          tipe: "adjustment",
-          jumlah: Math.abs(qtyDiff),
-          qty_before: qtyBefore,
-          qty_after: validated.qty_actual,
-          unit_cost: currentInv.unit_cost || 0,
-          total_cost: Math.abs(qtyDiff) * Number(currentInv.unit_cost || 0),
-          branch_id: currentInv.branch_id ?? null,
-          warehouse_id: currentInv.warehouse_id ?? null,
-          reference_type: "adjustment",
-          alasan: validated.notes || `Stok opname: ${qtyDiff > 0 ? "+" : ""}${qtyDiff}`,
-        });
+      const { error: movementError } = await db.from("inventory_movements").insert({
+        inventory_id: inventoryId,
+        raw_material_id: validated.raw_material_id,
+        tipe: "adjustment",
+        jumlah: Math.abs(qtyDiff),
+        qty_before: qtyBefore,
+        qty_after: validated.qty_actual,
+        unit_cost: currentInv.unit_cost || 0,
+        total_cost: Math.abs(qtyDiff) * Number(currentInv.unit_cost || 0),
+        branch_id: currentInv.branch_id ?? null,
+        warehouse_id: currentInv.warehouse_id ?? validated.warehouse_id,
+        reference_type: "adjustment",
+        alasan:
+          validated.notes ||
+          `Penyesuaian stok: ${qtyDiff > 0 ? "+" : ""}${qtyDiff}`,
+        created_by: user.id,
+        updated_by: user.id,
+      });
 
       if (movementError) throw movementError;
     }

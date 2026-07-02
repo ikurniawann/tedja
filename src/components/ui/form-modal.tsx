@@ -39,7 +39,7 @@ export interface FormModalProps {
 
 /**
  * Standardized add/edit form modal built on the DialogPanel design system.
- * Header + scrollable body + sticky footer (Batal / Simpan).
+ * Header + scrollable body + sticky footer (Cancel / Save).
  */
 export function FormModal({
   open,
@@ -48,9 +48,9 @@ export function FormModal({
   description,
   size = "sm",
   onSubmit,
-  submitLabel = "Simpan",
-  cancelLabel = "Batal",
-  loadingLabel = "Menyimpan...",
+  submitLabel = "Save",
+  cancelLabel = "Cancel",
+  loadingLabel = "Saving...",
   loading = false,
   submitDisabled = false,
   bodyClassName,

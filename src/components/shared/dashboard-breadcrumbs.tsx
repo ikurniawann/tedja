@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useMemo } from "react";
 import { ChevronRight } from "lucide-react";
 import { buildNavBreadcrumbs } from "@/lib/iam/nav-breadcrumbs";
+import { useNavFrom } from "@/lib/iam/use-nav-from";
 import type { NavItem } from "@/lib/iam/types";
 
 interface DashboardBreadcrumbsProps {
@@ -14,7 +15,11 @@ interface DashboardBreadcrumbsProps {
 
 export function DashboardBreadcrumbs({ navItems, className = "" }: DashboardBreadcrumbsProps) {
   const pathname = usePathname();
-  const items = useMemo(() => buildNavBreadcrumbs(navItems, pathname), [navItems, pathname]);
+  const navFrom = useNavFrom();
+  const items = useMemo(
+    () => buildNavBreadcrumbs(navItems, pathname, navFrom),
+    [navItems, pathname, navFrom]
+  );
 
   if (items.length === 0) {
     return null;

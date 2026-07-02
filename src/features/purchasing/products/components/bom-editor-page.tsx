@@ -8,7 +8,7 @@ import { useParams, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { ITEMS_PRODUCTS_PATH } from "@/modules/purchasing/constants/items-nav";
+import { PRODUCT_ROUTES, RM_ROUTES } from "@/modules/purchasing/constants/item-routes";
 import { Combobox } from "@/components/ui/combobox";
 import { NumericInput } from "@/components/ui/numeric-input";
 import {
@@ -267,7 +267,7 @@ export function BOMEditorPage() {
             <RefreshCw className="mr-2 h-4 w-4" />
             Refresh
           </Button>
-          <Link href={fromProduction ? "/dashboard/purchasing/production/recipes" : `${ITEMS_PRODUCTS_PATH}/${productId}`}>
+          <Link href={fromProduction ? RM_ROUTES.productionRecipes : PRODUCT_ROUTES.productsDetail(productId)}>
             <Button variant="outline" className="purchasing-secondary-button">
               <ChevronLeft className="mr-2 h-4 w-4" />
               Kembali
@@ -436,7 +436,7 @@ export function BOMEditorPage() {
       </Card>
 
       <div className="flex items-center justify-end gap-3 border-t border-gray-200/70 pt-4">
-        <Link href={fromProduction ? "/dashboard/purchasing/production/recipes" : `${ITEMS_PRODUCTS_PATH}/${productId}`}>
+        <Link href={fromProduction ? RM_ROUTES.productionRecipes : PRODUCT_ROUTES.productsDetail(productId)}>
           <Button variant="outline" type="button" className="purchasing-secondary-button px-6">Batal</Button>
         </Link>
         <Button onClick={saveAll} disabled={savingAll || bomItems.length === 0} className="purchasing-main-button px-6">

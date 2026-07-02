@@ -93,15 +93,30 @@ export async function generateVendorCode(
 }
 
 /**
- * Format currency to Rupiah
+ * Format angka locale Indonesia tanpa simbol mata uang.
+ */
+export function formatAmount(
+  amount: number | null | undefined,
+  options?: { minimumFractionDigits?: number; maximumFractionDigits?: number }
+): string {
+  const value = Number(amount);
+  if (!Number.isFinite(value)) return "0";
+
+  const minimumFractionDigits = options?.minimumFractionDigits ?? 0;
+  const maximumFractionDigits =
+    options?.maximumFractionDigits ?? minimumFractionDigits;
+
+  return new Intl.NumberFormat("id-ID", {
+    minimumFractionDigits,
+    maximumFractionDigits,
+  }).format(value);
+}
+
+/**
+ * Format nominal rupiah (tanpa prefix "Rp").
  */
 export function formatRupiah(amount: number): string {
-  return new Intl.NumberFormat("id-ID", {
-    style: "currency",
-    currency: "IDR",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(amount);
+  return formatAmount(amount);
 }
 
 /**
@@ -178,10 +193,10 @@ export function getPRStatusLabel(status: string): { label: string; color: string
     draft: { label: "Draft", color: "bg-gray-100 text-gray-700" },
     pending_head: { label: "Pending Head Dept", color: "bg-yellow-100 text-yellow-700" },
     pending_finance: { label: "Pending Finance", color: "bg-orange-100 text-orange-700" },
-    pending_direksi: { label: "Pending Direksi", color: "bg-red-100 text-red-700" },
+    pending_direksi: { label: "Pending Director", color: "bg-orange-100 text-orange-700" },
     approved: { label: "Approved", color: "bg-green-100 text-green-700" },
-    rejected: { label: "Ditolak", color: "bg-red-200 text-red-800" },
-    converted: { label: "PO Dibuat", color: "bg-blue-100 text-blue-700" },
+    rejected: { label: "Rejected", color: "bg-red-100 text-red-700" },
+    converted: { label: "PO Created", color: "bg-blue-100 text-blue-700" },
   };
   
   return labels[status] || { label: status, color: "bg-gray-100 text-gray-700" };
@@ -208,10 +223,10 @@ export function getPOStatusLabel(status: string): { label: string; color: string
  */
 export function getPriorityBadge(priority: string): { label: string; color: string } {
   const badges: Record<string, { label: string; color: string }> = {
-    low: { label: "Rendah", color: "bg-gray-100 text-gray-700" },
-    medium: { label: "Sedang", color: "bg-blue-100 text-blue-700" },
-    high: { label: "Tinggi", color: "bg-orange-100 text-orange-700" },
-    urgent: { label: "Mendesak", color: "bg-red-100 text-red-700" },
+    low: { label: "Low", color: "bg-gray-100 text-gray-700" },
+    medium: { label: "Medium", color: "bg-blue-100 text-blue-700" },
+    high: { label: "High", color: "bg-orange-100 text-orange-700" },
+    urgent: { label: "Urgent", color: "bg-red-100 text-red-700" },
   };
   
   return badges[priority] || { label: priority, color: "bg-gray-100 text-gray-700" };

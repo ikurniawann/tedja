@@ -17,6 +17,7 @@ import { ProductFormData, BOMItem, RawMaterialWithStock } from "@/types/purchasi
 import { ITEMS_PRODUCTS_PATH } from "@/modules/purchasing/constants/items-nav";
 import { useProductEditData, useProductCategoryOptions } from "../queries";
 import { useUpdateProduct } from "../mutations";
+import { mapUnitComboboxOptions } from "../product-unit";
 
 interface BOMFormItem extends Partial<BOMItem> {
   id: string;
@@ -75,6 +76,8 @@ export function EditProductPage() {
   const editQuery = useProductEditData(productId);
   const product = editQuery.data?.product ?? null;
   const materials = editQuery.data?.materials ?? [];
+  const units = editQuery.data?.units ?? [];
+  const unitOptions = mapUnitComboboxOptions(units);
   const bomItems = editQuery.data?.bom ?? [];
   const loading = editQuery.isLoading;
 
@@ -91,6 +94,7 @@ export function EditProductPage() {
   const [formData, setFormData] = useState<ProductFormData>({
     nama: "",
     kategori: "",
+    satuan_id: "",
     deskripsi: "",
     harga_jual: 0,
     markup_persen: 30,
@@ -110,6 +114,7 @@ export function EditProductPage() {
     setFormData({
       nama: productData.nama || "",
       kategori: productData.kategori || "",
+      satuan_id: productData.satuan_id || productData.unit_id || "",
       deskripsi: productData.deskripsi || "",
       harga_jual: productData.harga_jual || 0,
       markup_persen: productData.markup_persen ?? 30,
@@ -168,6 +173,10 @@ export function EditProductPage() {
       toast.error("Nama produk wajib diisi");
       return;
     }
+    if (!formData.satuan_id) {
+      toast.error("Satuan wajib dipilih");
+      return;
+    }
 
     try {
       await updateMutation.mutateAsync({
@@ -221,7 +230,7 @@ export function EditProductPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                 <div className="space-y-1.5">
                   <Label htmlFor="nama" className="text-xs">Nama Produk <span className="text-red-500">*</span></Label>
                   <Input
@@ -243,6 +252,19 @@ export function EditProductPage() {
                     emptyMessage="Tidak ada kategori"
                     disabled={categoriesQuery.isLoading}
                     allowClear
+                    className="h-9 text-sm"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="satuan_id" className="text-xs">Satuan <span className="text-red-500">*</span></Label>
+                  <Combobox
+                    options={unitOptions}
+                    value={formData.satuan_id || ""}
+                    onChange={(v) => setFormData({ ...formData, satuan_id: v })}
+                    placeholder={loading ? "Memuat satuan..." : "Pilih satuan..."}
+                    searchPlaceholder="Cari satuan..."
+                    emptyMessage="Satuan tidak ditemukan"
+                    disabled={loading}
                     className="h-9 text-sm"
                   />
                 </div>

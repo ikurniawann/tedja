@@ -1,5 +1,5 @@
-import { PurchasingItemsPage } from "@/features/purchasing/items";
+import { redirect } from "next/navigation";
 
 export default function Page() {
-  return <PurchasingItemsPage />;
+  redirect("/dashboard/items");
 }

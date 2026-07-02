@@ -2,7 +2,7 @@
 
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import type { GrnListParams } from "./types";
-import { listGrns, getGrn, getGrnQC, getReceivingWorkspace } from "./api";
+import { listGrns, getGrn, getGrnQC, getReceivingWorkspace, getGrnVendorCredits } from "./api";
 import { grnQueryKeys } from "./query-keys";
 
 export const useGrnList = (params: GrnListParams) =>
@@ -23,6 +23,13 @@ export const useGrnQC = <T = unknown>(id: string) =>
   useQuery({
     queryKey: grnQueryKeys.qc(id),
     queryFn: () => getGrnQC<T>(id),
+    enabled: !!id,
+  });
+
+export const useGrnVendorCredits = (id: string) =>
+  useQuery({
+    queryKey: grnQueryKeys.vendorCredits(id),
+    queryFn: () => getGrnVendorCredits(id),
     enabled: !!id,
   });
 

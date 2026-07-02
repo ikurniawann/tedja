@@ -10,6 +10,7 @@ import {
   MagnifyingGlassIcon,
   XMarkIcon,
 } from "@heroicons/react/24/outline";
+import { PRODUCT_ROUTES, RM_ROUTES } from "@/modules/purchasing/constants/item-routes";
 import { useProductionDashboard, useProductCogs } from "../queries";
 import { useCreateProductionOrder } from "../mutations";
 import type { ProductionProduct as Product } from "../types";
@@ -164,7 +165,7 @@ export function ProductionPage() {
         </div>
         <div className="flex flex-wrap gap-2">
           <Link
-            href="/dashboard/purchasing/production/recipes"
+            href={RM_ROUTES.productionRecipes}
             className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-pink-600 px-3 text-sm font-semibold text-white shadow-sm hover:bg-pink-700"
           >
             <BeakerIcon className="h-4 w-4" />
@@ -262,7 +263,7 @@ export function ProductionPage() {
                         Stock Card
                       </Link>
                       <Link
-                        href="/dashboard/purchasing/production/recipes"
+                        href={RM_ROUTES.productionRecipes}
                         className="rounded-lg border border-pink-200 px-3 py-1.5 text-xs font-semibold text-pink-700 hover:bg-pink-50"
                       >
                         Pakai di BOM
@@ -338,7 +339,7 @@ export function ProductionPage() {
                     <td className="px-4 py-3">
                       <div className="flex justify-end gap-2">
                         <Link
-                          href={`/dashboard/items/products/bom/${product.id}?from=production`}
+                          href={`${PRODUCT_ROUTES.productsBom(product.id)}?from=production`}
                           className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
                         >
                           Recipe
@@ -393,7 +394,7 @@ export function ProductionPage() {
               {orders.map((order) => (
                 <tr key={order.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3">
-                    <Link href={`/dashboard/purchasing/production/orders/${order.id}`} className="font-semibold text-gray-950 hover:text-pink-700">
+                    <Link href={RM_ROUTES.productionOrder(order.id)} className="font-semibold text-gray-950 hover:text-pink-700">
                       {order.nomor_produksi}
                     </Link>
                     <div className="mt-1 flex flex-wrap gap-1">
@@ -415,7 +416,7 @@ export function ProductionPage() {
                   <td className="px-4 py-3 text-right font-semibold text-pink-700">{formatCurrency(order.hpp_per_unit)}</td>
                   <td className="px-4 py-3 text-right">
                     <Link
-                      href={`/dashboard/purchasing/production/orders/${order.id}`}
+                      href={RM_ROUTES.productionOrder(order.id)}
                       className="rounded-lg border border-pink-200 px-3 py-1.5 text-xs font-semibold text-pink-700 hover:bg-pink-50"
                     >
                       Detail

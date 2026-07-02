@@ -3,19 +3,56 @@
  * Prevents generic paths (e.g. /dashboard/settings) from staying active
  * when a sibling has a more specific match (e.g. /dashboard/settings/users).
  */
+import {
+  NAV_FROM_APPROVAL_PO,
+  NAV_FROM_APPROVAL_PR,
+  getApprovalPoMenuHref,
+  getApprovalPrMenuHref,
+  getPurchaseOrderListMenuHref,
+  getPurchaseRequestListMenuHref,
+  isPurchaseOrderDetailPath,
+  isPurchaseRequestDetailPath,
+  menuHrefsMatch,
+  normalizeMenuHref,
+  normalizePurchasingPathname,
+} from "./nav-context";
+
 export function isNavLinkActive(
   pathname: string,
   href: string,
-  peerHrefs: string[] = []
+  peerHrefs: string[] = [],
+  navFrom?: string | null
 ): boolean {
-  if (pathname === href) return true;
+  const normalizedPath = normalizePurchasingPathname(pathname);
+  const normalizedHref = normalizeMenuHref(href);
 
-  if (!pathname.startsWith(`${href}/`)) return false;
+  if (navFrom === NAV_FROM_APPROVAL_PR && isPurchaseRequestDetailPath(normalizedPath)) {
+    const approvalHref = getApprovalPrMenuHref(normalizedPath);
+    const purchaseRequestHref = getPurchaseRequestListMenuHref(normalizedPath);
+
+    if (approvalHref && menuHrefsMatch(href, approvalHref)) return true;
+    if (purchaseRequestHref && menuHrefsMatch(href, purchaseRequestHref)) return false;
+  }
+
+  if (navFrom === NAV_FROM_APPROVAL_PO && isPurchaseOrderDetailPath(normalizedPath)) {
+    const approvalHref = getApprovalPoMenuHref(normalizedPath);
+    const purchaseOrderHref = getPurchaseOrderListMenuHref(normalizedPath);
+
+    if (approvalHref && menuHrefsMatch(href, approvalHref)) return true;
+    if (purchaseOrderHref && menuHrefsMatch(href, purchaseOrderHref)) return false;
+  }
+
+  if (normalizedPath === normalizedHref) return true;
+
+  if (!normalizedPath.startsWith(`${normalizedHref}/`)) return false;
 
   const blockedByPeer = peerHrefs.some((peer) => {
-    if (peer === href || peer.length <= href.length) return false;
-    if (!peer.startsWith(`${href}/`)) return false;
-    return pathname === peer || pathname.startsWith(`${peer}/`);
+    const normalizedPeer = normalizeMenuHref(peer);
+    if (normalizedPeer === normalizedHref || normalizedPeer.length <= normalizedHref.length) {
+      return false;
+    }
+    if (!normalizedPeer.startsWith(`${normalizedHref}/`)) return false;
+    return normalizedPath === normalizedPeer || normalizedPath.startsWith(`${normalizedPeer}/`);
   });
 
   return !blockedByPeer;

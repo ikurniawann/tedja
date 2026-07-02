@@ -646,3 +646,43 @@ ALTER TABLE ONLY "purchasing"."vendor_payments"
     ADD CONSTRAINT "vendor_payments_purchase_order_id_fkey" FOREIGN KEY (purchase_order_id) REFERENCES purchase_orders(id) ON DELETE RESTRICT;
 ALTER TABLE ONLY "purchasing"."vendor_payments"
     ADD CONSTRAINT "vendor_payments_supplier_id_fkey" FOREIGN KEY (supplier_id) REFERENCES suppliers(id) ON DELETE RESTRICT;
+DO $$ BEGIN
+    ALTER TABLE ONLY "purchasing"."vendor_credit_items"
+        ADD CONSTRAINT "vendor_credit_items_vendor_credit_id_fkey" FOREIGN KEY (vendor_credit_id) REFERENCES vendor_credits(id) ON DELETE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+    ALTER TABLE ONLY "purchasing"."vendor_credit_items"
+        ADD CONSTRAINT "vendor_credit_items_grn_item_id_fkey" FOREIGN KEY (grn_item_id) REFERENCES grn_items(id) ON DELETE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+    ALTER TABLE ONLY "purchasing"."vendor_credit_items"
+        ADD CONSTRAINT "vendor_credit_items_raw_material_id_fkey" FOREIGN KEY (raw_material_id) REFERENCES raw_materials(id) ON DELETE RESTRICT;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+    ALTER TABLE ONLY "purchasing"."vendor_credits"
+        ADD CONSTRAINT "vendor_credits_grn_id_fkey" FOREIGN KEY (grn_id) REFERENCES grn(id) ON DELETE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+    ALTER TABLE ONLY "purchasing"."vendor_credits"
+        ADD CONSTRAINT "vendor_credits_purchase_order_id_fkey" FOREIGN KEY (purchase_order_id) REFERENCES purchase_orders(id) ON DELETE SET NULL;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+    ALTER TABLE ONLY "purchasing"."vendor_credits"
+        ADD CONSTRAINT "vendor_credits_supplier_id_fkey" FOREIGN KEY (supplier_id) REFERENCES suppliers(id) ON DELETE SET NULL;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+    ALTER TABLE ONLY "purchasing"."vendor_credits"
+        ADD CONSTRAINT "vendor_credits_approved_by_fkey" FOREIGN KEY (approved_by) REFERENCES staff(id) ON DELETE SET NULL;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+    ALTER TABLE ONLY "purchasing"."vendor_credits"
+        ADD CONSTRAINT "vendor_credits_created_by_fkey" FOREIGN KEY (created_by) REFERENCES staff(id) ON DELETE SET NULL;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;

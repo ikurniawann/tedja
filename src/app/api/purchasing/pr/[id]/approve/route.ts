@@ -2,6 +2,11 @@ import { createServerPgClient } from "@/lib/pg/create-client";
 import { requireUser } from "@/lib/auth/require-user";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import {
+  effectiveBranchId,
+  effectiveCompanyId,
+  getApiUserScope,
+} from "@/lib/api/scope";
 
 const approvalSchema = z.object({
   action: z.enum(["approve", "reject"]),
@@ -12,6 +17,8 @@ type PRApprovalUpdate = {
   updated_at: string;
   status?: "approved" | "rejected";
   current_approval_level?: string | null;
+  company_id?: string | null;
+  branch_id?: string | null;
   approved_by_head?: string;
   approved_at_head?: string;
   approved_by_finance?: string;
@@ -103,6 +110,18 @@ export async function POST(
 
       updates.status = "approved";
       updates.current_approval_level = null;
+
+      if (!pr.company_id || !pr.branch_id) {
+        const { data: requester } = await db
+          .from("users")
+          .select("company_id, branch_id")
+          .eq("id", pr.requester_id)
+          .maybeSingle();
+
+        const scope = await getApiUserScope();
+        updates.company_id = pr.company_id ?? requester?.company_id ?? effectiveCompanyId(scope);
+        updates.branch_id = pr.branch_id ?? requester?.branch_id ?? effectiveBranchId(scope);
+      }
     } else {
       // Reject
       updates.status = "rejected";

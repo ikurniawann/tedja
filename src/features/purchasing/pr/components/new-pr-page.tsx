@@ -2,11 +2,9 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 import { PRForm } from "@/components/purchasing/pr-form";
-import { Button } from "@/components/ui/button";
+import { PurchasingFormHeader } from "@/modules/purchasing/components/page/purchasing-page-header";
 import { usePRFormData } from "../queries";
 import { useCreatePurchaseRequest } from "../mutations";
 import type { PRFormInput } from "../types";
@@ -24,18 +22,20 @@ export function NewPRPage() {
 
   async function handleCreatePR(data: PRFormInput, action: "draft" | "submit") {
     try {
-      const res = await createMutation.mutateAsync({ ...data, action });
-      toast.success(action === "draft" ? "PR draft berhasil disimpan" : "PR berhasil disubmit");
+      await createMutation.mutateAsync({ ...data, action });
+      toast.success(
+        action === "draft" ? "Draft purchase request saved" : "Purchase request submitted"
+      );
       router.push("/dashboard/purchasing/pr");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Gagal menyimpan PR");
+      toast.error(err instanceof Error ? err.message : "Failed to save purchase request");
     }
   }
 
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-20 text-sm text-gray-500">
-        Memuat form PR...
+        Loading purchase request form...
       </div>
     );
   }
@@ -43,29 +43,18 @@ export function NewPRPage() {
   if (isError || !formData) {
     return (
       <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-        {error instanceof Error ? error.message : "Gagal memuat data form PR"}
+        {error instanceof Error ? error.message : "Failed to load purchase request form data"}
       </div>
     );
   }
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-4">
-          <Link href="/dashboard/purchasing/pr">
-            <Button variant="ghost" size="icon" className="h-9 w-9">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Buat Purchase Request</h1>
-            <p className="text-sm text-gray-500">Isi kebutuhan pembelian sebelum dibuatkan PO</p>
-          </div>
-        </div>
-        <Link href="/dashboard/purchasing/pr">
-          <Button variant="outline" className="purchasing-secondary-button">Kembali ke PR</Button>
-        </Link>
-      </div>
+      <PurchasingFormHeader
+        backHref="/dashboard/purchasing/pr"
+        title="Create Purchase Request"
+        description="Enter purchasing needs before creating a purchase order"
+      />
 
       <PRForm
         departments={formData.departments}
@@ -73,6 +62,7 @@ export function NewPRPage() {
         units={formData.units}
         onSubmit={handleCreatePR}
         isLoading={createMutation.isPending}
+        cancelHref="/dashboard/purchasing/pr"
       />
     </div>
   );

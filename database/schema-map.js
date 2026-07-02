@@ -124,11 +124,15 @@ const TABLE_DOMAIN = {
   po_items: "purchasing",
   purchase_returns: "purchasing",
   purchase_return_items: "purchasing",
+  vendor_credits: "purchasing",
+  vendor_credit_items: "purchasing",
   returns: "purchasing",
   goods_receipts: "purchasing",
   gr_items: "purchasing",
   grn: "purchasing",
   grn_items: "purchasing",
+  grn_qc_inspections: "purchasing",
+  grn_qc_inspection_items: "purchasing",
   deliveries: "purchasing",
   qc_inspections: "purchasing",
   supplier_price_list: "purchasing",
@@ -138,6 +142,10 @@ const TABLE_DOMAIN = {
   // ── inventory ────────────────────────────────────────────────────────────
   inventory: "inventory",
   inventory_movements: "inventory",
+  stock_opnames: "inventory",
+  stock_opname_lines: "inventory",
+  product_stock_opnames: "inventory",
+  product_stock_opname_lines: "inventory",
   finished_goods_inventory: "inventory",
 
   // ── manufacturing (produksi) ─────────────────────────────────────────────
@@ -147,7 +155,7 @@ const TABLE_DOMAIN = {
   bom: "manufacturing",
   bom_items: "manufacturing",
 
-  // ── core (lintas domain, tetap di public) ────────────────────────────────
+  // ── core / public (lintas domain, fisik di schema public → folder schemas/public/) ──
   notifications: "core",
   notifications_log: "core",
   ai_assistant_sessions: "core",
@@ -163,8 +171,9 @@ function domainForTable(table, schema) {
   return TABLE_DOMAIN[table] || "core";
 }
 
-/** Nama folder domain (tanpa nomor), mis. "hris". */
+/** Nama folder domain (tanpa nomor), mis. "hris". Tabel `public` → `schemas/public/`. */
 function folderForDomain(domain) {
+  if (domain === "core") return "public";
   return domain;
 }
 

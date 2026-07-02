@@ -2,41 +2,54 @@
 
 import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Combobox } from "@/components/ui/combobox";
+import { NumericInput } from "@/components/ui/numeric-input";
+import { DsDateTimePicker } from "@/components/design-system";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Table,
-  TableHeader,
-  TableBody,
-  TableRow,
-  TableHead,
-  TableCell,
-} from "@/components/ui/table";
-import { useReturnFormData } from "../queries";
+  PurchasingFormFooter,
+  PurchasingFormHeader,
+} from "@/modules/purchasing/components/page/purchasing-page-header";
+import { RM_ROUTES } from "@/modules/purchasing/constants/item-routes";
+import { useReturnFormData, useReturnGrnOptions } from "../queries";
 import { useCreateReturn } from "../mutations";
+import { ReturnReasonType, ReturnableItem } from "@/types/purchasing";
+import { formatAmount } from "@/lib/purchasing/utils";
 import {
-  RETURN_REASON_LABELS,
-  ReturnReasonType,
-  ReturnableItem,
-} from "@/types/purchasing";
-import { ArrowLeft, Save, Plus, Trash2, AlertCircle } from "lucide-react";
-import { formatRupiah } from "@/lib/purchasing/utils";
+  AlertCircle,
+  ClipboardList,
+  Info,
+  Loader2,
+  Package,
+  RotateCcw,
+} from "lucide-react";
 import { toast } from "sonner";
+
+const RETURN_REASON_OPTIONS: { value: ReturnReasonType; label: string }[] = [
+  { value: "damaged", label: "Damaged Goods" },
+  { value: "wrong_item", label: "Wrong Item" },
+  { value: "expired", label: "Expired" },
+  { value: "overstock", label: "Overstock" },
+  { value: "specification_mismatch", label: "Specification Mismatch" },
+  { value: "other", label: "Other" },
+];
+
+const GUIDELINES = [
+  "Only goods receipts that have completed quality control can be returned.",
+  "Return quantity cannot exceed the QC-posted quantity minus prior returns.",
+  "Submitted returns require purchasing manager approval before stock is deducted.",
+];
 
 function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
+}
+
+function formatQty(value: number) {
+  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 4 }).format(value);
 }
 
 interface ReturnItem extends ReturnableItem {
@@ -48,35 +61,56 @@ interface ReturnItem extends ReturnableItem {
 export function NewReturnPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const grnId = searchParams.get("grn_id");
+  const initialGrnId = searchParams.get("grn_id") || "";
 
+  const [selectedGrnId, setSelectedGrnId] = useState(initialGrnId);
   const [returnableItems, setReturnableItems] = useState<ReturnItem[]>([]);
-
   const [formData, setFormData] = useState({
-    grn_id: grnId || "",
+    grn_id: initialGrnId,
     supplier_id: "",
     return_date: new Date().toISOString().split("T")[0],
-    reason_type: "" as ReturnReasonType,
+    reason_type: "" as ReturnReasonType | "",
     reason_notes: "",
     notes: "",
   });
 
-  const formDataQuery = useReturnFormData(grnId);
-  const suppliers = formDataQuery.data?.suppliers ?? [];
-  const loading = formDataQuery.isLoading;
+  const grnOptionsQuery = useReturnGrnOptions();
+  const grnOptions = grnOptionsQuery.data ?? [];
+  const formDataQuery = useReturnFormData(selectedGrnId || null);
+  const loadingGrnOptions = grnOptionsQuery.isLoading;
+  const loadingItems = Boolean(selectedGrnId) && formDataQuery.isLoading;
 
   const createMutation = useCreateReturn();
   const isSubmitting = createMutation.isPending;
 
+  const selectedGrn = grnOptions.find((grn) => grn.id === selectedGrnId);
+
+  useEffect(() => {
+    if (grnOptionsQuery.isError) {
+      toast.error("Failed to load goods receipt options");
+    }
+  }, [grnOptionsQuery.isError]);
+
   useEffect(() => {
     if (formDataQuery.isError) {
-      console.error("Error loading data:", formDataQuery.error);
-      toast.error("Gagal memuat data");
+      console.error("Error loading return items:", formDataQuery.error);
+      toast.error("Failed to load returnable items");
     }
   }, [formDataQuery.isError, formDataQuery.error]);
 
   useEffect(() => {
+    if (initialGrnId && initialGrnId !== selectedGrnId) {
+      setSelectedGrnId(initialGrnId);
+    }
+  }, [initialGrnId, selectedGrnId]);
+
+  useEffect(() => {
     const itemsData = formDataQuery.data?.returnableItems;
+    if (!selectedGrnId) {
+      setReturnableItems([]);
+      return;
+    }
+
     if (!itemsData) return;
 
     setReturnableItems(
@@ -91,20 +125,38 @@ export function NewReturnPage() {
     if (itemsData.length > 0) {
       setFormData((prev) => ({
         ...prev,
-        supplier_id: itemsData[0].supplier_id,
         grn_id: itemsData[0].grn_id,
+        supplier_id: itemsData[0].supplier_id,
+      }));
+    } else if (selectedGrn) {
+      setFormData((prev) => ({
+        ...prev,
+        grn_id: selectedGrn.id,
+        supplier_id: selectedGrn.supplier_id,
       }));
     }
-  }, [formDataQuery.data]);
+  }, [formDataQuery.data, selectedGrnId, selectedGrn]);
+
+  const handleGrnChange = (grnId: string) => {
+    setSelectedGrnId(grnId);
+    setReturnableItems([]);
+    setFormData((prev) => ({
+      ...prev,
+      grn_id: grnId,
+      supplier_id: "",
+    }));
+  };
 
   const toggleItem = (grnItemId: string) => {
     setReturnableItems((items) =>
       items.map((item) =>
-        item.grn_item_id === grnItemId
-          ? { ...item, selected: !item.selected }
-          : item
+        item.grn_item_id === grnItemId ? { ...item, selected: !item.selected } : item
       )
     );
+  };
+
+  const toggleAllItems = (checked: boolean) => {
+    setReturnableItems((items) => items.map((item) => ({ ...item, selected: checked })));
   };
 
   const updateQtyReturn = (grnItemId: string, qty: number) => {
@@ -113,7 +165,8 @@ export function NewReturnPage() {
         item.grn_item_id === grnItemId
           ? {
               ...item,
-              qty_return: Math.min(qty, item.qty_available_to_return),
+              qty_return: Math.min(Math.max(0, qty), item.qty_available_to_return),
+              selected: qty > 0 ? true : item.selected,
             }
           : item
       )
@@ -123,9 +176,7 @@ export function NewReturnPage() {
   const updateConditionNotes = (grnItemId: string, notes: string) => {
     setReturnableItems((items) =>
       items.map((item) =>
-        item.grn_item_id === grnItemId
-          ? { ...item, condition_notes: notes }
-          : item
+        item.grn_item_id === grnItemId ? { ...item, condition_notes: notes } : item
       )
     );
   };
@@ -133,13 +184,16 @@ export function NewReturnPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Validation
+    if (!formData.grn_id) {
+      toast.error("Goods receipt is required");
+      return;
+    }
     if (!formData.supplier_id) {
-      toast.error("Supplier wajib dipilih");
+      toast.error("Supplier is required");
       return;
     }
     if (!formData.reason_type) {
-      toast.error("Alasan return wajib dipilih");
+      toast.error("Return reason is required");
       return;
     }
 
@@ -148,28 +202,23 @@ export function NewReturnPage() {
     );
 
     if (selectedItems.length === 0) {
-      toast.error("Pilih minimal 1 item untuk di-return");
+      toast.error("Select at least one item with a return quantity");
       return;
     }
 
-    // Validate qty
     for (const item of selectedItems) {
       if (item.qty_return > item.qty_available_to_return) {
-        toast.error(`Qty return ${item.raw_material_nama} melebihi yang tersedia`);
-        return;
-      }
-      if (item.qty_return <= 0) {
-        toast.error(`Qty return ${item.raw_material_nama} harus > 0`);
+        toast.error(`Return qty for ${item.raw_material_nama} exceeds available quantity`);
         return;
       }
     }
 
     try {
-      const returnData = {
+      await createMutation.mutateAsync({
         grn_id: formData.grn_id,
         supplier_id: formData.supplier_id,
         return_date: formData.return_date,
-        reason_type: formData.reason_type,
+        reason_type: formData.reason_type as ReturnReasonType,
         reason_notes: formData.reason_notes,
         notes: formData.notes,
         items: selectedItems.map((item) => ({
@@ -181,18 +230,16 @@ export function NewReturnPage() {
           expiry_date: item.expiry_date,
           condition_notes: item.condition_notes,
         })),
-      };
-
-      await createMutation.mutateAsync(returnData);
-      toast.success("Return berhasil dibuat dan menunggu persetujuan");
-      router.push("/dashboard/purchasing/returns");
+      });
+      toast.success("Purchase return created and pending approval");
+      router.push(RM_ROUTES.purchasingReturns);
     } catch (error: unknown) {
       console.error("Error creating return:", error);
-      toast.error(getErrorMessage(error, "Gagal membuat return"));
+      toast.error(getErrorMessage(error, "Failed to create purchase return"));
     }
   };
 
-  const selectedCount = returnableItems.filter((i) => i.selected).length;
+  const selectedCount = returnableItems.filter((i) => i.selected && i.qty_return > 0).length;
   const totalQty = returnableItems
     .filter((i) => i.selected)
     .reduce((sum, i) => sum + i.qty_return, 0);
@@ -200,257 +247,248 @@ export function NewReturnPage() {
     .filter((i) => i.selected)
     .reduce((sum, i) => sum + i.qty_return * i.unit_price, 0);
 
-  if (loading) {
+  const allSelected =
+    returnableItems.length > 0 && returnableItems.every((item) => item.selected);
+
+  if (loadingGrnOptions && !grnOptions.length) {
     return (
-      <div className="p-6 flex items-center justify-center min-h-[400px]">
-        <p className="text-gray-500">Memuat data...</p>
+      <div className="flex min-h-[320px] items-center justify-center">
+        <Loader2 className="h-6 w-6 animate-spin text-pink-600" />
       </div>
     );
   }
 
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mt-4 mb-6">
-        <div>
-          <h1 className="text-2xl font-bold">Buat Return Baru</h1>
-          <p className="text-sm text-gray-500">
-            Retur barang ke supplier
-          </p>
-        </div>
-        <Link href="/dashboard/purchasing/returns">
-          <Button variant="outline" className="purchasing-secondary-button">
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Kembali
-          </Button>
-        </Link>
-      </div>
+    <div className="space-y-6">
+      <PurchasingFormHeader
+        backHref={RM_ROUTES.purchasingReturns}
+        title="Create Purchase Return"
+        description="Return QC-completed goods to the supplier."
+      />
 
-      <form onSubmit={handleSubmit}>
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left Column - Form */}
-          <div className="lg:col-span-2 space-y-4">
-            {/* Return Info */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Informasi Return</CardTitle>
+      <form id="purchase-return-form" onSubmit={handleSubmit} className="space-y-6">
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
+          <div className="space-y-6 xl:col-span-8">
+            <Card className="border-gray-200/70 shadow-xs">
+              <CardHeader className="border-b border-gray-200/70 pb-3">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <ClipboardList className="h-4 w-4 text-pink-600" />
+                  Return Information
+                </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="return_date">Tanggal Return *</Label>
-                    <Input
-                      id="return_date"
-                      type="date"
-                      value={formData.return_date}
-                      onChange={(e) =>
+              <CardContent className="space-y-4 pt-4">
+                <div className="min-w-0 space-y-1.5">
+                  <Label className="text-xs">
+                    Goods Receipt <span className="text-red-500">*</span>
+                  </Label>
+                  <Combobox
+                    options={grnOptions.map((grn) => ({
+                      value: grn.id,
+                      label: grn.nomor_grn,
+                      description: grn.supplier?.nama_supplier || undefined,
+                    }))}
+                    value={selectedGrnId}
+                    onChange={handleGrnChange}
+                    placeholder={
+                      loadingGrnOptions ? "Loading goods receipts..." : "Select goods receipt"
+                    }
+                    searchPlaceholder="Search GRN number..."
+                    emptyMessage="No QC-completed goods receipts found"
+                    disabled={loadingGrnOptions}
+                    className="w-full! h-9 text-sm"
+                  />
+                  <p className="text-xs text-gray-500">
+                    Only receipts with completed quality control are listed.
+                  </p>
+                </div>
+
+                {selectedGrn && (
+                  <div className="grid grid-cols-1 gap-3 rounded-xl border border-gray-200/70 bg-gray-50/60 p-4 text-sm md:grid-cols-2">
+                    <div>
+                      <p className="text-xs text-gray-500">GRN Number</p>
+                      <p className="font-medium text-gray-900">{selectedGrn.nomor_grn}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Supplier</p>
+                      <p className="font-medium text-gray-900">
+                        {selectedGrn.supplier?.nama_supplier || "-"}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <DsDateTimePicker
+                    label="Return Date"
+                    value={formData.return_date}
+                    onChange={(value) =>
+                      setFormData((prev) => ({ ...prev, return_date: value }))
+                    }
+                    placeholder="Select return date..."
+                    dateOnly
+                    required
+                  />
+                  <div className="min-w-0 space-y-1.5">
+                    <Label className="text-xs">
+                      Return Reason <span className="text-red-500">*</span>
+                    </Label>
+                    <Combobox
+                      options={RETURN_REASON_OPTIONS}
+                      value={formData.reason_type}
+                      onChange={(value) =>
                         setFormData((prev) => ({
                           ...prev,
-                          return_date: e.target.value,
+                          reason_type: value as ReturnReasonType,
                         }))
                       }
-                      required
+                      placeholder="Select reason..."
+                      searchPlaceholder="Search reason..."
+                      emptyMessage="No reason found"
+                      className="w-full! h-9 text-sm"
                     />
                   </div>
-                  <div>
-                    <Label htmlFor="supplier_id">Supplier *</Label>
-                    <Select
-                      value={formData.supplier_id}
-                      onValueChange={(value) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          supplier_id: value,
-                        }))
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Pilih supplier" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {suppliers.map((supplier) => (
-                          <SelectItem
-                            key={supplier.id}
-                            value={supplier.id}
-                          >
-                            {supplier.nama_supplier}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
                 </div>
 
-                <div>
-                  <Label htmlFor="reason_type">Alasan Return *</Label>
-                  <Select
-                    value={formData.reason_type}
-                    onValueChange={(value) =>
-                      setFormData((prev) => ({
-                        ...prev,
-                        reason_type: value as ReturnReasonType,
-                      }))
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Pilih alasan" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {Object.entries(RETURN_REASON_LABELS).map(
-                        ([key, label]) => (
-                          <SelectItem key={key} value={key}>
-                            {label}
-                          </SelectItem>
-                        )
-                      )}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div>
-                  <Label htmlFor="reason_notes">Catatan Alasan</Label>
+                <div className="space-y-1.5">
+                  <Label htmlFor="reason_notes" className="text-xs">
+                    Reason Notes
+                  </Label>
                   <Textarea
                     id="reason_notes"
-                    placeholder="Jelaskan alasan return secara detail..."
+                    placeholder="Describe the return reason in detail..."
                     value={formData.reason_notes}
                     onChange={(e) =>
-                      setFormData((prev) => ({
-                        ...prev,
-                        reason_notes: e.target.value,
-                      }))
+                      setFormData((prev) => ({ ...prev, reason_notes: e.target.value }))
                     }
                     rows={3}
+                    className="resize-none text-sm"
                   />
                 </div>
 
-                <div>
-                  <Label htmlFor="notes">Catatan Tambahan</Label>
+                <div className="space-y-1.5">
+                  <Label htmlFor="notes" className="text-xs">
+                    Internal Notes
+                  </Label>
                   <Textarea
                     id="notes"
-                    placeholder="Catatan internal (opsional)..."
+                    placeholder="Optional internal notes..."
                     value={formData.notes}
                     onChange={(e) =>
-                      setFormData((prev) => ({
-                        ...prev,
-                        notes: e.target.value,
-                      }))
+                      setFormData((prev) => ({ ...prev, notes: e.target.value }))
                     }
                     rows={2}
+                    className="resize-none text-sm"
                   />
                 </div>
               </CardContent>
             </Card>
 
-            {/* Items Selection */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Pilih Item untuk Return</CardTitle>
+            <Card className="border-gray-200/70 shadow-xs">
+              <CardHeader className="border-b border-gray-200/70 pb-3">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Package className="h-4 w-4 text-pink-600" />
+                  Select Items to Return
+                </CardTitle>
               </CardHeader>
-              <CardContent>
-                {returnableItems.length === 0 ? (
-                  <div className="flex flex-col items-center py-12 text-gray-400">
-                    <AlertCircle className="w-12 h-12 mb-2" />
-                    <p>Tidak ada item yang bisa di-return</p>
-                    <p className="text-sm">
-                      Pastikan GRN memiliki item dengan QC status rejected
+              <CardContent className="p-0">
+                {!selectedGrnId ? (
+                  <div className="flex flex-col items-center py-14 text-center text-sm text-gray-500">
+                    <RotateCcw className="mb-3 h-10 w-10 text-gray-300" />
+                    Select a goods receipt to view returnable items.
+                  </div>
+                ) : loadingItems ? (
+                  <div className="flex items-center justify-center py-14">
+                    <Loader2 className="h-6 w-6 animate-spin text-pink-600" />
+                  </div>
+                ) : returnableItems.length === 0 ? (
+                  <div className="flex flex-col items-center px-4 py-14 text-center">
+                    <AlertCircle className="mb-3 h-10 w-10 text-gray-300" />
+                    <p className="text-sm text-gray-600">No returnable items found</p>
+                    <p className="mt-1 max-w-md text-xs text-gray-500">
+                      This goods receipt has no QC-posted quantity available to return, or all
+                      quantities have already been returned.
                     </p>
                   </div>
                 ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead className="bg-gray-50 border-b">
+                  <div className="overflow-x-auto p-4">
+                    <table className="w-full table-fixed border-collapse text-sm [&_td]:border [&_td]:border-gray-200/70 [&_th]:border [&_th]:border-gray-200/70">
+                      <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
                         <tr>
-                          <th className="text-left px-4 py-3 w-10">
-                            <input
-                              type="checkbox"
-                              checked={
-                                selectedCount === returnableItems.length &&
-                                returnableItems.length > 0
-                              }
-                              onChange={(e) => {
-                                const checked = e.target.checked;
-                                setReturnableItems((items) =>
-                                  items.map((item) => ({
-                                    ...item,
-                                    selected: checked,
-                                  }))
-                                );
-                              }}
-                              className="rounded border-gray-300"
+                          <th className="w-10 px-2 py-3 text-center font-semibold">
+                            <Checkbox
+                              checked={allSelected}
+                              onCheckedChange={(checked) => toggleAllItems(checked === true)}
+                              aria-label="Select all items"
                             />
                           </th>
-                          <th className="text-left px-4 py-3">Bahan Baku</th>
-                          <th className="text-right px-4 py-3">Qty Diterima</th>
-                          <th className="text-right px-4 py-3">Sudah Return</th>
-                          <th className="text-right px-4 py-3">Bisa Return</th>
-                          <th className="text-right px-4 py-3 w-32">Qty Return</th>
-                          <th className="text-left px-4 py-3">Kondisi</th>
+                          <th className="px-4 py-3 text-left font-semibold">Raw Material</th>
+                          <th className="w-[88px] px-2 py-3 text-center font-semibold">Received</th>
+                          <th className="w-[88px] px-2 py-3 text-center font-semibold">Returned</th>
+                          <th className="w-[96px] px-2 py-3 text-center font-semibold">Available</th>
+                          <th className="w-[112px] px-2 py-3 text-center font-semibold">
+                            Return Qty
+                          </th>
+                          <th className="min-w-[140px] px-3 py-3 text-left font-semibold">
+                            Condition
+                          </th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y">
+                      <tbody>
                         {returnableItems.map((item) => (
-                          <TableRow
+                          <tr
                             key={item.grn_item_id}
-                            className={item.selected ? "bg-pink-50" : ""}
+                            className={`bg-white ${item.selected ? "bg-pink-50/40" : "hover:bg-gray-50/80"}`}
                           >
-                            <td className="px-4 py-3">
-                              <input
-                                type="checkbox"
+                            <td className="px-2 py-3 text-center align-middle">
+                              <Checkbox
                                 checked={item.selected}
-                                onChange={() => toggleItem(item.grn_item_id)}
-                                className="rounded border-gray-300"
+                                onCheckedChange={() => toggleItem(item.grn_item_id)}
+                                aria-label={`Select ${item.raw_material_nama}`}
                               />
                             </td>
-                            <td className="px-4 py-3">
-                              <div>
-                                <p className="font-medium">{item.raw_material_nama}</p>
-                                <p className="text-xs text-gray-500">
-                                  {item.raw_material_kode}
-                                </p>
+                            <td className="px-4 py-3 align-top">
+                              <div className="font-medium text-gray-900">
+                                {item.raw_material_nama}
+                              </div>
+                              <div className="mt-0.5 text-xs text-gray-500">
+                                {item.raw_material_kode}
                               </div>
                             </td>
-                            <td className="px-4 py-3 text-right">
-                              {item.qty_diterima.toLocaleString()} {item.satuan || ""}
+                            <td className="px-2 py-3 text-center align-middle text-gray-700">
+                              {formatQty(item.qty_diterima)}
                             </td>
-                            <td className="px-4 py-3 text-right text-gray-500">
-                              {item.qty_returned.toLocaleString()}
+                            <td className="px-2 py-3 text-center align-middle text-gray-500">
+                              {formatQty(item.qty_returned)}
                             </td>
-                            <td className="px-4 py-3 text-right font-medium text-green-600">
-                              {item.qty_available_to_return.toLocaleString()}
+                            <td className="px-2 py-3 text-center align-middle font-semibold text-pink-700">
+                              {formatQty(item.qty_available_to_return)}
                             </td>
-                            <td className="px-4 py-3">
-                              <Input
-                                type="number"
-                                min="0"
+                            <td className="px-1.5 py-1.5 align-middle">
+                              <NumericInput
+                                min={0}
                                 max={item.qty_available_to_return}
-                                value={
-                                  item.selected ? item.qty_return || "" : ""
+                                value={item.selected ? item.qty_return : 0}
+                                onValueChange={(value) =>
+                                  updateQtyReturn(item.grn_item_id, value || 0)
                                 }
-                                onChange={(e) =>
-                                  updateQtyReturn(
-                                    item.grn_item_id,
-                                    parseFloat(e.target.value) || 0
-                                  )
-                                }
+                                decimalScale={4}
                                 disabled={!item.selected}
-                                className="w-24 text-right"
-                                placeholder="0"
+                                className="h-9 w-full border-gray-200/80 bg-white px-2 text-center text-sm focus-visible:border-pink-300 focus-visible:ring-1 focus-visible:ring-pink-200/80 disabled:bg-gray-50"
                               />
                             </td>
-                            <td className="px-4 py-3">
-                              <Input
+                            <td className="px-1.5 py-1.5 align-middle">
+                              <input
                                 type="text"
                                 value={item.condition_notes}
                                 onChange={(e) =>
-                                  updateConditionNotes(
-                                    item.grn_item_id,
-                                    e.target.value
-                                  )
+                                  updateConditionNotes(item.grn_item_id, e.target.value)
                                 }
                                 disabled={!item.selected}
-                                placeholder="Kondisi barang..."
-                                className="text-xs"
+                                placeholder="Item condition..."
+                                className="h-9 w-full rounded-lg border border-gray-200/80 bg-white px-2 text-sm focus:border-pink-300 focus:outline-none focus:ring-1 focus:ring-pink-200/80 disabled:bg-gray-50"
                               />
                             </td>
-                          </TableRow>
+                          </tr>
                         ))}
                       </tbody>
                     </table>
@@ -460,74 +498,83 @@ export function NewReturnPage() {
             </Card>
           </div>
 
-          {/* Right Column - Summary */}
-          <div className="space-y-4">
-            <Card className="sticky top-6">
-              <CardHeader>
-                <CardTitle className="text-lg">Summary</CardTitle>
+          <div className="xl:col-span-4">
+            <Card className="border-gray-200/70 shadow-xs xl:sticky xl:top-6">
+              <CardHeader className="border-b border-gray-200/70 pb-3">
+                <CardTitle className="text-base">Summary</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-500">Item Dipilih</span>
-                    <span className="font-medium">{selectedCount} item</span>
+              <CardContent className="space-y-4 pt-4">
+                <dl className="space-y-3 text-sm">
+                  <div className="flex items-start justify-between gap-3">
+                    <dt className="text-gray-500">Selected Items</dt>
+                    <dd className="font-medium text-gray-900">{selectedCount}</dd>
                   </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-500">Total Qty</span>
-                    <span className="font-medium">
-                      {totalQty.toLocaleString()}
-                    </span>
+                  <div className="flex items-start justify-between gap-3">
+                    <dt className="text-gray-500">Total Quantity</dt>
+                    <dd className="font-medium text-gray-900">{formatQty(totalQty)}</dd>
                   </div>
-                  <div className="border-t pt-2">
-                    <div className="flex justify-between">
-                      <span className="font-medium">Total Nilai</span>
-                      <span className="font-bold text-pink-600">
-                        {formatRupiah(totalAmount)}
-                      </span>
-                    </div>
+                  <div className="flex items-start justify-between gap-3 border-t border-gray-200/70 pt-3">
+                    <dt className="font-medium text-gray-900">Total Amount</dt>
+                    <dd className="font-semibold text-pink-700">
+                      {formatAmount(totalAmount)}
+                    </dd>
                   </div>
+                </dl>
+
+                <div className="rounded-xl border border-gray-200/70 bg-gray-50/60 p-4">
+                  <div className="mb-2 flex items-center gap-2 text-sm font-medium text-gray-900">
+                    <Info className="h-4 w-4 text-pink-600" />
+                    Guidelines
+                  </div>
+                  <ul className="space-y-2 text-xs leading-5 text-gray-600">
+                    {GUIDELINES.map((line) => (
+                      <li key={line} className="flex gap-2">
+                        <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-gray-400" />
+                        <span>{line}</span>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
 
-                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
-                  <div className="flex items-start gap-2">
-                    <AlertCircle className="w-5 h-5 text-yellow-600 mt-0.5" />
-                    <div className="text-xs text-yellow-800">
-                      <p className="font-medium mb-1">Info Penting:</p>
-                      <ul className="list-disc list-inside space-y-1">
-                        <li>Return akan menunggu persetujuan Purchasing Manager</li>
-                        <li>Stock inventory akan berkurang setelah approved</li>
-                        <li>GRN akan diupdate dengan qty returned</li>
-                      </ul>
+                {selectedCount > 0 && (
+                  <div className="rounded-xl border border-gray-200/70 bg-white p-4">
+                    <div className="mb-2 flex items-center gap-2 text-sm font-medium text-gray-900">
+                      <Package className="h-4 w-4 text-pink-600" />
+                      Item Preview
                     </div>
+                    <ul className="space-y-2 text-xs text-gray-600">
+                      {returnableItems
+                        .filter((item) => item.selected && item.qty_return > 0)
+                        .slice(0, 4)
+                        .map((item) => (
+                          <li
+                            key={item.grn_item_id}
+                            className="flex items-center justify-between gap-3"
+                          >
+                            <span className="truncate">{item.raw_material_nama}</span>
+                            <span className="shrink-0 font-medium text-gray-900">
+                              {formatQty(item.qty_return)}
+                            </span>
+                          </li>
+                        ))}
+                      {selectedCount > 4 && (
+                        <li className="text-gray-500">+{selectedCount - 4} more items</li>
+                      )}
+                    </ul>
                   </div>
-                </div>
-
-                <Button
-                  type="submit"
-                  className="purchasing-main-button w-full"
-                  disabled={
-                    isSubmitting ||
-                    selectedCount === 0 ||
-                    totalQty <= 0
-                  }
-                >
-                  <Save className="w-4 h-4 mr-2" />
-                  {isSubmitting ? "Menyimpan..." : "Submit Return"}
-                </Button>
-
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="purchasing-secondary-button w-full"
-                  onClick={() => router.back()}
-                  disabled={isSubmitting}
-                >
-                  Batal
-                </Button>
+                )}
               </CardContent>
             </Card>
           </div>
         </div>
+
+        <PurchasingFormFooter
+          onCancel={() => router.push(RM_ROUTES.purchasingReturns)}
+          submitLabel="Submit Return"
+          loading={isSubmitting}
+          disabled={!selectedGrnId || selectedCount === 0 || totalQty <= 0}
+          formId="purchase-return-form"
+        />
       </form>
     </div>
   );

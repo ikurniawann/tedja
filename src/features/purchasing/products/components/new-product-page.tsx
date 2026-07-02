@@ -16,6 +16,7 @@ import { ProductFormData, RawMaterialWithStock, BOMItemFormData } from "@/types/
 import { ITEMS_PRODUCTS_PATH } from "@/modules/purchasing/constants/items-nav";
 import { useProductFormData, useProductCategoryOptions } from "../queries";
 import { useCreateProduct, useCreateBOMItem } from "../mutations";
+import { mapUnitComboboxOptions } from "../product-unit";
 
 interface BOMFormItem extends Partial<BOMItemFormData> {
   id: string;
@@ -52,6 +53,8 @@ export function NewProductPage() {
 
   const formDataQuery = useProductFormData();
   const materials = formDataQuery.data?.materials ?? [];
+  const units = formDataQuery.data?.units ?? [];
+  const unitOptions = mapUnitComboboxOptions(units);
   const loading = formDataQuery.isLoading;
 
   const categoriesQuery = useProductCategoryOptions();
@@ -68,6 +71,7 @@ export function NewProductPage() {
   const [formData, setFormData] = useState<ProductFormData>({
     nama: "",
     kategori: "",
+    satuan_id: "",
     deskripsi: "",
     harga_jual: 0,
     markup_persen: 30,
@@ -165,6 +169,10 @@ export function NewProductPage() {
       toast.error("Nama produk wajib diisi");
       return;
     }
+    if (!formData.satuan_id) {
+      toast.error("Satuan wajib dipilih");
+      return;
+    }
 
     try {
       const productData = {
@@ -230,7 +238,7 @@ export function NewProductPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                 <div className="space-y-1.5">
                   <Label htmlFor="nama" className="text-xs">Nama Produk <span className="text-red-500">*</span></Label>
                   <Input
@@ -253,6 +261,19 @@ export function NewProductPage() {
                     emptyMessage="Tidak ada kategori"
                     disabled={categoriesQuery.isLoading}
                     allowClear
+                    className="h-9 text-sm"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="satuan_id" className="text-xs">Satuan <span className="text-red-500">*</span></Label>
+                  <Combobox
+                    options={unitOptions}
+                    value={formData.satuan_id || ""}
+                    onChange={(v) => setFormData({ ...formData, satuan_id: v })}
+                    placeholder={loading ? "Memuat satuan..." : "Pilih satuan..."}
+                    searchPlaceholder="Cari satuan..."
+                    emptyMessage="Satuan tidak ditemukan"
+                    disabled={loading}
                     className="h-9 text-sm"
                   />
                 </div>

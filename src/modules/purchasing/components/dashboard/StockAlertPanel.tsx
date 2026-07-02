@@ -69,7 +69,7 @@ export function StockAlertPanel({ alerts }: StockAlertPanelProps) {
                       </div>
                     </div>
                   </div>
-                  <Link href="/dashboard/items/raw-materials">
+                  <Link href={RM_ROUTES.materials}>
                     <ArrowRight className="w-4 h-4 text-gray-400 hover:text-gray-600" />
                   </Link>
                 </div>

@@ -44,9 +44,45 @@ export async function getGrn<T = unknown>(id: string): Promise<T> {
 
 export async function getGrnQC<T = unknown>(id: string): Promise<T | null> {
   const res = await fetch(`/api/purchasing/grn/${id}/qc`);
-  if (!res.ok) return null;
   const json = await res.json().catch(() => null);
+  if (!res.ok || json?.success === false) return null;
   return (json?.data ?? null) as T | null;
+}
+
+export type VendorCreditRow = {
+  id: string;
+  credit_number: string;
+  source_type: "receive_reject" | "qc_reject";
+  status: string;
+  total_amount: number;
+  reason_notes?: string | null;
+  items?: {
+    id: string;
+    qty: number;
+    unit_price: number;
+    line_amount: number;
+    raw_material?: { kode?: string; nama?: string };
+  }[];
+};
+
+export async function getGrnVendorCredits(grnId: string): Promise<VendorCreditRow[]> {
+  const res = await fetch(`/api/purchasing/grn/${grnId}/vendor-credits`);
+  const json = await res.json().catch(() => null);
+  if (!res.ok || json?.success === false) {
+    throw new Error(json?.message || "Failed to load vendor credits");
+  }
+  return (json?.data ?? []) as VendorCreditRow[];
+}
+
+export async function approveVendorCredit(creditId: string) {
+  const res = await fetch(`/api/purchasing/vendor-credits/${creditId}/approve`, {
+    method: "PATCH",
+  });
+  const json = await res.json().catch(() => null);
+  if (!res.ok || json?.success === false) {
+    throw new Error(json?.message || "Failed to approve vendor credit");
+  }
+  return json.data;
 }
 
 export async function deleteGrn(id: string): Promise<{ message?: string }> {
@@ -124,8 +160,11 @@ export async function getGrnPO<T = unknown>(poId: string): Promise<T | null> {
 }
 
 export async function listGrnDeliveries<T = unknown>(): Promise<T[]> {
-  const res = await fetch("/api/purchasing/delivery?limit=100");
+  const res = await fetch("/api/purchasing/delivery/for-grn", { cache: "no-store" });
   const json = await res.json();
+  if (!res.ok) {
+    throw new Error(json.error || json.message || "Failed to load deliveries");
+  }
   return (Array.isArray(json.data) ? json.data : []) as T[];
 }
 
@@ -163,7 +202,7 @@ export async function getReceivingWorkspace(): Promise<ReceivingWorkspaceData> {
   });
   const json = await res.json();
   if (!res.ok) {
-    throw new Error(json.message || "Gagal memuat workspace penerimaan");
+    throw new Error(json.message || "Failed to load receiving workspace");
   }
   return {
     purchase_orders: Array.isArray(json.data?.purchase_orders)
@@ -174,15 +213,38 @@ export async function getReceivingWorkspace(): Promise<ReceivingWorkspaceData> {
   };
 }
 
-export async function createQCInspection(payload: unknown): Promise<unknown> {
-  const res = await fetch("/api/purchasing/qc", {
+export type SubmitGrnQcPayload = {
+  status?: "approved" | "rejected" | "partial";
+  parameter_inspeksi?: Record<string, unknown>;
+  hasil_inspeksi?: Record<string, string>;
+  catatan?: string | null;
+  rekomendasi?: string | null;
+  items: {
+    grn_item_id: string;
+    raw_material_id: string;
+    qty_inspected: number;
+    qty_accepted: number;
+    qty_rejected: number;
+    catatan?: string | null;
+  }[];
+};
+
+export async function createQCInspection(
+  grnId: string,
+  payload: SubmitGrnQcPayload
+): Promise<unknown> {
+  const res = await fetch(`/api/purchasing/grn/${grnId}/qc`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  if (!res.ok) {
-    const json = await res.json().catch(() => null);
-    throw new Error(json?.error || "Gagal menyimpan QC");
+  const json = await res.json().catch(() => null);
+  if (!res.ok || json?.success === false) {
+    const message =
+      typeof json?.error === "string"
+        ? json.error
+        : json?.error?.message || json?.message || "Failed to submit quality control";
+    throw new Error(message);
   }
-  return res.json().catch(() => ({}));
+  return json?.data ?? json;
 }

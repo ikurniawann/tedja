@@ -55,6 +55,7 @@ CREATE TRIGGER update_produk_updated_at BEFORE UPDATE ON produk FOR EACH ROW EXE
 CREATE TRIGGER update_po_updated_at BEFORE UPDATE ON purchase_orders FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_purchase_requests_updated_at BEFORE UPDATE ON purchase_requests FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER trg_generate_return_number BEFORE INSERT ON purchase_returns FOR EACH ROW WHEN (new.return_number IS NULL) EXECUTE FUNCTION generate_return_number();
+CREATE TRIGGER trg_generate_vendor_credit_number BEFORE INSERT ON vendor_credits FOR EACH ROW WHEN ((new.credit_number IS NULL) OR (new.credit_number = ''::character varying)) EXECUTE FUNCTION generate_vendor_credit_number();
 CREATE TRIGGER trg_process_return_approval AFTER UPDATE ON purchase_returns FOR EACH ROW EXECUTE FUNCTION process_return_approval();
 CREATE TRIGGER update_qc_updated_at BEFORE UPDATE ON qc_inspections FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_raw_materials_updated_at BEFORE UPDATE ON raw_materials FOR EACH ROW EXECUTE FUNCTION update_updated_at();

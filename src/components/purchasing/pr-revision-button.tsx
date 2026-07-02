@@ -7,14 +7,14 @@ import { FileText, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
+  DialogPanel,
+  DialogPanelBody,
+  DialogPanelDescription,
+  DialogPanelHeader,
+  DialogPanelTitle,
   DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
+import { RM_ROUTES } from "@/modules/purchasing/constants/item-routes";
 
 type PRRevisionButtonProps = {
   prId: string;
@@ -32,40 +32,65 @@ export function PRRevisionButton({ prId }: PRRevisionButtonProps) {
         method: "POST",
       });
       const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || "Gagal membuat revisi PR");
+      if (!response.ok) {
+        throw new Error(payload.error || "Failed to create purchase request revision");
+      }
 
       setOpen(false);
-      router.push(`/dashboard/purchasing/pr/edit/${payload.data.id}?revision=created`);
+      router.push(`${RM_ROUTES.purchasingPrEdit(payload.data.id)}?revision=created`);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Gagal membuat revisi PR");
+      toast.error(
+        error instanceof Error ? error.message : "Failed to create purchase request revision"
+      );
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button type="button" variant="outline" />}>
+    <>
+      <Button
+        type="button"
+        variant="outline"
+        className="purchasing-secondary-button w-full sm:w-auto"
+        onClick={() => setOpen(true)}
+      >
         <FileText className="mr-2 h-4 w-4" />
-        Revisi PR
-      </DialogTrigger>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Buat Revisi PR?</DialogTitle>
-          <DialogDescription>
-            Sistem akan membuat draft PR baru dari PR yang ditolak. PR lama tetap tersimpan sebagai history.
-          </DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <DialogClose render={<Button type="button" variant="outline" disabled={loading} />}>
-            Batal
-          </DialogClose>
-          <Button type="button" onClick={createRevision} disabled={loading}>
-            {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Buat Revisi
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        Create Revision
+      </Button>
+
+      <Dialog open={open} onOpenChange={(open) => !loading && setOpen(open)}>
+        <DialogPanel size="xs">
+          <DialogPanelHeader>
+            <DialogPanelTitle>Create Revision?</DialogPanelTitle>
+            <DialogPanelDescription>
+              A new draft purchase request will be created from this rejected request. The
+              original request remains in history.
+            </DialogPanelDescription>
+          </DialogPanelHeader>
+          <DialogPanelBody />
+          <DialogFooter className="px-6 py-4">
+            <Button
+              type="button"
+              variant="outline"
+              className="purchasing-secondary-button"
+              onClick={() => setOpen(false)}
+              disabled={loading}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              className="purchasing-main-button"
+              onClick={createRevision}
+              disabled={loading}
+            >
+              {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {loading ? "Creating..." : "Create Revision"}
+            </Button>
+          </DialogFooter>
+        </DialogPanel>
+      </Dialog>
+    </>
   );
 }

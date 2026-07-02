@@ -1,11 +1,18 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { useGrn } from "../queries";
+import { useGrn, useGrnQC } from "../queries";
 import { useCreateQCInspection } from "../mutations";
+import { resolveOverallQcStatus } from "@/lib/purchasing/grn-qc-utils";
+import { RM_ROUTES } from "@/modules/purchasing/constants/item-routes";
+import {
+  PurchasingFormFooter,
+  PurchasingFormHeader,
+} from "@/modules/purchasing/components/page/purchasing-page-header";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -17,32 +24,111 @@ import {
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, ClipboardCheck, Save, CheckCircle, XCircle, AlertTriangle } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  ClipboardCheck,
+  Loader2,
+  Package,
+  XCircle,
+} from "lucide-react";
 import { toast } from "sonner";
 
 const QC_PARAMETERS = [
-  "Kemasan",
+  "Packaging",
   "Label",
-  "Warna",
-  "Bau",
-  "Tekstur",
-  "Kadar Air",
-  "Expired Date",
-];
+  "Color",
+  "Odor",
+  "Texture",
+  "Moisture",
+  "Expiry Date",
+] as const;
+
+type QcLineState = {
+  grn_item_id: string;
+  raw_material_id: string;
+  materialName: string;
+  materialCode: string;
+  unitLabel: string;
+  qtyReceived: number;
+  qty_inspected: string;
+  qty_accepted: string;
+  qty_rejected: string;
+  catatan: string;
+};
 
 type GrnInspectionItem = {
   id: string;
+  raw_material_id?: string;
   qty_diterima?: number | null;
+  qc_status?: string | null;
   raw_material?: {
     nama?: string | null;
     kode?: string | null;
+    satuan_besar?: { nama?: string | null; kode?: string | null } | null;
+  } | null;
+  satuan?: { nama?: string | null; kode?: string | null } | null;
+  purchase_order_item?: {
+    satuan?: { nama?: string | null; kode?: string | null } | null;
   } | null;
 };
 
 type GrnInspection = {
+  id: string;
   nomor_grn?: string | null;
+  status?: string | null;
+  tanggal_penerimaan?: string | null;
+  po_number?: string | null;
+  supplier_name?: string | null;
+  total_item_diterima?: number | null;
   items?: GrnInspectionItem[];
 };
+
+type ExistingQc = {
+  id: string;
+  status?: string | null;
+  inventory_posted?: boolean | null;
+  inspected_at?: string | null;
+};
+
+function formatNumber(value?: number | null) {
+  return Number(value || 0).toLocaleString("en-US", { maximumFractionDigits: 4 });
+}
+
+function formatDate(value?: string | null) {
+  if (!value) return "-";
+  return new Intl.DateTimeFormat("en-US", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  }).format(new Date(value));
+}
+
+function parseQty(value: string) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function statusBadge(status: string) {
+  const normalized = status.toLowerCase();
+  const styles: Record<string, string> = {
+    approved: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    partial: "border-amber-200 bg-amber-50 text-amber-700",
+    rejected: "border-red-200 bg-red-50 text-red-700",
+    pending: "border-slate-200 bg-slate-100 text-slate-700",
+  };
+  const labels: Record<string, string> = {
+    approved: "Approved",
+    partial: "Partial",
+    rejected: "Rejected",
+    pending: "Pending",
+  };
+  return (
+    <Badge variant="outline" className={styles[normalized] || styles.pending}>
+      {labels[normalized] || status}
+    </Badge>
+  );
+}
 
 export function QCInspectionPage() {
   const params = useParams();
@@ -50,252 +136,545 @@ export function QCInspectionPage() {
   const grnId = params.id as string;
 
   const grnQuery = useGrn<GrnInspection>(grnId);
+  const qcQuery = useGrnQC<ExistingQc | null>(grnId);
   const grn = grnQuery.data ?? null;
-  const loading = grnQuery.isLoading;
+  const existingQc = qcQuery.data ?? null;
+  const loading = grnQuery.isLoading || qcQuery.isLoading;
 
   const qcMutation = useCreateQCInspection();
   const saving = qcMutation.isPending;
 
-  const [formData, setFormData] = useState({
-    status: "PENDING",
-    parameter_inspeksi: QC_PARAMETERS,
-    hasil_inspeksi: {} as Record<string, string>,
-    catatan_qc: "",
-    rekomendasi: "ACCEPT",
-  });
+  const [lines, setLines] = useState<QcLineState[]>([]);
+  const [hasilInspeksi, setHasilInspeksi] = useState<Record<string, string>>({});
+  const [catatan, setCatatan] = useState("");
 
   useEffect(() => {
     if (grnQuery.isError) {
-      console.error("Error loading GRN:", grnQuery.error);
-      toast.error("Gagal memuat data GRN");
+      toast.error("Failed to load goods receipt");
     }
-  }, [grnQuery.isError, grnQuery.error]);
+  }, [grnQuery.isError]);
 
   useEffect(() => {
     const initialHasil: Record<string, string> = {};
     QC_PARAMETERS.forEach((param) => {
       initialHasil[param] = "OK";
     });
-    setFormData((prev) => ({ ...prev, hasil_inspeksi: initialHasil }));
+    setHasilInspeksi(initialHasil);
   }, []);
 
-  const updateHasil = (param: string, value: string) => {
-    setFormData((prev) => ({
-      ...prev,
-      hasil_inspeksi: { ...prev.hasil_inspeksi, [param]: value },
+  useEffect(() => {
+    if (!grn?.items?.length) return;
+
+    setLines(
+      grn.items
+        .filter((item) => Number(item.qty_diterima || 0) > 0)
+        .map((item) => {
+          const qty = Number(item.qty_diterima || 0);
+          const unit =
+            item.satuan?.kode ||
+            item.satuan?.nama ||
+            item.raw_material?.satuan_besar?.kode ||
+            item.purchase_order_item?.satuan?.kode ||
+            "-";
+
+          return {
+            grn_item_id: item.id,
+            raw_material_id: item.raw_material_id || "",
+            materialName: item.raw_material?.nama || "Unknown material",
+            materialCode: item.raw_material?.kode || "-",
+            unitLabel: unit,
+            qtyReceived: qty,
+            qty_inspected: String(qty),
+            qty_accepted: String(qty),
+            qty_rejected: "0",
+            catatan: "",
+          };
+        })
+    );
+  }, [grn?.items]);
+
+  const overallStatus = useMemo(() => {
+    const payload = lines.map((line) => ({
+      grn_item_id: line.grn_item_id,
+      raw_material_id: line.raw_material_id,
+      qty_inspected: parseQty(line.qty_inspected),
+      qty_accepted: parseQty(line.qty_accepted),
+      qty_rejected: parseQty(line.qty_rejected),
     }));
+    return resolveOverallQcStatus(payload);
+  }, [lines]);
+
+  const totals = useMemo(() => {
+    return lines.reduce(
+      (acc, line) => ({
+        inspected: acc.inspected + parseQty(line.qty_inspected),
+        accepted: acc.accepted + parseQty(line.qty_accepted),
+        rejected: acc.rejected + parseQty(line.qty_rejected),
+      }),
+      { inspected: 0, accepted: 0, rejected: 0 }
+    );
+  }, [lines]);
+
+  const parameterSummary = useMemo(() => {
+    const values = Object.values(hasilInspeksi);
+    return {
+      ok: values.filter((value) => value === "OK").length,
+      ng: values.filter((value) => value === "NG").length,
+      na: values.filter((value) => value === "NA").length,
+    };
+  }, [hasilInspeksi]);
+
+  const qcLocked =
+    existingQc?.inventory_posted === true || (grn?.status && grn.status !== "pending");
+
+  const syncAcceptedRejected = (
+    grnItemId: string,
+    next: { inspected?: string; accepted?: string; rejected?: string }
+  ) => {
+    setLines((prev) =>
+      prev.map((line) => {
+        if (line.grn_item_id !== grnItemId) return line;
+
+        const inspected = parseQty(next.inspected ?? line.qty_inspected);
+        const maxQty = line.qtyReceived;
+
+        if (next.accepted !== undefined) {
+          const accepted = Math.min(maxQty, Math.max(0, parseQty(next.accepted)));
+          const rejected = Math.max(0, inspected - accepted);
+          return {
+            ...line,
+            qty_inspected: String(Math.min(maxQty, inspected)),
+            qty_accepted: String(accepted),
+            qty_rejected: String(rejected),
+          };
+        }
+
+        if (next.rejected !== undefined) {
+          const rejected = Math.min(maxQty, Math.max(0, parseQty(next.rejected)));
+          const inspectedValue = Math.min(maxQty, parseQty(next.inspected ?? line.qty_inspected));
+          const accepted = Math.max(0, inspectedValue - rejected);
+          return {
+            ...line,
+            qty_inspected: String(inspectedValue),
+            qty_accepted: String(accepted),
+            qty_rejected: String(rejected),
+          };
+        }
+
+        const inspectedValue = Math.min(maxQty, Math.max(0, inspected));
+        const accepted = Math.min(parseQty(line.qty_accepted), inspectedValue);
+        const rejected = Math.max(0, inspectedValue - accepted);
+        return {
+          ...line,
+          qty_inspected: String(inspectedValue),
+          qty_accepted: String(accepted),
+          qty_rejected: String(rejected),
+        };
+      })
+    );
   };
 
-  const calculateStatus = (): "APPROVED" | "REJECTED" | "PARTIAL" => {
-    const hasil = Object.values(formData.hasil_inspeksi || {});
-    const ngCount = hasil.filter((h) => h === "NG").length;
-    
-    if (ngCount === 0) return "APPROVED";
-    if (ngCount === hasil.length) return "REJECTED";
-    return "PARTIAL";
+  const validateForm = () => {
+    if (lines.length === 0) {
+      toast.error("No received items available for quality control");
+      return false;
+    }
+
+    for (const line of lines) {
+      const inspected = parseQty(line.qty_inspected);
+      const accepted = parseQty(line.qty_accepted);
+      const rejected = parseQty(line.qty_rejected);
+
+      if (inspected <= 0) {
+        toast.error(`Inspected quantity is required for ${line.materialName}`);
+        return false;
+      }
+
+      if (inspected > line.qtyReceived + 0.0001) {
+        toast.error(`Inspected quantity cannot exceed received quantity for ${line.materialName}`);
+        return false;
+      }
+
+      if (Math.abs(accepted + rejected - inspected) > 0.0001) {
+        toast.error(`Accepted and rejected quantities must match inspected quantity for ${line.materialName}`);
+        return false;
+      }
+    }
+
+    return true;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    const status = calculateStatus();
-    const rekomendasi = status === "REJECTED" ? "REJECT" : 
-                        status === "PARTIAL" ? "REWORK" : "ACCEPT";
+    if (qcLocked) {
+      toast.error("Quality control has already been completed for this goods receipt");
+      return;
+    }
+    if (!validateForm()) return;
+
+    const items = lines.map((line) => ({
+      grn_item_id: line.grn_item_id,
+      raw_material_id: line.raw_material_id,
+      qty_inspected: parseQty(line.qty_inspected),
+      qty_accepted: parseQty(line.qty_accepted),
+      qty_rejected: parseQty(line.qty_rejected),
+      catatan: line.catatan || null,
+    }));
+
+    const rekomendasi =
+      overallStatus === "rejected" ? "REJECT" : overallStatus === "partial" ? "REWORK" : "ACCEPT";
 
     try {
       await qcMutation.mutateAsync({
-        grn_id: grnId,
-        ...formData,
-        status,
-        rekomendasi,
+        grnId,
+        payload: {
+          status: overallStatus,
+          parameter_inspeksi: { parameters: [...QC_PARAMETERS] },
+          hasil_inspeksi: hasilInspeksi,
+          catatan: catatan || null,
+          rekomendasi,
+          items,
+        },
       });
 
-      toast.success("QC inspection berhasil disimpan");
-      router.push(`/dashboard/purchasing/grn/${grnId}`);
+      toast.success("Quality control completed. Stock has been updated.");
+      router.push(RM_ROUTES.purchasingGrnDetail(grnId));
     } catch (error: unknown) {
-      console.error("Error saving QC:", error);
-      toast.error(error instanceof Error ? error.message : "Gagal menyimpan QC inspection");
+      toast.error(error instanceof Error ? error.message : "Failed to submit quality control");
     }
   };
 
   if (loading) {
     return (
-      <div className="container mx-auto py-6">
-        <div className="text-center py-12">Memuat data...</div>
+      <div className="flex min-h-[320px] items-center justify-center text-sm text-gray-500">
+        <Loader2 className="mr-2 h-4 w-4 animate-spin text-pink-600" />
+        Loading quality control workspace...
       </div>
     );
   }
 
   if (!grn) {
     return (
-      <div className="container mx-auto py-6">
-        <div className="text-center py-12 text-red-500">GRN tidak ditemukan</div>
+      <div className="space-y-4">
+        <PurchasingFormHeader
+          backHref={RM_ROUTES.purchasingGrn}
+          title="Quality Control"
+          description="Goods receipt not found"
+        />
+        <Card className="border-gray-200/70">
+          <CardContent className="py-12 text-center text-gray-500">
+            Unable to load goods receipt data.
+          </CardContent>
+        </Card>
       </div>
     );
   }
 
-  const status = calculateStatus();
-
   return (
-    <div className="container mx-auto py-6 space-y-6">
-      {/* Header */}
-      <div className="flex items-center gap-4">
-        <Link href={`/dashboard/purchasing/grn/${grnId}`}>
-          <Button variant="ghost" size="icon">
-            <ArrowLeft className="w-5 h-5" />
-          </Button>
-        </Link>
-        <div>
-          <h1 className="text-2xl font-bold">QC Inspection</h1>
-          <p className="text-muted-foreground">
-            GRN: {grn.nomor_grn}
-          </p>
-        </div>
+    <div className="space-y-6">
+      <PurchasingFormHeader
+        backHref={RM_ROUTES.purchasingGrnDetail(grnId)}
+        title="Quality Control"
+        description={
+          <>
+            Inspect received goods for{" "}
+            <span className="font-medium text-gray-700">{grn.nomor_grn}</span> before stock is
+            posted to inventory.
+          </>
+        }
+        actions={
+          qcLocked ? (
+            <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700">
+              QC Completed
+            </Badge>
+          ) : (
+            <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-700">
+              Awaiting Inspection
+            </Badge>
+          )
+        }
+      />
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <Card className="border-gray-200/70 shadow-xs">
+          <CardContent className="space-y-1 p-4">
+            <p className="text-xs text-gray-500">Receipt Date</p>
+            <p className="text-sm font-medium text-gray-900">{formatDate(grn.tanggal_penerimaan)}</p>
+          </CardContent>
+        </Card>
+        <Card className="border-gray-200/70 shadow-xs">
+          <CardContent className="space-y-1 p-4">
+            <p className="text-xs text-gray-500">Purchase Order</p>
+            <p className="text-sm font-medium text-gray-900">{grn.po_number || "-"}</p>
+          </CardContent>
+        </Card>
+        <Card className="border-gray-200/70 shadow-xs">
+          <CardContent className="space-y-1 p-4">
+            <p className="text-xs text-gray-500">Good Qty Received</p>
+            <p className="text-sm font-medium text-gray-900">{formatNumber(grn.total_item_diterima)}</p>
+          </CardContent>
+        </Card>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-6">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* QC Form */}
-          <Card className="lg:col-span-2">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <ClipboardCheck className="w-5 h-5" />
-                Parameter Inspeksi
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {QC_PARAMETERS.map((param) => (
-                <div key={param} className="flex items-center justify-between p-3 border rounded-lg">
-                  <span className="font-medium">{param}</span>
-                  <Select
-                    value={formData.hasil_inspeksi?.[param] || "OK"}
-                    onValueChange={(v) => updateHasil(param, v)}
-                  >
-                    <SelectTrigger className="w-[150px]">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="OK">
-                        <span className="text-green-600">✓ OK</span>
-                      </SelectItem>
-                      <SelectItem value="NG">
-                        <span className="text-red-600">✗ NG</span>
-                      </SelectItem>
-                      <SelectItem value="NA">N/A</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              ))}
-
-              <div className="space-y-2 pt-4">
-                <Label>Catatan QC</Label>
-                <Textarea
-                  value={formData.catatan_qc}
-                  onChange={(e) => setFormData({ ...formData, catatan_qc: e.target.value })}
-                  placeholder="Catatan tambahan hasil inspeksi..."
-                  rows={4}
-                />
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Summary */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Ringkasan</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Status Hasil</span>
-                <Badge
-                  className={
-                    status === "APPROVED"
-                      ? "bg-green-100 text-green-800"
-                      : status === "REJECTED"
-                      ? "bg-red-100 text-red-800"
-                      : "bg-yellow-100 text-yellow-800"
-                  }
-                >
-                  {status}
-                </Badge>
-              </div>
-
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Total Parameter</span>
-                <span>{QC_PARAMETERS.length}</span>
-              </div>
-
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">OK</span>
-                <span className="text-green-600">
-                  {Object.values(formData.hasil_inspeksi || {}).filter((h) => h === "OK").length}
-                </span>
-              </div>
-
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">NG</span>
-                <span className="text-red-600">
-                  {Object.values(formData.hasil_inspeksi || {}).filter((h) => h === "NG").length}
-                </span>
-              </div>
-
-              <div className="border-t pt-4">
-                <div className="text-sm text-muted-foreground mb-2">Rekomendasi</div>
-                <div className="font-medium">
-                  {status === "APPROVED" && (
-                    <span className="text-green-600 flex items-center gap-1">
-                      <CheckCircle className="w-4 h-4" /> ACCEPT - Terima Barang
-                    </span>
-                  )}
-                  {status === "REJECTED" && (
-                    <span className="text-red-600 flex items-center gap-1">
-                      <XCircle className="w-4 h-4" /> REJECT - Tolak Barang
-                    </span>
-                  )}
-                  {status === "PARTIAL" && (
-                    <span className="text-yellow-600 flex items-center gap-1">
-                      <AlertTriangle className="w-4 h-4" /> REWORK - Perlu Perbaikan
-                    </span>
-                  )}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Items Summary */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Item yang Diinspeksi</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {grn.items?.map((item) => (
-                <div key={item.id} className="p-3 border rounded-lg">
-                  <div className="font-medium text-sm">{item.raw_material?.nama}</div>
-                  <div className="text-xs text-muted-foreground">{item.raw_material?.kode}</div>
-                  <div className="mt-2 text-sm">
-                    <span className="text-muted-foreground">Diterima:</span>{" "}
-                    <span className="font-medium">{item.qty_diterima}</span>
-                  </div>
-                </div>
-              ))}
+      {qcLocked && (
+        <Card className="border-emerald-200/80 bg-emerald-50/50">
+          <CardContent className="flex items-start gap-3 p-4 text-sm text-emerald-800">
+            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+            <div>
+              <p className="font-medium">Inspection already completed</p>
+              <p className="mt-1 text-emerald-700/90">
+                Stock was posted on {formatDate(existingQc?.inspected_at)}. View the goods receipt
+                detail for the final result.
+              </p>
+              <Link href={RM_ROUTES.purchasingGrnDetail(grnId)} className="mt-2 inline-block">
+                <Button variant="outline" size="sm" className="purchasing-secondary-button">
+                  View Goods Receipt
+                </Button>
+              </Link>
             </div>
           </CardContent>
         </Card>
+      )}
 
-        {/* Actions */}
-        <div className="flex justify-end gap-4">
-          <Link href={`/dashboard/purchasing/grn/${grnId}`}>
-            <Button variant="outline" disabled={saving} className="purchasing-secondary-button">
-              Batal
-            </Button>
-          </Link>
-          <Button type="submit" disabled={saving} className="purchasing-main-button">
-            <Save className="w-4 h-4 mr-2" />
-            {saving ? "Menyimpan..." : "Simpan QC Inspection"}
-          </Button>
+      <form id="grn-qc-form" onSubmit={handleSubmit} className="space-y-6">
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
+          <div className="space-y-6 xl:col-span-8">
+            <Card className="border-gray-200/70 shadow-xs">
+              <CardHeader className="border-b border-gray-200/70 pb-3">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Package className="h-4 w-4 text-pink-600" />
+                  Line Item Inspection
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-gray-200/70 bg-gray-50/80 text-left text-xs text-gray-500">
+                        <th className="px-4 py-3 font-medium">Material</th>
+                        <th className="px-4 py-3 font-medium text-right">Received</th>
+                        <th className="px-4 py-3 font-medium text-right">Inspected</th>
+                        <th className="px-4 py-3 font-medium text-right">Accepted</th>
+                        <th className="px-4 py-3 font-medium text-right">Rejected</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {lines.map((line) => (
+                        <tr
+                          key={line.grn_item_id}
+                          className="border-b border-gray-200/60 align-top hover:bg-gray-50/50"
+                        >
+                          <td className="px-4 py-3">
+                            <p className="font-medium text-gray-900">{line.materialName}</p>
+                            <p className="text-xs text-gray-500">
+                              {line.materialCode} · {line.unitLabel}
+                            </p>
+                          </td>
+                          <td className="px-4 py-3 text-right font-medium text-gray-900">
+                            {formatNumber(line.qtyReceived)}
+                          </td>
+                          <td className="px-4 py-3">
+                            <Input
+                              type="number"
+                              min={0}
+                              step="any"
+                              value={line.qty_inspected}
+                              disabled={qcLocked || saving}
+                              onChange={(e) =>
+                                syncAcceptedRejected(line.grn_item_id, { inspected: e.target.value })
+                              }
+                              className="h-9 text-right"
+                            />
+                          </td>
+                          <td className="px-4 py-3">
+                            <Input
+                              type="number"
+                              min={0}
+                              step="any"
+                              value={line.qty_accepted}
+                              disabled={qcLocked || saving}
+                              onChange={(e) =>
+                                syncAcceptedRejected(line.grn_item_id, { accepted: e.target.value })
+                              }
+                              className="h-9 text-right border-emerald-200/80 focus-visible:ring-emerald-200"
+                            />
+                          </td>
+                          <td className="px-4 py-3">
+                            <Input
+                              type="number"
+                              min={0}
+                              step="any"
+                              value={line.qty_rejected}
+                              disabled={qcLocked || saving}
+                              onChange={(e) =>
+                                syncAcceptedRejected(line.grn_item_id, { rejected: e.target.value })
+                              }
+                              className="h-9 text-right border-red-200/80 focus-visible:ring-red-200"
+                            />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-gray-200/70 shadow-xs">
+              <CardHeader className="border-b border-gray-200/70 pb-3">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <ClipboardCheck className="h-4 w-4 text-pink-600" />
+                  Inspection Parameters
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="grid gap-3 pt-4 sm:grid-cols-2">
+                {QC_PARAMETERS.map((param) => (
+                  <div
+                    key={param}
+                    className="flex items-center justify-between rounded-xl border border-gray-200/70 bg-gray-50/50 px-3 py-2.5"
+                  >
+                    <span className="text-sm font-medium text-gray-800">{param}</span>
+                    <Select
+                      value={hasilInspeksi[param] || "OK"}
+                      onValueChange={(value) =>
+                        setHasilInspeksi((prev) => ({ ...prev, [param]: value }))
+                      }
+                    >
+                      <SelectTrigger
+                        className="h-8 w-[120px] border-gray-200/80"
+                        disabled={qcLocked || saving}
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="OK">OK</SelectItem>
+                        <SelectItem value="NG">NG</SelectItem>
+                        <SelectItem value="NA">N/A</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+
+            <Card className="border-gray-200/70 shadow-xs">
+              <CardHeader className="border-b border-gray-200/70 pb-3">
+                <CardTitle className="text-base">Notes</CardTitle>
+              </CardHeader>
+              <CardContent className="pt-4">
+                <Label htmlFor="qc-notes" className="sr-only">
+                  QC notes
+                </Label>
+                <Textarea
+                  id="qc-notes"
+                  value={catatan}
+                  onChange={(e) => setCatatan(e.target.value)}
+                  placeholder="Add inspection notes, defects found, or follow-up actions..."
+                  rows={4}
+                  disabled={qcLocked || saving}
+                  className="border-gray-200/80"
+                />
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="space-y-6 xl:col-span-4">
+            <Card className="border-gray-200/70 shadow-xs">
+              <CardHeader className="border-b border-gray-200/70 pb-3">
+                <CardTitle className="text-base">Inspection Summary</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4 pt-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-500">Overall Result</span>
+                  {statusBadge(overallStatus)}
+                </div>
+
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="rounded-lg border border-gray-200/70 bg-gray-50/70 px-3 py-2 text-center">
+                    <p className="text-xs text-gray-500">Inspected</p>
+                    <p className="mt-1 text-sm font-semibold text-gray-900">
+                      {formatNumber(totals.inspected)}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-center">
+                    <p className="text-xs text-emerald-700">Accepted</p>
+                    <p className="mt-1 text-sm font-semibold text-emerald-800">
+                      {formatNumber(totals.accepted)}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-center">
+                    <p className="text-xs text-red-700">Rejected</p>
+                    <p className="mt-1 text-sm font-semibold text-red-700">
+                      {formatNumber(totals.rejected)}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-2 border-t border-gray-200/70 pt-3 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Parameters OK</span>
+                    <span className="font-medium text-emerald-700">{parameterSummary.ok}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Parameters NG</span>
+                    <span className="font-medium text-red-600">{parameterSummary.ng}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Parameters N/A</span>
+                    <span className="font-medium text-gray-700">{parameterSummary.na}</span>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-gray-200/70 bg-gray-50/60 p-4">
+                  <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
+                    Recommendation
+                  </p>
+                  <div className="mt-2 text-sm font-medium">
+                    {overallStatus === "approved" && (
+                      <span className="flex items-center gap-2 text-emerald-700">
+                        <CheckCircle2 className="h-4 w-4" />
+                        Accept and post stock
+                      </span>
+                    )}
+                    {overallStatus === "rejected" && (
+                      <span className="flex items-center gap-2 text-red-600">
+                        <XCircle className="h-4 w-4" />
+                        Reject — no stock movement
+                      </span>
+                    )}
+                    {overallStatus === "partial" && (
+                      <span className="flex items-center gap-2 text-amber-700">
+                        <AlertTriangle className="h-4 w-4" />
+                        Partial accept — post accepted qty only
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-gray-200/70 bg-gray-50/40 shadow-xs">
+              <CardContent className="space-y-2 p-4 text-sm text-gray-600">
+                <p className="font-medium text-gray-900">Before you submit</p>
+                <ul className="list-disc space-y-1 pl-5 text-xs leading-5">
+                  <li>Accepted quantity will be posted to warehouse stock.</li>
+                  <li>Rejected quantity will not enter available inventory.</li>
+                  <li>Inspection results are linked to this goods receipt permanently.</li>
+                </ul>
+              </CardContent>
+            </Card>
+          </div>
         </div>
+
+        {!qcLocked && (
+          <PurchasingFormFooter
+            formId="grn-qc-form"
+            onCancel={() => router.push(RM_ROUTES.purchasingGrnDetail(grnId))}
+            submitLabel="Complete Quality Control"
+            loading={saving}
+            disabled={lines.length === 0}
+          />
+        )}
       </form>
     </div>
   );

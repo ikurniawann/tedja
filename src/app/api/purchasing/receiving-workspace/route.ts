@@ -34,12 +34,11 @@ export async function GET() {
 
     const deliveriesData = deliveryResult.data || [];
     const grnsData = grnResult.data || [];
-    const poIds = Array.from(
-      new Set(
-        [...deliveriesData.map((delivery) => delivery.purchase_order_id), ...grnsData.map((grn) => grn.purchase_order_id)]
-          .filter(Boolean)
-      )
+    const deliveryPoIds = new Set(
+      deliveriesData.map((delivery) => delivery.purchase_order_id).filter(Boolean)
     );
+    const purchaseOrders = (poResult.data || []).filter((po) => deliveryPoIds.has(po.id));
+    const poIds = Array.from(deliveryPoIds);
     const supplierIds = Array.from(
       new Set(
         [...deliveriesData.map((delivery) => delivery.supplier_id), ...grnsData.map((grn) => grn.supplier_id)]
@@ -104,7 +103,7 @@ export async function GET() {
     return Response.json({
       success: true,
       data: {
-        purchase_orders: poResult.data || [],
+        purchase_orders: purchaseOrders,
         deliveries,
         grns,
       },

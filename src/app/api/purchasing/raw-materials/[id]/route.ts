@@ -11,6 +11,10 @@ import {
   UNIT_CONVERSION_SELECT,
   prepareMaterialBody,
 } from "../_helpers";
+import {
+  getApiUserScope,
+  isRowInBusinessScope,
+} from "@/lib/api/scope";
 
 const materialSchema = z.object({
   nama: z.string().min(1).max(100).optional(),
@@ -40,6 +44,7 @@ export async function GET(
   try {
     const { id } = await params;
     const db = await createServerPgClient();
+    const scope = await getApiUserScope();
 
     // Get material dengan stok info
     const { data, error } = await db
@@ -56,6 +61,18 @@ export async function GET(
         );
       }
       throwIfDbError(error);
+    }
+
+    if (
+      !isRowInBusinessScope(scope, {
+        company_id: data.company_id,
+        branch_id: data.branch_id,
+      })
+    ) {
+      return Response.json(
+        { success: false, message: "Bahan baku tidak ditemukan" },
+        { status: 404 }
+      );
     }
 
     // Get suppliers dengan harga

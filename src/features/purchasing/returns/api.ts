@@ -53,10 +53,34 @@ export interface ReturnFormData {
   returnableItems: ReturnableItem[];
 }
 
-export async function getReturnFormData(grnId?: string | null): Promise<ReturnFormData> {
+export interface ReturnGrnOption {
+  id: string;
+  nomor_grn: string;
+  tanggal_penerimaan?: string | null;
+  supplier_id: string;
+  supplier?: { nama_supplier?: string | null } | null;
+}
+
+export async function listReturnGrnOptions(): Promise<ReturnGrnOption[]> {
+  const response = await fetch("/api/purchasing/returns/grn-options");
+  const result = await response.json();
+
+  if (!response.ok) {
+    throw new Error(result.message || "Failed to load goods receipt options");
+  }
+
+  return result.data || [];
+}
+
+export async function getReturnFormData(
+  grnId?: string | null,
+  excludeReturnId?: string | null
+): Promise<ReturnFormData> {
   const [suppliers, returnableItems] = await Promise.all([
     listSuppliers({ is_active: true }),
-    grnId ? getReturnableItems(grnId) : Promise.resolve([] as ReturnableItem[]),
+    grnId
+      ? getReturnableItems(grnId, excludeReturnId || undefined)
+      : Promise.resolve([] as ReturnableItem[]),
   ]);
   return { suppliers, returnableItems };
 }

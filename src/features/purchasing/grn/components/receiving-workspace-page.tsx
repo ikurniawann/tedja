@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useReceivingWorkspace } from "../queries";
 import { Button } from "@/components/ui/button";
@@ -10,11 +10,12 @@ import { Badge } from "@/components/ui/badge";
 import { Combobox } from "@/components/ui/combobox";
 import { PurchasingListSection } from "@/modules/purchasing/components/list/PurchasingListSection";
 import { PurchasingTablePagination } from "@/modules/purchasing/components/pagination/PurchasingTablePagination";
+import { RM_ROUTES } from "@/modules/purchasing/constants/item-routes";
 import {
   ClipboardDocumentCheckIcon,
   TruckIcon,
 } from "@heroicons/react/24/outline";
-import { Filter, Search, X } from "lucide-react";
+import { Filter, Search, X, Eye, PackageCheck, ClipboardCheck } from "lucide-react";
 
 type ReceivingStatus =
   | "waiting_delivery"
@@ -99,20 +100,17 @@ const STATUS_STYLES: Record<ReceivingStatus, string> = {
 };
 
 const STATUS_LABELS: Record<ReceivingStatus, string> = {
-  waiting_delivery: "Menunggu Delivery",
-  in_delivery: "Dalam Delivery",
-  partially_received: "Diterima Sebagian",
-  received: "Diterima Penuh",
-  rejected: "Ditolak",
-  cancelled: "Dibatalkan",
+  waiting_delivery: "Waiting for Delivery",
+  in_delivery: "In Delivery",
+  partially_received: "Partially Received",
+  received: "Fully Received",
+  rejected: "Rejected",
+  cancelled: "Cancelled",
 };
-
-const ACTION_BUTTON_CLASS =
-  "inline-flex h-7 min-w-[112px] shrink-0 cursor-pointer items-center justify-center whitespace-nowrap rounded-lg border px-2.5 text-[0.8rem] font-medium text-white shadow-xs transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50";
 
 function formatDate(value?: string | null) {
   if (!value) return "-";
-  return new Date(value).toLocaleDateString("id-ID", {
+  return new Date(value).toLocaleDateString("en-US", {
     day: "2-digit",
     month: "short",
     year: "numeric",
@@ -136,7 +134,7 @@ function statusPriority(status: ReceivingStatus) {
 }
 
 function formatQty(value?: number | null) {
-  return new Intl.NumberFormat("id-ID", {
+  return new Intl.NumberFormat("en-US", {
     maximumFractionDigits: 4,
   }).format(Number(value || 0));
 }
@@ -195,6 +193,8 @@ export function ReceivingWorkspacePage() {
       const poDeliveries = (deliveriesByPo.get(po.id) || []).sort((a, b) =>
         String(b.tanggal_kirim || "").localeCompare(String(a.tanggal_kirim || ""))
       );
+      if (poDeliveries.length === 0) continue;
+
       const poGrns = (grnsByPo.get(po.id) || []).sort((a, b) =>
         String(b.tanggal_penerimaan || "").localeCompare(String(a.tanggal_penerimaan || ""))
       );
@@ -271,7 +271,9 @@ export function ReceivingWorkspacePage() {
       });
     }
 
-    return nextRows.sort((a, b) => statusPriority(a.status) - statusPriority(b.status));
+    return nextRows
+      .filter((row) => row.deliveries.length > 0)
+      .sort((a, b) => statusPriority(a.status) - statusPriority(b.status));
   }, [deliveries, grns, purchaseOrders]);
 
   const filteredRows = rows.filter((row) => {
@@ -282,6 +284,7 @@ export function ReceivingWorkspacePage() {
       row.deliveryNumber,
       row.suratJalan,
       row.grnNumber,
+      ...row.grns.map((grn) => grn.nomor_grn),
     ]
       .join(" ")
       .toLowerCase();
@@ -317,89 +320,111 @@ export function ReceivingWorkspacePage() {
 
   const isFilterActive = statusFilter !== "all";
 
+  function isFullyReceived(row: ReceivingRow) {
+    return row.status === "received" || Number(row.remainingQty || 0) <= 0;
+  }
+
   function canContinueReceiving(row: ReceivingRow) {
     return (
+      !isFullyReceived(row) &&
       Number(row.remainingQty || 0) > 0 &&
       !!row.latestGrn?.id &&
-      (row.latestGrn.status === "pending" || row.latestGrn.status === "partially_received")
+      row.latestGrn.status === "partially_received"
     );
   }
 
-  function renderAction(row: ReceivingRow) {
-    if (row.pendingDelivery?.id) {
-      return (
-        <Link
-          href={`/dashboard/purchasing/grn/insert?delivery_id=${row.pendingDelivery.id}`}
-          className={`${ACTION_BUTTON_CLASS} border-pink-600`}
-          style={{ backgroundColor: "#db2777" }}
-        >
-          Receive
-        </Link>
-      );
-    }
-    if (canContinueReceiving(row)) {
-      return (
-        <Link
-          href={`/dashboard/purchasing/grn/continue/${row.latestGrn!.id}`}
-          className={`${ACTION_BUTTON_CLASS} border-pink-600`}
-          style={{ backgroundColor: "#db2777" }}
-        >
-          Receive
-        </Link>
-      );
-    }
-    if (
-      row.poId &&
-      row.status !== "received" &&
-      row.status !== "cancelled" &&
-      Number(row.remainingQty || 0) > 0
-    ) {
-      return (
-        <Link
-          href={`/dashboard/purchasing/delivery/insert?po_id=${row.poId}`}
-          className={`${ACTION_BUTTON_CLASS} border-blue-600`}
-          style={{ backgroundColor: "#2563eb" }}
-        >
-          Buat Delivery
-        </Link>
-      );
-    }
-    if (row.grnId) {
-      return (
-        <Link
-          href={`/dashboard/purchasing/grn/${row.grnId}`}
-          className={`${ACTION_BUTTON_CLASS} border-emerald-600`}
-          style={{ backgroundColor: "#059669" }}
-        >
-          Lihat GRN
-        </Link>
-      );
-    }
-    if (row.deliveryId) {
-      return (
-        <Link href={`/dashboard/purchasing/delivery/${row.deliveryId}`}>
-          <Button size="sm" variant="ghost">Detail</Button>
-        </Link>
-      );
-    }
-    return row.poId ? (
-      <Link href={`/dashboard/purchasing/po/${row.poId}`}>
-        <Button size="sm" variant="ghost">Detail PO</Button>
+  function canRunQualityControl(row: ReceivingRow) {
+    return !!row.grnId && row.latestGrn?.status === "pending";
+  }
+
+  function renderActions(row: ReceivingRow) {
+    const iconButton = (href: string, title: string, icon: ReactNode, key: string) => (
+      <Link key={key} href={href}>
+        <Button variant="ghost" size="sm" className="cursor-pointer" title={title}>
+          {icon}
+        </Button>
       </Link>
-    ) : null;
+    );
+
+    const actions: ReactNode[] = [];
+    const fullyReceived = isFullyReceived(row);
+
+    if (!fullyReceived && row.pendingDelivery?.id) {
+      actions.push(
+        iconButton(
+          `/dashboard/purchasing/grn/insert?delivery_id=${row.pendingDelivery.id}`,
+          "Receive goods",
+          <PackageCheck className="h-4 w-4 text-pink-600" />,
+          "receive"
+        )
+      );
+    }
+
+    if (canContinueReceiving(row)) {
+      actions.push(
+        iconButton(
+          `/dashboard/purchasing/grn/continue/${row.latestGrn!.id}`,
+          "Continue receiving goods",
+          <PackageCheck className="h-4 w-4 text-pink-600" />,
+          "continue"
+        )
+      );
+    }
+
+    if (row.grnId) {
+      actions.push(
+        iconButton(
+          `/dashboard/purchasing/grn/${row.grnId}`,
+          "View detail",
+          <Eye className="h-4 w-4 text-pink-600" />,
+          "detail"
+        )
+      );
+    }
+
+    if (canRunQualityControl(row)) {
+      actions.push(
+        iconButton(
+          `/dashboard/purchasing/grn/${row.grnId}/qc`,
+          "Quality control",
+          <ClipboardCheck className="h-4 w-4 text-emerald-600" />,
+          "qc"
+        )
+      );
+    } else if (actions.length === 0 && row.deliveryId) {
+      actions.push(
+        iconButton(
+          `/dashboard/purchasing/delivery/${row.deliveryId}`,
+          "View delivery",
+          <Eye className="h-4 w-4 text-pink-600" />,
+          "delivery-detail"
+        )
+      );
+    } else if (actions.length === 0 && row.poId) {
+      actions.push(
+        iconButton(
+          `/dashboard/purchasing/po/${row.poId}`,
+          "View purchase order",
+          <Eye className="h-4 w-4 text-pink-600" />,
+          "po-detail"
+        )
+      );
+    }
+
+    return actions;
   }
 
   return (
     <div className="space-y-6">
       <div className="border-b border-gray-200/70 pb-4">
-        <h1 className="text-2xl font-bold text-gray-900">Receive</h1>
+        <h1 className="text-2xl font-bold text-gray-900">Goods Receipt</h1>
         <p className="text-sm text-gray-500">
-          Pantau setiap PO, riwayat delivery, GRN, qty diterima/ditolak, dan sisa yang perlu dikirim — {filteredRows.length} total
+          Track deliveries, goods receipts, received and rejected quantities, and remaining shipments — {filteredRows.length} total
         </p>
       </div>
 
       <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
-        {(["waiting_delivery", "in_delivery", "partially_received", "received"] as ReceivingStatus[]).map((status) => (
+        {(["in_delivery", "partially_received", "received", "rejected"] as ReceivingStatus[]).map((status) => (
           <Card key={status} className="border-gray-200/70 shadow-xs">
             <CardContent className="p-4">
               <p className="text-xs font-medium text-gray-500">{STATUS_LABELS[status]}</p>
@@ -411,14 +436,14 @@ export function ReceivingWorkspacePage() {
 
       <PurchasingListSection
         icon={ClipboardDocumentCheckIcon}
-        title="Workspace Penerimaan"
-        description="Satu baris mewakili satu PO. Receive untuk delivery baru atau lanjutkan penerimaan sisa PO; buat delivery baru hanya jika ada pengiriman fisik berikutnya."
+        title="Receiving Workspace"
+        description="Each row represents a purchase order with at least one delivery. Receive goods, continue a partial receipt, or review completed receipts."
         toolbar={
           <div className="flex w-full flex-col gap-3 sm:w-auto md:flex-row md:items-center">
           <label className="relative w-full md:w-96">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
               <Input
-                placeholder="Cari PO, supplier, surat jalan, resi, atau dokumen penerimaan..."
+                placeholder="Search purchase order, supplier, delivery note, tracking number, or goods receipt..."
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
                 className="h-10 bg-white pl-10 pr-10 text-sm focus:border-pink-400 focus:ring-2 focus:ring-pink-100"
@@ -428,7 +453,7 @@ export function ReceivingWorkspacePage() {
                   type="button"
                   onClick={() => setSearchQuery("")}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 transition-colors hover:text-gray-700"
-                  aria-label="Hapus pencarian"
+                  aria-label="Clear search"
                 >
                   <X className="h-4 w-4" />
                 </button>
@@ -471,13 +496,12 @@ export function ReceivingWorkspacePage() {
                   </div>
                   <Combobox
                     options={[
-                      { value: "all", label: "Semua Status" },
-                      { value: "waiting_delivery", label: "Menunggu Delivery" },
-                      { value: "in_delivery", label: "Dalam Delivery" },
-                      { value: "partially_received", label: "Diterima Sebagian" },
-                      { value: "received", label: "Diterima Penuh" },
-                      { value: "rejected", label: "Ditolak" },
-                      { value: "cancelled", label: "Dibatalkan" },
+                      { value: "all", label: "All Statuses" },
+                      { value: "in_delivery", label: "In Delivery" },
+                      { value: "partially_received", label: "Partially Received" },
+                      { value: "received", label: "Fully Received" },
+                      { value: "rejected", label: "Rejected" },
+                      { value: "cancelled", label: "Cancelled" },
                     ]}
                     value={statusFilter}
                     onChange={(value) => {
@@ -485,8 +509,8 @@ export function ReceivingWorkspacePage() {
                       setPage(1);
                     }}
                     placeholder="Filter status..."
-                    searchPlaceholder="Cari status..."
-                    emptyMessage="Status tidak ditemukan"
+                    searchPlaceholder="Search status..."
+                    emptyMessage="No status found"
                     className="!w-full h-9 text-sm"
                   />
                 </div>
@@ -496,12 +520,12 @@ export function ReceivingWorkspacePage() {
 
           {loading ? (
             <div className="py-12 text-center">
-              <p className="text-sm text-gray-500">Memuat data penerimaan...</p>
+              <p className="text-sm text-gray-500">Loading receiving data...</p>
             </div>
           ) : filteredRows.length === 0 ? (
             <div className="py-14 text-center">
               <TruckIcon className="mx-auto mb-4 h-12 w-12 text-gray-300" />
-              <p className="text-gray-500">Belum ada data sesuai filter</p>
+              <p className="text-gray-500">No data matches the current filters</p>
             </div>
           ) : (
             <>
@@ -509,19 +533,30 @@ export function ReceivingWorkspacePage() {
               <table className="min-w-full text-sm">
                 <thead className="border-b border-gray-100 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
                   <tr>
-                    {["Status", "PO", "Supplier", "Delivery & GRN", "Progress Barang", "Tanggal Terakhir", "Aksi"].map((heading) => (
-                      <th key={heading} className="px-4 py-3 text-left font-semibold">{heading}</th>
+                    {[
+                      "Purchase Order",
+                      "Supplier",
+                      "GRN Number",
+                      "Delivery",
+                      "Item Progress",
+                      "Status",
+                      "Last Updated",
+                      "Actions",
+                    ].map((heading) => (
+                      <th
+                        key={heading}
+                        className={`px-4 py-3 font-semibold ${
+                          heading === "Actions" ? "text-right" : "text-left"
+                        }`}
+                      >
+                        {heading}
+                      </th>
                     ))}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {paginatedRows.map((row) => (
                     <tr key={row.key} className="hover:bg-gray-50">
-                      <td className="px-4 py-3">
-                        <Badge variant="outline" className={STATUS_STYLES[row.status]}>
-                          {STATUS_LABELS[row.status]}
-                        </Badge>
-                      </td>
                       <td className="px-4 py-3">
                         {row.poId ? (
                           <Link href={`/dashboard/purchasing/po/${row.poId}`} className="font-medium text-pink-700 hover:underline">
@@ -533,48 +568,72 @@ export function ReceivingWorkspacePage() {
                       </td>
                       <td className="px-4 py-3 text-sm">{row.supplierName}</td>
                       <td className="px-4 py-3 text-sm">
+                        {row.grns.length === 0 ? (
+                          <span className="text-gray-400">-</span>
+                        ) : (
+                          <div className="space-y-1">
+                            {row.grns.slice(0, 3).map((grn) => (
+                              <Link
+                                key={grn.id}
+                                href={RM_ROUTES.purchasingGrnDetail(grn.id)}
+                                className="block font-medium text-pink-700 hover:underline"
+                              >
+                                {grn.nomor_grn}
+                              </Link>
+                            ))}
+                            {row.grns.length > 3 && (
+                              <div className="text-xs text-gray-500">+{row.grns.length - 3} more</div>
+                            )}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-sm">
                         <div className="space-y-1.5">
                           {row.deliveries.length === 0 ? (
-                            <span className="text-gray-400">Belum ada delivery</span>
+                            <span className="text-gray-400">No delivery yet</span>
                           ) : (
-                            row.deliveries.slice(0, 3).map((delivery) => {
-                              const deliveryGrns = row.grns.filter((grn) => grn.delivery_id === delivery.id);
-                              const firstGrn = deliveryGrns[0];
-                              return (
-                                <div key={delivery.id} className="rounded-lg border border-gray-100 bg-gray-50 px-2.5 py-2">
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    <Link href={`/dashboard/purchasing/delivery/${delivery.id}`} className="font-medium text-gray-900 hover:text-pink-700 hover:underline">
-                                      {deliveryLabel(delivery)}
-                                    </Link>
-                                    <span className="text-xs text-gray-400">SJ: {delivery.no_surat_jalan || "-"}</span>
-                                  </div>
-                                  {firstGrn ? (
-                                    <Link href={`/dashboard/purchasing/grn/${firstGrn.id}`} className="mt-1 block text-xs font-medium text-pink-700 hover:underline">
-                                      GRN: {firstGrn.nomor_grn}
-                                    </Link>
-                                  ) : (
-                                    <div className="mt-1 text-xs text-amber-600">Belum input barang masuk</div>
-                                  )}
+                            row.deliveries.slice(0, 3).map((delivery) => (
+                              <div key={delivery.id} className="rounded-lg border border-gray-100 bg-gray-50 px-2.5 py-2">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <Link
+                                    href={`/dashboard/raw-material/purchasing/delivery/${delivery.id}`}
+                                    className="font-medium text-gray-900 hover:text-pink-700 hover:underline"
+                                  >
+                                    {deliveryLabel(delivery)}
+                                  </Link>
+                                  <span className="text-xs text-gray-400">Delivery Note: {delivery.no_surat_jalan || "-"}</span>
                                 </div>
-                              );
-                            })
+                                {!row.grns.some((grn) => grn.delivery_id === delivery.id) && (
+                                  <div className="mt-1 text-xs text-amber-600">Goods receipt not recorded yet</div>
+                                )}
+                              </div>
+                            ))
                           )}
                           {row.deliveries.length > 3 && (
-                            <div className="text-xs text-gray-500">+{row.deliveries.length - 3} delivery lainnya</div>
+                            <div className="text-xs text-gray-500">+{row.deliveries.length - 3} more deliveries</div>
                           )}
                         </div>
                       </td>
                       <td className="px-4 py-3 text-sm">
                         <div className="font-medium">
-                          Diterima {formatQty(row.receivedQty)} / {formatQty(row.orderedQty)}
+                          Received {formatQty(row.receivedQty)} / {formatQty(row.orderedQty)}
                         </div>
-                        <div className="text-xs text-gray-500">Sisa {formatQty(row.remainingQty)}</div>
+                        <div className="text-xs text-gray-500">Remaining {formatQty(row.remainingQty)}</div>
                         {(row.rejectedQty || 0) > 0 && (
-                          <div className="text-xs text-red-600">{formatQty(row.rejectedQty)} ditolak</div>
+                          <div className="text-xs text-red-600">{formatQty(row.rejectedQty)} rejected</div>
                         )}
                       </td>
+                      <td className="px-4 py-3">
+                        <Badge variant="outline" className={STATUS_STYLES[row.status]}>
+                          {STATUS_LABELS[row.status]}
+                        </Badge>
+                      </td>
                       <td className="px-4 py-3 text-sm">{formatDate(row.date)}</td>
-                      <td className="px-4 py-3">{renderAction(row)}</td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          {renderActions(row)}
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>

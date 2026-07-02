@@ -22,6 +22,7 @@ import { toast } from "sonner";
 import { BOMItem } from "@/types/purchasing";
 import { ITEMS_PRODUCTS_PATH } from "@/modules/purchasing/constants/items-nav";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { getProductUnitLabel } from "../product-unit";
 
 function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
@@ -197,10 +198,14 @@ export function ProductDetailPage() {
               Ringkasan Produk
             </CardTitle>
           </CardHeader>
-          <CardContent className="grid gap-4 sm:grid-cols-3">
+          <CardContent className="grid gap-4 sm:grid-cols-2 md:grid-cols-4">
             <div>
               <p className="text-sm text-muted-foreground">Kategori</p>
               <p className="font-medium">{categoryLabel}</p>
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Satuan</p>
+              <p className="font-medium">{getProductUnitLabel(product)}</p>
             </div>
             <div>
               <p className="text-sm text-muted-foreground">Status</p>
@@ -272,6 +277,10 @@ export function ProductDetailPage() {
                 <div>
                   <p className="text-sm text-muted-foreground">Kategori</p>
                   <p className="font-medium">{categoryLabel}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Satuan</p>
+                  <p className="font-medium">{getProductUnitLabel(product)}</p>
                 </div>
               </div>
               <div>

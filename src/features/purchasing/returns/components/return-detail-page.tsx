@@ -5,47 +5,110 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { useReturn } from "../queries";
 import { useApproveReturn, useRejectReturn } from "../mutations";
+import { RM_ROUTES } from "@/modules/purchasing/constants/item-routes";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import {
-  Table,
-  TableHeader,
-  TableBody,
-  TableRow,
-  TableHead,
-  TableCell,
-} from "@/components/ui/table";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
   DialogFooter,
+  DialogPanel,
+  DialogPanelBody,
+  DialogPanelDescription,
+  DialogPanelHeader,
+  DialogPanelTitle,
 } from "@/components/ui/dialog";
-import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
 import {
-  RETURN_STATUS_LABELS,
-  RETURN_STATUS_COLORS,
-  RETURN_REASON_LABELS,
+  ReturnStatus,
+  ReturnReasonType,
 } from "@/types/purchasing";
 import {
-  ArrowLeft,
-  CheckCircle,
-  XCircle,
-  Printer,
-  Download,
-  Calendar,
-  Building,
+  ArrowLeftIcon,
+  CheckCircle2,
   FileText,
-  AlertCircle,
+  Loader2,
+  Package,
+  Pencil,
+  Printer,
+  RotateCcw,
+  XCircle,
 } from "lucide-react";
-import { formatRupiah } from "@/lib/purchasing/utils";
-import { format } from "date-fns";
-import { id as localeId } from "date-fns/locale";
+import { formatAmount, formatDate } from "@/lib/purchasing/utils";
 import { toast } from "sonner";
+
+const STATUS_LABELS: Record<ReturnStatus, string> = {
+  draft: "Draft",
+  pending_approval: "Pending Approval",
+  approved: "Approved",
+  rejected: "Rejected",
+  completed: "Completed",
+  cancelled: "Cancelled",
+};
+
+const STATUS_STYLES: Record<ReturnStatus, string> = {
+  draft: "border-gray-200 bg-gray-50 text-gray-700",
+  pending_approval: "border-amber-200 bg-amber-50 text-amber-700",
+  approved: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  rejected: "border-red-200 bg-red-50 text-red-700",
+  completed: "border-blue-200 bg-blue-50 text-blue-700",
+  cancelled: "border-gray-200 bg-gray-100 text-gray-600",
+};
+
+const REASON_LABELS: Record<ReturnReasonType, string> = {
+  damaged: "Damaged Goods",
+  wrong_item: "Wrong Item",
+  expired: "Expired",
+  overstock: "Overstock",
+  specification_mismatch: "Specification Mismatch",
+  other: "Other",
+};
+
+function formatQty(value: number) {
+  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 4 }).format(value);
+}
+
+function getGrnNumber(ret: {
+  grn_number?: string | null;
+  grn?: { grn_number?: string | null; nomor_grn?: string | null } | null;
+  grn_id?: string | null;
+}) {
+  return ret.grn_number || ret.grn?.grn_number || ret.grn?.nomor_grn || "-";
+}
+
+function getErrorMessage(error: unknown, fallback: string) {
+  return error instanceof Error ? error.message : fallback;
+}
+
+function DetailField({
+  label,
+  value,
+  href,
+  className,
+}: {
+  label: string;
+  value: string;
+  href?: string;
+  className?: string;
+}) {
+  const content = (
+    <div className={className}>
+      <dt className="text-xs text-gray-500">{label}</dt>
+      <dd
+        className={`mt-0.5 text-sm font-medium text-gray-900 ${href ? "text-pink-700 hover:underline" : ""}`}
+      >
+        {value}
+      </dd>
+    </div>
+  );
+
+  if (href) {
+    return <Link href={href}>{content}</Link>;
+  }
+
+  return content;
+}
 
 export function ReturnDetailPage() {
   const params = useParams();
@@ -65,114 +128,133 @@ export function ReturnDetailPage() {
 
   useEffect(() => {
     if (detailQuery.isError) {
-      console.error("Error loading return:", detailQuery.error);
-      toast.error("Gagal memuat detail return");
+      toast.error(getErrorMessage(detailQuery.error, "Failed to load purchase return"));
     }
   }, [detailQuery.isError, detailQuery.error]);
 
   const handleApprove = async () => {
     try {
-      // In real app, get current user ID from context
-      await approveMutation.mutateAsync({ id: returnId, approvedBy: "current-user-id" });
-      toast.success("Return berhasil disetujui");
+      await approveMutation.mutateAsync(returnId);
+      toast.success("Purchase return approved");
       setApproveDialogOpen(false);
-    } catch (error: any) {
-      toast.error(error.message || "Gagal menyetujui return");
+    } catch (error: unknown) {
+      toast.error(getErrorMessage(error, "Failed to approve purchase return"));
     }
   };
 
   const handleReject = async () => {
     if (!rejectionReason.trim()) {
-      toast.error("Alasan penolakan wajib diisi");
+      toast.error("Rejection reason is required");
       return;
     }
 
     try {
-      await rejectMutation.mutateAsync({ id: returnId, reason: rejectionReason, rejectedBy: "current-user-id" });
-      toast.success("Return ditolak");
+      await rejectMutation.mutateAsync({ id: returnId, reason: rejectionReason.trim() });
+      toast.success("Purchase return rejected");
       setRejectDialogOpen(false);
       setRejectionReason("");
-    } catch (error: any) {
-      toast.error(error.message || "Gagal menolak return");
+    } catch (error: unknown) {
+      toast.error(getErrorMessage(error, "Failed to reject purchase return"));
     }
   };
 
   if (loading) {
     return (
-      <div className="p-6 flex items-center justify-center min-h-[400px]">
-        <p className="text-gray-500">Memuat data...</p>
+      <div className="flex min-h-56 items-center justify-center text-sm text-gray-500">
+        <Loader2 className="mr-2 h-4 w-4 animate-spin text-pink-600" />
+        Loading purchase return...
       </div>
     );
   }
 
-  if (!ret) {
+  if (detailQuery.isError || !ret) {
     return (
-      <div className="p-6">
-        <div className="text-center py-12">
-          <AlertCircle className="w-16 h-16 mx-auto text-gray-400 mb-4" />
-          <h2 className="text-xl font-bold text-gray-900 mb-2">
-            Return tidak ditemukan
-          </h2>
-          <Link href="/dashboard/purchasing/returns">
-            <Button>Kembali ke List</Button>
-          </Link>
-        </div>
+      <div className="space-y-4">
+        <Link href={RM_ROUTES.purchasingReturns}>
+          <Button variant="ghost" size="sm" className="h-9 gap-2 text-pink-700">
+            <ArrowLeftIcon className="h-4 w-4" />
+            Back
+          </Button>
+        </Link>
+        <Card className="border-gray-200/70 shadow-xs">
+          <CardContent className="py-12 text-center text-sm text-gray-500">
+            Purchase return not found or could not be loaded.
+          </CardContent>
+        </Card>
       </div>
     );
   }
 
-  const canApprove = ret.status === "pending_approval";
-  const isApproved = ret.status === "approved" || ret.status === "completed";
+  const status = ret.status as ReturnStatus;
+  const reason = ret.reason_type as ReturnReasonType;
+  const canApprove = status === "pending_approval";
+  const canEdit = status === "draft" || status === "pending_approval";
+  const isApproved = status === "approved" || status === "completed";
+  const totalQty =
+    ret.items?.reduce((sum, item) => sum + Number(item.qty_returned || 0), 0) ?? 0;
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col items-start justify-between gap-4 border-b border-gray-200/70 pb-4 sm:flex-row sm:items-center">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-2xl font-bold text-gray-900">{ret.return_number}</h1>
-            <Badge className={RETURN_STATUS_COLORS[ret.status]}>
-              {RETURN_STATUS_LABELS[ret.status]}
-            </Badge>
-          </div>
-          <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-gray-500">
-            <span>{format(new Date(ret.return_date), "dd MMMM yyyy", { locale: localeId })}</span>
-            <span className="text-gray-300">•</span>
-            <span>{ret.supplier?.nama_supplier || "-"}</span>
-            <span className="text-gray-300">•</span>
-            <span>{RETURN_REASON_LABELS[ret.reason_type]}</span>
-          </div>
-        </div>
-        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap">
-          <Link href="/dashboard/purchasing/returns">
-            <Button variant="outline" className="purchasing-secondary-button w-full sm:w-auto">
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Kembali
+      <div className="flex flex-col gap-4 border-b border-gray-200/70 pb-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="flex items-start gap-3">
+          <Link href={RM_ROUTES.purchasingReturns}>
+            <Button variant="ghost" size="sm" className="h-9 gap-2 text-pink-700">
+              <ArrowLeftIcon className="h-4 w-4" />
+              Back
             </Button>
           </Link>
-          <Button variant="outline" className="purchasing-secondary-button w-full sm:w-auto">
-            <Printer className="w-4 h-4 mr-2" />
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-2xl font-bold text-gray-900">{ret.return_number}</h1>
+              <Badge variant="outline" className={STATUS_STYLES[status]}>
+                {STATUS_LABELS[status]}
+              </Badge>
+            </div>
+            <p className="mt-1 text-sm text-gray-500">
+              {formatDate(ret.return_date)} · {ret.supplier?.nama_supplier || "-"} ·{" "}
+              {REASON_LABELS[reason]}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+          <Button
+            variant="outline"
+            onClick={() => window.print()}
+            className="purchasing-secondary-button w-full sm:w-auto"
+          >
+            <Printer className="mr-2 h-4 w-4" />
             Print
           </Button>
-          <Button variant="outline" className="purchasing-secondary-button w-full sm:w-auto">
-            <Download className="w-4 h-4 mr-2" />
-            Export PDF
-          </Button>
+          {canEdit && (
+            <Link href={RM_ROUTES.purchasingReturnsEdit(returnId)}>
+              <Button
+                variant="outline"
+                className="purchasing-secondary-button w-full sm:w-auto"
+              >
+                <Pencil className="mr-2 h-4 w-4" />
+                Edit
+              </Button>
+            </Link>
+          )}
           {canApprove && (
             <>
               <Button
                 variant="outline"
-                className="h-10 w-full rounded-lg border-green-200 bg-white px-3 text-sm font-medium text-green-600 shadow-sm hover:!border-green-200 hover:!bg-green-50 hover:!text-green-700 sm:w-auto"
+                className="h-10 w-full rounded-lg border-emerald-200 bg-white px-3 text-sm font-medium text-emerald-700 shadow-sm hover:!border-emerald-200 hover:!bg-emerald-50 sm:w-auto"
                 onClick={() => setApproveDialogOpen(true)}
+                disabled={isProcessing}
               >
-                <CheckCircle className="w-4 h-4 mr-2" />
+                <CheckCircle2 className="mr-2 h-4 w-4" />
                 Approve
               </Button>
               <Button
                 variant="outline"
-                className="h-10 w-full rounded-lg border-red-200 bg-white px-3 text-sm font-medium text-red-600 shadow-sm hover:!border-red-200 hover:!bg-red-50 hover:!text-red-700 sm:w-auto"
+                className="h-10 w-full rounded-lg border-red-200 bg-white px-3 text-sm font-medium text-red-600 shadow-sm hover:!border-red-200 hover:!bg-red-50 sm:w-auto"
                 onClick={() => setRejectDialogOpen(true)}
+                disabled={isProcessing}
               >
-                <XCircle className="w-4 h-4 mr-2" />
+                <XCircle className="mr-2 h-4 w-4" />
                 Reject
               </Button>
             </>
@@ -180,333 +262,287 @@ export function ReturnDetailPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Column - Details */}
-        <div className="lg:col-span-2 space-y-4">
-          {/* Return Info */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Informasi Return</CardTitle>
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
+        <div className="space-y-6 xl:col-span-8">
+          <Card className="border-gray-200/70 shadow-xs">
+            <CardHeader className="border-b border-gray-200/70 pb-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <FileText className="h-4 w-4 text-pink-600" />
+                Return Information
+              </CardTitle>
             </CardHeader>
-            <CardContent>
-              <dl className="grid grid-cols-2 gap-4">
-                <div>
-                  <dt className="text-sm text-gray-500">Supplier</dt>
-                  <dd className="font-medium flex items-center gap-2 mt-1">
-                    <Building className="w-4 h-4 text-gray-400" />
-                    {ret.supplier?.nama_supplier || "-"}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-sm text-gray-500">Tanggal Return</dt>
-                  <dd className="font-medium flex items-center gap-2 mt-1">
-                    <Calendar className="w-4 h-4 text-gray-400" />
-                    {format(new Date(ret.return_date), "dd MMM yyyy", { locale: localeId })}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-sm text-gray-500">Alasan Return</dt>
-                  <dd className="font-medium flex items-center gap-2 mt-1">
-                    <FileText className="w-4 h-4 text-gray-400" />
-                    {RETURN_REASON_LABELS[ret.reason_type]}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-sm text-gray-500">GRN Reference</dt>
-                  <dd className="font-medium mt-1">{ret.grn?.grn_number || "-"}</dd>
-                </div>
-              </dl>
-
+            <CardContent className="grid gap-4 p-4 md:grid-cols-2">
+              <DetailField label="Supplier" value={ret.supplier?.nama_supplier || "-"} />
+              <DetailField label="Return Date" value={formatDate(ret.return_date)} />
+              <DetailField label="Reason" value={REASON_LABELS[reason]} />
+              <DetailField
+                label="Goods Receipt"
+                value={getGrnNumber(ret)}
+                href={ret.grn_id ? RM_ROUTES.purchasingGrnDetail(ret.grn_id) : undefined}
+              />
               {(ret.reason_notes || ret.notes) && (
-                <div className="mt-4 pt-4 border-t">
+                <div className="md:col-span-2 space-y-3 border-t border-gray-200/70 pt-4">
                   {ret.reason_notes && (
-                    <div className="mb-3">
-                      <dt className="text-sm font-medium text-gray-700 mb-1">
-                        Catatan Alasan:
-                      </dt>
-                      <dd className="text-sm text-gray-600">{ret.reason_notes}</dd>
+                    <div>
+                      <p className="text-xs font-medium text-gray-500">Reason Notes</p>
+                      <p className="mt-1 text-sm text-gray-700">{ret.reason_notes}</p>
                     </div>
                   )}
                   {ret.notes && (
                     <div>
-                      <dt className="text-sm font-medium text-gray-700 mb-1">
-                        Catatan Tambahan:
-                      </dt>
-                      <dd className="text-sm text-gray-600">{ret.notes}</dd>
+                      <p className="text-xs font-medium text-gray-500">Internal Notes</p>
+                      <p className="mt-1 text-sm text-gray-700">{ret.notes}</p>
                     </div>
                   )}
                 </div>
               )}
-
               {ret.rejection_reason && (
-                <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
-                  <div className="flex items-start gap-2">
-                    <XCircle className="w-5 h-5 text-red-600 mt-0.5" />
-                    <div>
-                      <p className="font-medium text-red-900 text-sm mb-1">
-                        Alasan Penolakan:
-                      </p>
-                      <p className="text-sm text-red-800">{ret.rejection_reason}</p>
-                    </div>
-                  </div>
+                <div className="md:col-span-2 rounded-xl border border-red-200/80 bg-red-50/60 p-4 text-sm text-red-800">
+                  <p className="font-medium">Rejection Reason</p>
+                  <p className="mt-1">{ret.rejection_reason}</p>
                 </div>
               )}
             </CardContent>
           </Card>
 
-          {/* Return Items */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Item yang Di-Return</CardTitle>
+          <Card className="border-gray-200/70 shadow-xs">
+            <CardHeader className="border-b border-gray-200/70 pb-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Package className="h-4 w-4 text-pink-600" />
+                Returned Items
+              </CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50 border-b">
-                    <tr>
-                      <th className="text-left px-4 py-3">Bahan Baku</th>
-                      <th className="text-right px-4 py-3">Batch</th>
-                      <th className="text-right px-4 py-3">Expired</th>
-                      <th className="text-right px-4 py-3">Qty</th>
-                      <th className="text-right px-4 py-3">Unit Cost</th>
-                      <th className="text-right px-4 py-3">Subtotal</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {ret.items?.map((item) => (
-                      <TableRow key={item.id}>
-                        <td className="px-4 py-3">
-                          <div>
-                            <p className="font-medium">{item.raw_material?.nama}</p>
-                            <p className="text-xs text-gray-500">
-                              {item.raw_material?.kode}
-                            </p>
-                          </div>
+            <CardContent className="p-0">
+              {!ret.items?.length ? (
+                <div className="py-12 text-center text-sm text-gray-500">No items found.</div>
+              ) : (
+                <div className="overflow-x-auto p-4">
+                  <table className="min-w-full text-sm">
+                    <thead className="border-b border-gray-100 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+                      <tr>
+                        <th className="px-4 py-3 text-left font-semibold">Raw Material</th>
+                        <th className="px-4 py-3 text-left font-semibold">Warehouse</th>
+                        <th className="px-4 py-3 text-right font-semibold">Batch</th>
+                        <th className="px-4 py-3 text-right font-semibold">Expiry</th>
+                        <th className="px-4 py-3 text-right font-semibold">Qty</th>
+                        <th className="px-4 py-3 text-right font-semibold">Unit Cost</th>
+                        <th className="px-4 py-3 text-right font-semibold">Subtotal</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {ret.items.map((item) => (
+                        <tr key={item.id} className="hover:bg-gray-50/80">
+                          <td className="px-4 py-3">
+                            <div className="font-medium text-gray-900">
+                              {item.raw_material?.nama || "-"}
+                            </div>
+                            <div className="text-xs text-gray-500">
+                              {item.raw_material?.kode || "-"}
+                            </div>
+                            {item.condition_notes && (
+                              <div className="mt-1 text-xs text-gray-500">{item.condition_notes}</div>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-gray-600">
+                            {item.grn_item?.warehouse?.name || "-"}
+                          </td>
+                          <td className="px-4 py-3 text-right font-mono text-xs text-gray-700">
+                            {item.batch_number || "-"}
+                          </td>
+                          <td className="px-4 py-3 text-right text-gray-600">
+                            {item.expiry_date ? formatDate(item.expiry_date) : "-"}
+                          </td>
+                          <td className="px-4 py-3 text-right text-gray-700">
+                            {formatQty(Number(item.qty_returned))}
+                          </td>
+                          <td className="px-4 py-3 text-right text-gray-700">
+                            {formatAmount(item.unit_cost)}
+                          </td>
+                          <td className="px-4 py-3 text-right font-medium text-gray-900">
+                            {formatAmount(item.subtotal)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t border-gray-200/70 bg-gray-50/60">
+                        <td colSpan={6} className="px-4 py-3 text-right text-sm font-medium text-gray-700">
+                          Total
                         </td>
-                        <td className="px-4 py-3 text-right font-mono text-xs">
-                          {item.batch_number || "-"}
+                        <td className="px-4 py-3 text-right text-sm font-semibold text-pink-700">
+                          {formatAmount(ret.total_amount)}
                         </td>
-                        <td className="px-4 py-3 text-right text-xs">
-                          {item.expiry_date
-                            ? format(new Date(item.expiry_date), "dd MMM yyyy", { locale: localeId })
-                            : "-"}
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          {item.qty_returned.toLocaleString()} {item.raw_material?.satuan || ""}
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          {formatRupiah(item.unit_cost)}
-                        </td>
-                        <td className="px-4 py-3 text-right font-medium">
-                          {formatRupiah(item.subtotal)}
-                        </td>
-                      </TableRow>
-                    ))}
-                  </tbody>
-                  <tfoot className="bg-gray-50">
-                    <tr>
-                      <td colSpan={5} className="text-right px-4 py-3 font-medium">
-                        Total:
-                      </td>
-                      <td className="text-right px-4 py-3 font-bold text-pink-600">
-                        {formatRupiah(ret.total_amount)}
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              )}
             </CardContent>
           </Card>
-
-          {/* Condition Notes */}
-          {ret.items?.some((item) => item.condition_notes) && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Kondisi Barang</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {ret.items
-                  .filter((item) => item.condition_notes)
-                  .map((item) => (
-                    <div
-                      key={item.id}
-                      className="p-3 bg-gray-50 rounded-lg"
-                    >
-                      <p className="font-medium text-sm mb-1">
-                        {item.raw_material?.nama}
-                      </p>
-                      <p className="text-sm text-gray-600">
-                        {item.condition_notes}
-                      </p>
-                    </div>
-                  ))}
-              </CardContent>
-            </Card>
-          )}
         </div>
 
-        {/* Right Column - Timeline & Actions */}
-        <div className="space-y-4">
-          {/* Summary Card */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Summary</CardTitle>
+        <div className="space-y-6 xl:col-span-4">
+          <Card className="border-gray-200/70 shadow-xs xl:sticky xl:top-6">
+            <CardHeader className="border-b border-gray-200/70 pb-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <RotateCcw className="h-4 w-4 text-pink-600" />
+                Summary
+              </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-500">Total Item</span>
-                <span className="font-medium">{ret.items?.length || 0}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-500">Total Qty</span>
-                <span className="font-medium">
-                  {ret.items?.reduce((sum, i) => sum + i.qty_returned, 0).toLocaleString() || 0}
-                </span>
-              </div>
-              <div className="border-t pt-3">
-                <div className="flex justify-between">
-                  <span className="font-medium">Total Nilai</span>
-                  <span className="font-bold text-pink-600">
-                    {formatRupiah(ret.total_amount)}
-                  </span>
+            <CardContent className="space-y-4 pt-4">
+              <dl className="space-y-3 text-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <dt className="text-gray-500">Items</dt>
+                  <dd className="font-medium text-gray-900">{ret.items?.length || 0}</dd>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Timeline */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Timeline</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-start gap-3">
-                <div className="w-2 h-2 rounded-full bg-gray-300 mt-2" />
-                <div className="flex-1">
-                  <p className="text-sm font-medium">Dibuat</p>
-                  <p className="text-xs text-gray-500">
-                    {format(new Date(ret.created_at), "dd MMM yyyy HH:mm", { locale: localeId })}
-                  </p>
+                <div className="flex items-start justify-between gap-3">
+                  <dt className="text-gray-500">Total Quantity</dt>
+                  <dd className="font-medium text-gray-900">{formatQty(totalQty)}</dd>
                 </div>
+                <div className="flex items-start justify-between gap-3 border-t border-gray-200/70 pt-3">
+                  <dt className="font-medium text-gray-900">Total Amount</dt>
+                  <dd className="font-semibold text-pink-700">{formatAmount(ret.total_amount)}</dd>
+                </div>
+              </dl>
+
+              <div className="border-t border-gray-200/70 pt-4">
+                <p className="mb-3 text-sm font-medium text-gray-900">Timeline</p>
+                <ul className="space-y-3 text-sm">
+                  <li className="flex gap-3">
+                    <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-gray-300" />
+                    <div>
+                      <p className="font-medium text-gray-900">Created</p>
+                      <p className="text-xs text-gray-500">{formatDate(ret.created_at)}</p>
+                    </div>
+                  </li>
+                  {ret.approved_at && (
+                    <li className="flex gap-3">
+                      <span
+                        className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${
+                          status === "rejected" ? "bg-red-500" : "bg-emerald-500"
+                        }`}
+                      />
+                      <div>
+                        <p className="font-medium text-gray-900">
+                          {status === "rejected" ? "Rejected" : "Approved"}
+                        </p>
+                        <p className="text-xs text-gray-500">{formatDate(ret.approved_at)}</p>
+                      </div>
+                    </li>
+                  )}
+                  {ret.shipping_date && (
+                    <li className="flex gap-3">
+                      <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-blue-500" />
+                      <div>
+                        <p className="font-medium text-gray-900">Shipped to Supplier</p>
+                        <p className="text-xs text-gray-500">{formatDate(ret.shipping_date)}</p>
+                        {ret.tracking_number && (
+                          <p className="text-xs text-gray-500">Tracking: {ret.tracking_number}</p>
+                        )}
+                      </div>
+                    </li>
+                  )}
+                </ul>
               </div>
 
-              {ret.approved_at && (
-                <div className="flex items-start gap-3">
-                  <div
-                    className={`w-2 h-2 rounded-full mt-2 ${
-                      ret.status === "rejected" ? "bg-red-500" : "bg-green-500"
-                    }`}
-                  />
-                  <div className="flex-1">
-                    <p className="text-sm font-medium">
-                      {ret.status === "rejected" ? "Ditolak" : "Disetujui"}
-                    </p>
-                    <p className="text-xs text-gray-500">
-                      {format(new Date(ret.approved_at), "dd MMM yyyy HH:mm", { locale: localeId })}
-                    </p>
+              {isApproved && (
+                <div className="rounded-xl border border-emerald-200/80 bg-emerald-50/60 p-4 text-sm text-emerald-800">
+                  <div className="flex items-start gap-2">
+                    <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+                    <div>
+                      <p className="font-medium">Return approved</p>
+                      <p className="mt-1 text-emerald-700/90">
+                        Stock has been reduced from the receipt warehouse. Goods receipt return
+                        quantities have been updated.
+                      </p>
+                    </div>
                   </div>
                 </div>
               )}
-
-              {ret.shipping_date && (
-                <div className="flex items-start gap-3">
-                  <div className="w-2 h-2 rounded-full bg-blue-500 mt-2" />
-                  <div className="flex-1">
-                    <p className="text-sm font-medium">Dikirim ke Supplier</p>
-                    <p className="text-xs text-gray-500">
-                      {format(new Date(ret.shipping_date), "dd MMM yyyy", { locale: localeId })}
-                    </p>
-                  </div>
-                </div>
-              )}
             </CardContent>
           </Card>
-
-          {/* Info Box */}
-          {isApproved && (
-            <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-              <div className="flex items-start gap-2">
-                <CheckCircle className="w-5 h-5 text-green-600 mt-0.5" />
-                <div className="text-sm text-green-800">
-                  <p className="font-medium mb-1">Return Approved</p>
-                  <p>
-                    Stock inventory telah disesuaikan dan GRN telah diupdate.
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
         </div>
       </div>
 
-      {/* Approve Dialog */}
       <Dialog open={approveDialogOpen} onOpenChange={setApproveDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Approve Return?</DialogTitle>
-            <DialogDescription>
-              Apakah Anda yakin ingin menyetujui return ini? Stock inventory akan berkurang dan GRN akan diupdate.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
+        <DialogPanel size="xs">
+          <DialogPanelHeader>
+            <DialogPanelTitle>Approve Purchase Return?</DialogPanelTitle>
+            <DialogPanelDescription>
+              Stock will be reduced from each item&apos;s receipt warehouse. Goods receipt return
+              quantities will be updated.
+            </DialogPanelDescription>
+          </DialogPanelHeader>
+          <DialogPanelBody />
+          <DialogFooter className="px-6 py-4">
             <Button
+              type="button"
               variant="outline"
+              className="purchasing-secondary-button"
               onClick={() => setApproveDialogOpen(false)}
               disabled={isProcessing}
             >
-              Batal
+              Cancel
             </Button>
             <Button
+              type="button"
+              className="purchasing-main-button"
               onClick={handleApprove}
               disabled={isProcessing}
-              className="bg-green-600 hover:bg-green-700"
             >
-              {isProcessing ? "Memproses..." : "Ya, Approve"}
+              {isProcessing ? "Approving..." : "Approve"}
             </Button>
           </DialogFooter>
-        </DialogContent>
+        </DialogPanel>
       </Dialog>
 
-      {/* Reject Dialog */}
       <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Reject Return</DialogTitle>
-            <DialogDescription>
-              Berikan alasan penolakan return ini.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="py-4">
-            <Label htmlFor="rejection_reason">Alasan Penolakan *</Label>
-            <Textarea
-              id="rejection_reason"
-              value={rejectionReason}
-              onChange={(e) => setRejectionReason(e.target.value)}
-              placeholder="Jelaskan alasan penolakan..."
-              rows={4}
-              className="mt-2"
-            />
-          </div>
-          <DialogFooter>
+        <DialogPanel size="sm">
+          <DialogPanelHeader>
+            <DialogPanelTitle>Reject Purchase Return</DialogPanelTitle>
+            <DialogPanelDescription>
+              Provide a reason for rejecting this return request.
+            </DialogPanelDescription>
+          </DialogPanelHeader>
+          <DialogPanelBody>
+            <div className="space-y-1.5">
+              <Label htmlFor="rejection_reason" className="text-xs">
+                Rejection Reason <span className="text-red-500">*</span>
+              </Label>
+              <Textarea
+                id="rejection_reason"
+                value={rejectionReason}
+                onChange={(e) => setRejectionReason(e.target.value)}
+                placeholder="Explain why this return is rejected..."
+                rows={4}
+                className="resize-none text-sm"
+              />
+            </div>
+          </DialogPanelBody>
+          <DialogFooter className="px-6 py-4">
             <Button
+              type="button"
               variant="outline"
+              className="purchasing-secondary-button"
               onClick={() => {
                 setRejectDialogOpen(false);
                 setRejectionReason("");
               }}
               disabled={isProcessing}
             >
-              Batal
+              Cancel
             </Button>
             <Button
-              variant="destructive"
+              type="button"
+              variant="outline"
+              className="h-10 rounded-lg border-red-200 bg-white px-3 text-sm font-medium text-red-600 hover:!border-red-200 hover:!bg-red-50"
               onClick={handleReject}
               disabled={isProcessing || !rejectionReason.trim()}
             >
-              {isProcessing ? "Memproses..." : "Ya, Reject"}
+              {isProcessing ? "Rejecting..." : "Reject"}
             </Button>
           </DialogFooter>
-        </DialogContent>
+        </DialogPanel>
       </Dialog>
     </div>
   );

@@ -728,11 +728,12 @@ export async function createPOItem(
   poId: string,
   payload: PurchaseOrderItemFormData
 ): Promise<PurchaseOrderItem> {
+  const { notes, ...rest } = payload;
   const response = await fetchApi<{ data: PurchaseOrderItem }>(
     `${BASE}/po/${poId}/items`,
     {
       method: "POST",
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ ...rest, catatan: notes || undefined }),
     }
   );
   return response.data;
@@ -742,11 +743,15 @@ export async function updatePOItem(
   itemId: string,
   payload: Partial<PurchaseOrderItemFormData>
 ): Promise<PurchaseOrderItem> {
+  const { notes, ...rest } = payload;
   const response = await fetchApi<{ data: PurchaseOrderItem }>(
     `${BASE}/po/items/${itemId}`,
     {
       method: "PUT",
-      body: JSON.stringify(payload),
+      body: JSON.stringify({
+        ...rest,
+        ...(notes !== undefined ? { catatan: notes || null } : {}),
+      }),
     }
   );
   return response.data;

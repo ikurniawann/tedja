@@ -427,7 +427,7 @@ export function CsvImporter({
 
                 <div className="flex gap-3">
                   <Button variant="outline" onClick={resetImport} className="flex-1">
-                    Batal
+                    Cancel
                   </Button>
                   <Button
                     onClick={handleImport}

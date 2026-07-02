@@ -1,18 +1,31 @@
-import { 
-  PurchaseReturn, 
-  PurchaseReturnFormData, 
+import {
+  PurchaseReturn,
+  PurchaseReturnFormData,
   ReturnListParams,
-  ReturnableItem 
+  ReturnableItem,
 } from "@/types/purchasing";
 
 const API_BASE = "/api/purchasing/returns";
+
+async function parseJsonResponse<T>(response: Response): Promise<T> {
+  const text = await response.text();
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new Error(
+      response.ok
+        ? "Invalid response from server"
+        : `Request failed (${response.status})`
+    );
+  }
+}
 
 /**
  * List purchase returns with pagination and filters
  */
 export async function listReturns(params: ReturnListParams) {
   const searchParams = new URLSearchParams();
-  
+
   if (params.page) searchParams.set("page", params.page.toString());
   if (params.limit) searchParams.set("limit", params.limit.toString());
   if (params.status) searchParams.set("status", params.status);
@@ -25,10 +38,14 @@ export async function listReturns(params: ReturnListParams) {
   if (params.sort_order) searchParams.set("sort_order", params.sort_order);
 
   const response = await fetch(`${API_BASE}?${searchParams}`);
-  const result = await response.json();
+  const result = await parseJsonResponse<{
+    message?: string;
+    data?: unknown;
+    pagination?: unknown;
+  }>(response);
 
   if (!response.ok) {
-    throw new Error(result.message || "Gagal mengambil data return");
+    throw new Error(result.message || "Failed to load purchase returns");
   }
 
   return result;
@@ -39,10 +56,10 @@ export async function listReturns(params: ReturnListParams) {
  */
 export async function getReturn(id: string): Promise<PurchaseReturn> {
   const response = await fetch(`${API_BASE}/${id}`);
-  const result = await response.json();
+  const result = await parseJsonResponse<{ message?: string; data: PurchaseReturn }>(response);
 
   if (!response.ok) {
-    throw new Error(result.message || "Gagal mengambil detail return");
+    throw new Error(result.message || "Failed to load purchase return");
   }
 
   return result.data;
@@ -58,10 +75,10 @@ export async function createReturn(data: PurchaseReturnFormData) {
     body: JSON.stringify(data),
   });
 
-  const result = await response.json();
+  const result = await parseJsonResponse<{ message?: string; data?: unknown }>(response);
 
   if (!response.ok) {
-    throw new Error(result.message || "Gagal membuat return");
+    throw new Error(result.message || "Failed to create purchase return");
   }
 
   return result;
@@ -70,17 +87,16 @@ export async function createReturn(data: PurchaseReturnFormData) {
 /**
  * Approve purchase return
  */
-export async function approveReturn(id: string, approvedBy: string) {
+export async function approveReturn(id: string) {
   const response = await fetch(`${API_BASE}/${id}/approve`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ approved_by: approvedBy }),
   });
 
-  const result = await response.json();
+  const result = await parseJsonResponse<{ message?: string }>(response);
 
   if (!response.ok) {
-    throw new Error(result.message || "Gagal menyetujui return");
+    throw new Error(result.message || "Failed to approve purchase return");
   }
 
   return result;
@@ -89,17 +105,17 @@ export async function approveReturn(id: string, approvedBy: string) {
 /**
  * Reject purchase return
  */
-export async function rejectReturn(id: string, reason: string, rejectedBy: string) {
+export async function rejectReturn(id: string, reason: string) {
   const response = await fetch(`${API_BASE}/${id}/reject`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ rejection_reason: reason, rejected_by: rejectedBy }),
+    body: JSON.stringify({ rejection_reason: reason }),
   });
 
-  const result = await response.json();
+  const result = await parseJsonResponse<{ message?: string }>(response);
 
   if (!response.ok) {
-    throw new Error(result.message || "Gagal menolak return");
+    throw new Error(result.message || "Failed to reject purchase return");
   }
 
   return result;
@@ -108,12 +124,18 @@ export async function rejectReturn(id: string, reason: string, rejectedBy: strin
 /**
  * Get returnable items from GRN
  */
-export async function getReturnableItems(grnId: string): Promise<ReturnableItem[]> {
-  const response = await fetch(`/api/purchasing/grn/${grnId}/returnable-items`);
-  const result = await response.json();
+export async function getReturnableItems(
+  grnId: string,
+  excludeReturnId?: string
+): Promise<ReturnableItem[]> {
+  const params = excludeReturnId
+    ? `?exclude_return_id=${encodeURIComponent(excludeReturnId)}`
+    : "";
+  const response = await fetch(`/api/purchasing/grn/${grnId}/returnable-items${params}`);
+  const result = await parseJsonResponse<{ message?: string; data?: ReturnableItem[] }>(response);
 
   if (!response.ok) {
-    throw new Error(result.message || "Gagal mengambil item yang bisa di-return");
+    throw new Error(result.message || "Failed to load returnable items");
   }
 
   return result.data || [];
@@ -129,10 +151,10 @@ export async function updateReturn(id: string, data: Partial<PurchaseReturnFormD
     body: JSON.stringify(data),
   });
 
-  const result = await response.json();
+  const result = await parseJsonResponse<{ message?: string }>(response);
 
   if (!response.ok) {
-    throw new Error(result.message || "Gagal mengupdate return");
+    throw new Error(result.message || "Failed to update purchase return");
   }
 
   return result;
@@ -146,10 +168,10 @@ export async function cancelReturn(id: string) {
     method: "PATCH",
   });
 
-  const result = await response.json();
+  const result = await parseJsonResponse<{ message?: string }>(response);
 
   if (!response.ok) {
-    throw new Error(result.message || "Gagal membatalkan return");
+    throw new Error(result.message || "Failed to cancel purchase return");
   }
 
   return result;
@@ -165,10 +187,10 @@ export async function shipReturn(id: string, shippingDate: string, trackingNumbe
     body: JSON.stringify({ shipping_date: shippingDate, tracking_number: trackingNumber }),
   });
 
-  const result = await response.json();
+  const result = await parseJsonResponse<{ message?: string }>(response);
 
   if (!response.ok) {
-    throw new Error(result.message || "Gagal mengupdate status pengiriman");
+    throw new Error(result.message || "Failed to update shipping status");
   }
 
   return result;

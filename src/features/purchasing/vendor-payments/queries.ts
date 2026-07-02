@@ -1,13 +1,16 @@
 "use client";
 
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
-import { listVendorPayments } from "./api";
+import { listPurchaseInvoices } from "./api";
 import { vendorPaymentsQueryKeys } from "./query-keys";
-import type { VendorPaymentListParams } from "./types";
+import type { PurchaseInvoiceListParams } from "./types";
 
-export const useVendorPaymentList = (params: VendorPaymentListParams) =>
+export const usePurchaseInvoiceList = (params: PurchaseInvoiceListParams) =>
   useQuery({
     queryKey: vendorPaymentsQueryKeys.list(params),
-    queryFn: () => listVendorPayments(params),
+    queryFn: () => listPurchaseInvoices(params),
     placeholderData: keepPreviousData,
   });
+
+/** @deprecated Use usePurchaseInvoiceList */
+export const useVendorPaymentList = usePurchaseInvoiceList;

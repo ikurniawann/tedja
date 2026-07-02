@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { RM_ROUTES } from "@/modules/purchasing/constants/item-routes";
 import { useParams } from "next/navigation";
 import {
   ArrowLeftIcon,
@@ -268,7 +269,7 @@ export function ProductionOrderDetailPage() {
   if (!order) {
     return (
       <div className="mx-auto max-w-7xl space-y-4">
-        <Link href="/dashboard/purchasing/production" className="inline-flex items-center gap-2 text-sm font-medium text-pink-700">
+        <Link href={RM_ROUTES.productionHub} className="inline-flex items-center gap-2 text-sm font-medium text-pink-700">
           <ArrowLeftIcon className="h-4 w-4" />
           Kembali ke Produksi
         </Link>
@@ -319,7 +320,7 @@ export function ProductionOrderDetailPage() {
     <div className="mx-auto max-w-7xl space-y-6">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div className="space-y-2">
-          <Link href="/dashboard/purchasing/production" className="inline-flex items-center gap-2 text-sm font-medium text-pink-700">
+          <Link href={RM_ROUTES.productionHub} className="inline-flex items-center gap-2 text-sm font-medium text-pink-700">
             <ArrowLeftIcon className="h-4 w-4" />
             Kembali ke Produksi
           </Link>

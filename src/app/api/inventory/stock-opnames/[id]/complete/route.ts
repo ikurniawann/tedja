@@ -1,0 +1,156 @@
+import { NextRequest } from "next/server";
+import { ApiError, requireApiRole } from "@/lib/api/auth";
+import { withTransaction } from "@/lib/db";
+import { fetchStockOpnameDetail } from "@/lib/inventory/stock-opname";
+
+const OPNAME_ROLES = ["super_admin", "warehouse_admin", "purchasing_admin"] as const;
+
+function toNumber(value: unknown) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+type RouteContext = { params: Promise<{ id: string }> };
+
+export async function POST(_request: NextRequest, context: RouteContext) {
+  try {
+    const user = await requireApiRole([...OPNAME_ROLES]);
+    const { id } = await context.params;
+    const detail = await fetchStockOpnameDetail(id);
+
+    if (!detail) {
+      return Response.json(
+        { success: false, message: "Stock opname tidak ditemukan" },
+        { status: 404 }
+      );
+    }
+
+    if (detail.status === "completed") {
+      return Response.json(
+        { success: false, message: "Stock opname sudah diselesaikan sebelumnya" },
+        { status: 400 }
+      );
+    }
+
+    if (detail.status === "cancelled") {
+      return Response.json(
+        { success: false, message: "Stock opname yang dibatalkan tidak dapat diselesaikan" },
+        { status: 400 }
+      );
+    }
+
+    const uncounted = detail.lines.filter(
+      (line) => line.qty_counted === null || line.qty_counted === undefined
+    );
+    if (uncounted.length > 0) {
+      return Response.json(
+        {
+          success: false,
+          message: `Masih ada ${uncounted.length} baris yang belum dihitung`,
+        },
+        { status: 400 }
+      );
+    }
+
+    await withTransaction(async (client) => {
+      for (const line of detail.lines) {
+        const qtyBefore = line.qty_system;
+        const qtyAfter = toNumber(line.qty_counted);
+        const qtyDiff = qtyAfter - qtyBefore;
+
+        if (qtyDiff === 0) continue;
+
+        const invRes = await client.query<{
+          id: string;
+          branch_id: string | null;
+          warehouse_id: string | null;
+          unit_cost: number | string | null;
+        }>(
+          `SELECT id, branch_id, warehouse_id, unit_cost
+           FROM inventory.inventory
+           WHERE id = $1
+           FOR UPDATE`,
+          [line.inventory_id]
+        );
+
+        const inv = invRes.rows[0];
+        if (!inv) {
+          throw new Error(`Inventory ${line.inventory_id} tidak ditemukan`);
+        }
+
+        await client.query(
+          `UPDATE inventory.inventory
+           SET qty_available = $1,
+               last_movement_at = now(),
+               updated_at = now(),
+               updated_by = $2
+           WHERE id = $3`,
+          [qtyAfter, user.id, line.inventory_id]
+        );
+
+        const unitCost = toNumber(inv.unit_cost ?? line.unit_cost);
+        await client.query(
+          `INSERT INTO inventory.inventory_movements (
+             inventory_id, raw_material_id, tipe, jumlah,
+             qty_before, qty_after, unit_cost, total_cost,
+             branch_id, warehouse_id,
+             reference_type, reference_id, reference_number, alasan,
+             created_by, updated_by
+           ) VALUES (
+             $1, $2, 'adjustment', $3,
+             $4, $5, $6, $7,
+             $8, $9,
+             'stock_opname', $10, $11, $12,
+             $13, $13
+           )`,
+          [
+            line.inventory_id,
+            line.raw_material_id,
+            Math.abs(qtyDiff),
+            qtyBefore,
+            qtyAfter,
+            unitCost,
+            Math.abs(qtyDiff) * unitCost,
+            inv.branch_id,
+            inv.warehouse_id,
+            detail.id,
+            detail.opname_number,
+            line.notes ||
+              `Stock opname ${detail.opname_number}: ${qtyDiff > 0 ? "+" : ""}${qtyDiff}`,
+            user.id,
+          ]
+        );
+      }
+
+      await client.query(
+        `UPDATE inventory.stock_opnames
+         SET status = 'completed',
+             completed_at = now(),
+             lines_counted = $2,
+             lines_with_variance = $3,
+             updated_by = $4,
+             updated_at = now()
+         WHERE id = $1`,
+        [
+          detail.id,
+          detail.lines.length,
+          detail.lines.filter((l) => toNumber(l.qty_variance) !== 0).length,
+          user.id,
+        ]
+      );
+    });
+
+    const updated = await fetchStockOpnameDetail(id);
+    return Response.json({
+      success: true,
+      data: updated,
+      message: "Stock opname selesai dan stok telah disesuaikan",
+    });
+  } catch (error: unknown) {
+    if (error instanceof ApiError) return error.toResponse();
+    console.error("POST complete stock-opname:", error);
+    const message =
+      error instanceof Error ? error.message : "Gagal menyelesaikan stock opname";
+    return Response.json({ success: false, message }, { status: 500 });
+  }
+}
