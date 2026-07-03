@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Combobox } from "@/components/ui/combobox";
 import { PurchasingListSection } from "@/modules/purchasing/components/list/PurchasingListSection";
 import { PurchasingTablePagination } from "@/modules/purchasing/components/pagination/PurchasingTablePagination";
-import { RM_ROUTES } from "@/modules/purchasing/constants/item-routes";
+import { RM_ROUTES, PRODUCT_ROUTES } from "@/modules/purchasing/constants/item-routes";
 import {
   ClipboardDocumentCheckIcon,
   TruckIcon,
@@ -143,7 +143,22 @@ function deliveryLabel(delivery: DeliveryRow) {
   return delivery.no_resi || delivery.delivery_number || delivery.no_surat_jalan || "Delivery";
 }
 
-export function ReceivingWorkspacePage() {
+type ModuleType = "raw_material" | "product";
+
+type ReceivingWorkspacePageProps = {
+  moduleType?: ModuleType;
+};
+
+export function ReceivingWorkspacePage({
+  moduleType = "raw_material",
+}: ReceivingWorkspacePageProps) {
+  const isProduct = moduleType === "product";
+  const routes = isProduct ? PRODUCT_ROUTES : RM_ROUTES;
+  const supplierColumnLabel = isProduct ? "Vendor" : "Supplier";
+  const searchPlaceholder = isProduct
+    ? "Search purchase order, vendor, delivery note, tracking number, or goods receipt..."
+    : "Search purchase order, supplier, delivery note, tracking number, or goods receipt...";
+
   const [search, setSearch] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<ReceivingStatus | "all">("all");
@@ -151,7 +166,7 @@ export function ReceivingWorkspacePage() {
   const [page, setPage] = useState(1);
   const limit = 10;
 
-  const workspaceQuery = useReceivingWorkspace();
+  const workspaceQuery = useReceivingWorkspace(moduleType);
   const loading = workspaceQuery.isLoading;
   const purchaseOrders = (workspaceQuery.data?.purchase_orders ?? []) as PurchaseOrderRow[];
   const deliveries = (workspaceQuery.data?.deliveries ?? []) as DeliveryRow[];
@@ -352,7 +367,7 @@ export function ReceivingWorkspacePage() {
     if (!fullyReceived && row.pendingDelivery?.id) {
       actions.push(
         iconButton(
-          `/dashboard/purchasing/grn/insert?delivery_id=${row.pendingDelivery.id}`,
+          `${isProduct ? routes.purchasingReceiveInsert : RM_ROUTES.purchasingGrnInsert}?delivery_id=${row.pendingDelivery.id}`,
           "Receive goods",
           <PackageCheck className="h-4 w-4 text-pink-600" />,
           "receive"
@@ -363,7 +378,9 @@ export function ReceivingWorkspacePage() {
     if (canContinueReceiving(row)) {
       actions.push(
         iconButton(
-          `/dashboard/purchasing/grn/continue/${row.latestGrn!.id}`,
+          isProduct
+            ? PRODUCT_ROUTES.purchasingReceiveContinue(row.latestGrn!.id)
+            : RM_ROUTES.purchasingGrnContinue(row.latestGrn!.id),
           "Continue receiving goods",
           <PackageCheck className="h-4 w-4 text-pink-600" />,
           "continue"
@@ -374,7 +391,9 @@ export function ReceivingWorkspacePage() {
     if (row.grnId) {
       actions.push(
         iconButton(
-          `/dashboard/purchasing/grn/${row.grnId}`,
+          isProduct
+            ? PRODUCT_ROUTES.purchasingReceiveDetail(row.grnId)
+            : RM_ROUTES.purchasingGrnDetail(row.grnId),
           "View detail",
           <Eye className="h-4 w-4 text-pink-600" />,
           "detail"
@@ -385,7 +404,9 @@ export function ReceivingWorkspacePage() {
     if (canRunQualityControl(row)) {
       actions.push(
         iconButton(
-          `/dashboard/purchasing/grn/${row.grnId}/qc`,
+          isProduct
+            ? PRODUCT_ROUTES.purchasingReceiveQc(row.grnId!)
+            : RM_ROUTES.purchasingGrnQc(row.grnId!),
           "Quality control",
           <ClipboardCheck className="h-4 w-4 text-emerald-600" />,
           "qc"
@@ -394,7 +415,9 @@ export function ReceivingWorkspacePage() {
     } else if (actions.length === 0 && row.deliveryId) {
       actions.push(
         iconButton(
-          `/dashboard/purchasing/delivery/${row.deliveryId}`,
+          isProduct
+            ? PRODUCT_ROUTES.purchasingDeliveryDetail(row.deliveryId)
+            : `/dashboard/purchasing/delivery/${row.deliveryId}`,
           "View delivery",
           <Eye className="h-4 w-4 text-pink-600" />,
           "delivery-detail"
@@ -403,7 +426,7 @@ export function ReceivingWorkspacePage() {
     } else if (actions.length === 0 && row.poId) {
       actions.push(
         iconButton(
-          `/dashboard/purchasing/po/${row.poId}`,
+          isProduct ? routes.purchasingPoDetail(row.poId) : `/dashboard/purchasing/po/${row.poId}`,
           "View purchase order",
           <Eye className="h-4 w-4 text-pink-600" />,
           "po-detail"
@@ -443,7 +466,7 @@ export function ReceivingWorkspacePage() {
           <label className="relative w-full md:w-96">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
               <Input
-                placeholder="Search purchase order, supplier, delivery note, tracking number, or goods receipt..."
+                placeholder={searchPlaceholder}
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
                 className="h-10 bg-white pl-10 pr-10 text-sm focus:border-pink-400 focus:ring-2 focus:ring-pink-100"
@@ -535,7 +558,7 @@ export function ReceivingWorkspacePage() {
                   <tr>
                     {[
                       "Purchase Order",
-                      "Supplier",
+                      supplierColumnLabel,
                       "GRN Number",
                       "Delivery",
                       "Item Progress",
@@ -559,7 +582,14 @@ export function ReceivingWorkspacePage() {
                     <tr key={row.key} className="hover:bg-gray-50">
                       <td className="px-4 py-3">
                         {row.poId ? (
-                          <Link href={`/dashboard/purchasing/po/${row.poId}`} className="font-medium text-pink-700 hover:underline">
+                          <Link
+                            href={
+                              isProduct
+                                ? routes.purchasingPoDetail(row.poId)
+                                : `/dashboard/purchasing/po/${row.poId}`
+                            }
+                            className="font-medium text-pink-700 hover:underline"
+                          >
                             {row.poNumber}
                           </Link>
                         ) : (
@@ -575,7 +605,11 @@ export function ReceivingWorkspacePage() {
                             {row.grns.slice(0, 3).map((grn) => (
                               <Link
                                 key={grn.id}
-                                href={RM_ROUTES.purchasingGrnDetail(grn.id)}
+                                href={
+                                  isProduct
+                                    ? PRODUCT_ROUTES.purchasingReceiveDetail(grn.id)
+                                    : RM_ROUTES.purchasingGrnDetail(grn.id)
+                                }
                                 className="block font-medium text-pink-700 hover:underline"
                               >
                                 {grn.nomor_grn}
@@ -596,7 +630,11 @@ export function ReceivingWorkspacePage() {
                               <div key={delivery.id} className="rounded-lg border border-gray-100 bg-gray-50 px-2.5 py-2">
                                 <div className="flex flex-wrap items-center gap-2">
                                   <Link
-                                    href={`/dashboard/raw-material/purchasing/delivery/${delivery.id}`}
+                                    href={
+                                      isProduct
+                                        ? PRODUCT_ROUTES.purchasingDeliveryDetail(delivery.id)
+                                        : `/dashboard/raw-material/purchasing/delivery/${delivery.id}`
+                                    }
                                     className="font-medium text-gray-900 hover:text-pink-700 hover:underline"
                                   >
                                     {deliveryLabel(delivery)}

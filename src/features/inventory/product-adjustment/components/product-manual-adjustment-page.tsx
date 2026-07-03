@@ -1,19 +1,19 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
-import { ArrowLeftIcon, MagnifyingGlassIcon } from "@heroicons/react/24/outline";
+import { MagnifyingGlassIcon } from "@heroicons/react/24/outline";
+import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { DsDateTimePicker } from "@/components/design-system";
+import { PurchasingFormHeader } from "@/modules/purchasing/components/page/purchasing-page-header";
 import { PRODUCT_ROUTES } from "@/modules/purchasing/constants/item-routes";
 import { toast } from "sonner";
 
 function formatQty(value: number | null | undefined) {
-  return new Intl.NumberFormat("id-ID", { maximumFractionDigits: 3 }).format(
-    Number(value) || 0
-  );
+  return Number(value || 0).toLocaleString("en-US", { maximumFractionDigits: 4 });
 }
 
 type AdjustLine = {
@@ -52,7 +52,7 @@ export function ProductManualAdjustmentPage() {
           }))
         );
       })
-      .catch(() => toast.error("Gagal memuat daftar produk"))
+      .catch(() => toast.error("Failed to load product list"))
       .finally(() => setLoading(false));
   }, []);
 
@@ -80,9 +80,7 @@ export function ProductManualAdjustmentPage() {
 
   const handleLineChange = (key: string, value: string) => {
     setLines((prev) =>
-      prev.map((line) =>
-        line.key === key ? { ...line, qty_actual_input: value } : line
-      )
+      prev.map((line) => (line.key === key ? { ...line, qty_actual_input: value } : line))
     );
   };
 
@@ -104,7 +102,7 @@ export function ProductManualAdjustmentPage() {
   const validateInputs = () => {
     const toSave = lines.filter((line) => line.qty_actual_input !== "");
     if (toSave.length === 0) {
-      toast.error("Isi stok baru minimal pada satu produk");
+      toast.error("Enter new stock for at least one product");
       return false;
     }
 
@@ -114,13 +112,13 @@ export function ProductManualAdjustmentPage() {
       return !Number.isFinite(n) || n < 0;
     });
     if (invalid) {
-      toast.error("Stok baru harus berupa angka ≥ 0");
+      toast.error("New stock must be a number greater than or equal to zero");
       return false;
     }
 
     const withVariance = toSave.filter((line) => resolveQty(line) !== line.qty_system);
     if (withVariance.length === 0) {
-      toast.error("Tidak ada selisih stok untuk disimpan");
+      toast.error("No stock variance to save");
       return false;
     }
 
@@ -129,9 +127,7 @@ export function ProductManualAdjustmentPage() {
 
   const buildNote = () => {
     const base = notes.trim();
-    const dateLabel = adjustDate
-      ? `Penyesuaian ${adjustDate}`
-      : "Penyesuaian stok";
+    const dateLabel = adjustDate ? `Adjustment ${adjustDate}` : "Stock adjustment";
     return base ? `${dateLabel}: ${base}` : dateLabel;
   };
 
@@ -163,14 +159,12 @@ export function ProductManualAdjustmentPage() {
           });
           const json = await res.json();
           if (!res.ok) {
-            throw new Error(json.message || "Gagal menyesuaikan stok");
+            throw new Error(json.message || "Failed to adjust stock");
           }
           saved += 1;
           setLines((prev) =>
             prev.map((row) =>
-              row.key === line.key
-                ? { ...row, qty_system: qty, qty_actual_input: "" }
-                : row
+              row.key === line.key ? { ...row, qty_system: qty, qty_actual_input: "" } : row
             )
           );
         } catch {
@@ -179,11 +173,11 @@ export function ProductManualAdjustmentPage() {
       }
 
       if (saved > 0 && failed === 0) {
-        toast.success(`${saved} produk berhasil disesuaikan`);
+        toast.success(`${saved} product(s) adjusted successfully`);
       } else if (saved > 0) {
-        toast.warning(`${saved} produk tersimpan, ${failed} gagal`);
+        toast.warning(`${saved} line(s) saved, ${failed} failed`);
       } else {
-        toast.error("Gagal menyimpan penyesuaian stok");
+        toast.error("Failed to save stock adjustments");
       }
     } finally {
       setSubmitting(false);
@@ -192,74 +186,68 @@ export function ProductManualAdjustmentPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 border-b border-gray-200/70 pb-4 lg:flex-row lg:items-start lg:justify-between">
-        <div className="flex items-start gap-3">
-          <Link href={PRODUCT_ROUTES.inventoryStock}>
-            <Button variant="ghost" size="sm" className="h-9 gap-2 text-pink-700">
-              <ArrowLeftIcon className="h-4 w-4" />
-              Kembali
-            </Button>
-          </Link>
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Stock Adjustment Produk</h1>
-            <p className="text-sm text-gray-500">
-              Koreksi stok manual per produk jadi
-            </p>
-          </div>
-        </div>
-
-        {hasItems && (
-          <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              className="border-gray-200/80"
-              onClick={handleFillSystem}
-              disabled={submitting}
-            >
-              Isi = Stok Sistem
-            </Button>
-            <Button
-              type="button"
-              className="bg-pink-600 hover:bg-pink-700"
-              onClick={handleSubmit}
-              disabled={submitting}
-            >
-              {submitting ? "Menyimpan..." : "Simpan Penyesuaian"}
-            </Button>
-          </div>
-        )}
-      </div>
+      <PurchasingFormHeader
+        backHref={PRODUCT_ROUTES.inventoryStock}
+        title="Product Stock Adjustment"
+        description="Manually correct finished product stock quantities"
+        actions={
+          hasItems ? (
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                className="purchasing-secondary-button w-full sm:w-auto"
+                onClick={handleFillSystem}
+                disabled={submitting}
+              >
+                Fill with System Stock
+              </Button>
+              <Button
+                type="button"
+                className="purchasing-main-button w-full sm:w-auto"
+                onClick={handleSubmit}
+                disabled={submitting}
+              >
+                {submitting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  "Save Adjustment"
+                )}
+              </Button>
+            </>
+          ) : undefined
+        }
+      />
 
       <Card className="border-gray-200/70 shadow-xs">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Informasi Penyesuaian</CardTitle>
+        <CardHeader className="border-b border-gray-200/70 pb-3">
+          <CardTitle className="text-base">Adjustment Information</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-4 p-4">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-12">
-            <div className="min-w-0 space-y-1.5 md:col-span-4">
-              <Label htmlFor="adjust_date" className="text-xs">
-                Tanggal Penyesuaian
-              </Label>
-              <Input
-                id="adjust_date"
-                type="date"
+            <div className="min-w-0 md:col-span-4">
+              <DsDateTimePicker
+                label="Adjustment Date"
                 value={adjustDate}
-                onChange={(e) => setAdjustDate(e.target.value)}
+                onChange={setAdjustDate}
+                placeholder="Select adjustment date..."
+                dateOnly
                 disabled={submitting}
-                className="h-9 border-gray-200/80 text-sm"
               />
             </div>
 
             <div className="min-w-0 space-y-1.5 md:col-span-8">
               <Label htmlFor="notes" className="text-xs">
-                Catatan
+                Notes
               </Label>
               <Input
                 id="notes"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                placeholder="Alasan penyesuaian (opsional)..."
+                placeholder="Reason for adjustment (optional)..."
                 disabled={submitting}
                 className="h-9 border-gray-200/80 text-sm"
               />
@@ -269,15 +257,15 @@ export function ProductManualAdjustmentPage() {
           {hasItems && (
             <div className="grid grid-cols-3 gap-3 border-t border-gray-200/70 pt-4">
               <div className="rounded-lg border border-gray-200/70 bg-gray-50/50 px-3 py-2">
-                <p className="text-xs font-medium text-gray-500">Total Baris</p>
+                <p className="text-xs font-medium text-gray-500">Total Lines</p>
                 <p className="text-lg font-bold text-gray-900">{progress.total}</p>
               </div>
               <div className="rounded-lg border border-gray-200/70 bg-gray-50/50 px-3 py-2">
-                <p className="text-xs font-medium text-gray-500">Sudah Diisi</p>
+                <p className="text-xs font-medium text-gray-500">Filled</p>
                 <p className="text-lg font-bold text-amber-600">{progress.filled}</p>
               </div>
               <div className="rounded-lg border border-gray-200/70 bg-gray-50/50 px-3 py-2">
-                <p className="text-xs font-medium text-gray-500">Ada Selisih</p>
+                <p className="text-xs font-medium text-gray-500">With Variance</p>
                 <p className="text-lg font-bold text-pink-600">{progress.variance}</p>
               </div>
             </div>
@@ -289,13 +277,13 @@ export function ProductManualAdjustmentPage() {
         <CardContent className="p-0">
           <div className="flex flex-col gap-3 border-b border-gray-200/70 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h2 className="text-base font-semibold text-gray-900">Koreksi Stok</h2>
+              <h2 className="text-base font-semibold text-gray-900">Stock Correction</h2>
               <p className="text-sm text-gray-500">
                 {loading
-                  ? "Memuat daftar produk..."
+                  ? "Loading product list..."
                   : hasItems
-                    ? "Masukkan stok baru untuk produk yang perlu dikoreksi"
-                    : "Tidak ada produk aktif dalam scope ini"}
+                    ? "Enter new stock for products that need correction"
+                    : "No active products in this scope"}
               </p>
             </div>
             {hasItems && (
@@ -304,8 +292,8 @@ export function ProductManualAdjustmentPage() {
                 <Input
                   value={itemSearch}
                   onChange={(e) => setItemSearch(e.target.value)}
-                  placeholder="Cari produk..."
-                  className="h-10 border-gray-200/80 pl-9"
+                  placeholder="Search products..."
+                  className="h-10 border-gray-200/80 pl-9 text-sm"
                   disabled={submitting}
                 />
               </div>
@@ -313,59 +301,55 @@ export function ProductManualAdjustmentPage() {
           </div>
 
           <div className="overflow-x-auto px-4 pb-4">
-            <table className="w-full min-w-[800px] text-sm">
-              <thead>
-                <tr className="border-b border-gray-200/70 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
-                  <th className="px-3 py-3">Kode</th>
-                  <th className="px-3 py-3">Nama Produk</th>
-                  <th className="px-3 py-3">Satuan</th>
-                  <th className="px-3 py-3 text-right">Stok Sistem</th>
-                  <th className="px-3 py-3 text-right">Stok Baru</th>
-                  <th className="px-3 py-3 text-right">Selisih</th>
+            <table className="min-w-full text-sm">
+              <thead className="border-b border-gray-100 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+                <tr>
+                  <th className="px-4 py-3 text-left font-semibold">Code</th>
+                  <th className="px-4 py-3 text-left font-semibold">Product Name</th>
+                  <th className="px-4 py-3 text-left font-semibold">Unit</th>
+                  <th className="px-4 py-3 text-right font-semibold">System Stock</th>
+                  <th className="px-4 py-3 text-right font-semibold">New Stock</th>
+                  <th className="px-4 py-3 text-right font-semibold">Variance</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="divide-y divide-gray-100">
                 {loading ? (
                   <tr>
-                    <td colSpan={6} className="px-3 py-10 text-center text-gray-400">
-                      Memuat item...
+                    <td colSpan={6} className="px-4 py-10 text-center text-gray-400">
+                      <Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin text-pink-600" />
+                      Loading items...
                     </td>
                   </tr>
                 ) : filteredLines.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-3 py-10 text-center text-gray-400">
+                    <td colSpan={6} className="px-4 py-10 text-center text-gray-400">
                       {hasItems
-                        ? "Tidak ada item yang cocok dengan pencarian"
-                        : "Tidak ada produk aktif"}
+                        ? "No items match your search"
+                        : "No active products found"}
                     </td>
                   </tr>
                 ) : (
                   filteredLines.map((line) => {
                     const actual =
-                      line.qty_actual_input === ""
-                        ? null
-                        : Number(line.qty_actual_input);
+                      line.qty_actual_input === "" ? null : Number(line.qty_actual_input);
                     const variance =
                       actual === null || !Number.isFinite(actual)
                         ? null
                         : actual - line.qty_system;
 
                     return (
-                      <tr
-                        key={line.key}
-                        className="border-b border-gray-200/70 hover:bg-gray-50/80"
-                      >
-                        <td className="px-3 py-3 font-mono text-xs text-gray-600">
+                      <tr key={line.key} className="hover:bg-gray-50">
+                        <td className="px-4 py-3 font-mono text-xs text-gray-600">
                           {line.product_kode}
                         </td>
-                        <td className="px-3 py-3 font-medium text-gray-900">
+                        <td className="px-4 py-3 font-medium text-gray-900">
                           {line.product_nama}
                         </td>
-                        <td className="px-3 py-3 text-gray-600">{line.satuan || "—"}</td>
-                        <td className="px-3 py-3 text-right text-gray-700">
+                        <td className="px-4 py-3 text-gray-600">{line.satuan || "—"}</td>
+                        <td className="px-4 py-3 text-right text-gray-700">
                           {formatQty(line.qty_system)}
                         </td>
-                        <td className="px-3 py-3 text-right">
+                        <td className="px-4 py-3 text-right">
                           <Input
                             type="number"
                             min={0}
@@ -378,7 +362,7 @@ export function ProductManualAdjustmentPage() {
                           />
                         </td>
                         <td
-                          className={`px-3 py-3 text-right font-medium ${
+                          className={`px-4 py-3 text-right font-medium ${
                             variance === null
                               ? "text-gray-400"
                               : variance === 0

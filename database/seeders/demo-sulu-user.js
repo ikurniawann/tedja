@@ -4,7 +4,8 @@
  *
  *   Email   : demo@sulu.id
  *   Password: demo
- *   Role    : purchasing_admin
+ *   Role    : purchasing_admin (API / auth metadata)
+ *   Menus   : sulu_dago_demo (IAM sidebar — Items + POS, tanpa Finance/Accounting/Laporan)
  *   Scope   : Prologe → Sulu → Sulu Dago
  *
  * Usage:
@@ -25,7 +26,10 @@ const PASSWORD = process.env.DEMO_SULU_PASSWORD || "demo";
 const FULL_NAME = process.env.DEMO_SULU_NAME || "Demo Sulu Dago";
 const NIP = process.env.DEMO_SULU_NIP || "DEMOSULU";
 const PHONE = process.env.DEMO_SULU_PHONE || "-";
-const ROLE = "purchasing_admin";
+/** Auth + API role (unchanged for purchasing module access). */
+const PROFILE_ROLE = "purchasing_admin";
+/** IAM sidebar role (see migration 20260703150000_sulu_dago_demo_menu_permissions.sql). */
+const MENU_ROLE = "sulu_dago_demo";
 
 const HOLDING_CODE = "PROLOGE";
 const COMPANY_CODE = "SULU";
@@ -101,8 +105,8 @@ async function main() {
     }
 
     const hash = await bcrypt.hash(PASSWORD, 10);
-    const userMeta = JSON.stringify({ role: ROLE, full_name: FULL_NAME });
-    const appMeta = JSON.stringify({ role: ROLE });
+    const userMeta = JSON.stringify({ role: PROFILE_ROLE, full_name: FULL_NAME });
+    const appMeta = JSON.stringify({ role: PROFILE_ROLE });
 
     const existing = await c.query(
       "SELECT id FROM auth.users WHERE lower(email) = lower($1)",
@@ -146,7 +150,7 @@ async function main() {
              company_id = EXCLUDED.company_id,
              branch_id = EXCLUDED.branch_id,
              updated_at = NOW()`,
-      [userId, FULL_NAME, ROLE, EMAIL, scope.holding_id, scope.company_id, scope.branch_id]
+      [userId, FULL_NAME, PROFILE_ROLE, EMAIL, scope.holding_id, scope.company_id, scope.branch_id]
     );
     console.log("configuration.users: ok");
     console.log(
@@ -154,23 +158,33 @@ async function main() {
       `${scope.holding_name} → ${scope.company_name} → ${scope.branch_name}`
     );
 
-    const role = await c.query(
-      `INSERT INTO iam.roles (code, name, description, is_system, is_active)
-       VALUES ($1, $2, $3, false, true)
-       ON CONFLICT (code) DO UPDATE
-         SET name = EXCLUDED.name, is_active = true
-       RETURNING id`,
-      [ROLE, "Purchasing Admin", "Administrasi pembelian"]
+    const menuRole = await c.query(
+      `SELECT id FROM iam.roles WHERE code = $1 AND deleted_at IS NULL LIMIT 1`,
+      [MENU_ROLE]
     );
-    const roleId = role.rows[0].id;
+    if (!menuRole.rowCount) {
+      throw new Error(
+        `IAM role "${MENU_ROLE}" belum ada. Jalankan migration 20260703150000_sulu_dago_demo_menu_permissions.sql dulu.`
+      );
+    }
+    const menuRoleId = menuRole.rows[0].id;
+
+    await c.query(
+      `DELETE FROM iam.user_roles ur
+       USING iam.roles r
+       WHERE ur.user_id = $1
+         AND ur.role_id = r.id
+         AND r.code IN ('purchasing_admin', 'sulu_dago_demo')`,
+      [userId]
+    );
 
     await c.query(
       `INSERT INTO iam.user_roles (user_id, role_id, is_primary)
        VALUES ($1, $2, true)
        ON CONFLICT (user_id, role_id) DO UPDATE SET is_primary = true`,
-      [userId, roleId]
+      [userId, menuRoleId]
     );
-    console.log("iam.user_roles     : ok");
+    console.log("iam.user_roles     : ok (menu role:", MENU_ROLE + ")");
 
     const emp = await c.query(
       "SELECT id FROM hris.employees WHERE user_id = $1 OR lower(email) = lower($2) LIMIT 1",
@@ -200,7 +214,8 @@ async function main() {
     console.log("\nDemo user siap:");
     console.log("  Email   :", EMAIL);
     console.log("  Password:", PASSWORD);
-    console.log("  Role    :", ROLE);
+    console.log("  Role    :", PROFILE_ROLE, "(API)");
+    console.log("  Menus   :", MENU_ROLE);
     console.log(
       "  Scope   :",
       `${scope.holding_name} / ${scope.company_name} / ${scope.branch_name}`

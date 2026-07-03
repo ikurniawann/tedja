@@ -1,43 +1,40 @@
 'use client';
 
-import { useMemo, useState } from 'react';
-import { 
-  Plus, 
-  Search, 
-  Edit, 
-  Trash2, 
-  Package, 
+import { useEffect, useMemo, useState } from 'react';
+import {
+  Search,
+  Package,
   Settings2,
   Sparkles,
-  ToggleLeft,
-  ToggleRight,
   Save,
   PlusCircle,
   MinusCircle,
+  Trash2,
+  Loader2,
+  X,
 } from 'lucide-react';
-import { Card, CardContent } from '@/components/ui/card';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { 
-  Dialog, 
-  DialogContent, 
-  DialogHeader, 
-  DialogTitle, 
-  DialogFooter 
+import { Switch } from '@/components/ui/switch';
+import {
+  Dialog,
+  DialogPanel,
+  DialogPanelHeader,
+  DialogPanelTitle,
+  DialogPanelDescription,
+  DialogPanelBody,
+  DialogFooter,
 } from '@/components/ui/dialog';
+import { PurchasingPageHeader } from '@/modules/purchasing/components/page/purchasing-page-header';
+import { PurchasingListSection } from '@/modules/purchasing/components/list/PurchasingListSection';
+import { formatAmount } from '@/lib/purchasing/utils';
+import { PosProductThumbnail } from '@/components/pos/PosProductThumbnail';
 import type { PosCatalogProduct, PosProductModifier, PosProductModifierGroup, PosProductVariant } from '../types';
 import { usePosCatalogProducts } from '../queries';
 import { usePatchPosProduct } from '../mutations';
 
-const formatCurrency = (value: number) => {
-  return new Intl.NumberFormat('id-ID', {
-    style: 'currency',
-    currency: 'IDR',
-    minimumFractionDigits: 0,
-  }).format(value);
-};
-
-const generateId = () => Math.random().toString(36).substr(2, 9);
+const generateId = () => Math.random().toString(36).slice(2, 11);
 
 const stationOptions = [
   { value: 'kitchen', label: 'Kitchen' },
@@ -47,6 +44,10 @@ const stationOptions = [
   { value: 'merchandise', label: 'Merchandise' },
   { value: 'photobooth', label: 'Photobooth' },
 ];
+
+function getErrorMessage(error: unknown, fallback: string) {
+  return error instanceof Error ? error.message : fallback;
+}
 
 function inferStation(product: PosCatalogProduct) {
   const explicit = product.station;
@@ -60,27 +61,48 @@ function inferStation(product: PosCatalogProduct) {
   return 'kitchen';
 }
 
-// ============== MAIN COMPONENT ==============
+function formatMarginLabel(margin: number) {
+  const hasFraction = Math.abs(margin % 1) > 0.001;
+  return `${margin.toFixed(hasFraction ? 2 : 0)}%`;
+}
+
+function marginTone(margin: number) {
+  if (margin < 0) return 'text-red-600';
+  if (margin < 15) return 'text-amber-600';
+  return 'text-green-600';
+}
+
 export function ProductsPage() {
   const { data: products = [], isLoading: loading, error: queryError } = usePosCatalogProducts();
   const patchProductMutation = usePatchPosProduct();
+  const [searchQuery, setSearchQuery] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('Semua');
+  const [selectedCategory, setSelectedCategory] = useState('All');
   const [savingProductId, setSavingProductId] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
-  const queryErrorMessage = queryError instanceof Error ? queryError.message : null;
-  
-  // Variants Modal
   const [variantModalProduct, setVariantModalProduct] = useState<PosCatalogProduct | null>(null);
   const [variantModalData, setVariantModalData] = useState<PosProductVariant[]>([]);
-  
-  // Modifiers Modal
+
   const [modifierModalProduct, setModifierModalProduct] = useState<PosCatalogProduct | null>(null);
   const [modifierModalData, setModifierModalData] = useState<PosProductModifierGroup[]>([]);
   const [localEdits, setLocalEdits] = useState<
     Record<string, Partial<Pick<PosCatalogProduct, 'variants' | 'modifierGroups' | 'hasVariants' | 'hasModifiers'>>>
   >({});
+
+  const queryErrorMessage = queryError instanceof Error ? queryError.message : null;
+
+  useEffect(() => {
+    if (queryErrorMessage) {
+      toast.error(queryErrorMessage);
+    }
+  }, [queryErrorMessage]);
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      setSearchTerm(searchQuery.trim());
+    }, 300);
+    return () => window.clearTimeout(timeout);
+  }, [searchQuery]);
 
   const displayProducts = useMemo(
     () => products.map((product) => (localEdits[product.id] ? { ...product, ...localEdits[product.id] } : product)),
@@ -89,26 +111,24 @@ export function ProductsPage() {
 
   const categories = useMemo(() => {
     const unique = Array.from(new Set(displayProducts.map((product) => product.category).filter(Boolean)));
-    return ['Semua', ...unique];
+    return ['All', ...unique];
   }, [displayProducts]);
 
-  // Filter products
   const filteredProducts = displayProducts.filter((product) => {
-    const matchesSearch = product.name.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesCategory = selectedCategory === 'Semua' || product.category === selectedCategory;
+    const haystack = `${product.name} ${product.sku || ''}`.toLowerCase();
+    const matchesSearch = !searchTerm || haystack.includes(searchTerm.toLowerCase());
+    const matchesCategory = selectedCategory === 'All' || product.category === selectedCategory;
     return matchesSearch && matchesCategory;
   });
 
-  // Open Variants Modal
   const openVariantsModal = (product: PosCatalogProduct) => {
     setVariantModalProduct(product);
-    setVariantModalData(product.variants.map(v => ({ ...v })));
+    setVariantModalData(product.variants.map((variant) => ({ ...variant })));
   };
 
-  // Save Variants
   const saveVariants = () => {
     if (!variantModalProduct) return;
-    const hasActiveVariants = variantModalData.some(v => v.active);
+    const hasActiveVariants = variantModalData.some((variant) => variant.active);
     setLocalEdits((prev) => ({
       ...prev,
       [variantModalProduct.id]: {
@@ -116,46 +136,41 @@ export function ProductsPage() {
         hasVariants: hasActiveVariants,
       },
     }));
+    toast.success('Variants saved locally');
     setVariantModalProduct(null);
     setVariantModalData([]);
   };
 
-  // Add Variant
   const addVariant = () => {
-    setVariantModalData(prev => [...prev, {
-      id: generateId(),
-      name: '',
-      sku: '',
-      priceAdj: 0,
-      active: true,
-    }]);
+    setVariantModalData((prev) => [
+      ...prev,
+      { id: generateId(), name: '', sku: '', priceAdj: 0, active: true },
+    ]);
   };
 
-  // Remove Variant
   const removeVariant = (id: string) => {
-    setVariantModalData(prev => prev.filter(v => v.id !== id));
+    setVariantModalData((prev) => prev.filter((variant) => variant.id !== id));
   };
 
-  // Update Variant
   const updateVariant = (id: string, field: keyof PosProductVariant, value: string | number | boolean) => {
-    setVariantModalData(prev => prev.map(v => 
-      v.id === id ? { ...v, [field]: value } : v
-    ));
+    setVariantModalData((prev) =>
+      prev.map((variant) => (variant.id === id ? { ...variant, [field]: value } : variant))
+    );
   };
 
-  // Open Modifiers Modal
   const openModifiersModal = (product: PosCatalogProduct) => {
     setModifierModalProduct(product);
-    setModifierModalData(product.modifierGroups.map(g => ({
-      ...g,
-      modifiers: g.modifiers.map(m => ({ ...m }))
-    })));
+    setModifierModalData(
+      product.modifierGroups.map((group) => ({
+        ...group,
+        modifiers: group.modifiers.map((modifier) => ({ ...modifier })),
+      }))
+    );
   };
 
-  // Save Modifiers
   const saveModifiers = () => {
     if (!modifierModalProduct) return;
-    const hasActiveModifiers = modifierModalData.some(g => g.active);
+    const hasActiveModifiers = modifierModalData.some((group) => group.active);
     setLocalEdits((prev) => ({
       ...prev,
       [modifierModalProduct.id]: {
@@ -163,216 +178,236 @@ export function ProductsPage() {
         hasModifiers: hasActiveModifiers,
       },
     }));
+    toast.success('Modifiers saved locally');
     setModifierModalProduct(null);
     setModifierModalData([]);
   };
 
-  // Add Modifier Group
   const addModifierGroup = () => {
-    setModifierModalData(prev => [...prev, {
-      id: generateId(),
-      name: '',
-      required: false,
-      maxSelect: 1,
-      active: true,
-      modifiers: [],
-    }]);
+    setModifierModalData((prev) => [
+      ...prev,
+      {
+        id: generateId(),
+        name: '',
+        required: false,
+        maxSelect: 1,
+        active: true,
+        modifiers: [],
+      },
+    ]);
   };
 
-  // Remove Modifier Group
   const removeModifierGroup = (id: string) => {
-    setModifierModalData(prev => prev.filter(g => g.id !== id));
+    setModifierModalData((prev) => prev.filter((group) => group.id !== id));
   };
 
-  // Update Modifier Group
-  const updateModifierGroup = (id: string, field: keyof PosProductModifierGroup, value: string | number | boolean) => {
-    setModifierModalData(prev => prev.map(g => 
-      g.id === id ? { ...g, [field]: value } : g
-    ));
+  const updateModifierGroup = (
+    id: string,
+    field: keyof PosProductModifierGroup,
+    value: string | number | boolean
+  ) => {
+    setModifierModalData((prev) =>
+      prev.map((group) => (group.id === id ? { ...group, [field]: value } : group))
+    );
   };
 
-  // Add Modifier to Group
   const addModifier = (groupId: string) => {
-    setModifierModalData(prev => prev.map(g => {
-      if (g.id === groupId) {
+    setModifierModalData((prev) =>
+      prev.map((group) => {
+        if (group.id !== groupId) return group;
         return {
-          ...g,
-          modifiers: [...g.modifiers, {
-            id: generateId(),
-            name: '',
-            priceAdj: 0,
-            active: true,
-          }]
+          ...group,
+          modifiers: [
+            ...group.modifiers,
+            { id: generateId(), name: '', priceAdj: 0, active: true },
+          ],
         };
-      }
-      return g;
-    }));
+      })
+    );
   };
 
-  // Remove Modifier
   const removeModifier = (groupId: string, modifierId: string) => {
-    setModifierModalData(prev => prev.map(g => {
-      if (g.id === groupId) {
+    setModifierModalData((prev) =>
+      prev.map((group) => {
+        if (group.id !== groupId) return group;
         return {
-          ...g,
-          modifiers: g.modifiers.filter(m => m.id !== modifierId)
+          ...group,
+          modifiers: group.modifiers.filter((modifier) => modifier.id !== modifierId),
         };
-      }
-      return g;
-    }));
+      })
+    );
   };
 
-  // Update Modifier
-  const updateModifier = (groupId: string, modifierId: string, field: keyof PosProductModifier, value: string | number | boolean) => {
-    setModifierModalData(prev => prev.map(g => {
-      if (g.id === groupId) {
+  const updateModifier = (
+    groupId: string,
+    modifierId: string,
+    field: keyof PosProductModifier,
+    value: string | number | boolean
+  ) => {
+    setModifierModalData((prev) =>
+      prev.map((group) => {
+        if (group.id !== groupId) return group;
         return {
-          ...g,
-          modifiers: g.modifiers.map(m => 
-            m.id === modifierId ? { ...m, [field]: value } : m
-          )
+          ...group,
+          modifiers: group.modifiers.map((modifier) =>
+            modifier.id === modifierId ? { ...modifier, [field]: value } : modifier
+          ),
         };
-      }
-      return g;
-    }));
+      })
+    );
   };
 
-  // Toggle Product Status
-  const toggleProductStatus = async (id: string) => {
-    const currentProduct = displayProducts.find((product) => product.id === id);
-    if (!currentProduct || savingProductId) return;
+  const toggleProductStatus = async (product: PosCatalogProduct, nextActive: boolean) => {
+    if (savingProductId) return;
 
-    const nextStatus = currentProduct.status === 'active' ? 'inactive' : 'active';
-    setSavingProductId(id);
-    setError(null);
-
+    setSavingProductId(product.id);
     try {
       await patchProductMutation.mutateAsync({
-        id,
-        payload: { is_active: nextStatus === 'active' },
+        id: product.id,
+        payload: { is_active: nextActive },
       });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Gagal menyimpan status produk');
+      toast.success(`Product ${nextActive ? 'activated' : 'deactivated'} successfully`);
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'Failed to update product status'));
     } finally {
       setSavingProductId(null);
     }
   };
 
   const updateProductStation = async (id: string, station: string) => {
-    const currentProduct = displayProducts.find((product) => product.id === id);
-    if (!currentProduct || savingProductId) return;
+    if (savingProductId) return;
 
     setSavingProductId(id);
-    setError(null);
-
     try {
       await patchProductMutation.mutateAsync({ id, payload: { station } });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Gagal menyimpan station produk');
+      toast.success('Station updated successfully');
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'Failed to update station'));
     } finally {
       setSavingProductId(null);
     }
   };
 
+  const handleResetFilters = () => {
+    setSearchQuery('');
+    setSearchTerm('');
+    setSelectedCategory('All');
+  };
+
+  const hasActiveFilters = searchQuery.trim().length > 0 || selectedCategory !== 'All';
+
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Produk & Menu</h1>
-          <p className="text-sm text-gray-500">Kelola produk, varian, dan modifier</p>
-        </div>
-        <Button className="bg-pink-600 hover:bg-pink-700">
-          <Plus className="w-4 h-4 mr-2" />
-          Tambah Produk
-        </Button>
-      </div>
+      <PurchasingPageHeader
+        title="Products & Menu"
+        description="Manage POS products, variants, modifiers, and kitchen stations."
+      />
 
-      {(error || queryErrorMessage) && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {error || queryErrorMessage}
-        </div>
-      )}
-
-      {/* Filters */}
-      <Card>
-        <CardContent className="p-4">
-          <div className="flex flex-col sm:flex-row gap-4">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+      <PurchasingListSection
+        icon={Package}
+        title="Product Catalog"
+        description={`${filteredProducts.length} product${filteredProducts.length === 1 ? '' : 's'} shown`}
+        toolbar={
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+            <div className="relative min-w-[220px]">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
               <Input
-                placeholder="Cari produk..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
+                placeholder="Search products..."
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                className="h-9 pl-9"
               />
             </div>
-            <div className="flex gap-2 overflow-x-auto pb-2 sm:pb-0">
-              {categories.map((cat) => (
-                <Button
-                  key={cat}
-                  variant={selectedCategory === cat ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setSelectedCategory(cat)}
-                >
-                  {cat}
-                </Button>
-              ))}
-            </div>
+            {hasActiveFilters ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleResetFilters}
+                className="h-9 gap-1.5"
+              >
+                <X className="h-3.5 w-3.5" />
+                Reset
+              </Button>
+            ) : null}
           </div>
-        </CardContent>
-      </Card>
+        }
+      >
+        <div className="border-b border-gray-100 px-5 py-3">
+          <div className="flex flex-wrap gap-2">
+            {categories.map((category) => (
+              <Button
+                key={category}
+                type="button"
+                variant={selectedCategory === category ? 'default' : 'outline'}
+                size="sm"
+                className="h-8"
+                onClick={() => setSelectedCategory(category)}
+              >
+                {category}
+              </Button>
+            ))}
+          </div>
+        </div>
 
-      {/* Products Table */}
-      <Card>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="text-left text-sm text-gray-500 border-b border-gray-100">
-                  <th className="p-4 font-medium">Produk</th>
-                  <th className="p-4 font-medium">Kategori</th>
-                  <th className="p-4 font-medium">Harga</th>
-                  <th className="p-4 font-medium">Margin</th>
-                  <th className="p-4 font-medium">Station</th>
-                  <th className="p-4 font-medium">Varian</th>
-                  <th className="p-4 font-medium">Modifiers</th>
-                  <th className="p-4 font-medium">Status</th>
-                  <th className="p-4 font-medium">Aksi</th>
+        {loading ? (
+          <div className="flex flex-col items-center justify-center gap-3 px-4 py-16 text-gray-400">
+            <Loader2 className="h-8 w-8 animate-spin text-pink-500" />
+            <p className="text-sm">Loading products...</p>
+          </div>
+        ) : filteredProducts.length === 0 ? (
+          <div className="flex flex-col items-center justify-center gap-3 px-4 py-16 text-gray-400">
+            <Package className="h-12 w-12 opacity-40" />
+            <p className="text-sm">No products found</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto px-4">
+            <table className="min-w-full text-sm">
+              <thead className="border-b border-gray-100 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+                <tr>
+                  <th className="px-4 py-3 text-left font-semibold">Product</th>
+                  <th className="px-4 py-3 text-left font-semibold">Category</th>
+                  <th className="px-4 py-3 text-right font-semibold">Selling Price</th>
+                  <th className="px-4 py-3 text-right font-semibold">Est. COGS</th>
+                  <th className="px-4 py-3 text-right font-semibold">Margin</th>
+                  <th className="px-4 py-3 text-left font-semibold">Station</th>
+                  <th className="px-4 py-3 text-center font-semibold">Variants</th>
+                  <th className="px-4 py-3 text-center font-semibold">Modifiers</th>
+                  <th className="px-4 py-3 text-center font-semibold">Active</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="divide-y divide-gray-100">
                 {filteredProducts.map((product) => (
-                  <tr key={product.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50">
-                    <td className="p-4">
+                  <tr key={product.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
-                        <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center">
-                          <Package className="w-6 h-6 text-gray-400" />
+                        <div className="h-11 w-11 shrink-0 overflow-hidden rounded-lg border border-gray-200/70">
+                          <PosProductThumbnail alt={product.name} />
                         </div>
-                        <div>
-                          <div className="font-medium text-gray-900">{product.name}</div>
-                          <div className="text-xs text-gray-400">ID: {product.id}</div>
+                        <div className="min-w-0">
+                          <p className="font-medium text-gray-900">{product.name}</p>
+                          <p className="text-xs text-gray-400">
+                            {product.sku || product.id.slice(0, 8)}
+                          </p>
                         </div>
                       </div>
                     </td>
-                    <td className="p-4">
-                      <span className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded-full">
-                        {product.category}
-                      </span>
+                    <td className="px-4 py-3 text-gray-700">{product.category}</td>
+                    <td className="px-4 py-3 text-right font-medium text-gray-900">
+                      {formatAmount(product.price)}
                     </td>
-                    <td className="p-4">
-                      <div className="font-medium text-gray-900">{formatCurrency(product.price)}</div>
-                      <div className="text-xs text-gray-400">HPP {formatCurrency(product.cost)}</div>
+                    <td className="px-4 py-3 text-right font-medium text-pink-700">
+                      {formatAmount(product.cost)}
                     </td>
-                    <td className="p-4">
-                      <span className="text-green-600 font-medium">{product.margin}%</span>
+                    <td className={`px-4 py-3 text-right font-medium ${marginTone(product.margin)}`}>
+                      {formatMarginLabel(product.margin)}
                     </td>
-                    <td className="p-4">
+                    <td className="px-4 py-3">
                       <select
                         value={inferStation(product)}
                         onChange={(event) => updateProductStation(product.id, event.target.value)}
                         disabled={savingProductId === product.id}
-                        className="h-9 rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 outline-none transition focus:border-pink-400 focus:ring-2 focus:ring-pink-100"
+                        className="h-9 rounded-lg border border-gray-200/80 bg-white px-3 text-xs font-medium text-gray-700 outline-none transition focus:border-pink-300 focus:ring-1 focus:ring-pink-100 disabled:opacity-50"
                       >
                         {stationOptions.map((option) => (
                           <option key={option.value} value={option.value}>
@@ -381,52 +416,46 @@ export function ProductsPage() {
                         ))}
                       </select>
                     </td>
-                    <td className="p-4">
+                    <td className="px-4 py-3 text-center">
                       <Button
-                        variant={product.hasVariants ? "outline" : "ghost"}
+                        type="button"
+                        variant={product.hasVariants ? 'outline' : 'ghost'}
                         size="sm"
                         onClick={() => openVariantsModal(product)}
-                        className={product.hasVariants ? "border-pink-600 text-pink-600 hover:bg-pink-50" : ""}
+                        className={
+                          product.hasVariants
+                            ? 'border-pink-200 text-pink-700 hover:bg-pink-50'
+                            : 'text-gray-600'
+                        }
                       >
-                        <Settings2 className="w-3 h-3 mr-1" />
+                        <Settings2 className="mr-1 h-3.5 w-3.5" />
                         {product.variants.length}
                       </Button>
                     </td>
-                    <td className="p-4">
+                    <td className="px-4 py-3 text-center">
                       <Button
-                        variant={product.hasModifiers ? "outline" : "ghost"}
+                        type="button"
+                        variant={product.hasModifiers ? 'outline' : 'ghost'}
                         size="sm"
                         onClick={() => openModifiersModal(product)}
-                        className={product.hasModifiers ? "border-green-600 text-green-600 hover:bg-green-50" : ""}
+                        className={
+                          product.hasModifiers
+                            ? 'border-green-200 text-green-700 hover:bg-green-50'
+                            : 'text-gray-600'
+                        }
                       >
-                        <Sparkles className="w-3 h-3 mr-1" />
+                        <Sparkles className="mr-1 h-3.5 w-3.5" />
                         {product.modifierGroups.length}
                       </Button>
                     </td>
-                    <td className="p-4">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => toggleProductStatus(product.id)}
-                        disabled={savingProductId === product.id}
-                        className={product.status === 'active' ? "text-green-600" : "text-red-600"}
-                      >
-                        {product.status === 'active' ? (
-                          <ToggleRight className="w-4 h-4 mr-1" />
-                        ) : (
-                          <ToggleLeft className="w-4 h-4 mr-1" />
-                        )}
-                        {product.status === 'active' ? 'Aktif' : 'Nonaktif'}
-                      </Button>
-                    </td>
-                    <td className="p-4">
-                      <div className="flex items-center gap-1">
-                        <Button variant="ghost" size="icon" className="h-8 w-8">
-                          <Edit className="w-4 h-4 text-gray-500" />
-                        </Button>
-                        <Button variant="ghost" size="icon" className="h-8 w-8">
-                          <Trash2 className="w-4 h-4 text-red-500" />
-                        </Button>
+                    <td className="px-4 py-3 text-center">
+                      <div className="flex items-center justify-center">
+                        <Switch
+                          checked={product.status === 'active'}
+                          disabled={savingProductId === product.id}
+                          onCheckedChange={(checked) => toggleProductStatus(product, checked)}
+                          aria-label={`Toggle active status for ${product.name}`}
+                        />
                       </div>
                     </td>
                   </tr>
@@ -434,205 +463,219 @@ export function ProductsPage() {
               </tbody>
             </table>
           </div>
-          
-          {loading && (
-            <div className="text-center py-12 text-gray-400">
-              <Package className="w-16 h-16 mx-auto mb-4 opacity-50 animate-pulse" />
-              <p>Memuat produk...</p>
-            </div>
-          )}
+        )}
 
-          {!loading && filteredProducts.length === 0 && (
-            <div className="text-center py-12 text-gray-400">
-              <Package className="w-16 h-16 mx-auto mb-4 opacity-50" />
-              <p>Tidak ada produk ditemukan</p>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+        <div className="border-t border-gray-100 px-5 py-3 text-xs text-gray-500">
+          Est. COGS for synced products (SKU PUR-*) is calculated from the latest BOM.
+        </div>
+      </PurchasingListSection>
 
-      {/* Variants Modal */}
       <Dialog open={variantModalProduct !== null} onOpenChange={(open) => !open && setVariantModalProduct(null)}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Kelola Varian</DialogTitle>
-            <p className="text-sm text-gray-500">{variantModalProduct?.name}</p>
-          </DialogHeader>
-          
-          <div className="max-h-[60vh] overflow-y-auto space-y-4 py-4">
-            {variantModalData.map((variant, idx) => (
-              <div key={variant.id} className="p-4 bg-gray-50 rounded-lg space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-gray-700">Varian {idx + 1}</span>
+        <DialogPanel size="md">
+          <DialogPanelHeader>
+            <DialogPanelTitle>Manage Variants</DialogPanelTitle>
+            <DialogPanelDescription>{variantModalProduct?.name}</DialogPanelDescription>
+          </DialogPanelHeader>
+          <DialogPanelBody className="max-h-[60vh] space-y-4 overflow-y-auto">
+            {variantModalData.map((variant, index) => (
+              <div key={variant.id} className="space-y-3 rounded-lg border border-gray-200/70 bg-gray-50/80 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm font-medium text-gray-700">Variant {index + 1}</span>
                   <div className="flex items-center gap-2">
                     <Button
+                      type="button"
                       variant="outline"
                       size="sm"
                       onClick={() => updateVariant(variant.id, 'active', !variant.active)}
-                      className={variant.active ? "border-green-600 text-green-600" : ""}
+                      className={variant.active ? 'border-green-200 text-green-700' : ''}
                     >
-                      {variant.active ? 'Aktif' : 'Nonaktif'}
+                      {variant.active ? 'Active' : 'Inactive'}
                     </Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => removeVariant(variant.id)}>
-                      <Trash2 className="w-4 h-4 text-red-500" />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={() => removeVariant(variant.id)}
+                    >
+                      <Trash2 className="h-4 w-4 text-red-500" />
                     </Button>
                   </div>
                 </div>
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                   <div>
-                    <label className="block text-xs text-gray-500 mb-1">Nama</label>
+                    <label className="mb-1 block text-xs text-gray-500">Name</label>
                     <Input
                       value={variant.name}
-                      onChange={(e) => updateVariant(variant.id, 'name', e.target.value)}
+                      onChange={(event) => updateVariant(variant.id, 'name', event.target.value)}
                       placeholder="Small"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-gray-500 mb-1">SKU</label>
+                    <label className="mb-1 block text-xs text-gray-500">SKU</label>
                     <Input
                       value={variant.sku}
-                      onChange={(e) => updateVariant(variant.id, 'sku', e.target.value)}
+                      onChange={(event) => updateVariant(variant.id, 'sku', event.target.value)}
                       placeholder="NF-SM"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-gray-500 mb-1">Harga Adj.</label>
+                    <label className="mb-1 block text-xs text-gray-500">Price Adj.</label>
                     <Input
                       type="number"
                       value={variant.priceAdj}
-                      onChange={(e) => updateVariant(variant.id, 'priceAdj', parseInt(e.target.value) || 0)}
+                      onChange={(event) =>
+                        updateVariant(variant.id, 'priceAdj', Number.parseInt(event.target.value, 10) || 0)
+                      }
                     />
                   </div>
                 </div>
-                <div className="text-xs text-gray-400">
-                  Harga final: {formatCurrency((variantModalProduct?.price || 0) + variant.priceAdj)}
-                </div>
+                <p className="text-xs text-gray-400">
+                  Final price: {formatAmount((variantModalProduct?.price || 0) + variant.priceAdj)}
+                </p>
               </div>
             ))}
-            
-            <Button variant="outline" onClick={addVariant} className="w-full">
-              <PlusCircle className="w-4 h-4 mr-2" />
-              Tambah Varian
+            <Button type="button" variant="outline" onClick={addVariant} className="w-full">
+              <PlusCircle className="mr-2 h-4 w-4" />
+              Add Variant
             </Button>
-          </div>
-          
+          </DialogPanelBody>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setVariantModalProduct(null)}>Batal</Button>
-            <Button onClick={saveVariants} className="bg-pink-600 hover:bg-pink-700">
-              <Save className="w-4 h-4 mr-2" />
-              Simpan
+            <Button type="button" variant="outline" onClick={() => setVariantModalProduct(null)}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={saveVariants} className="purchasing-main-button">
+              <Save className="mr-2 h-4 w-4" />
+              Save
             </Button>
           </DialogFooter>
-        </DialogContent>
+        </DialogPanel>
       </Dialog>
 
-      {/* Modifiers Modal */}
       <Dialog open={modifierModalProduct !== null} onOpenChange={(open) => !open && setModifierModalProduct(null)}>
-        <DialogContent className="max-w-3xl">
-          <DialogHeader>
-            <DialogTitle>Kelola Modifier Groups</DialogTitle>
-            <p className="text-sm text-gray-500">{modifierModalProduct?.name}</p>
-          </DialogHeader>
-          
-          <div className="max-h-[60vh] overflow-y-auto space-y-6 py-4">
+        <DialogPanel size="lg">
+          <DialogPanelHeader>
+            <DialogPanelTitle>Manage Modifier Groups</DialogPanelTitle>
+            <DialogPanelDescription>{modifierModalProduct?.name}</DialogPanelDescription>
+          </DialogPanelHeader>
+          <DialogPanelBody className="max-h-[60vh] space-y-6 overflow-y-auto">
             {modifierModalData.map((group) => (
-              <div key={group.id} className="p-4 bg-gray-50 rounded-lg space-y-4">
-                {/* Group Header */}
+              <div key={group.id} className="space-y-4 rounded-lg border border-gray-200/70 bg-gray-50/80 p-4">
                 <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1 grid grid-cols-3 gap-3">
+                  <div className="grid flex-1 grid-cols-1 gap-3 sm:grid-cols-3">
                     <div>
-                      <label className="block text-xs text-gray-500 mb-1">Nama Group</label>
+                      <label className="mb-1 block text-xs text-gray-500">Group Name</label>
                       <Input
                         value={group.name}
-                        onChange={(e) => updateModifierGroup(group.id, 'name', e.target.value)}
+                        onChange={(event) => updateModifierGroup(group.id, 'name', event.target.value)}
                         placeholder="Sugar Level"
                       />
                     </div>
                     <div>
-                      <label className="block text-xs text-gray-500 mb-1">Max Pilih</label>
+                      <label className="mb-1 block text-xs text-gray-500">Max Select</label>
                       <Input
                         type="number"
                         value={group.maxSelect}
-                        onChange={(e) => updateModifierGroup(group.id, 'maxSelect', parseInt(e.target.value) || 1)}
+                        onChange={(event) =>
+                          updateModifierGroup(group.id, 'maxSelect', Number.parseInt(event.target.value, 10) || 1)
+                        }
                         min="1"
                       />
                     </div>
                     <div>
-                      <label className="block text-xs text-gray-500 mb-1">Status</label>
+                      <label className="mb-1 block text-xs text-gray-500">Status</label>
                       <Button
+                        type="button"
                         variant="outline"
                         size="sm"
                         onClick={() => updateModifierGroup(group.id, 'active', !group.active)}
-                        className={group.active ? "border-green-600 text-green-600" : ""}
+                        className={group.active ? 'border-green-200 text-green-700' : ''}
                       >
-                        {group.active ? 'Aktif' : 'Nonaktif'}
+                        {group.active ? 'Active' : 'Inactive'}
                       </Button>
                     </div>
                   </div>
-                  <Button variant="ghost" size="icon" onClick={() => removeModifierGroup(group.id)} className="mt-6 h-8 w-8">
-                    <Trash2 className="w-4 h-4 text-red-500" />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => removeModifierGroup(group.id)}
+                    className="mt-6 h-8 w-8"
+                  >
+                    <Trash2 className="h-4 w-4 text-red-500" />
                   </Button>
                 </div>
-                
-                {/* Required Toggle */}
-                <div className="flex items-center gap-2">
+
+                <label className="flex items-center gap-2 text-sm text-gray-700">
                   <input
                     type="checkbox"
-                    id={`req-${group.id}`}
                     checked={group.required}
-                    onChange={(e) => updateModifierGroup(group.id, 'required', e.target.checked)}
-                    className="w-4 h-4 text-pink-600 rounded"
+                    onChange={(event) => updateModifierGroup(group.id, 'required', event.target.checked)}
+                    className="h-4 w-4 rounded border-gray-300 text-pink-600"
                   />
-                  <label htmlFor={`req-${group.id}`} className="text-sm text-gray-700">
-                    Wajib dipilih (customer harus pilih minimal 1)
-                  </label>
-                </div>
+                  Required (customer must select at least one)
+                </label>
 
-                {/* Modifiers List */}
-                <div className="space-y-2 pl-4 border-l-2 border-gray-200">
-                  <div className="text-xs text-gray-500 uppercase tracking-wide">Modifiers</div>
-                  {group.modifiers.map((modifier, mIdx) => (
+                <div className="space-y-2 border-l-2 border-gray-200/80 pl-4">
+                  <p className="text-xs uppercase tracking-wide text-gray-500">Modifiers</p>
+                  {group.modifiers.map((modifier, modifierIndex) => (
                     <div key={modifier.id} className="flex items-center gap-2">
-                      <div className="flex-1 grid grid-cols-2 gap-2">
+                      <div className="grid flex-1 grid-cols-1 gap-2 sm:grid-cols-2">
                         <Input
                           value={modifier.name}
-                          onChange={(e) => updateModifier(group.id, modifier.id, 'name', e.target.value)}
-                          placeholder={`Modifier ${mIdx + 1}`}
+                          onChange={(event) =>
+                            updateModifier(group.id, modifier.id, 'name', event.target.value)
+                          }
+                          placeholder={`Modifier ${modifierIndex + 1}`}
                         />
                         <Input
                           type="number"
                           value={modifier.priceAdj}
-                          onChange={(e) => updateModifier(group.id, modifier.id, 'priceAdj', parseInt(e.target.value) || 0)}
-                          placeholder="Harga adj."
+                          onChange={(event) =>
+                            updateModifier(
+                              group.id,
+                              modifier.id,
+                              'priceAdj',
+                              Number.parseInt(event.target.value, 10) || 0
+                            )
+                          }
+                          placeholder="Price adj."
                         />
                       </div>
-                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => removeModifier(group.id, modifier.id)}>
-                        <MinusCircle className="w-4 h-4 text-red-500" />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={() => removeModifier(group.id, modifier.id)}
+                      >
+                        <MinusCircle className="h-4 w-4 text-red-500" />
                       </Button>
                     </div>
                   ))}
-                  <Button variant="ghost" size="sm" onClick={() => addModifier(group.id)}>
-                    <PlusCircle className="w-3 h-3 mr-1" />
-                    Tambah Modifier
+                  <Button type="button" variant="ghost" size="sm" onClick={() => addModifier(group.id)}>
+                    <PlusCircle className="mr-1 h-3 w-3" />
+                    Add Modifier
                   </Button>
                 </div>
               </div>
             ))}
-            
-            <Button variant="outline" onClick={addModifierGroup} className="w-full">
-              <PlusCircle className="w-4 h-4 mr-2" />
-              Tambah Modifier Group
+
+            <Button type="button" variant="outline" onClick={addModifierGroup} className="w-full">
+              <PlusCircle className="mr-2 h-4 w-4" />
+              Add Modifier Group
             </Button>
-          </div>
-          
+          </DialogPanelBody>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setModifierModalProduct(null)}>Batal</Button>
-            <Button onClick={saveModifiers} className="bg-pink-600 hover:bg-pink-700">
-              <Save className="w-4 h-4 mr-2" />
-              Simpan
+            <Button type="button" variant="outline" onClick={() => setModifierModalProduct(null)}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={saveModifiers} className="purchasing-main-button">
+              <Save className="mr-2 h-4 w-4" />
+              Save
             </Button>
           </DialogFooter>
-        </DialogContent>
+        </DialogPanel>
       </Dialog>
     </div>
   );

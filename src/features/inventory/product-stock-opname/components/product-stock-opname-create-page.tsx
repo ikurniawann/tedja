@@ -1,13 +1,15 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeftIcon, MagnifyingGlassIcon } from "@heroicons/react/24/outline";
+import { MagnifyingGlassIcon } from "@heroicons/react/24/outline";
+import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { DsDateTimePicker } from "@/components/design-system";
+import { PurchasingFormHeader } from "@/modules/purchasing/components/page/purchasing-page-header";
 import { PRODUCT_ROUTES } from "@/modules/purchasing/constants/item-routes";
 import {
   useProductStockOpname,
@@ -21,9 +23,7 @@ import {
 import { toast } from "sonner";
 
 function formatQty(value: number | null | undefined) {
-  return new Intl.NumberFormat("id-ID", { maximumFractionDigits: 3 }).format(
-    Number(value) || 0
-  );
+  return Number(value || 0).toLocaleString("en-US", { maximumFractionDigits: 4 });
 }
 
 type CountLine = {
@@ -60,8 +60,7 @@ export function ProductStockOpnameCreatePage({ opnameId }: ProductStockOpnameCre
 
   const detail = detailQuery.data;
   const isEditableContinue =
-    isContinue &&
-    (detail?.status === "draft" || detail?.status === "in_progress");
+    isContinue && (detail?.status === "draft" || detail?.status === "in_progress");
 
   const isBusy =
     createMutation.isPending || updateMutation.isPending || completeMutation.isPending;
@@ -136,9 +135,7 @@ export function ProductStockOpnameCreatePage({ opnameId }: ProductStockOpnameCre
 
   const handleLineChange = (key: string, value: string) => {
     setLines((prev) =>
-      prev.map((line) =>
-        line.key === key ? { ...line, qty_counted_input: value } : line
-      )
+      prev.map((line) => (line.key === key ? { ...line, qty_counted_input: value } : line))
     );
   };
 
@@ -161,7 +158,7 @@ export function ProductStockOpnameCreatePage({ opnameId }: ProductStockOpnameCre
     if (requireAll) {
       const uncounted = lines.filter((line) => line.qty_counted_input === "");
       if (uncounted.length > 0) {
-        toast.error(`Masih ada ${uncounted.length} baris yang belum dihitung`);
+        toast.error(`${uncounted.length} line(s) still need a physical count`);
         return false;
       }
     }
@@ -172,7 +169,7 @@ export function ProductStockOpnameCreatePage({ opnameId }: ProductStockOpnameCre
       return !Number.isFinite(n) || n < 0;
     });
     if (invalid) {
-      toast.error("Qty fisik harus berupa angka ≥ 0");
+      toast.error("Physical quantity must be a number greater than or equal to zero");
       return false;
     }
     return true;
@@ -191,7 +188,7 @@ export function ProductStockOpnameCreatePage({ opnameId }: ProductStockOpnameCre
 
   const handleSaveDraft = async () => {
     if (!hasItems) {
-      toast.error("Tidak ada produk untuk diopname");
+      toast.error("No products available for stock opname");
       return;
     }
     if (!validateQtyInputs(false)) return;
@@ -208,7 +205,7 @@ export function ProductStockOpnameCreatePage({ opnameId }: ProductStockOpnameCre
             })),
           },
         });
-        toast.success("Draft stock opname produk disimpan");
+        toast.success("Product stock opname draft saved");
         return;
       }
 
@@ -232,16 +229,16 @@ export function ProductStockOpnameCreatePage({ opnameId }: ProductStockOpnameCre
         });
       }
 
-      toast.success("Draft stock opname produk disimpan");
+      toast.success("Product stock opname draft saved");
       router.replace(PRODUCT_ROUTES.inventoryOpnameContinue(created.id));
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Gagal menyimpan draft");
+      toast.error(error instanceof Error ? error.message : "Failed to save draft");
     }
   };
 
   const handleComplete = async () => {
     if (!hasItems) {
-      toast.error("Tidak ada produk untuk diopname");
+      toast.error("No products available for stock opname");
       return;
     }
     if (!validateQtyInputs(true)) return;
@@ -261,11 +258,9 @@ export function ProductStockOpnameCreatePage({ opnameId }: ProductStockOpnameCre
           id: sessionId,
           input: {
             lines: lines.map((line) => {
-              const createdLine = created.lines?.find(
-                (l) => l.product_id === line.product_id
-              );
+              const createdLine = created.lines?.find((l) => l.product_id === line.product_id);
               if (!createdLine) {
-                throw new Error(`Baris tidak ditemukan untuk ${line.product_kode}`);
+                throw new Error(`Line not found for ${line.product_kode}`);
               }
               return {
                 id: createdLine.id,
@@ -288,33 +283,34 @@ export function ProductStockOpnameCreatePage({ opnameId }: ProductStockOpnameCre
       }
 
       await completeMutation.mutateAsync(sessionId);
-      toast.success("Stock opname produk selesai dan stok telah disesuaikan");
+      toast.success("Product stock opname completed and inventory has been adjusted");
       router.push(PRODUCT_ROUTES.inventoryOpnameDetail(sessionId!));
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : "Gagal menyelesaikan stock opname"
+        error instanceof Error ? error.message : "Failed to complete stock opname"
       );
     }
   };
 
   const handleCancel = async () => {
-    if (!opnameId || !window.confirm("Batalkan sesi stock opname ini?")) return;
+    if (!opnameId || !window.confirm("Cancel this stock opname session?")) return;
     try {
       await updateMutation.mutateAsync({
         id: opnameId,
         input: { status: "cancelled" },
       });
-      toast.success("Stock opname produk dibatalkan");
+      toast.success("Product stock opname cancelled");
       router.push(PRODUCT_ROUTES.inventoryOpname);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Gagal membatalkan");
+      toast.error(error instanceof Error ? error.message : "Failed to cancel session");
     }
   };
 
   if (isContinue && detailQuery.isLoading) {
     return (
-      <div className="py-16 text-center text-sm text-gray-400">
-        Memuat sesi stock opname produk...
+      <div className="flex items-center justify-center py-16 text-sm text-gray-500">
+        <Loader2 className="mr-2 h-5 w-5 animate-spin text-pink-600" />
+        Loading product stock opname session...
       </div>
     );
   }
@@ -325,98 +321,83 @@ export function ProductStockOpnameCreatePage({ opnameId }: ProductStockOpnameCre
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 border-b border-gray-200/70 pb-4 lg:flex-row lg:items-start lg:justify-between">
-        <div className="flex items-start gap-3">
-          <Link href={PRODUCT_ROUTES.inventoryOpname}>
-            <Button variant="ghost" size="sm" className="h-9 gap-2 text-pink-700">
-              <ArrowLeftIcon className="h-4 w-4" />
-              Kembali
-            </Button>
-          </Link>
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">
-              {isContinue ? "Lanjutkan Stock Opname Produk" : "Buat Stock Opname Produk"}
-            </h1>
-            <p className="text-sm text-gray-500">
-              Hitung qty fisik produk jadi, lalu simpan draft atau selesaikan opname
-            </p>
-          </div>
-        </div>
-
-        {hasItems && (
-          <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              className="border-gray-200/80"
-              onClick={handleFillSystem}
-              disabled={isBusy}
-            >
-              Isi = Stok Sistem
-            </Button>
-            {isContinue && (
+      <PurchasingFormHeader
+        backHref={PRODUCT_ROUTES.inventoryOpname}
+        title={isContinue ? "Continue Product Stock Opname" : "Create Product Stock Opname"}
+        description="Enter physical quantities for finished products, then save as draft or complete the opname"
+        actions={
+          hasItems ? (
+            <>
               <Button
                 type="button"
                 variant="outline"
-                className="border-red-200/80 text-red-700"
-                onClick={handleCancel}
+                className="purchasing-secondary-button w-full sm:w-auto"
+                onClick={handleFillSystem}
                 disabled={isBusy}
               >
-                Batalkan
+                Fill with System Stock
               </Button>
-            )}
-            <Button
-              type="button"
-              variant="outline"
-              className="border-gray-200/80"
-              onClick={handleSaveDraft}
-              disabled={isBusy}
-            >
-              {updateMutation.isPending && !completeMutation.isPending
-                ? "Menyimpan..."
-                : "Simpan Draft"}
-            </Button>
-            <Button
-              type="button"
-              className="bg-pink-600 hover:bg-pink-700"
-              onClick={handleComplete}
-              disabled={isBusy}
-            >
-              {completeMutation.isPending ? "Memproses..." : "Selesaikan Opname"}
-            </Button>
-          </div>
-        )}
-      </div>
+              {isContinue && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full border-red-200/80 text-red-700 sm:w-auto"
+                  onClick={handleCancel}
+                  disabled={isBusy}
+                >
+                  Cancel Session
+                </Button>
+              )}
+              <Button
+                type="button"
+                variant="outline"
+                className="purchasing-secondary-button w-full sm:w-auto"
+                onClick={handleSaveDraft}
+                disabled={isBusy}
+              >
+                {updateMutation.isPending && !completeMutation.isPending
+                  ? "Saving..."
+                  : "Save Draft"}
+              </Button>
+              <Button
+                type="button"
+                className="purchasing-main-button w-full sm:w-auto"
+                onClick={handleComplete}
+                disabled={isBusy}
+              >
+                {completeMutation.isPending ? "Processing..." : "Complete Opname"}
+              </Button>
+            </>
+          ) : undefined
+        }
+      />
 
       <Card className="border-gray-200/70 shadow-xs">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Informasi Opname</CardTitle>
+        <CardHeader className="border-b border-gray-200/70 pb-3">
+          <CardTitle className="text-base">Opname Information</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-4 p-4">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-12">
-            <div className="min-w-0 space-y-1.5 md:col-span-4">
-              <Label htmlFor="opname_date" className="text-xs">
-                Tanggal Opname
-              </Label>
-              <Input
-                id="opname_date"
-                type="date"
+            <div className="min-w-0 md:col-span-4">
+              <DsDateTimePicker
+                label="Opname Date"
                 value={opnameDate}
-                onChange={(e) => setOpnameDate(e.target.value)}
+                onChange={setOpnameDate}
+                placeholder="Select opname date..."
+                dateOnly
                 disabled={isBusy}
-                className="h-9 border-gray-200/80 text-sm"
               />
             </div>
 
             <div className="min-w-0 space-y-1.5 md:col-span-8">
               <Label htmlFor="notes" className="text-xs">
-                Catatan
+                Notes
               </Label>
               <Input
                 id="notes"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                placeholder="Catatan tambahan (opsional)..."
+                placeholder="Additional notes (optional)..."
                 disabled={isBusy}
                 className="h-9 border-gray-200/80 text-sm"
               />
@@ -426,15 +407,15 @@ export function ProductStockOpnameCreatePage({ opnameId }: ProductStockOpnameCre
           {hasItems && (
             <div className="grid grid-cols-3 gap-3 border-t border-gray-200/70 pt-4">
               <div className="rounded-lg border border-gray-200/70 bg-gray-50/50 px-3 py-2">
-                <p className="text-xs font-medium text-gray-500">Total Baris</p>
+                <p className="text-xs font-medium text-gray-500">Total Lines</p>
                 <p className="text-lg font-bold text-gray-900">{progress.total}</p>
               </div>
               <div className="rounded-lg border border-gray-200/70 bg-gray-50/50 px-3 py-2">
-                <p className="text-xs font-medium text-gray-500">Sudah Dihitung</p>
+                <p className="text-xs font-medium text-gray-500">Counted</p>
                 <p className="text-lg font-bold text-amber-600">{progress.counted}</p>
               </div>
               <div className="rounded-lg border border-gray-200/70 bg-gray-50/50 px-3 py-2">
-                <p className="text-xs font-medium text-gray-500">Ada Selisih</p>
+                <p className="text-xs font-medium text-gray-500">With Variance</p>
                 <p className="text-lg font-bold text-pink-600">{progress.variance}</p>
               </div>
             </div>
@@ -446,13 +427,13 @@ export function ProductStockOpnameCreatePage({ opnameId }: ProductStockOpnameCre
         <CardContent className="p-0">
           <div className="flex flex-col gap-3 border-b border-gray-200/70 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h2 className="text-base font-semibold text-gray-900">Hitung Stok Fisik</h2>
+              <h2 className="text-base font-semibold text-gray-900">Physical Stock Count</h2>
               <p className="text-sm text-gray-500">
                 {isPreviewLoading
-                  ? "Memuat daftar produk..."
+                  ? "Loading products..."
                   : hasItems
-                    ? "Masukkan qty fisik hasil penghitungan"
-                    : "Tidak ada produk aktif dalam scope ini"}
+                    ? "Enter physical quantities from the product count"
+                    : "No active products in this scope"}
               </p>
             </div>
             {hasItems && (
@@ -461,8 +442,8 @@ export function ProductStockOpnameCreatePage({ opnameId }: ProductStockOpnameCre
                 <Input
                   value={itemSearch}
                   onChange={(e) => setItemSearch(e.target.value)}
-                  placeholder="Cari produk..."
-                  className="h-10 border-gray-200/80 pl-9"
+                  placeholder="Search products..."
+                  className="h-10 border-gray-200/80 pl-9 text-sm"
                   disabled={isBusy}
                 />
               </div>
@@ -470,84 +451,76 @@ export function ProductStockOpnameCreatePage({ opnameId }: ProductStockOpnameCre
           </div>
 
           <div className="overflow-x-auto px-4 pb-4">
-            <table className="w-full min-w-[800px] text-sm">
-              <thead>
-                <tr className="border-b border-gray-200/70 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
-                  <th className="px-3 py-3">Kode</th>
-                  <th className="px-3 py-3">Nama Produk</th>
-                  <th className="px-3 py-3">Satuan</th>
-                  <th className="px-3 py-3 text-right">Stok Sistem</th>
-                  <th className="px-3 py-3 text-right">Qty Fisik</th>
-                  <th className="px-3 py-3 text-right">Selisih</th>
+            <table className="min-w-full text-sm">
+              <thead className="border-b border-gray-100 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+                <tr>
+                  <th className="px-4 py-3 text-left font-semibold">Code</th>
+                  <th className="px-4 py-3 text-left font-semibold">Product Name</th>
+                  <th className="px-4 py-3 text-left font-semibold">Unit</th>
+                  <th className="px-4 py-3 text-right font-semibold">System Stock</th>
+                  <th className="px-4 py-3 text-right font-semibold">Physical Quantity</th>
+                  <th className="px-4 py-3 text-right font-semibold">Variance</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="divide-y divide-gray-100">
                 {isPreviewLoading ? (
                   <tr>
-                    <td colSpan={6} className="px-3 py-10 text-center text-gray-400">
-                      Memuat item...
+                    <td colSpan={6} className="px-4 py-10 text-center text-gray-400">
+                      <Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin text-pink-600" />
+                      Loading items...
                     </td>
                   </tr>
                 ) : filteredLines.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-3 py-10 text-center text-gray-400">
-                      {hasItems
-                        ? "Tidak ada item yang cocok dengan pencarian"
-                        : "Tidak ada produk aktif"}
+                    <td colSpan={6} className="px-4 py-10 text-center text-gray-400">
+                      {hasItems ? "No items match your search" : "No active products found"}
                     </td>
                   </tr>
                 ) : (
                   filteredLines.map((line) => {
                     const counted =
-                      line.qty_counted_input === ""
-                        ? null
-                        : Number(line.qty_counted_input);
+                      line.qty_counted_input === "" ? null : Number(line.qty_counted_input);
                     const variance =
                       counted === null || !Number.isFinite(counted)
                         ? null
                         : counted - line.qty_system;
 
                     return (
-                      <tr
-                        key={line.key}
-                        className="border-b border-gray-200/70 hover:bg-gray-50/80"
-                      >
-                        <td className="px-3 py-3 font-mono text-xs text-gray-600">
+                      <tr key={line.key} className="hover:bg-gray-50">
+                        <td className="px-4 py-3 font-mono text-xs text-gray-600">
                           {line.product_kode}
                         </td>
-                        <td className="px-3 py-3 font-medium text-gray-900">
+                        <td className="px-4 py-3 font-medium text-gray-900">
                           {line.product_nama}
                         </td>
-                        <td className="px-3 py-3 text-gray-600">
-                          {line.satuan || "—"}
-                        </td>
-                        <td className="px-3 py-3 text-right text-gray-700">
+                        <td className="px-4 py-3 text-gray-600">{line.satuan || "—"}</td>
+                        <td className="px-4 py-3 text-right text-gray-700">
                           {formatQty(line.qty_system)}
                         </td>
-                        <td className="px-3 py-3 text-right">
+                        <td className="px-4 py-3 text-right">
                           <Input
                             type="number"
                             min={0}
                             step="any"
                             value={line.qty_counted_input}
                             onChange={(e) => handleLineChange(line.key, e.target.value)}
-                            placeholder="0"
+                            placeholder="—"
                             disabled={isBusy}
                             className="ml-auto h-9 w-28 border-gray-200/80 text-right text-sm"
                           />
                         </td>
-                        <td
-                          className={`px-3 py-3 text-right font-medium ${
-                            variance === null
-                              ? "text-gray-400"
-                              : variance === 0
-                                ? "text-gray-600"
-                                : variance > 0
-                                  ? "text-emerald-600"
-                                  : "text-red-600"
-                          }`}
-                        >
-                          {variance === null ? "—" : formatQty(variance)}
+                        <td className="px-4 py-3 text-right">
+                          {variance === null ? (
+                            <span className="text-gray-400">—</span>
+                          ) : variance === 0 ? (
+                            <span className="text-emerald-600">0</span>
+                          ) : variance > 0 ? (
+                            <span className="font-medium text-emerald-600">
+                              +{formatQty(variance)}
+                            </span>
+                          ) : (
+                            <span className="font-medium text-red-600">{formatQty(variance)}</span>
+                          )}
                         </td>
                       </tr>
                     );

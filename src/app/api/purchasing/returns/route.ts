@@ -5,6 +5,7 @@ import {
   enrichPurchaseReturnsWithGrn,
   listScopedQcCompletedGrnIds,
 } from "@/lib/purchasing/purchase-returns";
+import { parsePurchasingModuleType } from "@/lib/purchasing/module-scope";
 
 // GET /api/purchasing/returns
 // List purchase returns (QC-completed GRNs only)
@@ -24,8 +25,10 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get("search");
     const sort_by = searchParams.get("sort_by") || "return_date";
     const sort_order = searchParams.get("sort_order") || "DESC";
+    const moduleType = parsePurchasingModuleType(searchParams.get("module_type"));
+    const vendor_id = searchParams.get("vendor_id");
 
-    const scopedGrnIds = await listScopedQcCompletedGrnIds(db, scope);
+    const scopedGrnIds = await listScopedQcCompletedGrnIds(db, scope, moduleType);
 
     if (scopedGrnIds.length === 0) {
       return NextResponse.json({
@@ -49,6 +52,10 @@ export async function GET(request: NextRequest) {
           id,
           nama_supplier
         ),
+        vendor:vendors (
+          id,
+          name
+        ),
         grn:grn (
           id,
           nomor_grn
@@ -63,6 +70,9 @@ export async function GET(request: NextRequest) {
     }
     if (supplier_id) {
       query = query.eq("supplier_id", supplier_id);
+    }
+    if (vendor_id) {
+      query = query.eq("vendor_id", vendor_id);
     }
     if (reason_type) {
       query = query.eq("reason_type", reason_type);
@@ -127,6 +137,8 @@ export async function POST(request: NextRequest) {
     const {
       grn_id,
       supplier_id,
+      vendor_id,
+      module_type,
       return_date,
       reason_type,
       reason_notes,
@@ -134,9 +146,25 @@ export async function POST(request: NextRequest) {
       notes,
     } = body;
 
-    if (!supplier_id || !return_date || !reason_type || !items || items.length === 0) {
+    const moduleType = parsePurchasingModuleType(module_type);
+
+    if (!return_date || !reason_type || !items || items.length === 0) {
       return NextResponse.json(
         { success: false, message: "Required fields are incomplete" },
+        { status: 400 }
+      );
+    }
+
+    if (moduleType === "product" && !vendor_id) {
+      return NextResponse.json(
+        { success: false, message: "Vendor is required for product returns" },
+        { status: 400 }
+      );
+    }
+
+    if (moduleType === "raw_material" && !supplier_id) {
+      return NextResponse.json(
+        { success: false, message: "Supplier is required for purchase returns" },
         { status: 400 }
       );
     }
@@ -148,7 +176,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const scopedGrnIds = await listScopedQcCompletedGrnIds(db, scope);
+    const scopedGrnIds = await listScopedQcCompletedGrnIds(db, scope, moduleType);
     if (!scopedGrnIds.includes(grn_id)) {
       return NextResponse.json(
         {
@@ -161,7 +189,7 @@ export async function POST(request: NextRequest) {
 
     const { data: grn, error: grnError } = await db
       .from("grn")
-      .select("id, company_id, branch_id, supplier_id")
+      .select("id, company_id, branch_id, supplier_id, vendor_id, purchase_order_id")
       .eq("id", grn_id)
       .eq("is_active", true)
       .maybeSingle();
@@ -184,7 +212,8 @@ export async function POST(request: NextRequest) {
       .from("purchase_returns")
       .insert({
         grn_id,
-        supplier_id,
+        supplier_id: moduleType === "product" ? null : supplier_id || grn.supplier_id,
+        vendor_id: moduleType === "product" ? vendor_id || grn.vendor_id : null,
         return_date,
         reason_type,
         reason_notes,
@@ -202,7 +231,8 @@ export async function POST(request: NextRequest) {
     const returnItems = items.map(
       (item: {
         grn_item_id: string;
-        raw_material_id: string;
+        raw_material_id?: string;
+        product_id?: string;
         qty_returned: number;
         unit_cost: number;
         batch_number?: string | null;
@@ -212,7 +242,8 @@ export async function POST(request: NextRequest) {
       }) => ({
         return_id: returnData.id,
         grn_item_id: item.grn_item_id,
-        raw_material_id: item.raw_material_id,
+        raw_material_id: item.raw_material_id || null,
+        product_id: item.product_id || null,
         qty_returned: item.qty_returned,
         unit_cost: item.unit_cost,
         subtotal: item.qty_returned * item.unit_cost,
@@ -236,9 +267,11 @@ export async function POST(request: NextRequest) {
         `
         *,
         supplier:suppliers (nama_supplier),
+        vendor:vendors (name),
         items:purchase_return_items (
           *,
-          raw_material:raw_materials (kode, nama, satuan)
+          raw_material:raw_materials (kode, nama, satuan),
+          product:products (kode, nama)
         )
       `
       )

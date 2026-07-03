@@ -5,7 +5,8 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { useReturn } from "../queries";
 import { useApproveReturn, useRejectReturn } from "../mutations";
-import { RM_ROUTES } from "@/modules/purchasing/constants/item-routes";
+import { getReturnsModuleConfig } from "../returns-module";
+import type { PurchasingModuleType } from "@/lib/purchasing/module-scope";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -110,7 +111,12 @@ function DetailField({
   return content;
 }
 
-export function ReturnDetailPage() {
+export function ReturnDetailPage({
+  moduleType = "raw_material",
+}: {
+  moduleType?: PurchasingModuleType;
+}) {
+  const config = getReturnsModuleConfig(moduleType);
   const params = useParams();
   const returnId = params.id as string;
 
@@ -170,7 +176,7 @@ export function ReturnDetailPage() {
   if (detailQuery.isError || !ret) {
     return (
       <div className="space-y-4">
-        <Link href={RM_ROUTES.purchasingReturns}>
+        <Link href={config.listRoute}>
           <Button variant="ghost" size="sm" className="h-9 gap-2 text-pink-700">
             <ArrowLeftIcon className="h-4 w-4" />
             Back
@@ -197,7 +203,7 @@ export function ReturnDetailPage() {
     <div className="space-y-6">
       <div className="flex flex-col gap-4 border-b border-gray-200/70 pb-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="flex items-start gap-3">
-          <Link href={RM_ROUTES.purchasingReturns}>
+          <Link href={config.listRoute}>
             <Button variant="ghost" size="sm" className="h-9 gap-2 text-pink-700">
               <ArrowLeftIcon className="h-4 w-4" />
               Back
@@ -211,7 +217,7 @@ export function ReturnDetailPage() {
               </Badge>
             </div>
             <p className="mt-1 text-sm text-gray-500">
-              {formatDate(ret.return_date)} · {ret.supplier?.nama_supplier || "-"} ·{" "}
+              {formatDate(ret.return_date)} · {config.partyNameFromReturn(ret)} ·{" "}
               {REASON_LABELS[reason]}
             </p>
           </div>
@@ -227,7 +233,7 @@ export function ReturnDetailPage() {
             Print
           </Button>
           {canEdit && (
-            <Link href={RM_ROUTES.purchasingReturnsEdit(returnId)}>
+            <Link href={config.editRoute(returnId)}>
               <Button
                 variant="outline"
                 className="purchasing-secondary-button w-full sm:w-auto"
@@ -272,13 +278,13 @@ export function ReturnDetailPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="grid gap-4 p-4 md:grid-cols-2">
-              <DetailField label="Supplier" value={ret.supplier?.nama_supplier || "-"} />
+              <DetailField label={config.partyLabel} value={config.partyNameFromReturn(ret)} />
               <DetailField label="Return Date" value={formatDate(ret.return_date)} />
               <DetailField label="Reason" value={REASON_LABELS[reason]} />
               <DetailField
                 label="Goods Receipt"
                 value={getGrnNumber(ret)}
-                href={ret.grn_id ? RM_ROUTES.purchasingGrnDetail(ret.grn_id) : undefined}
+                href={ret.grn_id ? config.receiveDetailRoute(ret.grn_id) : undefined}
               />
               {(ret.reason_notes || ret.notes) && (
                 <div className="md:col-span-2 space-y-3 border-t border-gray-200/70 pt-4">
@@ -320,7 +326,9 @@ export function ReturnDetailPage() {
                   <table className="min-w-full text-sm">
                     <thead className="border-b border-gray-100 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
                       <tr>
-                        <th className="px-4 py-3 text-left font-semibold">Raw Material</th>
+                        <th className="px-4 py-3 text-left font-semibold">
+                          {config.isProduct ? "Product" : "Raw Material"}
+                        </th>
                         <th className="px-4 py-3 text-left font-semibold">Warehouse</th>
                         <th className="px-4 py-3 text-right font-semibold">Batch</th>
                         <th className="px-4 py-3 text-right font-semibold">Expiry</th>
@@ -330,14 +338,21 @@ export function ReturnDetailPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {ret.items.map((item) => (
+                      {ret.items.map((item) => {
+                        const itemDisplay = config.itemName({
+                          product_nama: (item as { product?: { nama?: string } }).product?.nama,
+                          product_kode: (item as { product?: { kode?: string } }).product?.kode,
+                          raw_material_nama: item.raw_material?.nama,
+                          raw_material_kode: item.raw_material?.kode,
+                        });
+                        return (
                         <tr key={item.id} className="hover:bg-gray-50/80">
                           <td className="px-4 py-3">
                             <div className="font-medium text-gray-900">
-                              {item.raw_material?.nama || "-"}
+                              {itemDisplay.nama}
                             </div>
                             <div className="text-xs text-gray-500">
-                              {item.raw_material?.kode || "-"}
+                              {itemDisplay.kode}
                             </div>
                             {item.condition_notes && (
                               <div className="mt-1 text-xs text-gray-500">{item.condition_notes}</div>
@@ -362,7 +377,8 @@ export function ReturnDetailPage() {
                             {formatAmount(item.subtotal)}
                           </td>
                         </tr>
-                      ))}
+                        );
+                      })}
                     </tbody>
                     <tfoot>
                       <tr className="border-t border-gray-200/70 bg-gray-50/60">

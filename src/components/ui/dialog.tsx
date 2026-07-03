@@ -19,6 +19,7 @@ const dialogPanelVariants = cva(
         md: "sm:max-w-2xl",
         lg: "sm:max-w-3xl",
         xl: "sm:max-w-4xl",
+        "2xl": "sm:max-w-6xl",
       },
     },
     defaultVariants: {

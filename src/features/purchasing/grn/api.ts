@@ -120,11 +120,21 @@ export async function updateGrn(
   return data;
 }
 
-export async function createGrn(payload: unknown): Promise<unknown> {
+export type PurchasingModuleType = "raw_material" | "product";
+
+export async function createGrn(
+  payload: unknown,
+  moduleType?: PurchasingModuleType
+): Promise<unknown> {
+  const body =
+    moduleType === "product"
+      ? { ...(payload as Record<string, unknown>), module_type: "product" }
+      : payload;
+
   const res = await fetch("/api/purchasing/grn", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+    body: JSON.stringify(body),
   });
   const text = await res.text();
   let result: { success?: boolean; error?: string; message?: string } | null = null;
@@ -159,8 +169,17 @@ export async function getGrnPO<T = unknown>(poId: string): Promise<T | null> {
   return (json?.data ?? null) as T | null;
 }
 
-export async function listGrnDeliveries<T = unknown>(): Promise<T[]> {
-  const res = await fetch("/api/purchasing/delivery/for-grn", { cache: "no-store" });
+export async function listGrnDeliveries<T = unknown>(
+  moduleType?: PurchasingModuleType
+): Promise<T[]> {
+  const sp = new URLSearchParams();
+  if (moduleType === "product") sp.set("module_type", "product");
+
+  const query = sp.toString();
+  const res = await fetch(
+    query ? `/api/purchasing/delivery/for-grn?${query}` : "/api/purchasing/delivery/for-grn",
+    { cache: "no-store" }
+  );
   const json = await res.json();
   if (!res.ok) {
     throw new Error(json.error || json.message || "Failed to load deliveries");
@@ -196,10 +215,21 @@ export async function getReceivingUserScope(): Promise<ReceivingUserScope> {
   return json.data as ReceivingUserScope;
 }
 
-export async function getReceivingWorkspace(): Promise<ReceivingWorkspaceData> {
-  const res = await fetch("/api/purchasing/receiving-workspace", {
-    cache: "no-store",
-  });
+export async function getReceivingWorkspace(
+  moduleType?: PurchasingModuleType
+): Promise<ReceivingWorkspaceData> {
+  const sp = new URLSearchParams();
+  if (moduleType === "product") sp.set("module_type", "product");
+
+  const query = sp.toString();
+  const res = await fetch(
+    query
+      ? `/api/purchasing/receiving-workspace?${query}`
+      : "/api/purchasing/receiving-workspace",
+    {
+      cache: "no-store",
+    }
+  );
   const json = await res.json();
   if (!res.ok) {
     throw new Error(json.message || "Failed to load receiving workspace");

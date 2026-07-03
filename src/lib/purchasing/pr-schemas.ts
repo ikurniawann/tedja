@@ -43,6 +43,15 @@ export const prItemSchema = z.object({
   estimated_price: moneySchema,
 });
 
+export const productPrItemSchema = z.object({
+  product_id: z.string().uuid("Product is required"),
+  satuan_id: optionalUuidSchema,
+  description: z.string().min(1, "Description is required"),
+  qty: qtySchema,
+  unit: z.string().min(1, "Unit is required"),
+  estimated_price: moneySchema,
+});
+
 export const prWriteSchema = z.object({
   department_id: z.string().uuid("Department tidak valid"),
   priority: z.enum(["low", "medium", "high", "urgent"]),
@@ -51,6 +60,23 @@ export const prWriteSchema = z.object({
   items: z.array(prItemSchema).min(1, "Minimal 1 item"),
   action: z.enum(["draft", "submit"]).optional().default("draft"),
 });
+
+export const productPrWriteSchema = z.object({
+  department_id: z.string().uuid("Department is invalid"),
+  priority: z.enum(["low", "medium", "high", "urgent"]),
+  required_date: optionalTextSchema,
+  notes: optionalTextSchema,
+  items: z.array(productPrItemSchema).min(1, "At least one item is required"),
+  action: z.enum(["draft", "submit"]).optional().default("draft"),
+});
+
+export type PrModuleType = "raw_material" | "product";
+
+export function parsePrWriteBody(body: unknown, moduleType: PrModuleType = "raw_material") {
+  return moduleType === "product"
+    ? productPrWriteSchema.parse(body)
+    : prWriteSchema.parse(body);
+}
 
 export function formatZodError(error: z.ZodError) {
   const first = error.issues[0];
@@ -76,6 +102,9 @@ export function mapPrPgErrorMessage(message: string): string {
   }
   if (message.includes("pr_items_raw_material_id_fkey")) {
     return "Bahan baku pada item PR tidak valid.";
+  }
+  if (message.includes("pr_items_product_id_fkey")) {
+    return "Product on PR item is invalid.";
   }
   if (message.includes("department_id")) {
     return "Departemen tidak valid.";

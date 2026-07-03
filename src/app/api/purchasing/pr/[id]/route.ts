@@ -6,7 +6,7 @@ import {
   formatZodError,
   isZodValidationError,
   normalizePrWriteItems,
-  prWriteSchema,
+  parsePrWriteBody,
   sumPrTotalAmount,
 } from "@/lib/purchasing/pr-schemas";
 
@@ -53,6 +53,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
         items:pr_items(
           *,
           raw_material:raw_materials!raw_material_id(id, kode, nama),
+          product:products!product_id(id, kode, nama),
           satuan:units!satuan_id(id, nama)
         )
       `)
@@ -107,11 +108,13 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     const { id } = await params;
     const db = await createServerPgClient();
     const user = await requireUser();
-    const validated = prWriteSchema.parse(await request.json());
+    const moduleType =
+      existingPR.module_type === "product" ? ("product" as const) : ("raw_material" as const);
+    const validated = parsePrWriteBody(await request.json(), moduleType);
 
     const { data: existingPR, error: findError } = await db
       .from("purchase_requests")
-      .select("id, requester_id, status")
+      .select("id, requester_id, status, module_type")
       .eq("id", id)
       .single();
 
@@ -145,7 +148,8 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
     const items = normalizedItems.map((item) => ({
       pr_id: id,
-      raw_material_id: item.raw_material_id,
+      product_id: "product_id" in item ? item.product_id : null,
+      raw_material_id: "raw_material_id" in item ? item.raw_material_id : null,
       satuan_id: item.satuan_id || null,
       description: item.description,
       qty: item.qty,

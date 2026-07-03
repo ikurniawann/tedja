@@ -24,6 +24,10 @@ const nextConfig: NextConfig = {
         },
         { source: "/dashboard/raw-material/materials", destination: "/dashboard/items/raw-materials" },
         {
+          source: "/dashboard/raw-material/materials/bom/:path*",
+          destination: "/dashboard/items/raw-material/materials/bom/:path*",
+        },
+        {
           source: "/dashboard/raw-material/materials/:path*",
           destination: "/dashboard/items/raw-materials/:path*",
         },
@@ -72,7 +76,7 @@ const nextConfig: NextConfig = {
         },
         {
           source: "/dashboard/raw-material/production/:path*",
-          destination: "/dashboard/purchasing/production/:path*",
+          destination: "/dashboard/items/raw-material/production/:path*",
         },
         // ── Product: master data ────────────────────────────────────────────
         {
@@ -104,7 +108,7 @@ const nextConfig: NextConfig = {
         // ── Product: production ─────────────────────────────────────────────
         {
           source: "/dashboard/product/production/:path*",
-          destination: "/dashboard/purchasing/production/:path*",
+          destination: "/dashboard/items/product/production/:path*",
         },
       ],
     };

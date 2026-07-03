@@ -16,11 +16,13 @@ async function parseJsonResponse<T>(response: Response): Promise<T> {
 }
 
 export async function listPurchaseInvoices(
-  params: PurchaseInvoiceListParams = {}
+  params: PurchaseInvoiceListParams = {},
+  moduleType: PurchaseInvoiceListParams["module_type"] = "raw_material"
 ): Promise<PurchaseInvoiceRow[]> {
   const sp = new URLSearchParams();
   if (params.search) sp.set("search", params.search);
   if (params.status && params.status !== "all") sp.set("status", params.status);
+  if (moduleType === "product") sp.set("module_type", "product");
 
   const response = await fetch(`/api/purchasing/vendor-payments?${sp.toString()}`);
   const result = await parseJsonResponse<{ success?: boolean; message?: string; data?: PurchaseInvoiceRow[] }>(

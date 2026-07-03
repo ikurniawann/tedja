@@ -341,7 +341,7 @@ export function NewPOPage({ poId }: NewPOPageProps = {}) {
 
   // Auto-fill from URL query params (from Low Stock Report / Production shortage)
   useEffect(() => {
-    if (prefillApplied || materials.length === 0) return;
+    if (prefillApplied || materials.length === 0 || units.length === 0) return;
     const itemsJson = searchParams.get("items");
     const materialCode = searchParams.get('material');
     const qty = searchParams.get('qty');
@@ -350,27 +350,39 @@ export function NewPOPage({ poId }: NewPOPageProps = {}) {
     if (itemsJson) {
       try {
         const parsed = JSON.parse(itemsJson) as Array<{
+          id?: string;
           kode?: string;
           qty?: number;
           price?: number;
+          unit?: string;
         }>;
         const nextItems = parsed
           .map((prefill, index) => {
-            const material = materials.find((m) => m.kode === prefill.kode);
+            const material =
+              materials.find((m) => m.kode === prefill.kode) ||
+              (prefill.id ? materials.find((m) => m.id === prefill.id) : undefined);
             if (!material) return null;
             const qtyOrdered = Math.max(0, Number(prefill.qty || 0));
             const unitPrice = Number(prefill.price ?? material.harga_terakhir ?? material.avg_cost ?? 0);
+            const unitId = material.satuan_besar_id || material.satuan_kecil_id || "";
+            const unitName =
+              units.find((unit) => unit.id === unitId)?.nama ||
+              material.satuan_besar_nama ||
+              prefill.unit ||
+              material.satuan ||
+              "Unit";
             return {
               id: `prefill-${Date.now()}-${index}`,
               raw_material_id: material.id,
               qty_ordered: qtyOrdered,
               harga_satuan: unitPrice,
               subtotal: qtyOrdered * unitPrice,
-              notes: "Kebutuhan bahan produksi",
+              notes: "Production material requirement",
               raw_material_name: material.nama,
-              raw_material_unit: material.satuan_besar_nama || material.satuan || "Unit",
+              raw_material_unit: unitName,
+              satuan_id: unitId || undefined,
               requested_qty: qtyOrdered,
-              requested_satuan_id: material.satuan_besar_id,
+              requested_satuan_id: unitId || undefined,
               source: "prefill",
             } as POItemForm;
           })
@@ -410,7 +422,8 @@ export function NewPOPage({ poId }: NewPOPageProps = {}) {
         }
         
         // Add item to PO
-        const unit = units.find(u => u.nama === material.satuan);
+        const unitId = material.satuan_besar_id || material.satuan_kecil_id || "";
+        const unit = units.find((u) => u.id === unitId) || units.find((u) => u.nama === material.satuan);
         const newItem: POItemForm = {
           id: `temp-${Date.now()}`,
           raw_material_id: material.id,
@@ -419,9 +432,10 @@ export function NewPOPage({ poId }: NewPOPageProps = {}) {
           subtotal: parseInt(qty) * (material.harga_terakhir || 0),
           notes: "",
           raw_material_name: material.nama,
-          raw_material_unit: unit?.nama || 'Pcs',
+          raw_material_unit: unit?.nama || material.satuan_besar_nama || material.satuan || "Pcs",
+          satuan_id: unitId || unit?.id || undefined,
           requested_qty: parseInt(qty),
-          requested_satuan_id: material.satuan_besar_id,
+          requested_satuan_id: unitId || unit?.id || undefined,
           source: "prefill",
         };
         

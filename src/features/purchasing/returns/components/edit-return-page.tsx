@@ -15,7 +15,8 @@ import {
   PurchasingFormFooter,
   PurchasingFormHeader,
 } from "@/modules/purchasing/components/page/purchasing-page-header";
-import { RM_ROUTES } from "@/modules/purchasing/constants/item-routes";
+import { getReturnsModuleConfig } from "../returns-module";
+import type { PurchasingModuleType } from "@/lib/purchasing/module-scope";
 import { useReturn, useReturnFormData } from "../queries";
 import { useUpdateReturn } from "../mutations";
 import { ReturnReasonType, ReturnableItem, ReturnStatus } from "@/types/purchasing";
@@ -55,7 +56,12 @@ interface ReturnItem extends ReturnableItem {
   condition_notes: string;
 }
 
-export function EditReturnPage() {
+export function EditReturnPage({
+  moduleType = "raw_material",
+}: {
+  moduleType?: PurchasingModuleType;
+}) {
+  const config = getReturnsModuleConfig(moduleType);
   const router = useRouter();
   const params = useParams();
   const returnId = params.id as string;
@@ -169,7 +175,10 @@ export function EditReturnPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!existingReturn?.grn_id || !existingReturn.supplier_id) {
+    if (
+      !existingReturn?.grn_id ||
+      (config.isProduct ? !existingReturn.vendor_id : !existingReturn.supplier_id)
+    ) {
       toast.error("Return data is incomplete");
       return;
     }
@@ -189,7 +198,8 @@ export function EditReturnPage() {
 
     for (const item of selectedItems) {
       if (item.qty_return > item.qty_available_to_return) {
-        toast.error(`Return qty for ${item.raw_material_nama} exceeds available quantity`);
+        const { nama } = config.itemName(item);
+        toast.error(`Return qty for ${nama} exceeds available quantity`);
         return;
       }
     }
@@ -199,14 +209,18 @@ export function EditReturnPage() {
         id: returnId,
         data: {
           grn_id: existingReturn.grn_id,
-          supplier_id: existingReturn.supplier_id,
+          ...(config.isProduct
+            ? { vendor_id: existingReturn.vendor_id, module_type: "product" as const }
+            : { supplier_id: existingReturn.supplier_id }),
           return_date: formData.return_date,
           reason_type: formData.reason_type as ReturnReasonType,
           reason_notes: formData.reason_notes,
           notes: formData.notes,
           items: selectedItems.map((item) => ({
             grn_item_id: item.grn_item_id,
-            raw_material_id: item.raw_material_id,
+            ...(config.isProduct
+              ? { product_id: item.product_id }
+              : { raw_material_id: item.raw_material_id }),
             qty_returned: item.qty_return,
             unit_cost: item.unit_price,
             batch_number: item.batch_number,
@@ -216,7 +230,7 @@ export function EditReturnPage() {
         },
       });
       toast.success("Purchase return updated");
-      router.push(RM_ROUTES.purchasingReturnsDetail(returnId));
+      router.push(config.detailRoute(returnId));
     } catch (error: unknown) {
       toast.error(getErrorMessage(error, "Failed to update purchase return"));
     }
@@ -244,7 +258,7 @@ export function EditReturnPage() {
   if (detailQuery.isError || !existingReturn) {
     return (
       <div className="space-y-4">
-        <Link href={RM_ROUTES.purchasingReturns}>
+        <Link href={config.listRoute}>
           <Button variant="ghost" size="sm" className="h-9 gap-2 text-pink-700">
             <ArrowLeftIcon className="h-4 w-4" />
             Back
@@ -263,7 +277,7 @@ export function EditReturnPage() {
   if (!EDITABLE_STATUSES.includes(status)) {
     return (
       <div className="space-y-4">
-        <Link href={RM_ROUTES.purchasingReturnsDetail(returnId)}>
+        <Link href={config.detailRoute(returnId)}>
           <Button variant="ghost" size="sm" className="h-9 gap-2 text-pink-700">
             <ArrowLeftIcon className="h-4 w-4" />
             Back
@@ -284,7 +298,7 @@ export function EditReturnPage() {
   return (
     <div className="space-y-6">
       <PurchasingFormHeader
-        backHref={RM_ROUTES.purchasingReturnsDetail(returnId)}
+        backHref={config.detailRoute(returnId)}
         title={`Edit ${existingReturn.return_number}`}
         description="Update return details before approval. Stock is deducted from the receipt warehouse on approval."
       />
@@ -306,9 +320,9 @@ export function EditReturnPage() {
                     <p className="font-medium text-gray-900">{grnNumber}</p>
                   </div>
                   <div>
-                    <p className="text-xs text-gray-500">Supplier</p>
+                    <p className="text-xs text-gray-500">{config.partyLabel}</p>
                     <p className="font-medium text-gray-900">
-                      {existingReturn.supplier?.nama_supplier || "-"}
+                      {config.partyNameFromReturn(existingReturn)}
                     </p>
                   </div>
                 </div>
@@ -408,7 +422,9 @@ export function EditReturnPage() {
                               aria-label="Select all items"
                             />
                           </th>
-                          <th className="px-4 py-3 text-left font-semibold">Raw Material</th>
+                          <th className="px-4 py-3 text-left font-semibold">
+                            {config.isProduct ? "Product" : "Raw Material"}
+                          </th>
                           <th className="w-[100px] px-2 py-3 text-center font-semibold">Warehouse</th>
                           <th className="w-[88px] px-2 py-3 text-center font-semibold">Available</th>
                           <th className="w-[112px] px-2 py-3 text-center font-semibold">Return Qty</th>
@@ -418,7 +434,9 @@ export function EditReturnPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {returnableItems.map((item) => (
+                        {returnableItems.map((item) => {
+                          const itemDisplay = config.itemName(item);
+                          return (
                           <tr
                             key={item.grn_item_id}
                             className={`bg-white ${item.selected ? "bg-pink-50/40" : "hover:bg-gray-50/80"}`}
@@ -427,15 +445,15 @@ export function EditReturnPage() {
                               <Checkbox
                                 checked={item.selected}
                                 onCheckedChange={() => toggleItem(item.grn_item_id)}
-                                aria-label={`Select ${item.raw_material_nama}`}
+                                aria-label={`Select ${itemDisplay.nama}`}
                               />
                             </td>
                             <td className="px-4 py-3 align-top">
                               <div className="font-medium text-gray-900">
-                                {item.raw_material_nama}
+                                {itemDisplay.nama}
                               </div>
                               <div className="mt-0.5 text-xs text-gray-500">
-                                {item.raw_material_kode}
+                                {itemDisplay.kode}
                               </div>
                             </td>
                             <td className="px-2 py-3 text-center align-middle text-xs text-gray-600">
@@ -470,7 +488,8 @@ export function EditReturnPage() {
                               />
                             </td>
                           </tr>
-                        ))}
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -518,7 +537,7 @@ export function EditReturnPage() {
           formId="purchase-return-edit-form"
           submitLabel={isSubmitting ? "Saving..." : "Save Changes"}
           isSubmitting={isSubmitting}
-          onCancel={() => router.push(RM_ROUTES.purchasingReturnsDetail(returnId))}
+          onCancel={() => router.push(config.detailRoute(returnId))}
         />
       </form>
     </div>

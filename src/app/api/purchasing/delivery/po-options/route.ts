@@ -7,6 +7,7 @@ import {
   isPoEligibleForNewDelivery,
   PO_DELIVERY_ELIGIBLE_STATUSES,
 } from "@/lib/purchasing/delivery";
+import { parsePurchasingModuleType } from "@/lib/purchasing/module-scope";
 
 function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
@@ -31,42 +32,62 @@ export async function GET(request: NextRequest) {
     const scope = await getApiUserScope();
     const { searchParams } = new URL(request.url);
     const includeAssigned = searchParams.get("include_cancelled") === "true";
+    const moduleType = parsePurchasingModuleType(searchParams.get("module_type"));
 
-    const { data: purchaseOrders, error } = await db
+    let poQuery = db
       .from("purchase_orders")
-      .select("id, nomor_po, supplier_id, status, company_id, branch_id, created_at")
+      .select("id, nomor_po, supplier_id, vendor_id, status, company_id, branch_id, created_at, module_type")
       .eq("is_active", true)
+      .eq("module_type", moduleType)
       .in("status", [...PO_DELIVERY_ELIGIBLE_STATUSES])
       .order("created_at", { ascending: false })
       .limit(500);
+
+    const { data: purchaseOrders, error } = await poQuery;
 
     if (error) throw error;
 
     const supplierIds = [
       ...new Set((purchaseOrders || []).map((po) => po.supplier_id).filter(Boolean)),
     ] as string[];
+    const vendorIds = [
+      ...new Set((purchaseOrders || []).map((po) => po.vendor_id).filter(Boolean)),
+    ] as string[];
 
-    const { data: suppliers, error: suppliersError } = supplierIds.length
-      ? await db
-          .from("suppliers")
-          .select("id, nama_supplier, company_id, branch_id")
-          .in("id", supplierIds)
-      : { data: [], error: null };
+    const [suppliersResult, vendorsResult] = await Promise.all([
+      supplierIds.length
+        ? db
+            .from("suppliers")
+            .select("id, nama_supplier, company_id, branch_id")
+            .in("id", supplierIds)
+        : Promise.resolve({ data: [], error: null }),
+      vendorIds.length
+        ? db
+            .from("vendors")
+            .select("id, name, company_id, branch_id")
+            .in("id", vendorIds)
+        : Promise.resolve({ data: [], error: null }),
+    ]);
 
-    if (suppliersError) throw suppliersError;
+    if (suppliersResult.error) throw suppliersResult.error;
+    if (vendorsResult.error) throw vendorsResult.error;
 
-    const supplierById = new Map((suppliers || []).map((supplier) => [supplier.id, supplier]));
+    const supplierById = new Map((suppliersResult.data || []).map((supplier) => [supplier.id, supplier]));
+    const vendorById = new Map((vendorsResult.data || []).map((vendor) => [vendor.id, vendor]));
 
     const scopedOrders = (purchaseOrders || []).filter((po) => {
-      const supplier = supplierById.get(po.supplier_id);
+      const supplier = po.supplier_id ? supplierById.get(po.supplier_id) : null;
+      const vendor = po.vendor_id ? vendorById.get(po.vendor_id) : null;
       return isOperationalRowInBusinessScope(scope, {
         company_id:
           (po.company_id as string | null | undefined) ??
           (supplier?.company_id as string | null | undefined) ??
+          (vendor?.company_id as string | null | undefined) ??
           null,
         branch_id:
           (po.branch_id as string | null | undefined) ??
           (supplier?.branch_id as string | null | undefined) ??
+          (vendor?.branch_id as string | null | undefined) ??
           null,
       });
     });
@@ -93,7 +114,10 @@ export async function GET(request: NextRequest) {
     }
 
     const supplierNameById = new Map(
-      (suppliers || []).map((supplier) => [supplier.id, supplier.nama_supplier])
+      (suppliersResult.data || []).map((supplier) => [supplier.id, supplier.nama_supplier])
+    );
+    const vendorNameById = new Map(
+      (vendorsResult.data || []).map((vendor) => [vendor.id, vendor.name])
     );
 
     const mapped = scopedOrders
@@ -106,7 +130,11 @@ export async function GET(request: NextRequest) {
           id: po.id,
           nomor_po: po.nomor_po,
           supplier_id: po.supplier_id,
-          nama_supplier: supplierNameById.get(po.supplier_id) ?? null,
+          vendor_id: po.vendor_id,
+          nama_supplier:
+            moduleType === "product"
+              ? vendorNameById.get(po.vendor_id) ?? null
+              : supplierNameById.get(po.supplier_id) ?? null,
           status: po.status,
           active_delivery_id: openDelivery?.id ?? null,
           active_delivery_number:

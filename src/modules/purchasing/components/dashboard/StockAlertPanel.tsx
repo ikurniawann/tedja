@@ -3,6 +3,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StockAlert } from "@/modules/purchasing/hooks/usePurchasingDashboard";
 import { formatUnit } from "@/modules/purchasing/utils";
+import { RM_ROUTES } from "@/modules/purchasing/constants/item-routes";
 import { AlertTriangle, ArrowRight } from "lucide-react";
 import Link from "next/link";
 

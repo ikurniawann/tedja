@@ -20,6 +20,7 @@ import {
 } from "@/lib/purchasing/grn";
 import { toQty } from "@/lib/purchasing/utils";
 import { syncReceiveRejectCredits } from "@/lib/purchasing/vendor-credit-service";
+import { parsePurchasingModuleType } from "@/lib/purchasing/module-scope";
 import {
   getApiUserScope,
   companyScopeOr,
@@ -36,16 +37,26 @@ import {
 const grnItemSchema = z.object({
   delivery_id: z.string().uuid().optional(),
   purchase_order_item_id: z.string().uuid().optional(),
-  raw_material_id: z.string().uuid("Bahan baku wajib dipilih"),
+  raw_material_id: z.string().uuid().optional(),
+  product_id: z.string().uuid().optional(),
   qty_diterima: z.number().min(0, "Qty diterima minimal 0"),
   qty_ditolak: z.number().min(0, "Qty ditolak minimal 0"),
   satuan_id: z.string().uuid().optional(),
   kondisi: z.enum(["baik", "rusak", "cacat"]).default("baik"),
   catatan: z.string().optional().nullable(),
+}).superRefine((item, ctx) => {
+  if (!item.raw_material_id && !item.product_id) {
+    ctx.addIssue({
+      code: "custom",
+      message: "Item wajib memiliki raw material atau product",
+      path: ["product_id"],
+    });
+  }
 });
 
 const createGrnSchema = z.object({
   delivery_id: z.string().uuid("Delivery wajib dipilih"),
+  module_type: z.enum(["raw_material", "product"]).optional(),
   tanggal_penerimaan: z.string().optional(),
   catatan: z.string().optional(),
   warehouse_id: z.string().uuid("Gudang wajib dipilih"),
@@ -73,23 +84,32 @@ const QTY_EPSILON = 0.000001;
 
 type POQtyValidationItem = {
   id: string;
-  raw_material_id: string;
+  raw_material_id?: string | null;
+  product_id?: string | null;
   qty_ordered?: number | null;
   qty_received?: number | null;
   raw_material?: {
     nama?: string | null;
     nama_bahan?: string | null;
   } | null;
+  product?: {
+    nama?: string | null;
+  } | null;
 };
+
+function getMaterialLabel(item: POQtyValidationItem) {
+  return (
+    item.raw_material?.nama ||
+    item.raw_material?.nama_bahan ||
+    item.product?.nama ||
+    "item ini"
+  );
+}
 
 function formatQty(value: number) {
   return new Intl.NumberFormat("id-ID", {
     maximumFractionDigits: 4,
   }).format(value);
-}
-
-function getMaterialLabel(item: POQtyValidationItem) {
-  return item.raw_material?.nama || item.raw_material?.nama_bahan || "item ini";
 }
 
 // ============================================================
@@ -239,6 +259,7 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
     const validated = createGrnSchema.parse(body);
+    const moduleType = parsePurchasingModuleType(validated.module_type);
 
     // Validate delivery can be received — use adminDb to bypass RLS
     const { valid, errors, delivery, items: poItems } = await validateDeliveryCanReceive(
@@ -302,6 +323,7 @@ export async function POST(request: NextRequest) {
       .select(`
         id,
         raw_material_id,
+        product_id,
         qty_ordered,
         qty_received,
         harga_satuan
@@ -324,19 +346,21 @@ export async function POST(request: NextRequest) {
 
     const processedQtyByItem = new Map<string, number>();
     for (const item of validated.items) {
-      const key = item.purchase_order_item_id || item.raw_material_id;
+      const key = item.purchase_order_item_id || item.raw_material_id || item.product_id;
       processedQtyByItem.set(
-        key,
-        (processedQtyByItem.get(key) || 0) + item.qty_diterima + item.qty_ditolak
+        key!,
+        (processedQtyByItem.get(key!) || 0) + item.qty_diterima + item.qty_ditolak
       );
     }
 
     for (const item of validated.items) {
-      const key = item.purchase_order_item_id || item.raw_material_id;
+      const key = item.purchase_order_item_id || item.raw_material_id || item.product_id;
       const poItem = effectivePoItems.find((p) =>
         item.purchase_order_item_id
           ? p.id === item.purchase_order_item_id
-          : p.raw_material_id === item.raw_material_id
+          : item.product_id
+            ? p.product_id === item.product_id
+            : p.raw_material_id === item.raw_material_id
       );
 
       if (!poItem) {
@@ -386,7 +410,8 @@ export async function POST(request: NextRequest) {
       nomor_grn: grnNumber,
       delivery_id: validated.delivery_id,
       purchase_order_id: delivery.purchase_order_id,
-      supplier_id: delivery.supplier_id,
+      supplier_id: moduleType === "product" ? null : delivery.supplier_id,
+      vendor_id: moduleType === "product" ? delivery.vendor_id : null,
       company_id: businessScope?.company_id ?? null,
       branch_id: businessScope?.branch_id ?? null,
       tanggal_penerimaan: validated.tanggal_penerimaan || new Date().toISOString().split("T")[0],
@@ -418,7 +443,8 @@ export async function POST(request: NextRequest) {
       grn_id: grn.id,
       delivery_id: validated.delivery_id,
       purchase_order_item_id: item.purchase_order_item_id,
-      raw_material_id: item.raw_material_id,
+      raw_material_id: item.raw_material_id || null,
+      product_id: item.product_id || null,
       qty_diterima: item.qty_diterima,
       qty_ditolak: item.qty_ditolak,
       satuan_id: item.satuan_id,

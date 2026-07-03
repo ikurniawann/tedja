@@ -53,6 +53,7 @@ export async function GET(
         id,
         grn_id,
         raw_material_id,
+        product_id,
         qty_diterima,
         qty_returned,
         qty_qc_posted,
@@ -60,14 +61,22 @@ export async function GET(
         expiry_date,
         qc_status,
         warehouse_id,
-        raw_material:raw_materials!inner (
+        raw_material:raw_materials (
           kode,
           nama
         ),
-        grn:grn!inner (
+        product:products (
+          kode,
+          nama
+        ),
+        grn:grn (
           supplier_id,
-          supplier:suppliers!inner (
+          vendor_id,
+          supplier:suppliers (
             nama_supplier
+          ),
+          vendor:vendors (
+            name
           )
         ),
         purchase_order_item:purchase_order_items (
@@ -89,7 +98,8 @@ export async function GET(
     type GrnItemRow = {
       id: string;
       grn_id: string;
-      raw_material_id: string;
+      raw_material_id: string | null;
+      product_id: string | null;
       qty_diterima: number | null;
       qty_returned: number | null;
       qty_qc_posted: number | null;
@@ -97,8 +107,14 @@ export async function GET(
       expiry_date: string | null;
       qc_status: string | null;
       warehouse_id: string | null;
-      raw_material: { kode: string; nama: string };
-      grn: { supplier_id: string; supplier: { nama_supplier: string } };
+      raw_material: { kode: string; nama: string } | null;
+      product: { kode: string; nama: string } | null;
+      grn: {
+        supplier_id: string | null;
+        vendor_id: string | null;
+        supplier: { nama_supplier: string } | null;
+        vendor: { name: string } | null;
+      };
       purchase_order_item: { harga_satuan: number | null } | null;
       satuan: { nama: string | null } | null;
       warehouse: { name: string | null } | null;
@@ -112,12 +128,19 @@ export async function GET(
           toQty(item.qty_qc_posted) - toQty(item.qty_returned) + giveBack
         );
 
+        const partyId = item.grn.supplier_id || item.grn.vendor_id || "";
+        const partyName =
+          item.grn.supplier?.nama_supplier || item.grn.vendor?.name || "";
+
         return {
           grn_item_id: item.id,
           grn_id: item.grn_id,
-          raw_material_id: item.raw_material_id,
-          raw_material_kode: item.raw_material.kode,
-          raw_material_nama: item.raw_material.nama,
+          raw_material_id: item.raw_material_id || "",
+          product_id: item.product_id || undefined,
+          raw_material_kode: item.raw_material?.kode || item.product?.kode || "",
+          raw_material_nama: item.raw_material?.nama || item.product?.nama || "",
+          product_kode: item.product?.kode,
+          product_nama: item.product?.nama,
           qty_diterima: toQty(item.qty_diterima),
           qty_returned: toQty(item.qty_returned),
           qty_available_to_return: qtyAvailable,
@@ -125,8 +148,9 @@ export async function GET(
           batch_number: item.batch_number,
           expiry_date: item.expiry_date,
           qc_status: item.qc_status,
-          supplier_id: item.grn.supplier_id,
-          nama_supplier: item.grn.supplier.nama_supplier,
+          supplier_id: partyId,
+          vendor_id: item.grn.vendor_id || undefined,
+          nama_supplier: partyName,
           satuan: item.satuan?.nama || undefined,
           warehouse_id: item.warehouse_id,
           warehouse_name: item.warehouse?.name || undefined,

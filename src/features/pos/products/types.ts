@@ -24,6 +24,7 @@ export type PosProductModifierGroup = {
 
 export type PosCatalogProduct = {
   id: string;
+  sku?: string;
   name: string;
   category: string;
   price: number;
@@ -44,6 +45,8 @@ export type ApiPosProduct = {
   category?: { name?: string | null } | { name?: string | null }[] | string | null;
   base_price?: number | string | null;
   cost_price?: number | string | null;
+  estimated_cogs?: number | string | null;
+  hpp_estimasi?: number | string | null;
   station?: string | null;
   is_active?: boolean | null;
   variants?: Array<{

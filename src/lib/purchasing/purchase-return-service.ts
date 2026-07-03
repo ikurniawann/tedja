@@ -1,5 +1,6 @@
 import type { DbClient } from "@/lib/pg/types";
 import { reduceInventoryFromPurchaseReturn } from "@/lib/inventory";
+import { reduceProductInventoryFromPurchaseReturn } from "@/lib/inventory/product-purchase-return";
 import type { PurchaseReturnFormData } from "@/types/purchasing";
 
 const QTY_EPSILON = 0.000001;
@@ -59,9 +60,11 @@ export async function validateReturnLineItems(
         id,
         grn_id,
         raw_material_id,
+        product_id,
         qty_qc_posted,
         qty_returned,
-        raw_material:raw_materials (nama)
+        raw_material:raw_materials (nama),
+        product:products (nama)
       `
       )
       .eq("id", item.grn_item_id)
@@ -80,7 +83,9 @@ export async function validateReturnLineItems(
 
     if (toQty(item.qty_returned) > available + QTY_EPSILON) {
       const materialName =
-        (grnItem.raw_material as { nama?: string } | null)?.nama || "item";
+        (grnItem.raw_material as { nama?: string } | null)?.nama ||
+        (grnItem.product as { nama?: string } | null)?.nama ||
+        "item";
       throw new Error(
         `Return quantity for ${materialName} exceeds available stock (${available})`
       );
@@ -103,7 +108,8 @@ export async function replacePurchaseReturnItems(
   const payload = items.map((item) => ({
     return_id: returnId,
     grn_item_id: item.grn_item_id,
-    raw_material_id: item.raw_material_id,
+    raw_material_id: item.raw_material_id || null,
+    product_id: item.product_id || null,
     qty_returned: item.qty_returned,
     unit_cost: item.unit_cost,
     subtotal: item.qty_returned * item.unit_cost,
@@ -132,6 +138,7 @@ export async function approvePurchaseReturn(
         id,
         grn_item_id,
         raw_material_id,
+        product_id,
         qty_returned,
         unit_cost,
         condition_notes,
@@ -156,7 +163,8 @@ export async function approvePurchaseReturn(
   const returnNumber = currentReturn.return_number as string;
   const items = (currentReturn.items || []) as Array<{
     grn_item_id: string;
-    raw_material_id: string;
+    raw_material_id: string | null;
+    product_id: string | null;
     qty_returned: number;
     unit_cost: number;
     condition_notes?: string | null;
@@ -168,6 +176,23 @@ export async function approvePurchaseReturn(
   }
 
   for (const item of items) {
+    if (item.product_id) {
+      await reduceProductInventoryFromPurchaseReturn(db, {
+        productId: item.product_id,
+        qtyReturned: toQty(item.qty_returned),
+        unitCost: toQty(item.unit_cost),
+        returnId,
+        returnNumber,
+        userId,
+        conditionNotes: item.condition_notes,
+      });
+      continue;
+    }
+
+    if (!item.raw_material_id) {
+      throw new Error("Return item is missing material reference");
+    }
+
     await reduceInventoryFromPurchaseReturn(db, {
       rawMaterialId: item.raw_material_id,
       qtyReturned: toQty(item.qty_returned),

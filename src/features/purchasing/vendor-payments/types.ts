@@ -30,6 +30,7 @@ export type VendorPaymentRow = PurchaseInvoiceRow;
 export interface PurchaseInvoiceListParams {
   search?: string;
   status?: PurchaseInvoicePaymentStatus | "all";
+  module_type?: "raw_material" | "product";
 }
 
 /** @deprecated Use PurchaseInvoiceListParams */

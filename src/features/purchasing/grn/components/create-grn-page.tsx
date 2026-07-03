@@ -12,8 +12,9 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
 import { listGrnDeliveries, getGrnPOItems, getGrnPO, listWarehouses, getReceivingUserScope } from "../api";
-import type { ReceivingUserScope } from "../api";
+import type { PurchasingModuleType, ReceivingUserScope } from "../api";
 import { useCreateGrn } from "../mutations";
+import { RM_ROUTES, PRODUCT_ROUTES } from "@/modules/purchasing/constants/item-routes";
 import { DsDateTimePicker } from "@/components/design-system";
 import {
   ArrowLeftIcon,
@@ -52,6 +53,7 @@ interface Warehouse {
 interface POItem {
   id: string;
   raw_material_id: string;
+  product_id?: string;
   nama_bahan: string;
   qty_ordered: number;
   qty_received: number;
@@ -66,13 +68,17 @@ type ApiUnit = string | {
 
 type POItemApiRow = {
   id: string;
-  raw_material_id: string;
+  raw_material_id?: string;
+  product_id?: string;
   nama_bahan?: string;
   qty_ordered?: number | string | null;
   qty_received?: number | string | null;
   raw_material?: {
     nama?: string;
     nama_bahan?: string;
+  } | null;
+  product?: {
+    nama?: string;
   } | null;
   satuan?: ApiUnit;
   unit?: ApiUnit;
@@ -108,11 +114,23 @@ function getRemainingQty(poItem?: POItem) {
   return Math.max(0, toNumber(poItem.qty_ordered) - toNumber(poItem.qty_received));
 }
 
-function mapPOItem(item: POItemApiRow): POItem {
+function getProductName(
+  product?: POItemApiRow["product"],
+  fallback = "Unknown"
+) {
+  if (!product) return fallback;
+  return product.nama || fallback;
+}
+
+function mapPOItem(item: POItemApiRow, moduleType: PurchasingModuleType = "raw_material"): POItem {
+  const isProduct = moduleType === "product";
   return {
     id: item.id,
-    raw_material_id: item.raw_material_id,
-    nama_bahan: item.nama_bahan || getMaterialName(item.raw_material),
+    raw_material_id: isProduct ? "" : (item.raw_material_id || ""),
+    product_id: isProduct ? item.product_id : undefined,
+    nama_bahan: isProduct
+      ? item.nama_bahan || getProductName(item.product)
+      : item.nama_bahan || getMaterialName(item.raw_material),
     qty_ordered: toNumber(item.qty_ordered),
     qty_received: toNumber(item.qty_received),
     satuan: getUnitName(item.satuan || item.unit),
@@ -123,11 +141,16 @@ interface GrnItem {
   id: string;
   purchase_order_item_id: string;
   raw_material_id: string;
+  product_id?: string;
   nama_bahan: string;
   qty_diterima: number;
   qty_ditolak: number;
   catatan: string;
 }
+
+type CreateGrnPageProps = {
+  moduleType?: PurchasingModuleType;
+};
 
 const GUIDELINES = [
   "Select a delivery that has not been received yet.",
@@ -136,7 +159,12 @@ const GUIDELINES = [
   "Any shortfall is automatically moved to the reject column.",
 ];
 
-export function CreateGrnPage() {
+export function CreateGrnPage({ moduleType = "raw_material" }: CreateGrnPageProps) {
+  const isProduct = moduleType === "product";
+  const listRoute = isProduct ? PRODUCT_ROUTES.purchasingReceive : RM_ROUTES.purchasingGrn;
+  const supplierLabel = isProduct ? "Vendor" : "Supplier";
+  const itemColumnLabel = isProduct ? "Product" : "Raw Material";
+
   const router = useRouter();
   const searchParams = useSearchParams();
   const createMutation = useCreateGrn();
@@ -167,7 +195,7 @@ export function CreateGrnPage() {
         delivery_number?: string;
         ekspedisi?: string;
         vendor_name?: string;
-      }>();
+      }>(moduleType);
       if (Array.isArray(data)) {
         const enhanced = data.map((d) => ({
           id: d.id!,
@@ -193,7 +221,7 @@ export function CreateGrnPage() {
     } finally {
       setFetchingDeliveries(false);
     }
-  }, []);
+  }, [moduleType]);
 
   useEffect(() => {
     fetchDeliveries();
@@ -247,7 +275,7 @@ export function CreateGrnPage() {
         return;
       }
 
-      const simplifiedPoItems = rows.map(mapPOItem);
+      const simplifiedPoItems = rows.map((item) => mapPOItem(item, moduleType));
       setPoItems(simplifiedPoItems);
       setGrnItems(
         simplifiedPoItems.map((item) => {
@@ -256,6 +284,7 @@ export function CreateGrnPage() {
             id: crypto.randomUUID(),
             purchase_order_item_id: item.id,
             raw_material_id: item.raw_material_id,
+            product_id: item.product_id,
             nama_bahan: item.nama_bahan,
             qty_diterima: remaining,
             qty_ditolak: 0,
@@ -267,7 +296,7 @@ export function CreateGrnPage() {
       console.error(error);
       toast.error("Failed to load purchase order items.");
     }
-  }, []);
+  }, [moduleType]);
 
   useEffect(() => {
     const poId = selectedDelivery?.purchase_order_id;
@@ -426,9 +455,12 @@ export function CreateGrnPage() {
         warehouse_id: formData.warehouse_id,
         tanggal_penerimaan: formData.tanggal_penerimaan,
         catatan: formData.catatan || undefined,
+        ...(isProduct ? { module_type: "product" as const } : {}),
         items: grnItems.map((item) => ({
           purchase_order_item_id: item.purchase_order_item_id,
-          raw_material_id: item.raw_material_id,
+          ...(isProduct
+            ? { product_id: item.product_id }
+            : { raw_material_id: item.raw_material_id }),
           qty_diterima: Number(item.qty_diterima) || 0,
           qty_ditolak: Number(item.qty_ditolak) || 0,
           kondisi: "baik" as const,
@@ -439,9 +471,13 @@ export function CreateGrnPage() {
       const createdId = result?.data?.id;
       toast.success("Goods receipt created. Proceed to quality control.");
       if (createdId) {
-        router.push(`/dashboard/purchasing/grn/${createdId}/qc`);
+        router.push(
+          isProduct
+            ? PRODUCT_ROUTES.purchasingReceiveQc(createdId)
+            : RM_ROUTES.purchasingGrnQc(createdId)
+        );
       } else {
-        router.push("/dashboard/purchasing/grn");
+        router.push(listRoute);
       }
     } catch (error: unknown) {
       toast.error(error instanceof Error ? error.message : "Failed to create goods receipt.");
@@ -452,7 +488,7 @@ export function CreateGrnPage() {
     <div className="space-y-6">
       <div className="flex flex-col gap-4 border-b border-gray-200/70 pb-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="flex items-start gap-3">
-          <Link href="/dashboard/purchasing/grn">
+          <Link href={listRoute}>
             <Button variant="ghost" size="sm" className="h-9 gap-2 text-pink-700">
               <ArrowLeftIcon className="h-4 w-4" />
               Back
@@ -603,7 +639,7 @@ export function CreateGrnPage() {
                       <table className="w-full table-fixed border-collapse text-sm [&_td]:border [&_td]:border-gray-200/70 [&_th]:border [&_th]:border-gray-200/70">
                         <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
                           <tr>
-                            <th className="px-4 py-3 text-left font-semibold">Raw Material</th>
+                            <th className="px-4 py-3 text-left font-semibold">{itemColumnLabel}</th>
                             <th className="w-[72px] px-2 py-3 text-center font-semibold">Ordered</th>
                             <th className="w-[72px] px-2 py-3 text-center font-semibold">Received</th>
                             <th className="w-[84px] px-2 py-3 text-center font-semibold">Remaining</th>
@@ -686,7 +722,7 @@ export function CreateGrnPage() {
                       </dd>
                     </div>
                     <div className="flex items-start justify-between gap-3">
-                      <dt className="text-gray-500">Supplier</dt>
+                      <dt className="text-gray-500">{supplierLabel}</dt>
                       <dd className="text-right font-medium text-gray-900">
                         {selectedDelivery.supplier_name || "-"}
                       </dd>
@@ -758,7 +794,7 @@ export function CreateGrnPage() {
             type="button"
             variant="outline"
             className="purchasing-secondary-button w-full sm:w-auto"
-            onClick={() => router.push("/dashboard/purchasing/grn")}
+            onClick={() => router.push(listRoute)}
           >
             Cancel
           </Button>

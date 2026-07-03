@@ -225,6 +225,24 @@ export function findNavItem(items: NavItem[], href: string): NavItem | undefined
   return undefined;
 }
 
+/** First sidebar route outside a module prefix (e.g. leave POS → purchasing/items). */
+export function findFirstBackOfficeHref(
+  items: NavItem[],
+  excludePathPrefix = "/dashboard/pos"
+): string | null {
+  for (const item of items) {
+    const href = item.href?.trim();
+    if (href && !href.startsWith(excludePathPrefix)) {
+      return href;
+    }
+    if (item.children?.length) {
+      const childHref = findFirstBackOfficeHref(item.children, excludePathPrefix);
+      if (childHref) return childHref;
+    }
+  }
+  return null;
+}
+
 /**
  * Menu turunan dari sebuah modul top-level (mis. href "/dashboard/pos"),
  * dipakai oleh top-navbar modul (POS / Purchasing) agar tetap DB-driven.

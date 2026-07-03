@@ -6,7 +6,7 @@ import { cacheProducts, getCachedProducts, setLastSyncTimestamp } from "@/lib/po
 
 export function usePosProducts() {
   const [products, setProducts] = useState<Product[]>([]);
-  const [categories, setCategories] = useState<string[]>(["Semua"]);
+  const [categories, setCategories] = useState<string[]>(["All"]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isOfflineFallback, setIsOfflineFallback] = useState(false);
@@ -20,7 +20,7 @@ export function usePosProducts() {
       const data = res.data || [];
       setProducts(data);
       const cats = Array.from(new Set(data.map((p: any) => p.category?.name || "Uncategorized")));
-      setCategories(["Semua", ...cats]);
+      setCategories(["All", ...cats]);
       // Cache to IndexedDB
       void cacheProducts(data.map((p: any) => ({
         id: p.id,
@@ -44,7 +44,7 @@ export function usePosProducts() {
         if (cached.length > 0) {
           setProducts(cached as Product[]);
           const cats = Array.from(new Set(cached.map((p: any) => p.category?.name || "Uncategorized")));
-          setCategories(["Semua", ...cats]);
+          setCategories(["All", ...cats]);
           setIsOfflineFallback(true);
           setError(null);
         } else {

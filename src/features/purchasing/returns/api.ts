@@ -57,12 +57,19 @@ export interface ReturnGrnOption {
   id: string;
   nomor_grn: string;
   tanggal_penerimaan?: string | null;
-  supplier_id: string;
+  supplier_id?: string | null;
+  vendor_id?: string | null;
   supplier?: { nama_supplier?: string | null } | null;
+  vendor?: { name?: string | null } | null;
 }
 
-export async function listReturnGrnOptions(): Promise<ReturnGrnOption[]> {
-  const response = await fetch("/api/purchasing/returns/grn-options");
+export async function listReturnGrnOptions(
+  moduleType: "raw_material" | "product" = "raw_material"
+): Promise<ReturnGrnOption[]> {
+  const sp = new URLSearchParams();
+  if (moduleType === "product") sp.set("module_type", "product");
+
+  const response = await fetch(`/api/purchasing/returns/grn-options?${sp.toString()}`);
   const result = await response.json();
 
   if (!response.ok) {

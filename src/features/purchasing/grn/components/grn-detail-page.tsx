@@ -5,8 +5,8 @@ import { useParams } from "next/navigation";
 import { toast } from "sonner";
 import { useGrn, useGrnQC, useGrnVendorCredits } from "../queries";
 import { useApproveVendorCredit } from "../mutations";
-import type { VendorCreditRow } from "../api";
-import { RM_ROUTES } from "@/modules/purchasing/constants/item-routes";
+import type { VendorCreditRow, PurchasingModuleType } from "../api";
+import { RM_ROUTES, PRODUCT_ROUTES } from "@/modules/purchasing/constants/item-routes";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -182,7 +182,15 @@ function DetailField({
   return content;
 }
 
-export function GRNDetailPage() {
+export function GRNDetailPage({
+  moduleType = "raw_material",
+}: {
+  moduleType?: PurchasingModuleType;
+}) {
+  const isProduct = moduleType === "product";
+  const listRoute = isProduct ? PRODUCT_ROUTES.purchasingReceive : RM_ROUTES.purchasingGrn;
+  const supplierLabel = isProduct ? "Vendor" : "Supplier";
+
   const params = useParams();
   const grnId = params.id as string;
 
@@ -220,7 +228,7 @@ export function GRNDetailPage() {
   if (grnQuery.isError) {
     return (
       <div className="space-y-4">
-        <Link href="/dashboard/purchasing/grn">
+        <Link href={listRoute}>
           <Button variant="ghost" size="sm" className="h-9 gap-2 text-pink-700">
             <ArrowLeftIcon className="h-4 w-4" />
             Back
@@ -241,7 +249,7 @@ export function GRNDetailPage() {
   if (!grn) {
     return (
       <div className="space-y-4">
-        <Link href="/dashboard/purchasing/grn">
+        <Link href={listRoute}>
           <Button variant="ghost" size="sm" className="h-9 gap-2 text-pink-700">
             <ArrowLeftIcon className="h-4 w-4" />
             Back
@@ -268,7 +276,7 @@ export function GRNDetailPage() {
     <div className="space-y-6">
       <div className="flex flex-col gap-4 border-b border-gray-200/70 pb-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="flex items-start gap-3">
-          <Link href={RM_ROUTES.purchasingGrn}>
+          <Link href={listRoute}>
             <Button variant="ghost" size="sm" className="h-9 gap-2 text-pink-700">
               <ArrowLeftIcon className="h-4 w-4" />
               Back
@@ -296,7 +304,13 @@ export function GRNDetailPage() {
             Print
           </Button>
           {canRunQc && (
-            <Link href={RM_ROUTES.purchasingGrnQc(grn.id)}>
+            <Link
+              href={
+                isProduct
+                  ? PRODUCT_ROUTES.purchasingReceiveQc(grn.id)
+                  : RM_ROUTES.purchasingGrnQc(grn.id)
+              }
+            >
               <Button className="purchasing-main-button w-full sm:w-auto">
                 <ClipboardCheck className="mr-2 h-4 w-4" />
                 Run Quality Control
@@ -304,7 +318,13 @@ export function GRNDetailPage() {
             </Link>
           )}
           {canContinueReceive && (
-            <Link href={RM_ROUTES.purchasingGrnContinue(grn.id)}>
+            <Link
+              href={
+                isProduct
+                  ? PRODUCT_ROUTES.purchasingReceiveContinue(grn.id)
+                  : RM_ROUTES.purchasingGrnContinue(grn.id)
+              }
+            >
               <Button className="purchasing-main-button w-full sm:w-auto">
                 <Package className="mr-2 h-4 w-4" />
                 Continue Receipt
@@ -329,17 +349,17 @@ export function GRNDetailPage() {
               <DetailField
                 label="Purchase Order"
                 value={poNumber}
-                href={poId ? `/dashboard/purchasing/po/${poId}` : undefined}
+                href={poId ? (isProduct ? PRODUCT_ROUTES.purchasingPoDetail(poId) : `/dashboard/purchasing/po/${poId}`) : undefined}
               />
               <DetailField
                 label="Delivery Note Number"
                 value={grn.no_surat_jalan || grn.delivery?.no_surat_jalan || "-"}
               />
               <DetailField
-                label="Supplier"
+                label={supplierLabel}
                 value={grn.supplier_name || grn.supplier?.nama_supplier || "-"}
               />
-              <DetailField label="Supplier Code" value={grn.supplier?.kode || "-"} />
+              <DetailField label={`${supplierLabel} Code`} value={grn.supplier?.kode || "-"} />
               <DetailField label="Notes" value={grn.catatan || "-"} className="md:col-span-2" />
             </CardContent>
           </Card>
@@ -356,7 +376,11 @@ export function GRNDetailPage() {
                 <DetailField
                   label="Delivery Number"
                   value={grn.delivery_number || grn.delivery?.nomor_resi || "-"}
-                  href={`/dashboard/purchasing/delivery/${grn.delivery_id}`}
+                  href={
+                    isProduct
+                      ? PRODUCT_ROUTES.purchasingDeliveryDetail(grn.delivery_id)
+                      : `/dashboard/purchasing/delivery/${grn.delivery_id}`
+                  }
                 />
                 <DetailField label="Courier" value={grn.delivery?.kurir || "-"} />
                 <DetailField label="Shipment Date" value={formatDate(grn.delivery?.tanggal_kirim)} />
@@ -523,7 +547,7 @@ export function GRNDetailPage() {
                   <dd className="text-right font-medium text-gray-900">{poNumber}</dd>
                 </div>
                 <div className="flex items-start justify-between gap-3">
-                  <dt className="text-gray-500">Supplier</dt>
+                  <dt className="text-gray-500">{supplierLabel}</dt>
                   <dd className="text-right font-medium text-gray-900">
                     {grn.supplier_name || grn.supplier?.nama_supplier || "-"}
                   </dd>
@@ -560,7 +584,13 @@ export function GRNDetailPage() {
                       inventory stock.
                     </p>
                     {canRunQc && (
-                      <Link href={RM_ROUTES.purchasingGrnQc(grn.id)}>
+                      <Link
+                        href={
+                          isProduct
+                            ? PRODUCT_ROUTES.purchasingReceiveQc(grn.id)
+                            : RM_ROUTES.purchasingGrnQc(grn.id)
+                        }
+                      >
                         <Button size="sm" className="purchasing-main-button h-8">
                           <ClipboardCheck className="mr-2 h-3.5 w-3.5" />
                           Start Inspection
@@ -608,7 +638,7 @@ export function GRNDetailPage() {
               <div className="rounded-xl border border-gray-200/70 bg-gray-50/60 p-4">
                 <div className="mb-2 flex items-center gap-2 text-sm font-medium text-gray-900">
                   <Info className="h-4 w-4 text-pink-600" />
-                  Supplier Contact
+                  {supplierLabel} Contact
                 </div>
                 <dl className="space-y-2 text-xs text-gray-600">
                   <div className="flex items-start justify-between gap-3">

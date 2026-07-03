@@ -57,6 +57,8 @@ type StockRow = {
   id: string;
   qty_onhand?: number | string | null;
   avg_cost?: number | string | null;
+  satuan_kecil_nama?: string | null;
+  satuan_besar_nama?: string | null;
 };
 
 async function loadStockMap(
@@ -68,7 +70,7 @@ async function loadStockMap(
 
   const { data, error } = await db
     .from("v_raw_materials_stock")
-    .select("id, qty_onhand, avg_cost")
+    .select("id, qty_onhand, avg_cost, satuan_kecil_nama, satuan_besar_nama")
     .in("id", uniqueIds);
 
   if (error) throw error;
@@ -109,7 +111,7 @@ async function validateMaterialStock(
 ) {
   const { data: materials, error } = await db
     .from("production_order_materials")
-    .select("id, raw_material_id, qty_planned, qty_actual, inventory_movement_id, raw_material:raw_material_id(kode,nama)")
+    .select("id, raw_material_id, qty_planned, qty_actual, inventory_movement_id, raw_material:raw_materials!raw_material_id(kode,nama)")
     .eq("production_order_id", productionOrderId);
 
   if (error) throw error;
@@ -191,7 +193,7 @@ export async function GET(
 
     if (orderError || !order) {
       return NextResponse.json(
-        { success: false, message: "Production order tidak ditemukan" },
+        { success: false, message: "Production order not found" },
         { status: 404 }
       );
     }
@@ -200,7 +202,7 @@ export async function GET(
       await Promise.all([
         db
           .from("production_order_materials")
-          .select("*, raw_material:raw_material_id(id,kode,nama), satuan:satuan_id(id,kode,nama)")
+          .select("*, raw_material:raw_materials!raw_material_id(id,kode,nama), satuan:units!satuan_id(id,kode,nama)")
           .eq("production_order_id", id)
           .order("created_at", { ascending: true }),
         db
@@ -212,6 +214,27 @@ export async function GET(
 
     if (materialsError) throw materialsError;
     if (batchesError) throw batchesError;
+
+    let outputSatuanNama: string | null = null;
+    if (order.product_id) {
+      const { data: product } = await db
+        .from("products")
+        .select("satuan:units!satuan_id(nama)")
+        .eq("id", order.product_id)
+        .maybeSingle();
+      outputSatuanNama = (product as { satuan?: { nama?: string | null } | null } | null)?.satuan?.nama || null;
+    } else if (order.output_raw_material_id) {
+      const { data: outputMaterial } = await db
+        .from("v_raw_materials_stock")
+        .select("satuan_besar_nama, satuan_kecil_nama")
+        .eq("id", order.output_raw_material_id)
+        .maybeSingle();
+      outputSatuanNama =
+        (outputMaterial as { satuan_besar_nama?: string | null; satuan_kecil_nama?: string | null } | null)
+          ?.satuan_besar_nama ||
+        (outputMaterial as { satuan_kecil_nama?: string | null } | null)?.satuan_kecil_nama ||
+        null;
+    }
 
     const stockMap = await loadStockMap(
       db,
@@ -228,10 +251,25 @@ export async function GET(
       success: true,
       data: {
         ...order,
-        materials: (materials || []).map((material) => ({
-          ...material,
-          stock: coverageByMaterialId.get(material.id) || null,
-        })),
+        output_satuan_nama: outputSatuanNama,
+        materials: (materials || []).map((material) => {
+          const stockRow = stockMap.get(material.raw_material_id);
+          const unitName =
+            material.satuan?.nama ||
+            stockRow?.satuan_kecil_nama ||
+            stockRow?.satuan_besar_nama ||
+            null;
+
+          return {
+            ...material,
+            satuan: material.satuan?.nama
+              ? material.satuan
+              : unitName
+                ? { id: material.satuan_id, nama: unitName, kode: null }
+                : null,
+            stock: coverageByMaterialId.get(material.id) || null,
+          };
+        }),
         batches: batches || [],
         stock_coverage: stockCoverage,
         stock_summary: {
@@ -245,7 +283,7 @@ export async function GET(
     if (error instanceof ApiError) return error.toResponse();
     console.error("Error fetching production order:", error);
     return NextResponse.json(
-      { success: false, message: getErrorMessage(error, "Gagal mengambil detail produksi") },
+      { success: false, message: getErrorMessage(error, "Failed to load production order details") },
       { status: 500 }
     );
   }
@@ -264,13 +302,13 @@ export async function PATCH(
 
     const { data: order, error: orderError } = await db
       .from("production_orders")
-      .select("*, product:product_id(id,kode,nama,satuan_id)")
+      .select("*, product:products!product_id(id,kode,nama,satuan_id)")
       .eq("id", id)
       .single();
 
     if (orderError || !order) {
       return NextResponse.json(
-        { success: false, message: "Production order tidak ditemukan" },
+        { success: false, message: "Production order not found" },
         { status: 404 }
       );
     }
@@ -565,6 +603,7 @@ export async function PATCH(
           .insert({
             production_order_id: id,
             product_id: order.product_id,
+            output_raw_material_id: order.output_raw_material_id ?? null,
             output_type: outputType,
             wip_raw_material_id: wipRawMaterialId,
             batch_number: nextBatchNumber,
@@ -578,7 +617,18 @@ export async function PATCH(
 
     if (batchError) throw batchError;
 
-    if (outputType === "WIP" && wipRawMaterialId) {
+    if (order.production_context === "raw_material" && order.output_raw_material_id) {
+      await addInventoryFromProduction(
+        db,
+        order.output_raw_material_id,
+        actualQty,
+        hppPerUnit,
+        id,
+        order.nomor_produksi,
+        user.id,
+        "production_output"
+      );
+    } else if (outputType === "WIP" && wipRawMaterialId) {
       await addInventoryFromProduction(
         db,
         wipRawMaterialId,
@@ -648,7 +698,8 @@ export async function PATCH(
 
     if (completeError) throw completeError;
 
-    const posSync = outputType === "FINISHED_GOOD"
+    const posSync =
+      order.production_context !== "raw_material" && outputType === "FINISHED_GOOD"
       ? await syncProductionHppToPos(db, order.product_id, hppPerUnit)
       : null;
 

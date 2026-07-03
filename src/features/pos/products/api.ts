@@ -1,3 +1,4 @@
+import { computeMarginPercentage } from "@/lib/pos/purchasing-sync";
 import type { ApiPosProduct, PatchPosProductPayload, PosCatalogProduct } from "./types";
 
 export type * from "./types";
@@ -6,6 +7,12 @@ const toNumber = (value: unknown) => {
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : 0;
 };
+
+function resolveProductCost(product: ApiPosProduct) {
+  const bomCost = toNumber(product.hpp_estimasi ?? product.estimated_cogs);
+  const storedCost = toNumber(product.cost_price);
+  return bomCost > 0 ? bomCost : storedCost;
+}
 
 const generateId = () => Math.random().toString(36).slice(2, 11);
 
@@ -17,8 +24,8 @@ function normalizeCategory(category: ApiPosProduct["category"]) {
 
 export function mapApiPosProduct(product: ApiPosProduct): PosCatalogProduct {
   const price = toNumber(product.base_price);
-  const cost = toNumber(product.cost_price);
-  const margin = price > 0 ? Math.round(((price - cost) / price) * 100) : 0;
+  const cost = resolveProductCost(product);
+  const margin = computeMarginPercentage(price, cost);
   const variants = (product.variants ?? []).map((variant) => ({
     id: variant.id || generateId(),
     name: variant.name || "Regular",
@@ -48,6 +55,7 @@ export function mapApiPosProduct(product: ApiPosProduct): PosCatalogProduct {
 
   return {
     id: product.id,
+    sku: product.sku || undefined,
     name: product.name || "Untitled Product",
     category: normalizeCategory(product.category),
     price,

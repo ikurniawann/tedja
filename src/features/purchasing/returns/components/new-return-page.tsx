@@ -14,7 +14,8 @@ import {
   PurchasingFormFooter,
   PurchasingFormHeader,
 } from "@/modules/purchasing/components/page/purchasing-page-header";
-import { RM_ROUTES } from "@/modules/purchasing/constants/item-routes";
+import { getReturnsModuleConfig } from "../returns-module";
+import type { PurchasingModuleType } from "@/lib/purchasing/module-scope";
 import { useReturnFormData, useReturnGrnOptions } from "../queries";
 import { useCreateReturn } from "../mutations";
 import { ReturnReasonType, ReturnableItem } from "@/types/purchasing";
@@ -58,7 +59,12 @@ interface ReturnItem extends ReturnableItem {
   condition_notes: string;
 }
 
-export function NewReturnPage() {
+export function NewReturnPage({
+  moduleType = "raw_material",
+}: {
+  moduleType?: PurchasingModuleType;
+}) {
+  const config = getReturnsModuleConfig(moduleType);
   const router = useRouter();
   const searchParams = useSearchParams();
   const initialGrnId = searchParams.get("grn_id") || "";
@@ -68,13 +74,14 @@ export function NewReturnPage() {
   const [formData, setFormData] = useState({
     grn_id: initialGrnId,
     supplier_id: "",
+    vendor_id: "",
     return_date: new Date().toISOString().split("T")[0],
     reason_type: "" as ReturnReasonType | "",
     reason_notes: "",
     notes: "",
   });
 
-  const grnOptionsQuery = useReturnGrnOptions();
+  const grnOptionsQuery = useReturnGrnOptions(moduleType);
   const grnOptions = grnOptionsQuery.data ?? [];
   const formDataQuery = useReturnFormData(selectedGrnId || null);
   const loadingGrnOptions = grnOptionsQuery.isLoading;
@@ -126,16 +133,18 @@ export function NewReturnPage() {
       setFormData((prev) => ({
         ...prev,
         grn_id: itemsData[0].grn_id,
-        supplier_id: itemsData[0].supplier_id,
+        supplier_id: config.isProduct ? "" : itemsData[0].supplier_id || "",
+        vendor_id: config.isProduct ? itemsData[0].vendor_id || "" : "",
       }));
     } else if (selectedGrn) {
       setFormData((prev) => ({
         ...prev,
         grn_id: selectedGrn.id,
-        supplier_id: selectedGrn.supplier_id,
+        supplier_id: config.isProduct ? "" : selectedGrn.supplier_id || "",
+        vendor_id: config.isProduct ? selectedGrn.vendor_id || "" : "",
       }));
     }
-  }, [formDataQuery.data, selectedGrnId, selectedGrn]);
+  }, [formDataQuery.data, selectedGrnId, selectedGrn, config.isProduct]);
 
   const handleGrnChange = (grnId: string) => {
     setSelectedGrnId(grnId);
@@ -144,6 +153,7 @@ export function NewReturnPage() {
       ...prev,
       grn_id: grnId,
       supplier_id: "",
+      vendor_id: "",
     }));
   };
 
@@ -188,8 +198,8 @@ export function NewReturnPage() {
       toast.error("Goods receipt is required");
       return;
     }
-    if (!formData.supplier_id) {
-      toast.error("Supplier is required");
+    if (config.isProduct ? !formData.vendor_id : !formData.supplier_id) {
+      toast.error(`${config.partyLabel} is required`);
       return;
     }
     if (!formData.reason_type) {
@@ -208,7 +218,8 @@ export function NewReturnPage() {
 
     for (const item of selectedItems) {
       if (item.qty_return > item.qty_available_to_return) {
-        toast.error(`Return qty for ${item.raw_material_nama} exceeds available quantity`);
+        const { nama } = config.itemName(item);
+        toast.error(`Return qty for ${nama} exceeds available quantity`);
         return;
       }
     }
@@ -216,14 +227,18 @@ export function NewReturnPage() {
     try {
       await createMutation.mutateAsync({
         grn_id: formData.grn_id,
-        supplier_id: formData.supplier_id,
+        ...(config.isProduct
+          ? { vendor_id: formData.vendor_id, module_type: "product" as const }
+          : { supplier_id: formData.supplier_id }),
         return_date: formData.return_date,
         reason_type: formData.reason_type as ReturnReasonType,
         reason_notes: formData.reason_notes,
         notes: formData.notes,
         items: selectedItems.map((item) => ({
           grn_item_id: item.grn_item_id,
-          raw_material_id: item.raw_material_id,
+          ...(config.isProduct
+            ? { product_id: item.product_id }
+            : { raw_material_id: item.raw_material_id }),
           qty_returned: item.qty_return,
           unit_cost: item.unit_price,
           batch_number: item.batch_number,
@@ -232,7 +247,7 @@ export function NewReturnPage() {
         })),
       });
       toast.success("Purchase return created and pending approval");
-      router.push(RM_ROUTES.purchasingReturns);
+      router.push(config.listRoute);
     } catch (error: unknown) {
       console.error("Error creating return:", error);
       toast.error(getErrorMessage(error, "Failed to create purchase return"));
@@ -261,9 +276,9 @@ export function NewReturnPage() {
   return (
     <div className="space-y-6">
       <PurchasingFormHeader
-        backHref={RM_ROUTES.purchasingReturns}
+        backHref={config.listRoute}
         title="Create Purchase Return"
-        description="Return QC-completed goods to the supplier."
+        description={`Return QC-completed goods to the ${config.partyLabel.toLowerCase()}.`}
       />
 
       <form id="purchase-return-form" onSubmit={handleSubmit} className="space-y-6">
@@ -285,7 +300,7 @@ export function NewReturnPage() {
                     options={grnOptions.map((grn) => ({
                       value: grn.id,
                       label: grn.nomor_grn,
-                      description: grn.supplier?.nama_supplier || undefined,
+                      description: config.partyNameFromGrn(grn) || undefined,
                     }))}
                     value={selectedGrnId}
                     onChange={handleGrnChange}
@@ -309,9 +324,9 @@ export function NewReturnPage() {
                       <p className="font-medium text-gray-900">{selectedGrn.nomor_grn}</p>
                     </div>
                     <div>
-                      <p className="text-xs text-gray-500">Supplier</p>
+                      <p className="text-xs text-gray-500">{config.partyLabel}</p>
                       <p className="font-medium text-gray-900">
-                        {selectedGrn.supplier?.nama_supplier || "-"}
+                        {config.partyNameFromGrn(selectedGrn)}
                       </p>
                     </div>
                   </div>
@@ -421,7 +436,9 @@ export function NewReturnPage() {
                               aria-label="Select all items"
                             />
                           </th>
-                          <th className="px-4 py-3 text-left font-semibold">Raw Material</th>
+                          <th className="px-4 py-3 text-left font-semibold">
+                            {config.isProduct ? "Product" : "Raw Material"}
+                          </th>
                           <th className="w-[88px] px-2 py-3 text-center font-semibold">Received</th>
                           <th className="w-[88px] px-2 py-3 text-center font-semibold">Returned</th>
                           <th className="w-[96px] px-2 py-3 text-center font-semibold">Available</th>
@@ -434,7 +451,9 @@ export function NewReturnPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {returnableItems.map((item) => (
+                        {returnableItems.map((item) => {
+                          const itemDisplay = config.itemName(item);
+                          return (
                           <tr
                             key={item.grn_item_id}
                             className={`bg-white ${item.selected ? "bg-pink-50/40" : "hover:bg-gray-50/80"}`}
@@ -443,15 +462,15 @@ export function NewReturnPage() {
                               <Checkbox
                                 checked={item.selected}
                                 onCheckedChange={() => toggleItem(item.grn_item_id)}
-                                aria-label={`Select ${item.raw_material_nama}`}
+                                aria-label={`Select ${itemDisplay.nama}`}
                               />
                             </td>
                             <td className="px-4 py-3 align-top">
                               <div className="font-medium text-gray-900">
-                                {item.raw_material_nama}
+                                {itemDisplay.nama}
                               </div>
                               <div className="mt-0.5 text-xs text-gray-500">
-                                {item.raw_material_kode}
+                                {itemDisplay.kode}
                               </div>
                             </td>
                             <td className="px-2 py-3 text-center align-middle text-gray-700">
@@ -489,7 +508,8 @@ export function NewReturnPage() {
                               />
                             </td>
                           </tr>
-                        ))}
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -546,17 +566,20 @@ export function NewReturnPage() {
                       {returnableItems
                         .filter((item) => item.selected && item.qty_return > 0)
                         .slice(0, 4)
-                        .map((item) => (
+                        .map((item) => {
+                          const itemDisplay = config.itemName(item);
+                          return (
                           <li
                             key={item.grn_item_id}
                             className="flex items-center justify-between gap-3"
                           >
-                            <span className="truncate">{item.raw_material_nama}</span>
+                            <span className="truncate">{itemDisplay.nama}</span>
                             <span className="shrink-0 font-medium text-gray-900">
                               {formatQty(item.qty_return)}
                             </span>
                           </li>
-                        ))}
+                          );
+                        })}
                       {selectedCount > 4 && (
                         <li className="text-gray-500">+{selectedCount - 4} more items</li>
                       )}
@@ -569,7 +592,7 @@ export function NewReturnPage() {
         </div>
 
         <PurchasingFormFooter
-          onCancel={() => router.push(RM_ROUTES.purchasingReturns)}
+          onCancel={() => router.push(config.listRoute)}
           submitLabel="Submit Return"
           loading={isSubmitting}
           disabled={!selectedGrnId || selectedCount === 0 || totalQty <= 0}

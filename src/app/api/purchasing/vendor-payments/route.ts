@@ -10,6 +10,7 @@ import {
   getReturnCreditsByPoIds,
 } from "@/lib/purchasing/po-payments";
 import { getVendorCreditsByPoIds } from "@/lib/purchasing/vendor-credit-service";
+import { parsePurchasingModuleType } from "@/lib/purchasing/module-scope";
 
 const INVOICE_PO_STATUSES = ["approved", "sent", "partial", "partially_received", "received"];
 
@@ -24,6 +25,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const status = searchParams.get("status");
     const search = searchParams.get("search")?.trim();
+    const moduleType = parsePurchasingModuleType(searchParams.get("module_type"));
 
     let query = db
       .from("v_purchase_orders")
@@ -33,7 +35,9 @@ export async function GET(request: NextRequest) {
         nomor_po,
         tanggal_po,
         status,
+        module_type,
         nama_supplier,
+        vendor_name,
         payable_amount,
         paid_amount,
         outstanding_amount,
@@ -44,6 +48,7 @@ export async function GET(request: NextRequest) {
         received_percentage
       `
       )
+      .eq("module_type", moduleType)
       .in("status", INVOICE_PO_STATUSES)
       .gt("payable_amount", 0)
       .order("next_due_date", { ascending: true, nullsFirst: false });
@@ -55,7 +60,11 @@ export async function GET(request: NextRequest) {
     if (branchOr) query = query.or(branchOr);
 
     if (search) {
-      query = query.or(`nomor_po.ilike.%${search}%,nama_supplier.ilike.%${search}%`);
+      const searchField =
+        moduleType === "product"
+          ? `nomor_po.ilike.%${search}%,vendor_name.ilike.%${search}%`
+          : `nomor_po.ilike.%${search}%,nama_supplier.ilike.%${search}%`;
+      query = query.or(searchField);
     }
 
     const { data, error } = await query;
@@ -83,7 +92,10 @@ export async function GET(request: NextRequest) {
         purchase_order_id: row.id,
         nomor_po: row.nomor_po,
         tanggal_po: row.tanggal_po,
-        nama_supplier: row.nama_supplier,
+        nama_supplier:
+          moduleType === "product"
+            ? row.vendor_name || row.nama_supplier
+            : row.nama_supplier,
         po_status: row.status,
         gross_payable_amount: amounts.gross_payable_amount,
         return_credit_amount: amounts.return_credit_amount,

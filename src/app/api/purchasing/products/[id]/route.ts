@@ -16,6 +16,7 @@ const productSchema = z.object({
   harga_modal: z.number().min(0).optional(),
   markup_persen: z.number().optional(),
   is_active: z.boolean().optional(),
+  production_output_type: z.enum(["FINISHED_GOOD", "WIP"]).optional(),
 });
 
 type BomItemRow = {

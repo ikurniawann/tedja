@@ -1,11 +1,8 @@
 import { createServerPgClient } from "@/lib/pg/create-client";
 import { NextRequest } from "next/server";
 import { z } from "zod";
-import {
-  requireApiUser,
-  ApiError,
-  successResponse,
-} from "@/lib/api/auth";
+import { requireApiUser, ApiError, successResponse } from "@/lib/api/auth";
+import { getApiUserScope, isRowInBusinessScope } from "@/lib/api/scope";
 
 type StockRow = {
   id: string;
@@ -14,6 +11,10 @@ type StockRow = {
   avg_cost?: number | string | null;
   material_type?: string | null;
   source_product_id?: string | null;
+  konversi_factor?: number | string | null;
+  satuan_kecil_id?: string | null;
+  satuan_kecil_nama?: string | null;
+  satuan_besar_nama?: string | null;
 };
 
 function toNumber(value: unknown) {
@@ -21,8 +22,18 @@ function toNumber(value: unknown) {
   return Number.isFinite(numeric) ? numeric : 0;
 }
 
+function normalizeToSmallUnit(
+  baseCost: number,
+  konversiFactor?: number | string | null,
+  satuanKecilId?: string | null
+) {
+  const factor = toNumber(konversiFactor);
+  if (satuanKecilId && factor > 0) return baseCost / factor;
+  return baseCost;
+}
+
 // GET /api/purchasing/cogs/product/:produk_id
-// Real-time HPP estimasi berdasarkan products + bom_items + inventory.
+// Real-time estimated COGS from product BOM + inventory stock.
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ produk_id: string }> }
@@ -30,32 +41,39 @@ export async function GET(
   try {
     await requireApiUser();
     const db = await createServerPgClient();
+    const scope = await getApiUserScope();
     const { produk_id } = await params;
 
     if (!z.string().uuid().safeParse(produk_id).success) {
-      throw ApiError.badRequest("Invalid produk ID");
+      throw ApiError.badRequest("Invalid product ID");
     }
 
     const { data: product, error: productError } = await db
-      .from("products")
-      .select(`
-        *,
-        satuan:satuan_id(id, kode, nama)
-      `)
+      .from("v_products_cogs")
+      .select("*")
       .eq("id", produk_id)
       .eq("is_active", true)
       .single();
 
     if (productError || !product) {
-      throw ApiError.notFound("Produk tidak ditemukan");
+      throw ApiError.notFound("Product not found");
+    }
+
+    if (
+      !isRowInBusinessScope(scope, {
+        company_id: product.company_id,
+        branch_id: product.branch_id,
+      })
+    ) {
+      throw ApiError.notFound("Product not found");
     }
 
     const { data: bomItems, error: bomError } = await db
       .from("bom_items")
       .select(`
         *,
-        raw_material:raw_material_id(id, kode, nama, material_type, source_product_id),
-        satuan:satuan_id(id, kode, nama)
+        raw_material:raw_materials!raw_material_id(id, kode, nama, material_type, source_product_id),
+        satuan:units!satuan_id(id, kode, nama)
       `)
       .eq("product_id", produk_id)
       .eq("is_active", true)
@@ -68,14 +86,14 @@ export async function GET(
         produk_id: product.id,
         kode: product.kode,
         nama: product.nama,
-        satuan: product.satuan,
+        satuan: product.satuan_nama,
         harga_jual: product.harga_jual,
         hpp_per_unit: 0,
         total_bom_cost: 0,
         total_overhead: 0,
         breakdown_bahan: [],
         stock_warnings: [],
-        warning: "Produk belum memiliki BOM (Bill of Materials)",
+        warning: "This product does not have a bill of materials yet",
       });
     }
 
@@ -86,7 +104,9 @@ export async function GET(
     const { data: stockRows, error: stockError } = materialIds.length > 0
       ? await db
           .from("v_raw_materials_stock")
-          .select("id, qty_onhand, qty_on_order, avg_cost, material_type, source_product_id")
+          .select(
+            "id, qty_onhand, qty_on_order, avg_cost, material_type, source_product_id, konversi_factor, satuan_kecil_id, satuan_kecil_nama, satuan_besar_nama"
+          )
           .in("id", materialIds)
       : { data: [], error: null };
 
@@ -110,7 +130,11 @@ export async function GET(
       const qtyRequired = toNumber(bom.qty_required);
       const wasteFactor = toNumber(bom.waste_factor);
       const effectiveQty = qtyRequired * (1 + wasteFactor);
-      const unitCost = toNumber(stock?.avg_cost);
+      const unitCost = normalizeToSmallUnit(
+        toNumber(stock?.avg_cost),
+        stock?.konversi_factor,
+        stock?.satuan_kecil_id
+      );
       const subtotal = effectiveQty * unitCost;
       totalBomCost += subtotal;
 
@@ -121,7 +145,11 @@ export async function GET(
         material_type: bom.raw_material?.material_type || stock?.material_type || "PURCHASED",
         source_product_id: bom.raw_material?.source_product_id || stock?.source_product_id || null,
         jumlah: qtyRequired,
-        satuan: bom.satuan?.nama || "-",
+        satuan:
+          bom.satuan?.nama ||
+          stock?.satuan_kecil_nama ||
+          stock?.satuan_besar_nama ||
+          "-",
         qty_available: toNumber(stock?.qty_onhand),
         qty_on_order: toNumber(stock?.qty_on_order),
         unit_cost: unitCost,
@@ -138,9 +166,10 @@ export async function GET(
 
     const hargaJual = toNumber(product.harga_jual);
     const margin = hargaJual > 0 ? hargaJual - hppPerUnit : null;
-    const marginPct = margin !== null && hargaJual > 0
-      ? Math.round((margin / hargaJual) * 10000) / 100
-      : null;
+    const marginPct =
+      margin !== null && hargaJual > 0
+        ? Math.round((margin / hargaJual) * 10000) / 100
+        : null;
 
     const stockWarnings = breakdownBahan
       .filter((item) => item.jumlah > 0 && item.qty_available < item.jumlah * 10)
@@ -155,7 +184,7 @@ export async function GET(
       produk_id: product.id,
       kode: product.kode,
       nama: product.nama,
-      satuan: product.satuan,
+      satuan: product.satuan_nama,
       harga_jual: product.harga_jual,
       hpp_per_unit: hppPerUnit,
       total_bom_cost: totalBomCostRounded,
@@ -179,7 +208,7 @@ export async function GET(
     if (error instanceof z.ZodError) {
       return ApiError.badRequest("Invalid params", error.issues).toResponse();
     }
-    console.error("Error calculating HPP:", error);
-    return ApiError.server("Failed to calculate HPP").toResponse();
+    console.error("Error calculating product COGS:", error);
+    return ApiError.server("Failed to calculate estimated COGS").toResponse();
   }
 }

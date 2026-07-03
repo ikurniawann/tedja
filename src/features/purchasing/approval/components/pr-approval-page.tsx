@@ -20,8 +20,10 @@ import {
 import { PurchasingPageHeader } from "@/modules/purchasing/components/page/purchasing-page-header";
 import { PurchasingListSection } from "@/modules/purchasing/components/list/PurchasingListSection";
 import { RM_ROUTES } from "@/modules/purchasing/constants/item-routes";
-import { purchaseRequestDetailFromApproval, persistNavFrom, NAV_FROM_APPROVAL_PR } from "@/lib/iam/nav-context";
-import { CheckCircle, Eye, FileText, Loader2, XCircle } from "lucide-react";
+import { persistNavFrom, NAV_FROM_APPROVAL_PR } from "@/lib/iam/nav-context";
+import type { PurchasingModuleType } from "@/lib/purchasing/module-scope";
+import { getApprovalModuleConfig } from "../approval-module";
+import { CheckCircle, FileText, Loader2, XCircle } from "lucide-react";
 import { formatAmount, formatDate, getPriorityBadge, getPRStatusLabel } from "@/lib/purchasing/utils";
 import { usePendingPRApprovals } from "../queries";
 import { useApprovePRApproval, useRejectPRApproval } from "../mutations";
@@ -54,19 +56,24 @@ type ProcessingState = {
   action: "approve" | "reject";
 };
 
-export function PRApprovalPage() {
+type PRApprovalPageProps = {
+  moduleType?: PurchasingModuleType;
+};
+
+export function PRApprovalPage({ moduleType = "raw_material" }: PRApprovalPageProps) {
   const router = useRouter();
+  const config = getApprovalModuleConfig(moduleType);
   const [confirmingPR, setConfirmingPR] = useState<ApprovalPR | null>(null);
   const [rejectingPR, setRejectingPR] = useState<ApprovalPR | null>(null);
   const [rejectionReason, setRejectionReason] = useState("");
   const [processing, setProcessing] = useState<ProcessingState | null>(null);
 
-  const listQuery = usePendingPRApprovals();
+  const listQuery = usePendingPRApprovals(moduleType);
   const prs = listQuery.data ?? [];
   const loading = listQuery.isLoading;
 
-  const approveMutation = useApprovePRApproval();
-  const rejectMutation = useRejectPRApproval();
+  const approveMutation = useApprovePRApproval(moduleType);
+  const rejectMutation = useRejectPRApproval(moduleType);
   const isProcessing = Boolean(processing);
 
   useEffect(() => {
@@ -126,7 +133,7 @@ export function PRApprovalPage() {
 
   function prDetailHref(id: string) {
     persistNavFrom(NAV_FROM_APPROVAL_PR);
-    return purchaseRequestDetailFromApproval(RM_ROUTES.purchasingPrDetail(id));
+    return config.prDetailFromApproval(id);
   }
 
   return (
@@ -135,7 +142,7 @@ export function PRApprovalPage() {
         title="Purchase Request Approval"
         description="Review and approve item requirements before procurement proceeds."
         actions={
-          <Link href={RM_ROUTES.purchasingPr}>
+          <Link href={config.purchasingPrRoute}>
             <Button variant="outline" className="purchasing-secondary-button w-full sm:w-auto">
               View All Purchase Requests
             </Button>
@@ -192,8 +199,16 @@ export function PRApprovalPage() {
                         className="cursor-pointer hover:bg-gray-50/80"
                         onClick={() => router.push(prDetailHref(pr.id))}
                       >
-                        <td className="px-4 py-3">
-                          <span className="font-medium text-gray-900">{pr.pr_number}</span>
+                        <td
+                          className="px-4 py-3"
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          <Link
+                            href={prDetailHref(pr.id)}
+                            className="font-medium text-pink-700 hover:underline"
+                          >
+                            {pr.pr_number}
+                          </Link>
                         </td>
                         <td className="px-4 py-3 text-gray-600">{formatDate(pr.created_at)}</td>
                         <td className="px-4 py-3 text-gray-600">{pr.department_name || "-"}</td>
@@ -213,16 +228,6 @@ export function PRApprovalPage() {
                         </td>
                         <td className="px-4 py-3 text-right" onClick={(event) => event.stopPropagation()}>
                           <div className="flex items-center justify-end gap-2">
-                            <Link href={prDetailHref(pr.id)}>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                title="View detail"
-                                className="cursor-pointer"
-                              >
-                                <Eye className="h-4 w-4" />
-                              </Button>
-                            </Link>
                             <Button
                               variant="ghost"
                               size="sm"

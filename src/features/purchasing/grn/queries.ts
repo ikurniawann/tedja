@@ -33,8 +33,8 @@ export const useGrnVendorCredits = (id: string) =>
     enabled: !!id,
   });
 
-export const useReceivingWorkspace = () =>
+export const useReceivingWorkspace = (moduleType?: "raw_material" | "product") =>
   useQuery({
-    queryKey: grnQueryKeys.receivingWorkspace,
-    queryFn: getReceivingWorkspace,
+    queryKey: grnQueryKeys.receivingWorkspace(moduleType),
+    queryFn: () => getReceivingWorkspace(moduleType),
   });

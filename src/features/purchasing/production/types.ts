@@ -6,6 +6,7 @@ export type ProductionProduct = {
   hpp_estimasi?: number | string | null;
   harga_jual?: number | string | null;
   total_bahan_baku?: number | string | null;
+  production_output_type?: "FINISHED_GOOD" | "WIP" | null;
 };
 
 export type CogsMaterial = {
@@ -34,9 +35,14 @@ export type CogsData = {
 export type ProductionOrder = {
   id: string;
   nomor_produksi: string;
+  production_context?: "product" | "raw_material";
   output_type?: "FINISHED_GOOD" | "WIP";
   product_nama?: string | null;
   product_kode?: string | null;
+  output_raw_material_nama?: string | null;
+  output_raw_material_kode?: string | null;
+  item_nama?: string | null;
+  item_kode?: string | null;
   planned_qty: number | string;
   actual_qty: number | string;
   status: string;
@@ -90,6 +96,17 @@ export type ProductRecipe = {
   is_active?: boolean | null;
 };
 
+export type RawMaterialRecipe = {
+  id: string;
+  kode?: string | null;
+  nama?: string | null;
+  kategori?: string | null;
+  avg_cost?: number | string | null;
+  hpp_estimasi?: number | string | null;
+  total_bahan_baku?: number | string | null;
+  is_active?: boolean | null;
+};
+
 export interface ProductionDashboardData {
   orders: ProductionOrder[];
   products: ProductionProduct[];
@@ -98,8 +115,10 @@ export interface ProductionDashboardData {
 }
 
 export interface CreateProductionOrderPayload {
-  product_id: string;
-  output_type: "FINISHED_GOOD" | "WIP";
+  production_context?: "product" | "raw_material";
+  product_id?: string;
+  raw_material_id?: string;
+  output_type?: "FINISHED_GOOD" | "WIP";
   planned_qty: number;
   overhead_cost: number;
   labor_cost: number;

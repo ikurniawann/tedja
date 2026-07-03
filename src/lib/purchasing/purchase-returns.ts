@@ -1,6 +1,10 @@
 import type { UserScope } from "@/lib/api/scope";
 import { branchScopeOr, companyScopeOr } from "@/lib/api/scope";
 import type { createServerPgClient } from "@/lib/pg/create-client";
+import {
+  getPurchaseOrderIdsByModuleType,
+  type PurchasingModuleType,
+} from "@/lib/purchasing/module-scope";
 
 type Db = Awaited<ReturnType<typeof createServerPgClient>>;
 
@@ -68,7 +72,8 @@ export async function enrichPurchaseReturnsWithGrn<
 /** GRN ids that completed QC and match the user's business scope. */
 export async function listScopedQcCompletedGrnIds(
   db: Db,
-  scope: UserScope | null
+  scope: UserScope | null,
+  moduleType?: PurchasingModuleType
 ): Promise<string[]> {
   const { data: qcRows, error: qcError } = await db
     .from("grn_qc_inspections")
@@ -90,6 +95,12 @@ export async function listScopedQcCompletedGrnIds(
   if (companyOr) grnQuery = grnQuery.or(companyOr);
   const branchOr = branchScopeOr(scope);
   if (branchOr) grnQuery = grnQuery.or(branchOr);
+
+  if (moduleType) {
+    const poIds = await getPurchaseOrderIdsByModuleType(db, moduleType);
+    if (poIds.length === 0) return [];
+    grnQuery = grnQuery.in("purchase_order_id", poIds);
+  }
 
   const { data: grnRows, error: grnError } = await grnQuery;
   if (grnError) throw grnError;

@@ -197,6 +197,67 @@ export async function loadPosProductCostMap(
   );
 }
 
+export function computeMarginPercentage(price: number, cost: number) {
+  if (price <= 0) return 0;
+  return Math.round(((price - cost) / price) * 10000) / 100;
+}
+
+export async function enrichPosProductsWithPurchasingCogs(
+  db: PgServiceClient,
+  products: Array<Record<string, unknown>>
+) {
+  const kodes = Array.from(
+    new Set(
+      products
+        .map((product) => {
+          const sku = String(product.sku || "");
+          if (!sku.startsWith("PUR-")) return null;
+          const kode = sku.slice(4).trim();
+          return kode || null;
+        })
+        .filter((kode): kode is string => Boolean(kode))
+    )
+  );
+
+  if (kodes.length === 0) return products;
+
+  const { data: cogsRows, error } = await db
+    .from("v_products_cogs")
+    .select("kode, hpp_estimasi, estimated_cogs")
+    .in("kode", kodes);
+
+  if (error) {
+    console.warn("POS products COGS enrichment warning:", error.message);
+    return products;
+  }
+
+  const cogsByKode = new Map(
+    ((cogsRows || []) as Array<{ kode?: string | null; hpp_estimasi?: number | string | null; estimated_cogs?: number | string | null }>).map(
+      (row) => [String(row.kode || ""), row]
+    )
+  );
+
+  return products.map((product) => {
+    const sku = String(product.sku || "");
+    if (!sku.startsWith("PUR-")) return product;
+
+    const kode = sku.slice(4).trim();
+    const cogs = cogsByKode.get(kode);
+    if (!cogs) return product;
+
+    const hpp = toNumber(cogs.hpp_estimasi ?? cogs.estimated_cogs);
+    const storedCost = toNumber(product.cost_price);
+    const costPrice = hpp > 0 ? hpp : storedCost;
+
+    return {
+      ...product,
+      cost_price: costPrice,
+      estimated_cogs: hpp,
+      hpp_estimasi: hpp,
+    };
+  });
+}
+
 export function buildCostSnapshot(
   product: PosProductCostRow | undefined,
   quantity: number,

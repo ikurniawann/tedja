@@ -137,6 +137,7 @@ const TABLE_DOMAIN = {
   qc_inspections: "purchasing",
   supplier_price_list: "purchasing",
   supplier_price_lists: "purchasing",
+  vendor_price_lists: "purchasing",
   cogs_additional_costs: "purchasing",
 
   // ── inventory ────────────────────────────────────────────────────────────

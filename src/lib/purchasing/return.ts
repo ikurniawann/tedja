@@ -36,6 +36,8 @@ export async function listReturns(params: ReturnListParams) {
   if (params.search) searchParams.set("search", params.search);
   if (params.sort_by) searchParams.set("sort_by", params.sort_by);
   if (params.sort_order) searchParams.set("sort_order", params.sort_order);
+  if (params.module_type) searchParams.set("module_type", params.module_type);
+  if (params.vendor_id) searchParams.set("vendor_id", params.vendor_id);
 
   const response = await fetch(`${API_BASE}?${searchParams}`);
   const result = await parseJsonResponse<{

@@ -280,26 +280,26 @@ export function UnitsPage() {
             </div>
           ) : (
             <>
-              <div className="overflow-x-auto px-4">
+              <div className="overflow-x-auto">
                 <table className="min-w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-gray-200/70 text-xs uppercase tracking-wide text-gray-500">
-                      <th className="py-3 pr-4 text-left font-semibold">Code</th>
-                      <th className="px-3 py-3 text-left font-semibold">Name</th>
-                      <th className="px-3 py-3 text-left font-semibold">Type</th>
-                      <th className="px-3 py-3 text-left font-semibold">Description</th>
-                      <th className="px-3 py-3 text-center font-semibold">Active</th>
-                      <th className="py-3 pl-3 text-right font-semibold">Actions</th>
+                  <thead className="border-b border-gray-100 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+                    <tr>
+                      <th className="px-4 py-3 text-left font-semibold">Code</th>
+                      <th className="px-4 py-3 text-left font-semibold">Name</th>
+                      <th className="px-4 py-3 text-left font-semibold">Type</th>
+                      <th className="px-4 py-3 text-left font-semibold">Description</th>
+                      <th className="px-4 py-3 text-center font-semibold">Active</th>
+                      <th className="px-4 py-3 text-right font-semibold">Actions</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-200/70">
+                  <tbody className="divide-y divide-gray-100">
                     {units.map((unit) => (
-                      <tr key={unit.id} className="transition-colors hover:bg-gray-50/80">
-                        <td className="py-3 pr-4">
+                      <tr key={unit.id} className="hover:bg-gray-50">
+                        <td className="px-4 py-3">
                           <span className="font-medium text-gray-900">{unit.kode}</span>
                         </td>
-                        <td className="px-3 py-3 text-gray-700">{unit.nama}</td>
-                        <td className="px-3 py-3">
+                        <td className="px-4 py-3 text-gray-700">{unit.nama}</td>
+                        <td className="px-4 py-3">
                           <Badge
                             variant="outline"
                             className={TYPE_BADGE_STYLES[unit.tipe] || "border-gray-200 bg-gray-50 text-gray-700"}
@@ -307,10 +307,10 @@ export function UnitsPage() {
                             {TYPE_LABELS[unit.tipe] || unit.tipe}
                           </Badge>
                         </td>
-                        <td className="max-w-[320px] truncate px-3 py-3 text-gray-600">
+                        <td className="max-w-[320px] truncate px-4 py-3 text-gray-600">
                           {unit.deskripsi || "-"}
                         </td>
-                        <td className="px-3 py-3 text-center">
+                        <td className="px-4 py-3 text-center">
                           <div className="flex items-center justify-center">
                             <Switch
                               checked={unit.is_active}
@@ -322,7 +322,7 @@ export function UnitsPage() {
                             />
                           </div>
                         </td>
-                        <td className="py-3 pl-3 text-right">
+                        <td className="px-4 py-3 text-right">
                           <div className="flex items-center justify-end gap-1">
                             <Button
                               variant="ghost"

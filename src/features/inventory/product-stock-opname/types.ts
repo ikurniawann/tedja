@@ -84,9 +84,9 @@ export const PRODUCT_STOCK_OPNAME_STATUS_LABELS: Record<
   string
 > = {
   draft: "Draft",
-  in_progress: "Sedang Dihitung",
-  completed: "Selesai",
-  cancelled: "Dibatalkan",
+  in_progress: "Counting in Progress",
+  completed: "Completed",
+  cancelled: "Cancelled",
 };
 
 export const PRODUCT_STOCK_OPNAME_STATUS_COLORS: Record<

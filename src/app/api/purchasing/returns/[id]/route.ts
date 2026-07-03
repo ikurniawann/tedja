@@ -28,7 +28,8 @@ const updateReturnSchema = z.object({
     .array(
       z.object({
         grn_item_id: z.string().uuid(),
-        raw_material_id: z.string().uuid(),
+        raw_material_id: z.string().uuid().optional(),
+        product_id: z.string().uuid().optional(),
         qty_returned: z.number().positive(),
         unit_cost: z.number().min(0),
         batch_number: z.string().optional().nullable(),
@@ -58,6 +59,10 @@ export async function GET(
           id,
           nama_supplier
         ),
+        vendor:vendors (
+          id,
+          name
+        ),
         grn:grn (
           id,
           nomor_grn
@@ -67,6 +72,7 @@ export async function GET(
           return_id,
           grn_item_id,
           raw_material_id,
+          product_id,
           qty_returned,
           unit_cost,
           subtotal,
@@ -82,6 +88,10 @@ export async function GET(
             )
           ),
           raw_material:raw_materials (
+            kode,
+            nama
+          ),
+          product:products (
             kode,
             nama
           )

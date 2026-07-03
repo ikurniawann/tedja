@@ -12,7 +12,9 @@ import { NumericInput } from "@/components/ui/numeric-input";
 import { DsDateTimePicker } from "@/components/design-system";
 import { toast } from "sonner";
 import { getGrn, getGrnPOItems, getGrnPO } from "../api";
+import type { PurchasingModuleType } from "../api";
 import { useUpdateGrn } from "../mutations";
+import { RM_ROUTES, PRODUCT_ROUTES } from "@/modules/purchasing/constants/item-routes";
 import {
   ArrowLeftIcon,
   ClipboardCheck,
@@ -192,7 +194,15 @@ function getStatusBadge(status: string) {
   );
 }
 
-export function ContinueGrnPage() {
+export function ContinueGrnPage({
+  moduleType = "raw_material",
+}: {
+  moduleType?: PurchasingModuleType;
+}) {
+  const isProduct = moduleType === "product";
+  const listRoute = isProduct ? PRODUCT_ROUTES.purchasingReceive : RM_ROUTES.purchasingGrn;
+  const supplierLabel = isProduct ? "Vendor" : "Supplier";
+
   const params = useParams();
   const router = useRouter();
   const grnId = params.id as string;
@@ -417,7 +427,7 @@ export function ContinueGrnPage() {
 
       await updateMutation.mutateAsync({ id: grnId, payload });
       toast.success(`Goods receipt ${grnData?.nomor_grn || ""} updated successfully.`);
-      router.push("/dashboard/purchasing/grn");
+      router.push(listRoute);
       router.refresh();
     } catch (error: unknown) {
       toast.error(error instanceof Error ? error.message : "Failed to update goods receipt.");
@@ -443,7 +453,7 @@ export function ContinueGrnPage() {
     <div className="space-y-6">
       <div className="flex flex-col gap-4 border-b border-gray-200/70 pb-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="flex items-start gap-3">
-          <Link href="/dashboard/purchasing/grn">
+          <Link href={listRoute}>
             <Button variant="ghost" size="sm" className="h-9 gap-2 text-pink-700">
               <ArrowLeftIcon className="h-4 w-4" />
               Back
@@ -487,7 +497,7 @@ export function ContinueGrnPage() {
                     <p className="font-medium text-gray-900">{grnData.no_surat_jalan || "-"}</p>
                   </div>
                   <div className="md:col-span-2">
-                    <p className="text-xs text-gray-500">Supplier</p>
+                    <p className="text-xs text-gray-500">{supplierLabel}</p>
                     <p className="font-medium text-gray-900">{grnData.supplier_name || "-"}</p>
                   </div>
                 </div>
@@ -628,7 +638,7 @@ export function ContinueGrnPage() {
                     </dd>
                   </div>
                   <div className="flex items-start justify-between gap-3">
-                    <dt className="text-gray-500">Supplier</dt>
+                    <dt className="text-gray-500">{supplierLabel}</dt>
                     <dd className="text-right font-medium text-gray-900">
                       {grnData.supplier_name || "-"}
                     </dd>
@@ -721,7 +731,7 @@ export function ContinueGrnPage() {
             type="button"
             variant="outline"
             className="purchasing-secondary-button w-full sm:w-auto"
-            onClick={() => router.push("/dashboard/purchasing/grn")}
+            onClick={() => router.push(listRoute)}
           >
             Cancel
           </Button>

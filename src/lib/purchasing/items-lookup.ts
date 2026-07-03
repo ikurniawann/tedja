@@ -27,8 +27,8 @@ export const ITEMS_LOOKUP_CONFIG: Record<ItemsLookupType, ItemsLookupConfig> = {
   },
   "product-categories": {
     table: "product_categories",
-    title: "Kategori Produk",
-    description: "Kelola kategori untuk produk jadi",
+    title: "Product Categories",
+    description: "Manage categories for finished products",
   },
 };
 

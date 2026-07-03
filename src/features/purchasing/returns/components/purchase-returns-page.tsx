@@ -11,7 +11,8 @@ import { Combobox } from "@/components/ui/combobox";
 import { PurchasingPageHeader } from "@/modules/purchasing/components/page/purchasing-page-header";
 import { PurchasingListSection } from "@/modules/purchasing/components/list/PurchasingListSection";
 import { PurchasingTablePagination } from "@/modules/purchasing/components/pagination/PurchasingTablePagination";
-import { RM_ROUTES } from "@/modules/purchasing/constants/item-routes";
+import { getReturnsModuleConfig } from "../returns-module";
+import type { PurchasingModuleType } from "@/lib/purchasing/module-scope";
 import {
   RETURN_STATUS_COLORS,
   RETURN_REASON_LABELS,
@@ -75,7 +76,12 @@ function getGrnId(ret: {
   return ret.grn?.id || ret.grn_id || null;
 }
 
-export function PurchaseReturnsPage() {
+export function PurchaseReturnsPage({
+  moduleType = "raw_material",
+}: {
+  moduleType?: PurchasingModuleType;
+}) {
+  const config = getReturnsModuleConfig(moduleType);
   const router = useRouter();
   const [page, setPage] = useState(1);
   const limit = 10;
@@ -85,13 +91,16 @@ export function PurchaseReturnsPage() {
   const [reasonFilter, setReasonFilter] = useState<ReturnReasonType | "all">("all");
   const [filterOpen, setFilterOpen] = useState(false);
 
-  const listQuery = useReturnList({
-    page,
-    limit,
-    status: statusFilter === "all" ? undefined : statusFilter,
-    reason_type: reasonFilter === "all" ? undefined : reasonFilter,
-    search: search || undefined,
-  });
+  const listQuery = useReturnList(
+    {
+      page,
+      limit,
+      status: statusFilter === "all" ? undefined : statusFilter,
+      reason_type: reasonFilter === "all" ? undefined : reasonFilter,
+      search: search || undefined,
+    },
+    moduleType
+  );
   const returns = listQuery.data?.data ?? [];
   const loading = listQuery.isLoading;
   const total = listQuery.data?.pagination.total ?? 0;
@@ -130,11 +139,11 @@ export function PurchaseReturnsPage() {
         title="Purchase Returns"
         description={
           <>
-            Manage returns to suppliers for QC-completed goods receipts — {total} total
+            Manage returns to {config.partyLabel.toLowerCase()}s for QC-completed goods receipts — {total} total
           </>
         }
         actions={
-          <Link href={RM_ROUTES.purchasingReturnsInsert}>
+          <Link href={config.insertRoute}>
             <Button className="h-10 w-full gap-2 rounded-lg bg-pink-600 px-3 text-sm font-semibold text-white shadow-sm hover:bg-pink-700 sm:w-auto">
               <Plus className="mr-2 h-4 w-4" />
               Create Return
@@ -255,7 +264,7 @@ export function PurchaseReturnsPage() {
               <p className="mt-1 text-sm text-gray-400">
                 Returns are available only after goods receipt quality control is completed.
               </p>
-              <Link href={RM_ROUTES.purchasingReturnsInsert}>
+              <Link href={config.insertRoute}>
                 <Button
                   variant="outline"
                   className="mt-4 h-10 gap-2 rounded-lg border-pink-200 bg-white px-3 text-sm font-medium text-pink-700 shadow-sm hover:!border-pink-200 hover:!bg-pink-50 hover:!text-pink-700"
@@ -272,7 +281,7 @@ export function PurchaseReturnsPage() {
                     <tr>
                       <th className="px-4 py-3 text-left font-semibold">Return No.</th>
                       <th className="px-4 py-3 text-left font-semibold">Date</th>
-                      <th className="px-4 py-3 text-left font-semibold">Supplier</th>
+                      <th className="px-4 py-3 text-left font-semibold">{config.partyLabel}</th>
                       <th className="px-4 py-3 text-left font-semibold">Reason</th>
                       <th className="px-4 py-3 text-left font-semibold">GRN Number</th>
                       <th className="px-4 py-3 text-right font-semibold">Total</th>
@@ -295,14 +304,14 @@ export function PurchaseReturnsPage() {
                         <tr
                           key={ret.id}
                           className="cursor-pointer hover:bg-gray-50"
-                          onClick={() => router.push(RM_ROUTES.purchasingReturnsDetail(ret.id))}
+                          onClick={() => router.push(config.detailRoute(ret.id))}
                         >
                           <td
                             className="px-4 py-3"
                             onClick={(e) => e.stopPropagation()}
                           >
                             <Link
-                              href={RM_ROUTES.purchasingReturnsDetail(ret.id)}
+                              href={config.detailRoute(ret.id)}
                               className="font-medium text-pink-700 hover:underline"
                             >
                               {ret.return_number}
@@ -310,7 +319,7 @@ export function PurchaseReturnsPage() {
                           </td>
                           <td className="px-4 py-3 text-gray-600">{formatDate(ret.return_date)}</td>
                           <td className="px-4 py-3 text-gray-600">
-                            {ret.supplier?.nama_supplier || "-"}
+                            {config.partyNameFromReturn(ret)}
                           </td>
                           <td className="px-4 py-3">
                             <Badge variant="outline" className="border-gray-200/80 font-normal">
@@ -323,7 +332,7 @@ export function PurchaseReturnsPage() {
                           >
                             {grnId && grnNumber !== "-" ? (
                               <Link
-                                href={RM_ROUTES.purchasingGrnDetail(grnId)}
+                                href={config.receiveDetailRoute(grnId)}
                                 className="font-medium text-pink-700 hover:underline"
                               >
                                 {grnNumber}
@@ -343,7 +352,7 @@ export function PurchaseReturnsPage() {
                           <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                             <div className="flex items-center justify-end gap-1">
                               {(ret.status === "draft" || ret.status === "pending_approval") && (
-                                <Link href={RM_ROUTES.purchasingReturnsEdit(ret.id)}>
+                                <Link href={config.editRoute(ret.id)}>
                                   <Button
                                     variant="ghost"
                                     size="sm"
@@ -354,7 +363,7 @@ export function PurchaseReturnsPage() {
                                   </Button>
                                 </Link>
                               )}
-                              <Link href={RM_ROUTES.purchasingReturnsDetail(ret.id)}>
+                              <Link href={config.detailRoute(ret.id)}>
                                 <Button
                                   variant="ghost"
                                   size="sm"

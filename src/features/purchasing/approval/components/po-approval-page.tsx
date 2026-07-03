@@ -21,26 +21,46 @@ import { RM_ROUTES } from "@/modules/purchasing/constants/item-routes";
 import {
   NAV_FROM_APPROVAL_PO,
   persistNavFrom,
-  purchaseOrderDetailFromApproval,
 } from "@/lib/iam/nav-context";
-import { CheckCircle, Eye, Loader2, ShoppingCart } from "lucide-react";
+import type { PurchasingModuleType } from "@/lib/purchasing/module-scope";
+import { getApprovalModuleConfig } from "../approval-module";
+import { CheckCircle, Loader2, ShoppingCart } from "lucide-react";
 import { formatAmount, formatDate } from "@/lib/purchasing/utils";
 import { usePurchaseOrderList } from "../../po/queries";
 import { useApprovePurchaseOrder } from "../../po/mutations";
+import { useProductPurchaseOrderList } from "../../product-po/queries";
+import { useApproveProductPurchaseOrder } from "../../product-po/mutations";
 import type { PurchaseOrder } from "@/types/purchasing";
+import type { ProductPOListItem } from "../../product-po/types";
 
 const DRAFT_STATUS_STYLE = "border-gray-200 bg-gray-50 text-gray-700";
 
-export function POApprovalPage() {
+type POApprovalPageProps = {
+  moduleType?: PurchasingModuleType;
+};
+
+type ApprovalPO = PurchaseOrder | ProductPOListItem;
+
+export function POApprovalPage({ moduleType = "raw_material" }: POApprovalPageProps) {
   const router = useRouter();
-  const [confirmingPO, setConfirmingPO] = useState<PurchaseOrder | null>(null);
+  const config = getApprovalModuleConfig(moduleType);
+  const isProduct = config.isProduct;
+  const [confirmingPO, setConfirmingPO] = useState<ApprovalPO | null>(null);
   const [processingId, setProcessingId] = useState<string | null>(null);
 
-  const listQuery = usePurchaseOrderList({ status: "draft", page: 1, limit: 50 });
-  const pos = listQuery.data?.data ?? [];
+  const rmListQuery = usePurchaseOrderList({ status: "draft", page: 1, limit: 50 });
+  const productListQuery = useProductPurchaseOrderList({
+    status: "draft",
+    page: 1,
+    limit: 50,
+  });
+  const listQuery = isProduct ? productListQuery : rmListQuery;
+  const pos = (listQuery.data?.data ?? []) as ApprovalPO[];
   const loading = listQuery.isLoading;
 
-  const approveMutation = useApprovePurchaseOrder();
+  const rmApproveMutation = useApprovePurchaseOrder();
+  const productApproveMutation = useApproveProductPurchaseOrder();
+  const approveMutation = isProduct ? productApproveMutation : rmApproveMutation;
   const isProcessing = Boolean(processingId);
 
   useEffect(() => {
@@ -55,7 +75,7 @@ export function POApprovalPage() {
 
   function poDetailHref(id: string) {
     persistNavFrom(NAV_FROM_APPROVAL_PO);
-    return purchaseOrderDetailFromApproval(RM_ROUTES.purchasingPoDetail(id));
+    return config.poDetailFromApproval(id);
   }
 
   async function approvePO() {
@@ -81,9 +101,13 @@ export function POApprovalPage() {
     <div className="space-y-6">
       <PurchasingPageHeader
         title="Purchase Order Approval"
-        description="Review supplier, pricing, tax, and final totals before the order is sent."
+        description={
+          isProduct
+            ? "Review vendor, pricing, tax, and final totals before the order is sent."
+            : "Review supplier, pricing, tax, and final totals before the order is sent."
+        }
         actions={
-          <Link href={RM_ROUTES.purchasingPo}>
+          <Link href={config.purchasingPoRoute}>
             <Button variant="outline" className="purchasing-secondary-button w-full sm:w-auto">
               View All Purchase Orders
             </Button>
@@ -94,7 +118,11 @@ export function POApprovalPage() {
       <PurchasingListSection
         icon={ShoppingCart}
         title="Pending Approvals"
-        description="Draft purchase orders waiting for approval before supplier dispatch."
+        description={
+          isProduct
+            ? "Draft purchase orders waiting for approval before vendor dispatch."
+            : "Draft purchase orders waiting for approval before supplier dispatch."
+        }
       >
         {loading ? (
           <div className="flex items-center justify-center py-12 text-sm text-gray-500">
@@ -115,7 +143,7 @@ export function POApprovalPage() {
                   <tr>
                     <th className="px-4 py-3 text-left font-semibold">Number</th>
                     <th className="px-4 py-3 text-left font-semibold">Date</th>
-                    <th className="px-4 py-3 text-left font-semibold">Supplier</th>
+                    <th className="px-4 py-3 text-left font-semibold">{config.partyLabel}</th>
                     <th className="px-4 py-3 text-left font-semibold">Purchase Request</th>
                     <th className="px-4 py-3 text-right font-semibold">Total</th>
                     <th className="px-4 py-3 text-center font-semibold">Status</th>
@@ -132,11 +160,19 @@ export function POApprovalPage() {
                         className="cursor-pointer hover:bg-gray-50/80"
                         onClick={() => router.push(poDetailHref(po.id))}
                       >
-                        <td className="px-4 py-3">
-                          <span className="font-medium text-gray-900">{po.nomor_po}</span>
+                        <td
+                          className="px-4 py-3"
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          <Link
+                            href={poDetailHref(po.id)}
+                            className="font-medium text-pink-700 hover:underline"
+                          >
+                            {po.nomor_po}
+                          </Link>
                         </td>
                         <td className="px-4 py-3 text-gray-600">{formatDate(po.tanggal_po)}</td>
-                        <td className="px-4 py-3 text-gray-600">{po.nama_supplier || "-"}</td>
+                        <td className="px-4 py-3 text-gray-600">{config.poPartyName(po)}</td>
                         <td className="px-4 py-3 text-gray-600">{po.pr_number || "-"}</td>
                         <td className="px-4 py-3 text-right font-medium text-gray-900">
                           {formatAmount(po.grand_total || po.total || po.subtotal || 0)}
@@ -148,16 +184,6 @@ export function POApprovalPage() {
                         </td>
                         <td className="px-4 py-3 text-right" onClick={(event) => event.stopPropagation()}>
                           <div className="flex items-center justify-end gap-2">
-                            <Link href={poDetailHref(po.id)}>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                title="View detail"
-                                className="cursor-pointer"
-                              >
-                                <Eye className="h-4 w-4" />
-                              </Button>
-                            </Link>
                             <Button
                               variant="ghost"
                               size="sm"
@@ -193,8 +219,8 @@ export function POApprovalPage() {
             <DialogPanelTitle>Approve Purchase Order?</DialogPanelTitle>
             <DialogPanelDescription>
               {confirmingPO
-                ? `${confirmingPO.nomor_po} will be approved and can be sent to the supplier.`
-                : "This purchase order will be approved and can be sent to the supplier."}
+                ? config.approvePoDescription(confirmingPO.nomor_po)
+                : config.emptyPoDescription}
             </DialogPanelDescription>
           </DialogPanelHeader>
           <DialogPanelBody />

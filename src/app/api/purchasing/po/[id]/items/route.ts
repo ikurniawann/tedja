@@ -33,8 +33,9 @@ export async function GET(
       .from("purchase_order_items")
       .select(`
         *,
-        raw_material:raw_materials!raw_material_id (*),
-        satuan:units!satuan_id (*)
+        raw_material:raw_material_id(id, nama, kode),
+        product:product_id(id, nama, kode),
+        satuan:satuan_id(id, nama, nama_satuan)
       `)
       .eq("purchase_order_id", id)
       .eq("is_active", true)

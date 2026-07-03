@@ -62,6 +62,7 @@ export async function GET(
       .select(`
         *,
         raw_material:raw_materials!raw_material_id (*),
+        product:products!product_id (id, kode, nama, satuan_id),
         satuan:units!satuan_id (*)
       `)
       .eq("purchase_order_id", id)

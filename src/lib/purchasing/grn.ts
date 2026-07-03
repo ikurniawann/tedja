@@ -19,11 +19,16 @@ type DeliveryForGrn = {
 type POItemForGrn = {
   id: string;
   raw_material_id?: string | null;
+  product_id?: string | null;
   qty_ordered?: number | null;
   qty_received?: number | null;
   harga_satuan?: number | null;
   unit_price?: number | null;
   raw_material?: {
+    id: string;
+    nama: string;
+  } | null;
+  product?: {
     id: string;
     nama: string;
   } | null;
@@ -117,6 +122,7 @@ export async function validateDeliveryCanReceive(
     .select(`
       id,
       raw_material_id,
+      product_id,
       qty_ordered,
       qty_received,
       harga_satuan

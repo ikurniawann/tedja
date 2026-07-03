@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createPgClient } from "@/lib/pg/create-client";
+import { enrichPosProductsWithPurchasingCogs } from '@/lib/pos/purchasing-sync';
 
 type ProductVariantPayload = {
   name?: string;
@@ -102,7 +103,12 @@ export async function GET(request: NextRequest) {
       withProductXpAlias(product as Record<string, unknown>)
     );
 
-    return NextResponse.json({ success: true, data: normalizedProducts });
+    const enrichedProducts = await enrichPosProductsWithPurchasingCogs(
+      db,
+      normalizedProducts as Array<Record<string, unknown>>
+    );
+
+    return NextResponse.json({ success: true, data: enrichedProducts });
   } catch (error: unknown) {
     console.error('Error fetching products:', error);
     return NextResponse.json(

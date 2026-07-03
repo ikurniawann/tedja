@@ -242,7 +242,8 @@ export async function addInventoryFromProduction(
   unitCost: number,
   productionOrderId: string,
   productionNumber: string,
-  userId: string
+  userId: string,
+  referenceType: string = "production_wip"
 ): Promise<void> {
   if (qtyAdded <= 0) return;
 
@@ -250,7 +251,7 @@ export async function addInventoryFromProduction(
     .from("inventory_movements")
     .select("id")
     .eq("raw_material_id", rawMaterialId)
-    .eq("reference_type", "production_wip")
+    .eq("reference_type", referenceType)
     .eq("reference_id", productionOrderId)
     .eq("is_active", true)
     .maybeSingle();

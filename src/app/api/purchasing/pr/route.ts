@@ -6,7 +6,7 @@ import {
   formatZodError,
   isZodValidationError,
   normalizePrWriteItems,
-  prWriteSchema,
+  parsePrWriteBody,
   sumPrTotalAmount,
 } from "@/lib/purchasing/pr-schemas";
 import { requireUser } from "@/lib/auth/require-user";
@@ -27,6 +27,7 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get("status");
     const search = searchParams.get("search");
     const department_id = searchParams.get("department_id");
+    const module_type = searchParams.get("module_type") || "raw_material";
     const page = parseInt(searchParams.get("page") || "1");
     const limit = parseInt(searchParams.get("limit") || "20");
 
@@ -59,6 +60,10 @@ export async function GET(request: NextRequest) {
 
     if (department_id) {
       query = query.eq("department_id", department_id);
+    }
+
+    if (module_type === "raw_material" || module_type === "product") {
+      query = query.eq("module_type", module_type);
     }
 
     // Role-based filtering
@@ -147,7 +152,9 @@ export async function POST(request: NextRequest) {
     }
     
     const body = await request.json();
-    const validated = prWriteSchema.parse(body);
+    const moduleType =
+      body?.module_type === "product" ? ("product" as const) : ("raw_material" as const);
+    const validated = parsePrWriteBody(body, moduleType);
     const scope = await getApiUserScope();
     const companyId = effectiveCompanyId(scope);
     const branchId = effectiveBranchId(scope);
@@ -174,6 +181,7 @@ export async function POST(request: NextRequest) {
         priority: validated.priority,
         notes: validated.notes || null,
         required_date: validated.required_date || null,
+        module_type: moduleType,
         current_approval_level: nextStatus === "pending_head" ? "head_dept" : null,
       })
       .select()
@@ -193,8 +201,8 @@ export async function POST(request: NextRequest) {
     // Insert items
     const itemsWithTotal = normalizedItems.map((item) => ({
       pr_id: pr.id,
-      product_id: item.product_id || null,
-      raw_material_id: item.raw_material_id,
+      product_id: "product_id" in item ? item.product_id : null,
+      raw_material_id: "raw_material_id" in item ? item.raw_material_id : null,
       satuan_id: item.satuan_id || null,
       description: item.description,
       qty: item.qty,

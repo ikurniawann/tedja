@@ -6,7 +6,8 @@ import Link from "next/link";
 import { useGrn, useGrnQC } from "../queries";
 import { useCreateQCInspection } from "../mutations";
 import { resolveOverallQcStatus } from "@/lib/purchasing/grn-qc-utils";
-import { RM_ROUTES } from "@/modules/purchasing/constants/item-routes";
+import { RM_ROUTES, PRODUCT_ROUTES } from "@/modules/purchasing/constants/item-routes";
+import type { PurchasingModuleType } from "../api";
 import {
   PurchasingFormFooter,
   PurchasingFormHeader,
@@ -130,7 +131,16 @@ function statusBadge(status: string) {
   );
 }
 
-export function QCInspectionPage() {
+export function QCInspectionPage({
+  moduleType = "raw_material",
+}: {
+  moduleType?: PurchasingModuleType;
+}) {
+  const isProduct = moduleType === "product";
+  const listRoute = isProduct ? PRODUCT_ROUTES.purchasingReceive : RM_ROUTES.purchasingGrn;
+  const detailRoute = (id: string) =>
+    isProduct ? PRODUCT_ROUTES.purchasingReceiveDetail(id) : RM_ROUTES.purchasingGrnDetail(id);
+
   const params = useParams();
   const router = useRouter();
   const grnId = params.id as string;
@@ -338,7 +348,7 @@ export function QCInspectionPage() {
       });
 
       toast.success("Quality control completed. Stock has been updated.");
-      router.push(RM_ROUTES.purchasingGrnDetail(grnId));
+      router.push(detailRoute(grnId));
     } catch (error: unknown) {
       toast.error(error instanceof Error ? error.message : "Failed to submit quality control");
     }
@@ -357,7 +367,7 @@ export function QCInspectionPage() {
     return (
       <div className="space-y-4">
         <PurchasingFormHeader
-          backHref={RM_ROUTES.purchasingGrn}
+          backHref={listRoute}
           title="Quality Control"
           description="Goods receipt not found"
         />
@@ -373,7 +383,7 @@ export function QCInspectionPage() {
   return (
     <div className="space-y-6">
       <PurchasingFormHeader
-        backHref={RM_ROUTES.purchasingGrnDetail(grnId)}
+        backHref={detailRoute(grnId)}
         title="Quality Control"
         description={
           <>
@@ -426,7 +436,7 @@ export function QCInspectionPage() {
                 Stock was posted on {formatDate(existingQc?.inspected_at)}. View the goods receipt
                 detail for the final result.
               </p>
-              <Link href={RM_ROUTES.purchasingGrnDetail(grnId)} className="mt-2 inline-block">
+              <Link href={detailRoute(grnId)} className="mt-2 inline-block">
                 <Button variant="outline" size="sm" className="purchasing-secondary-button">
                   View Goods Receipt
                 </Button>
@@ -669,7 +679,7 @@ export function QCInspectionPage() {
         {!qcLocked && (
           <PurchasingFormFooter
             formId="grn-qc-form"
-            onCancel={() => router.push(RM_ROUTES.purchasingGrnDetail(grnId))}
+            onCancel={() => router.push(detailRoute(grnId))}
             submitLabel="Complete Quality Control"
             loading={saving}
             disabled={lines.length === 0}

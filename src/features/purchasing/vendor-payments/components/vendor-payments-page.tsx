@@ -25,7 +25,7 @@ import { Combobox } from "@/components/ui/combobox";
 import { PurchasingPageHeader } from "@/modules/purchasing/components/page/purchasing-page-header";
 import { PurchasingListSection } from "@/modules/purchasing/components/list/PurchasingListSection";
 import { PurchasingTablePagination } from "@/modules/purchasing/components/pagination/PurchasingTablePagination";
-import { RM_ROUTES } from "@/modules/purchasing/constants/item-routes";
+import { RM_ROUTES, PRODUCT_ROUTES } from "@/modules/purchasing/constants/item-routes";
 import { formatAmount, formatDate } from "@/lib/purchasing/utils";
 import { usePurchaseInvoiceList } from "../queries";
 import { PurchaseInvoicePayDialog } from "./purchase-invoice-pay-dialog";
@@ -57,7 +57,13 @@ function formatPct(value: number) {
   return `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 }).format(value)}%`;
 }
 
-export function PurchaseInvoicesPage() {
+export function PurchaseInvoicesPage({
+  moduleType = "raw_material",
+}: {
+  moduleType?: "raw_material" | "product";
+}) {
+  const routes = moduleType === "product" ? PRODUCT_ROUTES : RM_ROUTES;
+  const partyLabel = moduleType === "product" ? "Vendor" : "Supplier";
   const router = useRouter();
   const [page, setPage] = useState(1);
   const limit = 10;
@@ -67,10 +73,13 @@ export function PurchaseInvoicesPage() {
   const [filterOpen, setFilterOpen] = useState(false);
   const [payRow, setPayRow] = useState<PurchaseInvoiceRow | null>(null);
 
-  const listQuery = usePurchaseInvoiceList({
-    search: search || undefined,
-    status: statusFilter,
-  });
+  const listQuery = usePurchaseInvoiceList(
+    {
+      search: search || undefined,
+      status: statusFilter,
+    },
+    moduleType
+  );
   const allRows = listQuery.data ?? [];
   const loading = listQuery.isLoading;
 
@@ -199,7 +208,7 @@ export function PurchaseInvoicesPage() {
               <Input
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder="Search PO number or supplier..."
+                placeholder={`Search PO number or ${partyLabel.toLowerCase()}...`}
                 className="h-10 bg-white pl-10 pr-10 text-sm focus:border-pink-400 focus:ring-2 focus:ring-pink-100"
               />
               {searchQuery && (
@@ -288,7 +297,7 @@ export function PurchaseInvoicesPage() {
                     <tr>
                       <th className="px-4 py-3 text-left font-semibold">PO Number</th>
                       <th className="px-4 py-3 text-left font-semibold">PO Date</th>
-                      <th className="px-4 py-3 text-left font-semibold">Supplier</th>
+                      <th className="px-4 py-3 text-left font-semibold">{partyLabel}</th>
                       <th className="px-4 py-3 text-right font-semibold">PO Total</th>
                       <th className="px-4 py-3 text-right font-semibold">Returns</th>
                       <th className="px-4 py-3 text-right font-semibold">Reject Credits</th>
@@ -308,8 +317,9 @@ export function PurchaseInvoicesPage() {
                       <InvoiceTableRow
                         key={row.purchase_order_id}
                         row={row}
+                        poDetailRoute={routes.purchasingInvoicePoDetail(row.purchase_order_id)}
                         onOpen={() =>
-                          router.push(RM_ROUTES.purchasingInvoicePoDetail(row.purchase_order_id))
+                          router.push(routes.purchasingInvoicePoDetail(row.purchase_order_id))
                         }
                         onPay={() => setPayRow(row)}
                       />
@@ -343,10 +353,12 @@ export function PurchaseInvoicesPage() {
 
 function InvoiceTableRow({
   row,
+  poDetailRoute,
   onOpen,
   onPay,
 }: {
   row: PurchaseInvoiceRow;
+  poDetailRoute: string;
   onOpen: () => void;
   onPay: () => void;
 }) {
@@ -356,7 +368,7 @@ function InvoiceTableRow({
     <tr className="cursor-pointer hover:bg-gray-50/80" onClick={onOpen}>
       <td className="px-4 py-3">
         <Link
-          href={RM_ROUTES.purchasingInvoicePoDetail(row.purchase_order_id)}
+          href={poDetailRoute}
           className="font-medium text-pink-700 hover:underline"
           onClick={(e) => e.stopPropagation()}
         >
@@ -413,7 +425,7 @@ function InvoiceTableRow({
               Pay
             </Button>
           )}
-          <Link href={RM_ROUTES.purchasingInvoicePoDetail(row.purchase_order_id)}>
+          <Link href={poDetailRoute}>
             <Button variant="ghost" size="sm" title="View invoice detail" className="cursor-pointer">
               <Eye className="h-4 w-4" />
             </Button>

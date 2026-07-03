@@ -1,6 +1,6 @@
 import { createServerPgClient } from "@/lib/pg/create-client";
 import { requireUser } from "@/lib/auth/require-user";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import {
   getApiUserScope,
   isRowInBusinessScope,
@@ -34,13 +34,14 @@ function resolvePrScope(
  * - belum terhubung ke PO aktif lain
  * - dalam scope bisnis user (dengan fallback scope dari requester)
  */
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const db = await createServerPgClient();
     await requireUser();
     const scope = await getApiUserScope();
+    const moduleType = new URL(request.url).searchParams.get("module_type") || "raw_material";
 
-    const { data: prs, error } = await db
+    let query = db
       .from("purchase_requests")
       .select(
         `
@@ -49,9 +50,12 @@ export async function GET() {
       `
       )
       .eq("status", "approved")
+      .eq("module_type", moduleType)
       .is("converted_po_id", null)
       .order("created_at", { ascending: false })
       .limit(200);
+
+    const { data: prs, error } = await query;
 
     if (error) throw error;
 

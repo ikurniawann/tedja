@@ -1,9 +1,17 @@
 import type { ApprovalPR } from "./types";
+import type { PurchasingModuleType } from "@/lib/purchasing/module-scope";
 
 export type { ApprovalPR } from "./types";
 
-export async function listPendingPRApprovals(): Promise<ApprovalPR[]> {
-  const res = await fetch("/api/purchasing/pr?status=pending_head&limit=50");
+export async function listPendingPRApprovals(
+  moduleType: PurchasingModuleType = "raw_material"
+): Promise<ApprovalPR[]> {
+  const sp = new URLSearchParams({
+    status: "pending_head",
+    limit: "50",
+    module_type: moduleType,
+  });
+  const res = await fetch(`/api/purchasing/pr?${sp.toString()}`);
   const payload = await res.json();
   if (!res.ok) throw new Error(payload.error || "Failed to load purchase request approvals");
   return payload.data || [];

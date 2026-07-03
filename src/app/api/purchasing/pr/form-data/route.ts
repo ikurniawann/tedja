@@ -1,6 +1,11 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createServerPgClient } from "@/lib/pg/create-client";
 import { requireUser } from "@/lib/auth/require-user";
+import {
+  getApiUserScope,
+  companyScopeOr,
+  branchScopeOr,
+} from "@/lib/api/scope";
 
 const CREATE_PR_ROLES = [
   "purchasing_staff",
@@ -12,7 +17,7 @@ const CREATE_PR_ROLES = [
   "hrd",
 ];
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const user = await requireUser();
     if (!CREATE_PR_ROLES.includes(user.role)) {
@@ -22,10 +27,46 @@ export async function GET() {
       );
     }
 
-    const db = await createServerPgClient();
+    const { searchParams } = new URL(request.url);
+    const moduleType = searchParams.get("module_type") || "raw_material";
 
-    const [{ data: departments }, { data: materials }, { data: units }] = await Promise.all([
-      db.from("departments").select("id, name").eq("is_active", true).order("name"),
+    const db = await createServerPgClient();
+    const scope = await getApiUserScope();
+
+    const { data: departments } = await db
+      .from("departments")
+      .select("id, name")
+      .eq("is_active", true)
+      .order("name");
+
+    if (moduleType === "product") {
+      let productsQuery = db
+        .from("v_products_cogs")
+        .select("id, kode, nama, satuan_id, satuan_nama, harga_modal")
+        .eq("is_active", true)
+        .is("deleted_at", null)
+        .order("nama");
+
+      const companyOr = companyScopeOr(scope);
+      if (companyOr) productsQuery = productsQuery.or(companyOr);
+      const branchOr = branchScopeOr(scope);
+      if (branchOr) productsQuery = productsQuery.or(branchOr);
+
+      const [{ data: products }, { data: units }] = await Promise.all([
+        productsQuery,
+        db.from("units").select("id, nama").eq("is_active", true).order("nama"),
+      ]);
+
+      return NextResponse.json({
+        data: {
+          departments: departments || [],
+          products: products || [],
+          units: units || [],
+        },
+      });
+    }
+
+    const [{ data: materials }, { data: units }] = await Promise.all([
       db
         .from("v_raw_materials_stock")
         .select("id, kode, nama, satuan_besar_id, satuan_besar_nama, avg_cost")
