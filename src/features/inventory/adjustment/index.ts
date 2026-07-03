@@ -1,1 +1,1 @@
-export { InventoryAdjustmentPage } from "./components/inventory-adjustment-page";
+export { ManualAdjustmentPage } from "./components/manual-adjustment-page";

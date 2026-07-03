@@ -32,6 +32,7 @@ function toCrumb(item: NavItem): NavBreadcrumbItem {
 function findDeepestNavChain(
   items: NavItem[],
   pathname: string,
+  navFrom: string | null,
   ancestors: NavBreadcrumbItem[] = [],
   peerHrefs: string[] = []
 ): NavBreadcrumbItem[] | null {
@@ -42,13 +43,19 @@ function findDeepestNavChain(
     const chainHere = [...ancestors, toCrumb(item)];
 
     if (item.children?.length) {
-      const fromChildren = findDeepestNavChain(item.children, pathname, chainHere, childHrefs);
+      const fromChildren = findDeepestNavChain(
+        item.children,
+        pathname,
+        navFrom,
+        chainHere,
+        childHrefs
+      );
       if (fromChildren && (!best || fromChildren.length > best.length)) {
         best = fromChildren;
       }
     }
 
-    if (isValidHref(item.href) && isNavLinkActive(pathname, item.href, peerHrefs)) {
+    if (isValidHref(item.href) && isNavLinkActive(pathname, item.href, peerHrefs, navFrom)) {
       if (!best || chainHere.length > best.length) {
         best = chainHere;
       }
@@ -115,7 +122,11 @@ function finalizeChain(chain: NavBreadcrumbItem[], pathname: string): NavBreadcr
 }
 
 /** Build breadcrumb trail from IAM sidebar tree + current pathname. */
-export function buildNavBreadcrumbs(navItems: NavItem[], pathname: string): NavBreadcrumbItem[] {
+export function buildNavBreadcrumbs(
+  navItems: NavItem[],
+  pathname: string,
+  navFrom?: string | null
+): NavBreadcrumbItem[] {
   const normalizedPath = pathname.replace(/\/+$/, "") || "/";
 
   if (normalizedPath === HOME_HREF) {
@@ -125,6 +136,7 @@ export function buildNavBreadcrumbs(navItems: NavItem[], pathname: string): NavB
   const navChain = findDeepestNavChain(
     navItems,
     normalizedPath,
+    navFrom ?? null,
     [],
     navItems.map((item) => item.href)
   );

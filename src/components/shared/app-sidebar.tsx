@@ -17,8 +17,16 @@ import { AppSidebarNavIcon } from "./app-sidebar-nav-icons";
 import AppSidebarNav from "./app-sidebar-nav";
 import { DashboardBreadcrumbs } from "./dashboard-breadcrumbs";
 
+export interface SidebarUser {
+  full_name: string;
+  role: string;
+  email?: string;
+  company_name?: string | null;
+  branch_name?: string | null;
+}
+
 export interface AppSidebarProps {
-  user: { full_name: string; role: string; email?: string };
+  user: SidebarUser;
   navItems: NavItem[];
   children: React.ReactNode;
 }
@@ -82,6 +90,8 @@ export default function AppSidebar({ user, navItems, children }: AppSidebarProps
         <SidebarHeader
           collapsed={collapsed}
           onToggleCollapse={() => setCollapsed((prev) => !prev)}
+          companyName={user.company_name}
+          branchName={user.branch_name}
         />
 
         <AppSidebarNav navItems={allNavItems} collapsed={collapsed} onNavigate={closeMobile} />
@@ -122,9 +132,11 @@ export default function AppSidebar({ user, navItems, children }: AppSidebarProps
               <span className="grid h-9 w-9 place-items-center rounded-full bg-pink-600 text-sm font-bold text-white">
                 {user.full_name?.slice(0, 1).toUpperCase() || "A"}
               </span>
-              <span>
+              <span className="min-w-0">
                 <span className="block text-sm font-medium text-gray-700">{user.full_name}</span>
-                {user.email && <span className="block text-xs text-gray-500">{user.email}</span>}
+                {user.email && (
+                  <span className="block truncate text-xs text-gray-500">{user.email}</span>
+                )}
               </span>
             </button>
           </div>
@@ -143,9 +155,13 @@ export default function AppSidebar({ user, navItems, children }: AppSidebarProps
 function SidebarHeader({
   collapsed,
   onToggleCollapse,
+  companyName,
+  branchName,
 }: {
   collapsed: boolean;
   onToggleCollapse: () => void;
+  companyName?: string | null;
+  branchName?: string | null;
 }) {
   return (
     <div
@@ -189,9 +205,12 @@ function SidebarHeader({
             alt="Arkiv OS"
             className="h-16 w-auto max-w-[10rem] shrink-0 object-contain object-left"
           />
-          <div className="min-w-0 leading-tight">
-            <p className="text-[15px] font-bold tracking-tight text-gray-900">Prologue.</p>
-            <p className="text-xs text-gray-500">Backoffice</p>
+          <div className="min-w-0 flex-1 leading-tight">
+            <UserScopeLines
+              companyName={companyName}
+              branchName={branchName}
+              variant="header"
+            />
           </div>
         </div>
       )}
@@ -265,11 +284,55 @@ function ThemeToggle({
   );
 }
 
+function UserScopeLines({
+  companyName,
+  branchName,
+  compact = false,
+  variant = "default",
+}: {
+  companyName?: string | null;
+  branchName?: string | null;
+  compact?: boolean;
+  variant?: "default" | "header";
+}) {
+  const company = companyName?.trim() || "—";
+  const branch = branchName?.trim() || null;
+  const showBranch = Boolean(branch && branch !== company);
+
+  if (compact) {
+    return (
+      <span className="mt-0.5 block text-[11px] leading-snug text-gray-500">
+        {showBranch ? `${company} · ${branch}` : company}
+      </span>
+    );
+  }
+
+  if (variant === "header") {
+    return (
+      <div className="space-y-1">
+        <p className="truncate text-[15px] font-bold tracking-tight text-gray-900">
+          {company}
+        </p>
+        {showBranch && (
+          <p className="truncate text-xs font-medium text-gray-600">{branch}</p>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-1">
+      <p className="truncate text-sm font-semibold text-gray-900">{company}</p>
+      {showBranch && <p className="truncate text-xs text-gray-600">{branch}</p>}
+    </div>
+  );
+}
+
 function AccountPopup({
   user,
   onClose,
 }: {
-  user: { full_name: string; role: string; email?: string };
+  user: SidebarUser;
   onClose: () => void;
 }) {
   return (
@@ -304,6 +367,13 @@ function AccountPopup({
             <div className="mt-2 inline-flex rounded-full bg-white px-3 py-1 text-xs font-semibold capitalize text-pink-600 ring-1 ring-pink-100">
               {user.role.replace("_", " ")}
             </div>
+          </div>
+
+          <div className="mb-5 rounded-xl border border-gray-200/70 bg-gray-50/80 px-4 py-3">
+            <UserScopeLines
+              companyName={user.company_name}
+              branchName={user.branch_name}
+            />
           </div>
 
           <div className="grid gap-2">

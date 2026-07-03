@@ -2,85 +2,169 @@
 
 import { use } from "react";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
-  ArrowLeft,
-  Printer,
-  CheckCircle,
-  XCircle,
+  ArrowLeftIcon,
+  CheckCircle2,
+  ClipboardList,
   FileText,
+  Loader2,
   Pencil,
+  Printer,
   User,
+  XCircle,
 } from "lucide-react";
-import {
-  formatRupiah,
-  formatDate,
-  getPRStatusLabel,
-  getPriorityBadge,
-} from "@/lib/purchasing/utils";
+import { formatAmount, formatDate, getPRStatusLabel, getPriorityBadge } from "@/lib/purchasing/utils";
 import { PRRevisionButton } from "@/components/purchasing/pr-revision-button";
 import { PRDetailToast } from "@/components/purchasing/pr-detail-toast";
 import { PRApprovalActions } from "@/components/purchasing/pr-approval-actions";
+import { RM_ROUTES } from "@/modules/purchasing/constants/item-routes";
+import { NAV_FROM_APPROVAL_PR, appendNavFrom } from "@/lib/iam/nav-context";
+import { useNavFrom } from "@/lib/iam/use-nav-from";
 import { usePurchaseRequest } from "../queries";
 import type { PRDetailItem } from "../types";
+
+const PR_STATUS_LABEL_OVERRIDES: Record<string, string> = {
+  rejected: "Rejected",
+  converted: "Purchase Order Created",
+};
+
+const PR_STATUS_STYLES: Record<string, string> = {
+  draft: "border-gray-200 bg-gray-50 text-gray-700",
+  pending_head: "border-amber-200 bg-amber-50 text-amber-700",
+  pending_finance: "border-orange-200 bg-orange-50 text-orange-700",
+  pending_direksi: "border-orange-200 bg-orange-50 text-orange-700",
+  approved: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  rejected: "border-red-200 bg-red-50 text-red-700",
+  converted: "border-blue-200 bg-blue-50 text-blue-700",
+};
+
+const PRIORITY_STYLES: Record<string, string> = {
+  low: "border-gray-200 bg-gray-50 text-gray-600",
+  medium: "border-blue-200 bg-blue-50 text-blue-700",
+  high: "border-orange-200 bg-orange-50 text-orange-700",
+  urgent: "border-red-200 bg-red-50 text-red-700",
+};
 
 type PRDetailPageProps = {
   params: Promise<{ id: string }>;
 };
 
+function DetailField({
+  label,
+  value,
+  href,
+  className,
+}: {
+  label: string;
+  value: string;
+  href?: string;
+  className?: string;
+}) {
+  const content = (
+    <div className={className}>
+      <dt className="text-xs text-gray-500">{label}</dt>
+      <dd
+        className={`mt-0.5 text-sm font-medium text-gray-900 ${href ? "text-pink-700 hover:underline" : ""}`}
+      >
+        {value}
+      </dd>
+    </div>
+  );
+
+  if (href) {
+    return <Link href={href}>{content}</Link>;
+  }
+
+  return content;
+}
+
+function formatQty(value?: number | null) {
+  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 4 }).format(Number(value || 0));
+}
+
 export function PRDetailPage({ params }: PRDetailPageProps) {
   const { id } = use(params);
-  const { data: pr, isLoading, error } = usePurchaseRequest(id);
+  const navFrom = useNavFrom();
+  const fromApproval = navFrom === NAV_FROM_APPROVAL_PR;
+  const backHref = fromApproval ? RM_ROUTES.approvalPr : RM_ROUTES.purchasingPr;
+  const backLabel = fromApproval ? "Back to Approvals" : "Back";
+  const editHref = fromApproval
+    ? appendNavFrom(RM_ROUTES.purchasingPrEdit(id), NAV_FROM_APPROVAL_PR)
+    : RM_ROUTES.purchasingPrEdit(id);
+  const { data: pr, isLoading, isError, error } = usePurchaseRequest(id);
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center py-20 text-sm text-gray-500">
-        Memuat detail PR...
+      <div className="flex min-h-56 items-center justify-center text-sm text-gray-500">
+        <Loader2 className="mr-2 h-4 w-4 animate-spin text-pink-600" />
+        Loading purchase request...
       </div>
     );
   }
 
-  if (error || !pr) {
-    notFound();
+  if (isError || !pr) {
+    return (
+      <div className="space-y-4">
+        <Link href={backHref}>
+          <Button variant="ghost" size="sm" className="h-9 gap-2 text-pink-700">
+            <ArrowLeftIcon className="h-4 w-4" />
+            {backLabel}
+          </Button>
+        </Link>
+        <Card className="border-gray-200/70 shadow-xs">
+          <CardContent className="py-12 text-center text-sm text-gray-500">
+            {error instanceof Error ? error.message : "Purchase request not found or could not be loaded."}
+          </CardContent>
+        </Card>
+      </div>
+    );
   }
 
   const statusBadge = getPRStatusLabel(pr.status);
   const priorityBadge = getPriorityBadge(pr.priority);
+  const statusLabel = PR_STATUS_LABEL_OVERRIDES[pr.status] ?? statusBadge.label;
+  const priorityLabel = priorityBadge.label;
+  const statusStyle = PR_STATUS_STYLES[pr.status] ?? "border-gray-200 bg-gray-50 text-gray-700";
+  const priorityStyle = PRIORITY_STYLES[pr.priority] ?? "border-gray-200 bg-gray-50 text-gray-700";
   const requesterName = pr.requester_name || "-";
   const { canApprove, canCreatePO } = pr.permissions;
+  const itemCount = pr.items?.length ?? 0;
+  const totalQty = pr.items?.reduce((sum, item) => sum + Number(item.qty || 0), 0) ?? 0;
 
   return (
     <div className="space-y-6">
       <PRDetailToast />
-      <div className="flex flex-col items-start justify-between gap-4 border-b border-gray-200/70 pb-4 sm:flex-row sm:items-center">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-2xl font-bold text-gray-900">{pr.pr_number}</h1>
-            <Badge className={statusBadge.color}>{statusBadge.label}</Badge>
-          </div>
-          <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-gray-500">
-            <span>Dibuat {formatDate(pr.created_at)}</span>
-            <span className="text-gray-300">•</span>
-            <span>{requesterName}</span>
-            <span className="text-gray-300">•</span>
-            <span>Prioritas {priorityBadge.label}</span>
+
+      <div className="flex flex-col gap-4 border-b border-gray-200/70 pb-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="flex items-start gap-3">
+          <Link href={backHref}>
+            <Button variant="ghost" size="sm" className="h-9 gap-2 text-pink-700">
+              <ArrowLeftIcon className="h-4 w-4" />
+              {backLabel}
+            </Button>
+          </Link>
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-2xl font-bold text-gray-900">{pr.pr_number}</h1>
+              <Badge variant="outline" className={statusStyle}>
+                {statusLabel}
+              </Badge>
+            </div>
+            <p className="mt-1 text-sm text-gray-500">
+              {formatDate(pr.created_at)} · {requesterName} · Priority {priorityLabel}
+            </p>
           </div>
         </div>
 
-        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap">
-          <Link href="/dashboard/purchasing/pr">
-            <Button variant="outline" className="purchasing-secondary-button w-full sm:w-auto">
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Kembali
-            </Button>
-          </Link>
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
           {pr.status === "draft" && pr.permissions.canEdit && (
-            <Link href={`/dashboard/purchasing/pr/edit/${id}`}>
+            <Link href={editHref}>
               <Button variant="outline" className="purchasing-secondary-button w-full sm:w-auto">
-                <Pencil className="w-4 h-4 mr-2" />
+                <Pencil className="mr-2 h-4 w-4" />
                 Edit
               </Button>
             </Link>
@@ -88,200 +172,241 @@ export function PRDetailPage({ params }: PRDetailPageProps) {
           {pr.status === "rejected" && <PRRevisionButton prId={id} />}
           <Link href={`/dashboard/purchasing/print/pr/${id}`} target="_blank">
             <Button variant="outline" className="purchasing-secondary-button w-full cursor-pointer sm:w-auto">
-              <Printer className="w-4 h-4 mr-2" />
-              Cetak PR
+              <Printer className="mr-2 h-4 w-4" />
+              Print
             </Button>
           </Link>
-
           {canCreatePO && (
-            <Link href={`/dashboard/purchasing/po/insert?pr_id=${id}`}>
+            <Link href={`${RM_ROUTES.purchasingPoInsert}?pr_id=${id}`}>
               <Button className="purchasing-main-button w-full sm:w-auto">
-                <FileText className="w-4 h-4 mr-2" />
-                Buat PO
+                <FileText className="mr-2 h-4 w-4" />
+                Create Purchase Order
               </Button>
             </Link>
           )}
           {pr.status === "converted" && pr.converted_po_id && (
-            <Link href={`/dashboard/purchasing/po/${pr.converted_po_id}`}>
+            <Link href={RM_ROUTES.purchasingPoDetail(pr.converted_po_id)}>
               <Button className="purchasing-main-button w-full sm:w-auto">
-                <FileText className="w-4 h-4 mr-2" />
-                Lihat PO
+                <FileText className="mr-2 h-4 w-4" />
+                View Purchase Order
               </Button>
             </Link>
           )}
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <div className="lg:col-span-2 space-y-4">
-          <Card>
-            <CardContent className="p-4">
-              <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex flex-wrap items-center gap-3">
-                  <Badge className={statusBadge.color} size="lg">
-                    {statusBadge.label}
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
+        <div className="space-y-6 xl:col-span-8">
+          <Card className="border-gray-200/70 shadow-xs">
+            <CardHeader className="border-b border-gray-200/70 pb-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <ClipboardList className="h-4 w-4 text-pink-600" />
+                Request Information
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="grid gap-4 p-4 md:grid-cols-2">
+              <DetailField label="Department" value={pr.department?.name || pr.department_name || "-"} />
+              <DetailField label="Requester" value={requesterName} />
+              <DetailField
+                label="Required Date"
+                value={pr.required_date ? formatDate(pr.required_date) : "-"}
+              />
+              <div>
+                <dt className="text-xs text-gray-500">Priority</dt>
+                <dd className="mt-1">
+                  <Badge variant="outline" className={priorityStyle}>
+                    {priorityLabel}
                   </Badge>
-                  <Badge className={priorityBadge.color}>
-                    Prioritas: {priorityBadge.label}
-                  </Badge>
-                </div>
-                <div className="text-right">
-                  <p className="text-sm text-gray-500">Total Estimasi</p>
-                  <p className="text-2xl font-bold">{formatRupiah(pr.total_amount)}</p>
-                </div>
+                </dd>
               </div>
-
-              <div className="overflow-x-auto rounded-lg border border-gray-200/70">
-                <table className="w-full">
-                  <thead className="bg-gray-50">
-                    <tr className="border-b border-gray-200/70">
-                      <th className="text-left py-3 px-4 text-sm font-medium">No</th>
-                      <th className="text-left py-3 px-4 text-sm font-medium">Deskripsi</th>
-                      <th className="text-center py-3 px-4 text-sm font-medium">Qty</th>
-                      <th className="text-center py-3 px-4 text-sm font-medium">Satuan</th>
-                      <th className="text-right py-3 px-4 text-sm font-medium">Est. Harga</th>
-                      <th className="text-right py-3 px-4 text-sm font-medium">Total</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {pr.items?.map((item: PRDetailItem, index: number) => (
-                      <tr key={item.id} className="border-b border-gray-200/60 last:border-0">
-                        <td className="py-3 px-4 text-sm">{index + 1}</td>
-                        <td className="py-3 px-4 text-sm">
-                          {item.raw_material?.nama || item.description}
-                          {item.description && item.raw_material?.nama && (
-                            <p className="text-xs text-gray-500">{item.description}</p>
-                          )}
-                        </td>
-                        <td className="py-3 px-4 text-sm text-center">{item.qty}</td>
-                        <td className="py-3 px-4 text-sm text-center">{item.satuan?.nama || item.unit}</td>
-                        <td className="py-3 px-4 text-sm text-right">
-                          {formatRupiah(item.estimated_price || 0)}
-                        </td>
-                        <td className="py-3 px-4 text-sm text-right font-medium">
-                          {formatRupiah(item.total || 0)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
               {pr.notes && (
-                <div className="mt-6 p-4 bg-gray-50 rounded-lg">
-                  <p className="text-sm font-medium text-gray-700 mb-1">Catatan:</p>
-                  <p className="text-sm text-gray-600">{pr.notes}</p>
+                <div className="md:col-span-2 border-t border-gray-200/70 pt-4">
+                  <p className="text-xs font-medium text-gray-500">Notes</p>
+                  <p className="mt-1 text-sm text-gray-700">{pr.notes}</p>
+                </div>
+              )}
+              {pr.status === "rejected" && pr.rejection_reason && (
+                <div className="md:col-span-2 rounded-xl border border-red-200/80 bg-red-50/60 p-4 text-sm text-red-800">
+                  <p className="font-medium">Rejection Reason</p>
+                  <p className="mt-1">{pr.rejection_reason}</p>
                 </div>
               )}
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader className="border-b border-gray-200/70 px-4 py-3">
-              <CardTitle className="text-base">Timeline Approval</CardTitle>
+          <Card className="border-gray-200/70 shadow-xs">
+            <CardHeader className="border-b border-gray-200/70 pb-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <FileText className="h-4 w-4 text-pink-600" />
+                Requested Items
+              </CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
+            <CardContent className="p-0">
+              {!pr.items?.length ? (
+                <div className="py-12 text-center text-sm text-gray-500">No line items found.</div>
+              ) : (
+                <div className="overflow-x-auto p-4">
+                  <table className="min-w-full text-sm">
+                    <thead className="border-b border-gray-100 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+                      <tr>
+                        <th className="px-4 py-3 text-left font-semibold">#</th>
+                        <th className="px-4 py-3 text-left font-semibold">Raw Material</th>
+                        <th className="px-4 py-3 text-right font-semibold">Qty</th>
+                        <th className="px-4 py-3 text-center font-semibold">Unit</th>
+                        <th className="px-4 py-3 text-right font-semibold">Est. Unit Price</th>
+                        <th className="px-4 py-3 text-right font-semibold">Line Total</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {pr.items.map((item: PRDetailItem, index: number) => (
+                        <tr key={item.id} className="hover:bg-gray-50/80">
+                          <td className="px-4 py-3 text-gray-500">{index + 1}</td>
+                          <td className="px-4 py-3">
+                            <div className="font-medium text-gray-900">
+                              {item.raw_material?.nama || item.description || "-"}
+                            </div>
+                            {item.raw_material?.kode && (
+                              <div className="text-xs text-gray-500">{item.raw_material.kode}</div>
+                            )}
+                            {item.description && item.raw_material?.nama && item.description !== item.raw_material.nama && (
+                              <div className="mt-1 text-xs text-gray-500">{item.description}</div>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-right text-gray-700">{formatQty(item.qty)}</td>
+                          <td className="px-4 py-3 text-center text-gray-600">
+                            {item.satuan?.nama || item.unit || "-"}
+                          </td>
+                          <td className="px-4 py-3 text-right text-gray-700">
+                            {formatAmount(item.estimated_price || 0)}
+                          </td>
+                          <td className="px-4 py-3 text-right font-medium text-gray-900">
+                            {formatAmount(item.total || 0)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="border-gray-200/70 shadow-xs">
+            <CardHeader className="border-b border-gray-200/70 pb-3">
+              <CardTitle className="text-base">Approval Timeline</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4 pt-4">
+              <div className="flex items-start gap-3">
+                <div className="rounded-full border border-blue-100 bg-blue-50 p-2">
+                  <User className="h-4 w-4 text-pink-600" />
+                </div>
+                <div>
+                  <p className="font-medium text-gray-900">Submitted by {requesterName}</p>
+                  <p className="text-sm text-gray-500">{formatDate(pr.created_at)}</p>
+                </div>
+              </div>
+
+              {pr.approved_by_head && (
                 <div className="flex items-start gap-3">
-                  <div className="p-2 bg-blue-100 rounded-full">
-                    <User className="w-4 h-4 text-pink-600" />
+                  <div className="rounded-full border border-emerald-100 bg-emerald-50 p-2">
+                    <CheckCircle2 className="h-4 w-4 text-emerald-600" />
                   </div>
                   <div>
-                    <p className="font-medium">Dibuat oleh {requesterName}</p>
-                    <p className="text-sm text-gray-500">{formatDate(pr.created_at)}</p>
+                    <p className="font-medium text-gray-900">
+                      Approved by Head of Department
+                      {pr.approved_head_name ? ` (${pr.approved_head_name})` : ""}
+                    </p>
+                    <p className="text-sm text-gray-500">{formatDate(pr.approved_at_head)}</p>
                   </div>
                 </div>
+              )}
 
-                {pr.approved_by_head && (
-                  <div className="flex items-start gap-3">
-                    <div className="p-2 bg-green-100 rounded-full">
-                      <CheckCircle className="w-4 h-4 text-green-600" />
-                    </div>
-                    <div>
-                      <p className="font-medium">
-                        Disetujui Head Dept ({pr.approved_head_name || "-"})
-                      </p>
-                      <p className="text-sm text-gray-500">{formatDate(pr.approved_at_head)}</p>
-                    </div>
+              {pr.approved_by_finance && (
+                <div className="flex items-start gap-3">
+                  <div className="rounded-full border border-emerald-100 bg-emerald-50 p-2">
+                    <CheckCircle2 className="h-4 w-4 text-emerald-600" />
                   </div>
-                )}
+                  <div>
+                    <p className="font-medium text-gray-900">
+                      Approved by Finance
+                      {pr.approved_finance_name ? ` (${pr.approved_finance_name})` : ""}
+                    </p>
+                    <p className="text-sm text-gray-500">{formatDate(pr.approved_at_finance)}</p>
+                  </div>
+                </div>
+              )}
 
-                {pr.approved_by_finance && (
-                  <div className="flex items-start gap-3">
-                    <div className="p-2 bg-green-100 rounded-full">
-                      <CheckCircle className="w-4 h-4 text-green-600" />
-                    </div>
-                    <div>
-                      <p className="font-medium">
-                        Disetujui Finance ({pr.approved_finance_name || "-"})
-                      </p>
-                      <p className="text-sm text-gray-500">{formatDate(pr.approved_at_finance)}</p>
-                    </div>
+              {pr.approved_by_direksi && (
+                <div className="flex items-start gap-3">
+                  <div className="rounded-full border border-emerald-100 bg-emerald-50 p-2">
+                    <CheckCircle2 className="h-4 w-4 text-emerald-600" />
                   </div>
-                )}
+                  <div>
+                    <p className="font-medium text-gray-900">
+                      Approved by Director
+                      {pr.approved_direksi_name ? ` (${pr.approved_direksi_name})` : ""}
+                    </p>
+                    <p className="text-sm text-gray-500">{formatDate(pr.approved_at_direksi)}</p>
+                  </div>
+                </div>
+              )}
 
-                {pr.approved_by_direksi && (
-                  <div className="flex items-start gap-3">
-                    <div className="p-2 bg-green-100 rounded-full">
-                      <CheckCircle className="w-4 h-4 text-green-600" />
-                    </div>
-                    <div>
-                      <p className="font-medium">
-                        Disetujui Direksi ({pr.approved_direksi_name || "-"})
-                      </p>
-                      <p className="text-sm text-gray-500">{formatDate(pr.approved_at_direksi)}</p>
-                    </div>
+              {pr.status === "rejected" && (
+                <div className="flex items-start gap-3">
+                  <div className="rounded-full border border-red-100 bg-red-50 p-2">
+                    <XCircle className="h-4 w-4 text-red-600" />
                   </div>
-                )}
-
-                {pr.status === "rejected" && (
-                  <div className="flex items-start gap-3">
-                    <div className="p-2 bg-red-100 rounded-full">
-                      <XCircle className="w-4 h-4 text-red-600" />
-                    </div>
-                    <div>
-                      <p className="font-medium">
-                        Ditolak oleh {pr.rejected_by_name || "-"}
-                      </p>
-                      <p className="text-sm text-gray-500">{formatDate(pr.rejected_at)}</p>
-                      {pr.rejection_reason && (
-                        <p className="text-sm text-red-600 mt-1">
-                          Alasan: {pr.rejection_reason}
-                        </p>
-                      )}
-                    </div>
+                  <div>
+                    <p className="font-medium text-gray-900">
+                      Rejected{pr.rejected_by_name ? ` by ${pr.rejected_by_name}` : ""}
+                    </p>
+                    <p className="text-sm text-gray-500">{formatDate(pr.rejected_at)}</p>
                   </div>
-                )}
-              </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
 
-        <div className="space-y-4">
+        <div className="space-y-6 xl:col-span-4">
           {canApprove && <PRApprovalActions prId={id} />}
 
-          <Card>
-            <CardHeader className="border-b border-gray-200/70 px-4 py-3">
-              <CardTitle className="text-base">Informasi</CardTitle>
+          <Card className="border-gray-200/70 shadow-xs xl:sticky xl:top-6">
+            <CardHeader className="border-b border-gray-200/70 pb-3">
+              <CardTitle className="text-base">Summary</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3 text-sm">
-              <div>
-                <p className="text-gray-500">Departemen</p>
-                <p className="font-medium">{pr.department?.name || "-"}</p>
-              </div>
-
-              <div>
-                <p className="text-gray-500">Tanggal Dibutuhkan</p>
-                <p className="font-medium">
-                  {pr.required_date ? formatDate(pr.required_date) : "-"}
-                </p>
-              </div>
+            <CardContent className="space-y-4 pt-4">
+              <dl className="space-y-3 text-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <dt className="text-gray-500">Line Items</dt>
+                  <dd className="font-medium text-gray-900">{itemCount}</dd>
+                </div>
+                <div className="flex items-start justify-between gap-3">
+                  <dt className="text-gray-500">Total Quantity</dt>
+                  <dd className="font-medium text-gray-900">{formatQty(totalQty)}</dd>
+                </div>
+                <div className="flex items-start justify-between gap-3 border-t border-gray-200/70 pt-3">
+                  <dt className="font-medium text-gray-900">Estimated Total</dt>
+                  <dd className="font-semibold text-pink-700">{formatAmount(pr.total_amount)}</dd>
+                </div>
+              </dl>
 
               {pr.status === "pending_head" && (
-                <div className="p-3 bg-blue-50 rounded-lg mt-4">
-                  <p className="font-medium text-blue-900">Approval Kebutuhan</p>
-                  <p className="mt-1 text-sm text-blue-800">
-                    PR ini menunggu approval kebutuhan barang dan qty. Approval nominal final dilakukan di PO.
+                <div className="rounded-xl border border-blue-200/80 bg-blue-50/60 p-4 text-sm text-blue-900">
+                  <p className="font-medium">Requirement approval</p>
+                  <p className="mt-1 text-blue-800/90">
+                    This request is waiting for item and quantity approval. Final amount approval
+                    happens on the purchase order.
+                  </p>
+                </div>
+              )}
+
+              {pr.status === "approved" && canCreatePO && (
+                <div className="rounded-xl border border-emerald-200/80 bg-emerald-50/60 p-4 text-sm text-emerald-900">
+                  <p className="font-medium">Ready for procurement</p>
+                  <p className="mt-1 text-emerald-800/90">
+                    All approvals are complete. Create a purchase order to proceed with vendor
+                    ordering.
                   </p>
                 </div>
               )}

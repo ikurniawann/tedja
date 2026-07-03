@@ -103,13 +103,20 @@ async function main() {
       console.log("auth.users        : created", userId);
     }
 
-    // 2) configuration.users (profil app)
+    // 2) configuration.users (profil app — super_admin tetap unscoped)
     await c.query(
       `INSERT INTO configuration.users (id, full_name, role, email, status)
        VALUES ($1, $2, 'super_admin', $3, 'active')
        ON CONFLICT (id) DO UPDATE
-         SET full_name = EXCLUDED.full_name, role = 'super_admin',
-             email = EXCLUDED.email, status = 'active', updated_at = NOW()`,
+         SET full_name = EXCLUDED.full_name,
+             role = 'super_admin',
+             email = EXCLUDED.email,
+             status = 'active',
+             business_scope = NULL,
+             holding_id = NULL,
+             company_id = NULL,
+             branch_id = NULL,
+             updated_at = NOW()`,
       [userId, FULL_NAME, EMAIL]
     );
     console.log("configuration.users: ok");
@@ -165,6 +172,7 @@ async function main() {
     console.log("  Email   :", EMAIL);
     console.log("  Password:", PASSWORD);
     console.log("  Role    : super_admin");
+    console.log("  Scope   : unscoped (lihat semua)");
   } catch (err) {
     await c.query("ROLLBACK").catch(() => {});
     console.error("Gagal:", err.message);

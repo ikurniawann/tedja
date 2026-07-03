@@ -47,7 +47,7 @@ function loadEnv() {
   }
 }
 
-// Discovery rekursif: kumpulkan semua .sql (root + schemas/<domain>/...).
+// Discovery rekursif: kumpulkan semua .sql (bootstrap/, schemas/<domain>/, deltas/, …).
 // Urutan apply ditentukan oleh prefix 14-digit pada NAMA FILE (bukan path),
 // sehingga reorganisasi ke subfolder tidak mengubah urutan. Tracking di
 // schema_migrations memakai BASENAME (unik global) agar pemindahan file antar

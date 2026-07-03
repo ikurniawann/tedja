@@ -1,6 +1,6 @@
 "use client";
 
-import { useReducer, useCallback, useEffect } from "react";
+import { useReducer, useCallback, useEffect, useState } from "react";
 
 export interface PosCartItem {
   id: string;               // composite: productId + variant + modifier join
@@ -40,15 +40,30 @@ type CartAction =
 
 const STORAGE_KEY = "pos_cart_state";
 
-function getInitialState(): CartState {
-  if (typeof window === "undefined") {
-    return { items: [], orderType: "dine_in", selectedTable: null, selectedCustomerId: null, notes: "", includeTax: false };
-  }
+const DEFAULT_CART_STATE: CartState = {
+  items: [],
+  orderType: "dine_in",
+  selectedTable: null,
+  selectedCustomerId: null,
+  notes: "",
+  includeTax: false,
+};
+
+function readStoredCartState(): CartState {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
-  } catch { /* noop */ }
-  return { items: [], orderType: "dine_in", selectedTable: null, selectedCustomerId: null, notes: "", includeTax: false };
+    if (raw) {
+      const parsed = JSON.parse(raw) as CartState;
+      return {
+        ...DEFAULT_CART_STATE,
+        ...parsed,
+        items: Array.isArray(parsed.items) ? parsed.items : [],
+      };
+    }
+  } catch {
+    /* noop */
+  }
+  return DEFAULT_CART_STATE;
 }
 
 function cartReducer(state: CartState, action: CartAction): CartState {
@@ -97,14 +112,20 @@ function cartReducer(state: CartState, action: CartAction): CartState {
 }
 
 export function usePosCart() {
-  const [state, dispatch] = useReducer(cartReducer, getInitialState());
+  const [state, dispatch] = useReducer(cartReducer, DEFAULT_CART_STATE);
+  const [hydrated, setHydrated] = useState(false);
 
-  // Persist to localStorage
+  // Restore cart from localStorage after mount (avoids SSR/client hydration mismatch).
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    }
-  }, [state]);
+    dispatch({ type: "HYDRATE", state: readStoredCartState() });
+    setHydrated(true);
+  }, []);
+
+  // Persist to localStorage only after initial hydrate.
+  useEffect(() => {
+    if (!hydrated) return;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  }, [state, hydrated]);
 
   const addItem = useCallback((item: PosCartItem) => dispatch({ type: "ADD_ITEM", item }), []);
   const updateQty = useCallback((id: string, delta: number) => dispatch({ type: "UPDATE_QTY", id, delta }), []);

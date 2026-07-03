@@ -8,18 +8,20 @@ import { useParams, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { ITEMS_PRODUCTS_PATH } from "@/modules/purchasing/constants/items-nav";
+import { PRODUCT_ROUTES, RM_ROUTES } from "@/modules/purchasing/constants/item-routes";
 import { Combobox } from "@/components/ui/combobox";
 import { NumericInput } from "@/components/ui/numeric-input";
 import {
-  ChevronLeft,
   Loader2,
   Plus,
   RefreshCw,
-  Save,
   Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
+import {
+  PurchasingFormHeader,
+} from "@/modules/purchasing/components/page/purchasing-page-header";
+import { formatAmount } from "@/lib/purchasing/utils";
 import {
   BOMItem,
   RawMaterialWithStock,
@@ -41,11 +43,7 @@ function toNumber(value: unknown) {
 }
 
 function formatRupiah(value: number) {
-  return new Intl.NumberFormat("id-ID", {
-    style: "currency",
-    currency: "IDR",
-    maximumFractionDigits: 0,
-  }).format(value);
+  return formatAmount(value);
 }
 
 function getErrorMessage(error: unknown, fallback: string) {
@@ -125,7 +123,7 @@ export function BOMEditorPage() {
   useEffect(() => {
     if (editorQuery.isError) {
       console.error("Error loading BOM:", editorQuery.error);
-      toast.error(getErrorMessage(editorQuery.error, "Gagal memuat BOM"));
+      toast.error(getErrorMessage(editorQuery.error, "Failed to load bill of materials"));
     }
   }, [editorQuery.isError, editorQuery.error]);
 
@@ -174,10 +172,10 @@ export function BOMEditorPage() {
 
   async function saveItem(item: BomDraft, options?: { silent?: boolean }) {
     if (!item.raw_material_id) {
-      throw new Error("Bahan baku wajib dipilih");
+      throw new Error("Raw material is required");
     }
     if (item.qty_required <= 0) {
-      throw new Error("Qty harus lebih dari 0");
+      throw new Error("Quantity must be greater than 0");
     }
 
     const payload = {
@@ -196,7 +194,7 @@ export function BOMEditorPage() {
     }
 
     if (!options?.silent) {
-      toast.success("BOM berhasil disimpan");
+      toast.success("Bill of materials saved");
       await loadData();
     }
   }
@@ -210,10 +208,10 @@ export function BOMEditorPage() {
     try {
       await deleteBomMutation.mutateAsync(item.id);
       setBomItems((items) => items.filter((current) => current.id !== item.id));
-      toast.success("Bahan dihapus dari BOM");
+      toast.success("Material removed from bill of materials");
     } catch (error: unknown) {
       console.error("Error deleting BOM item:", error);
-      toast.error(getErrorMessage(error, "Gagal menghapus BOM"));
+      toast.error(getErrorMessage(error, "Failed to remove bill of materials item"));
     }
   }
 
@@ -221,11 +219,11 @@ export function BOMEditorPage() {
     if (bomItems.length === 0) return;
 
     if (bomItems.some((item) => !item.raw_material_id)) {
-      toast.error("Lengkapi bahan baku pada semua baris");
+      toast.error("Complete raw material on every row");
       return;
     }
     if (bomItems.some((item) => item.qty_required <= 0)) {
-      toast.error("Qty setiap bahan harus lebih dari 0");
+      toast.error("Quantity for each material must be greater than 0");
       return;
     }
 
@@ -234,11 +232,11 @@ export function BOMEditorPage() {
       for (const item of bomItems) {
         await saveItem(item, { silent: true });
       }
-      toast.success("BOM berhasil disimpan");
+      toast.success("Bill of materials saved");
       await loadData();
     } catch (error: unknown) {
       console.error("Error saving BOM:", error);
-      toast.error(getErrorMessage(error, "Gagal menyimpan BOM"));
+      toast.error(getErrorMessage(error, "Failed to save bill of materials"));
     } finally {
       setSavingAll(false);
     }
@@ -248,40 +246,46 @@ export function BOMEditorPage() {
     return (
       <div className="flex min-h-[360px] items-center justify-center text-sm text-gray-500">
         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-        Memuat BOM...
+        Loading bill of materials...
       </div>
     );
   }
 
+  const backHref = fromProduction
+    ? RM_ROUTES.productionRecipes
+    : PRODUCT_ROUTES.productsDetail(productId);
+
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Recipe / BOM</h1>
-          <p className="text-sm text-gray-500">
-            {displayName(product?.nama)} · Total HPP {formatRupiah(totalHpp)}
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Button type="button" variant="outline" onClick={loadData} className="purchasing-secondary-button">
-            <RefreshCw className="mr-2 h-4 w-4" />
+      <PurchasingFormHeader
+        backHref={backHref}
+        title="Bill of Materials Editor"
+        description={
+          <>
+            {displayName(product?.nama)} · Total estimated COGS {formatRupiah(totalHpp)}
+          </>
+        }
+        actions={
+          <Button
+            type="button"
+            variant="outline"
+            onClick={loadData}
+            disabled={editorQuery.isFetching}
+            className="purchasing-secondary-button w-full sm:w-auto"
+          >
+            <RefreshCw className={`mr-2 h-4 w-4 ${editorQuery.isFetching ? "animate-spin" : ""}`} />
             Refresh
           </Button>
-          <Link href={fromProduction ? "/dashboard/purchasing/production/recipes" : `${ITEMS_PRODUCTS_PATH}/${productId}`}>
-            <Button variant="outline" className="purchasing-secondary-button">
-              <ChevronLeft className="mr-2 h-4 w-4" />
-              Kembali
-            </Button>
-          </Link>
-        </div>
-      </div>
+        }
+      />
 
-      <Card>
-        <CardHeader>
+      <Card className="border-gray-200/70 shadow-xs">
+        <CardHeader className="flex flex-row items-start justify-between border-b border-gray-200/70 pb-3">
           <div>
-            <CardTitle>Komponen Recipe</CardTitle>
+            <CardTitle className="text-base">Recipe Components</CardTitle>
             <p className="mt-1 text-xs text-gray-500">
-              Raw material dan WIP bisa dipakai sebagai komponen. WIP dari produk yang sama otomatis disembunyikan.
+              Raw materials and work-in-progress items can be used as components. WIP from the same
+              product is automatically hidden.
             </p>
           </div>
           <CardAction>
@@ -293,14 +297,14 @@ export function BOMEditorPage() {
               className="border-pink-200 text-pink-700 hover:bg-pink-50"
             >
               <Plus className="mr-1 h-4 w-4" />
-              Tambah Bahan
+              Add Material
             </Button>
           </CardAction>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-4 p-4">
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="rounded-lg border border-gray-200/70 bg-gray-50 px-4 py-3">
-              <p className="text-xs font-medium text-gray-500">Total Komponen</p>
+              <p className="text-xs font-medium text-gray-500">Total Components</p>
               <p className="mt-1 text-lg font-semibold text-gray-950">{bomItems.length}</p>
             </div>
             <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-4 py-3">
@@ -308,35 +312,35 @@ export function BOMEditorPage() {
               <p className="mt-1 text-lg font-semibold text-emerald-800">{rawCount}</p>
             </div>
             <div className="rounded-lg border border-sky-100 bg-sky-50 px-4 py-3">
-              <p className="text-xs font-medium text-sky-700">WIP</p>
+              <p className="text-xs font-medium text-sky-700">Work in Progress</p>
               <p className="mt-1 text-lg font-semibold text-sky-800">{wipCount}</p>
             </div>
           </div>
           <div className="overflow-x-auto rounded-lg border border-gray-200/70">
-            <table className="w-full min-w-[720px] table-fixed [&_td]:border-r [&_td]:border-gray-200/70 [&_th]:border-r [&_th]:border-gray-200/70 [&_td:last-child]:border-r-0 [&_th:last-child]:border-r-0">
-              <thead className="border-b border-gray-200/70 bg-gray-50/80">
+            <table className="min-w-full text-sm">
+              <thead className="border-b border-gray-100 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
                 <tr>
-                  <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Bahan Baku</th>
-                  <th className="w-[170px] px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Qty</th>
-                  <th className="w-[140px] px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Waste (%)</th>
-                  <th className="w-[140px] px-3 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Harga Satuan</th>
-                  <th className="w-[140px] px-3 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Subtotal</th>
-                  <th className="w-[56px] px-3 py-2.5" aria-label="Hapus" />
+                  <th className="px-4 py-3 text-left font-semibold">Raw Material</th>
+                  <th className="w-[170px] px-4 py-3 text-left font-semibold">Qty</th>
+                  <th className="w-[140px] px-4 py-3 text-left font-semibold">Waste (%)</th>
+                  <th className="w-[140px] px-4 py-3 text-right font-semibold">Unit Cost</th>
+                  <th className="w-[140px] px-4 py-3 text-right font-semibold">Subtotal</th>
+                  <th className="w-[56px] px-4 py-3" aria-label="Remove" />
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="divide-y divide-gray-100">
                 {bomItems.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="py-10 text-center text-sm text-gray-400">
-                      Belum ada komponen BOM. Klik &quot;Tambah Bahan&quot; untuk menambahkan.
+                      No bill of materials components yet. Click &quot;Add Material&quot; to get started.
                     </td>
                   </tr>
                 ) : (
                   bomItems.map((item) => {
                     const material = materialMap.get(item.raw_material_id);
                     return (
-                      <tr key={item.id} className="border-b border-gray-200/70 align-top transition-colors hover:bg-gray-50/60">
-                        <td className="px-3 py-3">
+                      <tr key={item.id} className="align-top hover:bg-gray-50">
+                        <td className="px-4 py-3">
                           <Combobox
                             options={materials.map((materialOption) => ({
                               value: materialOption.id,
@@ -345,9 +349,9 @@ export function BOMEditorPage() {
                             }))}
                             value={item.raw_material_id}
                             onChange={(value) => updateItem(item.id, { raw_material_id: value })}
-                            placeholder="Pilih bahan..."
-                            searchPlaceholder="Cari bahan..."
-                            emptyMessage="Bahan tidak ditemukan"
+                            placeholder="Select material..."
+                            searchPlaceholder="Search material..."
+                            emptyMessage="No material found"
                             allowClear
                             className="w-full"
                           />
@@ -362,9 +366,9 @@ export function BOMEditorPage() {
                             </div>
                           )}
                         </td>
-                        <td className="px-3 py-3">
+                        <td className="px-4 py-3">
                           <Label className="sr-only">Qty</Label>
-                          <div className="flex w-full rounded-lg border border-gray-300 bg-white focus-within:border-gray-400 focus-within:ring-2 focus-within:ring-gray-100">
+                          <div className="flex w-full rounded-lg border border-gray-200/70 bg-white focus-within:border-pink-300 focus-within:ring-2 focus-within:ring-pink-100">
                             <NumericInput
                               min="0"
                               step="0.0001"
@@ -373,14 +377,14 @@ export function BOMEditorPage() {
                               decimalScale={4}
                               className="h-9 rounded-r-none border-0 text-sm shadow-none focus-visible:ring-0"
                             />
-                            <div className="flex min-w-14 items-center justify-center rounded-r-lg border-l border-gray-200 bg-gray-50 px-3 text-xs font-semibold uppercase text-gray-500">
+                            <div className="flex min-w-14 items-center justify-center rounded-r-lg border-l border-gray-200/70 bg-gray-50 px-3 text-xs font-semibold uppercase text-gray-500">
                               {getMaterialSmallUnitLabel(material)}
                             </div>
                           </div>
                         </td>
-                        <td className="px-3 py-3">
+                        <td className="px-4 py-3">
                           <Label className="sr-only">Waste</Label>
-                          <div className="flex w-full rounded-lg border border-gray-300 bg-white focus-within:border-gray-400 focus-within:ring-2 focus-within:ring-gray-100">
+                          <div className="flex w-full rounded-lg border border-gray-200/70 bg-white focus-within:border-pink-300 focus-within:ring-2 focus-within:ring-pink-100">
                             <NumericInput
                               min="0"
                               max="100"
@@ -390,28 +394,31 @@ export function BOMEditorPage() {
                               decimalScale={2}
                               className="h-9 rounded-r-none border-0 text-sm shadow-none focus-visible:ring-0"
                             />
-                            <div className="flex min-w-10 items-center justify-center rounded-r-lg border-l border-gray-200 bg-gray-50 px-3 text-xs font-semibold text-gray-500">
+                            <div className="flex min-w-10 items-center justify-center rounded-r-lg border-l border-gray-200/70 bg-gray-50 px-3 text-xs font-semibold text-gray-500">
                               %
                             </div>
                           </div>
                         </td>
-                        <td className="px-3 py-3 text-right align-middle">
+                        <td className="px-4 py-3 text-right align-middle">
                           <div className="font-mono text-sm text-gray-700">{formatRupiah(item.cost_per_unit)}</div>
                           {material && (
                             <div className="text-[11px] text-gray-400">/ {getMaterialSmallUnitLabel(material)}</div>
                           )}
                         </td>
-                        <td className="px-3 py-3 text-right align-middle">
-                          <span className="font-mono text-sm font-semibold text-gray-900">{formatRupiah(item.total_cost)}</span>
+                        <td className="px-4 py-3 text-right align-middle">
+                          <span className="font-mono text-sm font-semibold text-gray-900">
+                            {formatRupiah(item.total_cost)}
+                          </span>
                         </td>
-                        <td className="px-3 py-3 text-right align-middle">
+                        <td className="px-4 py-3 text-right align-middle">
                           <Button
                             type="button"
                             variant="ghost"
                             size="icon"
                             onClick={() => removeItem(item)}
+                            title="Remove material"
                             className="text-gray-400 hover:bg-red-50 hover:text-red-600"
-                            aria-label="Hapus bahan"
+                            aria-label="Remove material"
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>
@@ -423,11 +430,13 @@ export function BOMEditorPage() {
               </tbody>
               <tfoot className="border-t border-gray-200/70 bg-gray-50/80">
                 <tr>
-                  <td colSpan={4} className="px-3 py-3 text-right text-sm font-semibold text-gray-600">
-                    Total HPP
+                  <td colSpan={4} className="px-4 py-3 text-right text-sm font-semibold text-gray-600">
+                    Total Estimated COGS
                   </td>
-                  <td className="px-3 py-3 text-right font-mono text-sm font-bold text-gray-900">{formatRupiah(totalHpp)}</td>
-                  <td className="px-3 py-3" />
+                  <td className="px-4 py-3 text-right font-mono text-sm font-bold text-gray-900">
+                    {formatRupiah(totalHpp)}
+                  </td>
+                  <td className="px-4 py-3" />
                 </tr>
               </tfoot>
             </table>
@@ -435,13 +444,25 @@ export function BOMEditorPage() {
         </CardContent>
       </Card>
 
-      <div className="flex items-center justify-end gap-3 border-t border-gray-200/70 pt-4">
-        <Link href={fromProduction ? "/dashboard/purchasing/production/recipes" : `${ITEMS_PRODUCTS_PATH}/${productId}`}>
-          <Button variant="outline" type="button" className="purchasing-secondary-button px-6">Batal</Button>
+      <div className="flex flex-col-reverse gap-3 border-t border-gray-200/70 pt-4 sm:flex-row sm:justify-end">
+        <Link href={backHref}>
+          <Button variant="outline" type="button" className="purchasing-secondary-button w-full sm:w-auto">
+            Cancel
+          </Button>
         </Link>
-        <Button onClick={saveAll} disabled={savingAll || bomItems.length === 0} className="purchasing-main-button px-6">
-          {savingAll ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-          {savingAll ? "Menyimpan..." : "Simpan"}
+        <Button
+          onClick={saveAll}
+          disabled={savingAll || bomItems.length === 0}
+          className="purchasing-main-button w-full sm:w-auto"
+        >
+          {savingAll ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Submitting...
+            </>
+          ) : (
+            "Save Bill of Materials"
+          )}
         </Button>
       </div>
     </div>

@@ -6,6 +6,7 @@ import {
   ApiError,
   paginatedResponse,
 } from "@/lib/api/auth";
+import { effectiveBranchId, getApiUserScope } from "@/lib/api/scope";
 
 // GET /api/purchasing/inventory/movements?bahan_id=xxx&date_from=xxx&date_to=xxx
 
@@ -23,6 +24,8 @@ export async function GET(request: NextRequest) {
   try {
     await requireApiUser();
     const db = await createServerPgClient();
+    const scope = await getApiUserScope();
+    const branchId = effectiveBranchId(scope);
 
     const { searchParams } = new URL(request.url);
     const params = querySchema.parse(Object.fromEntries(searchParams));
@@ -43,6 +46,8 @@ export async function GET(request: NextRequest) {
       )
       .order("created_at", { ascending: false })
       .range(offset, offset + limit - 1);
+
+    if (branchId) query = query.eq("branch_id", branchId);
 
     if (bahan_id) query = query.eq("raw_material_id", bahan_id);
     if (tipe) query = query.eq("tipe", tipe);

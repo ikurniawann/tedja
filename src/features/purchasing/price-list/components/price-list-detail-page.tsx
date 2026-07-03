@@ -6,18 +6,25 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Edit, Trash2, DollarSign, Package, Truck, CalendarDays, Star } from "lucide-react";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { ArrowLeft, Edit, Trash2, DollarSign, Package, Truck, CalendarDays, Star, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { formatAmount } from "@/lib/purchasing/utils";
 import { usePriceList } from "../queries";
 import { useDeletePriceList } from "../mutations";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from "@/components/ui/dialog";
+
+function formatDate(dateStr?: string | null) {
+  if (!dateStr) return "-";
+  return new Date(dateStr).toLocaleDateString("en-US", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function formatNumber(num?: number | null) {
+  return formatAmount(num, { maximumFractionDigits: 4 });
+}
 
 export function PriceListDetailPage() {
   const params = useParams();
@@ -30,39 +37,23 @@ export function PriceListDetailPage() {
   const priceList = priceListQuery.data ?? null;
   const loading = priceListQuery.isLoading;
   const deleteMutation = useDeletePriceList();
+  const isDeleting = deleteMutation.isPending;
 
   const getErrorMessage = (error: unknown, fallback: string) => {
     return error instanceof Error ? error.message : fallback;
   };
 
   const handleDelete = async () => {
-    if (!priceList) return;
+    if (!priceList || isDeleting) return;
     try {
       await deleteMutation.mutateAsync(priceList.id);
-      toast.success("Price list berhasil dihapus");
+      toast.success("Price list deleted successfully.");
       setIsDeleteDialogOpen(false);
       router.push("/dashboard/purchasing/price-list");
     } catch (error: unknown) {
       console.error("Error deleting price list:", error);
-      toast.error(getErrorMessage(error, "Gagal menghapus price list"));
+      toast.error(getErrorMessage(error, "Failed to delete price list."));
     }
-  };
-
-  const formatCurrency = (num?: number | null) => {
-    return `Rp ${(num || 0).toLocaleString("id-ID")}`;
-  };
-
-  const formatNumber = (num?: number | null) => {
-    return (num || 0).toLocaleString("id-ID", { maximumFractionDigits: 4 });
-  };
-
-  const formatDate = (dateStr?: string) => {
-    if (!dateStr) return "-";
-    return new Date(dateStr).toLocaleDateString("id-ID", {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    });
   };
 
   const unitName = priceList?.satuan?.nama || "unit";
@@ -70,17 +61,15 @@ export function PriceListDetailPage() {
 
   if (loading) {
     return (
-      <div className="container mx-auto py-6">
-        <div className="text-center py-12">Memuat data...</div>
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="h-8 w-8 animate-spin text-pink-600" />
       </div>
     );
   }
 
   if (!priceList) {
     return (
-      <div className="container mx-auto py-6">
-        <div className="text-center py-12 text-red-500">Price list tidak ditemukan</div>
-      </div>
+      <div className="py-12 text-center text-red-500">Price list not found.</div>
     );
   }
 
@@ -97,27 +86,33 @@ export function PriceListDetailPage() {
           <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-gray-500">
             <span>{priceList.bahan_baku?.nama || "-"}</span>
             <span className="text-gray-300">•</span>
-            <span className="rounded-md bg-gray-100 px-2 py-0.5 font-mono text-xs text-gray-700">{priceList.bahan_baku?.kode || "-"}</span>
+            <span className="rounded-md bg-gray-100 px-2 py-0.5 font-mono text-xs text-gray-700">
+              {priceList.bahan_baku?.kode || "-"}
+            </span>
             <span className="text-gray-300">•</span>
-            <span>{formatCurrency(priceList.harga || 0)}</span>
+            <span>{formatAmount(priceList.harga || 0)}</span>
           </div>
         </div>
         <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
           <Link href="/dashboard/purchasing/price-list">
             <Button variant="outline" className="purchasing-secondary-button w-full sm:w-auto">
               <ArrowLeft className="mr-2 h-4 w-4" />
-              Kembali
+              Back
             </Button>
           </Link>
           <Link href={`/dashboard/purchasing/price-list/edit/${priceList.id}`}>
             <Button variant="outline" className="purchasing-secondary-button w-full sm:w-auto">
-              <Edit className="w-4 h-4 mr-2" />
+              <Edit className="mr-2 h-4 w-4" />
               Edit
             </Button>
           </Link>
-          <Button variant="outline" onClick={() => setIsDeleteDialogOpen(true)} className="h-10 w-full rounded-lg border-red-200 bg-white px-3 text-sm font-medium text-red-600 shadow-sm hover:!border-red-200 hover:!bg-red-50 hover:!text-red-700 sm:w-auto">
-            <Trash2 className="w-4 h-4 mr-2" />
-            Hapus
+          <Button
+            variant="outline"
+            onClick={() => setIsDeleteDialogOpen(true)}
+            className="h-10 w-full rounded-lg border-red-200 bg-white px-3 text-sm font-medium text-red-600 shadow-sm hover:!border-red-200 hover:!bg-red-50 hover:!text-red-700 sm:w-auto"
+          >
+            <Trash2 className="mr-2 h-4 w-4" />
+            Delete
           </Button>
         </div>
       </div>
@@ -130,8 +125,8 @@ export function PriceListDetailPage() {
                 <DollarSign className="h-5 w-5" />
               </span>
               <div>
-                <p className="text-xs font-medium text-gray-500">Harga per Satuan</p>
-                <p className="text-lg font-bold text-gray-900">{formatCurrency(priceList.harga)}</p>
+                <p className="text-xs font-medium text-gray-500">Price per Unit</p>
+                <p className="text-lg font-bold text-gray-900">{formatAmount(priceList.harga)}</p>
               </div>
             </div>
           </CardContent>
@@ -143,8 +138,10 @@ export function PriceListDetailPage() {
                 <Package className="h-5 w-5" />
               </span>
               <div>
-                <p className="text-xs font-medium text-gray-500">Minimum Qty</p>
-                <p className="text-lg font-bold text-gray-900">{formatNumber(priceList.minimum_qty)} {unitName}</p>
+                <p className="text-xs font-medium text-gray-500">Minimum Quantity</p>
+                <p className="text-lg font-bold text-gray-900">
+                  {formatNumber(priceList.minimum_qty)} {unitName}
+                </p>
               </div>
             </div>
           </CardContent>
@@ -157,7 +154,9 @@ export function PriceListDetailPage() {
               </span>
               <div>
                 <p className="text-xs font-medium text-gray-500">Lead Time</p>
-                <p className="text-lg font-bold text-gray-900">{formatNumber(priceList.lead_time_days)} hari</p>
+                <p className="text-lg font-bold text-gray-900">
+                  {formatNumber(priceList.lead_time_days)} days
+                </p>
               </div>
             </div>
           </CardContent>
@@ -169,8 +168,10 @@ export function PriceListDetailPage() {
                 <Star className="h-5 w-5" />
               </span>
               <div>
-                <p className="text-xs font-medium text-gray-500">Status Supplier</p>
-                <p className="text-lg font-bold text-gray-900">{priceList.is_preferred ? "Preferred" : "Regular"}</p>
+                <p className="text-xs font-medium text-gray-500">Supplier Status</p>
+                <p className="text-lg font-bold text-gray-900">
+                  {priceList.is_preferred ? "Preferred" : "Regular"}
+                </p>
               </div>
             </div>
           </CardContent>
@@ -178,15 +179,14 @@ export function PriceListDetailPage() {
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        {/* Pricing Info */}
-        <Card className="border-gray-200/70 shadow-sm lg:col-span-2">
-          <CardHeader className="pb-3">
+        <Card className="border-gray-200/70 shadow-xs lg:col-span-2">
+          <CardHeader className="border-b border-gray-200/70 pb-3">
             <CardTitle className="flex items-center gap-2 text-base">
-              <DollarSign className="w-5 h-5" />
-              Informasi Harga
+              <DollarSign className="h-5 w-5" />
+              Pricing Information
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-4 pt-4">
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <p className="text-sm text-gray-500">Supplier</p>
@@ -194,59 +194,60 @@ export function PriceListDetailPage() {
                 <p className="text-sm text-gray-500">{supplierCode}</p>
               </div>
               <div>
-                <p className="text-sm text-gray-500">Bahan Baku</p>
+                <p className="text-sm text-gray-500">Raw Material</p>
                 <p className="font-semibold text-gray-900">{priceList.bahan_baku?.nama || "-"}</p>
                 <p className="text-sm text-gray-500">{priceList.bahan_baku?.kode || "-"}</p>
               </div>
             </div>
             <div className="border-t border-gray-200/70 pt-4">
               <div className="mb-2 flex items-center justify-between">
-                <span className="text-gray-500">Harga per Satuan</span>
-                <span className="text-2xl font-bold text-gray-900">{formatCurrency(priceList.harga)}</span>
+                <span className="text-gray-500">Price per Unit</span>
+                <span className="text-2xl font-bold text-gray-900">{formatAmount(priceList.harga)}</span>
               </div>
-              <p className="text-sm text-gray-500">
-                per {unitName}
-              </p>
+              <p className="text-sm text-gray-500">per {unitName}</p>
             </div>
             <div className="grid grid-cols-2 gap-4 border-t border-gray-200/70 pt-4">
               <div className="flex items-center gap-2">
-                <Package className="w-4 h-4 text-gray-400" />
+                <Package className="h-4 w-4 text-gray-400" />
                 <div>
-                  <p className="text-sm text-gray-500">Minimum Qty</p>
-                  <p className="font-semibold text-gray-900">{formatNumber(priceList.minimum_qty)} {unitName}</p>
+                  <p className="text-sm text-gray-500">Minimum Quantity</p>
+                  <p className="font-semibold text-gray-900">
+                    {formatNumber(priceList.minimum_qty)} {unitName}
+                  </p>
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <Truck className="w-4 h-4 text-gray-400" />
+                <Truck className="h-4 w-4 text-gray-400" />
                 <div>
                   <p className="text-sm text-gray-500">Lead Time</p>
-                  <p className="font-semibold text-gray-900">{formatNumber(priceList.lead_time_days)} hari</p>
+                  <p className="font-semibold text-gray-900">
+                    {formatNumber(priceList.lead_time_days)} days
+                  </p>
                 </div>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        {/* Validity Period */}
-        <Card className="border-gray-200/70 shadow-sm">
-          <CardHeader className="pb-3">
+        <Card className="border-gray-200/70 shadow-xs">
+          <CardHeader className="border-b border-gray-200/70 pb-3">
             <CardTitle className="flex items-center gap-2 text-base">
               <CalendarDays className="h-5 w-5" />
-              Periode Berlaku
+              Validity Period
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-4 pt-4">
             <div>
-              <p className="text-sm text-gray-500">Berlaku Dari</p>
+              <p className="text-sm text-gray-500">Effective From</p>
               <p className="font-semibold text-gray-900">{formatDate(priceList.berlaku_dari)}</p>
             </div>
             <div>
-              <p className="text-sm text-gray-500">Berlaku Sampai</p>
+              <p className="text-sm text-gray-500">Effective Until</p>
               <p className="font-semibold text-gray-900">{formatDate(priceList.berlaku_sampai)}</p>
             </div>
             {priceList.catatan && (
               <div className="border-t border-gray-200/70 pt-4">
-                <p className="mb-2 text-sm text-gray-500">Catatan</p>
+                <p className="mb-2 text-sm text-gray-500">Notes</p>
                 <p className="text-sm text-gray-700">{priceList.catatan}</p>
               </div>
             )}
@@ -254,25 +255,17 @@ export function PriceListDetailPage() {
         </Card>
       </div>
 
-      {/* Delete Dialog */}
-      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-        <DialogContent className="border-gray-200/70">
-          <DialogHeader>
-            <DialogTitle>Konfirmasi Hapus</DialogTitle>
-            <DialogDescription>
-              Apakah Anda yakin ingin menghapus price list ini?
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="border-t border-gray-200/70 pt-4">
-            <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)} className="purchasing-secondary-button">
-              Batal
-            </Button>
-            <Button variant="destructive" onClick={handleDelete} className="h-10 rounded-lg px-5">
-              Hapus
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={isDeleteDialogOpen}
+        onOpenChange={setIsDeleteDialogOpen}
+        title="Delete Price List?"
+        description="Are you sure you want to delete this price list? This action cannot be undone."
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        loadingLabel="Deleting..."
+        loading={isDeleting}
+        onConfirm={handleDelete}
+      />
     </div>
   );
 }

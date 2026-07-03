@@ -12,6 +12,7 @@ import {
   effectiveCompanyId,
   effectiveBranchId,
 } from "@/lib/api/scope";
+import { isOpenDeliveryStatus } from "@/lib/purchasing/delivery";
 
 const optionalDateSchema = z
   .union([z.string().regex(/^\d{4}-\d{2}-\d{2}$/), z.literal(""), z.null()])
@@ -41,6 +42,29 @@ const poSchema = z.object({
       notes: z.string().optional(),
     })
   ).min(1, "Minimal 1 item PO"),
+});
+
+const productPoSchema = z.object({
+  vendor_id: z.string().uuid("Vendor is required"),
+  pr_id: z.string().uuid().optional(),
+  tanggal_po: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date format must be YYYY-MM-DD"),
+  tanggal_kirim_estimasi: optionalDateSchema,
+  catatan: z.string().optional(),
+  alamat_pengiriman: z.string().optional(),
+  diskon_persen: z.number().min(0).max(100).default(0),
+  diskon_nominal: z.number().min(0).default(0),
+  ppn_persen: z.number().min(0).max(100).default(11),
+  source_type: z.enum(["manual", "production_order", "low_stock"]).optional().default("manual"),
+  items: z.array(
+    z.object({
+      product_id: z.string().uuid("Product is required"),
+      pr_item_id: z.string().uuid().optional(),
+      satuan_id: z.string().uuid().optional(),
+      qty_ordered: z.number().min(0.0001, "Order quantity must be at least 0.0001"),
+      harga_satuan: z.number().min(0, "Price cannot be negative"),
+      notes: z.string().optional(),
+    })
+  ).min(1, "At least one PO item is required"),
 });
 
 function getErrorMessage(error: unknown, fallback: string) {
@@ -83,6 +107,8 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get("search");
     const status = searchParams.get("status");
     const supplierId = searchParams.get("supplier_id");
+    const vendorId = searchParams.get("vendor_id");
+    const moduleType = searchParams.get("module_type") || "raw_material";
     const tanggalMulai = searchParams.get("tanggal_mulai");
     const tanggalSampai = searchParams.get("tanggal_sampai");
     const page = parseInt(searchParams.get("page") || "1");
@@ -102,13 +128,23 @@ export async function GET(request: NextRequest) {
 
     // Filters
     if (search) {
-      query = query.or(`nomor_po.ilike.%${search}%,nama_supplier.ilike.%${search}%`);
+      if (moduleType === "product") {
+        query = query.or(`nomor_po.ilike.%${search}%,vendor_name.ilike.%${search}%`);
+      } else {
+        query = query.or(`nomor_po.ilike.%${search}%,nama_supplier.ilike.%${search}%`);
+      }
     }
     if (status) {
       query = query.eq("status", status.toLowerCase());
     }
     if (supplierId) {
       query = query.eq("supplier_id", supplierId);
+    }
+    if (vendorId) {
+      query = query.eq("vendor_id", vendorId);
+    }
+    if (moduleType === "raw_material" || moduleType === "product") {
+      query = query.eq("module_type", moduleType);
     }
     if (tanggalMulai) {
       query = query.gte("tanggal_po", tanggalMulai);
@@ -146,20 +182,46 @@ export async function GET(request: NextRequest) {
 
     if (deliveriesError) throw deliveriesError;
 
-    const deliveryByPoId = new Map<string, (typeof deliveries)[number]>();
+    const prIds = Array.from(
+      new Set((data || []).map((po) => po.pr_id).filter(Boolean) as string[])
+    );
+    const { data: purchaseRequests, error: prError } = prIds.length
+      ? await db.from("purchase_requests").select("id, pr_number").in("id", prIds)
+      : { data: [], error: null };
+
+    if (prError) throw prError;
+
+    const prNumberById = new Map(
+      (purchaseRequests || []).map((pr) => [pr.id as string, pr.pr_number as string])
+    );
+
+    const openDeliveryByPoId = new Map<string, (typeof deliveries)[number]>();
+    const latestDeliveryByPoId = new Map<string, (typeof deliveries)[number]>();
     for (const delivery of deliveries || []) {
-      if (!deliveryByPoId.has(delivery.purchase_order_id)) {
-        deliveryByPoId.set(delivery.purchase_order_id, delivery);
+      const poId = delivery.purchase_order_id as string;
+      if (!latestDeliveryByPoId.has(poId)) {
+        latestDeliveryByPoId.set(poId, delivery);
+      }
+      if (!openDeliveryByPoId.has(poId) && isOpenDeliveryStatus(delivery.status)) {
+        openDeliveryByPoId.set(poId, delivery);
       }
     }
 
     const mappedData = (data || []).map((po) => {
-      const delivery = deliveryByPoId.get(po.id);
+      const openDelivery = openDeliveryByPoId.get(po.id);
+      const latestDelivery = latestDeliveryByPoId.get(po.id);
+      const prId = po.pr_id as string | null | undefined;
       return {
         ...po,
-        active_delivery_id: delivery?.id || null,
-        active_delivery_number: delivery?.nomor_resi || delivery?.no_surat_jalan || null,
-        active_delivery_status: delivery?.status || null,
+        pr_number: prId ? prNumberById.get(prId) ?? null : null,
+        active_delivery_id: openDelivery?.id || null,
+        active_delivery_number:
+          openDelivery?.nomor_resi ||
+          openDelivery?.no_surat_jalan ||
+          latestDelivery?.nomor_resi ||
+          latestDelivery?.no_surat_jalan ||
+          null,
+        active_delivery_status: openDelivery?.status || latestDelivery?.status || null,
       };
     });
 
@@ -187,12 +249,76 @@ export async function POST(request: NextRequest) {
   try {
     const db = await createServerPgClient();
     const body = await request.json();
-    
-    // Validasi input
-    const validated = poSchema.parse(body);
+    const moduleType = body?.module_type === "product" ? "product" : "raw_material";
+    const validated =
+      moduleType === "product" ? productPoSchema.parse(body) : poSchema.parse(body);
     const scope = await getApiUserScope();
-    const companyId = effectiveCompanyId(scope);
-    const branchId = effectiveBranchId(scope);
+    let companyId = effectiveCompanyId(scope);
+    let branchId = effectiveBranchId(scope);
+
+    if (validated.pr_id) {
+      const { data: linkedPr } = await db
+        .from("purchase_requests")
+        .select("id, status, converted_po_id, company_id, branch_id")
+        .eq("id", validated.pr_id)
+        .maybeSingle();
+
+      if (!linkedPr) {
+        return Response.json(
+          { success: false, message: "PR tidak ditemukan" },
+          { status: 404 }
+        );
+      }
+      if (linkedPr.status !== "approved") {
+        return Response.json(
+          { success: false, message: "PR harus approved sebelum dibuatkan PO" },
+          { status: 400 }
+        );
+      }
+      if (linkedPr.converted_po_id) {
+        return Response.json(
+          { success: false, message: "PR sudah dibuatkan PO" },
+          { status: 400 }
+        );
+      }
+
+      companyId = linkedPr.company_id ?? companyId;
+      branchId = linkedPr.branch_id ?? branchId;
+    }
+
+    if (!companyId || !branchId) {
+      if (moduleType === "product" && "vendor_id" in validated) {
+        const { data: vendor, error: vendorError } = await db
+          .from("vendors")
+          .select("company_id, branch_id")
+          .eq("id", validated.vendor_id)
+          .maybeSingle();
+
+        if (vendorError) throw vendorError;
+
+        companyId = companyId ?? vendor?.company_id ?? scope?.companyId ?? null;
+        branchId =
+          branchId ??
+          vendor?.branch_id ??
+          (scope?.businessScope === "branch" ? scope.branchId : null) ??
+          null;
+      } else if ("supplier_id" in validated) {
+        const { data: supplier, error: supplierError } = await db
+          .from("suppliers")
+          .select("company_id, branch_id")
+          .eq("id", validated.supplier_id)
+          .maybeSingle();
+
+        if (supplierError) throw supplierError;
+
+        companyId = companyId ?? supplier?.company_id ?? scope?.companyId ?? null;
+        branchId =
+          branchId ??
+          supplier?.branch_id ??
+          (scope?.businessScope === "branch" ? scope.branchId : null) ??
+          null;
+      }
+    }
 
     const { items, ...poPayload } = validated;
     const subtotal = items.reduce((sum, item) => sum + item.qty_ordered * item.harga_satuan, 0);
@@ -212,6 +338,9 @@ export async function POST(request: NextRequest) {
       nomor_po,
       company_id: companyId,
       branch_id: branchId,
+      module_type: moduleType,
+      supplier_id: moduleType === "product" ? null : (poPayload as { supplier_id: string }).supplier_id,
+      vendor_id: moduleType === "product" ? (validated as z.infer<typeof productPoSchema>).vendor_id : null,
       status: "draft",
       subtotal,
       diskon_nominal: diskonNominal,
@@ -228,22 +357,53 @@ export async function POST(request: NextRequest) {
 
     if (error) throw error;
 
-    const poItems = items.map((item) => ({
-      purchase_order_id: data.id,
-      raw_material_id: item.raw_material_id,
-      pr_item_id: item.pr_item_id || null,
-      satuan_id: item.satuan_id || null,
-      qty_ordered: item.qty_ordered,
-      harga_satuan: item.harga_satuan,
-      catatan: item.notes || null,
-      is_active: true,
-    }));
+    const poItems = items.map((item) => {
+      if ("product_id" in item) {
+        return {
+          purchase_order_id: data.id,
+          product_id: item.product_id,
+          raw_material_id: null,
+          pr_item_id: item.pr_item_id || null,
+          satuan_id: item.satuan_id || null,
+          qty_ordered: item.qty_ordered,
+          harga_satuan: item.harga_satuan,
+          catatan: item.notes || null,
+          is_active: true,
+        };
+      }
+      return {
+        purchase_order_id: data.id,
+        raw_material_id: item.raw_material_id,
+        product_id: null,
+        pr_item_id: item.pr_item_id || null,
+        satuan_id: item.satuan_id || null,
+        qty_ordered: item.qty_ordered,
+        harga_satuan: item.harga_satuan,
+        catatan: item.notes || null,
+        is_active: true,
+      };
+    });
 
     const { error: itemError } = await db
       .from("purchase_order_items")
       .insert(poItems);
 
     if (itemError) throw itemError;
+
+    if (poPayload.pr_id) {
+      const { error: prUpdateError } = await db
+        .from("purchase_requests")
+        .update({
+          status: "converted",
+          converted_po_id: data.id,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", poPayload.pr_id)
+        .eq("status", "approved")
+        .is("converted_po_id", null);
+
+      if (prUpdateError) throw prUpdateError;
+    }
 
     return Response.json(
       { success: true, data, message: "PO berhasil dibuat" },

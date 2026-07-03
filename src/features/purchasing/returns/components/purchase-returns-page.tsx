@@ -2,50 +2,105 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useReturnList } from "../queries";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Combobox } from "@/components/ui/combobox";
+import { PurchasingPageHeader } from "@/modules/purchasing/components/page/purchasing-page-header";
 import { PurchasingListSection } from "@/modules/purchasing/components/list/PurchasingListSection";
 import { PurchasingTablePagination } from "@/modules/purchasing/components/pagination/PurchasingTablePagination";
+import { getReturnsModuleConfig } from "../returns-module";
+import type { PurchasingModuleType } from "@/lib/purchasing/module-scope";
 import {
-  RETURN_STATUS_LABELS,
   RETURN_STATUS_COLORS,
   RETURN_REASON_LABELS,
   ReturnStatus,
   ReturnReasonType,
 } from "@/types/purchasing";
-import {
-  ArrowPathIcon,
-  PlusIcon,
-  MagnifyingGlassIcon,
-  EyeIcon,
-  CalendarIcon,
-  BuildingOfficeIcon,
-} from "@heroicons/react/24/outline";
-import { Filter, X } from "lucide-react";
-import { formatRupiah } from "@/lib/purchasing/utils";
-import { format } from "date-fns";
-import { id as localeId } from "date-fns/locale";
+import { formatAmount, formatDate } from "@/lib/purchasing/utils";
+import { Plus, Search, Filter, RotateCcw, Eye, Pencil, X } from "lucide-react";
+import { toast } from "sonner";
 
-export function PurchaseReturnsPage() {
+const RETURN_STATUS_LABELS_EN: Record<ReturnStatus, string> = {
+  draft: "Draft",
+  pending_approval: "Pending Approval",
+  approved: "Approved",
+  rejected: "Rejected",
+  completed: "Completed",
+  cancelled: "Cancelled",
+};
+
+const RETURN_REASON_LABELS_EN: Record<ReturnReasonType, string> = {
+  damaged: "Damaged Goods",
+  wrong_item: "Wrong Item",
+  expired: "Expired",
+  overstock: "Overstock",
+  specification_mismatch: "Specification Mismatch",
+  other: "Other",
+};
+
+const STATUS_OPTIONS = [
+  { value: "all", label: "All Statuses" },
+  { value: "draft", label: "Draft" },
+  { value: "pending_approval", label: "Pending Approval" },
+  { value: "approved", label: "Approved" },
+  { value: "rejected", label: "Rejected" },
+  { value: "completed", label: "Completed" },
+  { value: "cancelled", label: "Cancelled" },
+];
+
+const REASON_OPTIONS = [
+  { value: "all", label: "All Reasons" },
+  { value: "damaged", label: "Damaged Goods" },
+  { value: "wrong_item", label: "Wrong Item" },
+  { value: "expired", label: "Expired" },
+  { value: "overstock", label: "Overstock" },
+  { value: "specification_mismatch", label: "Specification Mismatch" },
+  { value: "other", label: "Other" },
+];
+
+function getGrnNumber(ret: {
+  grn_number?: string | null;
+  grn_id?: string | null;
+  grn?: { grn_number?: string | null; nomor_grn?: string | null } | null;
+}) {
+  return ret.grn_number || ret.grn?.grn_number || ret.grn?.nomor_grn || "-";
+}
+
+function getGrnId(ret: {
+  grn_id?: string | null;
+  grn?: { id?: string | null } | null;
+}) {
+  return ret.grn?.id || ret.grn_id || null;
+}
+
+export function PurchaseReturnsPage({
+  moduleType = "raw_material",
+}: {
+  moduleType?: PurchasingModuleType;
+}) {
+  const config = getReturnsModuleConfig(moduleType);
+  const router = useRouter();
   const [page, setPage] = useState(1);
-  const limit = 20;
+  const limit = 10;
   const [search, setSearch] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<ReturnStatus | "all">("all");
   const [reasonFilter, setReasonFilter] = useState<ReturnReasonType | "all">("all");
   const [filterOpen, setFilterOpen] = useState(false);
 
-  const listQuery = useReturnList({
-    page,
-    limit,
-    status: statusFilter === "all" ? undefined : statusFilter,
-    reason_type: reasonFilter === "all" ? undefined : reasonFilter,
-    search: search || undefined,
-  });
+  const listQuery = useReturnList(
+    {
+      page,
+      limit,
+      status: statusFilter === "all" ? undefined : statusFilter,
+      reason_type: reasonFilter === "all" ? undefined : reasonFilter,
+      search: search || undefined,
+    },
+    moduleType
+  );
   const returns = listQuery.data?.data ?? [];
   const loading = listQuery.isLoading;
   const total = listQuery.data?.pagination.total ?? 0;
@@ -54,6 +109,7 @@ export function PurchaseReturnsPage() {
   useEffect(() => {
     if (listQuery.isError) {
       console.error("Error loading returns:", listQuery.error);
+      toast.error("Failed to load purchase returns");
     }
   }, [listQuery.isError, listQuery.error]);
 
@@ -75,65 +131,37 @@ export function PurchaseReturnsPage() {
   };
 
   const isFilterActive = statusFilter !== "all" || reasonFilter !== "all";
+  const activeFilterCount = Number(statusFilter !== "all") + Number(reasonFilter !== "all");
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col items-start justify-between gap-4 border-b border-gray-200/70 pb-4 sm:flex-row sm:items-center">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Retur Pembelian</h1>
-          <p className="text-sm text-gray-500">Kelola retur barang ke supplier — {total} total</p>
-        </div>
-        <Link href="/dashboard/purchasing/returns/insert">
-          <Button className="h-10 w-full gap-2 rounded-lg bg-pink-600 px-3 text-sm font-semibold text-white shadow-sm hover:bg-pink-700 sm:w-auto">
-            <PlusIcon className="w-4 h-4 mr-2" />
-            Buat Return
-          </Button>
-        </Link>
-      </div>
-
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
-        <Card className="border-gray-200/70 shadow-xs">
-          <CardContent className="p-4">
-            <p className="text-xs font-medium text-gray-500">Total Return</p>
-            <p className="mt-1 text-2xl font-bold text-gray-900">{total}</p>
-          </CardContent>
-        </Card>
-        <Card className="border-gray-200/70 shadow-xs">
-          <CardContent className="p-4">
-            <p className="text-xs font-medium text-gray-500">Pending Approval</p>
-            <p className="mt-1 text-2xl font-bold text-amber-600">
-              {returns.filter((r) => r.status === "pending_approval").length}
-            </p>
-          </CardContent>
-        </Card>
-        <Card className="border-gray-200/70 shadow-xs">
-          <CardContent className="p-4">
-            <p className="text-xs font-medium text-gray-500">Approved</p>
-            <p className="mt-1 text-2xl font-bold text-emerald-600">
-              {returns.filter((r) => r.status === "approved").length}
-            </p>
-          </CardContent>
-        </Card>
-        <Card className="border-gray-200/70 shadow-xs">
-          <CardContent className="p-4">
-            <p className="text-xs font-medium text-gray-500">Total Nilai</p>
-            <p className="mt-1 text-2xl font-bold text-pink-600">
-              {formatRupiah(returns.reduce((sum, r) => sum + (r.total_amount || 0), 0))}
-            </p>
-          </CardContent>
-        </Card>
-      </div>
+      <PurchasingPageHeader
+        title="Purchase Returns"
+        description={
+          <>
+            Manage returns to {config.partyLabel.toLowerCase()}s for QC-completed goods receipts — {total} total
+          </>
+        }
+        actions={
+          <Link href={config.insertRoute}>
+            <Button className="h-10 w-full gap-2 rounded-lg bg-pink-600 px-3 text-sm font-semibold text-white shadow-sm hover:bg-pink-700 sm:w-auto">
+              <Plus className="mr-2 h-4 w-4" />
+              Create Return
+            </Button>
+          </Link>
+        }
+      />
 
       <PurchasingListSection
-        icon={ArrowPathIcon}
-        title="Daftar Retur Pembelian"
-        description="Kelola retur barang ke supplier berdasarkan status, alasan, dan total nilai."
+        icon={RotateCcw}
+        title="Purchase Return List"
+        description="Only goods receipts that have completed quality control are eligible for returns."
         toolbar={
           <div className="flex w-full flex-col gap-3 sm:w-auto md:flex-row md:items-center">
             <label className="relative w-full md:w-80">
-              <MagnifyingGlassIcon className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
               <Input
-                placeholder="Cari nomor return atau catatan..."
+                placeholder="Search return number, GRN number, or notes..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="h-10 bg-white pl-10 pr-10 text-sm focus:border-pink-400 focus:ring-2 focus:ring-pink-100"
@@ -143,7 +171,7 @@ export function PurchaseReturnsPage() {
                   type="button"
                   onClick={() => setSearchQuery("")}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 transition-colors hover:text-gray-700"
-                  aria-label="Hapus pencarian"
+                  aria-label="Clear search"
                 >
                   <X className="h-4 w-4" />
                 </button>
@@ -163,12 +191,16 @@ export function PurchaseReturnsPage() {
               Filter
               {isFilterActive && (
                 <span className="ml-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-white/20 px-1.5 text-xs text-white">
-                  {[statusFilter !== "all", reasonFilter !== "all"].filter(Boolean).length}
+                  {activeFilterCount}
                 </span>
               )}
             </Button>
             {(search || isFilterActive || page > 1) && (
-              <Button variant="outline" onClick={handleResetFilters} className="h-10 flex-shrink-0 rounded-lg">
+              <Button
+                variant="outline"
+                onClick={handleResetFilters}
+                className="h-10 flex-shrink-0 rounded-lg"
+              >
                 Reset
               </Button>
             )}
@@ -185,22 +217,15 @@ export function PurchaseReturnsPage() {
                     Status
                   </div>
                   <Combobox
-                    options={[
-                      { value: "all", label: "Semua Status" },
-                      { value: "draft", label: "Draft" },
-                      { value: "pending_approval", label: "Pending Approval" },
-                      { value: "approved", label: "Approved" },
-                      { value: "rejected", label: "Rejected" },
-                      { value: "completed", label: "Completed" },
-                    ]}
+                    options={STATUS_OPTIONS}
                     value={statusFilter}
                     onChange={(value) => {
                       setStatusFilter(value as ReturnStatus | "all");
                       setPage(1);
                     }}
                     placeholder="Filter status..."
-                    searchPlaceholder="Cari status..."
-                    emptyMessage="Status tidak ditemukan"
+                    searchPlaceholder="Search status..."
+                    emptyMessage="No status found"
                     className="!w-full h-9 text-sm"
                   />
                 </div>
@@ -208,26 +233,18 @@ export function PurchaseReturnsPage() {
                 <div className="space-y-1.5">
                   <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
                     <Filter className="h-3.5 w-3.5 text-pink-500" />
-                    Alasan
+                    Reason
                   </div>
                   <Combobox
-                    options={[
-                      { value: "all", label: "Semua Alasan" },
-                      { value: "damaged", label: "Barang Rusak" },
-                      { value: "wrong_item", label: "Barang Salah" },
-                      { value: "expired", label: "Expired" },
-                      { value: "overstock", label: "Overstock" },
-                      { value: "specification_mismatch", label: "Tidak Sesuai Spek" },
-                      { value: "other", label: "Lainnya" },
-                    ]}
+                    options={REASON_OPTIONS}
                     value={reasonFilter}
                     onChange={(value) => {
                       setReasonFilter(value as ReturnReasonType | "all");
                       setPage(1);
                     }}
-                    placeholder="Filter alasan..."
-                    searchPlaceholder="Cari alasan..."
-                    emptyMessage="Alasan tidak ditemukan"
+                    placeholder="Filter reason..."
+                    searchPlaceholder="Search reason..."
+                    emptyMessage="No reason found"
                     className="!w-full h-9 text-sm"
                   />
                 </div>
@@ -237,83 +254,142 @@ export function PurchaseReturnsPage() {
 
           {loading ? (
             <div className="py-12 text-center">
-              <p className="text-sm text-gray-500">Memuat data...</p>
+              <div className="mx-auto h-8 w-8 animate-spin rounded-full border-b-2 border-gray-900" />
+              <p className="mt-2 text-sm text-gray-500">Loading purchase returns...</p>
             </div>
           ) : returns.length === 0 ? (
             <div className="py-14 text-center">
-              <ArrowPathIcon className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-              <p className="text-gray-500">Belum ada data return</p>
+              <RotateCcw className="mx-auto mb-4 h-12 w-12 text-gray-300" />
+              <p className="text-gray-500">No purchase returns found</p>
+              <p className="mt-1 text-sm text-gray-400">
+                Returns are available only after goods receipt quality control is completed.
+              </p>
+              <Link href={config.insertRoute}>
+                <Button
+                  variant="outline"
+                  className="mt-4 h-10 gap-2 rounded-lg border-pink-200 bg-white px-3 text-sm font-medium text-pink-700 shadow-sm hover:!border-pink-200 hover:!bg-pink-50 hover:!text-pink-700"
+                >
+                  Create Return
+                </Button>
+              </Link>
             </div>
           ) : (
             <>
-            <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <thead className="border-b border-gray-100 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
-                <tr>
-                  <th className="px-4 py-3 text-left font-semibold">No. Return</th>
-                  <th className="px-4 py-3 text-left font-semibold">Tanggal</th>
-                  <th className="px-4 py-3 text-left font-semibold">Supplier</th>
-                  <th className="px-4 py-3 text-left font-semibold">Alasan</th>
-                  <th className="px-4 py-3 text-left font-semibold">GRN</th>
-                  <th className="px-4 py-3 text-right font-semibold">Total</th>
-                  <th className="px-4 py-3 text-center font-semibold">Status</th>
-                  <th className="px-4 py-3 text-right font-semibold">Aksi</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {returns.map((ret) => (
-                    <tr key={ret.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 font-mono text-xs font-medium text-pink-600">
-                        {ret.return_number}
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <CalendarIcon className="w-4 h-4 text-gray-400" />
-                          {format(new Date(ret.return_date), "dd MMM yyyy", { locale: localeId })}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <BuildingOfficeIcon className="w-4 h-4 text-gray-400" />
-                          {ret.supplier?.nama_supplier || "-"}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <Badge variant="outline">
-                          {RETURN_REASON_LABELS[ret.reason_type as ReturnReasonType]}
-                        </Badge>
-                      </td>
-                      <td className="px-4 py-3 font-mono text-xs">
-                        {ret.grn?.grn_number || "-"}
-                      </td>
-                      <td className="px-4 py-3 text-right font-medium">
-                        {formatRupiah(ret.total_amount)}
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        <Badge className={RETURN_STATUS_COLORS[ret.status as ReturnStatus]}>
-                          {RETURN_STATUS_LABELS[ret.status as ReturnStatus]}
-                        </Badge>
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <Link href={`/dashboard/purchasing/returns/${ret.id}`}>
-                          <Button variant="ghost" size="sm" className="cursor-pointer">
-                            <EyeIcon className="w-4 h-4" />
-                          </Button>
-                        </Link>
-                      </td>
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead className="border-b border-gray-100 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+                    <tr>
+                      <th className="px-4 py-3 text-left font-semibold">Return No.</th>
+                      <th className="px-4 py-3 text-left font-semibold">Date</th>
+                      <th className="px-4 py-3 text-left font-semibold">{config.partyLabel}</th>
+                      <th className="px-4 py-3 text-left font-semibold">Reason</th>
+                      <th className="px-4 py-3 text-left font-semibold">GRN Number</th>
+                      <th className="px-4 py-3 text-right font-semibold">Total</th>
+                      <th className="px-4 py-3 text-center font-semibold">Status</th>
+                      <th className="px-4 py-3 text-right font-semibold">Actions</th>
                     </tr>
-                  ))}
-              </tbody>
-            </table>
-          </div>
-            <PurchasingTablePagination
-              page={page}
-              totalPages={Math.max(1, totalPages)}
-              totalItems={total}
-              pageSize={limit}
-              onPageChange={setPage}
-            />
-          </>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {returns.map((ret) => {
+                      const statusLabel =
+                        RETURN_STATUS_LABELS_EN[ret.status as ReturnStatus] ||
+                        RETURN_STATUS_LABELS[ret.status as ReturnStatus];
+                      const reasonLabel =
+                        RETURN_REASON_LABELS_EN[ret.reason_type as ReturnReasonType] ||
+                        RETURN_REASON_LABELS[ret.reason_type as ReturnReasonType];
+                      const grnNumber = getGrnNumber(ret);
+                      const grnId = getGrnId(ret);
+
+                      return (
+                        <tr
+                          key={ret.id}
+                          className="cursor-pointer hover:bg-gray-50"
+                          onClick={() => router.push(config.detailRoute(ret.id))}
+                        >
+                          <td
+                            className="px-4 py-3"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <Link
+                              href={config.detailRoute(ret.id)}
+                              className="font-medium text-pink-700 hover:underline"
+                            >
+                              {ret.return_number}
+                            </Link>
+                          </td>
+                          <td className="px-4 py-3 text-gray-600">{formatDate(ret.return_date)}</td>
+                          <td className="px-4 py-3 text-gray-600">
+                            {config.partyNameFromReturn(ret)}
+                          </td>
+                          <td className="px-4 py-3">
+                            <Badge variant="outline" className="border-gray-200/80 font-normal">
+                              {reasonLabel}
+                            </Badge>
+                          </td>
+                          <td
+                            className="px-4 py-3 text-gray-700"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {grnId && grnNumber !== "-" ? (
+                              <Link
+                                href={config.receiveDetailRoute(grnId)}
+                                className="font-medium text-pink-700 hover:underline"
+                              >
+                                {grnNumber}
+                              </Link>
+                            ) : (
+                              <span className="text-gray-400">-</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-right font-medium">
+                            {formatAmount(ret.total_amount)}
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            <Badge className={RETURN_STATUS_COLORS[ret.status as ReturnStatus]}>
+                              {statusLabel}
+                            </Badge>
+                          </td>
+                          <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
+                            <div className="flex items-center justify-end gap-1">
+                              {(ret.status === "draft" || ret.status === "pending_approval") && (
+                                <Link href={config.editRoute(ret.id)}>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    title="Edit return"
+                                    className="cursor-pointer"
+                                  >
+                                    <Pencil className="h-4 w-4" />
+                                  </Button>
+                                </Link>
+                              )}
+                              <Link href={config.detailRoute(ret.id)}>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  title="View detail"
+                                  className="cursor-pointer"
+                                >
+                                  <Eye className="h-4 w-4" />
+                                </Button>
+                              </Link>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              <PurchasingTablePagination
+                page={page}
+                totalPages={Math.max(1, totalPages)}
+                totalItems={total}
+                pageSize={limit}
+                onPageChange={setPage}
+              />
+            </>
           )}
         </div>
       </PurchasingListSection>

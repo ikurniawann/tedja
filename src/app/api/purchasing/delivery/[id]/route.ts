@@ -45,9 +45,12 @@ export async function GET(
       throw ApiError.notFound("Delivery tidak ditemukan");
     }
 
-    const [supplierResult, poResult] = await Promise.all([
+    const [supplierResult, vendorResult, poResult] = await Promise.all([
       delivery.supplier_id
         ? db.from("suppliers").select("*").eq("id", delivery.supplier_id).maybeSingle()
+        : Promise.resolve({ data: null, error: null }),
+      delivery.vendor_id
+        ? db.from("vendors").select("id, code, name").eq("id", delivery.vendor_id).maybeSingle()
         : Promise.resolve({ data: null, error: null }),
       delivery.purchase_order_id
         ? db.from("purchase_orders").select("*").eq("id", delivery.purchase_order_id).maybeSingle()
@@ -55,9 +58,11 @@ export async function GET(
     ]);
 
     if (supplierResult.error) throw supplierResult.error;
+    if (vendorResult.error) throw vendorResult.error;
     if (poResult.error) throw poResult.error;
 
     const supplier = supplierResult.data as Record<string, unknown> | null;
+    const vendor = vendorResult.data as Record<string, unknown> | null;
     const purchaseOrder = poResult.data as Record<string, unknown> | null;
 
     return successResponse(
@@ -68,6 +73,13 @@ export async function GET(
               id: supplier.id,
               nama: supplier.nama_supplier || supplier.nama || "-",
               kode: supplier.kode_supplier || supplier.kode || "",
+            }
+          : null,
+        vendor: vendor
+          ? {
+              id: vendor.id,
+              nama: vendor.name || "-",
+              kode: vendor.code || "",
             }
           : null,
         purchase_order: purchaseOrder

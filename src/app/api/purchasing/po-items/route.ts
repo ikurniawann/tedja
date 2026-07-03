@@ -26,6 +26,7 @@ export async function GET(request: NextRequest) {
       .select(`
         *,
         raw_material:raw_material_id(id, nama, kode),
+        product:product_id(id, nama, kode),
         satuan:satuan_id(id, nama, nama_satuan)
       `)
       .eq("purchase_order_id", poId)

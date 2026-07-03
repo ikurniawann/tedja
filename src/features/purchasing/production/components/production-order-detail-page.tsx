@@ -3,15 +3,34 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  ArrowLeftIcon,
-  ArrowPathIcon,
-  CheckCircleIcon,
-  CubeIcon,
-  ExclamationTriangleIcon,
-  PlayIcon,
-  XMarkIcon,
-} from "@heroicons/react/24/outline";
+  Dialog,
+  DialogFooter,
+  DialogPanel,
+  DialogPanelBody,
+  DialogPanelDescription,
+  DialogPanelHeader,
+  DialogPanelTitle,
+} from "@/components/ui/dialog";
+import { PurchasingFormHeader } from "@/modules/purchasing/components/page/purchasing-page-header";
+import type { PurchasingModuleType } from "@/lib/purchasing/module-scope";
+import { formatAmount, formatDate } from "@/lib/purchasing/utils";
+import { getProductionModuleConfig } from "../production-module";
+import {
+  AlertTriangle,
+  Box,
+  CheckCircle2,
+  Loader2,
+  PackageCheck,
+  Play,
+  RefreshCw,
+} from "lucide-react";
+import { toast } from "sonner";
 import { useProductionOrder } from "../queries";
 import { useUpdateProductionOrder } from "../mutations";
 
@@ -55,6 +74,7 @@ type ProductionDetail = {
   product_nama?: string | null;
   product_kode?: string | null;
   output_type?: "FINISHED_GOOD" | "WIP";
+  output_satuan_nama?: string | null;
   planned_qty: number | string;
   actual_qty: number | string;
   status: string;
@@ -103,22 +123,16 @@ function toNumber(value: unknown) {
   return Number.isFinite(numeric) ? numeric : 0;
 }
 
-function formatCurrency(value: unknown) {
-  return new Intl.NumberFormat("id-ID", {
-    style: "currency",
-    currency: "IDR",
-    maximumFractionDigits: 0,
-  }).format(toNumber(value));
-}
-
-function formatNumber(value: unknown) {
-  return new Intl.NumberFormat("id-ID", {
-    maximumFractionDigits: 3,
-  }).format(toNumber(value));
+function formatQty(value: unknown) {
+  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 3 }).format(toNumber(value));
 }
 
 function displayName(value?: string | null) {
   return (value || "-").replace(/\s+\d{8,}$/g, "").trim();
+}
+
+function materialUnitLabel(material: ProductionMaterial) {
+  return material.satuan?.nama?.trim() || "-";
 }
 
 function statusLabel(status: string) {
@@ -133,22 +147,11 @@ function statusLabel(status: string) {
 }
 
 function statusClass(status: string) {
-  if (status === "COMPLETED") return "border-emerald-200 bg-emerald-50 text-emerald-700";
-  if (status === "IN_PROGRESS") return "border-sky-200 bg-sky-50 text-sky-700";
-  if (status === "RELEASED") return "border-amber-200 bg-amber-50 text-amber-700";
-  if (status === "CANCELLED") return "border-gray-200 bg-gray-100 text-gray-500";
-  return "border-pink-200 bg-pink-50 text-pink-700";
-}
-
-function formatDate(value?: string | null) {
-  if (!value) return "-";
-  return new Intl.DateTimeFormat("id-ID", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(value));
+  if (status === "COMPLETED") return "border-emerald-200/80 bg-emerald-50 text-emerald-700";
+  if (status === "IN_PROGRESS") return "border-sky-200/80 bg-sky-50 text-sky-700";
+  if (status === "RELEASED") return "border-amber-200/80 bg-amber-50 text-amber-700";
+  if (status === "CANCELLED") return "border-gray-200/80 bg-gray-50 text-gray-500";
+  return "border-pink-200/80 bg-pink-50 text-pink-700";
 }
 
 function buildProcurementItems(materials: ProductionMaterial[]) {
@@ -166,10 +169,22 @@ function buildProcurementItems(materials: ProductionMaterial[]) {
   );
 }
 
-export function ProductionOrderDetailPage() {
+const PAGE_ACTION_BUTTON =
+  "inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg px-3 text-sm font-medium shadow-sm sm:w-auto";
+const PAGE_MAIN_ACTION = "purchasing-main-button w-full gap-2 sm:w-auto";
+const PAGE_SECONDARY_ACTION = "purchasing-secondary-button w-full gap-2 sm:w-auto";
+const PAGE_DESTRUCTIVE_ACTION =
+  "h-10 w-full gap-2 rounded-lg border-red-200/80 bg-white px-3 text-sm font-medium text-red-600 shadow-sm hover:border-red-200 hover:bg-red-50 hover:text-red-700 sm:w-auto";
+
+export function ProductionOrderDetailPage({
+  moduleType = "raw_material",
+}: {
+  moduleType?: PurchasingModuleType;
+}) {
+  const config = getProductionModuleConfig(moduleType);
   const params = useParams();
   const orderId = params.id as string;
-  const [message, setMessage] = useState("");
+  const [completeOpen, setCompleteOpen] = useState(false);
   const [completeForm, setCompleteForm] = useState<CompleteForm | null>(null);
 
   const orderQuery = useProductionOrder<ProductionDetail>(orderId);
@@ -186,22 +201,25 @@ export function ProductionOrderDetailPage() {
 
   useEffect(() => {
     if (orderQuery.isError) {
-      setMessage(
+      toast.error(
         orderQuery.error instanceof Error
           ? orderQuery.error.message
-          : "Gagal memuat detail produksi"
+          : "Failed to load production order details"
       );
     }
   }, [orderQuery.isError, orderQuery.error]);
 
   const runAction = async (action: "recheck_stock" | "release" | "start" | "cancel") => {
-    setMessage("");
     try {
       const result = await actionMutation.mutateAsync({ id: orderId, payload: { action } });
+      if (result.ok) {
+        toast.success(result.message || "Production order updated");
+      } else {
+        toast.error(result.message || "Failed to update production order");
+      }
       if (result.ok || action === "recheck_stock") await loadOrder();
-      setMessage(result.message);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Gagal mengupdate status produksi");
+      toast.error(error instanceof Error ? error.message : "Failed to update production order");
     }
   };
 
@@ -225,11 +243,11 @@ export function ProductionOrderDetailPage() {
         stockQty: toNumber(material.stock?.qty_onhand),
       })),
     });
+    setCompleteOpen(true);
   };
 
   const submitComplete = async () => {
     if (!completeForm) return;
-    setMessage("");
     try {
       const result = await actionMutation.mutateAsync({
         id: orderId,
@@ -247,33 +265,38 @@ export function ProductionOrderDetailPage() {
           })),
         },
       });
-      setMessage(result.message || "Produksi selesai");
       if (result.ok) {
+        toast.success(result.message || "Production output received into inventory");
+        setCompleteOpen(false);
         setCompleteForm(null);
         await loadOrder();
+      } else {
+        toast.error(result.message || "Failed to receive production output");
       }
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Gagal menyelesaikan produksi");
+      toast.error(error instanceof Error ? error.message : "Failed to receive production output");
     }
   };
 
   if (loading && !order) {
     return (
       <div className="flex min-h-[360px] items-center justify-center text-sm text-gray-500">
-        Memuat detail produksi...
+        <Loader2 className="mr-2 h-5 w-5 animate-spin text-pink-600" />
+        Loading production order...
       </div>
     );
   }
 
   if (!order) {
     return (
-      <div className="mx-auto max-w-7xl space-y-4">
-        <Link href="/dashboard/purchasing/production" className="inline-flex items-center gap-2 text-sm font-medium text-pink-700">
-          <ArrowLeftIcon className="h-4 w-4" />
-          Kembali ke Produksi
-        </Link>
+      <div className="space-y-4">
+        <PurchasingFormHeader
+          backHref={config.productionHubRoute}
+          title="Production Order"
+          description="The requested production order could not be loaded."
+        />
         <div className="rounded-xl border border-red-100 bg-red-50 px-5 py-4 text-sm font-medium text-red-700">
-          {message || "Production order tidak ditemukan"}
+          Production order not found
         </div>
       </div>
     );
@@ -316,295 +339,401 @@ export function ProductionOrderDetailPage() {
     : null;
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-        <div className="space-y-2">
-          <Link href="/dashboard/purchasing/production" className="inline-flex items-center gap-2 text-sm font-medium text-pink-700">
-            <ArrowLeftIcon className="h-4 w-4" />
-            Kembali ke Produksi
-          </Link>
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-2xl font-semibold text-gray-950">{order.nomor_produksi}</h1>
-              <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${statusClass(order.status)}`}>
-                {statusLabel(order.status)}
-              </span>
-              <span className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-700">
-                {order.output_type === "WIP" ? "Output WIP" : "Produk Jadi"}
-              </span>
-            </div>
-            <p className="mt-1 text-sm text-gray-500">{displayName(order.product_nama)} · {formatDate(order.created_at)}</p>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={loadOrder} className="inline-flex h-10 items-center gap-2 rounded-lg border border-gray-200 px-3 text-sm font-medium text-gray-700 hover:bg-gray-50">
-            <ArrowPathIcon className="h-4 w-4" />
-            Refresh
-          </button>
-          {["DRAFT", "RELEASED", "IN_PROGRESS"].includes(order.status) && (
-            <button type="button" onClick={() => runAction("recheck_stock")} disabled={loading} className="inline-flex h-10 items-center gap-2 rounded-lg border border-emerald-200 px-3 text-sm font-semibold text-emerald-700 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50">
-              <ArrowPathIcon className="h-4 w-4" />
-              Cek Ulang Stok
-            </button>
-          )}
-          {canRelease && (
-            <button type="button" onClick={() => runAction("release")} disabled={loading || insufficientMaterials.length > 0} className="inline-flex h-10 items-center gap-2 rounded-lg border border-amber-200 px-3 text-sm font-semibold text-amber-700 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-50">
-              Release
-            </button>
-          )}
-          {canStart && (
-            <button type="button" onClick={() => runAction("start")} disabled={loading} className="inline-flex h-10 items-center gap-2 rounded-lg border border-sky-200 px-3 text-sm font-semibold text-sky-700 hover:bg-sky-50 disabled:opacity-50">
-              <PlayIcon className="h-4 w-4" />
-              Start
-            </button>
-          )}
-          {canComplete && (
-            <button type="button" onClick={openComplete} disabled={loading || insufficientMaterials.length > 0} className="inline-flex h-10 items-center gap-2 rounded-lg bg-pink-600 px-3 text-sm font-semibold text-white hover:bg-pink-700 disabled:cursor-not-allowed disabled:opacity-50">
-              <CheckCircleIcon className="h-4 w-4" />
-              Complete
-            </button>
-          )}
-          {canCancel && (
-            <button type="button" onClick={() => runAction("cancel")} disabled={loading} className="inline-flex h-10 items-center gap-2 rounded-lg border border-red-200 px-3 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50">
-              Cancel
-            </button>
-          )}
-        </div>
-      </div>
-
-      {message && (
-        <div className="rounded-xl border border-pink-100 bg-pink-50 px-5 py-4 text-sm font-medium text-pink-700">
-          {message}
-        </div>
-      )}
+    <div className="space-y-6">
+      <PurchasingFormHeader
+        backHref={config.productionHubRoute}
+        title={order.nomor_produksi}
+        description={
+          <span className="flex flex-wrap items-center gap-2">
+            <span>{displayName(order.product_nama || order.output_raw_material_nama || order.item_nama)}</span>
+            <span className="text-gray-300">·</span>
+            <span>{formatDate(order.created_at)}</span>
+            <Badge variant="outline" className={statusClass(order.status)}>
+              {statusLabel(order.status)}
+            </Badge>
+            <Badge
+              variant="outline"
+              className={
+                order.output_type === "WIP"
+                  ? "border-sky-200/80 bg-sky-50 text-sky-700"
+                  : "border-emerald-200/80 bg-emerald-50 text-emerald-700"
+              }
+            >
+              {order.output_type === "WIP" ? "Work-in-Progress" : "Finished Good"}
+            </Badge>
+          </span>
+        }
+        actions={
+          <>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => void loadOrder()}
+              disabled={loading}
+              className={PAGE_SECONDARY_ACTION}
+            >
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              Refresh
+            </Button>
+            {["DRAFT", "RELEASED", "IN_PROGRESS"].includes(order.status) && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => void runAction("recheck_stock")}
+                disabled={loading}
+                className={`${PAGE_ACTION_BUTTON} border-emerald-200/80 bg-white text-emerald-700 hover:bg-emerald-50`}
+              >
+                <RefreshCw className="h-4 w-4" />
+                Recheck Stock
+              </Button>
+            )}
+            {canRelease && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => void runAction("release")}
+                disabled={loading || insufficientMaterials.length > 0}
+                className={`${PAGE_ACTION_BUTTON} border-amber-200/80 bg-white text-amber-700 hover:bg-amber-50`}
+              >
+                <CheckCircle2 className="h-4 w-4" />
+                Release
+              </Button>
+            )}
+            {canStart && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => void runAction("start")}
+                disabled={loading}
+                className={`${PAGE_ACTION_BUTTON} border-sky-200/80 bg-white text-sky-700 hover:bg-sky-50`}
+              >
+                <Play className="h-4 w-4" />
+                Start
+              </Button>
+            )}
+            {canComplete && (
+              <Button
+                type="button"
+                onClick={openComplete}
+                disabled={loading || insufficientMaterials.length > 0}
+                className={PAGE_MAIN_ACTION}
+              >
+                <PackageCheck className="h-4 w-4" />
+                Receive Output
+              </Button>
+            )}
+            {canCancel && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => void runAction("cancel")}
+                disabled={loading}
+                className={PAGE_DESTRUCTIVE_ACTION}
+              >
+                Cancel
+              </Button>
+            )}
+          </>
+        }
+      />
 
       {insufficientMaterials.length > 0 && (
-        <div className="rounded-xl border border-red-100 bg-red-50 px-5 py-4">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <Card className="border-red-200/70 bg-red-50/50 shadow-xs">
+          <CardContent className="flex flex-col gap-4 p-4 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex gap-3">
-              <ExclamationTriangleIcon className="mt-0.5 h-5 w-5 text-red-600" />
+              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-red-600" />
               <div>
-                <h2 className="text-sm font-semibold text-red-800">Stok belum cukup</h2>
+                <h2 className="text-sm font-semibold text-red-800">Insufficient stock</h2>
                 <p className="mt-1 text-sm text-red-700">
-                  Release atau complete akan ditahan sampai kekurangan bahan di bawah ini dipenuhi.
+                  Release or receive will be blocked until the material shortages below are resolved.
                 </p>
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
-              <button
+              <Button
                 type="button"
-                onClick={() => runAction("recheck_stock")}
+                variant="outline"
+                onClick={() => void runAction("recheck_stock")}
                 disabled={loading}
-                className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                className={`${PAGE_ACTION_BUTTON} border-red-200/80 bg-white text-red-700 hover:bg-red-50`}
               >
-                <ArrowPathIcon className="h-3.5 w-3.5" />
-                Cek Ulang Stok
-              </button>
+                <RefreshCw className="h-4 w-4" />
+                Recheck Stock
+              </Button>
               <Link
-                href={`/dashboard/purchasing/po/insert?source=production&production_order_id=${order.id}&production_order=${productionOrderParam}&items=${shortageQuery}`}
-                className="inline-flex h-9 items-center justify-center rounded-lg bg-red-600 px-3 text-xs font-semibold text-white hover:bg-red-700"
+                href={`${config.purchasingPoInsertRoute}?source=production&production_order_id=${order.id}&production_order=${productionOrderParam}&items=${shortageQuery}`}
+                className={`${PAGE_ACTION_BUTTON} bg-red-600 text-white hover:bg-red-700`}
               >
-                Buatkan PO
+                Create Purchase Order
               </Link>
             </div>
-          </div>
-        </div>
+          </CardContent>
+        </Card>
       )}
 
-      <section className="grid gap-4 md:grid-cols-4">
-        <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-          <p className="text-xs font-medium text-gray-500">Planned Qty</p>
-          <p className="mt-2 text-xl font-semibold text-gray-950">{formatNumber(order.planned_qty)}</p>
-        </div>
-        <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-          <p className="text-xs font-medium text-gray-500">Actual Qty</p>
-          <p className="mt-2 text-xl font-semibold text-gray-950">{formatNumber(order.actual_qty)}</p>
-        </div>
-        <div className="rounded-xl border border-pink-100 bg-pink-50/60 p-4 shadow-sm">
-          <p className="text-xs font-medium text-pink-700">Material Cost</p>
-          <p className="mt-2 text-xl font-semibold text-pink-800">{formatCurrency(actualMaterialCost)}</p>
-        </div>
-        <div className="rounded-xl border border-emerald-100 bg-emerald-50/60 p-4 shadow-sm">
-          <p className="text-xs font-medium text-emerald-700">HPP / Unit</p>
-          <p className="mt-2 text-xl font-semibold text-emerald-800">{formatCurrency(order.hpp_per_unit)}</p>
-        </div>
-      </section>
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <Card className="border-gray-200/70 shadow-xs">
+          <CardContent className="p-4">
+            <p className="text-xs font-medium text-gray-500">Planned Quantity</p>
+            <p className="mt-2 text-xl font-semibold text-gray-950">
+              {formatQty(order.planned_qty)}
+              {order.output_satuan_nama ? (
+                <span className="ml-1.5 text-sm font-medium text-gray-500">{order.output_satuan_nama}</span>
+              ) : null}
+            </p>
+          </CardContent>
+        </Card>
+        <Card className="border-gray-200/70 shadow-xs">
+          <CardContent className="p-4">
+            <p className="text-xs font-medium text-gray-500">Actual Quantity</p>
+            <p className="mt-2 text-xl font-semibold text-gray-950">
+              {formatQty(order.actual_qty)}
+              {order.output_satuan_nama ? (
+                <span className="ml-1.5 text-sm font-medium text-gray-500">{order.output_satuan_nama}</span>
+              ) : null}
+            </p>
+          </CardContent>
+        </Card>
+        <Card className="border-pink-200/70 bg-pink-50/40 shadow-xs">
+          <CardContent className="p-4">
+            <p className="text-xs font-medium text-pink-700">Material Cost</p>
+            <p className="mt-2 text-xl font-semibold text-pink-800">{formatAmount(actualMaterialCost)}</p>
+          </CardContent>
+        </Card>
+        <Card className="border-emerald-200/70 bg-emerald-50/40 shadow-xs">
+          <CardContent className="p-4">
+            <p className="text-xs font-medium text-emerald-700">COGS / Unit</p>
+            <p className="mt-2 text-xl font-semibold text-emerald-800">{formatAmount(order.hpp_per_unit)}</p>
+          </CardContent>
+        </Card>
+      </div>
 
-      <section className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-        <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
+      <Card className="border-gray-200/70 shadow-xs">
+        <CardHeader className="flex flex-row items-center justify-between border-b border-gray-200/70 pb-3">
           <div>
-            <h2 className="text-base font-semibold text-gray-950">Material Requirement</h2>
-            <p className="text-xs text-gray-500">Kebutuhan bahan, stok tersedia, dan nilai konsumsi produksi.</p>
+            <CardTitle className="text-base">Material Requirements</CardTitle>
+            <p className="mt-1 text-xs text-gray-500">
+              Planned consumption, available stock, and production line values.
+            </p>
           </div>
-          <span className={`rounded-full px-3 py-1 text-xs font-semibold ${insufficientMaterials.length > 0 ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-700"}`}>
-            {insufficientMaterials.length > 0 ? `${insufficientMaterials.length} bahan kurang` : "Stok cukup"}
-          </span>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-sm">
-            <thead className="border-b border-gray-100 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
-              <tr>
-                <th className="px-4 py-3 text-left font-semibold">Bahan</th>
-                <th className="px-4 py-3 text-right font-semibold">Plan</th>
-                <th className="px-4 py-3 text-right font-semibold">Actual</th>
-                <th className="px-4 py-3 text-right font-semibold">Stok</th>
-                <th className="px-4 py-3 text-right font-semibold">Shortage</th>
-                <th className="px-4 py-3 text-right font-semibold">Cost</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {order.materials.map((material) => {
-                const shortage = toNumber(material.stock?.shortage_qty);
-                const itemQuery = buildProcurementItems([material]);
-                return (
-                  <tr key={material.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3">
-                      <p className="font-medium text-gray-950">{displayName(material.raw_material?.nama)}</p>
-                      <p className="text-xs text-gray-500">{material.raw_material?.kode || material.raw_material_id}</p>
-                    </td>
-                    <td className="px-4 py-3 text-right">{formatNumber(material.qty_planned)} {material.satuan?.nama || ""}</td>
-                    <td className="px-4 py-3 text-right">{formatNumber(material.qty_actual)} {material.satuan?.nama || ""}</td>
-                    <td className="px-4 py-3 text-right">{formatNumber(material.stock?.qty_onhand)}</td>
-                    <td className="px-4 py-3 text-right">
-                      {shortage > 0 ? (
-                        <div className="space-y-2">
-                          <p className="font-semibold text-red-600">{formatNumber(shortage)}</p>
-                          <div className="flex justify-end gap-1.5">
-                            <Link
-                              href={`/dashboard/purchasing/po/insert?source=production&production_order_id=${order.id}&production_order=${productionOrderParam}&items=${itemQuery}`}
-                              className="rounded-md bg-red-600 px-2 py-1 text-[11px] font-semibold text-white hover:bg-red-700"
-                            >
-                              PO
-                            </Link>
+          <Badge
+            variant="outline"
+            className={
+              insufficientMaterials.length > 0
+                ? "border-red-200/80 bg-red-50 text-red-700"
+                : "border-emerald-200/80 bg-emerald-50 text-emerald-700"
+            }
+          >
+            {insufficientMaterials.length > 0
+              ? `${insufficientMaterials.length} shortage${insufficientMaterials.length === 1 ? "" : "s"}`
+              : "Stock sufficient"}
+          </Badge>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead className="border-b border-gray-100 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+                <tr>
+                  <th className="px-4 py-3 text-left font-semibold">Material</th>
+                  <th className="px-4 py-3 text-left font-semibold whitespace-nowrap">Unit</th>
+                  <th className="px-4 py-3 text-right font-semibold">Planned</th>
+                  <th className="px-4 py-3 text-right font-semibold">Actual</th>
+                  <th className="px-4 py-3 text-right font-semibold">Stock</th>
+                  <th className="px-4 py-3 text-right font-semibold">Shortage</th>
+                  <th className="px-4 py-3 text-right font-semibold">Cost</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {order.materials.map((material) => {
+                  const shortage = toNumber(material.stock?.shortage_qty);
+                  const itemQuery = buildProcurementItems([material]);
+                  return (
+                    <tr key={material.id} className="hover:bg-gray-50">
+                      <td className="px-4 py-3">
+                        <p className="font-medium text-gray-950">{displayName(material.raw_material?.nama)}</p>
+                        <p className="text-xs text-gray-500">{material.raw_material?.kode || material.raw_material_id}</p>
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <Badge
+                          variant="outline"
+                          className="border-gray-200/80 bg-gray-50 font-normal text-gray-700"
+                        >
+                          {materialUnitLabel(material)}
+                        </Badge>
+                      </td>
+                      <td className="px-4 py-3 text-right tabular-nums">
+                        {formatQty(material.qty_planned)}
+                      </td>
+                      <td className="px-4 py-3 text-right tabular-nums">
+                        {formatQty(material.qty_actual)}
+                      </td>
+                      <td className="px-4 py-3 text-right tabular-nums">
+                        {formatQty(material.stock?.qty_onhand)}
+                      </td>
+                      <td className="px-4 py-3 text-right tabular-nums">
+                        {shortage > 0 ? (
+                          <div className="space-y-2">
+                            <p className="font-semibold text-red-600">{formatQty(shortage)}</p>
+                            <div className="flex justify-end">
+                              <Link
+                                href={`${config.purchasingPoInsertRoute}?source=production&production_order_id=${order.id}&production_order=${productionOrderParam}&items=${itemQuery}`}
+                                className={`${PAGE_ACTION_BUTTON} bg-red-600 text-white hover:bg-red-700`}
+                              >
+                                Purchase Order
+                              </Link>
+                            </div>
                           </div>
-                        </div>
-                      ) : (
-                        <span className="font-semibold text-emerald-600">Cukup</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-right font-semibold text-pink-700">{formatCurrency(material.total_cost)}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section className="grid gap-4 lg:grid-cols-2">
-        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-          <h2 className="text-base font-semibold text-gray-950">Cost Breakdown</h2>
-          <div className="mt-4 space-y-3 text-sm">
-            <div className="flex justify-between"><span className="text-gray-500">Material</span><span className="font-medium">{formatCurrency(actualMaterialCost)}</span></div>
-            <div className="flex justify-between"><span className="text-gray-500">Overhead</span><span className="font-medium">{formatCurrency(order.overhead_cost)}</span></div>
-            <div className="flex justify-between"><span className="text-gray-500">Labor</span><span className="font-medium">{formatCurrency(order.labor_cost)}</span></div>
-            <div className="flex justify-between"><span className="text-gray-500">Packaging</span><span className="font-medium">{formatCurrency(order.packaging_cost)}</span></div>
-            <div className="flex justify-between"><span className="text-gray-500">Waste</span><span className="font-medium">{formatCurrency(order.waste_cost)}</span></div>
+                        ) : (
+                          <span className="font-semibold text-emerald-600">OK</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-right font-semibold text-pink-700">
+                        {formatAmount(material.total_cost)}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
-        </div>
-        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-          <h2 className="text-base font-semibold text-gray-950">Batch Output</h2>
-          <div className="mt-4 space-y-3">
+        </CardContent>
+      </Card>
+
+      <div className="grid gap-6 xl:grid-cols-12">
+        <Card className="border-gray-200/70 shadow-xs xl:col-span-5">
+          <CardHeader className="border-b border-gray-200/70 pb-3">
+            <CardTitle className="text-base">Cost Breakdown</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 p-4 text-sm">
+            <div className="flex justify-between"><span className="text-gray-500">Material</span><span className="font-medium">{formatAmount(actualMaterialCost)}</span></div>
+            <div className="flex justify-between"><span className="text-gray-500">Overhead</span><span className="font-medium">{formatAmount(order.overhead_cost)}</span></div>
+            <div className="flex justify-between"><span className="text-gray-500">Labor</span><span className="font-medium">{formatAmount(order.labor_cost)}</span></div>
+            <div className="flex justify-between"><span className="text-gray-500">Packaging</span><span className="font-medium">{formatAmount(order.packaging_cost)}</span></div>
+            <div className="flex justify-between"><span className="text-gray-500">Waste</span><span className="font-medium">{formatAmount(order.waste_cost)}</span></div>
+          </CardContent>
+        </Card>
+        <Card className="border-gray-200/70 shadow-xs xl:col-span-7">
+          <CardHeader className="border-b border-gray-200/70 pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Box className="h-4 w-4 text-pink-600" />
+              Batch Output
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 p-4">
             {order.batches.length === 0 ? (
-              <div className="rounded-lg border border-dashed border-gray-200 px-4 py-6 text-center text-sm text-gray-500">
-                Batch akan muncul setelah produksi completed.
+              <div className="rounded-lg border border-dashed border-gray-200/80 px-4 py-6 text-center text-sm text-gray-500">
+                Batches appear after production output is received.
               </div>
             ) : (
               order.batches.map((batch) => (
-                <div key={batch.id} className="rounded-lg border border-gray-100 bg-gray-50 px-4 py-3 text-sm">
-                  <div className="flex items-center justify-between">
-                    <p className="font-semibold text-gray-950">{batch.batch_number}</p>
-                    <CubeIcon className="h-4 w-4 text-pink-600" />
-                  </div>
+                <div key={batch.id} className="rounded-lg border border-gray-200/70 bg-gray-50/80 px-4 py-3 text-sm">
+                  <p className="font-semibold text-gray-950">{batch.batch_number}</p>
                   <div className="mt-2 grid grid-cols-3 gap-3 text-xs text-gray-500">
-                    <span>Qty {formatNumber(batch.qty_produced)}</span>
-                    <span>{formatCurrency(batch.hpp_per_unit)}/unit</span>
+                    <span>Qty {formatQty(batch.qty_produced)}{order.output_satuan_nama ? ` ${order.output_satuan_nama}` : ""}</span>
+                    <span>{formatAmount(batch.hpp_per_unit)}/unit</span>
                     <span>{formatDate(batch.created_at)}</span>
                   </div>
                 </div>
               ))
             )}
-          </div>
-        </div>
-      </section>
+          </CardContent>
+        </Card>
+      </div>
 
-      {completeForm && completePreview && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-4">
-          <div className="max-h-[92vh] w-full max-w-6xl overflow-hidden rounded-xl bg-white shadow-2xl">
-            <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
-              <div>
-                <h2 className="text-lg font-semibold text-gray-950">Selesaikan Produksi</h2>
-                <p className="text-sm text-gray-500">Finalisasi output, konsumsi bahan, dan HPP aktual untuk {order.nomor_produksi}</p>
-              </div>
-              <button type="button" onClick={() => setCompleteForm(null)} className="rounded-lg p-2 text-gray-500 hover:bg-gray-100">
-                <XMarkIcon className="h-5 w-5" />
-              </button>
-            </div>
-            <div className="max-h-[calc(92vh-142px)] overflow-y-auto p-5">
-              <div className="grid gap-5 lg:grid-cols-[1fr_320px]">
-                <div className="space-y-5">
-                  <section className="rounded-xl border border-gray-200 bg-white p-4">
-                    <div className="mb-4">
-                      <h3 className="text-sm font-semibold text-gray-950">Output & Biaya Aktual</h3>
-                      <p className="text-xs text-gray-500">Isi hasil produksi dan biaya tambahan yang benar-benar terjadi.</p>
+      <Dialog
+        open={completeOpen && !!completeForm && !!completePreview}
+        onOpenChange={(open) => {
+          if (!open && !loading) {
+            setCompleteOpen(false);
+            setCompleteForm(null);
+          }
+        }}
+      >
+        {completeForm && completePreview && (
+          <DialogPanel size="xl" className="max-h-[min(92vh,960px)]">
+            <DialogPanelHeader>
+              <DialogPanelTitle>Receive Production Output</DialogPanelTitle>
+              <DialogPanelDescription>
+                Finalize output quantity, actual material consumption, and COGS for {order.nomor_produksi}.
+              </DialogPanelDescription>
+            </DialogPanelHeader>
+            <DialogPanelBody className="space-y-5">
+              <Card className="border-gray-200/70 shadow-xs">
+                <CardHeader className="border-b border-gray-200/70 pb-3">
+                  <CardTitle className="text-sm">Output & Additional Costs</CardTitle>
+                </CardHeader>
+                <CardContent className="grid gap-4 p-4 md:grid-cols-5">
+                  {[
+                    ["Actual Output", "actualQty"],
+                    ["Overhead", "overheadCost"],
+                    ["Labor", "laborCost"],
+                    ["Packaging", "packagingCost"],
+                    ["Waste Cost", "wasteCost"],
+                  ].map(([label, key]) => (
+                    <div key={key} className="space-y-1.5">
+                      <Label className="text-xs text-gray-500">{label}</Label>
+                      <Input
+                        value={completeForm[key as keyof Omit<CompleteForm, "materials">]}
+                        onChange={(event) =>
+                          setCompleteForm({ ...completeForm, [key]: event.target.value })
+                        }
+                        type="number"
+                        min="0"
+                        className="h-9 text-sm focus:border-pink-400 focus:ring-2 focus:ring-pink-100"
+                      />
                     </div>
-                    <div className="grid gap-3 md:grid-cols-5">
-                      {[
-                        ["Output Aktual", "actualQty", ""],
-                        ["Overhead", "overheadCost", "Rp"],
-                        ["Labor", "laborCost", "Rp"],
-                        ["Packaging", "packagingCost", "Rp"],
-                        ["Biaya Waste", "wasteCost", "Rp"],
-                      ].map(([label, key, prefix]) => (
-                        <label key={key} className="space-y-1.5">
-                          <span className="text-xs font-medium text-gray-500">{label}</span>
-                          <div className="relative">
-                            {prefix && <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-gray-400">{prefix}</span>}
-                            <input
-                              value={completeForm[key as keyof Omit<CompleteForm, "materials">]}
-                              onChange={(event) => setCompleteForm({ ...completeForm, [key]: event.target.value })}
-                              type="number"
-                              min="0"
-                              className={`h-10 w-full rounded-lg border border-gray-200 px-3 text-sm outline-none focus:border-pink-400 focus:ring-2 focus:ring-pink-100 ${prefix ? "pl-9" : ""}`}
-                            />
-                          </div>
-                        </label>
-                      ))}
-                    </div>
-                  </section>
+                  ))}
+                </CardContent>
+              </Card>
 
-                  <section className="overflow-hidden rounded-xl border border-gray-200 bg-white">
-                    <div className="border-b border-gray-100 px-4 py-3">
-                      <h3 className="text-sm font-semibold text-gray-950">Konsumsi Bahan Aktual</h3>
-                      <p className="text-xs text-gray-500">Actual qty akan mengurangi stok bahan saat produksi diselesaikan.</p>
-                    </div>
-                    <div className="overflow-x-auto">
-                      <div className="min-w-[820px]">
-                        <div className="grid grid-cols-[1.4fr_110px_110px_110px_120px_120px] gap-3 border-b border-gray-100 bg-gray-50 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
-                          <span>Bahan</span>
-                          <span className="text-right">Plan</span>
-                          <span className="text-right">Stok</span>
-                          <span className="text-right">Actual</span>
-                          <span className="text-right">Waste</span>
-                          <span className="text-right">Nilai</span>
-                        </div>
-                        <div className="divide-y divide-gray-100">
-                          {completeForm.materials.map((material, index) => {
-                            const qtyActual = toNumber(material.qtyActual);
-                            const isShort = qtyActual > material.stockQty;
-
-                            return (
-                              <div key={material.id} className="grid grid-cols-[1.4fr_110px_110px_110px_120px_120px] items-center gap-3 px-4 py-3 text-sm">
-                                <div>
-                                  <p className="font-medium text-gray-900">{material.name}</p>
-                                  <p className="text-xs text-gray-500">{material.code} · {formatCurrency(material.unitCost)} / unit</p>
-                                </div>
-                                <div className="text-right text-gray-700">{formatNumber(material.plannedQty)} {material.unitName}</div>
-                                <div className={`text-right font-semibold ${isShort ? "text-red-600" : "text-emerald-600"}`}>
-                                  {formatNumber(material.stockQty)}
-                                </div>
-                                <input
+              <div className="grid gap-5 xl:grid-cols-[1fr_300px]">
+                <Card className="border-gray-200/70 shadow-xs">
+                  <CardHeader className="border-b border-gray-200/70 pb-3">
+                    <CardTitle className="text-sm">Actual Material Consumption</CardTitle>
+                  </CardHeader>
+                  <CardContent className="overflow-x-auto p-0">
+                    <table className="min-w-[760px] w-full text-sm">
+                      <thead className="border-b border-gray-100 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+                        <tr>
+                          <th className="px-4 py-3 text-left font-semibold">Material</th>
+                          <th className="px-4 py-3 text-left font-semibold whitespace-nowrap">Unit</th>
+                          <th className="px-4 py-3 text-right font-semibold">Planned</th>
+                          <th className="px-4 py-3 text-right font-semibold">Stock</th>
+                          <th className="px-4 py-3 text-right font-semibold">Actual</th>
+                          <th className="px-4 py-3 text-right font-semibold">Waste</th>
+                          <th className="px-4 py-3 text-right font-semibold">Value</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {completeForm.materials.map((material, index) => {
+                          const qtyActual = toNumber(material.qtyActual);
+                          const isShort = qtyActual > material.stockQty;
+                          return (
+                            <tr key={material.id} className="hover:bg-gray-50/80">
+                              <td className="px-4 py-3">
+                                <p className="font-medium text-gray-900">{material.name}</p>
+                                <p className="text-xs text-gray-500">
+                                  {material.code} · {formatAmount(material.unitCost)} / unit
+                                </p>
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap">
+                                <Badge
+                                  variant="outline"
+                                  className="border-gray-200/80 bg-gray-50 font-normal text-gray-700"
+                                >
+                                  {material.unitName || "-"}
+                                </Badge>
+                              </td>
+                              <td className="px-4 py-3 text-right tabular-nums text-gray-700">
+                                {formatQty(material.plannedQty)}
+                              </td>
+                              <td
+                                className={`px-4 py-3 text-right font-semibold ${isShort ? "text-red-600" : "text-emerald-600"}`}
+                              >
+                                {formatQty(material.stockQty)}
+                              </td>
+                              <td className="px-4 py-3">
+                                <Input
                                   value={material.qtyActual}
                                   onChange={(event) => {
                                     const materials = [...completeForm.materials];
@@ -613,9 +742,11 @@ export function ProductionOrderDetailPage() {
                                   }}
                                   type="number"
                                   min="0"
-                                  className={`h-9 rounded-lg border px-2 text-right text-sm outline-none focus:border-pink-400 focus:ring-2 focus:ring-pink-100 ${isShort ? "border-red-300 bg-red-50 text-red-700" : "border-gray-200"}`}
+                                  className={`h-9 text-right text-sm focus:border-pink-400 focus:ring-2 focus:ring-pink-100 ${isShort ? "border-red-200/80 bg-red-50 text-red-700" : ""}`}
                                 />
-                                <input
+                              </td>
+                              <td className="px-4 py-3">
+                                <Input
                                   value={material.wasteQty}
                                   onChange={(event) => {
                                     const materials = [...completeForm.materials];
@@ -624,78 +755,128 @@ export function ProductionOrderDetailPage() {
                                   }}
                                   type="number"
                                   min="0"
-                                  className="h-9 rounded-lg border border-gray-200 px-2 text-right text-sm outline-none focus:border-pink-400 focus:ring-2 focus:ring-pink-100"
+                                  className="h-9 text-right text-sm focus:border-pink-400 focus:ring-2 focus:ring-pink-100"
                                 />
-                                <div className="text-right font-semibold text-pink-700">
-                                  {formatCurrency(qtyActual * material.unitCost)}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    </div>
-                  </section>
-                </div>
+                              </td>
+                              <td className="px-4 py-3 text-right font-semibold text-pink-700">
+                                {formatAmount(qtyActual * material.unitCost)}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </CardContent>
+                </Card>
 
-                <aside className="space-y-4">
-                  <div className="rounded-xl border border-pink-100 bg-pink-50/60 p-4">
-                    <h3 className="text-sm font-semibold text-pink-900">Preview HPP Aktual</h3>
-                    <div className="mt-4 space-y-3 text-sm">
-                      <div className="flex justify-between gap-3"><span className="text-pink-700">Output</span><span className="font-semibold text-pink-950">{formatNumber(completePreview.actualQty)}</span></div>
-                      <div className="flex justify-between gap-3"><span className="text-pink-700">Material</span><span className="font-semibold text-pink-950">{formatCurrency(completePreview.materialCost)}</span></div>
-                      <div className="flex justify-between gap-3"><span className="text-pink-700">Overhead</span><span className="font-semibold text-pink-950">{formatCurrency(completePreview.overheadCost)}</span></div>
-                      <div className="flex justify-between gap-3"><span className="text-pink-700">Labor</span><span className="font-semibold text-pink-950">{formatCurrency(completePreview.laborCost)}</span></div>
-                      <div className="flex justify-between gap-3"><span className="text-pink-700">Packaging</span><span className="font-semibold text-pink-950">{formatCurrency(completePreview.packagingCost)}</span></div>
-                      <div className="flex justify-between gap-3"><span className="text-pink-700">Biaya Waste</span><span className="font-semibold text-pink-950">{formatCurrency(completePreview.wasteCost)}</span></div>
-                      <div className="border-t border-pink-200 pt-3">
-                        <div className="flex justify-between gap-3"><span className="font-semibold text-pink-800">Total Cost</span><span className="font-bold text-pink-950">{formatCurrency(completePreview.totalCost)}</span></div>
+                <div className="space-y-4">
+                  <Card className="border-pink-200/70 bg-pink-50/40 shadow-xs">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-sm text-pink-900">COGS Preview</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3 p-4 pt-0 text-sm">
+                      <div className="flex justify-between gap-3">
+                        <span className="text-pink-700">Output</span>
+                        <span className="font-semibold text-pink-950">
+                          {formatQty(completePreview.actualQty)}
+                          {order.output_satuan_nama ? ` ${order.output_satuan_nama}` : ""}
+                        </span>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <span className="text-pink-700">Material</span>
+                        <span className="font-semibold text-pink-950">{formatAmount(completePreview.materialCost)}</span>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <span className="text-pink-700">Overhead</span>
+                        <span className="font-semibold text-pink-950">{formatAmount(completePreview.overheadCost)}</span>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <span className="text-pink-700">Labor</span>
+                        <span className="font-semibold text-pink-950">{formatAmount(completePreview.laborCost)}</span>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <span className="text-pink-700">Packaging</span>
+                        <span className="font-semibold text-pink-950">{formatAmount(completePreview.packagingCost)}</span>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <span className="text-pink-700">Waste</span>
+                        <span className="font-semibold text-pink-950">{formatAmount(completePreview.wasteCost)}</span>
+                      </div>
+                      <div className="border-t border-pink-200/70 pt-3">
+                        <div className="flex justify-between gap-3">
+                          <span className="font-semibold text-pink-800">Total Cost</span>
+                          <span className="font-bold text-pink-950">{formatAmount(completePreview.totalCost)}</span>
+                        </div>
                         <div className="mt-3 rounded-lg bg-white px-3 py-3">
-                          <p className="text-xs font-medium text-pink-600">HPP / Unit</p>
-                          <p className="mt-1 text-2xl font-semibold text-pink-900">{formatCurrency(completePreview.hppPerUnit)}</p>
+                          <p className="text-xs font-medium text-pink-600">COGS / Unit</p>
+                          <p className="mt-1 text-2xl font-semibold text-pink-900">
+                            {formatAmount(completePreview.hppPerUnit)}
+                          </p>
                         </div>
                       </div>
-                    </div>
-                  </div>
+                    </CardContent>
+                  </Card>
 
                   {completePreview.actualQty <= 0 && (
-                    <div className="rounded-xl border border-red-100 bg-red-50 p-4 text-sm font-medium leading-6 text-red-700">
-                      Output aktual harus lebih dari 0 sebelum produksi bisa diselesaikan.
+                    <div className="rounded-xl border border-red-100 bg-red-50 p-4 text-sm font-medium text-red-700">
+                      Actual output must be greater than 0 before receiving production output.
                     </div>
                   )}
 
                   {completePreview.shortageItems.length > 0 && (
                     <div className="rounded-xl border border-red-100 bg-red-50 p-4">
-                      <h3 className="text-sm font-semibold text-red-800">Stok aktual kurang</h3>
-                      <p className="mt-1 text-sm leading-6 text-red-700">Kurangi actual consumption atau terima barang masuk terlebih dahulu.</p>
+                      <h3 className="text-sm font-semibold text-red-800">Insufficient stock</h3>
+                      <p className="mt-1 text-sm text-red-700">
+                        Reduce actual consumption or receive incoming goods first.
+                      </p>
                       <div className="mt-3 space-y-2">
                         {completePreview.shortageItems.map((material) => (
                           <div key={material.id} className="rounded-lg bg-white px-3 py-2 text-xs text-red-700">
-                            <span className="font-semibold">{material.name}</span>: butuh {formatNumber(material.qtyActual)}, stok {formatNumber(material.stockQty)}
+                            <span className="font-semibold">{material.name}</span>: need{" "}
+                            {formatQty(material.qtyActual)}, stock {formatQty(material.stockQty)}
                           </div>
                         ))}
                       </div>
                     </div>
                   )}
-                </aside>
+                </div>
               </div>
-            </div>
-            <div className="flex justify-end gap-2 border-t border-gray-100 px-5 py-4">
-              <button type="button" onClick={() => setCompleteForm(null)} className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
-                Batal
-              </button>
-              <button
+            </DialogPanelBody>
+            <DialogFooter>
+              <Button
                 type="button"
-                onClick={submitComplete}
-                disabled={loading || completePreview.actualQty <= 0 || completePreview.shortageItems.length > 0}
-                className="rounded-lg bg-pink-600 px-4 py-2 text-sm font-semibold text-white hover:bg-pink-700 disabled:cursor-not-allowed disabled:opacity-50"
+                variant="outline"
+                onClick={() => {
+                  setCompleteOpen(false);
+                  setCompleteForm(null);
+                }}
+                disabled={loading}
+                className={`${PAGE_SECONDARY_ACTION} sm:w-auto`}
               >
-                Selesaikan Produksi
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={() => void submitComplete()}
+                disabled={loading || completePreview.actualQty <= 0 || completePreview.shortageItems.length > 0}
+                className={`${PAGE_MAIN_ACTION} sm:w-auto`}
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Receiving...
+                  </>
+                ) : (
+                  <>
+                    <PackageCheck className="h-4 w-4" />
+                    Receive Output
+                  </>
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogPanel>
+        )}
+      </Dialog>
     </div>
   );
 }

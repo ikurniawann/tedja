@@ -16,17 +16,30 @@ import {
   createVendorPayment,
 } from "./api";
 import { poQueryKeys } from "./query-keys";
+import { vendorPaymentsQueryKeys } from "@/features/purchasing/vendor-payments/query-keys";
 
-export const useCreatePurchaseOrder = () =>
-  useMutation({
+export const useCreatePurchaseOrder = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
     mutationFn: (payload: PurchaseOrderFormData) => createPurchaseOrder(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: poQueryKeys.all });
+      queryClient.invalidateQueries({ queryKey: poQueryKeys.approvedPRs });
+    },
   });
+};
 
-export const useConvertPRToPurchaseOrder = () =>
-  useMutation({
+export const useConvertPRToPurchaseOrder = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
     mutationFn: ({ prId, payload }: { prId: string; payload: PurchaseOrderFormData }) =>
       convertPRToPurchaseOrder(prId, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: poQueryKeys.all });
+      queryClient.invalidateQueries({ queryKey: poQueryKeys.approvedPRs });
+    },
   });
+};
 
 export const useApprovePurchaseOrder = () => {
   const queryClient = useQueryClient();
@@ -120,6 +133,8 @@ export const useCreateVendorPayment = () => {
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: poQueryKeys.payments(variables.poId) });
       queryClient.invalidateQueries({ queryKey: poQueryKeys.detail(variables.poId) });
+      queryClient.invalidateQueries({ queryKey: poQueryKeys.all });
+      queryClient.invalidateQueries({ queryKey: vendorPaymentsQueryKeys.all });
     },
   });
 };

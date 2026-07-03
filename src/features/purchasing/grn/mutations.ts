@@ -1,7 +1,14 @@
 "use client";
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { deleteGrn, updateGrn, createGrn, createQCInspection } from "./api";
+import {
+  deleteGrn,
+  updateGrn,
+  createGrn,
+  createQCInspection,
+  approveVendorCredit,
+  type SubmitGrnQcPayload,
+} from "./api";
 import { grnQueryKeys } from "./query-keys";
 
 export const useDeleteGrn = () => {
@@ -38,9 +45,27 @@ export const useCreateGrn = () => {
 export const useCreateQCInspection = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (payload: unknown) => createQCInspection(payload),
-    onSuccess: () => {
+    mutationFn: ({ grnId, payload }: { grnId: string; payload: SubmitGrnQcPayload }) =>
+      createQCInspection(grnId, payload),
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: grnQueryKeys.all });
+      queryClient.invalidateQueries({ queryKey: grnQueryKeys.detail(variables.grnId) });
+      queryClient.invalidateQueries({ queryKey: grnQueryKeys.qc(variables.grnId) });
+      queryClient.invalidateQueries({ queryKey: grnQueryKeys.vendorCredits(variables.grnId) });
+    },
+  });
+};
+
+export const useApproveVendorCredit = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ creditId }: { creditId: string; grnId: string }) =>
+      approveVendorCredit(creditId),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: grnQueryKeys.vendorCredits(variables.grnId) });
+      queryClient.invalidateQueries({ queryKey: grnQueryKeys.detail(variables.grnId) });
+      queryClient.invalidateQueries({ queryKey: ["purchasing", "vendor-payments"] });
+      queryClient.invalidateQueries({ queryKey: ["purchasing", "po"] });
     },
   });
 };

@@ -8,18 +8,22 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
-import { DatePicker } from "@/components/ui/datepicker";
-import { Combobox } from "@/components/ui/combobox";
 import { NumericInput } from "@/components/ui/numeric-input";
+import { DsDateTimePicker } from "@/components/design-system";
 import { toast } from "sonner";
 import { getGrn, getGrnPOItems, getGrnPO } from "../api";
+import type { PurchasingModuleType } from "../api";
 import { useUpdateGrn } from "../mutations";
+import { RM_ROUTES, PRODUCT_ROUTES } from "@/modules/purchasing/constants/item-routes";
 import {
-  ClipboardDocumentCheckIcon,
   ArrowLeftIcon,
+  ClipboardCheck,
+  Info,
+  Loader2Icon,
+  Package,
+  SaveIcon,
   TruckIcon,
-  ExclamationTriangleIcon,
-} from "@heroicons/react/24/outline";
+} from "lucide-react";
 
 interface GrnItem {
   id: string;
@@ -31,7 +35,6 @@ interface GrnItem {
   qty_ditolak: number;
   previous_qty_diterima: number;
   previous_qty_ditolak: number;
-  kondisi: "baik" | "rusak" | "cacat";
   catatan: string;
   satuan?: string;
 }
@@ -87,7 +90,6 @@ type ApiLineItem = {
   qty_received?: number;
   qty_diterima?: number;
   qty_ditolak?: number;
-  kondisi?: "baik" | "rusak" | "cacat";
   catatan?: string | null;
   raw_material?: {
     nama?: string;
@@ -106,6 +108,13 @@ type ApiLineItem = {
   } | null;
 };
 
+const GUIDELINES = [
+  "Good quantity is the total accepted on this goods receipt line.",
+  "You can receive up to the PO remaining balance (outstanding qty).",
+  "Any shortfall versus PO remaining is automatically moved to reject.",
+  "Receipt date and notes can be updated before submitting.",
+];
+
 function toNumber(value: unknown) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
@@ -123,18 +132,52 @@ function getUnitName(unit?: ApiUnit, fallback = "pcs") {
   return unit.nama || unit.nama_satuan || unit.kode || fallback;
 }
 
-function getMaterialName(rawMaterial?: ApiRawMaterial, fallback = "Bahan tidak ditemukan") {
+function getMaterialName(rawMaterial?: ApiRawMaterial, fallback = "Unknown") {
   if (!rawMaterial) return fallback;
   return rawMaterial.nama || rawMaterial.nama_bahan || fallback;
+}
+
+function getPoRemainingQty(poItem?: POItem) {
+  if (!poItem) return 0;
+  return Math.max(0, toNumber(poItem.qty_ordered) - toNumber(poItem.qty_received));
+}
+
+function findPoItem(item: GrnItem, poItems: POItem[]) {
+  return (
+    poItems.find((poItem) => poItem.id === item.purchase_order_item_id) ||
+    poItems.find((poItem) => poItem.raw_material_id === item.raw_material_id)
+  );
+}
+
+/** Max total good on this GRN line after continue (previous + PO hutang/sisa). */
+function getMaxTotalGoodQty(item: GrnItem, poItem?: POItem) {
+  const ordered = toNumber(poItem?.qty_ordered);
+  const poRemaining = getPoRemainingQty(poItem);
+  const previousGood = toNumber(item.previous_qty_diterima);
+  if (ordered <= 0) return previousGood + poRemaining;
+  return Math.min(ordered, previousGood + poRemaining);
+}
+
+function applyDefaultReceiptQty(items: GrnItem[], poItemsList: POItem[]) {
+  return items.map((item) => {
+    const poItem = findPoItem(item, poItemsList);
+    const poRemaining = getPoRemainingQty(poItem);
+    const maxTotalGood = getMaxTotalGoodQty(item, poItem);
+    const totalGood = maxTotalGood;
+    const incrementalGood = Math.max(0, totalGood - toNumber(item.previous_qty_diterima));
+    const incrementalReject = Math.max(0, poRemaining - incrementalGood);
+    const totalReject = toNumber(item.previous_qty_ditolak) + incrementalReject;
+    return { ...item, qty_diterima: totalGood, qty_ditolak: totalReject };
+  });
 }
 
 function getStatusBadge(status: string) {
   const normalized = status || "pending";
   const labels: Record<string, string> = {
-    pending: "Menunggu",
-    partially_received: "Diterima Sebagian",
-    received: "Diterima",
-    rejected: "Ditolak",
+    pending: "Pending",
+    partially_received: "Partially Received",
+    received: "Received",
+    rejected: "Rejected",
   };
 
   const classes: Record<string, string> = {
@@ -151,7 +194,15 @@ function getStatusBadge(status: string) {
   );
 }
 
-export function ContinueGrnPage() {
+export function ContinueGrnPage({
+  moduleType = "raw_material",
+}: {
+  moduleType?: PurchasingModuleType;
+}) {
+  const isProduct = moduleType === "product";
+  const listRoute = isProduct ? PRODUCT_ROUTES.purchasingReceive : RM_ROUTES.purchasingGrn;
+  const supplierLabel = isProduct ? "Vendor" : "Supplier";
+
   const params = useParams();
   const router = useRouter();
   const grnId = params.id as string;
@@ -176,27 +227,23 @@ export function ContinueGrnPage() {
     satuan: getUnitName(item.satuan || item.raw_material?.satuan_besar),
   }), []);
 
-  const fetchPOItems = useCallback(async (poId: string) => {
-    try {
-      const items = await getGrnPOItems<ApiLineItem>(poId);
-      if (items.length > 0) {
-        setPoItems(items.map(mapPOItem));
-        return;
-      }
-
-      const fallback = await getGrnPO<{ items?: ApiLineItem[] }>(poId);
-      if (fallback?.items && Array.isArray(fallback.items)) {
-        setPoItems(fallback.items.map(mapPOItem));
-      }
-    } catch (e) {
-      console.error("Failed to fetch PO items:", e);
+  const loadPoItems = useCallback(async (poId: string) => {
+    const items = await getGrnPOItems<ApiLineItem>(poId);
+    if (items.length > 0) {
+      return items.map(mapPOItem);
     }
+
+    const fallback = await getGrnPO<{ items?: ApiLineItem[] }>(poId);
+    if (fallback?.items && Array.isArray(fallback.items)) {
+      return fallback.items.map(mapPOItem);
+    }
+
+    return [];
   }, [mapPOItem]);
 
   const fetchGrnData = useCallback(async () => {
     setLoading(true);
     try {
-      // Fetch GRN detail
       const grn = await getGrn<GRNData>(grnId);
       const poId = grn.purchase_order_id || grn.po_id || "";
       setGrnData({ ...grn, po_id: poId });
@@ -205,10 +252,21 @@ export function ContinueGrnPage() {
         catatan: grn.catatan || "",
       });
 
-      // Initialize GRN items with existing data
-      if (grn.items && grn.items.length > 0) {
-        const apiItems = grn.items as unknown as ApiLineItem[];
-        const embeddedPoItems = apiItems
+      if (!grn.items || grn.items.length === 0) {
+        setGrnItems([]);
+        setPoItems([]);
+        return;
+      }
+
+      const apiItems = grn.items as unknown as ApiLineItem[];
+      let poItemsList: POItem[] = [];
+
+      if (poId) {
+        poItemsList = await loadPoItems(poId);
+      }
+
+      if (poItemsList.length === 0) {
+        poItemsList = apiItems
           .filter((item) => item.purchase_order_item)
           .map((item) => {
             const poItem = item.purchase_order_item!;
@@ -221,15 +279,12 @@ export function ContinueGrnPage() {
               satuan: getUnitName(poItem.satuan || item.satuan || item.raw_material?.satuan_besar),
             };
           });
+      }
 
-        if (embeddedPoItems.length > 0) {
-          setPoItems(embeddedPoItems);
-        }
-
-        const mappedItems = apiItems.map((item) => {
-          const poItem = item.purchase_order_item;
-          const rawMaterial = item.raw_material || poItem?.raw_material;
-          return {
+      const mappedItems: GrnItem[] = apiItems.map((item) => {
+        const poItem = item.purchase_order_item;
+        const rawMaterial = item.raw_material || poItem?.raw_material;
+        return {
           id: item.id,
           grn_id: item.grn_id,
           purchase_order_item_id: item.purchase_order_item_id,
@@ -239,27 +294,20 @@ export function ContinueGrnPage() {
           qty_ditolak: 0,
           previous_qty_diterima: toNumber(item.qty_diterima),
           previous_qty_ditolak: toNumber(item.qty_ditolak),
-          kondisi: item.kondisi || "baik" as const,
           catatan: "",
           satuan: getUnitName(item.satuan || poItem?.satuan || rawMaterial?.satuan_besar),
-          };
-        });
+        };
+      });
 
-        setGrnItems(mappedItems);
-
-        if (poId) {
-          await fetchPOItems(poId);
-        } else {
-          console.error("No PO ID found in GRN data", grn);
-        }
-      }
+      setPoItems(poItemsList);
+      setGrnItems(applyDefaultReceiptQty(mappedItems, poItemsList));
     } catch (error: unknown) {
       console.error("Fetch error:", error);
-      toast.error(error instanceof Error ? error.message : "Gagal memuat data GRN");
+      toast.error(error instanceof Error ? error.message : "Failed to load goods receipt.");
     } finally {
       setLoading(false);
     }
-  }, [fetchPOItems, grnId]);
+  }, [grnId, loadPoItems]);
 
   useEffect(() => {
     if (grnId) {
@@ -267,91 +315,98 @@ export function ContinueGrnPage() {
     }
   }, [fetchGrnData, grnId]);
 
-  function updateGrnItem(index: number, field: keyof GrnItem, value: GrnItem[keyof GrnItem]) {
-    setGrnItems((prev) => {
-      const updated = [...prev];
-      updated[index] = { ...updated[index], [field]: value };
-      return updated;
-    });
-  }
-
-  const itemRows = useMemo(() => grnItems.map((item) => {
-    const poItem =
-      poItems.find((p) => p.id === item.purchase_order_item_id) ||
-      poItems.find((p) => p.raw_material_id === item.raw_material_id);
-    const qtyOrdered = poItem?.qty_ordered || 0;
-    const qtyReceived = poItem?.qty_received || 0;
-    const remaining = Math.max(0, qtyOrdered - qtyReceived);
-    const satuan = poItem?.satuan || item.satuan || "pcs";
-
-    return {
-      item,
-      poItem,
-      qtyOrdered,
-      qtyReceived,
-      remaining,
-      satuan,
-    };
-  }), [grnItems, poItems]);
-
-  const totals = useMemo(() => {
-    return itemRows.reduce(
-      (acc, row) => {
-        acc.ordered += row.qtyOrdered;
-        acc.received += row.qtyReceived;
-        acc.remaining += row.remaining;
-        acc.newReceived += row.item.qty_diterima;
-        acc.rejected += row.item.qty_ditolak;
-        return acc;
-      },
-      { ordered: 0, received: 0, remaining: 0, newReceived: 0, rejected: 0 }
-    );
-  }, [itemRows]);
-
-  function fillAllRemaining() {
+  const handleUpdateAcceptedQty = (index: number, acceptQty: number) => {
     setGrnItems((items) =>
-      items.map((item) => {
-        const poItem =
-          poItems.find((p) => p.id === item.purchase_order_item_id) ||
-          poItems.find((p) => p.raw_material_id === item.raw_material_id);
-        const remaining = poItem ? Math.max(0, poItem.qty_ordered - poItem.qty_received) : 0;
-        return { ...item, qty_diterima: remaining, qty_ditolak: 0, kondisi: "baik" };
+      items.map((item, itemIndex) => {
+        if (itemIndex !== index) return item;
+        const poItem = findPoItem(item, poItems);
+        const poRemaining = getPoRemainingQty(poItem);
+        const maxTotalGood = getMaxTotalGoodQty(item, poItem);
+        const totalGood = Math.max(
+          toNumber(item.previous_qty_diterima),
+          Math.min(toNumber(acceptQty), maxTotalGood)
+        );
+        const incrementalGood = Math.max(0, totalGood - toNumber(item.previous_qty_diterima));
+        const incrementalReject = Math.max(0, poRemaining - incrementalGood);
+        const totalReject = toNumber(item.previous_qty_ditolak) + incrementalReject;
+        return { ...item, qty_diterima: totalGood, qty_ditolak: totalReject };
       })
     );
-  }
+  };
+
+  const itemRows = useMemo(
+    () =>
+      grnItems.map((item) => {
+        const poItem = findPoItem(item, poItems);
+        const qtyOrdered = toNumber(poItem?.qty_ordered);
+        const qtyReceived = toNumber(poItem?.qty_received);
+        const poRemaining = getPoRemainingQty(poItem);
+        const maxTotalGood = getMaxTotalGoodQty(item, poItem);
+        const satuan = poItem?.satuan || item.satuan || "pcs";
+
+        return {
+          item,
+          poItem,
+          qtyOrdered,
+          qtyReceived,
+          poRemaining,
+          maxTotalGood,
+          satuan,
+        };
+      }),
+    [grnItems, poItems]
+  );
+
+  const totals = useMemo(
+    () =>
+      itemRows.reduce(
+        (acc, row) => {
+          acc.ordered += row.qtyOrdered;
+          acc.received += row.qtyReceived;
+          acc.remaining += row.poRemaining;
+          acc.newAccepted += row.item.qty_diterima;
+          acc.rejected += row.item.qty_ditolak;
+          return acc;
+        },
+        { ordered: 0, received: 0, remaining: 0, newAccepted: 0, rejected: 0 }
+      ),
+    [itemRows]
+  );
+
+  const canSubmit = grnItems.length > 0 && Boolean(formData.tanggal_penerimaan);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
 
-    // Validate
     const validItems = grnItems.filter(
-      (item) =>
-        item.previous_qty_diterima + item.qty_diterima > 0 ||
-        item.previous_qty_ditolak + item.qty_ditolak > 0
+      (item) => item.qty_diterima > 0 || item.qty_ditolak > 0
     );
     if (validItems.length === 0) {
-      toast.error("Minimal 1 item harus diisi");
+      toast.error("Enter quantity for at least one item.");
       return;
     }
 
     try {
-
-      // Calculate totals
       const totalDiterima = validItems.reduce((sum, item) => sum + item.qty_diterima, 0);
       const totalDitolak = validItems.reduce((sum, item) => sum + item.qty_ditolak, 0);
 
-      // Determine new status
       let newStatus = "pending";
       const totalOrdered = poItems.reduce((sum, item) => sum + item.qty_ordered, 0);
-      const totalAlreadyReceived = poItems.reduce((sum, item) => sum + item.qty_received, 0);
-      const newTotalReceived = totalAlreadyReceived + totalDiterima;
+      const projectedPoReceived = poItems.reduce((sum, poItem) => {
+        const grnItem = validItems.find(
+          (item) =>
+            item.purchase_order_item_id === poItem.id ||
+            item.raw_material_id === poItem.raw_material_id
+        );
+        return sum + (grnItem ? grnItem.qty_diterima : poItem.qty_received);
+      }, 0);
 
       if (totalDiterima === 0 && totalDitolak > 0) {
         newStatus = "rejected";
-      } else if (newTotalReceived >= totalOrdered && totalDitolak === 0) {
+      } else if (projectedPoReceived >= totalOrdered && totalDitolak === 0) {
         newStatus = "received";
       } else if (totalDiterima > 0) {
-        newStatus = "partially_received";
+        newStatus = "pending";
       }
 
       const payload = {
@@ -363,283 +418,342 @@ export function ContinueGrnPage() {
           grn_id: grnId,
           purchase_order_item_id: item.purchase_order_item_id,
           raw_material_id: item.raw_material_id,
-          qty_diterima: item.previous_qty_diterima + item.qty_diterima,
-          qty_ditolak: item.previous_qty_ditolak + item.qty_ditolak,
-          kondisi: item.kondisi,
+          qty_diterima: item.qty_diterima,
+          qty_ditolak: item.qty_ditolak,
+          kondisi: "baik" as const,
           catatan: item.catatan || null,
         })),
       };
 
       await updateMutation.mutateAsync({ id: grnId, payload });
-      toast.success(`GRN ${grnData?.nomor_grn || ""} berhasil diupdate`);
-      router.push("/dashboard/purchasing/grn");
+      toast.success(`Goods receipt ${grnData?.nomor_grn || ""} updated successfully.`);
+      router.push(listRoute);
       router.refresh();
     } catch (error: unknown) {
-      toast.error(error instanceof Error ? error.message : "Gagal mengupdate GRN");
+      toast.error(error instanceof Error ? error.message : "Failed to update goods receipt.");
     }
   }
 
   if (loading) {
     return (
-      <div className="space-y-6">
-        <div className="text-center py-12 text-gray-500">Memuat data GRN...</div>
+      <div className="flex min-h-56 items-center justify-center text-sm text-gray-500">
+        <Loader2Icon className="mr-2 h-4 w-4 animate-spin" />
+        Loading goods receipt...
       </div>
     );
   }
 
   if (!grnData) {
     return (
-      <div className="space-y-6">
-        <div className="text-center py-12 text-red-500">GRN tidak ditemukan</div>
-      </div>
+      <div className="py-12 text-center text-sm text-red-600">Goods receipt not found.</div>
     );
   }
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col items-start justify-between gap-4 border-b border-gray-200/70 pb-4 sm:flex-row sm:items-center">
-        <div className="min-w-0">
-          <h1 className="mt-2 text-2xl font-bold text-gray-900">Lanjutkan Penerimaan Barang</h1>
-          <p className="text-sm text-gray-500">
-            Cek sisa PO dari GRN sebelumnya, lalu input penerimaan lanjutan
-          </p>
+      <div className="flex flex-col gap-4 border-b border-gray-200/70 pb-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="flex items-start gap-3">
+          <Link href={listRoute}>
+            <Button variant="ghost" size="sm" className="h-9 gap-2 text-pink-700">
+              <ArrowLeftIcon className="h-4 w-4" />
+              Back
+            </Button>
+          </Link>
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Continue Goods Receipt</h1>
+            <p className="text-sm text-gray-500">
+              Record additional received quantities for the remaining purchase order items
+            </p>
+          </div>
         </div>
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => router.back()}
-          className="purchasing-secondary-button w-full sm:w-auto"
-        >
-          <ArrowLeftIcon className="mr-2 h-4 w-4" />
-          Kembali
-        </Button>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
-        <Card className="border-gray-200/70 shadow-sm">
-          <CardHeader className="border-b border-gray-100 pb-4">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <ClipboardDocumentCheckIcon className="h-5 w-5" />
-              Informasi GRN
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-5 p-4">
-            <div className="grid gap-5 lg:grid-cols-12">
-              <div className="lg:col-span-8">
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
+          <div className="space-y-6 xl:col-span-8">
+            <Card className="border-gray-200/70 shadow-xs">
+              <CardHeader className="border-b border-gray-200/70 pb-3">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <TruckIcon className="h-4 w-4" />
+                  Receipt Information
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4 pt-4">
+                <div className="grid grid-cols-1 gap-3 rounded-xl border border-gray-200/70 bg-gray-50/60 p-4 text-sm md:grid-cols-2">
                   <div>
-                    <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Nomor GRN</span>
-                    <p className="mt-0.5 text-sm font-semibold text-gray-900">{grnData.nomor_grn}</p>
+                    <p className="text-xs text-gray-500">Goods Receipt Number</p>
+                    <p className="font-medium text-gray-900">{grnData.nomor_grn}</p>
                   </div>
                   <div>
-                    <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Status</span>
+                    <p className="text-xs text-gray-500">Status</p>
                     <div className="mt-1">{getStatusBadge(grnData.status)}</div>
                   </div>
                   <div>
-                    <span className="text-xs font-medium uppercase tracking-wide text-gray-500">No. PO</span>
-                    <p className="mt-0.5 text-sm font-medium text-gray-900">{grnData.po_number || "-"}</p>
+                    <p className="text-xs text-gray-500">Purchase Order</p>
+                    <p className="font-medium text-gray-900">{grnData.po_number || "-"}</p>
                   </div>
                   <div>
-                    <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Surat Jalan</span>
-                    <p className="mt-0.5 text-sm font-medium text-gray-900">{grnData.no_surat_jalan || "-"}</p>
+                    <p className="text-xs text-gray-500">Delivery Note Number</p>
+                    <p className="font-medium text-gray-900">{grnData.no_surat_jalan || "-"}</p>
+                  </div>
+                  <div className="md:col-span-2">
+                    <p className="text-xs text-gray-500">{supplierLabel}</p>
+                    <p className="font-medium text-gray-900">{grnData.supplier_name || "-"}</p>
                   </div>
                 </div>
 
-                <div className="mt-4 border-t border-gray-200/70 pt-4">
-                  <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Supplier</span>
-                  <p className="mt-0.5 text-sm font-semibold text-gray-900">{grnData.supplier_name || "-"}</p>
-                </div>
-
-                <div className="mt-4 grid grid-cols-3 gap-2 border-t border-gray-200/70 pt-4">
-                  <div className="rounded-lg border border-gray-200/70 bg-gray-50 px-3 py-2">
-                    <p className="text-xs text-gray-500">Total PO</p>
-                    <p className="mt-1 text-sm font-semibold text-gray-900">{formatQty(totals.ordered)}</p>
-                  </div>
-                  <div className="rounded-lg border border-pink-100 bg-pink-50 px-3 py-2">
-                    <p className="text-xs text-pink-600">Sudah Terima</p>
-                    <p className="mt-1 text-sm font-semibold text-pink-700">{formatQty(totals.received)}</p>
-                  </div>
-                  <div className="rounded-lg border border-orange-100 bg-orange-50 px-3 py-2">
-                    <p className="text-xs text-orange-600">Sisa</p>
-                    <p className="mt-1 text-sm font-semibold text-orange-700">{formatQty(totals.remaining)}</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-3 border-t border-gray-200/70 pt-4 lg:col-span-4 lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0">
-                <div className="space-y-1.5">
-                  <Label htmlFor="tanggal_penerimaan">Tanggal Penerimaan</Label>
-                  <DatePicker
-                    id="tanggal_penerimaan"
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <DsDateTimePicker
+                    label="Receipt Date"
                     value={formData.tanggal_penerimaan}
-                    onChange={(date) =>
-                      setFormData((prev) => ({ ...prev, tanggal_penerimaan: date }))
+                    onChange={(value) =>
+                      setFormData((prev) => ({ ...prev, tanggal_penerimaan: value }))
                     }
-                    variant="neutral"
+                    placeholder="Select receipt date..."
+                    dateOnly
+                    required
                   />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="catatan">Catatan</Label>
-                  <Textarea
-                    id="catatan"
-                    value={formData.catatan}
-                    onChange={(e) => setFormData((prev) => ({ ...prev, catatan: e.target.value }))}
-                    placeholder="Catatan penerimaan..."
-                    rows={3}
-                    className="resize-none"
-                  />
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="border-gray-200/70 shadow-sm">
-              <CardHeader className="border-b border-gray-100 px-4 pb-4">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <CardTitle className="flex items-center gap-2 text-base font-semibold">
-                      <TruckIcon className="h-5 w-5" />
-                      Update Detail Item Diterima
-                    </CardTitle>
-                    <p className="mt-1 text-sm text-gray-500">
-                      Qty baru akan ditambahkan ke penerimaan sebelumnya. Sisa yang belum diterima tetap terbuka.
-                    </p>
+                  <div className="min-w-0 space-y-1.5 md:col-span-2">
+                    <Label htmlFor="catatan" className="text-xs">
+                      Notes
+                    </Label>
+                    <Textarea
+                      id="catatan"
+                      value={formData.catatan}
+                      onChange={(e) =>
+                        setFormData((prev) => ({ ...prev, catatan: e.target.value }))
+                      }
+                      placeholder="Add notes if needed..."
+                      rows={3}
+                      className="resize-none text-sm"
+                    />
                   </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={fillAllRemaining}
-                    disabled={grnItems.length === 0 || totals.remaining <= 0}
-                    className="purchasing-secondary-button"
-                  >
-                    Isi Semua Sisa
-                  </Button>
                 </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-gray-200/70 shadow-xs">
+              <CardHeader className="border-b border-gray-200/70 pb-3">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <ClipboardCheck className="h-4 w-4" />
+                  Confirm Received Items
+                </CardTitle>
               </CardHeader>
               <CardContent className="p-0">
                 {itemRows.length === 0 ? (
-                  <div className="flex min-h-56 flex-col items-center justify-center gap-2 text-center text-sm text-gray-500">
-                    <ExclamationTriangleIcon className="h-8 w-8 text-amber-500" />
-                    Item GRN tidak ditemukan.
+                  <div className="py-12 text-center text-sm text-gray-500">
+                    No goods receipt items found.
                   </div>
                 ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full">
-                      <thead className="border-b border-gray-100 bg-gray-50">
-                        <tr>
-                          <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Bahan Baku</th>
-                          <th className="w-24 px-3 py-2.5 text-center text-xs font-semibold uppercase tracking-wide text-gray-600">Order</th>
-                          <th className="w-24 px-3 py-2.5 text-center text-xs font-semibold uppercase tracking-wide text-gray-600">Terima</th>
-                          <th className="w-24 px-3 py-2.5 text-center text-xs font-semibold uppercase tracking-wide text-gray-600">Sisa</th>
-                          <th className="w-28 px-3 py-2.5 text-center text-xs font-semibold uppercase tracking-wide text-gray-600">Qty Baru</th>
-                          <th className="w-28 px-3 py-2.5 text-center text-xs font-semibold uppercase tracking-wide text-gray-600">Ditolak</th>
-                          <th className="w-32 px-3 py-2.5 text-center text-xs font-semibold uppercase tracking-wide text-gray-600">Kondisi</th>
-                          <th className="min-w-40 px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Catatan</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-100">
-                        {itemRows.map(({ item, poItem, qtyOrdered, qtyReceived, remaining, satuan }, index) => (
-                          <tr key={item.id} className="transition-colors hover:bg-gray-50">
-                            <td className="px-4 py-3">
-                              <p className="text-sm font-medium text-gray-900">{item.nama_bahan}</p>
-                              <p className="mt-0.5 text-xs text-gray-500">
-                                Satuan: {satuan}
-                                {!poItem && <span className="ml-2 text-amber-600">Data PO tidak lengkap</span>}
-                              </p>
-                              {(item.previous_qty_diterima > 0 || item.previous_qty_ditolak > 0) && (
-                                <p className="mt-1 text-xs text-gray-500">
-                                  GRN ini sebelumnya: {formatQty(item.previous_qty_diterima)} diterima
-                                  {item.previous_qty_ditolak > 0 ? `, ${formatQty(item.previous_qty_ditolak)} ditolak` : ""}
-                                </p>
-                              )}
-                            </td>
-                            <td className="px-3 py-3 text-center text-sm text-gray-700">{formatQty(qtyOrdered)}</td>
-                            <td className="px-3 py-3 text-center text-sm font-medium text-pink-700">{formatQty(qtyReceived)}</td>
-                            <td className="px-3 py-3 text-center text-sm font-semibold text-orange-700">{formatQty(remaining)}</td>
-                            <td className="px-3 py-3">
-                              <NumericInput
-                                min="0"
-                                max={remaining || undefined}
-                                value={item.qty_diterima}
-                                onValueChange={(value) => updateGrnItem(index, "qty_diterima", value || 0)}
-                                decimalScale={4}
-                                disabled={remaining <= 0}
-                                className="mx-auto h-9 w-24 text-center text-sm"
-                              />
-                              {remaining <= 0 && (
-                                <p className="mt-1 text-center text-xs text-orange-600">Sudah lengkap</p>
-                              )}
-                            </td>
-                            <td className="px-3 py-3">
-                              <NumericInput
-                                min="0"
-                                value={item.qty_ditolak}
-                                onValueChange={(value) => updateGrnItem(index, "qty_ditolak", value || 0)}
-                                decimalScale={4}
-                                className="mx-auto h-9 w-24 text-center text-sm"
-                              />
-                            </td>
-                            <td className="px-3 py-3">
-                              <Combobox
-                                options={[
-                                  { value: "baik", label: "Baik" },
-                                  { value: "rusak", label: "Rusak" },
-                                  { value: "cacat", label: "Cacat" },
-                                ]}
-                                value={item.kondisi}
-                                onChange={(value) =>
-                                  updateGrnItem(index, "kondisi", value as "baik" | "rusak" | "cacat")
-                                }
-                                placeholder="Kondisi..."
-                                searchPlaceholder="Cari kondisi..."
-                                emptyMessage="Kondisi tidak ditemukan"
-                                className="!w-full h-9 text-sm"
-                              />
-                            </td>
-                            <td className="px-4 py-3">
-                              <Textarea
-                                value={item.catatan}
-                                onChange={(e) => updateGrnItem(index, "catatan", e.target.value)}
-                                placeholder="Catatan..."
-                                rows={1}
-                                className="min-h-9 resize-none text-sm"
-                              />
-                            </td>
+                  <div className="p-4">
+                    <div className="overflow-x-auto rounded-xl border border-gray-200/70">
+                      <table className="w-full table-fixed border-collapse text-sm [&_td]:border [&_td]:border-gray-200/70 [&_th]:border [&_th]:border-gray-200/70">
+                        <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+                          <tr>
+                            <th className="px-4 py-3 text-left font-semibold">Raw Material</th>
+                            <th className="w-[72px] px-2 py-3 text-center font-semibold">Ordered</th>
+                            <th className="w-[72px] px-2 py-3 text-center font-semibold">Received</th>
+                            <th className="w-[84px] px-2 py-3 text-center font-semibold">Remaining</th>
+                            <th className="w-[104px] px-1.5 py-3 text-center font-semibold">Good</th>
+                            <th className="w-[104px] px-1.5 py-3 text-center font-semibold">Reject</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                        </thead>
+                        <tbody>
+                          {itemRows.map(({ item, poItem, qtyOrdered, qtyReceived, poRemaining, maxTotalGood, satuan }, index) => (
+                            <tr key={item.id} className="bg-white hover:bg-gray-50/80">
+                              <td className="px-4 py-3 align-top">
+                                <div className="font-medium text-gray-900">{item.nama_bahan}</div>
+                                {qtyOrdered > 0 && (
+                                  <div className="mt-0.5 text-xs text-gray-500">
+                                    Purchase Order: {formatQty(qtyOrdered)} {satuan}
+                                  </div>
+                                )}
+                                {!poItem && (
+                                  <div className="mt-0.5 text-xs text-amber-600">
+                                    Purchase order item data is incomplete.
+                                  </div>
+                                )}
+                                {(item.previous_qty_diterima > 0 || item.previous_qty_ditolak > 0) && (
+                                  <div className="mt-1 text-xs text-gray-500">
+                                    Previous receipt: {formatQty(item.previous_qty_diterima)} good
+                                    {item.previous_qty_ditolak > 0
+                                      ? `, ${formatQty(item.previous_qty_ditolak)} reject`
+                                      : ""}
+                                  </div>
+                                )}
+                              </td>
+                              <td className="px-2 py-3 text-center align-middle text-gray-700">
+                                {formatQty(qtyOrdered)}
+                              </td>
+                              <td className="px-2 py-3 text-center align-middle text-gray-700">
+                                {formatQty(qtyReceived)}
+                              </td>
+                              <td className="px-2 py-3 text-center align-middle font-semibold text-pink-700">
+                                {formatQty(poRemaining)}
+                              </td>
+                              <td className="px-1.5 py-1.5 align-middle">
+                                <NumericInput
+                                  min={item.previous_qty_diterima}
+                                  max={maxTotalGood || undefined}
+                                  value={item.qty_diterima}
+                                  onValueChange={(value) =>
+                                    handleUpdateAcceptedQty(index, value || 0)
+                                  }
+                                  decimalScale={4}
+                                  disabled={poRemaining <= 0 && item.qty_diterima <= item.previous_qty_diterima}
+                                  className="h-9 w-full border-gray-200/80 bg-white px-2 text-center text-sm focus-visible:border-pink-300 focus-visible:ring-1 focus-visible:ring-pink-200/80 disabled:bg-gray-50"
+                                />
+                              </td>
+                              <td className="px-1.5 py-1.5 align-middle">
+                                <div
+                                  className={`flex h-9 w-full items-center justify-center rounded-lg border border-gray-200/80 bg-gray-50 px-2 text-sm font-medium ${
+                                    item.qty_ditolak > 0 ? "text-red-600" : "text-gray-700"
+                                  }`}
+                                >
+                                  {formatQty(item.qty_ditolak)}
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 )}
               </CardContent>
-              <div className="flex flex-col gap-3 border-t border-gray-200/70 bg-gray-50 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
-                <div className="text-sm text-gray-500">
-                  Akan ditambahkan: <span className="font-semibold text-gray-900">{formatQty(totals.newReceived)}</span> diterima
-                  {totals.rejected > 0 && (
-                    <span>, <span className="font-semibold text-gray-900">{formatQty(totals.rejected)}</span> ditolak</span>
-                  )}
-                </div>
-                <div className="flex justify-end gap-3">
-                  <Link href="/dashboard/purchasing/grn/continue">
-                    <Button type="button" variant="outline" className="purchasing-secondary-button px-6">
-                      Batal
-                    </Button>
-                  </Link>
-                  <Button
-                    type="submit"
-                    disabled={saving || grnItems.length === 0}
-                    className="purchasing-main-button px-6"
-                  >
-                    <ClipboardDocumentCheckIcon className="mr-2 h-4 w-4" />
-                    {saving ? "Menyimpan..." : "Simpan Perubahan"}
-                  </Button>
-                </div>
-              </div>
-        </Card>
-      </form>
+            </Card>
+          </div>
 
+          <div className="xl:col-span-4">
+            <Card className="border-gray-200/70 shadow-xs xl:sticky xl:top-6">
+              <CardHeader className="border-b border-gray-200/70 pb-3">
+                <CardTitle className="text-base">Summary</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4 pt-4">
+                <dl className="space-y-3 text-sm">
+                  <div className="flex items-start justify-between gap-3">
+                    <dt className="text-gray-500">Purchase Order</dt>
+                    <dd className="text-right font-medium text-gray-900">
+                      {grnData.po_number || "-"}
+                    </dd>
+                  </div>
+                  <div className="flex items-start justify-between gap-3">
+                    <dt className="text-gray-500">{supplierLabel}</dt>
+                    <dd className="text-right font-medium text-gray-900">
+                      {grnData.supplier_name || "-"}
+                    </dd>
+                  </div>
+                  <div className="flex items-start justify-between gap-3">
+                    <dt className="text-gray-500">Items</dt>
+                    <dd className="text-right font-medium text-gray-900">{grnItems.length}</dd>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 border-t border-gray-200/70 pt-3">
+                    <div className="rounded-lg border border-gray-200/70 bg-gray-50 px-3 py-2">
+                      <p className="text-xs text-gray-500">Ordered</p>
+                      <p className="mt-1 text-sm font-semibold text-gray-900">
+                        {formatQty(totals.ordered)}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-pink-100 bg-pink-50 px-3 py-2">
+                      <p className="text-xs text-pink-600">Received</p>
+                      <p className="mt-1 text-sm font-semibold text-pink-700">
+                        {formatQty(totals.received)}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-orange-100 bg-orange-50 px-3 py-2">
+                      <p className="text-xs text-orange-600">Remaining</p>
+                      <p className="mt-1 text-sm font-semibold text-orange-700">
+                        {formatQty(totals.remaining)}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-start justify-between gap-3 border-t border-gray-200/70 pt-3">
+                    <dt className="font-medium text-gray-900">Total Reject</dt>
+                    <dd
+                      className={`text-right font-semibold ${
+                        totals.rejected > 0 ? "text-red-600" : "text-gray-900"
+                      }`}
+                    >
+                      {formatQty(totals.rejected)}
+                    </dd>
+                  </div>
+                  <div className="flex items-start justify-between gap-3">
+                    <dt className="font-medium text-gray-900">Total Good (this receipt)</dt>
+                    <dd className="text-right font-semibold text-gray-900">
+                      {formatQty(totals.newAccepted)}
+                    </dd>
+                  </div>
+                </dl>
+
+                <div className="rounded-xl border border-gray-200/70 bg-gray-50/60 p-4">
+                  <div className="mb-2 flex items-center gap-2 text-sm font-medium text-gray-900">
+                    <Info className="h-4 w-4 text-pink-600" />
+                    Guidelines
+                  </div>
+                  <ul className="space-y-2 text-xs leading-5 text-gray-600">
+                    {GUIDELINES.map((line) => (
+                      <li key={line} className="flex gap-2">
+                        <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-gray-400" />
+                        <span>{line}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                {grnItems.length > 0 && (
+                  <div className="rounded-xl border border-gray-200/70 bg-white p-4">
+                    <div className="mb-2 flex items-center gap-2 text-sm font-medium text-gray-900">
+                      <Package className="h-4 w-4 text-pink-600" />
+                      Item Preview
+                    </div>
+                    <ul className="space-y-2 text-xs text-gray-600">
+                      {grnItems.slice(0, 4).map((item) => (
+                        <li key={item.id} className="flex items-center justify-between gap-3">
+                          <span className="truncate">{item.nama_bahan}</span>
+                          <span className="shrink-0 font-medium text-gray-900">
+                            {formatQty(item.qty_diterima)}
+                          </span>
+                        </li>
+                      ))}
+                      {grnItems.length > 4 && (
+                        <li className="text-gray-500">+{grnItems.length - 4} more items</li>
+                      )}
+                    </ul>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+
+        <div className="flex flex-col-reverse gap-3 border-t border-gray-200/70 pt-4 sm:flex-row sm:justify-end">
+          <Button
+            type="button"
+            variant="outline"
+            className="purchasing-secondary-button w-full sm:w-auto"
+            onClick={() => router.push(listRoute)}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            disabled={saving || !canSubmit}
+            className="purchasing-main-button w-full sm:w-auto"
+          >
+            {saving ? (
+              <>
+                <Loader2Icon className="mr-2 h-4 w-4 animate-spin" />
+                Submitting...
+              </>
+            ) : (
+              <>
+                <SaveIcon className="mr-2 h-4 w-4" />
+                Submit
+              </>
+            )}
+          </Button>
+        </div>
+      </form>
     </div>
   );
 }

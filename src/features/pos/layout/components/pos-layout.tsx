@@ -4,6 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import {
+  ArrowLeft,
   LayoutDashboardIcon,
   PackageIcon,
   ShoppingCartIcon,
@@ -17,11 +18,13 @@ import {
   SlidersHorizontal,
   Table2,
   TrendingUp,
+  AlertTriangle,
 } from "lucide-react";
 import { ActivityLogBell } from "@/components/layout/ActivityLogBell";
 import { ShiftModal } from "@/components/pos/ShiftModal";
 import { createBrowserClient } from "@/lib/pg/browser-client";
 import { usePosShift } from "@/hooks/use-pos-shift";
+import { formatAmount } from "@/lib/purchasing/utils";
 import { useState } from "react";
 import type { NavItem } from "@/lib/iam/types";
 
@@ -41,16 +44,22 @@ const POS_ICON_MAP: Record<string, typeof LayoutDashboardIcon> = {
   "open-bills": Table2,
   kds: ChefHat,
   topup: Coins,
+  "alert-triangle": AlertTriangle,
 };
 
 function clsx(...args: (string | boolean | undefined | null)[]) {
   return args.filter(Boolean).join(" ");
 }
 
-const formatCurrency = (value: number) =>
-  new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(value);
-
-export function PosLayout({ items, children }: { items: NavItem[]; children: React.ReactNode }) {
+export function PosLayout({
+  items,
+  backOfficeHref = "/arkiv-os",
+  children,
+}: {
+  items: NavItem[];
+  backOfficeHref?: string;
+  children: React.ReactNode;
+}) {
   const pathname = usePathname();
   const db = createBrowserClient();
   const { shift, isActive: hasShift, loading: loadingShift, openShift, closeShift } = usePosShift(CASHIER_ID);
@@ -68,6 +77,14 @@ export function PosLayout({ items, children }: { items: NavItem[]; children: Rea
         <div className="flex h-14 items-center justify-between px-3 sm:px-4">
           {/* Left - Logo + Navigation tabs */}
           <div className="flex items-center gap-3 flex-1 overflow-x-auto scrollbar-hide">
+            <Link
+              href={backOfficeHref}
+              className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-gray-200/70 px-2.5 text-xs font-medium text-gray-700 transition-colors hover:border-pink-200 hover:bg-pink-50 hover:text-pink-700 sm:px-3 sm:text-sm"
+              title="Back to Back Office"
+            >
+              <ArrowLeft className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+              <span className="hidden sm:inline">Back Office</span>
+            </Link>
             <Image
               src="/logo.png"
               alt="Prologue Wonderland"
@@ -107,7 +124,7 @@ export function PosLayout({ items, children }: { items: NavItem[]; children: Rea
                 totalOrders: shift?.total_orders || 0,
                 totalSales: shift?.total_sales || 0,
                 onClick: () => setShowShiftModal(true),
-                formatCurrency,
+                formatCurrency: formatAmount,
               }}
             />
             <button
@@ -116,11 +133,11 @@ export function PosLayout({ items, children }: { items: NavItem[]; children: Rea
               className={clsx(
                 "hidden sm:inline-flex h-8 items-center rounded-lg border px-3 text-xs font-semibold transition-colors",
                 hasShift
-                  ? "border-green-200 bg-green-50 text-green-700 hover:bg-green-100"
-                  : "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100"
+                  ? "border-green-200/80 bg-green-50 text-green-700 hover:bg-green-100"
+                  : "border-amber-200/80 bg-amber-50 text-amber-700 hover:bg-amber-100"
               )}
             >
-              {hasShift ? "Tutup Shift" : "Buka Shift"}
+              {hasShift ? "Close Shift" : "Open Shift"}
             </button>
             <div className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm text-gray-900">
               <UserCircle className="w-4 h-4 sm:w-5 sm:h-5 text-gray-900" />
@@ -149,7 +166,6 @@ export function PosLayout({ items, children }: { items: NavItem[]; children: Rea
         onClose={() => setShowShiftModal(false)}
         onOpenShift={openShift}
         onCloseShift={closeShift}
-        formatCurrency={formatCurrency}
       />
     </div>
   );

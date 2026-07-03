@@ -31,7 +31,7 @@ export async function listDeliveries(
   const res = await fetch(`/api/purchasing/delivery?${sp.toString()}`);
   const json = await res.json();
   if (!res.ok) {
-    throw new Error(json.message || json.error || "Gagal memuat data delivery");
+    throw new Error(json.message || json.error || "Failed to load deliveries");
   }
   const total = json.pagination?.total || 0;
   const limit = params.limit || 10;
@@ -57,13 +57,16 @@ export async function getDelivery(id: string): Promise<DeliveryDetail> {
 export async function listDeliveryPOOptions(
   includeCancelled = false
 ): Promise<DeliveryPOOption[]> {
-  const sp = new URLSearchParams({ limit: "100" });
+  const sp = new URLSearchParams();
   if (includeCancelled) sp.set("include_cancelled", "true");
 
-  const res = await fetch(`/api/purchasing/po?${sp.toString()}`, {
+  const res = await fetch(`/api/purchasing/delivery/po-options?${sp.toString()}`, {
     cache: "no-store",
   });
   const json = await res.json();
+  if (!res.ok) {
+    throw new Error(json.message || json.error || "Failed to load purchase order options");
+  }
   return Array.isArray(json.data) ? json.data : [];
 }
 
@@ -84,7 +87,7 @@ export async function createDelivery(
   if (!res.ok) {
     const apiError =
       typeof json.error === "string" ? json.error : json.error?.message;
-    throw new Error(apiError || json.message || "Gagal membuat delivery");
+    throw new Error(apiError || json.message || "Failed to create delivery");
   }
   return json.data || {};
 }

@@ -6,7 +6,7 @@ import { Clock, CheckCircle, XCircle, ChefHat, Truck, Search, Filter, Eye, User,
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { listCustomers } from '../api';
 import type { Customer, Order } from '../types';
@@ -163,6 +163,7 @@ export function OrdersPage() {
   const [arkCoinCustomer, setArkCoinCustomer] = useState<Customer | null>(null);
   const [arkToUse, setArkToUse] = useState<number>(0);
   const [scanningArk, setScanningArk] = useState(false);
+  const [showDetailModal, setShowDetailModal] = useState(false);
   const [showVoidModal, setShowVoidModal] = useState(false);
   const [showMoveModal, setShowMoveModal] = useState(false);
   const [showMergeModal, setShowMergeModal] = useState(false);
@@ -424,23 +425,17 @@ export function OrdersPage() {
                               <Eye className="w-4 h-4 mr-1" /> Lihat Pesanan
                             </button>
                           )}
-                          <Dialog>
-                            <DialogTrigger asChild>
-                              <button
-                                type="button"
-                                onClick={() => setSelectedOrder(order)}
-                                className="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                              >
-                                <Eye className="w-4 h-4 mr-1" /> Detail
-                              </button>
-                            </DialogTrigger>
-                            <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
-                              <DialogHeader>
-                                <DialogTitle>Detail Pesanan</DialogTitle>
-                              </DialogHeader>
-                              {selectedOrder && <OrderDetail order={selectedOrder} />}
-                            </DialogContent>
-                          </Dialog>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setSelectedOrder(order);
+                              setShowDetailModal(true);
+                            }}
+                          >
+                            <Eye className="w-4 h-4 mr-1" /> Detail
+                          </Button>
 
                           {order.status && !['completed', 'cancelled', 'voided', 'merged'].includes(order.status) && (
                             <>
@@ -489,6 +484,21 @@ export function OrdersPage() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog
+        open={showDetailModal}
+        onOpenChange={(open) => {
+          setShowDetailModal(open);
+          if (!open) setSelectedOrder(null);
+        }}
+      >
+        <DialogContent className="max-h-[90vh] max-w-5xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Detail Pesanan</DialogTitle>
+          </DialogHeader>
+          {selectedOrder ? <OrderDetail order={selectedOrder} /> : null}
+        </DialogContent>
+      </Dialog>
 
       {/* Payment Modal for Pending Orders */}
       <Dialog open={showPaymentModal} onOpenChange={(open) => {

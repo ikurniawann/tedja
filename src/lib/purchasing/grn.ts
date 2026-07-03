@@ -19,6 +19,7 @@ type DeliveryForGrn = {
 type POItemForGrn = {
   id: string;
   raw_material_id?: string | null;
+  product_id?: string | null;
   qty_ordered?: number | null;
   qty_received?: number | null;
   harga_satuan?: number | null;
@@ -27,11 +28,15 @@ type POItemForGrn = {
     id: string;
     nama: string;
   } | null;
+  product?: {
+    id: string;
+    nama: string;
+  } | null;
 };
 
 export const GRN_TRANSITIONS: Record<GrnStatus, GrnStatus[]> = {
   pending: ["received", "partially_received", "rejected"],
-  partially_received: ["received"],
+  partially_received: ["received", "pending"],
   received: [],
   rejected: [],
 };
@@ -117,6 +122,7 @@ export async function validateDeliveryCanReceive(
     .select(`
       id,
       raw_material_id,
+      product_id,
       qty_ordered,
       qty_received,
       harga_satuan

@@ -1,6 +1,7 @@
 'use client';
 
-import { Minus, Plus, Trash2, ShoppingBag, Utensils, Truck, Check } from 'lucide-react';
+import { Minus, Plus, Trash2, ShoppingBag, Utensils, Truck, Check, Loader2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import type { PosCartItem } from '@/hooks/use-pos-cart';
 
 interface CartPanelProps {
@@ -9,7 +10,7 @@ interface CartPanelProps {
   selectedTable: string | null;
   subtotal: number;
   discountAmount: number;
-  selectedCustomer: any;
+  selectedCustomer: { discount?: number; name?: string } | null;
   includeTax: boolean;
   tax: number;
   arkToUseCapped: number;
@@ -22,6 +23,8 @@ interface CartPanelProps {
   setShowPaymentModal: () => void;
   onOpenBill: () => void;
   isSavingBill: boolean;
+  canTransact?: boolean;
+  onOpenShift?: () => void;
   updateQuantity: (id: string, delta: number) => void;
   removeFromCart: (id: string) => void;
 }
@@ -45,86 +48,100 @@ export function CartPanel({
   setShowPaymentModal,
   onOpenBill,
   isSavingBill,
+  canTransact = true,
+  onOpenShift,
   updateQuantity,
   removeFromCart,
 }: CartPanelProps) {
   return (
-    <div className="w-full lg:w-96 bg-white rounded-xl border border-gray-200 flex flex-col max-h-[60vh] lg:max-h-none">
-      <div className="p-4 border-b border-gray-200">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-lg font-bold text-gray-900">Pesanan</h2>
-          <span className="text-sm text-gray-500">{cart.reduce((sum, i) => sum + i.quantity, 0)} item</span>
+    <div className="flex w-full max-h-[60vh] flex-col rounded-xl border border-gray-200/70 bg-white shadow-xs lg:max-h-none lg:w-96">
+      <div className="border-b border-gray-200/70 p-4">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-lg font-bold text-gray-900">Order</h2>
+          <span className="text-sm text-gray-500">{cart.reduce((sum, i) => sum + i.quantity, 0)} items</span>
         </div>
-        
-        {/* Order Type & Table Badges */}
+
         <div className="flex flex-wrap gap-2">
           {orderType === 'dine_in' && (
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-pink-100 text-pink-700 text-xs font-medium rounded-full">
-              <Utensils className="w-3 h-3" /> Dine-in
+            <span className="inline-flex items-center gap-1 rounded-full bg-pink-50 px-2.5 py-1 text-xs font-medium text-pink-700">
+              <Utensils className="h-3 w-3" /> Dine-in
             </span>
           )}
           {orderType === 'takeaway' && (
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded-full">
-              <ShoppingBag className="w-3 h-3" /> Takeaway
+            <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">
+              <ShoppingBag className="h-3 w-3" /> Takeaway
             </span>
           )}
           {orderType === 'delivery' && (
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-orange-100 text-orange-700 text-xs font-medium rounded-full">
-              <Truck className="w-3 h-3" /> Delivery
+            <span className="inline-flex items-center gap-1 rounded-full bg-orange-50 px-2.5 py-1 text-xs font-medium text-orange-700">
+              <Truck className="h-3 w-3" /> Delivery
             </span>
           )}
           {selectedTable && (
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-pink-100 text-pink-700 text-xs font-medium rounded-full">
+            <span className="inline-flex items-center gap-1 rounded-full bg-pink-50 px-2.5 py-1 text-xs font-medium text-pink-700">
               {selectedTable}
             </span>
           )}
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+      <div className="flex-1 space-y-3 overflow-y-auto p-4">
         {cart.length === 0 ? (
-          <div className="text-center text-gray-400 py-8">
-            <ShoppingBag className="w-12 h-12 mx-auto mb-2 opacity-50" />
-            <p className="text-sm">Belum ada item</p>
+          <div className="py-8 text-center text-gray-400">
+            <ShoppingBag className="mx-auto mb-2 h-12 w-12 opacity-50" />
+            <p className="text-sm">No items yet</p>
           </div>
         ) : (
           cart.map((item) => (
-            <div key={item.id} className="flex gap-3 p-3 bg-gray-50 rounded-xl">
-              <div className="flex-1 min-w-0">
-                <div className="font-medium text-sm text-gray-900 truncate">{item.name}</div>
-                
+            <div key={item.id} className="flex gap-3 rounded-xl bg-gray-50/80 p-3">
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm font-medium text-gray-900">{item.name}</div>
+
                 {(item.variantName || (item.modifierNames && item.modifierNames.length > 0)) && (
-                  <div className="flex flex-wrap gap-1 mt-1 mb-1">
+                  <div className="mb-1 mt-1 flex flex-wrap gap-1">
                     {item.variantName && (
-                      <span className="inline-flex items-center px-1.5 py-0.5 bg-pink-100 text-pink-700 text-xs font-medium rounded">
+                      <span className="inline-flex items-center rounded bg-pink-50 px-1.5 py-0.5 text-xs font-medium text-pink-700">
                         {item.variantName}
                       </span>
                     )}
-                    {item.modifierNames && item.modifierNames.map((mod, idx) => (
-                      <span key={idx} className="inline-flex items-center px-1.5 py-0.5 bg-amber-100 text-amber-700 text-xs font-medium rounded">
+                    {item.modifierNames?.map((mod, idx) => (
+                      <span
+                        key={idx}
+                        className="inline-flex items-center rounded bg-amber-50 px-1.5 py-0.5 text-xs font-medium text-amber-700"
+                      >
                         {mod}
                       </span>
                     ))}
                   </div>
                 )}
-                
-                {item.notes && (
-                  <div className="text-xs text-gray-500 italic mt-1">📝 {item.notes}</div>
-                )}
-                
+
+                {item.notes && <div className="mt-1 text-xs italic text-gray-500">{item.notes}</div>}
+
                 <div className="text-xs text-gray-500">{formatCurrency(item.price)}</div>
-                <div className="text-xs text-amber-600 font-medium">{formatArk(item.price)}</div>
+                <div className="text-xs font-medium text-amber-600">{formatArk(item.price)}</div>
               </div>
-              <div className="flex items-center gap-2 flex-shrink-0">
-                <button onClick={() => updateQuantity(item.id, -1)} className="w-7 h-7 rounded-full bg-white border border-gray-300 flex items-center justify-center hover:bg-gray-100">
-                  <Minus className="w-3 h-3" />
+              <div className="flex shrink-0 items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => updateQuantity(item.id, -1)}
+                  className="flex h-7 w-7 items-center justify-center rounded-full border border-gray-200/80 bg-white hover:bg-gray-50"
+                >
+                  <Minus className="h-3 w-3" />
                 </button>
-                <span className="text-sm font-medium w-6 text-center">{item.quantity}</span>
-                <button onClick={() => updateQuantity(item.id, 1)} className="w-7 h-7 rounded-full bg-white border border-gray-300 flex items-center justify-center hover:bg-gray-100">
-                  <Plus className="w-3 h-3" />
+                <span className="w-6 text-center text-sm font-medium">{item.quantity}</span>
+                <button
+                  type="button"
+                  onClick={() => updateQuantity(item.id, 1)}
+                  className="flex h-7 w-7 items-center justify-center rounded-full border border-gray-200/80 bg-white hover:bg-gray-50"
+                >
+                  <Plus className="h-3 w-3" />
                 </button>
-                <button onClick={() => removeFromCart(item.id)} className="ml-1 text-gray-400 hover:text-red-600">
-                  <Trash2 className="w-4 h-4" />
+                <button
+                  type="button"
+                  onClick={() => removeFromCart(item.id)}
+                  className="ml-1 text-gray-400 hover:text-red-600"
+                >
+                  <Trash2 className="h-4 w-4" />
                 </button>
               </div>
             </div>
@@ -132,31 +149,38 @@ export function CartPanel({
         )}
       </div>
 
-      {/* Summary */}
-      <div className="p-4 border-t border-gray-200 space-y-2 bg-gray-50">
+      <div className="space-y-2 border-t border-gray-200/70 bg-gray-50/50 p-4">
         <div className="flex justify-between text-sm">
           <span className="text-gray-600">Subtotal</span>
           <div className="text-right">
             <div className="font-medium text-gray-900">{formatCurrency(subtotal)}</div>
-            <div className="text-xs text-amber-600 font-medium">{formatArk(subtotal)}</div>
+            <div className="text-xs font-medium text-amber-600">{formatArk(subtotal)}</div>
           </div>
         </div>
         {discountAmount > 0 && selectedCustomer && (
           <div className="flex justify-between text-sm">
-            <span className="text-green-600">Diskon ({selectedCustomer.discount}%)</span>
+            <span className="text-green-600">Discount ({selectedCustomer.discount}%)</span>
             <span className="font-medium text-green-600">-{formatCurrency(discountAmount)}</span>
           </div>
         )}
         <div className="flex items-center justify-between text-sm">
-          <button onClick={() => setIncludeTax(!includeTax)} className="flex items-center gap-2 text-gray-600 hover:text-gray-900">
-            <div className={`w-4 h-4 rounded border-2 flex items-center justify-center ${includeTax ? 'bg-pink-600 border-pink-600' : 'border-gray-300'}`}>
-              {includeTax && <Check className="w-3 h-3 text-white" />}
+          <button
+            type="button"
+            onClick={() => setIncludeTax(!includeTax)}
+            className="flex items-center gap-2 text-gray-600 hover:text-gray-900"
+          >
+            <div
+              className={`flex h-4 w-4 items-center justify-center rounded border ${
+                includeTax ? 'border-pink-600 bg-pink-600' : 'border-gray-300'
+              }`}
+            >
+              {includeTax && <Check className="h-3 w-3 text-white" />}
             </div>
-            <span>Pajak (10%)</span>
+            <span>Tax (10%)</span>
           </button>
           <div className="text-right">
             <div className="font-medium text-gray-900">{formatCurrency(tax)}</div>
-            <div className="text-xs text-amber-600 font-medium">{formatArk(tax)}</div>
+            <div className="text-xs font-medium text-amber-600">{formatArk(tax)}</div>
           </div>
         </div>
         {paymentMethod === 'ark_coin' && arkToUseCapped > 0 && (
@@ -166,38 +190,61 @@ export function CartPanel({
           </div>
         )}
         {paymentMethod === 'ark_coin' ? (
-          <div className="text-center pt-3 border-t border-gray-300">
-            <div className="text-lg font-bold text-gray-900 mb-1">Total Pembayaran</div>
+          <div className="border-t border-gray-200/70 pt-3 text-center">
+            <div className="mb-1 text-lg font-bold text-gray-900">Total Payment</div>
             <div className="text-4xl font-bold text-amber-600">{formatArk(totalAfterArk)}</div>
-            <div className="text-xs text-gray-500 mt-1">≈ {formatCurrency(totalAfterArk)}</div>
+            <div className="mt-1 text-xs text-gray-500">≈ {formatCurrency(totalAfterArk)}</div>
           </div>
         ) : (
-          <div className="flex justify-between items-end pt-3 border-t border-gray-300">
+          <div className="flex items-end justify-between border-t border-gray-200/70 pt-3">
             <div>
               <div className="text-lg font-bold text-gray-900">Total</div>
-              <div className="text-xs text-amber-600 font-medium">{formatArk(totalAfterArk)}</div>
+              <div className="text-xs font-medium text-amber-600">{formatArk(totalAfterArk)}</div>
             </div>
             <div className="text-2xl font-bold text-pink-600">{formatCurrency(totalAfterArk)}</div>
           </div>
         )}
       </div>
 
-      {/* Pay Button */}
-      <div className="p-4 border-t border-gray-200 space-y-2">
-        <button
+      <div className="space-y-2 border-t border-gray-200/70 p-4">
+        {!canTransact && (
+          <div className="rounded-lg border border-amber-200/80 bg-amber-50 px-3 py-2 text-center text-xs font-medium text-amber-800">
+            Open a shift to pay or save orders.{' '}
+            {onOpenShift && (
+              <button
+                type="button"
+                onClick={onOpenShift}
+                className="font-semibold text-amber-900 underline underline-offset-2 hover:text-amber-700"
+              >
+                Open shift
+              </button>
+            )}
+          </div>
+        )}
+        <Button
+          type="button"
           onClick={setShowPaymentModal}
-          disabled={cart.length === 0}
-          className="w-full py-3 bg-pink-600 text-white rounded-lg font-semibold hover:bg-pink-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+          disabled={cart.length === 0 || !canTransact}
+          className="h-11 w-full bg-pink-600 font-semibold hover:bg-pink-700"
         >
-          Bayar {formatCurrency(total)}
-        </button>
-        <button
+          Pay {formatCurrency(total)}
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
           onClick={onOpenBill}
-          disabled={cart.length === 0 || isSavingBill}
-          className="w-full py-2.5 border-2 border-amber-500 text-amber-700 rounded-lg font-semibold hover:bg-amber-50 disabled:border-gray-300 disabled:text-gray-400 disabled:bg-gray-100 disabled:cursor-not-allowed transition-colors text-sm"
+          disabled={cart.length === 0 || isSavingBill || !canTransact}
+          className="h-10 w-full border-amber-200/80 font-semibold text-amber-700 hover:bg-amber-50/80"
         >
-          {isSavingBill ? 'Menyimpan...' : 'Simpan / Buka Bill'}
-        </button>
+          {isSavingBill ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Saving...
+            </>
+          ) : (
+            'Save Open Bill'
+          )}
+        </Button>
       </div>
     </div>
   );

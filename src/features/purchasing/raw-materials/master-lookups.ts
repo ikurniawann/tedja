@@ -1,11 +1,11 @@
 import type { ItemsLookupRecord } from "@/lib/purchasing/items-lookup";
 
 const LEGACY_CATEGORY_LABELS: Record<string, string> = {
-  BAHAN_PANGAN: "Bahan Pangan",
-  BAHAN_NON_PANGAN: "Bahan Non-Pangan",
-  KEMASAN: "Kemasan",
-  BAHAN_BAKAR: "Bahan Bakar",
-  LAINNYA: "Lainnya",
+  BAHAN_PANGAN: "Food Material",
+  BAHAN_NON_PANGAN: "Non-Food Material",
+  KEMASAN: "Packaging",
+  BAHAN_BAKAR: "Fuel Material",
+  LAINNYA: "Other",
 };
 
 export function toLookupOptions(records: ItemsLookupRecord[] | undefined) {

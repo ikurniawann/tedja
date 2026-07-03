@@ -45,7 +45,7 @@ export interface PayOpenOrderPayload {
 export async function listCashierTables(): Promise<PosTable[]> {
   const res = await getPOSTables();
   if (!res.success) {
-    throw new Error(res.error || "Gagal memuat data meja");
+    throw new Error(res.error || "Failed to load tables");
   }
   return res.data ?? [];
 }
@@ -54,7 +54,7 @@ export async function getCashierOrder(orderId: string): Promise<CashierOrder> {
   const response = await fetch(`/api/pos/orders/${orderId}`, { cache: "no-store" });
   const json = await response.json();
   if (!json.success || !json.data) {
-    throw new Error(json.error || "Gagal memuat pesanan");
+    throw new Error(json.error || "Failed to load order");
   }
   return json.data as CashierOrder;
 }

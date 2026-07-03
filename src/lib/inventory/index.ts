@@ -242,7 +242,8 @@ export async function addInventoryFromProduction(
   unitCost: number,
   productionOrderId: string,
   productionNumber: string,
-  userId: string
+  userId: string,
+  referenceType: string = "production_wip"
 ): Promise<void> {
   if (qtyAdded <= 0) return;
 
@@ -250,7 +251,7 @@ export async function addInventoryFromProduction(
     .from("inventory_movements")
     .select("id")
     .eq("raw_material_id", rawMaterialId)
-    .eq("reference_type", "production_wip")
+    .eq("reference_type", referenceType)
     .eq("reference_id", productionOrderId)
     .eq("is_active", true)
     .maybeSingle();
@@ -386,4 +387,102 @@ export async function removeInventoryFromGrn(
     alasan: `Pembatalan GRN ${grnNumber}`,
     created_by: userId,
   });
+}
+
+const QTY_EPSILON = 0.000001;
+
+/** Reduce warehouse stock when a purchase return is approved (same warehouse as GRN receipt). */
+export async function reduceInventoryFromPurchaseReturn(
+  db: DbClient,
+  params: {
+    rawMaterialId: string;
+    qtyReturned: number;
+    unitCost: number;
+    returnId: string;
+    returnNumber: string;
+    warehouseId?: string | null;
+    userId: string;
+    conditionNotes?: string | null;
+  }
+): Promise<void> {
+  const qty = toQty(params.qtyReturned);
+  if (qty <= 0) return;
+
+  let location: InventoryLocation;
+  if (params.warehouseId) {
+    const { data: warehouse } = await db
+      .from("warehouses", "configuration")
+      .select("branch_id")
+      .eq("id", params.warehouseId)
+      .maybeSingle();
+    location = {
+      branch_id: (warehouse as { branch_id: string | null } | null)?.branch_id ?? null,
+      warehouse_id: params.warehouseId,
+    };
+  } else {
+    location = await resolveInventoryLocation(db, params.rawMaterialId);
+  }
+
+  let inventoryQuery = db
+    .from("inventory")
+    .select("id, qty_available, unit_cost")
+    .eq("raw_material_id", params.rawMaterialId)
+    .eq("is_active", true);
+
+  if (location.warehouse_id) {
+    inventoryQuery = inventoryQuery.eq("warehouse_id", location.warehouse_id);
+  } else {
+    inventoryQuery = inventoryQuery.is("warehouse_id", null);
+  }
+
+  const { data: existing, error: existingError } = await inventoryQuery.maybeSingle();
+  if (existingError) throw existingError;
+
+  if (!existing) {
+    throw new Error("Insufficient stock in the receipt warehouse for this return");
+  }
+
+  const qtyBefore = toQty(existing.qty_available);
+  if (qtyBefore + QTY_EPSILON < qty) {
+    throw new Error("Insufficient stock in the receipt warehouse for this return");
+  }
+
+  const qtyAfter = Math.max(0, qtyBefore - qty);
+  const unitCost = toQty(params.unitCost) || toQty(existing.unit_cost);
+
+  const { error: updateError } = await db
+    .from("inventory")
+    .update({
+      qty_available: qtyAfter,
+      branch_id: location.branch_id,
+      warehouse_id: location.warehouse_id,
+      last_movement_at: new Date().toISOString(),
+      updated_by: params.userId,
+    })
+    .eq("id", existing.id);
+
+  if (updateError) throw updateError;
+
+  const { error: movementError } = await db.from("inventory_movements").insert({
+    inventory_id: existing.id,
+    raw_material_id: params.rawMaterialId,
+    tipe: "return",
+    jumlah: qty,
+    qty_before: qtyBefore,
+    qty_after: qtyAfter,
+    unit_cost: unitCost,
+    total_cost: qty * unitCost,
+    branch_id: location.branch_id,
+    warehouse_id: location.warehouse_id,
+    reference_type: "purchase_return",
+    reference_id: params.returnId,
+    reference_number: params.returnNumber,
+    return_id: params.returnId,
+    alasan: params.conditionNotes
+      ? `Purchase return ${params.returnNumber}: ${params.conditionNotes}`
+      : `Purchase return ${params.returnNumber}`,
+    created_by: params.userId,
+  });
+
+  if (movementError) throw movementError;
 }

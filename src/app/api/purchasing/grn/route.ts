@@ -19,7 +19,8 @@ import {
   GrnStatus,
 } from "@/lib/purchasing/grn";
 import { toQty } from "@/lib/purchasing/utils";
-import { addInventoryFromGrn } from "@/lib/inventory";
+import { syncReceiveRejectCredits } from "@/lib/purchasing/vendor-credit-service";
+import { parsePurchasingModuleType } from "@/lib/purchasing/module-scope";
 import {
   getApiUserScope,
   companyScopeOr,
@@ -36,16 +37,26 @@ import {
 const grnItemSchema = z.object({
   delivery_id: z.string().uuid().optional(),
   purchase_order_item_id: z.string().uuid().optional(),
-  raw_material_id: z.string().uuid("Bahan baku wajib dipilih"),
+  raw_material_id: z.string().uuid().optional(),
+  product_id: z.string().uuid().optional(),
   qty_diterima: z.number().min(0, "Qty diterima minimal 0"),
   qty_ditolak: z.number().min(0, "Qty ditolak minimal 0"),
   satuan_id: z.string().uuid().optional(),
   kondisi: z.enum(["baik", "rusak", "cacat"]).default("baik"),
   catatan: z.string().optional().nullable(),
+}).superRefine((item, ctx) => {
+  if (!item.raw_material_id && !item.product_id) {
+    ctx.addIssue({
+      code: "custom",
+      message: "Item wajib memiliki raw material atau product",
+      path: ["product_id"],
+    });
+  }
 });
 
 const createGrnSchema = z.object({
   delivery_id: z.string().uuid("Delivery wajib dipilih"),
+  module_type: z.enum(["raw_material", "product"]).optional(),
   tanggal_penerimaan: z.string().optional(),
   catatan: z.string().optional(),
   warehouse_id: z.string().uuid("Gudang wajib dipilih"),
@@ -73,23 +84,32 @@ const QTY_EPSILON = 0.000001;
 
 type POQtyValidationItem = {
   id: string;
-  raw_material_id: string;
+  raw_material_id?: string | null;
+  product_id?: string | null;
   qty_ordered?: number | null;
   qty_received?: number | null;
   raw_material?: {
     nama?: string | null;
     nama_bahan?: string | null;
   } | null;
+  product?: {
+    nama?: string | null;
+  } | null;
 };
+
+function getMaterialLabel(item: POQtyValidationItem) {
+  return (
+    item.raw_material?.nama ||
+    item.raw_material?.nama_bahan ||
+    item.product?.nama ||
+    "item ini"
+  );
+}
 
 function formatQty(value: number) {
   return new Intl.NumberFormat("id-ID", {
     maximumFractionDigits: 4,
   }).format(value);
-}
-
-function getMaterialLabel(item: POQtyValidationItem) {
-  return item.raw_material?.nama || item.raw_material?.nama_bahan || "item ini";
 }
 
 // ============================================================
@@ -239,6 +259,7 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
     const validated = createGrnSchema.parse(body);
+    const moduleType = parsePurchasingModuleType(validated.module_type);
 
     // Validate delivery can be received — use adminDb to bypass RLS
     const { valid, errors, delivery, items: poItems } = await validateDeliveryCanReceive(
@@ -302,6 +323,7 @@ export async function POST(request: NextRequest) {
       .select(`
         id,
         raw_material_id,
+        product_id,
         qty_ordered,
         qty_received,
         harga_satuan
@@ -324,19 +346,21 @@ export async function POST(request: NextRequest) {
 
     const processedQtyByItem = new Map<string, number>();
     for (const item of validated.items) {
-      const key = item.purchase_order_item_id || item.raw_material_id;
+      const key = item.purchase_order_item_id || item.raw_material_id || item.product_id;
       processedQtyByItem.set(
-        key,
-        (processedQtyByItem.get(key) || 0) + item.qty_diterima + item.qty_ditolak
+        key!,
+        (processedQtyByItem.get(key!) || 0) + item.qty_diterima + item.qty_ditolak
       );
     }
 
     for (const item of validated.items) {
-      const key = item.purchase_order_item_id || item.raw_material_id;
+      const key = item.purchase_order_item_id || item.raw_material_id || item.product_id;
       const poItem = effectivePoItems.find((p) =>
         item.purchase_order_item_id
           ? p.id === item.purchase_order_item_id
-          : p.raw_material_id === item.raw_material_id
+          : item.product_id
+            ? p.product_id === item.product_id
+            : p.raw_material_id === item.raw_material_id
       );
 
       if (!poItem) {
@@ -374,34 +398,20 @@ export async function POST(request: NextRequest) {
     const receiveCount = (previousGrnCount || 0) + 1; // This is the Nth receive
     console.log(`GRN receive_count: ${receiveCount} (previous: ${previousGrnCount}, delivery: ${validated.delivery_id})`);
 
-    // Determine GRN status based on qty_diterima vs total qty_ordered
-    // FIX Issue #1: Status based on received vs ordered, not on reject count
-    const totalOrdered = effectivePoItems.reduce((s: number, i: any) => s + (i.qty_ordered || 0), 0);
-    const totalReceived = effectivePoItems.reduce((s: number, i: any) => s + (i.qty_received || 0), 0);
-    const newTotalReceived = totalReceived + totals.total_diterima;
-
+    // Goods are physically received; stock posts after QC. Status stays pending until QC completes.
     let grnStatus: GrnStatus = "pending";
-    
-    // Check if all items rejected (no good items at all)
+
     if (totals.total_diterima === 0 && totals.total_ditolak > 0) {
-      grnStatus = "rejected"; // Semua ditolak, tidak ada yang bagus
-    } 
-    // Check if we've received enough (regardless of rejects)
-    else if (totalOrdered > 0 && newTotalReceived >= totalOrdered) {
-      grnStatus = "received"; // Sudah cukup yang diterima (bisa ada reject)
-    } 
-    // Check if we received some good items but not enough
-    else if (totals.total_diterima > 0) {
-      grnStatus = "partially_received"; // Ada yang diterima tapi belum cukup
+      grnStatus = "rejected";
     }
-    // Otherwise stays pending (no good items received yet)
 
     // Scope mengikuti gudang penerimaan (mis. Company Sulu / Cabang Sulu Dago)
     const insertData: Record<string, unknown> = {
       nomor_grn: grnNumber,
       delivery_id: validated.delivery_id,
       purchase_order_id: delivery.purchase_order_id,
-      supplier_id: delivery.supplier_id,
+      supplier_id: moduleType === "product" ? null : delivery.supplier_id,
+      vendor_id: moduleType === "product" ? delivery.vendor_id : null,
       company_id: businessScope?.company_id ?? null,
       branch_id: businessScope?.branch_id ?? null,
       tanggal_penerimaan: validated.tanggal_penerimaan || new Date().toISOString().split("T")[0],
@@ -433,13 +443,15 @@ export async function POST(request: NextRequest) {
       grn_id: grn.id,
       delivery_id: validated.delivery_id,
       purchase_order_item_id: item.purchase_order_item_id,
-      raw_material_id: item.raw_material_id,
+      raw_material_id: item.raw_material_id || null,
+      product_id: item.product_id || null,
       qty_diterima: item.qty_diterima,
       qty_ditolak: item.qty_ditolak,
       satuan_id: item.satuan_id,
       kondisi: item.kondisi,
       catatan: item.catatan || null,
       warehouse_id: validated.warehouse_id,
+      qc_status: "pending",
     }));
 
     const { error: itemsError } = await adminDb.from("grn_items").insert(grnItems);
@@ -477,46 +489,32 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Update delivery status
-    await updateDeliveryStatusAfterGrn(adminDb, validated.delivery_id, grnStatus);
+    // Physical receipt recorded — mark delivery arrived; stock posts after QC.
+    if (grnStatus !== "rejected") {
+      await adminDb
+        .from("deliveries")
+        .update({ status: "delivered", updated_at: new Date().toISOString() })
+        .eq("id", validated.delivery_id);
+    } else {
+      await updateDeliveryStatusAfterGrn(adminDb, validated.delivery_id, grnStatus);
+    }
 
-    // Update PO status based on received quantities
     if (delivery?.purchase_order_id) {
       await updatePOStatusAfterGrn(adminDb, delivery.purchase_order_id);
     }
 
-    // Update inventory untuk setiap item yang diterima
-    console.log(`\n[GRN/${grn.id}] Updating inventory for ${validated.items.length} items...`);
-    for (const item of validated.items) {
-      if (item.qty_diterima > 0) {
-        const poItem = effectivePoItems.find((p: any) => p.id === item.purchase_order_item_id);
-        const unitCost = poItem?.harga_satuan || 0;
-        try {
-          console.log(`  ${item.raw_material_id}: +${item.qty_diterima} @ Rp ${unitCost}`);
-          await addInventoryFromGrn(
-            adminDb,
-            item.raw_material_id,
-            item.qty_diterima,
-            unitCost,
-            grn.id,
-            grnNumber,
-            user.id,
-            validated.warehouse_id
-          );
-          console.log(`  ✅ ${item.raw_material_id}: +${item.qty_diterima} units @ Rp ${unitCost}`);
-        } catch (invErr: unknown) {
-          const message =
-            invErr instanceof Error ? invErr.message : "Gagal memperbarui stok inventory";
-          console.error(`  ❌ Inventory update failed for ${item.raw_material_id}:`, message);
-          throw ApiError.server(
-            `GRN tersimpan tetapi stok gagal diperbarui untuk bahan ${item.raw_material_id}: ${message}`
-          );
-        }
-      }
+    try {
+      await syncReceiveRejectCredits(adminDb, grn.id, user.id);
+    } catch (creditErr) {
+      console.error("[GRN] Vendor credit sync error (non-fatal):", creditErr);
     }
-    console.log('[GRN/' + grn.id + '] Inventory update complete\n');
 
-    return createdResponse(grn, `GRN ${grnNumber} berhasil dibuat`);
+    return createdResponse(
+      grn,
+      grnStatus === "rejected"
+        ? `GRN ${grnNumber} created — all items rejected at receipt`
+        : `GRN ${grnNumber} created — proceed to quality control before stock is updated`
+    );
   } catch (error) {
     if (error instanceof ApiError) return error.toResponse();
     if (error instanceof z.ZodError) {

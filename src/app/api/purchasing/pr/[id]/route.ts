@@ -1,25 +1,14 @@
 import { createServerPgClient } from "@/lib/pg/create-client";
 import { requireUser } from "@/lib/auth/require-user";
 import { NextRequest, NextResponse } from "next/server";
-import { z } from "zod";
-
-const prItemSchema = z.object({
-  raw_material_id: z.string().uuid("Bahan baku wajib dipilih"),
-  satuan_id: z.string().uuid().optional(),
-  description: z.string().min(1, "Deskripsi barang wajib diisi"),
-  qty: z.number().min(1, "Jumlah minimal 1"),
-  unit: z.string().min(1, "Satuan wajib diisi"),
-  estimated_price: z.number().min(0, "Harga estimasi tidak boleh negatif"),
-});
-
-const updatePRSchema = z.object({
-  department_id: z.string().uuid("Department tidak valid"),
-  priority: z.enum(["low", "medium", "high", "urgent"]),
-  required_date: z.string().optional(),
-  notes: z.string().optional(),
-  items: z.array(prItemSchema).min(1, "Minimal 1 item"),
-  action: z.enum(["draft", "submit"]).default("draft"),
-});
+import {
+  extractPrErrorMessage,
+  formatZodError,
+  isZodValidationError,
+  normalizePrWriteItems,
+  parsePrWriteBody,
+  sumPrTotalAmount,
+} from "@/lib/purchasing/pr-schemas";
 
 type RouteParams = {
   params: Promise<{ id: string }>;
@@ -64,6 +53,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
         items:pr_items(
           *,
           raw_material:raw_materials!raw_material_id(id, kode, nama),
+          product:products!product_id(id, kode, nama),
           satuan:units!satuan_id(id, nama)
         )
       `)
@@ -118,11 +108,13 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     const { id } = await params;
     const db = await createServerPgClient();
     const user = await requireUser();
-    const validated = updatePRSchema.parse(await request.json());
+    const moduleType =
+      existingPR.module_type === "product" ? ("product" as const) : ("raw_material" as const);
+    const validated = parsePrWriteBody(await request.json(), moduleType);
 
     const { data: existingPR, error: findError } = await db
       .from("purchase_requests")
-      .select("id, requester_id, status")
+      .select("id, requester_id, status, module_type")
       .eq("id", id)
       .single();
 
@@ -142,10 +134,8 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Hanya PR draft yang bisa diedit" }, { status: 400 });
     }
 
-    const totalAmount = validated.items.reduce(
-      (sum, item) => sum + item.qty * item.estimated_price,
-      0
-    );
+    const normalizedItems = normalizePrWriteItems(validated.items);
+    const totalAmount = sumPrTotalAmount(normalizedItems);
 
     const nextStatus = validated.action === "submit" ? "pending_head" : "draft";
 
@@ -156,15 +146,16 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
     if (deleteItemsError) throw deleteItemsError;
 
-    const items = validated.items.map((item) => ({
+    const items = normalizedItems.map((item) => ({
       pr_id: id,
-      raw_material_id: item.raw_material_id,
+      product_id: "product_id" in item ? item.product_id : null,
+      raw_material_id: "raw_material_id" in item ? item.raw_material_id : null,
       satuan_id: item.satuan_id || null,
       description: item.description,
       qty: item.qty,
       unit: item.unit,
       estimated_price: item.estimated_price,
-      total: item.qty * item.estimated_price,
+      total: item.total,
     }));
 
     const { error: insertItemsError } = await db.from("pr_items").insert(items);
@@ -189,12 +180,15 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ data: { id, status: nextStatus } });
   } catch (error) {
     console.error("Error updating PR:", error);
-    if (error instanceof z.ZodError) {
+    if (isZodValidationError(error)) {
       return NextResponse.json(
-        { error: "Validasi gagal", details: error.issues },
+        { error: formatZodError(error), details: error.issues },
         { status: 400 }
       );
     }
-    return NextResponse.json({ error: "Gagal mengubah PR" }, { status: 500 });
+    return NextResponse.json(
+      { error: extractPrErrorMessage(error, "Gagal mengubah PR") },
+      { status: 500 }
+    );
   }
 }

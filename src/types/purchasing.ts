@@ -234,13 +234,17 @@ export interface SupplierPriceList {
 // PRODUCT & BOM TYPES
 // ============================================
 
+export type ProductOutputType = "FINISHED_GOOD" | "WIP";
+
 export interface ProductFormData {
   nama_produk?: string;
   kode_produk?: string;
   category?: string;
   unit_id?: string;
+  satuan_id?: string | null;
   harga_jual?: number;
   notes?: string;
+  production_output_type?: ProductOutputType;
   // Legacy fields for compatibility
   nama?: string;
   kategori?: string;
@@ -268,11 +272,14 @@ export interface ProductWithCOGS {
   
   // Legacy fields for compatibility
   nama?: string;
+  kode?: string;
   kategori?: string;
   deskripsi?: string;
   markup_persen?: number;
   is_active?: boolean;
   hpp_estimasi?: number;
+  satuan_id?: string | null;
+  satuan_nama?: string | null;
 }
 
 export type Product = ProductWithCOGS;
@@ -615,6 +622,13 @@ export interface PurchaseOrderWithStats extends PurchaseOrder {
   payment_status?: "unpaid" | "partial" | "paid" | "overdue";
   lifecycle_status?: "draft" | "in_progress" | "waiting_payment" | "waiting_receipt" | "completed" | "cancelled";
   overall_progress_pct?: number;
+  order_progress_pct?: number;
+  qc_progress_pct?: number;
+  return_progress_pct?: number;
+  fulfillment_progress_pct?: number;
+  total_qty_received_grn?: number;
+  total_qty_qc_posted?: number;
+  total_qty_returned?: number;
   active_delivery_id?: string | null;
   active_delivery_number?: string | null;
   active_delivery_status?: string | null;
@@ -678,7 +692,9 @@ export interface PurchaseReturn {
   id: string;
   return_number: string;
   grn_id: string | null;
+  grn_number?: string | null;
   supplier_id: string;
+  vendor_id?: string | null;
   return_date: string;
   reason_type: ReturnReasonType;
   reason_notes: string | null;
@@ -696,7 +712,8 @@ export interface PurchaseReturn {
   
   // Relations (optional, loaded separately)
   supplier?: { nama_supplier: string };
-  grn?: { grn_number: string };
+  vendor?: { name?: string | null };
+  grn?: { id?: string | null; grn_number?: string | null; nomor_grn?: string | null };
   items?: PurchaseReturnItem[];
 }
 
@@ -720,12 +737,19 @@ export interface PurchaseReturnItem {
     nama: string;
     satuan?: string;
   };
+  grn_item?: {
+    warehouse_id?: string | null;
+    warehouse?: { name?: string | null } | null;
+  };
 }
 
 export interface ReturnableItem {
   grn_item_id: string;
   grn_id: string;
   raw_material_id: string;
+  product_id?: string;
+  product_kode?: string;
+  product_nama?: string;
   raw_material_kode: string;
   raw_material_nama: string;
   qty_diterima: number;
@@ -736,19 +760,25 @@ export interface ReturnableItem {
   expiry_date: string | null;
   qc_status: string;
   supplier_id: string;
+  vendor_id?: string;
   nama_supplier: string;
   satuan?: string;
+  warehouse_id?: string | null;
+  warehouse_name?: string;
 }
 
 export interface PurchaseReturnFormData {
   grn_id: string;
-  supplier_id: string;
+  supplier_id?: string;
+  vendor_id?: string;
+  module_type?: "raw_material" | "product";
   return_date: string;
   reason_type: ReturnReasonType;
   reason_notes: string;
   items: Array<{
     grn_item_id: string;
-    raw_material_id: string;
+    raw_material_id?: string;
+    product_id?: string;
     qty_returned: number;
     unit_cost: number;
     batch_number?: string | null;
@@ -762,6 +792,8 @@ export interface ReturnListParams {
   page?: number;
   limit?: number;
   supplier_id?: string;
+  vendor_id?: string;
+  module_type?: "raw_material" | "product";
   status?: ReturnStatus | 'all';
   reason_type?: ReturnReasonType | 'all';
   date_from?: string;

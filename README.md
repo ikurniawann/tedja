@@ -562,8 +562,9 @@ App Router hanya berisi routing + layout shell (thin wrapper); logic UI ada di `
 ```text
 database/
 ├── migrations/                 # baseline + incremental (schema-per-domain)
-│   ├── 00000000000000_app_auth.sql
-│   ├── schemas/<domain>/        # satu file per tabel
+│   ├── bootstrap/              # app_auth, prelude, functions, FK, views, triggers
+│   ├── schemas/<domain>/       # satu file per tabel (public = schema PostgreSQL public)
+│   ├── deltas/                 # migrasi incremental YYYYMMDD…
 │   └── ...
 ├── seeders/                    # super-admin.js, dll.
 └── scripts/                    # generate-from-db, apply-migrations, ...

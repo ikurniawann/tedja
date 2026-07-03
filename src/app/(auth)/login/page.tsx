@@ -7,17 +7,27 @@ import { createBrowserClient } from "@/lib/pg/browser-client";
 import { useRouter } from "next/navigation";
 import { Eye, EyeOff, Lock, Mail } from "lucide-react";
 
-const DEMO_LOGIN = {
-  email: "super@arkivworld.com",
-  password: "Arkiv2026*#",
-};
+const DEMO_ACCOUNTS = [
+  {
+    label: "Super Admin",
+    email: "super@arkivworld.com",
+    password: "Arkiv2026*#",
+  },
+  {
+    label: "Demo Sulu Dago",
+    email: "demo@sulu.id",
+    password: "demo",
+  },
+] as const;
+
+const DEFAULT_ACCOUNT = DEMO_ACCOUNTS[0];
 
 export default function LoginPage() {
   const router = useRouter();
   const db = createBrowserClient();
 
-  const [email, setEmail] = useState(DEMO_LOGIN.email);
-  const [password, setPassword] = useState(DEMO_LOGIN.password);
+  const [email, setEmail] = useState(DEFAULT_ACCOUNT.email);
+  const [password, setPassword] = useState(DEFAULT_ACCOUNT.password);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -176,6 +186,61 @@ export default function LoginPage() {
               {loading ? "Memverifikasi..." : "Log In"}
             </button>
           </form>
+
+          <div
+            className="mt-4 w-full rounded-[20px] border border-white/15 px-4 py-3 text-left text-xs text-white/80 shadow-lg"
+            style={{
+              background: "rgba(10, 10, 18, 0.22)",
+              backdropFilter: "blur(20px) saturate(140%)",
+              WebkitBackdropFilter: "blur(20px) saturate(140%)",
+            }}
+          >
+            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-white/55">
+              Akun demo
+            </p>
+            <div className="space-y-3">
+              <div>
+                <p className="text-[11px] font-medium text-white/50">Email</p>
+                <div className="mt-1 space-y-1">
+                  {DEMO_ACCOUNTS.map((account) => (
+                    <button
+                      key={account.email}
+                      type="button"
+                      onClick={() => {
+                        setEmail(account.email);
+                        setPassword(account.password);
+                        setError("");
+                      }}
+                      className="block w-full rounded-lg border border-transparent px-2 py-1 text-left font-mono text-[11px] text-white/90 transition hover:border-white/15 hover:bg-white/10"
+                      title={`Gunakan ${account.label}`}
+                    >
+                      {account.email}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <p className="text-[11px] font-medium text-white/50">Password</p>
+                <div className="mt-1 space-y-1">
+                  {DEMO_ACCOUNTS.map((account) => (
+                    <button
+                      key={`${account.email}-password`}
+                      type="button"
+                      onClick={() => {
+                        setEmail(account.email);
+                        setPassword(account.password);
+                        setError("");
+                      }}
+                      className="block w-full rounded-lg border border-transparent px-2 py-1 text-left font-mono text-[11px] text-white/90 transition hover:border-white/15 hover:bg-white/10"
+                      title={`Gunakan ${account.label}`}
+                    >
+                      {account.password}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div className="flex w-full items-center justify-between text-xs text-white/55">

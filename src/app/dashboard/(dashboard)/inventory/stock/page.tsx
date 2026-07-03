@@ -1,5 +1,5 @@
-import { InventoryStockPage } from "@/features/inventory/stock";
+import { RawMaterialStockPage } from "@/features/inventory/stock";
 
 export default function Page() {
-  return <InventoryStockPage />;
+  return <RawMaterialStockPage />;
 }

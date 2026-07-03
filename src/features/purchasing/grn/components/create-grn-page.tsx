@@ -1,27 +1,30 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { DatePicker } from "@/components/ui/datepicker";
 import { Combobox } from "@/components/ui/combobox";
 import { NumericInput } from "@/components/ui/numeric-input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { listGrnDeliveries, getGrnPOItems, getGrnPO, listWarehouses, getReceivingUserScope } from "../api";
-import type { ReceivingUserScope } from "../api";
+import type { PurchasingModuleType, ReceivingUserScope } from "../api";
 import { useCreateGrn } from "../mutations";
+import { RM_ROUTES, PRODUCT_ROUTES } from "@/modules/purchasing/constants/item-routes";
 import { DsDateTimePicker } from "@/components/design-system";
 import {
-  ClipboardDocumentCheckIcon,
-  PlusIcon,
-  TrashIcon,
   ArrowLeftIcon,
+  ClipboardCheck,
+  Package,
   TruckIcon,
-} from "@heroicons/react/24/outline";
+  Info,
+  Loader2Icon,
+  SaveIcon,
+} from "lucide-react";
 
 interface Delivery {
   id: string;
@@ -39,7 +42,6 @@ interface Delivery {
   po_number?: string;
   po_id?: string;
   branch_id?: string;
-  search_text?: string;
 }
 
 interface Warehouse {
@@ -51,6 +53,7 @@ interface Warehouse {
 interface POItem {
   id: string;
   raw_material_id: string;
+  product_id?: string;
   nama_bahan: string;
   qty_ordered: number;
   qty_received: number;
@@ -65,13 +68,17 @@ type ApiUnit = string | {
 
 type POItemApiRow = {
   id: string;
-  raw_material_id: string;
+  raw_material_id?: string;
+  product_id?: string;
   nama_bahan?: string;
   qty_ordered?: number | string | null;
   qty_received?: number | string | null;
   raw_material?: {
     nama?: string;
     nama_bahan?: string;
+  } | null;
+  product?: {
+    nama?: string;
   } | null;
   satuan?: ApiUnit;
   unit?: ApiUnit;
@@ -96,11 +103,34 @@ function getMaterialName(
   return rawMaterial.nama || rawMaterial.nama_bahan || fallback;
 }
 
-function mapPOItem(item: POItemApiRow): POItem {
+function calculateReceiptQuantities(acceptQty: number, remainingQty: number) {
+  const accept = Math.max(0, Math.min(toNumber(acceptQty), remainingQty));
+  const reject = Math.max(0, remainingQty - accept);
+  return { accept, reject };
+}
+
+function getRemainingQty(poItem?: POItem) {
+  if (!poItem) return 0;
+  return Math.max(0, toNumber(poItem.qty_ordered) - toNumber(poItem.qty_received));
+}
+
+function getProductName(
+  product?: POItemApiRow["product"],
+  fallback = "Unknown"
+) {
+  if (!product) return fallback;
+  return product.nama || fallback;
+}
+
+function mapPOItem(item: POItemApiRow, moduleType: PurchasingModuleType = "raw_material"): POItem {
+  const isProduct = moduleType === "product";
   return {
     id: item.id,
-    raw_material_id: item.raw_material_id,
-    nama_bahan: item.nama_bahan || getMaterialName(item.raw_material),
+    raw_material_id: isProduct ? "" : (item.raw_material_id || ""),
+    product_id: isProduct ? item.product_id : undefined,
+    nama_bahan: isProduct
+      ? item.nama_bahan || getProductName(item.product)
+      : item.nama_bahan || getMaterialName(item.raw_material),
     qty_ordered: toNumber(item.qty_ordered),
     qty_received: toNumber(item.qty_received),
     satuan: getUnitName(item.satuan || item.unit),
@@ -109,22 +139,37 @@ function mapPOItem(item: POItemApiRow): POItem {
 
 interface GrnItem {
   id: string;
-  purchase_order_item_id?: string;
+  purchase_order_item_id: string;
   raw_material_id: string;
+  product_id?: string;
   nama_bahan: string;
   qty_diterima: number;
   qty_ditolak: number;
-  kondisi: "baik" | "rusak" | "cacat";
   catatan: string;
 }
 
-export function CreateGrnPage() {
+type CreateGrnPageProps = {
+  moduleType?: PurchasingModuleType;
+};
+
+const GUIDELINES = [
+  "Select a delivery that has not been received yet.",
+  "Destination warehouse and receipt date are required.",
+  "Accepted quantity cannot exceed the remaining purchase order quantity.",
+  "Any shortfall is automatically moved to the reject column.",
+];
+
+export function CreateGrnPage({ moduleType = "raw_material" }: CreateGrnPageProps) {
+  const isProduct = moduleType === "product";
+  const listRoute = isProduct ? PRODUCT_ROUTES.purchasingReceive : RM_ROUTES.purchasingGrn;
+  const supplierLabel = isProduct ? "Vendor" : "Supplier";
+  const itemColumnLabel = isProduct ? "Product" : "Raw Material";
+
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { toast } = useToast();
   const createMutation = useCreateGrn();
   const loading = createMutation.isPending;
-  const [, setFetchingDeliveries] = useState(true);
+  const [fetchingDeliveries, setFetchingDeliveries] = useState(true);
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   const [selectedDelivery, setSelectedDelivery] = useState<Delivery | null>(null);
   const [poItems, setPoItems] = useState<POItem[]>([]);
@@ -150,42 +195,34 @@ export function CreateGrnPage() {
         delivery_number?: string;
         ekspedisi?: string;
         vendor_name?: string;
-      }>();
+      }>(moduleType);
       if (Array.isArray(data)) {
-        // Enhance delivery data with searchable text and safe defaults
         const enhanced = data.map((d) => ({
-          id: d.id,
-          no_resi: d.no_resi || d.nomor_resi || d.delivery_number || '',
-          nomor_resi: d.nomor_resi || d.no_resi || d.delivery_number || '',
-          no_surat_jalan: d.no_surat_jalan || '',
-          kurir: d.kurir || d.ekspedisi || d.vendor_name || '',
-          status: d.status || 'pending',
-          purchase_order_id: d.purchase_order_id || d.po_id || '',
-          po_id: d.po_id || d.purchase_order_id || '',
-          supplier_id: d.supplier_id || '',
+          id: d.id!,
+          no_resi: d.no_resi || d.nomor_resi || d.delivery_number || "",
+          nomor_resi: d.nomor_resi || d.no_resi || d.delivery_number || "",
+          no_surat_jalan: d.no_surat_jalan || "",
+          kurir: d.kurir || d.ekspedisi || d.vendor_name || "",
+          status: d.status || "pending",
+          purchase_order_id: d.purchase_order_id || d.po_id || "",
+          po_id: d.po_id || d.purchase_order_id || "",
+          supplier_id: d.supplier_id || "",
           branch_id: d.branch_id || undefined,
-          tanggal_kirim: d.tanggal_kirim || '',
-          tanggal_estimasi_tiba: d.tanggal_estimasi_tiba || '',
-          supplier_name: d.supplier_name || d.kurir || d.ekspedisi || d.no_surat_jalan || d.no_resi || 'Unknown',
-          po_number: d.po_number || d.nomor_resi || d.no_resi || '',
-          search_text: `${d.no_resi || ''} ${d.nomor_resi || ''} ${d.no_surat_jalan || ''} ${d.kurir || ''} ${d.ekspedisi || ''}`.toLowerCase(),
+          tanggal_kirim: d.tanggal_kirim || "",
+          tanggal_estimasi_tiba: d.tanggal_estimasi_tiba || "",
+          supplier_name: d.supplier_name || d.kurir || d.ekspedisi || d.no_surat_jalan || d.no_resi || "Unknown",
+          po_number: d.po_number || d.nomor_resi || d.no_resi || "",
         })) as Delivery[];
-        console.log('Enhanced deliveries:', enhanced);
         setDeliveries(enhanced);
       }
-    } catch (e) {
-      console.error(e);
-      toast({ 
-        title: "Error", 
-        description: "Gagal memuat data pengiriman", 
-        variant: "destructive" 
-      });
+    } catch (error) {
+      console.error(error);
+      toast.error("Failed to load deliveries.");
     } finally {
       setFetchingDeliveries(false);
     }
-  }, [toast]);
+  }, [moduleType]);
 
-  // Fetch deliveries that can be received
   useEffect(() => {
     fetchDeliveries();
   }, [fetchDeliveries]);
@@ -193,15 +230,11 @@ export function CreateGrnPage() {
   useEffect(() => {
     getReceivingUserScope()
       .then(setUserScope)
-      .catch((e) => {
-        console.error("Error fetching user scope:", e);
-        toast({
-          title: "Error",
-          description: "Gagal memuat scope cabang pengguna",
-          variant: "destructive",
-        });
+      .catch((error) => {
+        console.error("Error fetching user scope:", error);
+        toast.error("Failed to load user branch scope.");
       });
-  }, [toast]);
+  }, []);
 
   const warehouseBranchId = useMemo(() => {
     if (!userScope) return null;
@@ -215,66 +248,59 @@ export function CreateGrnPage() {
 
   useEffect(() => {
     const deliveryId = searchParams.get("delivery_id");
-    if (!deliveryId || selectedDelivery || deliveries.length === 0) return;
+    if (!deliveryId || fetchingDeliveries) return;
+
     const delivery = deliveries.find((item) => item.id === deliveryId);
     if (delivery) {
       setSelectedDelivery(delivery);
       setFormData((prev) => ({ ...prev, delivery_id: delivery.id, warehouse_id: "" }));
+      return;
     }
-  }, [deliveries, searchParams, selectedDelivery]);
 
-  // Fetch PO items when delivery selected
+    if (deliveries.length > 0 || !fetchingDeliveries) {
+      toast.error("This delivery already has a goods receipt or is not eligible.");
+    }
+  }, [deliveries, searchParams, fetchingDeliveries]);
+
   const fetchPOItems = useCallback(async (poId: string) => {
     try {
       const data = await getGrnPOItems<POItemApiRow>(poId);
-      if (Array.isArray(data) && data.length > 0) {
-        const simplifiedPoItems = data.map(mapPOItem);
-        setPoItems(simplifiedPoItems);
-        // Initialize GRN items from PO items
-        const initialGrnItems: GrnItem[] = simplifiedPoItems.map((item: POItem) => ({
-          id: crypto.randomUUID(),
-          purchase_order_item_id: item.id,
-          raw_material_id: item.raw_material_id,
-          nama_bahan: item.nama_bahan,
-          qty_diterima: Math.max(0, item.qty_ordered - item.qty_received),
-          qty_ditolak: 0,
-          kondisi: "baik" as const,
-          catatan: "",
-        }));
-        setGrnItems(initialGrnItems);
+      const rows = Array.isArray(data) && data.length > 0
+        ? data
+        : (await getGrnPO<{ items?: POItemApiRow[] }>(poId))?.items || [];
+
+      if (!Array.isArray(rows) || rows.length === 0) {
+        setPoItems([]);
+        setGrnItems([]);
         return;
       }
 
-      const fallback = await getGrnPO<{ items?: POItemApiRow[] }>(poId);
-      if (fallback?.items && Array.isArray(fallback.items) && fallback.items.length > 0) {
-        const simplifiedPoItems = fallback.items.map(mapPOItem);
-        setPoItems(simplifiedPoItems);
-        const initialGrnItems: GrnItem[] = simplifiedPoItems.map((item) => ({
-          id: crypto.randomUUID(),
-          purchase_order_item_id: item.id,
-          raw_material_id: item.raw_material_id,
-          nama_bahan: item.nama_bahan,
-          qty_diterima: Math.max(0, item.qty_ordered - item.qty_received),
-          qty_ditolak: 0,
-          kondisi: "baik" as const,
-          catatan: "",
-        }));
-        setGrnItems(initialGrnItems);
-      }
-    } catch (e) {
-      console.error(e);
-      toast({ 
-        title: "Error", 
-        description: "Gagal memuat item PO", 
-        variant: "destructive" 
-      });
+      const simplifiedPoItems = rows.map((item) => mapPOItem(item, moduleType));
+      setPoItems(simplifiedPoItems);
+      setGrnItems(
+        simplifiedPoItems.map((item) => {
+          const remaining = Math.max(0, item.qty_ordered - item.qty_received);
+          return {
+            id: crypto.randomUUID(),
+            purchase_order_item_id: item.id,
+            raw_material_id: item.raw_material_id,
+            product_id: item.product_id,
+            nama_bahan: item.nama_bahan,
+            qty_diterima: remaining,
+            qty_ditolak: 0,
+            catatan: "",
+          };
+        })
+      );
+    } catch (error) {
+      console.error(error);
+      toast.error("Failed to load purchase order items.");
     }
-  }, [toast]);
+  }, [moduleType]);
 
   useEffect(() => {
     const poId = selectedDelivery?.purchase_order_id;
     if (poId) {
-      console.log('Fetching PO items for:', poId);
       fetchPOItems(poId);
     } else {
       setPoItems([]);
@@ -282,7 +308,6 @@ export function CreateGrnPage() {
     }
   }, [fetchPOItems, selectedDelivery]);
 
-  // Resolve branch from delivery/PO for super_admin (unscoped users)
   useEffect(() => {
     if (!selectedDelivery) {
       setResolvedBranchId(null);
@@ -324,8 +349,8 @@ export function CreateGrnPage() {
           setContextBranchResolved(true);
         }
       })
-      .catch((e) => {
-        console.error("Error resolving branch from PO:", e);
+      .catch((error) => {
+        console.error("Error resolving branch from purchase order:", error);
         if (!cancelled) {
           setResolvedBranchId(null);
           setContextBranchResolved(true);
@@ -337,7 +362,6 @@ export function CreateGrnPage() {
     };
   }, [selectedDelivery, userScope]);
 
-  // Fetch warehouses when delivery is selected
   useEffect(() => {
     if (!selectedDelivery || userScope === null) {
       setWarehouses([]);
@@ -361,140 +385,139 @@ export function CreateGrnPage() {
           setFormData((prev) => ({ ...prev, warehouse_id: data[0].id }));
         }
       })
-      .catch((e) => {
-        console.error("Error fetching warehouses:", e);
-        toast({
-          title: "Error",
-          description: "Gagal memuat data gudang",
-          variant: "destructive",
-        });
+      .catch((error) => {
+        console.error("Error fetching warehouses:", error);
+        toast.error("Failed to load warehouses.");
       })
       .finally(() => setFetchingWarehouses(false));
-  }, [selectedDelivery, userScope, warehouseBranchId, contextBranchResolved, toast]);
+  }, [selectedDelivery, userScope, warehouseBranchId, contextBranchResolved]);
 
-  const handleAddItem = () => {
-    setGrnItems([
-      ...grnItems,
-      {
-        id: crypto.randomUUID(),
-        raw_material_id: "",
-        nama_bahan: "",
-        qty_diterima: 0,
-        qty_ditolak: 0,
-        kondisi: "baik",
-        catatan: "",
-      },
-    ]);
-  };
-
-  const handleRemoveItem = (id: string) => {
-    setGrnItems(grnItems.filter((item) => item.id !== id));
-  };
-
-  const handleUpdateItem = (id: string, field: keyof GrnItem, value: GrnItem[keyof GrnItem]) => {
-    setGrnItems(
-      grnItems.map((item) => (item.id === id ? { ...item, [field]: value } : item))
-    );
-  };
-
-  const fillAllRemaining = () => {
+  const handleUpdateAcceptedQty = (id: string, acceptQty: number) => {
     setGrnItems((items) =>
       items.map((item) => {
+        if (item.id !== id) return item;
         const poItem = poItems.find((p) => p.id === item.purchase_order_item_id);
-        const remaining = poItem ? Math.max(0, poItem.qty_ordered - poItem.qty_received) : item.qty_diterima;
-        return { ...item, qty_diterima: remaining, qty_ditolak: 0, kondisi: "baik" };
+        const remaining = getRemainingQty(poItem);
+        const { accept, reject } = calculateReceiptQuantities(acceptQty, remaining);
+        return { ...item, qty_diterima: accept, qty_ditolak: reject };
       })
     );
   };
+
+  const totalAccepted = useMemo(
+    () => grnItems.reduce((sum, item) => sum + Number(item.qty_diterima || 0), 0),
+    [grnItems]
+  );
+
+  const totalRejected = useMemo(
+    () => grnItems.reduce((sum, item) => sum + Number(item.qty_ditolak || 0), 0),
+    [grnItems]
+  );
+
+  const canSubmit =
+    Boolean(formData.delivery_id) &&
+    Boolean(formData.warehouse_id) &&
+    Boolean(formData.tanggal_penerimaan) &&
+    grnItems.length > 0;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!formData.delivery_id) {
-      toast({
-        title: "Error",
-        description: "Pilih pengiriman terlebih dahulu",
-        variant: "destructive",
-      });
+      toast.error("Please select a delivery first.");
       return;
     }
 
     if (!formData.warehouse_id) {
-      toast({
-        title: "Error",
-        description: "Pilih gudang tujuan",
-        variant: "destructive",
-      });
+      toast.error("Please select a destination warehouse.");
+      return;
+    }
+
+    if (!formData.tanggal_penerimaan) {
+      toast.error("Receipt date is required.");
       return;
     }
 
     if (grnItems.length === 0) {
-      toast({
-        title: "Error",
-        description: "Tambahkan minimal 1 item",
-        variant: "destructive",
-      });
+      toast.error("At least one item is required.");
+      return;
+    }
+
+    const hasAcceptedQty = grnItems.some((item) => Number(item.qty_diterima || 0) > 0);
+    if (!hasAcceptedQty) {
+      toast.error("Enter accepted quantity for at least one item.");
       return;
     }
 
     try {
-      await createMutation.mutateAsync({
+      const result = (await createMutation.mutateAsync({
         delivery_id: formData.delivery_id,
         warehouse_id: formData.warehouse_id,
         tanggal_penerimaan: formData.tanggal_penerimaan,
         catatan: formData.catatan || undefined,
+        ...(isProduct ? { module_type: "product" as const } : {}),
         items: grnItems.map((item) => ({
           purchase_order_item_id: item.purchase_order_item_id,
-          raw_material_id: item.raw_material_id,
+          ...(isProduct
+            ? { product_id: item.product_id }
+            : { raw_material_id: item.raw_material_id }),
           qty_diterima: Number(item.qty_diterima) || 0,
           qty_ditolak: Number(item.qty_ditolak) || 0,
-          kondisi: item.kondisi,
+          kondisi: "baik" as const,
           catatan: item.catatan || undefined,
         })),
-      });
+      })) as { data?: { id?: string } };
 
-      toast({
-        title: "Berhasil",
-        description: "Penerimaan barang berhasil dibuat",
-      });
-      router.push("/dashboard/purchasing/grn");
+      const createdId = result?.data?.id;
+      toast.success("Goods receipt created. Proceed to quality control.");
+      if (createdId) {
+        router.push(
+          isProduct
+            ? PRODUCT_ROUTES.purchasingReceiveQc(createdId)
+            : RM_ROUTES.purchasingGrnQc(createdId)
+        );
+      } else {
+        router.push(listRoute);
+      }
     } catch (error: unknown) {
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Gagal membuat penerimaan barang",
-        variant: "destructive",
-      });
+      toast.error(error instanceof Error ? error.message : "Failed to create goods receipt.");
     }
   };
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col items-start justify-between gap-4 border-b border-gray-200/70 pb-4 sm:flex-row sm:items-center">
-        <div className="min-w-0">
-          <h1 className="text-2xl font-bold text-gray-900 mt-2">Buat Penerimaan Baru</h1>
-          <p className="text-sm text-gray-500">Pilih delivery, cek sisa PO, lalu simpan penerimaan untuk menambah stok</p>
+      <div className="flex flex-col gap-4 border-b border-gray-200/70 pb-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="flex items-start gap-3">
+          <Link href={listRoute}>
+            <Button variant="ghost" size="sm" className="h-9 gap-2 text-pink-700">
+              <ArrowLeftIcon className="h-4 w-4" />
+              Back
+            </Button>
+          </Link>
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Record Goods Receipt</h1>
+            <p className="text-sm text-gray-500">
+              Confirm received items from the selected delivery. Stock is posted after quality control.
+            </p>
+          </div>
         </div>
-        <Button variant="outline" onClick={() => router.back()} className="purchasing-secondary-button w-full sm:w-auto">
-          <ArrowLeftIcon className="w-4 h-4 mr-2" />
-          Kembali
-        </Button>
       </div>
 
-      {/* Form */}
-      <form onSubmit={handleSubmit}>
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-          {/* Left Panel - Delivery Selection & Info (4 cols) */}
-          <div className="lg:col-span-4 space-y-4">
-            <Card className="border-gray-200/70 shadow-sm">
-              <CardHeader className="border-b border-gray-100 pb-4">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <TruckIcon className="w-5 h-5" />
-                  1. Pilih Delivery
+      <form onSubmit={handleSubmit} className="space-y-6">
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
+          <div className="space-y-6 xl:col-span-8">
+            <Card className="border-gray-200/70 shadow-xs">
+              <CardHeader className="border-b border-gray-200/70 pb-3">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <TruckIcon className="h-4 w-4" />
+                  Receipt Information
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4 p-4">
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium">Pengiriman</Label>
+              <CardContent className="space-y-4 pt-4">
+                <div className="min-w-0 space-y-1.5">
+                  <Label className="text-xs">
+                    Delivery <span className="text-red-500">*</span>
+                  </Label>
                   <Combobox
                     options={deliveries.map((delivery) => ({
                       value: delivery.id,
@@ -507,223 +530,291 @@ export function CreateGrnPage() {
                       setSelectedDelivery(delivery);
                       setFormData((prev) => ({ ...prev, delivery_id: value, warehouse_id: "" }));
                     }}
-                    placeholder="Pilih pengiriman..."
-                    searchPlaceholder="Cari nomor resi / surat jalan..."
-                    emptyMessage="Tidak ada pengiriman ditemukan"
+                    placeholder={fetchingDeliveries ? "Loading deliveries..." : "Select delivery"}
+                    searchPlaceholder="Search tracking number or delivery note..."
+                    emptyMessage="No eligible deliveries found"
                     allowClear
-                    className="!w-full h-9 text-sm"
+                    disabled={fetchingDeliveries}
+                    className="w-full! h-9 text-sm"
                   />
                 </div>
 
                 {selectedDelivery && (
-                  <div className="mt-4 space-y-3 border-t border-gray-200/70 pt-4">
+                  <div className="grid grid-cols-1 gap-3 rounded-xl border border-gray-200/70 bg-gray-50/60 p-4 text-sm md:grid-cols-2">
                     <div>
-                      <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">No. Resi</span>
-                      <p className="text-sm font-semibold text-gray-900 mt-0.5">{selectedDelivery.no_resi}</p>
+                      <p className="text-xs text-gray-500">Tracking Number</p>
+                      <p className="font-medium text-gray-900">{selectedDelivery.no_resi || "-"}</p>
                     </div>
                     <div>
-                      <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Surat Jalan</span>
-                      <p className="text-sm font-medium text-gray-900 mt-0.5">{selectedDelivery.no_surat_jalan || "-"}</p>
+                      <p className="text-xs text-gray-500">Delivery Note Number</p>
+                      <p className="font-medium text-gray-900">{selectedDelivery.no_surat_jalan || "-"}</p>
                     </div>
                     <div>
-                      <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Kurir</span>
-                      <p className="text-sm font-medium text-gray-900 mt-0.5">{selectedDelivery.kurir || "-"}</p>
+                      <p className="text-xs text-gray-500">Courier</p>
+                      <p className="font-medium text-gray-900">{selectedDelivery.kurir || "-"}</p>
                     </div>
                     <div>
-                      <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Status</span>
-                      <div className="mt-1">
-                        <Badge variant="outline" className="font-medium">{selectedDelivery.status}</Badge>
-                      </div>
+                      <p className="text-xs text-gray-500">Status</p>
+                      <Badge variant="outline" className="mt-1 font-medium capitalize">
+                        {selectedDelivery.status}
+                      </Badge>
                     </div>
                   </div>
                 )}
 
-                {/* Warehouse Selection */}
-                {selectedDelivery && (
-                  <div className="mt-4 space-y-3 border-t border-gray-200/70 pt-4">
-                    <div className="space-y-1.5">
-                      <Label htmlFor="warehouse_id">
-                        Gudang Tujuan <span className="text-red-500">*</span>
-                      </Label>
-                      <Combobox
-                        options={warehouses.map((w) => ({
-                          value: w.id,
-                          label: w.name,
-                          description: w.code,
-                        }))}
-                        value={formData.warehouse_id}
-                        onChange={(value) =>
-                          setFormData((prev) => ({ ...prev, warehouse_id: value }))
-                        }
-                        placeholder={fetchingWarehouses ? "Memuat gudang..." : "Pilih gudang tujuan"}
-                        searchPlaceholder="Cari gudang..."
-                        emptyMessage={fetchingWarehouses ? "Memuat..." : "Tidak ada gudang ditemukan"}
-                        allowClear
-                        disabled={fetchingWarehouses}
-                        className="!w-full h-9 text-sm"
-                      />
-                    </div>
-                  </div>
-                )}
-
-                {/* Informasi Penerimaan */}
-                <div className="mt-4 space-y-3 border-t border-gray-200/70 pt-4">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="tanggal">Tanggal Penerimaan</Label>
-                    <DatePicker
-                      id="tanggal"
-                      value={formData.tanggal_penerimaan}
-                      onChange={(date) =>
-                        setFormData((prev) => ({ ...prev, tanggal_penerimaan: date }))
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div className="min-w-0 space-y-1.5">
+                    <Label className="text-xs">
+                      Destination Warehouse <span className="text-red-500">*</span>
+                    </Label>
+                    <Combobox
+                      options={warehouses.map((warehouse) => ({
+                        value: warehouse.id,
+                        label: warehouse.name,
+                        description: warehouse.code,
+                      }))}
+                      value={formData.warehouse_id}
+                      onChange={(value) =>
+                        setFormData((prev) => ({ ...prev, warehouse_id: value }))
                       }
-                      variant="neutral"
+                      placeholder={fetchingWarehouses ? "Loading warehouses..." : "Select destination warehouse"}
+                      searchPlaceholder="Search warehouse..."
+                      emptyMessage={fetchingWarehouses ? "Loading..." : "No warehouse found"}
+                      allowClear
+                      disabled={!selectedDelivery || fetchingWarehouses}
+                      className="w-full! h-9 text-sm"
                     />
                   </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="catatan" className="text-sm font-medium">Catatan</Label>
-                    <Textarea
-                      id="catatan"
-                      value={formData.catatan || ""}
-                      onChange={(e) => setFormData((prev) => ({ ...prev, catatan: e.target.value }))}
-                      placeholder="Catatan tambahan (opsional)"
-                      rows={2}
-                      className="resize-none"
-                    />
-                  </div>
+
+                  <DsDateTimePicker
+                    label="Receipt Date"
+                    value={formData.tanggal_penerimaan}
+                    onChange={(value) =>
+                      setFormData((prev) => ({ ...prev, tanggal_penerimaan: value }))
+                    }
+                    placeholder="Select receipt date..."
+                    dateOnly
+                    required
+                    disabled={!selectedDelivery}
+                  />
+                </div>
+
+                <div className="min-w-0 space-y-1.5">
+                  <Label htmlFor="catatan" className="text-xs">
+                    Notes
+                  </Label>
+                  <Textarea
+                    id="catatan"
+                    value={formData.catatan || ""}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, catatan: e.target.value }))}
+                    placeholder="Add notes if needed..."
+                    rows={3}
+                    className="resize-none text-sm"
+                    disabled={!selectedDelivery}
+                  />
                 </div>
               </CardContent>
             </Card>
-          </div>
 
-          {/* Right Panel - Items Table (8 cols) */}
-          <div className="lg:col-span-8">
-            <Card className="h-full border-gray-200/70 shadow-sm">
-              <CardHeader className="border-b border-gray-100 px-4 pb-4">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-base font-semibold flex items-center gap-2">
-                    <ClipboardDocumentCheckIcon className="w-5 h-5" />
-                    2. Konfirmasi Item Diterima
-                  </CardTitle>
-                  <div className="flex gap-2">
-                    <Button type="button" variant="outline" size="sm" onClick={fillAllRemaining} disabled={grnItems.length === 0} className="purchasing-secondary-button">
-                      Isi Sisa PO
-                    </Button>
-                    <Button type="button" variant="outline" size="sm" onClick={handleAddItem} className="purchasing-secondary-button">
-                      <PlusIcon className="w-4 h-4 mr-1.5" />
-                      Item Manual
-                    </Button>
-                  </div>
-                </div>
+            <Card className="border-gray-200/70 shadow-xs">
+              <CardHeader className="border-b border-gray-200/70 pb-3">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <ClipboardCheck className="h-4 w-4" />
+                  Confirm Received Items
+                </CardTitle>
               </CardHeader>
               <CardContent className="p-0">
-                {grnItems.length === 0 ? (
-                  <div className="flex items-center justify-center h-full text-gray-400 text-sm">
-                    Pilih delivery di kiri untuk menarik item PO otomatis
+                {!selectedDelivery ? (
+                  <div className="py-12 text-center text-sm text-gray-500">
+                    Select a delivery to load purchase order items automatically.
+                  </div>
+                ) : grnItems.length === 0 ? (
+                  <div className="flex items-center justify-center py-12 text-sm text-gray-500">
+                    <Loader2Icon className="mr-2 h-4 w-4 animate-spin" />
+                    Loading purchase order items...
                   </div>
                 ) : (
-                  <table className="w-full">
-                    <thead className="sticky top-0 z-10 border-b border-gray-100 bg-gray-50">
-                      <tr>
-                        <th className="text-left text-xs font-semibold text-gray-600 uppercase tracking-wide px-4 py-2.5">Bahan Baku</th>
-                        <th className="text-center text-xs font-semibold text-gray-600 uppercase tracking-wide px-3 py-2.5 w-20">Ordered</th>
-                        <th className="text-center text-xs font-semibold text-gray-600 uppercase tracking-wide px-3 py-2.5 w-20">Received</th>
-                        <th className="text-center text-xs font-semibold text-gray-600 uppercase tracking-wide px-3 py-2.5 w-20">Sisa</th>
-                        <th className="text-center text-xs font-semibold text-gray-600 uppercase tracking-wide px-3 py-2.5 w-24">Terima</th>
-                        <th className="text-center text-xs font-semibold text-gray-600 uppercase tracking-wide px-3 py-2.5 w-24">Ditolak</th>
-                        <th className="text-center text-xs font-semibold text-gray-600 uppercase tracking-wide px-3 py-2.5 w-28">Kondisi</th>
-                        <th className="text-right text-xs font-semibold text-gray-600 uppercase tracking-wide px-4 py-2.5 w-16">Aksi</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {grnItems.map((item) => {
-                        const poItem = poItems.find((p) => p.id === item.purchase_order_item_id);
-                        const qtyOrdered = toNumber(poItem?.qty_ordered);
-                        const qtyReceived = toNumber(poItem?.qty_received);
-                        const qtyRemaining = Math.max(0, qtyOrdered - qtyReceived);
-                        const satuan = poItem?.satuan || 'pcs';
-                        
-                        return (
-                          <tr key={item.id} className="hover:bg-gray-50 transition-colors">
-                            <td className="px-4 py-3">
-                              <div className="text-sm font-medium text-gray-900">{item.nama_bahan || "Item manual"}</div>
-                              {poItem && qtyOrdered > 0 && (
-                                <div className="text-xs text-gray-500 mt-0.5">
-                                  PO: {qtyOrdered} {satuan}
-                                </div>
-                              )}
-                            </td>
-                            <td className="px-3 py-3 text-center">
-                              <span className="text-sm text-gray-600">{qtyOrdered}</span>
-                            </td>
-                            <td className="px-3 py-3 text-center">
-                              <span className="text-sm text-gray-600">{qtyReceived}</span>
-                            </td>
-                            <td className="px-3 py-3 text-center">
-                              <span className="text-sm font-semibold text-pink-700">{qtyRemaining}</span>
-                            </td>
-                            <td className="px-3 py-3">
-                              <NumericInput
-                                min="0"
-                                max={qtyRemaining || undefined}
-                                value={item.qty_diterima}
-                                onValueChange={(value) => handleUpdateItem(item.id, "qty_diterima", value || 0)}
-                                decimalScale={4}
-                                className="w-20 text-center text-sm h-9"
-                              />
-                            </td>
-                            <td className="px-3 py-3">
-                              <NumericInput
-                                min="0"
-                                value={item.qty_ditolak}
-                                onValueChange={(value) => handleUpdateItem(item.id, "qty_ditolak", value || 0)}
-                                decimalScale={4}
-                                className="w-20 text-center text-sm h-9"
-                              />
-                            </td>
-                            <td className="px-3 py-3">
-                              <Combobox
-                                options={[
-                                  { value: "baik", label: "Baik" },
-                                  { value: "rusak", label: "Rusak" },
-                                  { value: "cacat", label: "Cacat" },
-                                ]}
-                                value={item.kondisi}
-                                onChange={(value) => handleUpdateItem(item.id, "kondisi", value as "baik" | "rusak" | "cacat")}
-                                placeholder="Kondisi..."
-                                searchPlaceholder="Cari kondisi..."
-                                emptyMessage="Kondisi tidak ditemukan"
-                                className="!w-full h-9 text-sm"
-                              />
-                            </td>
-                            <td className="px-4 py-3 text-right">
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => handleRemoveItem(item.id)}
-                                className="h-9 w-9 text-red-600 hover:text-red-700 hover:bg-red-50"
-                              >
-                                <TrashIcon className="w-4 h-4" />
-                              </Button>
-                            </td>
+                  <div className="p-4">
+                    <div className="overflow-x-auto rounded-xl border border-gray-200/70">
+                      <table className="w-full table-fixed border-collapse text-sm [&_td]:border [&_td]:border-gray-200/70 [&_th]:border [&_th]:border-gray-200/70">
+                        <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+                          <tr>
+                            <th className="px-4 py-3 text-left font-semibold">{itemColumnLabel}</th>
+                            <th className="w-[72px] px-2 py-3 text-center font-semibold">Ordered</th>
+                            <th className="w-[72px] px-2 py-3 text-center font-semibold">Received</th>
+                            <th className="w-[84px] px-2 py-3 text-center font-semibold">Remaining</th>
+                            <th className="w-[104px] px-1.5 py-3 text-center font-semibold">Accept</th>
+                            <th className="w-[104px] px-1.5 py-3 text-center font-semibold">Reject</th>
                           </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                        </thead>
+                        <tbody>
+                          {grnItems.map((item) => {
+                            const poItem = poItems.find((p) => p.id === item.purchase_order_item_id);
+                            const qtyOrdered = toNumber(poItem?.qty_ordered);
+                            const qtyReceived = toNumber(poItem?.qty_received);
+                            const qtyRemaining = getRemainingQty(poItem);
+                            const satuan = poItem?.satuan || "pcs";
+
+                            return (
+                              <tr key={item.id} className="bg-white hover:bg-gray-50/80">
+                                <td className="px-4 py-3 align-top">
+                                  <div className="font-medium text-gray-900">{item.nama_bahan}</div>
+                                  {qtyOrdered > 0 && (
+                                    <div className="mt-0.5 text-xs text-gray-500">
+                                      Purchase Order: {qtyOrdered} {satuan}
+                                    </div>
+                                  )}
+                                </td>
+                                <td className="px-2 py-3 text-center align-middle text-gray-700">
+                                  {qtyOrdered}
+                                </td>
+                                <td className="px-2 py-3 text-center align-middle text-gray-700">
+                                  {qtyReceived}
+                                </td>
+                                <td className="px-2 py-3 text-center align-middle font-semibold text-pink-700">
+                                  {qtyRemaining}
+                                </td>
+                                <td className="px-1.5 py-1.5 align-middle">
+                                  <NumericInput
+                                    min="0"
+                                    max={qtyRemaining || undefined}
+                                    value={item.qty_diterima}
+                                    onValueChange={(value) =>
+                                      handleUpdateAcceptedQty(item.id, value || 0)
+                                    }
+                                    decimalScale={4}
+                                    className="h-9 w-full border-gray-200/80 bg-white px-2 text-center text-sm focus-visible:border-pink-300 focus-visible:ring-1 focus-visible:ring-pink-200/80"
+                                  />
+                                </td>
+                                <td className="px-1.5 py-1.5 align-middle">
+                                  <div
+                                    className={`flex h-9 w-full items-center justify-center rounded-lg border border-gray-200/80 bg-gray-50 px-2 text-sm font-medium ${
+                                      item.qty_ditolak > 0 ? "text-red-600" : "text-gray-700"
+                                    }`}
+                                  >
+                                    {item.qty_ditolak}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
                 )}
               </CardContent>
-              <div className="flex justify-end gap-3 border-t border-gray-200/70 bg-gray-50 px-4 py-4">
-                <Button type="button" variant="outline" onClick={() => router.back()} className="purchasing-secondary-button px-6">
-                  Batal
-                </Button>
-                <Button type="submit" disabled={loading || grnItems.length === 0} className="purchasing-main-button px-6">
-                  <ClipboardDocumentCheckIcon className="w-4 h-4 mr-2" />
-                  {loading ? "Menyimpan..." : "Simpan Penerimaan"}
-                </Button>
-              </div>
             </Card>
           </div>
+
+          <div className="xl:col-span-4">
+            <Card className="border-gray-200/70 shadow-xs xl:sticky xl:top-6">
+              <CardHeader className="border-b border-gray-200/70 pb-3">
+                <CardTitle className="text-base">Summary</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4 pt-4">
+                {selectedDelivery ? (
+                  <dl className="space-y-3 text-sm">
+                    <div className="flex items-start justify-between gap-3">
+                      <dt className="text-gray-500">Purchase Order</dt>
+                      <dd className="text-right font-medium text-gray-900">
+                        {selectedDelivery.po_number || "-"}
+                      </dd>
+                    </div>
+                    <div className="flex items-start justify-between gap-3">
+                      <dt className="text-gray-500">{supplierLabel}</dt>
+                      <dd className="text-right font-medium text-gray-900">
+                        {selectedDelivery.supplier_name || "-"}
+                      </dd>
+                    </div>
+                    <div className="flex items-start justify-between gap-3">
+                      <dt className="text-gray-500">Items</dt>
+                      <dd className="text-right font-medium text-gray-900">{grnItems.length}</dd>
+                    </div>
+                    <div className="flex items-start justify-between gap-3 border-t border-gray-200/70 pt-3">
+                      <dt className="font-medium text-gray-900">Total Rejected</dt>
+                      <dd className={`text-right font-semibold ${totalRejected > 0 ? "text-red-600" : "text-gray-900"}`}>
+                        {totalRejected}
+                      </dd>
+                    </div>
+                    <div className="flex items-start justify-between gap-3">
+                      <dt className="font-medium text-gray-900">Total Accepted</dt>
+                      <dd className="text-right font-semibold text-gray-900">{totalAccepted}</dd>
+                    </div>
+                  </dl>
+                ) : (
+                  <p className="text-sm text-gray-500">
+                    Select a delivery to preview receipt details.
+                  </p>
+                )}
+
+                <div className="rounded-xl border border-gray-200/70 bg-gray-50/60 p-4">
+                  <div className="mb-2 flex items-center gap-2 text-sm font-medium text-gray-900">
+                    <Info className="h-4 w-4 text-pink-600" />
+                    Guidelines
+                  </div>
+                  <ul className="space-y-2 text-xs leading-5 text-gray-600">
+                    {GUIDELINES.map((line) => (
+                      <li key={line} className="flex gap-2">
+                        <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-gray-400" />
+                        <span>{line}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                {grnItems.length > 0 && (
+                  <div className="rounded-xl border border-gray-200/70 bg-white p-4">
+                    <div className="mb-2 flex items-center gap-2 text-sm font-medium text-gray-900">
+                      <Package className="h-4 w-4 text-pink-600" />
+                      Item Preview
+                    </div>
+                    <ul className="space-y-2 text-xs text-gray-600">
+                      {grnItems.slice(0, 4).map((item) => (
+                        <li key={item.id} className="flex items-center justify-between gap-3">
+                          <span className="truncate">{item.nama_bahan}</span>
+                          <span className="shrink-0 font-medium text-gray-900">
+                            {item.qty_diterima}
+                          </span>
+                        </li>
+                      ))}
+                      {grnItems.length > 4 && (
+                        <li className="text-gray-500">+{grnItems.length - 4} more items</li>
+                      )}
+                    </ul>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+
+        <div className="flex flex-col-reverse gap-3 border-t border-gray-200/70 pt-4 sm:flex-row sm:justify-end">
+          <Button
+            type="button"
+            variant="outline"
+            className="purchasing-secondary-button w-full sm:w-auto"
+            onClick={() => router.push(listRoute)}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            disabled={loading || !canSubmit}
+            className="purchasing-main-button w-full sm:w-auto"
+          >
+            {loading ? (
+              <>
+                <Loader2Icon className="mr-2 h-4 w-4 animate-spin" />
+                Submitting...
+              </>
+            ) : (
+              <>
+                <SaveIcon className="mr-2 h-4 w-4" />
+                Submit
+              </>
+            )}
+          </Button>
         </div>
       </form>
     </div>

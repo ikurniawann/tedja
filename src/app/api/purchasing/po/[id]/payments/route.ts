@@ -1,6 +1,10 @@
 import { NextRequest } from "next/server";
 import { createPgClient } from "@/lib/pg/create-client";
 import { ApiError, requireApiRole } from "@/lib/api/auth";
+import {
+  getPoPayableContext,
+  resolvePaymentTermId,
+} from "@/lib/purchasing/po-payments";
 import { z } from "zod";
 
 const PAYMENT_ROLES = ["super_admin", "purchasing_admin", "finance_staff"] as const;
@@ -89,40 +93,28 @@ export async function POST(
     const db = createPgClient();
     const body = await request.json();
     const validated = paymentSchema.parse(body);
+    const paymentDate = validated.payment_date || new Date().toISOString().slice(0, 10);
 
-    const { data: po, error: poError } = await db
-      .from("purchase_orders")
-      .select("id, supplier_id")
-      .eq("id", id)
-      .single();
-
-    if (poError || !po) {
-      return Response.json({ success: false, message: "PO tidak ditemukan" }, { status: 404 });
+    const ctx = await getPoPayableContext(db, id);
+    if (!ctx) {
+      return Response.json({ success: false, message: "Purchase order not found" }, { status: 404 });
     }
 
-    let termId = validated.payment_term_id || null;
-
-    if (!termId) {
-      const { data: term, error: termError } = await db
-        .from("purchase_order_payment_terms")
-        .select("id")
-        .eq("purchase_order_id", id)
-        .eq("is_active", true)
-        .in("status", ["unpaid", "partial", "overdue"])
-        .order("term_no", { ascending: true })
-        .limit(1)
-        .maybeSingle();
-
-      if (termError) throw termError;
-      termId = term?.id || null;
-    }
-
-    if (!termId) {
+    if (ctx.outstandingAmount <= 0) {
       return Response.json(
-        { success: false, message: "Belum ada termin yang bisa dibayar untuk PO ini" },
+        { success: false, message: "This purchase order is already fully paid" },
         { status: 400 }
       );
     }
+
+    const termId = await resolvePaymentTermId(
+      db,
+      id,
+      ctx.supplierId,
+      validated.amount,
+      paymentDate,
+      validated.payment_term_id
+    );
 
     const paymentNumber = await generatePaymentNumber(db);
     const { data, error } = await db
@@ -131,8 +123,8 @@ export async function POST(
         payment_number: paymentNumber,
         purchase_order_id: id,
         payment_term_id: termId,
-        supplier_id: po.supplier_id,
-        payment_date: validated.payment_date || new Date().toISOString().slice(0, 10),
+        supplier_id: ctx.supplierId,
+        payment_date: paymentDate,
         amount: validated.amount,
         method: validated.method,
         reference_number: validated.reference_number || null,
@@ -146,16 +138,29 @@ export async function POST(
 
     await recalculateTerm(db, termId);
 
-    return Response.json({ success: true, data, message: "Pembayaran vendor berhasil dicatat" }, { status: 201 });
+    const isFullPayment = validated.amount >= ctx.outstandingAmount - 0.01;
+
+    return Response.json(
+      {
+        success: true,
+        data,
+        message: isFullPayment
+          ? "Full payment recorded. Purchase order is now paid."
+          : "Payment recorded successfully",
+      },
+      { status: 201 }
+    );
   } catch (error: unknown) {
     if (error instanceof ApiError) return error.toResponse();
     console.error("Error creating vendor payment:", error);
     if (error instanceof z.ZodError) {
-      return Response.json({ success: false, message: "Validasi gagal", errors: error.flatten().fieldErrors }, { status: 400 });
+      return Response.json(
+        { success: false, message: "Validation failed", errors: error.flatten().fieldErrors },
+        { status: 400 }
+      );
     }
-    return Response.json(
-      { success: false, message: getErrorMessage(error, "Gagal mencatat pembayaran vendor") },
-      { status: 500 }
-    );
+    const message = getErrorMessage(error, "Failed to record payment");
+    const status = message.includes("cannot exceed") ? 400 : 500;
+    return Response.json({ success: false, message }, { status });
   }
 }

@@ -2,17 +2,20 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowLeft, Save, DollarSign, Calendar, Package } from "lucide-react";
+import { DollarSign, Calendar, Package, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Combobox } from "@/components/ui/combobox";
-import { DatePicker } from "@/components/ui/datepicker";
+import { DsDateTimePicker } from "@/components/design-system";
 import { NumericInput } from "@/components/ui/numeric-input";
 import { SupplierPriceListFormData } from "@/types/purchasing";
+import {
+  PurchasingFormFooter,
+  PurchasingFormHeader,
+} from "@/modules/purchasing/components/page/purchasing-page-header";
 import { usePriceListFormData } from "../queries";
 import { useCreatePriceList } from "../mutations";
 
@@ -46,43 +49,47 @@ export function NewPriceListPage() {
   useEffect(() => {
     if (formDataQuery.isError) {
       console.error("Error loading data:", formDataQuery.error);
-      toast.error("Gagal memuat data");
+      toast.error("Failed to load form data.");
     }
   }, [formDataQuery.isError, formDataQuery.error]);
 
-  const selectedUnitLabel = units.find((unit) => unit.id === formData.satuan_id)?.simbol ||
+  const selectedUnitLabel =
+    units.find((unit) => unit.id === formData.satuan_id)?.simbol ||
     units.find((unit) => unit.id === formData.satuan_id)?.nama ||
-    "Unit";
+    "unit";
   const selectedMaterial = materials.find((material) => material.id === formData.bahan_baku_id);
-  const convertedUnits = selectedMaterial?.unit_conversions?.filter((conversion) => conversion.is_active !== false) || [];
-  const unitOptions = convertedUnits.length > 0
-    ? convertedUnits.map((conversion) => {
-        const unit = conversion.satuan || units.find((item) => item.id === conversion.satuan_id);
-        return {
-          value: conversion.satuan_id,
-          label: unit?.nama || "Satuan",
-          description: conversion.is_base ? "Satuan dasar" : `1 ${unit?.simbol || unit?.kode || unit?.nama || "unit"} = ${conversion.qty_in_base_unit}`,
-        };
-      })
-    : units.map((u) => ({ value: u.id, label: u.nama, description: u.simbol }));
+  const convertedUnits =
+    selectedMaterial?.unit_conversions?.filter((conversion) => conversion.is_active !== false) || [];
+  const unitOptions =
+    convertedUnits.length > 0
+      ? convertedUnits.map((conversion) => {
+          const unit = conversion.satuan || units.find((item) => item.id === conversion.satuan_id);
+          return {
+            value: conversion.satuan_id,
+            label: unit?.nama || "Unit",
+            description: conversion.is_base
+              ? "Base unit"
+              : `1 ${unit?.simbol || unit?.kode || unit?.nama || "unit"} = ${conversion.qty_in_base_unit}`,
+          };
+        })
+      : units.map((u) => ({ value: u.id, label: u.nama, description: u.simbol }));
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!formData.supplier_id) {
-      toast.error("Supplier wajib dipilih");
+      toast.error("Supplier is required.");
       return;
     }
     if (!formData.bahan_baku_id) {
-      toast.error("Bahan baku wajib dipilih");
+      toast.error("Raw material is required.");
       return;
     }
     if (!formData.satuan_id) {
-      toast.error("Satuan wajib dipilih");
+      toast.error("Unit is required.");
       return;
     }
 
-    // Ensure numeric fields are numbers and omit empty optional fields
     const payload: SupplierPriceListFormData = {
       supplier_id: formData.supplier_id,
       bahan_baku_id: formData.bahan_baku_id,
@@ -93,82 +100,80 @@ export function NewPriceListPage() {
       is_preferred: formData.is_preferred,
     };
 
-    // Add optional fields only if they have values
     if (formData.berlaku_dari) {
-      // Ensure date format is YYYY-MM-DD
       const dateStr = formData.berlaku_dari;
-      payload.berlaku_dari = dateStr.length === 10 ? dateStr : new Date(dateStr).toISOString().split('T')[0];
+      payload.berlaku_dari =
+        dateStr.length === 10 ? dateStr : new Date(dateStr).toISOString().split("T")[0];
     }
     if (formData.berlaku_sampai) {
       const dateStr = formData.berlaku_sampai;
-      payload.berlaku_sampai = dateStr.length === 10 ? dateStr : new Date(dateStr).toISOString().split('T')[0];
+      payload.berlaku_sampai =
+        dateStr.length === 10 ? dateStr : new Date(dateStr).toISOString().split("T")[0];
     }
-    if (formData.catatan && formData.catatan.trim()) {
+    if (formData.catatan?.trim()) {
       payload.catatan = formData.catatan.trim();
     }
 
     try {
       await createMutation.mutateAsync(payload);
-      toast.success("Price list berhasil ditambahkan");
+      toast.success("Price list created successfully.");
       router.push("/dashboard/purchasing/price-list");
     } catch (error: unknown) {
       console.error("Error creating price list:", error);
-      toast.error(getErrorMessage(error, "Gagal menambahkan price list"));
+      toast.error(getErrorMessage(error, "Failed to create price list."));
     }
   };
 
   if (loading) {
     return (
       <div className="flex items-center justify-center py-16">
-        <div className="text-center text-gray-500">Memuat data...</div>
+        <Loader2 className="h-8 w-8 animate-spin text-pink-600" />
       </div>
     );
   }
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center gap-4">
-        <Link href="/dashboard/purchasing/price-list">
-          <Button variant="ghost" size="icon" className="h-9 w-9">
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
-        </Link>
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Tambah Price List Baru</h1>
-          <p className="text-sm text-gray-500">Isi detail harga supplier</p>
-        </div>
-      </div>
+      <PurchasingFormHeader
+        backHref="/dashboard/purchasing/price-list"
+        title="Add Price List"
+        description="Enter supplier pricing details for a raw material."
+      />
 
-      <form onSubmit={handleSubmit}>
-        {/* Full Column Layout */}
+      <form id="price-list-form" onSubmit={handleSubmit}>
         <div className="space-y-6">
-          
-          {/* Card 1: Supplier & Bahan Baku */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base flex items-center gap-2">
-                <Package className="w-4 h-4" />
-                Supplier & Bahan Baku
+          <Card className="border-gray-200/70 shadow-xs">
+            <CardHeader className="border-b border-gray-200/70 pb-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Package className="h-4 w-4" />
+                Supplier & Raw Material
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <CardContent className="space-y-4 pt-4">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div className="space-y-1.5">
-                  <Label htmlFor="supplier" className="text-xs">Supplier <span className="text-red-500">*</span></Label>
+                  <Label htmlFor="supplier" className="text-xs">
+                    Supplier <span className="text-red-500">*</span>
+                  </Label>
                   <Combobox
-                    options={suppliers.map((s) => ({ value: s.id, label: s.nama_supplier, description: s.kota || undefined }))}
+                    options={suppliers.map((s) => ({
+                      value: s.id,
+                      label: s.nama_supplier,
+                      description: s.kota || undefined,
+                    }))}
                     value={formData.supplier_id}
                     onChange={(v) => setFormData((prev) => ({ ...prev, supplier_id: v }))}
-                    placeholder="Pilih supplier..."
-                    searchPlaceholder="Cari..."
-                    emptyMessage="Supplier tidak ditemukan"
+                    placeholder="Select supplier..."
+                    searchPlaceholder="Search..."
+                    emptyMessage="Supplier not found"
                     allowClear
                     className="h-9 text-sm"
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="bahan_baku" className="text-xs">Bahan Baku <span className="text-red-500">*</span></Label>
+                  <Label htmlFor="bahan_baku" className="text-xs">
+                    Raw Material <span className="text-red-500">*</span>
+                  </Label>
                   <Combobox
                     options={materials.map((m) => ({ value: m.id, label: m.nama, description: m.kode }))}
                     value={formData.bahan_baku_id}
@@ -180,9 +185,9 @@ export function NewPriceListPage() {
                         "";
                       setFormData((prev) => ({ ...prev, bahan_baku_id: v, satuan_id: defaultUnitId }));
                     }}
-                    placeholder="Pilih bahan baku..."
-                    searchPlaceholder="Cari..."
-                    emptyMessage="Bahan baku tidak ditemukan"
+                    placeholder="Select raw material..."
+                    searchPlaceholder="Search..."
+                    emptyMessage="Raw material not found"
                     allowClear
                     className="h-9 text-sm"
                   />
@@ -190,81 +195,83 @@ export function NewPriceListPage() {
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="satuan" className="text-xs">Satuan <span className="text-red-500">*</span></Label>
+                <Label htmlFor="satuan" className="text-xs">
+                  Unit <span className="text-red-500">*</span>
+                </Label>
                 <Combobox
                   options={unitOptions}
                   value={formData.satuan_id}
                   onChange={(v) => setFormData((prev) => ({ ...prev, satuan_id: v }))}
-                  placeholder={formData.bahan_baku_id ? "Pilih satuan..." : "Pilih bahan baku dulu"}
-                  searchPlaceholder="Cari..."
-                  emptyMessage="Satuan belum dikonfigurasi di bahan baku"
+                  placeholder={formData.bahan_baku_id ? "Select unit..." : "Select raw material first"}
+                  searchPlaceholder="Search..."
+                  emptyMessage="No units configured for this raw material"
                   disabled={!formData.bahan_baku_id}
                   allowClear
                   className="h-9 text-sm"
                 />
                 <p className="text-xs text-gray-500">
-                  Pilihan satuan diambil dari konversi pada master bahan baku.
+                  Unit options are taken from the raw material conversion settings.
                 </p>
               </div>
             </CardContent>
           </Card>
 
-          {/* Card 2: Pricing & Terms */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base flex items-center gap-2">
-                <DollarSign className="w-4 h-4" />
-                Harga & Terms
+          <Card className="border-gray-200/70 shadow-xs">
+            <CardHeader className="border-b border-gray-200/70 pb-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <DollarSign className="h-4 w-4" />
+                Price & Terms
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <CardContent className="space-y-4 pt-4">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                 <div className="space-y-1.5">
-                  <Label htmlFor="harga" className="text-xs">Harga per Satuan <span className="text-red-500">*</span></Label>
-                  <div className="flex rounded-lg border border-gray-300 bg-white focus-within:border-gray-400 focus-within:ring-2 focus-within:ring-gray-100">
-                    <div className="flex min-w-12 items-center justify-center rounded-l-lg border-r border-gray-200 bg-gray-50 px-3 text-xs font-semibold text-gray-500">
-                      Rp
-                    </div>
-                    <NumericInput
-                      id="harga"
-                      min="0"
-                      step="0.01"
-                      value={formData.harga}
-                      onValueChange={(value) => setFormData((prev) => ({ ...prev, harga: value }))}
-                      decimalScale={0}
-                      className="h-9 rounded-l-none border-0 text-sm font-mono shadow-none focus-visible:ring-0"
-                    />
-                  </div>
+                  <Label htmlFor="harga" className="text-xs">
+                    Price per Unit <span className="text-red-500">*</span>
+                  </Label>
+                  <NumericInput
+                    id="harga"
+                    min="0"
+                    step="0.01"
+                    value={formData.harga}
+                    onValueChange={(value) => setFormData((prev) => ({ ...prev, harga: value }))}
+                    decimalScale={0}
+                    className="h-9 text-sm font-mono"
+                  />
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="minimum_qty" className="text-xs">Minimum Qty</Label>
-                  <div className="flex rounded-lg border border-gray-300 bg-white focus-within:border-gray-400 focus-within:ring-2 focus-within:ring-gray-100">
+                  <Label htmlFor="minimum_qty" className="text-xs">Minimum Quantity</Label>
+                  <div className="flex rounded-lg border border-gray-200/80 bg-white focus-within:border-pink-300 focus-within:ring-1 focus-within:ring-pink-100">
                     <NumericInput
                       id="minimum_qty"
                       min="1"
                       value={formData.minimum_qty}
-                      onValueChange={(value) => setFormData((prev) => ({ ...prev, minimum_qty: value || 1 }))}
+                      onValueChange={(value) =>
+                        setFormData((prev) => ({ ...prev, minimum_qty: value || 1 }))
+                      }
                       decimalScale={4}
                       className="h-9 rounded-r-none border-0 text-sm shadow-none focus-visible:ring-0"
                     />
-                    <div className="flex min-w-14 items-center justify-center rounded-r-lg border-l border-gray-200 bg-gray-50 px-3 text-xs font-semibold uppercase text-gray-500">
+                    <div className="flex min-w-14 items-center justify-center rounded-r-lg border-l border-gray-200/80 bg-gray-50 px-3 text-xs font-semibold uppercase text-gray-500">
                       {selectedUnitLabel}
                     </div>
                   </div>
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="lead_time" className="text-xs">Lead Time (hari)</Label>
-                  <div className="flex rounded-lg border border-gray-300 bg-white focus-within:border-gray-400 focus-within:ring-2 focus-within:ring-gray-100">
+                  <Label htmlFor="lead_time" className="text-xs">Lead Time (days)</Label>
+                  <div className="flex rounded-lg border border-gray-200/80 bg-white focus-within:border-pink-300 focus-within:ring-1 focus-within:ring-pink-100">
                     <NumericInput
                       id="lead_time"
                       min="0"
                       value={formData.lead_time_days}
-                      onValueChange={(value) => setFormData((prev) => ({ ...prev, lead_time_days: value }))}
+                      onValueChange={(value) =>
+                        setFormData((prev) => ({ ...prev, lead_time_days: value }))
+                      }
                       decimalScale={0}
                       className="h-9 rounded-r-none border-0 text-sm shadow-none focus-visible:ring-0"
                     />
-                    <div className="flex min-w-14 items-center justify-center rounded-r-lg border-l border-gray-200 bg-gray-50 px-3 text-xs font-semibold text-gray-500">
-                      Hari
+                    <div className="flex min-w-14 items-center justify-center rounded-r-lg border-l border-gray-200/80 bg-gray-50 px-3 text-xs font-semibold text-gray-500">
+                      days
                     </div>
                   </div>
                 </div>
@@ -272,62 +279,52 @@ export function NewPriceListPage() {
             </CardContent>
           </Card>
 
-          {/* Card 3: Contract Price */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base flex items-center gap-2">
-                <Calendar className="w-4 h-4" />
-                Contract Price
+          <Card className="border-gray-200/70 shadow-xs">
+            <CardHeader className="border-b border-gray-200/70 pb-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Calendar className="h-4 w-4" />
+                Contract Validity
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <Label htmlFor="berlaku_dari" className="text-xs">Berlaku Dari</Label>
-                  <DatePicker
-                    value={formData.berlaku_dari}
-                    onChange={(v) => setFormData((prev) => ({ ...prev, berlaku_dari: v }))}
-                    placeholder="Dari..."
-                    variant="neutral"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="berlaku_sampai" className="text-xs">Berlaku Sampai</Label>
-                  <DatePicker
-                    value={formData.berlaku_sampai}
-                    onChange={(v) => setFormData((prev) => ({ ...prev, berlaku_sampai: v }))}
-                    placeholder="Sampai..."
-                    variant="neutral"
-                  />
-                </div>
+            <CardContent className="space-y-4 pt-4">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <DsDateTimePicker
+                  label="Effective From"
+                  value={formData.berlaku_dari}
+                  onChange={(v) => setFormData((prev) => ({ ...prev, berlaku_dari: v }))}
+                  placeholder="Select start date..."
+                  dateOnly
+                />
+                <DsDateTimePicker
+                  label="Effective Until"
+                  value={formData.berlaku_sampai}
+                  onChange={(v) => setFormData((prev) => ({ ...prev, berlaku_sampai: v }))}
+                  placeholder="Select end date..."
+                  dateOnly
+                />
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="catatan" className="text-xs">Catatan</Label>
+                <Label htmlFor="catatan" className="text-xs">Notes</Label>
                 <Textarea
                   id="catatan"
                   value={formData.catatan}
                   onChange={(e) => setFormData((prev) => ({ ...prev, catatan: e.target.value }))}
-                  placeholder="Catatan tambahan..."
+                  placeholder="Additional notes..."
                   rows={2}
-                  className="text-sm resize-none"
+                  className="resize-none text-sm"
                 />
               </div>
             </CardContent>
           </Card>
-
         </div>
 
-        {/* Action Buttons */}
-        <div className="mt-6 flex items-center justify-end gap-3 border-t border-gray-200/70 pt-4">
-          <Button type="button" variant="outline" onClick={() => router.back()} className="purchasing-secondary-button px-6">
-            Batal
-          </Button>
-          <Button type="submit" disabled={isSubmitting} className="purchasing-main-button px-6">
-            <Save className="w-4 h-4 mr-2" />
-            {isSubmitting ? "Menyimpan..." : "Simpan Price List"}
-          </Button>
-        </div>
+        <PurchasingFormFooter
+          onCancel={() => router.back()}
+          submitLabel="Save Price List"
+          loading={isSubmitting}
+          formId="price-list-form"
+        />
       </form>
     </div>
   );

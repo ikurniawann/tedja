@@ -2,12 +2,10 @@
 
 import { use, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 import { PRForm } from "@/components/purchasing/pr-form";
 import { PRDetailToast } from "@/components/purchasing/pr-detail-toast";
-import { Button } from "@/components/ui/button";
+import { PurchasingFormHeader } from "@/modules/purchasing/components/page/purchasing-page-header";
 import { usePRFormData, usePurchaseRequest } from "../queries";
 import { useUpdatePurchaseRequest } from "../mutations";
 import type { PRFormInput } from "../types";
@@ -51,17 +49,19 @@ export function EditPRPage({ params }: EditPRPageProps) {
   async function handleUpdatePR(data: PRFormInput, action: "draft" | "submit") {
     try {
       await updateMutation.mutateAsync({ id, payload: { ...data, action } });
-      toast.success(action === "submit" ? "PR berhasil disubmit" : "Perubahan PR disimpan");
+      toast.success(
+        action === "submit" ? "Purchase request submitted" : "Purchase request changes saved"
+      );
       router.push(`/dashboard/purchasing/pr/${id}?updated=${action}`);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Gagal menyimpan PR");
+      toast.error(err instanceof Error ? err.message : "Failed to save purchase request");
     }
   }
 
   if (prLoading || formLoading) {
     return (
       <div className="flex items-center justify-center py-20 text-sm text-gray-500">
-        Memuat data PR...
+        Loading purchase request...
       </div>
     );
   }
@@ -69,7 +69,7 @@ export function EditPRPage({ params }: EditPRPageProps) {
   if (prError || !pr || !formData || !initialData) {
     return (
       <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-        {prError instanceof Error ? prError.message : "PR tidak ditemukan"}
+        {prError instanceof Error ? prError.message : "Purchase request not found"}
       </div>
     );
   }
@@ -77,17 +77,11 @@ export function EditPRPage({ params }: EditPRPageProps) {
   return (
     <div className="space-y-6">
       <PRDetailToast />
-      <div className="flex items-center gap-4">
-        <Link href={`/dashboard/purchasing/pr/${id}`}>
-          <Button variant="ghost" size="icon" className="h-9 w-9">
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
-        </Link>
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Edit Purchase Request</h1>
-          <p className="text-sm text-gray-500">Perubahan hanya bisa dilakukan saat PR masih draft</p>
-        </div>
-      </div>
+      <PurchasingFormHeader
+        backHref={`/dashboard/purchasing/pr/${id}`}
+        title="Edit Purchase Request"
+        description="Changes are only allowed while the purchase request is still a draft"
+      />
 
       <PRForm
         departments={formData.departments}
@@ -97,6 +91,7 @@ export function EditPRPage({ params }: EditPRPageProps) {
         mode="edit"
         onSubmit={handleUpdatePR}
         isLoading={updateMutation.isPending}
+        cancelHref={`/dashboard/purchasing/pr/${id}`}
       />
     </div>
   );

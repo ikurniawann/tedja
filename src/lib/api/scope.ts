@@ -77,25 +77,74 @@ export function effectiveBranchId(scope: UserScope | null): string | null {
 }
 
 /**
- * Ekspresi `.or()` untuk membaca data master level company:
- * tampilkan baris milik company user + baris global (company_id IS NULL).
- * Mengembalikan null bila user unscoped (lihat semua, tanpa filter).
+ * Ekspresi `.or()` untuk membaca data master level company (ketat).
+ * Hanya baris milik company user — tanpa template global (company_id IS NULL).
  */
 export function companyScopeOr(scope: UserScope | null): string | null {
-  const companyId = effectiveCompanyId(scope);
+  if (!scope || scope.isUnscoped) return null;
+  if (scope.businessScope === "holding") return null;
+  const companyId = scope.companyId;
   if (!companyId) return null;
-  return `company_id.eq.${companyId},company_id.is.null`;
+  return `company_id.eq.${companyId}`;
 }
 
 /**
- * Ekspresi `.or()` untuk membaca data master level branch:
- * tampilkan baris milik branch user + baris tanpa branch (branch_id IS NULL).
- * Hanya berlaku untuk user bercope branch; selain itu null.
+ * Ekspresi `.or()` untuk membaca data master level branch (ketat).
+ * Hanya baris milik branch user — tanpa template global (branch_id IS NULL).
  */
 export function branchScopeOr(scope: UserScope | null): string | null {
   const branchId = effectiveBranchId(scope);
   if (!branchId) return null;
-  return `branch_id.eq.${branchId},branch_id.is.null`;
+  return `branch_id.eq.${branchId}`;
+}
+
+/** Cek apakah baris master/operasional boleh diakses user scoped. */
+export function isRowInBusinessScope(
+  scope: UserScope | null,
+  row: { company_id?: string | null; branch_id?: string | null }
+): boolean {
+  if (!scope || scope.isUnscoped) return true;
+
+  if (scope.businessScope === "branch") {
+    if (!scope.branchId || row.branch_id !== scope.branchId) return false;
+    if (!scope.companyId || row.company_id !== scope.companyId) return false;
+    return true;
+  }
+
+  if (scope.businessScope === "company") {
+    if (!scope.companyId || row.company_id !== scope.companyId) return false;
+    return true;
+  }
+
+  return true;
+}
+
+/**
+ * Looser scope check for operational documents (PO, delivery, GRN) that may have
+ * null company_id/branch_id on legacy rows. Null scope columns inherit visibility
+ * from the user's company/branch instead of being excluded outright.
+ */
+export function isOperationalRowInBusinessScope(
+  scope: UserScope | null,
+  row: { company_id?: string | null; branch_id?: string | null }
+): boolean {
+  if (!scope || scope.isUnscoped) return true;
+
+  const companyId = row.company_id ?? null;
+  const branchId = row.branch_id ?? null;
+
+  if (scope.businessScope === "branch") {
+    if (scope.companyId && companyId && companyId !== scope.companyId) return false;
+    if (branchId && scope.branchId && branchId !== scope.branchId) return false;
+    return true;
+  }
+
+  if (scope.businessScope === "company") {
+    if (scope.companyId && companyId && companyId !== scope.companyId) return false;
+    return true;
+  }
+
+  return true;
 }
 
 export async function resolveBusinessScopeFromWarehouse(

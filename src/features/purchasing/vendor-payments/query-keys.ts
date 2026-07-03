@@ -1,7 +1,8 @@
-import type { VendorPaymentListParams } from "./types";
+import type { PurchasingModuleType } from "@/lib/purchasing/module-scope";
+import type { PurchaseInvoiceListParams } from "./types";
 
 export const vendorPaymentsQueryKeys = {
-  all: ["purchasing", "vendor-payments"] as const,
-  list: (params: VendorPaymentListParams) =>
-    ["purchasing", "vendor-payments", "list", params] as const,
+  all: ["purchasing", "purchase-invoices"] as const,
+  list: (params: PurchaseInvoiceListParams, moduleType: PurchasingModuleType = "raw_material") =>
+    ["purchasing", "purchase-invoices", "list", moduleType, params] as const,
 };

@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Combobox } from "@/components/ui/combobox";
+import { PurchasingPageHeader } from "@/modules/purchasing/components/page/purchasing-page-header";
 import { PurchasingListSection } from "@/modules/purchasing/components/list/PurchasingListSection";
 import { PurchasingTablePagination } from "@/modules/purchasing/components/pagination/PurchasingTablePagination";
 import {
@@ -20,10 +21,22 @@ import {
   Pencil,
   X,
 } from "lucide-react";
-import { formatRupiah, formatDate, getPRStatusLabel, getPriorityBadge } from "@/lib/purchasing/utils";
+import { formatAmount, formatDate, getPRStatusLabel, getPriorityBadge } from "@/lib/purchasing/utils";
 import { toast } from "sonner";
 import { usePurchaseRequestList } from "../queries";
 import type { PRStatusFilter as PRStatus } from "../types";
+
+const PR_STATUS_LABEL_OVERRIDES: Record<string, string> = {
+  rejected: "Rejected",
+  converted: "Purchase Order Created",
+};
+
+const PRIORITY_LABEL_OVERRIDES: Record<string, string> = {
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  urgent: "Urgent",
+};
 
 export function PRListPage() {
   const router = useRouter();
@@ -49,7 +62,8 @@ export function PRListPage() {
 
   useEffect(() => {
     if (listQuery.isError) {
-      console.error("Error fetching PRs:", listQuery.error);
+      console.error("Error fetching purchase requests:", listQuery.error);
+      toast.error("Failed to load purchase requests");
     }
   }, [listQuery.isError, listQuery.error]);
 
@@ -68,7 +82,9 @@ export function PRListPage() {
     if (handledCreatedToast.current === created) return;
     handledCreatedToast.current = created;
 
-    toast.success(created === "draft" ? "Draft PR berhasil disimpan" : "PR berhasil disubmit");
+    toast.success(
+      created === "draft" ? "Draft purchase request saved" : "Purchase request submitted"
+    );
     router.replace("/dashboard/purchasing/pr");
   }, [router, searchParams]);
 
@@ -80,56 +96,56 @@ export function PRListPage() {
   }
 
   const statusOptions = [
-    { value: "all", label: "Semua Status" },
+    { value: "all", label: "All Statuses" },
     { value: "draft", label: "Draft" },
-    { value: "pending_head", label: "Pending Head Dept" },
+    { value: "pending_head", label: "Pending Head Department" },
     { value: "pending_finance", label: "Pending Finance" },
-    { value: "pending_direksi", label: "Pending Direksi" },
+    { value: "pending_direksi", label: "Pending Director" },
     { value: "approved", label: "Approved" },
     { value: "rejected", label: "Rejected" },
-    { value: "converted", label: "PO Dibuat" },
+    { value: "converted", label: "Purchase Order Created" },
   ];
   const isFilterActive = statusFilter !== "all";
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-gray-200/70 pb-4">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Purchase Request</h1>
-          <p className="text-sm text-gray-500">Kelola permintaan pembelian — {total} total</p>
-        </div>
-        <Link href="/dashboard/purchasing/pr/insert">
-          <Button className="h-10 w-full gap-2 rounded-lg bg-pink-600 px-3 text-sm font-semibold text-white shadow-sm hover:bg-pink-700 sm:w-auto">
-            <Plus className="w-4 h-4 mr-2" />
-            Buat PR Baru
-          </Button>
-        </Link>
-      </div>
+      <PurchasingPageHeader
+        title="Purchase Request"
+        description={`Manage purchase requests — ${total} total`}
+        actions={
+          <Link href="/dashboard/purchasing/pr/insert">
+            <Button className="h-10 w-full gap-2 rounded-lg bg-pink-600 px-3 text-sm font-semibold text-white shadow-sm hover:bg-pink-700 sm:w-auto">
+              <Plus className="mr-2 h-4 w-4" />
+              Create Purchase Request
+            </Button>
+          </Link>
+        }
+      />
 
       <PurchasingListSection
         icon={FileText}
-        title="Daftar Purchase Request"
-        description="Pantau PR berdasarkan nomor dokumen, status, prioritas, dan total nilai."
+        title="Purchase Request List"
+        description="Track purchase requests by document number, status, priority, and total value."
         toolbar={
           <div className="flex w-full flex-col gap-3 sm:w-auto md:flex-row md:items-center">
             <label className="relative w-full md:w-80">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <Input
-                  placeholder="Cari nomor PR..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="h-10 bg-white pl-10 pr-10 text-sm focus:border-pink-400 focus:ring-2 focus:ring-pink-100"
-                />
-                {searchQuery && (
-                  <button
-                    type="button"
-                    onClick={() => setSearchQuery("")}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 transition-colors hover:text-gray-700"
-                    aria-label="Hapus pencarian"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                )}
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+              <Input
+                placeholder="Search purchase request number..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="h-10 bg-white pl-10 pr-10 text-sm focus:border-pink-400 focus:ring-2 focus:ring-pink-100"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 transition-colors hover:text-gray-700"
+                  aria-label="Clear search"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
             </label>
 
             <Button
@@ -176,8 +192,8 @@ export function PRListPage() {
                       setPage(1);
                     }}
                     placeholder="Filter status..."
-                    searchPlaceholder="Cari status..."
-                    emptyMessage="Status tidak ditemukan"
+                    searchPlaceholder="Search status..."
+                    emptyMessage="No status found"
                     className="!w-full h-9 text-sm"
                   />
                 </div>
@@ -186,40 +202,45 @@ export function PRListPage() {
           )}
 
           {loading ? (
-            <div className="text-center py-12">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mx-auto"></div>
-              <p className="text-sm text-gray-500 mt-2">Memuat data...</p>
+            <div className="py-12 text-center">
+              <div className="mx-auto h-8 w-8 animate-spin rounded-full border-b-2 border-gray-900" />
+              <p className="mt-2 text-sm text-gray-500">Loading purchase requests...</p>
             </div>
           ) : prs.length === 0 ? (
-            <div className="text-center py-14">
-              <FileText className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-              <p className="text-gray-500">Tidak ada data PR</p>
+            <div className="py-14 text-center">
+              <FileText className="mx-auto mb-4 h-12 w-12 text-gray-300" />
+              <p className="text-gray-500">No purchase requests found</p>
               <Link href="/dashboard/purchasing/pr/insert">
-                <Button variant="outline" className="mt-4 h-10 gap-2 rounded-lg border-pink-200 bg-white px-3 text-sm font-medium text-pink-700 shadow-sm hover:!border-pink-200 hover:!bg-pink-50 hover:!text-pink-700">
-                  Buat PR Pertama
+                <Button
+                  variant="outline"
+                  className="mt-4 h-10 gap-2 rounded-lg border-pink-200 bg-white px-3 text-sm font-medium text-pink-700 shadow-sm hover:!border-pink-200 hover:!bg-pink-50 hover:!text-pink-700"
+                >
+                  Create First Purchase Request
                 </Button>
               </Link>
             </div>
           ) : (
             <>
               <div className="overflow-x-auto">
-              <table className="min-w-full text-sm">
-                <thead className="border-b border-gray-100 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
-                  <tr>
-                    <th className="px-4 py-3 text-left font-semibold">No. PR</th>
-                    <th className="px-4 py-3 text-left font-semibold">Tanggal</th>
-                    <th className="px-4 py-3 text-left font-semibold">Departemen</th>
-                    <th className="px-4 py-3 text-left font-semibold">Requester</th>
-                    <th className="px-4 py-3 text-right font-semibold">Total</th>
-                    <th className="px-4 py-3 text-center font-semibold">Prioritas</th>
-                    <th className="px-4 py-3 text-center font-semibold">Status</th>
-                    <th className="px-4 py-3 text-right font-semibold">Aksi</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
+                <table className="min-w-full text-sm">
+                  <thead className="border-b border-gray-100 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+                    <tr>
+                      <th className="px-4 py-3 text-left font-semibold">Number</th>
+                      <th className="px-4 py-3 text-left font-semibold">Date</th>
+                      <th className="px-4 py-3 text-left font-semibold">Department</th>
+                      <th className="px-4 py-3 text-left font-semibold">Requester</th>
+                      <th className="px-4 py-3 text-right font-semibold">Total</th>
+                      <th className="px-4 py-3 text-center font-semibold">Priority</th>
+                      <th className="px-4 py-3 text-center font-semibold">Status</th>
+                      <th className="px-4 py-3 text-right font-semibold">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
                     {prs.map((pr) => {
                       const statusBadge = getPRStatusLabel(pr.status);
                       const priorityBadge = getPriorityBadge(pr.priority);
+                      const statusLabel = PR_STATUS_LABEL_OVERRIDES[pr.status] ?? statusBadge.label;
+                      const priorityLabel = PRIORITY_LABEL_OVERRIDES[pr.priority] ?? priorityBadge.label;
 
                       return (
                         <tr
@@ -228,52 +249,37 @@ export function PRListPage() {
                           onClick={() => router.push(`/dashboard/purchasing/pr/${pr.id}`)}
                         >
                           <td className="px-4 py-3">
-                            <span className="font-medium text-gray-900">
-                              {pr.pr_number}
-                            </span>
+                            <span className="font-medium text-gray-900">{pr.pr_number}</span>
                           </td>
-                          <td className="px-4 py-3 text-gray-600">
-                            {formatDate(pr.created_at)}
-                          </td>
-                          <td className="px-4 py-3 text-gray-600">
-                            {pr.department_name || "-"}
-                          </td>
-                          <td className="px-4 py-3 text-gray-600">
-                            {pr.requester_name || "-"}
-                          </td>
+                          <td className="px-4 py-3 text-gray-600">{formatDate(pr.created_at)}</td>
+                          <td className="px-4 py-3 text-gray-600">{pr.department_name || "-"}</td>
+                          <td className="px-4 py-3 text-gray-600">{pr.requester_name || "-"}</td>
                           <td className="px-4 py-3 text-right font-medium">
-                            {formatRupiah(pr.total_amount)}
+                            {formatAmount(pr.total_amount)}
                           </td>
                           <td className="px-4 py-3 text-center">
-                            <Badge className={priorityBadge.color}>
-                              {priorityBadge.label}
-                            </Badge>
+                            <Badge className={priorityBadge.color}>{priorityLabel}</Badge>
                           </td>
                           <td className="px-4 py-3 text-center">
-                            <Badge className={statusBadge.color}>
-                              {statusBadge.label}
-                            </Badge>
+                            <Badge className={statusBadge.color}>{statusLabel}</Badge>
                           </td>
                           <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                             <div className="flex items-center justify-end gap-2">
                               <Link href={`/dashboard/purchasing/pr/${pr.id}`}>
-                                <Button variant="ghost" size="sm" title="Detail" className="cursor-pointer">
-                                  <Eye className="w-4 h-4" />
+                                <Button variant="ghost" size="sm" title="View detail" className="cursor-pointer">
+                                  <Eye className="h-4 w-4" />
                                 </Button>
                               </Link>
                               {pr.status === "draft" && (
                                 <Link href={`/dashboard/purchasing/pr/edit/${pr.id}`}>
                                   <Button variant="ghost" size="sm" title="Edit" className="cursor-pointer">
-                                    <Pencil className="w-4 h-4" />
+                                    <Pencil className="h-4 w-4" />
                                   </Button>
                                 </Link>
                               )}
-                              <Link
-                                href={`/dashboard/purchasing/print/pr/${pr.id}`}
-                                target="_blank"
-                              >
-                                <Button variant="ghost" size="sm" title="Cetak" className="cursor-pointer">
-                                  <Printer className="w-4 h-4" />
+                              <Link href={`/dashboard/purchasing/print/pr/${pr.id}`} target="_blank">
+                                <Button variant="ghost" size="sm" title="Print" className="cursor-pointer">
+                                  <Printer className="h-4 w-4" />
                                 </Button>
                               </Link>
                             </div>
@@ -281,8 +287,8 @@ export function PRListPage() {
                         </tr>
                       );
                     })}
-                </tbody>
-              </table>
+                  </tbody>
+                </table>
               </div>
 
               <PurchasingTablePagination

@@ -9,6 +9,18 @@ import type {
 
 export type * from "./types";
 
+function normalizePRPayload(payload: PRFormPayload): PRFormPayload {
+  return {
+    ...payload,
+    required_date: payload.required_date?.trim() || undefined,
+    notes: payload.notes?.trim() || undefined,
+    items: payload.items.map((item) => ({
+      ...item,
+      satuan_id: item.satuan_id?.trim() || undefined,
+    })),
+  };
+}
+
 export async function listPurchaseRequests(
   params: PRListParams = {}
 ): Promise<PRListResult> {
@@ -41,10 +53,13 @@ export async function getPurchaseRequest(id: string): Promise<PRDetail> {
 export async function createPurchaseRequest(payload: PRFormPayload) {
   return apiPost<{ data: { id: string; pr_number?: string; status?: string } }>(
     "/api/purchasing/pr",
-    payload
+    normalizePRPayload(payload)
   );
 }
 
 export async function updatePurchaseRequest(id: string, payload: PRFormPayload) {
-  return apiPut<{ data: { id: string; status: string } }>(`/api/purchasing/pr/${id}`, payload);
+  return apiPut<{ data: { id: string; status: string } }>(
+    `/api/purchasing/pr/${id}`,
+    normalizePRPayload(payload)
+  );
 }

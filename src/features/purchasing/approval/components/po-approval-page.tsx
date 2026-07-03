@@ -2,152 +2,250 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { usePurchaseOrderList } from "../../po/queries";
-import { useApprovePurchaseOrder } from "../../po/mutations";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { CheckCircle, Eye, ShoppingCart } from "lucide-react";
-import { toast } from "sonner";
+  Dialog,
+  DialogPanel,
+  DialogPanelBody,
+  DialogPanelDescription,
+  DialogPanelHeader,
+  DialogPanelTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { PurchasingPageHeader } from "@/modules/purchasing/components/page/purchasing-page-header";
+import { PurchasingListSection } from "@/modules/purchasing/components/list/PurchasingListSection";
+import { RM_ROUTES } from "@/modules/purchasing/constants/item-routes";
+import {
+  NAV_FROM_APPROVAL_PO,
+  persistNavFrom,
+} from "@/lib/iam/nav-context";
+import type { PurchasingModuleType } from "@/lib/purchasing/module-scope";
+import { getApprovalModuleConfig } from "../approval-module";
+import { CheckCircle, Loader2, ShoppingCart } from "lucide-react";
+import { formatAmount, formatDate } from "@/lib/purchasing/utils";
+import { usePurchaseOrderList } from "../../po/queries";
+import { useApprovePurchaseOrder } from "../../po/mutations";
+import { useProductPurchaseOrderList } from "../../product-po/queries";
+import { useApproveProductPurchaseOrder } from "../../product-po/mutations";
+import type { PurchaseOrder } from "@/types/purchasing";
+import type { ProductPOListItem } from "../../product-po/types";
 
-function formatCurrency(value: number) {
-  return `Rp ${Number(value || 0).toLocaleString("id-ID")}`;
-}
+const DRAFT_STATUS_STYLE = "border-gray-200 bg-gray-50 text-gray-700";
 
-function formatDate(value?: string | null) {
-  if (!value) return "-";
-  return new Date(value).toLocaleDateString("id-ID", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
-}
+type POApprovalPageProps = {
+  moduleType?: PurchasingModuleType;
+};
 
-export function POApprovalPage() {
+type ApprovalPO = PurchaseOrder | ProductPOListItem;
+
+export function POApprovalPage({ moduleType = "raw_material" }: POApprovalPageProps) {
   const router = useRouter();
+  const config = getApprovalModuleConfig(moduleType);
+  const isProduct = config.isProduct;
+  const [confirmingPO, setConfirmingPO] = useState<ApprovalPO | null>(null);
   const [processingId, setProcessingId] = useState<string | null>(null);
 
-  const listQuery = usePurchaseOrderList({ status: "draft", page: 1, limit: 50 });
-  const pos = listQuery.data?.data ?? [];
+  const rmListQuery = usePurchaseOrderList({ status: "draft", page: 1, limit: 50 });
+  const productListQuery = useProductPurchaseOrderList({
+    status: "draft",
+    page: 1,
+    limit: 50,
+  });
+  const listQuery = isProduct ? productListQuery : rmListQuery;
+  const pos = (listQuery.data?.data ?? []) as ApprovalPO[];
   const loading = listQuery.isLoading;
 
-  const approveMutation = useApprovePurchaseOrder();
+  const rmApproveMutation = useApprovePurchaseOrder();
+  const productApproveMutation = useApproveProductPurchaseOrder();
+  const approveMutation = isProduct ? productApproveMutation : rmApproveMutation;
+  const isProcessing = Boolean(processingId);
 
   useEffect(() => {
     if (listQuery.isError) {
-      toast.error(listQuery.error instanceof Error ? listQuery.error.message : "Gagal memuat approval PO");
+      toast.error(
+        listQuery.error instanceof Error
+          ? listQuery.error.message
+          : "Failed to load purchase order approvals"
+      );
     }
   }, [listQuery.isError, listQuery.error]);
 
-  async function approvePO(id: string) {
-    setProcessingId(id);
+  function poDetailHref(id: string) {
+    persistNavFrom(NAV_FROM_APPROVAL_PO);
+    return config.poDetailFromApproval(id);
+  }
+
+  async function approvePO() {
+    if (!confirmingPO) return;
+    setProcessingId(confirmingPO.id);
     try {
-      await approveMutation.mutateAsync(id);
-      toast.success("PO berhasil diapprove");
+      await approveMutation.mutateAsync(confirmingPO.id);
+      toast.success("Purchase order approved");
+      setConfirmingPO(null);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Gagal approve PO");
+      toast.error(error instanceof Error ? error.message : "Failed to approve purchase order");
     } finally {
       setProcessingId(null);
     }
   }
 
+  function closeDialog() {
+    if (isProcessing) return;
+    setConfirmingPO(null);
+  }
+
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 border-b border-gray-200/70 pb-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Approval PO</h1>
-          <p className="text-sm text-gray-500">Review supplier, harga, pajak, dan total final sebelum PO dikirim</p>
-        </div>
-        <Link href="/dashboard/purchasing/po">
-          <Button variant="outline" className="h-10 gap-2 rounded-lg border-pink-200 bg-white px-3 text-sm font-medium text-pink-700 shadow-sm hover:!border-pink-200 hover:!bg-pink-50 hover:!text-pink-700">Lihat Semua PO</Button>
-        </Link>
-      </div>
+      <PurchasingPageHeader
+        title="Purchase Order Approval"
+        description={
+          isProduct
+            ? "Review vendor, pricing, tax, and final totals before the order is sent."
+            : "Review supplier, pricing, tax, and final totals before the order is sent."
+        }
+        actions={
+          <Link href={config.purchasingPoRoute}>
+            <Button variant="outline" className="purchasing-secondary-button w-full sm:w-auto">
+              View All Purchase Orders
+            </Button>
+          </Link>
+        }
+      />
 
-      <Card>
-        <CardHeader className="border-b border-gray-200/70 pb-3">
-          <CardTitle className="text-base flex items-center gap-2">
-            <ShoppingCart className="w-5 h-5" />
-            PO Menunggu Approval
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-0">
-          {loading ? (
-            <div className="py-12 text-center text-sm text-gray-500">Memuat data approval...</div>
-          ) : pos.length === 0 ? (
-            <div className="py-14 text-center">
-              <CheckCircle className="mx-auto mb-3 h-12 w-12 text-green-300" />
-              <p className="text-gray-500">Tidak ada PO yang perlu diapprove</p>
-            </div>
-          ) : (
-            <>
-              <div className="px-4">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="hover:bg-transparent">
-                      <TableHead className="text-gray-900">No. PO</TableHead>
-                      <TableHead className="text-gray-900">Tanggal</TableHead>
-                      <TableHead className="text-gray-900">Supplier</TableHead>
-                      <TableHead className="text-gray-900">PR</TableHead>
-                      <TableHead className="text-right text-gray-900">Total</TableHead>
-                      <TableHead className="text-center text-gray-900">Status</TableHead>
-                      <TableHead className="text-right text-gray-900">Aksi</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {pos.map((po) => (
-                      <TableRow
+      <PurchasingListSection
+        icon={ShoppingCart}
+        title="Pending Approvals"
+        description={
+          isProduct
+            ? "Draft purchase orders waiting for approval before vendor dispatch."
+            : "Draft purchase orders waiting for approval before supplier dispatch."
+        }
+      >
+        {loading ? (
+          <div className="flex items-center justify-center py-12 text-sm text-gray-500">
+            <Loader2 className="mr-2 h-4 w-4 animate-spin text-pink-600" />
+            Loading approvals...
+          </div>
+        ) : pos.length === 0 ? (
+          <div className="py-14 text-center">
+            <CheckCircle className="mx-auto mb-3 h-12 w-12 text-emerald-300" />
+            <p className="text-gray-500">No purchase orders pending approval</p>
+            <p className="mt-1 text-sm text-gray-400">You&apos;re all caught up.</p>
+          </div>
+        ) : (
+          <>
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead className="border-b border-gray-100 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+                  <tr>
+                    <th className="px-4 py-3 text-left font-semibold">Number</th>
+                    <th className="px-4 py-3 text-left font-semibold">Date</th>
+                    <th className="px-4 py-3 text-left font-semibold">{config.partyLabel}</th>
+                    <th className="px-4 py-3 text-left font-semibold">Purchase Request</th>
+                    <th className="px-4 py-3 text-right font-semibold">Total</th>
+                    <th className="px-4 py-3 text-center font-semibold">Status</th>
+                    <th className="px-4 py-3 text-right font-semibold">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {pos.map((po) => {
+                    const rowProcessing = processingId === po.id;
+
+                    return (
+                      <tr
                         key={po.id}
-                        className="cursor-pointer"
-                        onClick={() => router.push(`/dashboard/purchasing/po/${po.id}`)}
+                        className="cursor-pointer hover:bg-gray-50/80"
+                        onClick={() => router.push(poDetailHref(po.id))}
                       >
-                        <TableCell className="font-medium text-gray-900">{po.nomor_po}</TableCell>
-                        <TableCell className="text-gray-600">{formatDate(po.tanggal_po)}</TableCell>
-                        <TableCell className="text-gray-600">{po.nama_supplier || "-"}</TableCell>
-                        <TableCell className="text-gray-600">{po.pr_number || "-"}</TableCell>
-                        <TableCell className="text-right font-medium">
-                          {formatCurrency(po.grand_total || po.total || po.subtotal || 0)}
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <Badge className="bg-gray-100 text-gray-800">Draft</Badge>
-                        </TableCell>
-                        <TableCell className="text-right" onClick={(event) => event.stopPropagation()}>
-                          <div className="flex justify-end gap-2">
-                            <Link href={`/dashboard/purchasing/po/${po.id}`}>
-                              <Button variant="ghost" size="sm" className="cursor-pointer">
-                                <Eye className="h-4 w-4" />
-                              </Button>
-                            </Link>
+                        <td
+                          className="px-4 py-3"
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          <Link
+                            href={poDetailHref(po.id)}
+                            className="font-medium text-pink-700 hover:underline"
+                          >
+                            {po.nomor_po}
+                          </Link>
+                        </td>
+                        <td className="px-4 py-3 text-gray-600">{formatDate(po.tanggal_po)}</td>
+                        <td className="px-4 py-3 text-gray-600">{config.poPartyName(po)}</td>
+                        <td className="px-4 py-3 text-gray-600">{po.pr_number || "-"}</td>
+                        <td className="px-4 py-3 text-right font-medium text-gray-900">
+                          {formatAmount(po.grand_total || po.total || po.subtotal || 0)}
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <Badge variant="outline" className={DRAFT_STATUS_STYLE}>
+                            Draft
+                          </Badge>
+                        </td>
+                        <td className="px-4 py-3 text-right" onClick={(event) => event.stopPropagation()}>
+                          <div className="flex items-center justify-end gap-2">
                             <Button
+                              variant="ghost"
                               size="sm"
-                              onClick={() => approvePO(po.id)}
-                              disabled={processingId === po.id}
-                              className="purchasing-main-button"
+                              title="Approve"
+                              className="cursor-pointer"
+                              onClick={() => setConfirmingPO(po)}
+                              disabled={rowProcessing}
                             >
-                              {processingId === po.id ? "Memproses..." : "Approve"}
+                              {rowProcessing ? (
+                                <Loader2 className="h-4 w-4 animate-spin text-emerald-600" />
+                              ) : (
+                                <CheckCircle className="h-4 w-4 text-emerald-600" />
+                              )}
                             </Button>
                           </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-              <div className="border-t border-gray-200/70 px-4 py-3 text-sm text-gray-500">
-                Menampilkan {pos.length} PO menunggu approval
-              </div>
-            </>
-          )}
-        </CardContent>
-      </Card>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <div className="border-t border-gray-200/70 px-4 py-3 text-sm text-gray-500">
+              Showing {pos.length} pending purchase order{pos.length === 1 ? "" : "s"}
+            </div>
+          </>
+        )}
+      </PurchasingListSection>
+
+      <Dialog open={confirmingPO !== null} onOpenChange={(open) => !open && closeDialog()}>
+        <DialogPanel size="xs">
+          <DialogPanelHeader>
+            <DialogPanelTitle>Approve Purchase Order?</DialogPanelTitle>
+            <DialogPanelDescription>
+              {confirmingPO
+                ? config.approvePoDescription(confirmingPO.nomor_po)
+                : config.emptyPoDescription}
+            </DialogPanelDescription>
+          </DialogPanelHeader>
+          <DialogPanelBody />
+          <DialogFooter className="px-6 py-4">
+            <Button
+              type="button"
+              variant="outline"
+              className="purchasing-secondary-button"
+              onClick={closeDialog}
+              disabled={isProcessing}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              className="purchasing-main-button"
+              onClick={approvePO}
+              disabled={isProcessing}
+            >
+              {isProcessing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {isProcessing ? "Approving..." : "Approve"}
+            </Button>
+          </DialogFooter>
+        </DialogPanel>
+      </Dialog>
     </div>
   );
 }

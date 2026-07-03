@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { FormEvent } from "react";
+import type { ComponentType, FormEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -11,16 +11,27 @@ import { FormModal } from "@/components/ui/form-modal";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { FormFieldLabel, formInputClassName } from "@/components/layout/form-field";
 import { BreadcrumbNav } from "@/modules/purchasing/components/breadcrumb/BreadcrumbNav";
-import { Loader2, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { PurchasingPageHeader } from "@/modules/purchasing/components/page/purchasing-page-header";
+import { PurchasingListSection } from "@/modules/purchasing/components/list/PurchasingListSection";
+import { FolderOpen, Loader2, Pencil, Plus, Search, Tags, Trash2, Warehouse, X } from "lucide-react";
 import { toast } from "sonner";
 import type { ItemsLookupRecord, ItemsLookupType } from "@/lib/purchasing/items-lookup";
 import { ITEMS_LOOKUP_CONFIG } from "@/lib/purchasing/items-lookup";
 import { useItemsLookupList } from "@/features/purchasing/items/queries";
 import { useSaveItemsLookup, useDeleteItemsLookup } from "@/features/purchasing/items/mutations";
 
+const LOOKUP_ICONS: Record<ItemsLookupType, ComponentType<{ className?: string }>> = {
+  "raw-material-categories": Tags,
+  "storage-conditions": Warehouse,
+  "product-categories": FolderOpen,
+};
+
 interface ItemsLookupPageProps {
   lookupType: ItemsLookupType;
   breadcrumbs?: { label: string; href?: string }[];
+  listTitle?: string;
+  listDescription?: string;
+  addButtonLabel?: string;
 }
 
 const EMPTY_FORM = {
@@ -30,8 +41,15 @@ const EMPTY_FORM = {
   is_active: true,
 };
 
-export function ItemsLookupPage({ lookupType, breadcrumbs = [] }: ItemsLookupPageProps) {
+export function ItemsLookupPage({
+  lookupType,
+  breadcrumbs = [],
+  listTitle,
+  listDescription,
+  addButtonLabel = "Add Record",
+}: ItemsLookupPageProps) {
   const config = ITEMS_LOOKUP_CONFIG[lookupType];
+  const Icon = LOOKUP_ICONS[lookupType] ?? Search;
 
   const [searchQuery, setSearchQuery] = useState("");
   const [search, setSearch] = useState("");
@@ -44,18 +62,28 @@ export function ItemsLookupPage({ lookupType, breadcrumbs = [] }: ItemsLookupPag
   const listQuery = useItemsLookupList(lookupType, search);
   const records = listQuery.data ?? [];
   const loading = listQuery.isLoading;
+  const total = records.length;
 
   const saveMutation = useSaveItemsLookup(lookupType);
   const deleteMutation = useDeleteItemsLookup(lookupType);
-  const isSubmitting = saveMutation.isPending || deleteMutation.isPending;
+  const isSubmitting = saveMutation.isPending;
+  const isDeleting = deleteMutation.isPending;
 
   useEffect(() => {
     if (listQuery.isError) {
-      toast.error(listQuery.error instanceof Error ? listQuery.error.message : "Gagal memuat data");
+      toast.error(
+        listQuery.error instanceof Error ? listQuery.error.message : "Failed to load records"
+      );
     }
   }, [listQuery.isError, listQuery.error]);
 
-  const handleSearch = () => setSearch(searchQuery.trim());
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      setSearch(searchQuery.trim());
+    }, 300);
+
+    return () => window.clearTimeout(timeout);
+  }, [searchQuery]);
 
   const handleOpenAdd = () => {
     setEditing(null);
@@ -79,144 +107,184 @@ export function ItemsLookupPage({ lookupType, breadcrumbs = [] }: ItemsLookupPag
     if (isSubmitting) return;
     try {
       const json = await saveMutation.mutateAsync({ payload: formData, id: editing?.id });
-      toast.success(json.message || "Berhasil disimpan");
+      toast.success(json.message || "Record saved successfully");
       setIsDialogOpen(false);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Gagal menyimpan");
+      toast.error(error instanceof Error ? error.message : "Failed to save record");
     }
   };
 
   const handleDelete = async () => {
-    if (!deleting) return;
+    if (!deleting || isDeleting) return;
     try {
       const json = await deleteMutation.mutateAsync(deleting.id);
-      toast.success(json.message || "Berhasil dihapus");
+      toast.success(json.message || "Record deleted successfully");
       setIsDeleteDialogOpen(false);
       setDeleting(null);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Gagal menghapus");
+      toast.error(error instanceof Error ? error.message : "Failed to delete record");
     }
+  };
+
+  const handleResetSearch = () => {
+    setSearchQuery("");
+    setSearch("");
   };
 
   return (
     <div className="space-y-6">
       {breadcrumbs.length > 0 ? <BreadcrumbNav items={breadcrumbs} /> : null}
 
-      <div className="flex flex-col items-start justify-between gap-4 border-b border-gray-200/70 pb-4 sm:flex-row sm:items-center">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">{config.title}</h1>
-          <p className="mt-1 text-sm text-gray-500">{config.description}</p>
-        </div>
-        <Button
-          onClick={handleOpenAdd}
-          className="h-10 w-full gap-2 rounded-lg bg-pink-600 px-3 text-sm font-semibold text-white shadow-sm hover:bg-pink-700 sm:w-auto"
-        >
-          <Plus className="h-4 w-4" />
-          Tambah
-        </Button>
-      </div>
-
-      <section className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-        <div className="flex flex-col gap-3 border-b border-gray-100 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="relative w-full sm:max-w-sm">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-            <Input
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-              placeholder="Cari kode atau nama..."
-              className="h-10 pl-9"
-            />
-          </div>
-          <Button variant="outline" onClick={handleSearch} className="h-10 border-gray-200/80">
-            Cari
+      <PurchasingPageHeader
+        title={config.title}
+        description={`${config.description} — ${total} total`}
+        actions={
+          <Button onClick={handleOpenAdd} className="purchasing-main-button w-full sm:w-auto">
+            <Plus className="mr-2 h-4 w-4" />
+            {addButtonLabel}
           </Button>
-        </div>
+        }
+      />
 
-        <div className="overflow-x-auto px-4">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-gray-200/70 text-left text-gray-500">
-                <th className="px-4 py-3 font-semibold">Kode</th>
-                <th className="px-4 py-3 font-semibold">Nama</th>
-                <th className="px-4 py-3 font-semibold">Deskripsi</th>
-                <th className="px-4 py-3 font-semibold">Status</th>
-                <th className="px-4 py-3 text-right font-semibold">Aksi</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr>
-                  <td colSpan={5} className="px-4 py-12 text-center text-gray-500">
-                    <Loader2 className="mx-auto h-6 w-6 animate-spin" />
-                  </td>
-                </tr>
-              ) : records.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="px-4 py-12 text-center text-gray-500">
-                    Tidak ada data
-                  </td>
-                </tr>
-              ) : (
-                records.map((record) => (
-                  <tr key={record.id} className="border-b border-gray-200/70 hover:bg-gray-50/80">
-                    <td className="px-4 py-3 font-mono text-xs text-gray-700">{record.code}</td>
-                    <td className="px-4 py-3 font-medium text-gray-900">{record.nama}</td>
-                    <td className="px-4 py-3 text-gray-600">{record.deskripsi || "-"}</td>
-                    <td className="px-4 py-3">
-                      <Badge className={record.is_active ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"}>
-                        {record.is_active ? "Aktif" : "Nonaktif"}
-                      </Badge>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex justify-end gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleOpenEdit(record)}
-                          className="h-8 border-gray-200/80"
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            setDeleting(record);
-                            setIsDeleteDialogOpen(true);
-                          }}
-                          className="h-8 border-red-200/80 text-red-600 hover:bg-red-50"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
+      <PurchasingListSection
+        icon={Icon}
+        title={listTitle || `${config.title} List`}
+        description={
+          listDescription ||
+          "Review code, name, description, and active status for each record."
+        }
+        toolbar={
+          <div className="flex w-full flex-col gap-3 sm:w-auto md:flex-row md:items-center">
+            <label className="relative w-full md:w-80">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+              <Input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search code or name..."
+                className="h-10 bg-white pl-10 pr-10 text-sm focus:border-pink-400 focus:ring-2 focus:ring-pink-100"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 transition-colors hover:text-gray-700"
+                  aria-label="Clear search"
+                >
+                  <X className="h-4 w-4" />
+                </button>
               )}
-            </tbody>
-          </table>
+            </label>
+            {search && (
+              <Button variant="outline" onClick={handleResetSearch} className="h-10 shrink-0 rounded-lg">
+                Reset
+              </Button>
+            )}
+          </div>
+        }
+      >
+        <div>
+          {loading ? (
+            <div className="flex items-center justify-center py-12 text-sm text-gray-500">
+              <Loader2 className="mr-2 h-5 w-5 animate-spin text-pink-600" />
+              Loading records...
+            </div>
+          ) : records.length === 0 ? (
+            <div className="py-14 text-center">
+              <Icon className="mx-auto mb-4 h-12 w-12 text-gray-300" />
+              <p className="text-gray-500">
+                {search ? "No records match the current search" : "No records yet"}
+              </p>
+              {!search && (
+                <Button variant="outline" onClick={handleOpenAdd} className="purchasing-secondary-button mt-4">
+                  {addButtonLabel}
+                </Button>
+              )}
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead className="border-b border-gray-100 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+                  <tr>
+                    <th className="px-4 py-3 text-left font-semibold">Code</th>
+                    <th className="px-4 py-3 text-left font-semibold">Name</th>
+                    <th className="px-4 py-3 text-left font-semibold">Description</th>
+                    <th className="px-4 py-3 text-center font-semibold">Status</th>
+                    <th className="px-4 py-3 text-right font-semibold">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {records.map((record) => (
+                    <tr key={record.id} className="hover:bg-gray-50">
+                      <td className="px-4 py-3 font-mono text-xs text-gray-700">{record.code}</td>
+                      <td className="px-4 py-3 font-medium text-gray-900">{record.nama}</td>
+                      <td className="px-4 py-3 text-gray-600">{record.deskripsi || "-"}</td>
+                      <td className="px-4 py-3 text-center">
+                        <Badge
+                          variant="outline"
+                          className={
+                            record.is_active
+                              ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                              : "border-gray-200 bg-gray-50 text-gray-600"
+                          }
+                        >
+                          {record.is_active ? "Active" : "Inactive"}
+                        </Badge>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="cursor-pointer"
+                            title="Edit"
+                            onClick={() => handleOpenEdit(record)}
+                          >
+                            <Pencil className="h-4 w-4 text-gray-600" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="cursor-pointer text-red-500 hover:text-red-600"
+                            title="Delete"
+                            onClick={() => {
+                              setDeleting(record);
+                              setIsDeleteDialogOpen(true);
+                            }}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
-      </section>
+      </PurchasingListSection>
 
       <FormModal
         open={isDialogOpen}
         onOpenChange={setIsDialogOpen}
-        title={editing ? `Edit ${config.title}` : `Tambah ${config.title}`}
-        description={editing ? "Ubah data yang sudah ada" : "Lengkapi informasi di bawah ini"}
+        title={editing ? `Edit ${config.title}` : `Add ${config.title}`}
+        description={editing ? "Update the selected record" : "Complete the information below"}
         onSubmit={handleSubmit}
         loading={isSubmitting}
         submitDisabled={!formData.code || !formData.nama}
+        submitLabel={editing ? "Save Changes" : "Save"}
+        cancelLabel="Cancel"
+        loadingLabel="Saving..."
       >
         <div>
           <FormFieldLabel htmlFor="code" required>
-            Kode
+            Code
           </FormFieldLabel>
           <Input
             id="code"
             value={formData.code}
             onChange={(e) => setFormData({ ...formData, code: e.target.value.toUpperCase() })}
-            placeholder="CONTOH_KODE"
+            placeholder="EXAMPLE_CODE"
             maxLength={30}
             required
             className={formInputClassName}
@@ -224,32 +292,32 @@ export function ItemsLookupPage({ lookupType, breadcrumbs = [] }: ItemsLookupPag
         </div>
         <div>
           <FormFieldLabel htmlFor="nama" required>
-            Nama
+            Name
           </FormFieldLabel>
           <Input
             id="nama"
             value={formData.nama}
             onChange={(e) => setFormData({ ...formData, nama: e.target.value })}
-            placeholder="Nama"
+            placeholder="Name"
             maxLength={100}
             required
             className={formInputClassName}
           />
         </div>
         <div>
-          <FormFieldLabel htmlFor="deskripsi">Deskripsi</FormFieldLabel>
+          <FormFieldLabel htmlFor="deskripsi">Description</FormFieldLabel>
           <Textarea
             id="deskripsi"
             value={formData.deskripsi}
             onChange={(e) => setFormData({ ...formData, deskripsi: e.target.value })}
-            placeholder="Deskripsi opsional"
+            placeholder="Optional description"
             rows={3}
             className="min-h-24 resize-none bg-white text-sm focus:border-pink-400 focus:ring-2 focus:ring-pink-100"
           />
         </div>
         <div className="flex items-center justify-between rounded-lg border border-gray-200/70 px-3 py-2.5">
           <FormFieldLabel htmlFor="is_active" className="mb-0">
-            Status aktif
+            Active status
           </FormFieldLabel>
           <Switch
             id="is_active"
@@ -262,10 +330,12 @@ export function ItemsLookupPage({ lookupType, breadcrumbs = [] }: ItemsLookupPag
       <ConfirmDialog
         open={isDeleteDialogOpen}
         onOpenChange={setIsDeleteDialogOpen}
-        title="Hapus data?"
-        description={`"${deleting?.nama ?? ""}" akan dihapus. Tindakan ini tidak dapat dibatalkan.`}
-        confirmLabel="Hapus"
-        loading={isSubmitting}
+        title="Delete Record?"
+        description={`Are you sure you want to delete "${deleting?.nama ?? ""}"? This action cannot be undone.`}
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        loadingLabel="Deleting..."
+        loading={isDeleting}
         onConfirm={handleDelete}
       />
     </div>

@@ -1,54 +1,45 @@
 "use client";
 
 import { useState } from "react";
-import { useForm, useFieldArray } from "react-hook-form";
+import { useRouter } from "next/navigation";
+import { useForm, useFieldArray, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { FileText, Loader2, Plus, ShoppingBasket, StickyNote, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Combobox } from "@/components/ui/combobox";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { NumericInput } from "@/components/ui/numeric-input";
-import { formatRupiah } from "@/lib/purchasing/utils";
+import { DsDateTimePicker } from "@/components/design-system";
+import { formatAmount } from "@/lib/purchasing/utils";
+import { parseLocaleNumber } from "@/lib/purchasing/parse-locale-number";
 import { listPriceLists } from "@/lib/purchasing";
 import { SupplierPriceList } from "@/types/purchasing";
 import { toast } from "sonner";
 
-function toNumber(value: unknown): number | undefined {
-  if (typeof value === "number") return value;
-  if (typeof value === "string") {
-    const cleaned = value
-      .replace(/\./g, "")
-      .replace(/,/g, ".")
-      .replace(/[^\d.-]/g, "");
-    if (cleaned === "") return undefined;
-    const parsed = Number(cleaned);
-    return Number.isFinite(parsed) ? parsed : undefined;
-  }
-  return undefined;
-}
-
 const prItemSchema = z.object({
-  raw_material_id: z.string().min(1, "Bahan baku wajib dipilih"),
+  raw_material_id: z.string().min(1, "Raw material is required"),
   satuan_id: z.string().optional(),
-  description: z.string().min(1, "Deskripsi wajib diisi"),
-  qty: z.preprocess(toNumber, z.number().min(1, "Minimal 1")),
-  unit: z.string().min(1, "Satuan wajib diisi"),
+  description: z.string().min(1, "Description is required"),
+  qty: z.preprocess(
+    (value) => parseLocaleNumber(value) ?? value,
+    z.number().min(1, "Minimum quantity is 1")
+  ),
+  unit: z.string().min(1, "Unit is required"),
   estimated_price: z.preprocess(
-    (value) => toNumber(value) ?? 0,
+    (value) => parseLocaleNumber(value) ?? 0,
     z.number().min(0)
   ),
 });
 
 const prSchema = z.object({
-  department_id: z.string().min(1, "Departemen wajib dipilih"),
+  department_id: z.string().min(1, "Department is required"),
   priority: z.enum(["low", "medium", "high", "urgent"]),
   required_date: z.string().optional(),
   notes: z.string().optional(),
-  items: z.array(prItemSchema).min(1, "Minimal 1 item"),
+  items: z.array(prItemSchema).min(1, "At least one item is required"),
 });
 
 type PRFormData = z.infer<typeof prSchema>;
@@ -93,6 +84,7 @@ interface PRFormProps {
   isLoading?: boolean;
   initialData?: PRFormData;
   mode?: "create" | "edit";
+  cancelHref?: string;
 }
 
 export function PRForm({
@@ -103,9 +95,12 @@ export function PRForm({
   isLoading,
   initialData,
   mode = "create",
+  cancelHref = "/dashboard/purchasing/pr",
 }: PRFormProps) {
+  const router = useRouter();
   const [submitAction, setSubmitAction] = useState<"draft" | "submit" | null>(null);
-  
+  const formId = "purchase-request-form";
+
   const {
     register,
     control,
@@ -114,20 +109,20 @@ export function PRForm({
     setValue,
     formState: { errors },
   } = useForm<PRFormData>({
-    resolver: zodResolver(prSchema),
+    resolver: zodResolver(prSchema) as Resolver<PRFormData>,
     defaultValues: initialData || {
       priority: "medium",
       items: [{ raw_material_id: "", satuan_id: "", description: "", qty: 1, unit: "", estimated_price: 0 }],
     },
   });
-  
+
   const { fields, append, remove } = useFieldArray({
     control,
     name: "items",
   });
 
   const selectedDepartment = watch("department_id");
-  
+  const requiredDate = watch("required_date");
   const items = watch("items");
   const totalAmount = items.reduce(
     (sum, item) => sum + (item.qty || 0) * (item.estimated_price || 0),
@@ -153,10 +148,7 @@ export function PRForm({
       .filter((conversion) => conversion.is_active !== false)
       .map((conversion) => conversion.satuan_id);
     const unitIds = Array.from(
-      new Set([
-        material?.satuan_besar_id,
-        ...conversionUnitIds,
-      ].filter(Boolean) as string[])
+      new Set([material?.satuan_besar_id, ...conversionUnitIds].filter(Boolean) as string[])
     );
 
     return unitIds
@@ -196,8 +188,14 @@ export function PRForm({
     return validPrices[0]?.estimatedPrice;
   }
 
-  async function applyEstimatedPrice(index: number, materialId: string, unitId?: string, fallbackPrice = 0) {
-    setValue(`items.${index}.estimated_price`, fallbackPrice);
+  async function applyEstimatedPrice(
+    index: number,
+    materialId: string,
+    unitId?: string,
+    fallbackPrice: unknown = 0
+  ) {
+    const fallback = parseLocaleNumber(fallbackPrice) ?? 0;
+    setValue(`items.${index}.estimated_price`, fallback);
 
     if (!materialId) return;
 
@@ -244,7 +242,7 @@ export function PRForm({
         try {
           await onSubmit(data, action);
         } catch (error) {
-          const message = error instanceof Error ? error.message : "Gagal membuat PR";
+          const message = error instanceof Error ? error.message : "Failed to save purchase request";
           if (!message.includes("NEXT_REDIRECT")) {
             toast.error(message);
           }
@@ -257,277 +255,307 @@ export function PRForm({
         const message = firstErrorMessage(formErrors);
         toast.error(
           message
-            ? `Lengkapi isian form: ${message}`
-            : "Periksa kembali isian form — masih ada field wajib yang belum lengkap"
+            ? `Complete the form: ${message}`
+            : "Please review the form — required fields are still missing"
         );
       }
     )();
   }
-  
-  return (
 
+  return (
     <form
+      id={formId}
       onSubmit={(event) => {
         event.preventDefault();
         submitWithAction("submit");
       }}
       className="space-y-6"
     >
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base flex items-center gap-2">
-            <FileText className="h-4 w-4" />
-            Informasi Request
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-            <div className="min-w-0 space-y-1.5">
-              <Label htmlFor="department_id" className="text-xs">Departemen <span className="text-red-500">*</span></Label>
-              <Combobox
-                options={departments.map((dept) => ({
-                  value: dept.id,
-                  label: dept.name,
-                }))}
-                value={selectedDepartment}
-                onChange={(value) => setValue("department_id", value)}
-                placeholder="Pilih departemen..."
-                searchPlaceholder="Cari departemen..."
-                emptyMessage="Departemen tidak ditemukan"
-                allowClear
-                className="!w-full h-9 text-sm"
-              />
-              {errors.department_id && (
-                <p className="text-xs text-red-500">{errors.department_id.message}</p>
-              )}
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
+        <div className="space-y-6 xl:col-span-8">
+          <Card className="border-gray-200/70 shadow-xs">
+            <CardHeader className="border-b border-gray-200/70 pb-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <FileText className="h-4 w-4" />
+                Request Information
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4 pt-4">
+              <input type="hidden" {...register("department_id")} />
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div className="min-w-0 space-y-1.5">
+                  <Label htmlFor="department_id" className="text-xs">
+                    Department <span className="text-red-500">*</span>
+                  </Label>
+                  <Combobox
+                    options={departments.map((dept) => ({
+                      value: dept.id,
+                      label: dept.name,
+                    }))}
+                    value={selectedDepartment}
+                    onChange={(value) => setValue("department_id", value, { shouldValidate: true })}
+                    placeholder="Select department..."
+                    searchPlaceholder="Search department..."
+                    emptyMessage="No department found"
+                    allowClear
+                    className="!w-full h-9 text-sm"
+                  />
+                  {errors.department_id && (
+                    <p className="text-xs text-red-500">{errors.department_id.message}</p>
+                  )}
+                </div>
 
-            </div>
-            
-            <div className="min-w-0 space-y-1.5">
-              <Label htmlFor="priority" className="text-xs">Prioritas <span className="text-red-500">*</span></Label>
-              <Combobox
-                options={[
-                  { value: "low", label: "Rendah" },
-                  { value: "medium", label: "Sedang" },
-                  { value: "high", label: "Tinggi" },
-                  { value: "urgent", label: "Mendesak" },
-                ]}
-                value={watch("priority")}
-                onChange={(value) => setValue("priority", value as PRFormData["priority"])}
-                placeholder="Pilih prioritas..."
-                searchPlaceholder="Cari prioritas..."
-                emptyMessage="Prioritas tidak ditemukan"
-                className="!w-full h-9 text-sm"
-              />
-            </div>
-            
-            <div className="min-w-0 space-y-1.5">
-              <Label htmlFor="required_date" className="text-xs">Tanggal Dibutuhkan</Label>
-              <Input type="date" className="h-9 text-sm" {...register("required_date")} />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader className="pb-3">
-          <div className="flex items-center justify-between gap-3">
-            <CardTitle className="text-base flex items-center gap-2">
-              <ShoppingBasket className="h-4 w-4" />
-              Item Permintaan
-            </CardTitle>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() =>
-                append({ raw_material_id: "", satuan_id: "", description: "", qty: 1, unit: "", estimated_price: 0 })
-              }
-              className="purchasing-secondary-button"
-            >
-              <Plus className="w-4 h-4 mr-1" /> Tambah Item
-            </Button>
-          </div>
-          <p className="text-xs text-gray-500">Pilih bahan baku dari master agar bisa langsung dibuatkan PO.</p>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {fields.map((field, index) => (
-            <div key={field.id} className="rounded-xl border border-gray-200/70 bg-white/70 p-4">
-              <div className="mb-4 flex items-center justify-between border-b border-gray-200/70 pb-3">
-                <p className="text-sm font-medium text-gray-900">Item #{index + 1}</p>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => remove(index)}
-                  disabled={fields.length === 1}
-                  className="h-8 text-red-500 hover:text-red-600"
-                >
-                  <Trash2 className="w-4 h-4 mr-1" />
-                  Hapus
-                </Button>
+                <div className="min-w-0 space-y-1.5">
+                  <Label htmlFor="priority" className="text-xs">
+                    Priority <span className="text-red-500">*</span>
+                  </Label>
+                  <Combobox
+                    options={[
+                      { value: "low", label: "Low" },
+                      { value: "medium", label: "Medium" },
+                      { value: "high", label: "High" },
+                      { value: "urgent", label: "Urgent" },
+                    ]}
+                    value={watch("priority")}
+                    onChange={(value) => setValue("priority", value as PRFormData["priority"])}
+                    placeholder="Select priority..."
+                    searchPlaceholder="Search priority..."
+                    emptyMessage="No priority found"
+                    className="!w-full h-9 text-sm"
+                  />
+                </div>
               </div>
 
-              <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
-                  <div className="min-w-0 space-y-1.5 lg:col-span-4">
-                    <Label className="text-xs">Bahan Baku <span className="text-red-500">*</span></Label>
-                    <Combobox
-                      options={materials.map((material) => ({
-                        value: material.id,
-                        label: material.nama,
-                        description: material.kode,
-                      }))}
-                      value={items[index]?.raw_material_id || ""}
-                      onChange={(value) => handleSelectMaterial(index, value)}
-                      placeholder="Pilih bahan..."
-                      searchPlaceholder="Cari bahan..."
-                      emptyMessage="Bahan tidak ditemukan"
-                      allowClear
-                      className="!w-full h-9 text-sm"
-                    />
-                    {errors.items?.[index]?.raw_material_id && (
-                      <p className="text-xs text-red-500 mt-1">
-                        {errors.items[index]?.raw_material_id?.message}
-                      </p>
-                    )}
+              <DsDateTimePicker
+                label="Required Date"
+                value={requiredDate || ""}
+                onChange={(value) => setValue("required_date", value)}
+                placeholder="Select required date..."
+                dateOnly
+              />
+            </CardContent>
+          </Card>
+
+          <Card className="border-gray-200/70 shadow-xs">
+            <CardHeader className="flex flex-col gap-3 border-b border-gray-200/70 pb-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <ShoppingBasket className="h-4 w-4" />
+                  Request Items
+                </CardTitle>
+                <p className="mt-1 text-xs text-gray-500">
+                  Select raw materials from master data so they can be converted to a purchase order.
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  append({
+                    raw_material_id: "",
+                    satuan_id: "",
+                    description: "",
+                    qty: 1,
+                    unit: "",
+                    estimated_price: 0,
+                  })
+                }
+                className="purchasing-secondary-button w-full sm:w-auto"
+              >
+                <Plus className="mr-1 h-4 w-4" /> Add Item
+              </Button>
+            </CardHeader>
+            <CardContent className="space-y-3 pt-4">
+              {fields.map((field, index) => (
+                <div key={field.id} className="rounded-xl border border-gray-200/70 bg-white/70 p-4">
+                  <div className="mb-4 flex items-center justify-between border-b border-gray-200/70 pb-3">
+                    <p className="text-sm font-medium text-gray-900">Item #{index + 1}</p>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => remove(index)}
+                      disabled={fields.length === 1}
+                      className="h-8 text-red-500 hover:text-red-600"
+                    >
+                      <Trash2 className="mr-1 h-4 w-4" />
+                      Remove
+                    </Button>
                   </div>
 
-                  <div className="min-w-0 space-y-1.5 lg:col-span-4">
-                    <Label className="text-xs">Deskripsi</Label>
-                    <input type="hidden" {...register(`items.${index}.description`)} />
-                    <div className="flex h-9 w-full items-center rounded-lg border border-gray-300 bg-gray-200 px-2.5 text-sm text-gray-700">
-                      {items[index]?.description || "Pilih bahan baku terlebih dahulu"}
+                  <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
+                    <div className="min-w-0 space-y-1.5 lg:col-span-4">
+                      <Label className="text-xs">
+                        Raw Material <span className="text-red-500">*</span>
+                      </Label>
+                      <Combobox
+                        options={materials.map((material) => ({
+                          value: material.id,
+                          label: material.nama,
+                          description: material.kode,
+                        }))}
+                        value={items[index]?.raw_material_id || ""}
+                        onChange={(value) => handleSelectMaterial(index, value)}
+                        placeholder="Select raw material..."
+                        searchPlaceholder="Search raw material..."
+                        emptyMessage="No raw material found"
+                        allowClear
+                        className="!w-full h-9 text-sm"
+                      />
+                      {errors.items?.[index]?.raw_material_id && (
+                        <p className="mt-1 text-xs text-red-500">
+                          {errors.items[index]?.raw_material_id?.message}
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="min-w-0 space-y-1.5 lg:col-span-4">
+                      <Label className="text-xs">Description</Label>
+                      <input type="hidden" {...register(`items.${index}.description`)} />
+                      <div className="flex h-9 w-full items-center rounded-lg border border-gray-200/80 bg-gray-50 px-2.5 text-sm text-gray-700">
+                        {items[index]?.description || "Select a raw material first"}
+                      </div>
+                    </div>
+
+                    <div className="min-w-0 space-y-1.5 lg:col-span-2">
+                      <Label className="text-xs">Quantity</Label>
+                      <NumericInput
+                        value={items[index]?.qty || 0}
+                        onValueChange={(value) =>
+                          setValue(`items.${index}.qty`, value, {
+                            shouldDirty: true,
+                            shouldValidate: true,
+                          })
+                        }
+                        decimalScale={4}
+                        className="h-9 text-sm"
+                      />
+                    </div>
+
+                    <div className="min-w-0 space-y-1.5 lg:col-span-2">
+                      <Label className="text-xs">Unit</Label>
+                      <input type="hidden" {...register(`items.${index}.unit`)} />
+                      <input type="hidden" {...register(`items.${index}.satuan_id`)} />
+                      <Combobox
+                        options={getMaterialUnitOptions(items[index]?.raw_material_id)}
+                        value={items[index]?.satuan_id || ""}
+                        onChange={(value) => handleSelectUnit(index, value)}
+                        placeholder="Select unit..."
+                        searchPlaceholder="Search unit..."
+                        emptyMessage={
+                          items[index]?.raw_material_id
+                            ? "No units configured for this material"
+                            : "Select a raw material first"
+                        }
+                        allowClear={false}
+                        disabled={!items[index]?.raw_material_id}
+                        className="!w-full h-9 text-sm"
+                      />
+                    </div>
+
+                    <div className="min-w-0 space-y-1.5 lg:col-span-3">
+                      <Label className="text-xs">
+                        Estimated Price <span className="text-gray-400">(optional)</span>
+                      </Label>
+                      <NumericInput
+                        value={items[index]?.estimated_price || 0}
+                        onValueChange={(value) =>
+                          setValue(`items.${index}.estimated_price`, value, {
+                            shouldDirty: true,
+                            shouldValidate: true,
+                          })
+                        }
+                        decimalScale={0}
+                        placeholder="Leave blank if unknown"
+                        className="h-9 text-sm"
+                      />
+                    </div>
+
+                    <div className="min-w-0 rounded-lg bg-gray-50/80 p-3 lg:col-span-3">
+                      <p className="text-xs text-gray-500">Subtotal</p>
+                      <p className="text-sm font-semibold text-gray-900">
+                        {formatAmount((items[index]?.qty || 0) * (items[index]?.estimated_price || 0))}
+                      </p>
                     </div>
                   </div>
-                  
-                  <div className="min-w-0 space-y-1.5 lg:col-span-2">
-                    <Label className="text-xs">Qty</Label>
-                    <NumericInput
-                      value={items[index]?.qty || 0}
-                      onValueChange={(value) =>
-                        setValue(`items.${index}.qty`, value, {
-                          shouldDirty: true,
-                          shouldValidate: true,
-                        })
-                      }
-                      decimalScale={4}
-                      className="h-9 text-sm"
-                    />
-                  </div>
-                  
-                  <div className="min-w-0 space-y-1.5 lg:col-span-2">
-                    <Label className="text-xs">Satuan</Label>
-                    <input type="hidden" {...register(`items.${index}.unit`)} />
-                    <Combobox
-                      options={getMaterialUnitOptions(items[index]?.raw_material_id)}
-                      value={items[index]?.satuan_id || ""}
-                      onChange={(value) => handleSelectUnit(index, value)}
-                      placeholder="Pilih satuan..."
-                      searchPlaceholder="Cari satuan..."
-                      emptyMessage={
-                        items[index]?.raw_material_id
-                          ? "Satuan bahan ini belum dikonfigurasi"
-                          : "Pilih bahan baku terlebih dahulu"
-                      }
-                      allowClear={false}
-                      disabled={!items[index]?.raw_material_id}
-                      className="!w-full h-9 text-sm"
-                    />
-                  </div>
+                </div>
+              ))}
 
-                  <div className="min-w-0 space-y-1.5 lg:col-span-3">
-                    <Label className="text-xs">Est. Harga <span className="text-gray-400">(opsional)</span></Label>
-                    <NumericInput
-                      value={items[index]?.estimated_price || 0}
-                      onValueChange={(value) =>
-                        setValue(`items.${index}.estimated_price`, value, {
-                          shouldDirty: true,
-                          shouldValidate: true,
-                        })
-                      }
-                      decimalScale={0}
-                      placeholder="Kosongkan jika belum tahu"
-                      className="h-9 text-sm"
-                    />
-                  </div>
+              {errors.items && <p className="text-sm text-red-500">{errors.items.message}</p>}
+            </CardContent>
+          </Card>
+        </div>
 
-                  <div className="min-w-0 rounded-lg bg-gray-50 p-3 lg:col-span-3">
-                    <p className="text-xs text-gray-500">Subtotal</p>
-                    <p className="text-sm font-semibold text-gray-900">
-                      {formatRupiah(
-                        (items[index]?.qty || 0) * (items[index]?.estimated_price || 0)
-                      )}
-                    </p>
-                  </div>
+        <div className="xl:col-span-4">
+          <Card className="border-gray-200/70 shadow-xs xl:sticky xl:top-6">
+            <CardHeader className="border-b border-gray-200/70 pb-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <StickyNote className="h-4 w-4" />
+                Notes & Summary
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4 pt-4">
+              <div className="min-w-0 space-y-1.5">
+                <Label htmlFor="notes" className="text-xs">
+                  Notes
+                </Label>
+                <Textarea
+                  {...register("notes")}
+                  placeholder="Additional notes..."
+                  rows={4}
+                  className="resize-none text-sm"
+                />
               </div>
-            </div>
-          ))}
-        
-          {errors.items && (
-            <p className="text-sm text-red-500">{errors.items.message}</p>
-          )}
-        </CardContent>
-      </Card>
-      
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base flex items-center gap-2">
-            <StickyNote className="h-4 w-4" />
-            Catatan & Ringkasan
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-            <div className="min-w-0 space-y-1.5 lg:col-span-2">
-              <Label htmlFor="notes" className="text-xs">Catatan</Label>
-              <Textarea
-                {...register("notes")}
-                placeholder="Catatan tambahan..."
-                rows={4}
-                className="text-sm resize-none"
-              />
-            </div>
 
-            <div className="rounded-xl border border-gray-200/70 bg-gray-50/70 p-4">
-              <p className="text-sm text-gray-500">Estimasi Total</p>
-              <p className="mt-1 text-2xl font-bold text-gray-900">
-                {formatRupiah(totalAmount)}
-              </p>
-              <div className="mt-4 rounded-lg bg-white p-3 text-left">
-                <p className="text-xs font-medium text-gray-500">
-                  Approval Required
-                </p>
-                <p className="mt-1 text-sm font-medium text-gray-900">
-                  Head Department
-                </p>
-                <p className="mt-1 text-xs text-gray-500">
-                  Setiap PR yang disubmit wajib approval kebutuhan. Approval nominal final dilakukan di PO.
-                </p>
+              <div className="rounded-xl border border-gray-200/70 bg-gray-50/70 p-4">
+                <p className="text-sm text-gray-500">Estimated Total</p>
+                <p className="mt-1 text-2xl font-bold text-gray-900">{formatAmount(totalAmount)}</p>
+                <div className="mt-4 rounded-lg bg-white p-3 text-left">
+                  <p className="text-xs font-medium text-gray-500">Approval Required</p>
+                  <p className="mt-1 text-sm font-medium text-gray-900">Head Department</p>
+                  <p className="mt-1 text-xs text-gray-500">
+                    Every submitted purchase request requires requirement approval. Final amount approval
+                    happens on the purchase order.
+                  </p>
+                </div>
               </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-      
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+
       <div className="flex flex-col-reverse gap-3 border-t border-gray-200/70 pt-4 sm:flex-row sm:justify-end">
         <Button
           type="button"
           variant="outline"
           disabled={isSubmitting}
-          onClick={() => submitWithAction("draft")}
-          className="purchasing-secondary-button"
+          onClick={() => router.push(cancelHref)}
+          className="purchasing-secondary-button w-full sm:w-auto"
         >
-                    {submitAction === "draft" && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-          {submitAction === "draft" ? "Menyimpan..." : mode === "edit" ? "Simpan Perubahan" : "Save as Draft"}
+          Cancel
         </Button>
         <Button
           type="button"
+          variant="outline"
           disabled={isSubmitting}
-          onClick={() => submitWithAction("submit")}
-          className="purchasing-main-button"
+          onClick={() => submitWithAction("draft")}
+          className="purchasing-secondary-button w-full sm:w-auto"
         >
-          {submitAction === "submit" && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-          {submitAction === "submit" ? "Mengirim..." : "Submit"}
+          {submitAction === "draft" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          {submitAction === "draft"
+            ? "Saving..."
+            : mode === "edit"
+              ? "Save Changes"
+              : "Save as Draft"}
+        </Button>
+        <Button
+          type="submit"
+          disabled={isSubmitting}
+          className="purchasing-main-button w-full sm:w-auto"
+        >
+          {submitAction === "submit" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          {submitAction === "submit" ? "Submitting..." : "Submit"}
         </Button>
       </div>
     </form>

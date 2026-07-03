@@ -9,19 +9,14 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { ArrowLeft, Package, Calculator, Edit, Trash2 } from "lucide-react";
+import { Calculator, Edit, Trash2, Package, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { BOMItem } from "@/types/purchasing";
-import { ITEMS_PRODUCTS_PATH } from "@/modules/purchasing/constants/items-nav";
+import { PRODUCT_ROUTES } from "@/modules/purchasing/constants/item-routes";
+import { PurchasingPageHeader } from "@/modules/purchasing/components/page/purchasing-page-header";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { formatAmount } from "@/lib/purchasing/utils";
+import { getProductUnitLabel } from "../product-unit";
 
 function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
@@ -58,6 +53,10 @@ function getBomSubtotal(item: BOMItem) {
   return item.subtotal ?? item.total_cost ?? 0;
 }
 
+function formatQuantity(value: number) {
+  return value.toLocaleString("en-US", { maximumFractionDigits: 4 });
+}
+
 export function ProductDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -73,9 +72,7 @@ export function ProductDetailPage() {
 
   const categoryLabel = useMemo(() => {
     if (!product?.kategori) return "-";
-    const match = (categoriesQuery.data ?? []).find(
-      (row) => row.code === product.kategori
-    );
+    const match = (categoriesQuery.data ?? []).find((row) => row.code === product.kategori);
     return match?.nama ?? product.kategori;
   }, [categoriesQuery.data, product?.kategori]);
 
@@ -95,144 +92,147 @@ export function ProductDetailPage() {
   useEffect(() => {
     if (productQuery.isError || bomQuery.isError) {
       console.error("Error loading data:", productQuery.error || bomQuery.error);
-      toast.error("Gagal memuat data produk");
+      toast.error("Failed to load product data");
     }
   }, [productQuery.isError, bomQuery.isError, productQuery.error, bomQuery.error]);
 
   const handleDelete = async () => {
-    if (!product) return;
+    if (!product || deleteMutation.isPending) return;
     try {
       await deleteMutation.mutateAsync(product.id);
-      toast.success("Produk berhasil dinonaktifkan");
+      toast.success("Product deleted successfully");
       setIsDeleteDialogOpen(false);
-      router.push(ITEMS_PRODUCTS_PATH);
+      router.push(PRODUCT_ROUTES.products);
     } catch (error: unknown) {
       console.error("Error deleting product:", error);
-      toast.error(getErrorMessage(error, "Gagal menghapus produk"));
+      toast.error(getErrorMessage(error, "Failed to delete product"));
     }
-  };
-
-  const formatCurrency = (num: number | undefined | null) => {
-    if (num === undefined || num === null) return "Rp 0";
-    return `Rp ${num.toLocaleString("id-ID")}`;
   };
 
   const calculateMargin = () => {
     if (!product) return { amount: 0, percentage: 0 };
     const hpp = product.hpp_estimasi || 0;
     const amount = product.harga_jual - hpp;
-    const percentage = hpp > 0 
-      ? (amount / hpp) * 100 
-      : 0;
+    const percentage = hpp > 0 ? (amount / hpp) * 100 : 0;
     return { amount, percentage };
   };
 
   if (loading) {
     return (
-      <div className="container mx-auto py-6">
-        <div className="text-center py-12">Memuat data...</div>
+      <div className="flex items-center justify-center py-16 text-sm text-gray-500">
+        <Loader2 className="mr-2 h-5 w-5 animate-spin text-pink-600" />
+        Loading product...
       </div>
     );
   }
 
   if (!product) {
-    return (
-      <div className="container mx-auto py-6">
-        <div className="text-center py-12 text-red-500">Produk tidak ditemukan</div>
-      </div>
-    );
+    return <div className="py-16 text-center text-red-500">Product not found</div>;
   }
 
   const margin = calculateMargin();
+  const totalBomCost = bomItems.reduce((sum, item) => sum + getBomSubtotal(item), 0);
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col items-start justify-between gap-4 border-b border-gray-200/70 pb-4 sm:flex-row sm:items-center">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-2xl font-bold text-gray-900">{product.nama}</h1>
-            {product.is_active ? (
-              <Badge className="bg-green-100 text-green-800">Aktif</Badge>
-            ) : (
-              <Badge variant="secondary">Nonaktif</Badge>
-            )}
-          </div>
-          <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-gray-500">
-            <span className="rounded-md bg-gray-100 px-2 py-0.5 font-mono text-xs text-gray-700">{product.kode_produk}</span>
+      <PurchasingPageHeader
+        title={product.nama}
+        description={
+          <span className="flex flex-wrap items-center gap-2">
+            <span className="rounded-md bg-gray-100 px-2 py-0.5 font-mono text-xs text-gray-700">
+              {product.kode_produk || product.kode}
+            </span>
             <span className="text-gray-300">•</span>
             <span>{categoryLabel}</span>
-          </div>
-        </div>
-        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
-          <Link href={ITEMS_PRODUCTS_PATH}>
-            <Button variant="outline" className="purchasing-secondary-button w-full sm:w-auto">
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Kembali
+            <span className="text-gray-300">•</span>
+            <span>{getProductUnitLabel(product)}</span>
+            <span className="ml-1">
+              {product.is_active ? (
+                <Badge className="border-emerald-200 bg-emerald-50 text-emerald-700">Active</Badge>
+              ) : (
+                <Badge variant="secondary">Inactive</Badge>
+              )}
+            </span>
+          </span>
+        }
+        actions={
+          <>
+            <Link href={PRODUCT_ROUTES.productsEdit(product.id)}>
+              <Button variant="outline" className="purchasing-secondary-button w-full sm:w-auto">
+                <Edit className="mr-2 h-4 w-4" />
+                Edit
+              </Button>
+            </Link>
+            <Link href={PRODUCT_ROUTES.productsBom(product.id)}>
+              <Button variant="outline" className="purchasing-secondary-button w-full sm:w-auto">
+                <Calculator className="mr-2 h-4 w-4" />
+                Edit Bill of Materials
+              </Button>
+            </Link>
+            <Button
+              variant="outline"
+              onClick={() => setIsDeleteDialogOpen(true)}
+              className="h-10 w-full rounded-lg border-red-200/80 bg-white px-3 text-sm font-medium text-red-600 shadow-sm hover:!border-red-200 hover:!bg-red-50 hover:!text-red-700 sm:w-auto"
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              Delete
             </Button>
-          </Link>
-          <Link href={`${ITEMS_PRODUCTS_PATH}/edit/${product.id}`}>
-            <Button variant="outline" className="purchasing-secondary-button w-full sm:w-auto">
-              <Edit className="w-4 h-4 mr-2" />
-              Edit
-            </Button>
-          </Link>
-          <Link href={`${ITEMS_PRODUCTS_PATH}/bom/${product.id}`}>
-            <Button variant="outline" className="purchasing-secondary-button w-full sm:w-auto">
-              <Calculator className="w-4 h-4 mr-2" />
-              Edit BOM
-            </Button>
-          </Link>
-          <Button variant="outline" onClick={() => setIsDeleteDialogOpen(true)} className="h-10 w-full rounded-lg border-red-200 bg-white px-3 text-sm font-medium text-red-600 shadow-sm hover:!border-red-200 hover:!bg-red-50 hover:!text-red-700 sm:w-auto">
-            <Trash2 className="w-4 h-4 mr-2" />
-            Hapus
-          </Button>
-        </div>
-      </div>
+          </>
+        }
+      />
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Package className="w-5 h-5" />
-              Ringkasan Produk
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <Card className="border-gray-200/70 shadow-xs lg:col-span-2">
+          <CardHeader className="border-b border-gray-200/70 pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Package className="h-4 w-4 text-pink-600" />
+              Product Summary
             </CardTitle>
           </CardHeader>
-          <CardContent className="grid gap-4 sm:grid-cols-3">
+          <CardContent className="grid gap-4 p-4 sm:grid-cols-2 md:grid-cols-4">
             <div>
-              <p className="text-sm text-muted-foreground">Kategori</p>
-              <p className="font-medium">{categoryLabel}</p>
+              <p className="text-xs font-medium text-gray-500">Category</p>
+              <p className="font-medium text-gray-900">{categoryLabel}</p>
             </div>
             <div>
-              <p className="text-sm text-muted-foreground">Status</p>
-              <p className="font-medium">{product.is_active ? "Aktif" : "Nonaktif"}</p>
+              <p className="text-xs font-medium text-gray-500">Unit</p>
+              <p className="font-medium text-gray-900">{getProductUnitLabel(product)}</p>
             </div>
             <div>
-              <p className="text-sm text-muted-foreground">Komponen BOM</p>
-              <p className="font-medium">{bomItems.length} bahan</p>
+              <p className="text-xs font-medium text-gray-500">Status</p>
+              <p className="font-medium text-gray-900">{product.is_active ? "Active" : "Inactive"}</p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-gray-500">BOM Components</p>
+              <p className="font-medium text-gray-900">
+                {bomItems.length} material{bomItems.length === 1 ? "" : "s"}
+              </p>
             </div>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Calculator className="w-5 h-5" />
-              Harga
+        <Card className="border-gray-200/70 shadow-xs">
+          <CardHeader className="border-b border-gray-200/70 pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Calculator className="h-4 w-4 text-pink-600" />
+              Pricing
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">HPP Estimasi</span>
-              <span className="font-medium">{formatCurrency(product.hpp_estimasi)}</span>
+          <CardContent className="space-y-4 p-4">
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-500">Estimated COGS</span>
+              <span className="font-medium text-gray-900">{formatAmount(product.hpp_estimasi)}</span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Harga Jual</span>
-              <span className="font-medium">{formatCurrency(product.harga_jual)}</span>
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-500">Selling Price</span>
+              <span className="font-medium text-gray-900">{formatAmount(product.harga_jual)}</span>
             </div>
-            <div className="border-t pt-2 flex justify-between">
-              <span className="text-muted-foreground">Margin</span>
-              <span className={`font-medium ${margin.amount >= 0 ? "text-green-600" : "text-red-600"}`}>
-                {formatCurrency(margin.amount)} ({margin.percentage.toFixed(1)}%)
+            <div className="flex justify-between border-t border-gray-200/70 pt-2 text-sm">
+              <span className="text-gray-500">Margin</span>
+              <span
+                className={`font-medium ${margin.amount >= 0 ? "text-emerald-600" : "text-red-600"}`}
+              >
+                {formatAmount(margin.amount)} ({margin.percentage.toFixed(1)}%)
               </span>
             </div>
           </CardContent>
@@ -242,106 +242,116 @@ export function ProductDetailPage() {
       <Tabs defaultValue="info" className="flex-col space-y-4">
         <TabsList
           variant="line"
-          className="flex h-auto w-full justify-start gap-6 rounded-none border-b border-gray-200 bg-transparent p-0"
+          className="flex h-auto w-full justify-start gap-6 rounded-none border-b border-gray-200/70 bg-transparent p-0"
         >
           <TabsTrigger
             value="info"
             className="h-11 flex-none rounded-none border-0 border-b-2 border-transparent bg-transparent px-0 text-sm font-semibold text-gray-500 shadow-none data-active:border-pink-600 data-active:!bg-transparent data-active:text-pink-700 data-active:shadow-none"
           >
-            Informasi
+            Information
           </TabsTrigger>
           <TabsTrigger
             value="bom"
             className="h-11 flex-none rounded-none border-0 border-b-2 border-transparent bg-transparent px-0 text-sm font-semibold text-gray-500 shadow-none data-active:border-pink-600 data-active:!bg-transparent data-active:text-pink-700 data-active:shadow-none"
           >
-            BOM ({bomItems.length})
+            Bill of Materials ({bomItems.length})
           </TabsTrigger>
         </TabsList>
 
         <TabsContent value="info">
-          <Card>
-            <CardHeader>
-              <CardTitle>Informasi Produk</CardTitle>
+          <Card className="border-gray-200/70 shadow-xs">
+            <CardHeader className="border-b border-gray-200/70 pb-3">
+              <CardTitle className="text-base">Product Information</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-4 p-4">
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
-                  <p className="text-sm text-muted-foreground">Kode</p>
-                  <p className="font-medium">{product.kode_produk}</p>
+                  <p className="text-xs font-medium text-gray-500">Code</p>
+                  <p className="font-medium text-gray-900">{product.kode_produk || product.kode}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Kategori</p>
-                  <p className="font-medium">{categoryLabel}</p>
+                  <p className="text-xs font-medium text-gray-500">Category</p>
+                  <p className="font-medium text-gray-900">{categoryLabel}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-gray-500">Unit</p>
+                  <p className="font-medium text-gray-900">{getProductUnitLabel(product)}</p>
                 </div>
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Deskripsi</p>
-                <p>{product.deskripsi || "-"}</p>
+                <p className="text-xs font-medium text-gray-500">Description</p>
+                <p className="text-gray-900">{product.deskripsi || "-"}</p>
               </div>
             </CardContent>
           </Card>
         </TabsContent>
 
-        {/* BOM Tab */}
         <TabsContent value="bom">
-          <Card>
-            <CardHeader>
-              <CardTitle>Bill of Materials</CardTitle>
+          <Card className="border-gray-200/70 shadow-xs">
+            <CardHeader className="border-b border-gray-200/70 pb-3">
+              <CardTitle className="text-base">Bill of Materials</CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="p-4">
               {bomItems.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  Tidak ada komposisi BOM
+                <div className="py-8 text-center text-sm text-gray-500">
+                  No bill of materials components yet.
                 </div>
               ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Bahan Baku</TableHead>
-                      <TableHead className="text-right">Jumlah</TableHead>
-                      <TableHead>Satuan</TableHead>
-                      <TableHead className="text-right">Waste</TableHead>
-                      <TableHead className="text-right">Subtotal</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {bomItems.map((item) => (
-                      <TableRow key={item.id}>
-                        <TableCell>
-                          <div className="font-medium">{item.raw_material?.nama}</div>
-                          <div className="text-sm text-muted-foreground">{item.raw_material?.kode}</div>
-                        </TableCell>
-                        <TableCell className="text-right">{getBomQty(item)}</TableCell>
-                        <TableCell>{getBomUnitLabel(item)}</TableCell>
-                        <TableCell className="text-right">{getBomWastePercent(item)}%</TableCell>
-                        <TableCell className="text-right">
-                          {formatCurrency(getBomSubtotal(item))}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                    <TableRow>
-                      <TableCell colSpan={4} className="text-right font-semibold">
-                        Total HPP
-                      </TableCell>
-                      <TableCell className="text-right font-semibold">
-                        {formatCurrency(bomItems.reduce((sum, item) => sum + getBomSubtotal(item), 0))}
-                      </TableCell>
-                    </TableRow>
-                  </TableBody>
-                </Table>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm">
+                    <thead className="border-b border-gray-100 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+                      <tr>
+                        <th className="px-4 py-3 text-left font-semibold">Raw Material</th>
+                        <th className="px-4 py-3 text-right font-semibold">Qty</th>
+                        <th className="px-4 py-3 text-left font-semibold">Unit</th>
+                        <th className="px-4 py-3 text-right font-semibold">Waste</th>
+                        <th className="px-4 py-3 text-right font-semibold">Subtotal</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {bomItems.map((item) => (
+                        <tr key={item.id} className="hover:bg-gray-50">
+                          <td className="px-4 py-3">
+                            <div className="font-medium text-gray-900">{item.raw_material?.nama}</div>
+                            <div className="text-xs text-gray-500">{item.raw_material?.kode}</div>
+                          </td>
+                          <td className="px-4 py-3 text-right text-gray-700">
+                            {formatQuantity(getBomQty(item))}
+                          </td>
+                          <td className="px-4 py-3 text-gray-700">{getBomUnitLabel(item)}</td>
+                          <td className="px-4 py-3 text-right text-gray-700">
+                            {getBomWastePercent(item).toFixed(2)}%
+                          </td>
+                          <td className="px-4 py-3 text-right font-medium text-gray-900">
+                            {formatAmount(getBomSubtotal(item))}
+                          </td>
+                        </tr>
+                      ))}
+                      <tr className="bg-gray-50/80">
+                        <td colSpan={4} className="px-4 py-3 text-right text-sm font-semibold text-gray-600">
+                          Total Estimated COGS
+                        </td>
+                        <td className="px-4 py-3 text-right text-sm font-semibold text-gray-900">
+                          {formatAmount(totalBomCost)}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
               )}
             </CardContent>
           </Card>
         </TabsContent>
       </Tabs>
 
-      {/* Delete Dialog */}
       <ConfirmDialog
         open={isDeleteDialogOpen}
         onOpenChange={setIsDeleteDialogOpen}
-        title="Nonaktifkan Produk?"
-        description={`Apakah Anda yakin ingin menonaktifkan produk "${product.nama}"?`}
-        confirmLabel="Nonaktifkan"
+        title="Delete Product?"
+        description={`Are you sure you want to delete product "${product.nama}"? The record will be hidden from the list.`}
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        loadingLabel="Deleting..."
         loading={deleteMutation.isPending}
         onConfirm={handleDelete}
       />

@@ -2,6 +2,7 @@
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Sparkles, Utensils } from "lucide-react";
+import { PosProductThumbnail } from "@/components/pos/PosProductThumbnail";
 import type { Product, ProductVariant } from "@/lib/pos-api";
 
 export interface SelectedCustomization {
@@ -64,12 +65,8 @@ export function CustomizationModal({
         </DialogHeader>
         <div className="space-y-6 py-4">
           <div className="flex gap-4">
-            <div className="w-24 h-24 bg-gray-100 rounded-lg overflow-hidden flex-shrink-0">
-              <img
-                src={product.image_url || "/products/placeholder.png"}
-                alt={product.name}
-                className="w-full h-full object-cover"
-              />
+            <div className="flex h-24 w-24 shrink-0 overflow-hidden rounded-lg bg-gray-100">
+              <PosProductThumbnail src={product.image_url} alt={product.name} iconClassName="h-8 w-8" />
             </div>
             <div className="flex-1">
               <div className="text-lg font-bold text-pink-600">{formatCurrency(product.base_price)}</div>

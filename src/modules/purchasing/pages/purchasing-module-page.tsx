@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { PRODUCT_ROUTES, RM_ROUTES } from "@/modules/purchasing/constants/item-routes";
 import {
   BuildingOfficeIcon,
   CubeIcon,
@@ -20,13 +21,13 @@ import {
 } from "@heroicons/react/24/outline";
 
 const MODULE_STATS = [
-  { label: "Supplier", href: "/dashboard/purchasing/suppliers", icon: BuildingOfficeIcon, color: "bg-blue-100 text-blue-600", desc: "Kelola data vendor & supplier" },
-  { label: "Bahan Baku", href: "/dashboard/items/raw-materials", icon: CubeIcon, color: "bg-purple-100 text-purple-600", desc: "Master bahan &amp; satuan" },
-  { label: "Produk", href: "/dashboard/items/products", icon: CubeIcon, color: "bg-indigo-100 text-indigo-600", desc: "BOM &amp; struktur produk" },
-  { label: "Purchase Order", href: "/dashboard/purchasing/purchase-orders", icon: ClipboardDocumentListIcon, color: "bg-green-100 text-green-600", desc: "Kelola PO ke vendor" },
-  { label: "Barang Masuk", href: "/dashboard/purchasing/grn", icon: ArrowDownCircleIcon, color: "bg-teal-100 text-teal-600", desc: "Delivery, GRN &amp; status barang masuk" },
+  { label: "Supplier", href: RM_ROUTES.purchasingSuppliers, icon: BuildingOfficeIcon, color: "bg-blue-100 text-blue-600", desc: "Kelola data vendor & supplier" },
+  { label: "Bahan Baku", href: RM_ROUTES.materials, icon: CubeIcon, color: "bg-purple-100 text-purple-600", desc: "Master bahan &amp; satuan" },
+  { label: "Produk", href: PRODUCT_ROUTES.products, icon: CubeIcon, color: "bg-indigo-100 text-indigo-600", desc: "BOM &amp; struktur produk" },
+  { label: "Purchase Order", href: RM_ROUTES.purchasingPo, icon: ClipboardDocumentListIcon, color: "bg-green-100 text-green-600", desc: "Kelola PO ke vendor" },
+  { label: "Barang Masuk", href: RM_ROUTES.purchasingGrn, icon: ArrowDownCircleIcon, color: "bg-teal-100 text-teal-600", desc: "Delivery, GRN &amp; status barang masuk" },
   { label: "Quality Control", href: "/dashboard/purchasing/qc", icon: CheckBadgeIcon, color: "bg-yellow-100 text-yellow-600", desc: "Inspeksi &amp; QC barang" },
-  { label: "Retur", href: "/dashboard/purchasing/returns", icon: ArrowUturnLeftIcon, color: "bg-red-100 text-red-600", desc: "Pengelolaan retur" },
+  { label: "Retur", href: RM_ROUTES.purchasingReturns, icon: ArrowUturnLeftIcon, color: "bg-red-100 text-red-600", desc: "Pengelolaan retur" },
   { label: "Inventori", href: "/dashboard/purchasing/inventory", icon: ArchiveBoxIcon, color: "bg-cyan-100 text-cyan-600", desc: "Stok &amp; mutasi bahan" },
   { label: "Valuasi Stok", href: "/dashboard/purchasing/reports/inventory-valuation", icon: ChartBarIcon, color: "bg-blue-100 text-blue-600", desc: "Nilai stok per periode" },
   { label: "Summary PO", href: "/dashboard/purchasing/reports/po-summary", icon: DocumentChartBarIcon, color: "bg-emerald-100 text-emerald-600", desc: "Ringkasan PO per periode" },

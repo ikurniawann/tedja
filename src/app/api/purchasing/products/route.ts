@@ -22,6 +22,7 @@ const productSchema = z.object({
   harga_jual: z.number().min(0).default(0),
   harga_modal: z.number().min(0).optional(),
   markup_persen: z.number().optional(),
+  production_output_type: z.enum(["FINISHED_GOOD", "WIP"]).default("FINISHED_GOOD").optional(),
 });
 
 function getErrorMessage(error: unknown, fallback: string) {

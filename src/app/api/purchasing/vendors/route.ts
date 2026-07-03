@@ -2,20 +2,35 @@ import { createServerPgClient } from "@/lib/pg/create-client";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import {
+  requireApiRole,
+  ApiError,
+  createdResponse,
+} from "@/lib/api/auth";
+import {
   getApiUserScope,
   companyScopeOr,
   branchScopeOr,
   effectiveCompanyId,
   effectiveBranchId,
 } from "@/lib/api/scope";
+import { generateVendorCode } from "@/lib/purchasing/utils";
+
+const vendorCategoryEnum = z.enum([
+  "it",
+  "office",
+  "stationery",
+  "services",
+  "raw_material",
+  "other",
+]);
 
 const vendorSchema = z.object({
-  name: z.string().min(1, "Nama vendor wajib diisi"),
-  contact_person: z.string().min(1, "Contact person wajib diisi"),
-  phone: z.string().min(1, "Nomor telepon wajib diisi"),
-  email: z.string().email("Email tidak valid"),
-  address: z.string().min(1, "Alamat wajib diisi"),
-  category: z.enum(["it", "office", "stationery", "services", "raw_material", "other"]),
+  name: z.string().min(1, "Vendor name is required"),
+  contact_person: z.string().min(1, "Contact person is required"),
+  phone: z.string().min(1, "Phone number is required"),
+  email: z.string().email("Invalid email address"),
+  address: z.string().min(1, "Address is required"),
+  category: vendorCategoryEnum,
   npwp: z.string().optional(),
   bank_name: z.string().optional(),
   bank_account: z.string().optional(),
@@ -23,19 +38,30 @@ const vendorSchema = z.object({
   notes: z.string().optional(),
 });
 
+const queryParamsSchema = z.object({
+  search: z.string().optional(),
+  category: vendorCategoryEnum.optional(),
+  status: z.enum(["all", "active", "inactive"]).optional(),
+  page: z.coerce.number().min(1).default(1),
+  limit: z.coerce.number().min(1).max(100).default(10),
+});
+
 export async function GET(request: NextRequest) {
   try {
+    await requireApiRole([
+      "purchasing_admin",
+      "purchasing_staff",
+      "purchasing_manager",
+      "super_admin",
+    ]);
+
+    const url = new URL(request.url);
+    const params = queryParamsSchema.parse(Object.fromEntries(url.searchParams));
+    const { page, limit, search, category, status } = params;
+    const offset = (page - 1) * limit;
+
     const db = await createServerPgClient();
-    
-    const { searchParams } = new URL(request.url);
-    const category = searchParams.get("category");
-    const search = searchParams.get("search");
-    
-    let query = db
-      .from("vendors")
-      .select("*")
-      .eq("is_active", true)
-      .order("name");
+    let query = db.from("vendors").select("*", { count: "exact" }).order("name");
 
     const scope = await getApiUserScope();
     const companyOr = companyScopeOr(scope);
@@ -43,62 +69,61 @@ export async function GET(request: NextRequest) {
     const branchOr = branchScopeOr(scope);
     if (branchOr) query = query.or(branchOr);
 
+    if (status === "active") {
+      query = query.eq("is_active", true);
+    } else if (status === "inactive") {
+      query = query.eq("is_active", false);
+    }
+
     if (category) {
       query = query.eq("category", category);
     }
-    
+
     if (search) {
-      query = query.or(`name.ilike.%${search}%,code.ilike.%${search}%`);
+      query = query.or(`name.ilike.%${search}%,code.ilike.%${search}%,contact_person.ilike.%${search}%`);
     }
-    
-    const { data: vendors, error } = await query;
-    
+
+    const { data: vendors, error, count } = await query.range(offset, offset + limit - 1);
+
     if (error) throw error;
-    
-    return NextResponse.json({ data: vendors });
+
+    const total = count ?? 0;
+    return NextResponse.json({
+      data: vendors ?? [],
+      pagination: {
+        page,
+        limit,
+        total,
+        total_pages: Math.max(1, Math.ceil(total / limit)),
+      },
+    });
   } catch (error) {
+    if (error instanceof ApiError) return error.toResponse();
+    if (error instanceof z.ZodError) {
+      return ApiError.badRequest("Invalid query parameters", error.issues).toResponse();
+    }
     console.error("Error fetching vendors:", error);
-    return NextResponse.json(
-      { error: "Gagal mengambil data vendor" },
-      { status: 500 }
-    );
+    return ApiError.server("Failed to load vendors").toResponse();
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
+    await requireApiRole([
+      "purchasing_admin",
+      "purchasing_staff",
+      "purchasing_manager",
+      "super_admin",
+    ]);
+
     const db = await createServerPgClient();
-    
-    // Check auth
-    const { data: { user } } = await db.auth.getUser();
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    
     const body = await request.json();
-    
-    // Validate input
     const validated = vendorSchema.parse(body);
     const scope = await getApiUserScope();
     const companyId = effectiveCompanyId(scope);
     const branchId = effectiveBranchId(scope);
-    
-    // Generate vendor code: V-YYYY-NNNN
-    const year = new Date().getFullYear();
-    const { data: lastVendor } = await db
-      .from("vendors")
-      .select("code")
-      .ilike("code", `V-${year}-%`)
-      .order("code", { ascending: false })
-      .limit(1);
-    
-    let sequence = 1;
-    if (lastVendor && lastVendor.length > 0) {
-      const lastNum = parseInt(lastVendor[0].code.split("-")[2]);
-      sequence = lastNum + 1;
-    }
-    const code = `V-${year}-${String(sequence).padStart(4, "0")}`;
-    
+    const code = await generateVendorCode(db);
+
     const { data: vendor, error } = await db
       .from("vendors")
       .insert({
@@ -110,21 +135,16 @@ export async function POST(request: NextRequest) {
       })
       .select()
       .single();
-    
+
     if (error) throw error;
-    
-    return NextResponse.json({ data: vendor }, { status: 201 });
+
+    return createdResponse(vendor, "Vendor created successfully");
   } catch (error) {
-    console.error("Error creating vendor:", error);
+    if (error instanceof ApiError) return error.toResponse();
     if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: "Validasi gagal", details: error.issues },
-        { status: 400 }
-      );
+      return ApiError.badRequest("Validation failed", error.issues).toResponse();
     }
-    return NextResponse.json(
-      { error: "Gagal membuat vendor" },
-      { status: 500 }
-    );
+    console.error("Error creating vendor:", error);
+    return ApiError.server("Failed to create vendor").toResponse();
   }
 }

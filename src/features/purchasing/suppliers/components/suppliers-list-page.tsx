@@ -10,22 +10,19 @@ import { Combobox } from "@/components/ui/combobox";
 import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
+  DialogPanel,
+  DialogPanelBody,
+  DialogPanelDescription,
+  DialogPanelHeader,
+  DialogPanelTitle,
 } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { PurchasingPageHeader } from "@/modules/purchasing/components/page/purchasing-page-header";
 import { PurchasingListSection } from "@/modules/purchasing/components/list/PurchasingListSection";
 import { PurchasingTablePagination } from "@/modules/purchasing/components/pagination/PurchasingTablePagination";
 import { CsvImporter } from "@/components/ui/csv-importer";
-import {
-  BuildingOfficeIcon,
-  PlusIcon,
-  MagnifyingGlassIcon,
-  ArrowUpTrayIcon,
-} from "@heroicons/react/24/outline";
-import { Eye, Filter, Loader2, Pencil, Trash2, X } from "lucide-react";
+import { BuildingOfficeIcon } from "@heroicons/react/24/outline";
+import { Eye, Filter, Loader2, Pencil, Plus, Search, Trash2, Upload, X } from "lucide-react";
 import {
   Supplier,
   SupplierListParams,
@@ -44,8 +41,6 @@ function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
 }
 
-// ─── Main List Page ──────────────────────────────────────────────
-
 export function SuppliersListPage() {
   return (
     <PurchasingGuard minRole="purchasing_staff">
@@ -58,18 +53,14 @@ function SuppliersListInner() {
   const { user } = useAuth();
   const router = useRouter();
 
-  // Filters
   const [search, setSearch] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive" | "draft">("all");
   const [paymentFilter, setPaymentFilter] = useState<PaymentTerms | "all">("all");
   const [filterOpen, setFilterOpen] = useState(false);
-
-  // Pagination
   const [page, setPage] = useState(1);
   const limit = 10;
 
-  // Dialog
   const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; supplier: Supplier | null }>({
     open: false,
     supplier: null,
@@ -83,10 +74,7 @@ function SuppliersListInner() {
     supplier: null,
     nextStatus: true,
   });
-
   const [importDialogOpen, setImportDialogOpen] = useState(false);
-
-  // ── Fetch ────────────────────────────────────────────────────
 
   const listParams: SupplierListParams = {
     search: search || undefined,
@@ -113,7 +101,7 @@ function SuppliersListInner() {
 
   useEffect(() => {
     if (listQuery.isError) {
-      toast.error("Gagal memuat data: " + getErrorMessage(listQuery.error, "Unknown error"));
+      toast.error(`Failed to load suppliers: ${getErrorMessage(listQuery.error, "Unknown error")}`);
     }
   }, [listQuery.isError, listQuery.error]);
 
@@ -126,39 +114,39 @@ function SuppliersListInner() {
     return () => window.clearTimeout(timeout);
   }, [searchQuery]);
 
-  // ── Actions ──────────────────────────────────────────────────
+  async function handleDelete() {
+    const supplier = deleteDialog.supplier;
+    if (!supplier || deleteLoading) return;
 
-  async function handleDelete(supplier: Supplier) {
     try {
       await deleteMutation.mutateAsync(supplier.id);
-      toast.success(`Supplier "${supplier.nama_supplier}" berhasil dihapus.`);
+      toast.success(`Supplier "${supplier.nama_supplier}" deleted successfully.`);
       setDeleteDialog({ open: false, supplier: null });
     } catch (err: unknown) {
-      toast.error("Gagal: " + getErrorMessage(err, "Unknown error"));
+      toast.error(`Failed to delete supplier: ${getErrorMessage(err, "Unknown error")}`);
     }
   }
 
   async function handleConfirmToggleStatus() {
     const supplier = statusDialog.supplier;
-    if (!supplier) return;
-    if (statusMutation.isPending) return;
+    if (!supplier || statusMutation.isPending) return;
 
     try {
       await statusMutation.mutateAsync({ id: supplier.id, isActive: statusDialog.nextStatus });
-      toast.success(`Supplier berhasil ${statusDialog.nextStatus ? "diaktifkan" : "dinonaktifkan"}.`);
+      toast.success(`Supplier ${statusDialog.nextStatus ? "activated" : "deactivated"} successfully.`);
       setStatusDialog({ open: false, supplier: null, nextStatus: true });
     } catch (err: unknown) {
-      toast.error("Gagal mengubah status: " + getErrorMessage(err, "Unknown error"));
+      toast.error(`Failed to update status: ${getErrorMessage(err, "Unknown error")}`);
     }
   }
 
   function handleExportCSV() {
     if (suppliers.length === 0) {
-      toast.error("Tidak ada data: Tidak ada supplier untuk di-export.");
+      toast.error("No suppliers available to export.");
       return;
     }
     exportSuppliersCSV(suppliers);
-    toast.success("File CSV sedang didownload.");
+    toast.success("Supplier export download started.");
   }
 
   function handleResetFilters() {
@@ -169,60 +157,60 @@ function SuppliersListInner() {
     setPage(1);
   }
 
-  // ── Render ───────────────────────────────────────────────────
-
   const canManageSuppliers = ["purchasing_admin", "purchasing_manager", "purchasing_staff"].includes(user?.role ?? "");
   const isFilterActive = statusFilter !== "all" || paymentFilter !== "all";
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col items-start justify-between gap-4 border-b border-gray-200/70 pb-4 sm:flex-row sm:items-center">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Supplier</h1>
-          <p className="mt-1 text-sm text-gray-500">
-            Kelola vendor &amp; supplier — {total} total
-          </p>
-        </div>
-        {canManageSuppliers && (
-          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
-            <Button variant="outline" onClick={() => setImportDialogOpen(true)} className="h-10 gap-2 rounded-lg border-pink-200 bg-white px-3 text-sm font-medium text-pink-700 shadow-sm hover:!border-pink-200 hover:!bg-pink-50 hover:!text-pink-700">
-              <ArrowUpTrayIcon className="mr-2 h-4 w-4" />
-              Import
-            </Button>
-            <Link href="/dashboard/purchasing/suppliers/insert">
-              <Button className="h-10 w-full gap-2 rounded-lg bg-pink-600 px-3 text-sm font-semibold text-white shadow-sm hover:bg-pink-700 sm:w-auto">
-                <PlusIcon className="mr-2 h-4 w-4" />
-                Tambah Supplier
+      <PurchasingPageHeader
+        title="Suppliers"
+        description={`Manage vendors and supplier records — ${total} total`}
+        actions={
+          canManageSuppliers ? (
+            <>
+              <Button
+                variant="outline"
+                onClick={() => setImportDialogOpen(true)}
+                className="purchasing-secondary-button w-full sm:w-auto"
+              >
+                <Upload className="mr-2 h-4 w-4" />
+                Import
               </Button>
-            </Link>
-          </div>
-        )}
-      </div>
+              <Link href="/dashboard/purchasing/suppliers/insert">
+                <Button className="purchasing-main-button w-full sm:w-auto">
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add Supplier
+                </Button>
+              </Link>
+            </>
+          ) : undefined
+        }
+      />
 
       <PurchasingListSection
         icon={BuildingOfficeIcon}
-        title="Daftar Supplier"
-        description="Kelola vendor, payment terms, status aktif, dan kontak supplier."
+        title="Supplier List"
+        description="Manage vendors, payment terms, active status, and supplier contacts."
         toolbar={
           <div className="flex w-full flex-col gap-3 sm:w-auto md:flex-row md:items-center">
             <label className="relative w-full md:w-80">
-                <MagnifyingGlassIcon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                <Input
-                  placeholder="Cari supplier..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="h-10 bg-white pl-10 pr-10 text-sm focus:border-pink-400 focus:ring-2 focus:ring-pink-100"
-                />
-                {searchQuery && (
-                  <button
-                    type="button"
-                    onClick={() => setSearchQuery("")}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 transition-colors hover:text-gray-700"
-                    aria-label="Hapus pencarian"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                )}
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+              <Input
+                placeholder="Search suppliers..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="h-10 bg-white pl-10 pr-10 text-sm focus:border-pink-400 focus:ring-2 focus:ring-pink-100"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 transition-colors hover:text-gray-700"
+                  aria-label="Clear search"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
             </label>
 
             <Button
@@ -248,9 +236,9 @@ function SuppliersListInner() {
               variant="outline"
               onClick={handleExportCSV}
               title="Export CSV"
-              className="h-10 gap-2 rounded-lg border-pink-200 bg-white px-3 text-sm font-medium text-pink-700 shadow-sm hover:!border-pink-200 hover:!bg-pink-50 hover:!text-pink-700"
+              className="purchasing-secondary-button w-full sm:w-auto"
             >
-              <ArrowUpTrayIcon className="mr-2 h-4 w-4" />
+              <Upload className="mr-2 h-4 w-4" />
               Export
             </Button>
 
@@ -273,9 +261,9 @@ function SuppliersListInner() {
                   </div>
                   <Combobox
                     options={[
-                      { value: "all", label: "Semua Status" },
-                      { value: "active", label: "Aktif" },
-                      { value: "inactive", label: "Nonaktif" },
+                      { value: "all", label: "All Statuses" },
+                      { value: "active", label: "Active" },
+                      { value: "inactive", label: "Inactive" },
                       { value: "draft", label: "Draft" },
                     ]}
                     value={statusFilter}
@@ -283,9 +271,9 @@ function SuppliersListInner() {
                       setStatusFilter(value as typeof statusFilter);
                       setPage(1);
                     }}
-                    placeholder="Filter status..."
-                    searchPlaceholder="Cari status..."
-                    emptyMessage="Status tidak ditemukan"
+                    placeholder="Filter by status..."
+                    searchPlaceholder="Search status..."
+                    emptyMessage="No status found"
                     className="!w-full h-9 text-sm"
                   />
                 </div>
@@ -297,7 +285,7 @@ function SuppliersListInner() {
                   </div>
                   <Combobox
                     options={[
-                      { value: "all", label: "Semua Terms" },
+                      { value: "all", label: "All Terms" },
                       ...PAYMENT_TERMS_OPTIONS.map((pt) => ({ value: pt, label: pt })),
                     ]}
                     value={paymentFilter}
@@ -305,9 +293,9 @@ function SuppliersListInner() {
                       setPaymentFilter(value as PaymentTerms | "all");
                       setPage(1);
                     }}
-                    placeholder="Filter terms..."
-                    searchPlaceholder="Cari terms..."
-                    emptyMessage="Terms tidak ditemukan"
+                    placeholder="Filter by terms..."
+                    searchPlaceholder="Search terms..."
+                    emptyMessage="No terms found"
                     className="!w-full h-9 text-sm"
                   />
                 </div>
@@ -318,17 +306,19 @@ function SuppliersListInner() {
           {loading ? (
             <div className="py-12 text-center">
               <Loader2 className="mx-auto h-8 w-8 animate-spin text-pink-600" />
-              <p className="mt-2 text-sm text-gray-500">Memuat data...</p>
+              <p className="mt-2 text-sm text-gray-500">Loading suppliers...</p>
             </div>
           ) : suppliers.length === 0 ? (
             <div className="py-14 text-center">
               <BuildingOfficeIcon className="mx-auto mb-4 h-12 w-12 text-gray-300" />
               <p className="text-gray-500">
-                {search ? "Tidak ada supplier yang cocok dengan pencarian" : "Belum ada data supplier"}
+                {search ? "No suppliers match your search" : "No suppliers yet"}
               </p>
               {canManageSuppliers && !search && (
                 <Link href="/dashboard/purchasing/suppliers/insert">
-                  <Button variant="outline" className="mt-4">Tambah Supplier Pertama</Button>
+                  <Button variant="outline" className="mt-4 purchasing-secondary-button">
+                    Add First Supplier
+                  </Button>
                 </Link>
               )}
             </div>
@@ -338,14 +328,14 @@ function SuppliersListInner() {
                 <table className="min-w-full text-sm">
                   <thead className="border-b border-gray-100 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
                     <tr>
-                      <th className="w-12 px-4 py-3 text-left font-semibold">No</th>
-                      <th className="px-4 py-3 text-left font-semibold">Kode</th>
-                      <th className="px-4 py-3 text-left font-semibold">Nama Supplier</th>
-                      <th className="px-4 py-3 text-left font-semibold">Kota</th>
-                      <th className="px-4 py-3 text-left font-semibold">PIC + Telepon</th>
+                      <th className="w-12 px-4 py-3 text-left font-semibold">No.</th>
+                      <th className="px-4 py-3 text-left font-semibold">Code</th>
+                      <th className="px-4 py-3 text-left font-semibold">Supplier Name</th>
+                      <th className="px-4 py-3 text-left font-semibold">City</th>
+                      <th className="px-4 py-3 text-left font-semibold">Contact Person & Phone</th>
                       <th className="px-4 py-3 text-left font-semibold">Payment Terms</th>
                       <th className="px-4 py-3 text-center font-semibold">Status</th>
-                      {canManageSuppliers && <th className="px-4 py-3 text-right font-semibold">Aksi</th>}
+                      {canManageSuppliers && <th className="px-4 py-3 text-right font-semibold">Actions</th>}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
@@ -382,7 +372,7 @@ function SuppliersListInner() {
                               onCheckedChange={(checked) =>
                                 setStatusDialog({ open: true, supplier, nextStatus: checked })
                               }
-                              aria-label={`Ubah status ${supplier.nama_supplier}`}
+                              aria-label={`Toggle status for ${supplier.nama_supplier}`}
                             />
                           </div>
                         </td>
@@ -390,7 +380,7 @@ function SuppliersListInner() {
                           <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                             <div className="flex items-center justify-end gap-2">
                               <Link href={`/dashboard/purchasing/suppliers/${supplier.id}`}>
-                                <Button variant="ghost" size="sm" title="Detail" className="cursor-pointer">
+                                <Button variant="ghost" size="sm" title="View detail" className="cursor-pointer">
                                   <Eye className="h-4 w-4" />
                                 </Button>
                               </Link>
@@ -404,7 +394,7 @@ function SuppliersListInner() {
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                title="Hapus"
+                                title="Delete"
                                 className="cursor-pointer text-red-500 hover:text-red-600"
                                 onClick={() => setDeleteDialog({ open: true, supplier })}
                               >
@@ -431,117 +421,71 @@ function SuppliersListInner() {
         </div>
       </PurchasingListSection>
 
-      {/* Status Dialog */}
-      <Dialog
+      <ConfirmDialog
         open={statusDialog.open}
         onOpenChange={(open) => {
           if (!open && !statusUpdatingId) {
             setStatusDialog({ open: false, supplier: null, nextStatus: true });
           }
         }}
-      >
-        <DialogContent className="gap-0 overflow-hidden rounded-2xl border border-gray-200/70 p-0 shadow-xl ring-1 ring-gray-200/60 sm:max-w-[420px]">
-          <DialogHeader className="border-b border-gray-200/70 px-4 py-3.5">
-            <DialogTitle className="text-base font-semibold text-gray-900">
-              {statusDialog.nextStatus ? "Aktifkan Supplier" : "Nonaktifkan Supplier"}
-            </DialogTitle>
-            <DialogDescription className="mt-1 text-sm leading-5 text-gray-500">
-              Apakah Anda yakin ingin {statusDialog.nextStatus ? "mengaktifkan" : "menonaktifkan"} supplier{" "}
-              <strong>{statusDialog.supplier?.nama_supplier}</strong>?
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="mx-0 mb-0 gap-2 border-t border-gray-200/70 bg-gray-50/60 px-5 py-4 sm:justify-end">
-            <Button
-              variant="outline"
-              onClick={() => setStatusDialog({ open: false, supplier: null, nextStatus: true })}
-              disabled={Boolean(statusUpdatingId)}
-              className="purchasing-secondary-button"
-            >
-              Batal
-            </Button>
-            <Button onClick={handleConfirmToggleStatus} disabled={Boolean(statusUpdatingId)} className="purchasing-main-button">
-              {statusUpdatingId
-                ? "Menyimpan..."
-                : statusDialog.nextStatus
-                  ? "Aktifkan"
-                  : "Nonaktifkan"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        variant="default"
+        title={statusDialog.nextStatus ? "Activate Supplier?" : "Deactivate Supplier?"}
+        description={`Are you sure you want to ${statusDialog.nextStatus ? "activate" : "deactivate"} "${statusDialog.supplier?.nama_supplier ?? ""}"?`}
+        confirmLabel={statusDialog.nextStatus ? "Activate" : "Deactivate"}
+        cancelLabel="Cancel"
+        loadingLabel="Saving..."
+        loading={Boolean(statusUpdatingId)}
+        onConfirm={handleConfirmToggleStatus}
+      />
 
-      {/* Delete Dialog */}
-      <Dialog
+      <ConfirmDialog
         open={deleteDialog.open}
         onOpenChange={(open) => !open && setDeleteDialog({ open: false, supplier: null })}
-      >
-        <DialogContent className="gap-0 overflow-hidden rounded-2xl border border-gray-200/70 p-0 shadow-xl ring-1 ring-gray-200/60 sm:max-w-[420px]">
-          <DialogHeader className="border-b border-gray-200/70 px-4 py-3.5">
-            <DialogTitle className="text-base font-semibold text-gray-900">Hapus Supplier</DialogTitle>
-            <DialogDescription className="mt-1 text-sm leading-5 text-gray-500">
-              Apakah Anda yakin ingin menghapus supplier{" "}
-              <strong>{deleteDialog.supplier?.nama_supplier}</strong>? Data akan
-              disembunyikan dari daftar, bukan sekadar dinonaktifkan.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="mx-0 mb-0 gap-2 border-t border-gray-200/70 bg-gray-50/60 px-5 py-4 sm:justify-end">
-            <Button
-              variant="outline"
-              onClick={() => setDeleteDialog({ open: false, supplier: null })}
-              disabled={deleteLoading}
-              className="purchasing-secondary-button"
-            >
-              Batal
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => deleteDialog.supplier && handleDelete(deleteDialog.supplier)}
-              disabled={deleteLoading}
-              className="purchasing-main-button"
-            >
-              {deleteLoading ? "Menghapus..." : "Hapus"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        title="Delete Supplier?"
+        description={`Are you sure you want to delete "${deleteDialog.supplier?.nama_supplier ?? ""}"? The record will be hidden from the list rather than deactivated.`}
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        loadingLabel="Deleting..."
+        loading={deleteLoading}
+        onConfirm={handleDelete}
+      />
 
-      {/* Import Dialog */}
       <Dialog open={importDialogOpen} onOpenChange={setImportDialogOpen}>
-        <DialogContent className="gap-0 overflow-hidden rounded-2xl border border-gray-200/70 p-0 shadow-xl ring-1 ring-gray-200/60 sm:max-w-2xl">
-          <DialogHeader className="border-b border-gray-200/70 px-5 py-4">
-            <DialogTitle className="text-lg font-semibold text-gray-900">Import Supplier dari CSV</DialogTitle>
-            <DialogDescription className="mt-1 text-sm leading-5 text-gray-500">
-              Upload file CSV untuk menambahkan supplier secara massal
-            </DialogDescription>
-          </DialogHeader>
-          <div className="px-5 py-4">
+        <DialogPanel size="md">
+          <DialogPanelHeader>
+            <DialogPanelTitle>Import Suppliers from Spreadsheet</DialogPanelTitle>
+            <DialogPanelDescription>
+              Upload a comma-separated values file to add suppliers in bulk.
+            </DialogPanelDescription>
+          </DialogPanelHeader>
+          <DialogPanelBody>
             <CsvImporter
-              title="Import Supplier"
-              description="Import data supplier dari file CSV"
+              title="Import Suppliers"
+              description="Import supplier data from a comma-separated values file"
               templateName="template-supplier.csv"
               apiEndpoint="/api/purchasing/import/suppliers"
               onSuccess={() => {
                 listQuery.refetch();
               }}
               columns={[
-                { key: "kode", label: "Kode", required: true, type: "text" },
-                { key: "nama", label: "Nama Supplier", required: true, type: "text" },
+                { key: "kode", label: "Code", required: true, type: "text" },
+                { key: "nama", label: "Supplier Name", required: true, type: "text" },
                 { key: "email", label: "Email", required: false, type: "email" },
-                { key: "telepon", label: "Telepon", required: false, type: "text" },
-                { key: "alamat", label: "Alamat", required: false, type: "text" },
-                { key: "kota", label: "Kota", required: false, type: "text" },
-                { key: "provinsi", label: "Provinsi", required: false, type: "text" },
-                { key: "kode_pos", label: "Kode Pos", required: false, type: "text" },
-                { key: "npwp", label: "NPWP", required: false, type: "text" },
-                { key: "termin_pembayaran", label: "Termin Pembayaran (hari)", required: false, type: "number" },
-                { key: "mata_uang", label: "Mata Uang", required: false, type: "text" },
-                { key: "kategori", label: "Kategori", required: false, type: "text" },
-                { key: "deskripsi", label: "Deskripsi", required: false, type: "text" },
+                { key: "telepon", label: "Phone", required: false, type: "text" },
+                { key: "alamat", label: "Address", required: false, type: "text" },
+                { key: "kota", label: "City", required: false, type: "text" },
+                { key: "provinsi", label: "Province", required: false, type: "text" },
+                { key: "kode_pos", label: "Postal Code", required: false, type: "text" },
+                { key: "npwp", label: "Tax ID", required: false, type: "text" },
+                { key: "termin_pembayaran", label: "Payment Term (days)", required: false, type: "number" },
+                { key: "mata_uang", label: "Currency", required: false, type: "text" },
+                { key: "kategori", label: "Category", required: false, type: "text" },
+                { key: "deskripsi", label: "Description", required: false, type: "text" },
                 { key: "status", label: "Status", required: false, type: "text" },
               ]}
             />
-          </div>
-        </DialogContent>
+          </DialogPanelBody>
+        </DialogPanel>
       </Dialog>
     </div>
   );

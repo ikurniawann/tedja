@@ -42,4 +42,6 @@ export const useApprovedPRsForPO = () =>
   useQuery({
     queryKey: poQueryKeys.approvedPRs,
     queryFn: listApprovedPRsForPO,
+    staleTime: 0,
+    refetchOnMount: "always",
   });

@@ -3,6 +3,11 @@ import { z } from "zod";
 import { createPgClient } from "@/lib/pg/create-client";
 import { ApiError, requireApiRole } from "@/lib/api/auth";
 import { generatePONumber } from "@/lib/purchasing/utils";
+import {
+  effectiveBranchId,
+  effectiveCompanyId,
+  getApiUserScope,
+} from "@/lib/api/scope";
 
 const optionalDateSchema = z
   .union([z.string().regex(/^\d{4}-\d{2}-\d{2}$/), z.literal(""), z.null()])
@@ -84,13 +89,17 @@ export async function POST(
 
     const { data: pr, error: prError } = await db
       .from("purchase_requests")
-      .select("id,status,converted_po_id")
+      .select("id,status,converted_po_id,company_id,branch_id")
       .eq("id", id)
       .single();
 
     if (prError || !pr) throw ApiError.notFound("PR tidak ditemukan");
     if (pr.status !== "approved") throw ApiError.badRequest("PR harus approved sebelum dibuatkan PO");
     if (pr.converted_po_id) throw ApiError.badRequest("PR sudah dibuatkan PO");
+
+    const scope = await getApiUserScope();
+    const companyId = pr.company_id ?? effectiveCompanyId(scope);
+    const branchId = pr.branch_id ?? effectiveBranchId(scope);
 
     const { data: prItems, error: prItemsError } = await db
       .from("pr_items")
@@ -126,6 +135,8 @@ export async function POST(
         nomor_po: poNumber,
         pr_id: id,
         supplier_id: payload.supplier_id,
+        company_id: companyId,
+        branch_id: branchId,
         tanggal_po: payload.tanggal_po || new Date().toISOString().split("T")[0],
         tanggal_kirim_estimasi: payload.tanggal_kirim_estimasi || null,
         status: "draft",

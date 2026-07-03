@@ -3,6 +3,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StockAlert } from "@/modules/purchasing/hooks/usePurchasingDashboard";
 import { formatUnit } from "@/modules/purchasing/utils";
+import { RM_ROUTES } from "@/modules/purchasing/constants/item-routes";
 import { AlertTriangle, ArrowRight } from "lucide-react";
 import Link from "next/link";
 
@@ -69,7 +70,7 @@ export function StockAlertPanel({ alerts }: StockAlertPanelProps) {
                       </div>
                     </div>
                   </div>
-                  <Link href="/dashboard/items/raw-materials">
+                  <Link href={RM_ROUTES.materials}>
                     <ArrowRight className="w-4 h-4 text-gray-400 hover:text-gray-600" />
                   </Link>
                 </div>
