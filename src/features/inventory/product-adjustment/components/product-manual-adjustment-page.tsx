@@ -7,9 +7,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Combobox } from "@/components/ui/combobox";
 import { DsDateTimePicker } from "@/components/design-system";
+import { STALL_LABELS } from "@/lib/configuration/stall-labels";
 import { PurchasingFormHeader } from "@/modules/purchasing/components/page/purchasing-page-header";
 import { PRODUCT_ROUTES } from "@/modules/purchasing/constants/item-routes";
+import { listStockWarehouses } from "@/features/inventory/stock/api";
 import { toast } from "sonner";
 
 function formatQty(value: number | null | undefined) {
@@ -27,19 +30,39 @@ type AdjustLine = {
 };
 
 export function ProductManualAdjustmentPage() {
+  const [warehouseId, setWarehouseId] = useState("");
+  const [warehouses, setWarehouses] = useState<{ id: string; name: string; code: string }[]>([]);
+  const [loadingWarehouses, setLoadingWarehouses] = useState(true);
   const [adjustDate, setAdjustDate] = useState(new Date().toISOString().slice(0, 10));
   const [notes, setNotes] = useState("");
   const [itemSearch, setItemSearch] = useState("");
   const [lines, setLines] = useState<AdjustLine[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
+    setLoadingWarehouses(true);
+    listStockWarehouses()
+      .then(setWarehouses)
+      .catch(() => toast.error("Failed to load stalls"))
+      .finally(() => setLoadingWarehouses(false));
+  }, []);
+
+  useEffect(() => {
+    if (!warehouseId) {
+      setLines([]);
+      return;
+    }
+
     setLoading(true);
-    fetch("/api/inventory/finished-goods?limit=500")
+    fetch(`/api/inventory/finished-goods?limit=500&warehouse_id=${warehouseId}`)
       .then((res) => res.json())
       .then((json) => {
-        const rows = Array.isArray(json.data) ? json.data : [];
+        const rows = Array.isArray(json.data?.data)
+          ? json.data.data
+          : Array.isArray(json.data)
+            ? json.data
+            : [];
         setLines(
           rows.map((row: Record<string, unknown>) => ({
             key: String(row.product_id || row.id),
@@ -54,7 +77,14 @@ export function ProductManualAdjustmentPage() {
       })
       .catch(() => toast.error("Failed to load product list"))
       .finally(() => setLoading(false));
-  }, []);
+  }, [warehouseId]);
+
+  const warehouseOptions = warehouses.map((w) => ({
+    value: w.id,
+    label: w.name,
+    description: w.code,
+  }));
+  const selectedWarehouse = warehouseOptions.find((w) => w.value === warehouseId);
 
   const filteredLines = useMemo(() => {
     const q = itemSearch.trim().toLowerCase();
@@ -76,7 +106,7 @@ export function ProductManualAdjustmentPage() {
     return { filled, variance, total: lines.length };
   }, [lines]);
 
-  const hasItems = lines.length > 0;
+  const hasItems = Boolean(warehouseId) && lines.length > 0;
 
   const handleLineChange = (key: string, value: string) => {
     setLines((prev) =>
@@ -100,6 +130,11 @@ export function ProductManualAdjustmentPage() {
   };
 
   const validateInputs = () => {
+    if (!warehouseId) {
+      toast.error(`${STALL_LABELS.singular} is required`);
+      return false;
+    }
+
     const toSave = lines.filter((line) => line.qty_actual_input !== "");
     if (toSave.length === 0) {
       toast.error("Enter new stock for at least one product");
@@ -126,9 +161,11 @@ export function ProductManualAdjustmentPage() {
   };
 
   const buildNote = () => {
+    const stallLabel = selectedWarehouse?.label || STALL_LABELS.singular;
     const base = notes.trim();
     const dateLabel = adjustDate ? `Adjustment ${adjustDate}` : "Stock adjustment";
-    return base ? `${dateLabel}: ${base}` : dateLabel;
+    const prefix = `${dateLabel} (${stallLabel})`;
+    return base ? `${prefix}: ${base}` : prefix;
   };
 
   const handleSubmit = async () => {
@@ -189,7 +226,7 @@ export function ProductManualAdjustmentPage() {
       <PurchasingFormHeader
         backHref={PRODUCT_ROUTES.inventoryStock}
         title="Product Stock Adjustment"
-        description="Manually correct finished product stock quantities"
+        description="Manually correct finished product stock per stall"
         actions={
           hasItems ? (
             <>
@@ -229,6 +266,26 @@ export function ProductManualAdjustmentPage() {
         <CardContent className="space-y-4 p-4">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-12">
             <div className="min-w-0 md:col-span-4">
+              <Label className="text-xs">
+                Stall <span className="text-red-500">*</span>
+              </Label>
+              <Combobox
+                options={warehouseOptions}
+                value={warehouseId}
+                onChange={setWarehouseId}
+                placeholder={
+                  loadingWarehouses ? STALL_LABELS.loading : STALL_LABELS.selectPlaceholder
+                }
+                searchPlaceholder={STALL_LABELS.search}
+                emptyMessage={STALL_LABELS.empty}
+                disabled={loadingWarehouses || submitting}
+                className="mt-1.5 h-9 text-sm"
+              />
+              {selectedWarehouse && (
+                <p className="mt-1 text-xs text-gray-500">{selectedWarehouse.description}</p>
+              )}
+            </div>
+            <div className="min-w-0 md:col-span-4">
               <DsDateTimePicker
                 label="Adjustment Date"
                 value={adjustDate}
@@ -239,7 +296,7 @@ export function ProductManualAdjustmentPage() {
               />
             </div>
 
-            <div className="min-w-0 space-y-1.5 md:col-span-8">
+            <div className="min-w-0 space-y-1.5 md:col-span-4">
               <Label htmlFor="notes" className="text-xs">
                 Notes
               </Label>
@@ -279,11 +336,13 @@ export function ProductManualAdjustmentPage() {
             <div>
               <h2 className="text-base font-semibold text-gray-900">Stock Correction</h2>
               <p className="text-sm text-gray-500">
-                {loading
-                  ? "Loading product list..."
-                  : hasItems
-                    ? "Enter new stock for products that need correction"
-                    : "No active products in this scope"}
+                {!warehouseId
+                  ? "Select a stall to load products"
+                  : loading
+                    ? "Loading product list..."
+                    : hasItems
+                      ? "Enter new stock for products that need correction"
+                      : "No active products in this stall"}
               </p>
             </div>
             {hasItems && (
@@ -313,7 +372,13 @@ export function ProductManualAdjustmentPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {loading ? (
+                {!warehouseId ? (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-10 text-center text-gray-400">
+                      Select a stall to begin
+                    </td>
+                  </tr>
+                ) : loading ? (
                   <tr>
                     <td colSpan={6} className="px-4 py-10 text-center text-gray-400">
                       <Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin text-pink-600" />
@@ -325,7 +390,7 @@ export function ProductManualAdjustmentPage() {
                     <td colSpan={6} className="px-4 py-10 text-center text-gray-400">
                       {hasItems
                         ? "No items match your search"
-                        : "No active products found"}
+                        : "No active products found for this stall"}
                     </td>
                   </tr>
                 ) : (

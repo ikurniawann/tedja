@@ -1,33 +1,36 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerPgClient } from "@/lib/pg/create-client";
+import { ApiError } from "@/lib/api/auth";
 
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const db = await createServerPgClient();
     const { id } = await params;
+
     const { data, error } = await db
-      .from("goods_receipt_items")
-      .select(`
+      .from("grn_items")
+      .select(
+        `
         *,
-        raw_material:raw_material_id(*),
-        satuan:satuan_id(*),
-        po_item:po_item_id(*)
-      `)
+        raw_material:raw_materials!raw_material_id(*),
+        satuan:units!satuan_id(*),
+        purchase_order_item:purchase_order_items!purchase_order_item_id(*)
+      `
+      )
       .eq("grn_id", id)
+      .eq("is_active", true)
       .order("created_at");
 
     if (error) throw error;
 
     return NextResponse.json({ data: data || [] });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error fetching GRN items:", error);
-    return NextResponse.json(
-      { error: error.message || "Failed to fetch GRN items" },
-      { status: 500 }
-    );
+    const message = error instanceof Error ? error.message : "Failed to fetch GRN items";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
 
@@ -40,41 +43,39 @@ export async function POST(
     const { id } = await params;
     const body = await request.json();
 
-    // Validate GRN status
     const { data: grn } = await db
-      .from("goods_receipts")
+      .from("grn")
       .select("status")
       .eq("id", id)
       .single();
 
-    if (!grn || grn.status !== "DRAFT") {
-      return NextResponse.json(
-        { error: "Cannot add items to non-draft GRN" },
-        { status: 400 }
-      );
+    if (!grn || grn.status !== "pending") {
+      return ApiError.badRequest("Cannot add items to GRN that is not pending").toResponse();
     }
 
     const { data, error } = await db
-      .from("goods_receipt_items")
+      .from("grn_items")
       .insert({
         ...body,
         grn_id: id,
+        raw_material_id: body.raw_material_id || body.bahan_baku_id,
+        satuan_id: body.satuan_id,
       })
-      .select(`
+      .select(
+        `
         *,
-        raw_material:raw_material_id(*),
-        satuan:satuan_id(*)
-      `)
+        raw_material:raw_materials!raw_material_id(*),
+        satuan:units!satuan_id(*)
+      `
+      )
       .single();
 
     if (error) throw error;
 
     return NextResponse.json({ data });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error creating GRN item:", error);
-    return NextResponse.json(
-      { error: error.message || "Failed to create GRN item" },
-      { status: 500 }
-    );
+    const message = error instanceof Error ? error.message : "Failed to create GRN item";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

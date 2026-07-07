@@ -215,3 +215,12 @@ export function getPaymentTermsLabel(value: PaymentTerms): string {
   };
   return labels[value] || value;
 }
+
+export const PAYMENT_TERMS_BADGE_STYLES: Record<PaymentTerms, string> = {
+  CBD: "border-sky-200/80 bg-sky-50 text-sky-700",
+  TOP7: "border-violet-200/80 bg-violet-50 text-violet-700",
+  TOP14: "border-indigo-200/80 bg-indigo-50 text-indigo-700",
+  TOP30: "border-pink-200/80 bg-pink-50 text-pink-700",
+  TOP45: "border-amber-200/80 bg-amber-50 text-amber-700",
+  TOP60: "border-orange-200/80 bg-orange-50 text-orange-700",
+};

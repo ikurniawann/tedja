@@ -21,6 +21,7 @@ export interface ProductStockOpname {
   opname_number: string;
   company_id: string | null;
   branch_id: string | null;
+  warehouse_id: string | null;
   opname_date: string;
   status: ProductStockOpnameStatus;
   reason: ProductStockOpnameReason;
@@ -32,6 +33,7 @@ export interface ProductStockOpname {
   created_at: string;
   updated_at: string;
   branch?: { id: string; name: string; code: string } | null;
+  warehouse?: { id: string; name: string; code: string } | null;
 }
 
 export interface ProductStockOpnameLine {
@@ -59,9 +61,11 @@ export interface ProductStockOpnameListParams {
   status?: ProductStockOpnameStatus | "all";
   search?: string;
   reason?: ProductStockOpnameReason;
+  warehouse_id?: string;
 }
 
 export interface CreateProductStockOpnameInput {
+  warehouse_id: string;
   opname_date?: string;
   notes?: string;
   reason?: ProductStockOpnameReason;

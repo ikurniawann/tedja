@@ -36,6 +36,7 @@ import { usePosCheckout } from '@/hooks/use-pos-checkout';
 import { usePosShift } from '@/hooks/use-pos-shift';
 import { usePosOnline } from '@/hooks/use-pos-online';
 import { usePosOfflineQueue } from '@/hooks/use-pos-offline';
+import { POS_SHIFT_MANAGEMENT_ENABLED } from '@/lib/pos/feature-flags';
 import { ShiftModal } from '@/components/pos/ShiftModal';
 import { PosProductThumbnail } from '@/components/pos/PosProductThumbnail';
 
@@ -137,6 +138,7 @@ function CashierPageNewContent() {
   const canTransact = hasShift && !loadingShift;
 
   const requireActiveShift = useCallback(() => {
+    if (!POS_SHIFT_MANAGEMENT_ENABLED) return true;
     if (loadingShift) {
       toast.message('Checking shift status...');
       return false;
@@ -710,7 +712,7 @@ function CashierPageNewContent() {
           </div>
         )}
 
-        {!loadingShift && !hasShift && (
+        {!POS_SHIFT_MANAGEMENT_ENABLED ? null : !loadingShift && !hasShift ? (
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200/80 bg-amber-50 px-4 py-3 text-sm text-amber-900">
             <div className="flex items-center gap-2">
               <AlertCircle className="h-4 w-4 shrink-0 text-amber-600" />
@@ -725,9 +727,9 @@ function CashierPageNewContent() {
               Open Shift
             </Button>
           </div>
-        )}
+        ) : null}
 
-        {loadingShift && (
+        {POS_SHIFT_MANAGEMENT_ENABLED && loadingShift && (
           <div className="flex items-center gap-2 rounded-lg border border-gray-200/70 bg-gray-50 px-4 py-2 text-sm text-gray-600">
             <Loader2 className="h-4 w-4 animate-spin" />
             Checking shift status...
@@ -984,7 +986,7 @@ function CashierPageNewContent() {
         onOpenBill={handleOpenBill}
         isSavingBill={savingBill}
         canTransact={canTransact}
-        onOpenShift={() => setShowShiftModal(true)}
+        onOpenShift={POS_SHIFT_MANAGEMENT_ENABLED ? () => setShowShiftModal(true) : undefined}
         updateQuantity={cart.updateQty}
         removeFromCart={cart.removeItem}
       />
@@ -1224,14 +1226,16 @@ function CashierPageNewContent() {
       </Dialog>
 
       {/* ── Shift Modal ── */}
-      <ShiftModal
-        open={showShiftModal}
-        shift={shift}
-        onClose={() => setShowShiftModal(false)}
-        onOpenShift={openShift}
-        onCloseShift={closeShift}
-        formatCurrency={formatCurrency}
-      />
+      {POS_SHIFT_MANAGEMENT_ENABLED ? (
+        <ShiftModal
+          open={showShiftModal}
+          shift={shift}
+          onClose={() => setShowShiftModal(false)}
+          onOpenShift={openShift}
+          onCloseShift={closeShift}
+          formatCurrency={formatCurrency}
+        />
+      ) : null}
 
       {/* ── Split Bill Modal ── */}
       <SplitBillModal

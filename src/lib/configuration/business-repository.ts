@@ -1,4 +1,5 @@
 import { query, queryOne } from "@/lib/db";
+import { sortWarehouses } from "@/lib/configuration/sort-warehouses";
 
 export type BusinessEntityType = "holding" | "company" | "branch" | "warehouse";
 
@@ -56,7 +57,7 @@ async function nextWarehouseCode(branchId: string): Promise<{ name: string; code
     [branchId]
   );
   const n = Number(row?.count ?? 0) + 1;
-  return { name: `Gudang ${n}`, code: `WH-${String(n).padStart(2, "0")}` };
+  return { name: `Stall ${n}`, code: `STALL-${String(n).padStart(2, "0")}` };
 }
 
 export async function fetchBusinessTree(): Promise<BusinessTree> {
@@ -86,7 +87,8 @@ export async function fetchBusinessTree(): Promise<BusinessTree> {
   const warehouses = await query<BusinessWarehouseRow>(
     `SELECT id, branch_id, name, code, is_default, is_active
      FROM configuration.warehouses
-     ORDER BY is_default DESC, name`
+     WHERE is_active = true
+     ORDER BY is_default DESC, code`
   );
 
   const warehousesByBranch = new Map<string, BusinessWarehouseRow[]>();
@@ -94,6 +96,9 @@ export async function fetchBusinessTree(): Promise<BusinessTree> {
     const list = warehousesByBranch.get(wh.branch_id) ?? [];
     list.push(wh);
     warehousesByBranch.set(wh.branch_id, list);
+  }
+  for (const [branchId, list] of warehousesByBranch) {
+    warehousesByBranch.set(branchId, sortWarehouses(list));
   }
 
   const branchesByCompany = new Map<string, BusinessBranchRow[]>();
@@ -231,14 +236,14 @@ export async function deleteBusinessEntity(type: BusinessEntityType, id: string)
       `SELECT is_default, branch_id FROM configuration.warehouses WHERE id = $1`,
       [id]
     );
-    if (!wh) throw new Error("Warehouse tidak ditemukan");
+    if (!wh) throw new Error("Stall tidak ditemukan");
     if (wh.is_default) {
       const count = await queryOne<{ count: string }>(
         `SELECT COUNT(*)::text AS count FROM configuration.warehouses WHERE branch_id = $1`,
         [wh.branch_id]
       );
       if (Number(count?.count ?? 0) <= 1) {
-        throw new Error("Gudang default tidak dapat dihapus. Setiap cabang wajib memiliki minimal 1 gudang.");
+        throw new Error("Main Storage tidak dapat dihapus. Setiap cabang wajib memiliki minimal 1 stall.");
       }
     }
   }

@@ -1,13 +1,13 @@
 import type { DbClient } from "@/lib/pg/types";
-
-// ============================================================
-// Inventory Movement Types
-// ============================================================
+import {
+  addInventoryFromGrn,
+  reduceInventoryFromPurchaseReturn,
+} from "@/lib/inventory";
 
 export type MovementType = "in" | "out" | "adjustment" | "transfer" | "return";
 export type ReferenceType =
   | "purchase_order"
-  | "goods_receipt"
+  | "grn"
   | "qc_inspection"
   | "return"
   | "adjustment"
@@ -15,6 +15,7 @@ export type ReferenceType =
 
 export interface MovementRecord {
   inventory_id: string;
+  /** @deprecated use rawMaterialId — kept for legacy call sites */
   bahan_baku_id: string;
   tipe: MovementType;
   jumlah: number;
@@ -30,68 +31,68 @@ export interface MovementRecord {
   tanggal_movement?: string;
 }
 
-// ============================================================
-// Record a single inventory movement
-// ============================================================
-
 export async function recordMovement(
   db: DbClient,
   movement: MovementRecord
 ): Promise<void> {
   await db.from("inventory_movements").insert({
     inventory_id: movement.inventory_id,
-    bahan_baku_id: movement.bahan_baku_id,
+    raw_material_id: movement.bahan_baku_id,
     tipe: movement.tipe,
     jumlah: movement.jumlah,
     unit_cost: movement.unit_cost ?? null,
     total_cost: movement.total_cost ?? null,
     reference_type: movement.reference_type,
     reference_id: movement.reference_id,
-    sebelum: movement.sebelum,
-    sesudah: movement.sesudah,
+    qty_before: movement.sebelum,
+    qty_after: movement.sesudah,
     alasan: movement.alasan ?? null,
     catatan: movement.catatan ?? null,
     created_by: movement.created_by,
-    tanggal_movement: movement.tanggal_movement ?? new Date().toISOString(),
+    created_at: movement.tanggal_movement ?? new Date().toISOString(),
   });
 }
 
-// ============================================================
-// Get or create inventory record for a bahan_baku
-// ============================================================
-
 export async function getOrCreateInventory(
   db: DbClient,
-  bahanBakuId: string
+  rawMaterialId: string
 ): Promise<{ id: string; qty_in_stock: number; avg_cost: number }> {
   const { data: existing } = await db
     .from("inventory")
-    .select("id, qty_in_stock, avg_cost")
-    .eq("bahan_baku_id", bahanBakuId)
-    .single();
+    .select("id, qty_available, unit_cost")
+    .eq("raw_material_id", rawMaterialId)
+    .eq("is_active", true)
+    .maybeSingle();
 
   if (existing) {
-    return existing;
+    return {
+      id: existing.id,
+      qty_in_stock: Number(existing.qty_available || 0),
+      avg_cost: Number(existing.unit_cost || 0),
+    };
   }
 
-  // Create if doesn't exist
   const { data: newInv, error } = await db
     .from("inventory")
-    .insert({ bahan_baku_id: bahanBakuId, qty_in_stock: 0, avg_cost: 0 })
-    .select("id, qty_in_stock, avg_cost")
+    .insert({
+      raw_material_id: rawMaterialId,
+      qty_available: 0,
+      qty_on_order: 0,
+      unit_cost: 0,
+    })
+    .select("id, qty_available, unit_cost")
     .single();
 
   if (error || !newInv) {
     throw new Error(`Failed to create inventory record: ${error?.message}`);
   }
 
-  return newInv;
+  return {
+    id: newInv.id,
+    qty_in_stock: 0,
+    avg_cost: 0,
+  };
 }
-
-// ============================================================
-// Weighted Average Cost calculation
-// new_avg = (current_qty × current_avg + accepted_qty × unit_price) / (current_qty + accepted_qty)
-// ============================================================
 
 export function calculateWeightedAverage(
   currentQty: number,
@@ -105,12 +106,6 @@ export function calculateWeightedAverage(
   return (totalCurrentValue + totalAcceptedValue) / (currentQty + acceptedQty);
 }
 
-// ============================================================
-// Add stock from QC accepted goods (GRN → QC → Inventory)
-// Updates qty_in_stock AND avg_cost via weighted average
-// Returns the movement record for inventory_movements
-// ============================================================
-
 export async function addStockFromQC(
   db: DbClient,
   params: {
@@ -118,59 +113,29 @@ export async function addStockFromQC(
     grnItemId: string;
     bahanBakuId: string;
     qtyAccepted: number;
-    unitPrice: number; // from PO item
+    unitPrice: number;
     userId: string;
   }
 ): Promise<void> {
-  const { grnId, grnItemId, bahanBakuId, qtyAccepted, unitPrice, userId } = params;
-
+  const { grnId, bahanBakuId, qtyAccepted, unitPrice, userId } = params;
   if (qtyAccepted <= 0) return;
 
-  // Get or create inventory
-  const inventory = await getOrCreateInventory(db, bahanBakuId);
+  const { data: grn } = await db
+    .from("grn")
+    .select("nomor_grn")
+    .eq("id", grnId)
+    .maybeSingle();
 
-  const sebelum = inventory.qty_in_stock || 0;
-  const sesudah = sebelum + qtyAccepted;
-
-  // Calculate new weighted average cost
-  const newAvgCost = calculateWeightedAverage(
-    sebelum,
-    inventory.avg_cost || 0,
+  await addInventoryFromGrn(
+    db,
+    bahanBakuId,
     qtyAccepted,
-    unitPrice
+    unitPrice,
+    grnId,
+    grn?.nomor_grn || grnId,
+    userId
   );
-
-  // Update inventory
-  const { error: invError } = await db
-    .from("inventory")
-    .update({
-      qty_in_stock: sesudah,
-      avg_cost: newAvgCost,
-    })
-    .eq("id", inventory.id);
-
-  if (invError) throw new Error(`Failed to update inventory: ${invError.message}`);
-
-  // Record movement
-  await recordMovement(db, {
-    inventory_id: inventory.id,
-    bahan_baku_id: bahanBakuId,
-    tipe: "in",
-    jumlah: qtyAccepted,
-    unit_cost: unitPrice,
-    total_cost: qtyAccepted * unitPrice,
-    reference_type: "goods_receipt",
-    reference_id: grnId,
-    sebelum,
-    sesudah,
-    alasan: "QC Accepted",
-    created_by: userId,
-  });
 }
-
-// ============================================================
-// Reduce stock on Return sent to supplier
-// ============================================================
 
 export async function reduceStockOnReturn(
   db: DbClient,
@@ -183,32 +148,20 @@ export async function reduceStockOnReturn(
   }
 ): Promise<void> {
   const { returnId, bahanBakuId, qtyReturned, unitCost, userId } = params;
-
   if (qtyReturned <= 0) return;
 
-  const inventory = await getOrCreateInventory(db, bahanBakuId);
-  const sebelum = inventory.qty_in_stock || 0;
-  const sesudah = Math.max(0, sebelum - qtyReturned);
+  const { data: purchaseReturn } = await db
+    .from("purchase_returns")
+    .select("return_number")
+    .eq("id", returnId)
+    .maybeSingle();
 
-  // Update inventory
-  await db
-    .from("inventory")
-    .update({ qty_in_stock: sesudah })
-    .eq("id", inventory.id);
-
-  // Record movement
-  await recordMovement(db, {
-    inventory_id: inventory.id,
-    bahan_baku_id: bahanBakuId,
-    tipe: "out",
-    jumlah: qtyReturned,
-    unit_cost: unitCost,
-    total_cost: qtyReturned * unitCost,
-    reference_type: "return",
-    reference_id: returnId,
-    sebelum,
-    sesudah,
-    alasan: "Return ke Supplier",
-    created_by: userId,
+  await reduceInventoryFromPurchaseReturn(db, {
+    rawMaterialId: bahanBakuId,
+    qtyReturned,
+    unitCost,
+    returnId,
+    returnNumber: purchaseReturn?.return_number || returnId,
+    userId,
   });
 }

@@ -47,8 +47,8 @@ const MODULE_ICON: Record<string, NavIconName> = {
   accounting: "reports",
   pos: "shopping",
   crm: "star",
-  master: "database",
-  settings: "settings",
+  business: "building",
+  "user-management": "users",
 };
 
 function buildChildrenByParent(permissions: RoleMenuPermission[]) {

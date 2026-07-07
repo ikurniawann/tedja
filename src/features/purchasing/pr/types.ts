@@ -11,6 +11,7 @@ export interface PRListItem {
   notes: string | null;
   required_date: string | null;
   created_at: string;
+  converted_po_id?: string | null;
 }
 
 export type PRStatusFilter =

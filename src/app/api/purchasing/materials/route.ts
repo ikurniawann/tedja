@@ -2,7 +2,13 @@ import { createServerPgClient } from "@/lib/pg/create-client";
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { requireApiRole, ApiError, successResponse, paginatedResponse } from "@/lib/api/auth";
-import { getApiUserScope, companyScopeOr, branchScopeOr } from "@/lib/api/scope";
+import {
+  getApiUserScope,
+  companyScopeOr,
+  branchScopeOr,
+  effectiveCompanyId,
+  effectiveBranchId,
+} from "@/lib/api/scope";
 
 const queryParamsSchema = z.object({
   search: z.string().optional(),
@@ -11,9 +17,7 @@ const queryParamsSchema = z.object({
   limit: z.coerce.number().min(1).max(100).default(20),
 });
 
-// ========================
-// GET /api/purchasing/materials - List bahan baku
-// ========================
+// GET /api/purchasing/materials — alias legacy ke item.raw_materials
 export async function GET(request: NextRequest) {
   try {
     await requireApiRole(["purchasing_admin", "purchasing_staff", "purchasing_manager", "super_admin"]);
@@ -25,8 +29,9 @@ export async function GET(request: NextRequest) {
     const offset = (page - 1) * limit;
 
     let query = db
-      .from("bahan_baku")
+      .from("raw_materials")
       .select("*", { count: "exact" })
+      .is("deleted_at", null)
       .eq("is_active", true);
 
     const scope = await getApiUserScope();
@@ -64,9 +69,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// ========================
-// POST /api/purchasing/materials - Create bahan baku
-// ========================
+// POST /api/purchasing/materials — alias legacy ke item.raw_materials
 export async function POST(request: NextRequest) {
   try {
     const user = await requireApiRole(["purchasing_admin", "purchasing_staff", "purchasing_manager", "super_admin"]);
@@ -77,10 +80,23 @@ export async function POST(request: NextRequest) {
     const companyId = effectiveCompanyId(scope);
     const branchId = effectiveBranchId(scope);
 
+    const satuanBesarId = body.satuan_besar_id || body.satuan_id;
+    if (!satuanBesarId) {
+      throw ApiError.badRequest("satuan_id atau satuan_besar_id wajib diisi");
+    }
+
     const { data, error } = await db
-      .from("bahan_baku")
+      .from("raw_materials")
       .insert({
-        ...body,
+        kode: body.kode,
+        nama: body.nama,
+        kategori: body.kategori || "LAINNYA",
+        deskripsi: body.deskripsi ?? null,
+        satuan_besar_id: satuanBesarId,
+        satuan_kecil_id: body.satuan_kecil_id ?? null,
+        konversi_factor: body.konversi_factor ?? 1,
+        stok_minimum: body.stok_minimum ?? 0,
+        stok_maximum: body.stok_maximum ?? 0,
         company_id: companyId,
         branch_id: branchId,
         created_by: user.id,

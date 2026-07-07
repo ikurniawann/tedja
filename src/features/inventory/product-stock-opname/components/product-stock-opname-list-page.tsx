@@ -19,7 +19,8 @@ import { PurchasingPageHeader } from "@/modules/purchasing/components/page/purch
 import { PurchasingListSection } from "@/modules/purchasing/components/list/PurchasingListSection";
 import { PurchasingTablePagination } from "@/modules/purchasing/components/pagination/PurchasingTablePagination";
 import { PRODUCT_ROUTES } from "@/modules/purchasing/constants/item-routes";
-import { useProductStockOpnameList } from "../queries";
+import { STALL_LABELS } from "@/lib/configuration/stall-labels";
+import { useProductStockOpnameList, useProductStockOpnameWarehouses } from "../queries";
 import {
   PRODUCT_STOCK_OPNAME_STATUS_COLORS,
   PRODUCT_STOCK_OPNAME_STATUS_LABELS,
@@ -52,7 +53,18 @@ export function ProductStockOpnameListPage() {
   const [search, setSearch] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<ProductStockOpnameStatus | "all">("all");
+  const [stallFilter, setStallFilter] = useState("");
   const limit = 10;
+
+  const warehousesQuery = useProductStockOpnameWarehouses();
+  const stallOptions = [
+    { value: "", label: `All ${STALL_LABELS.plural}` },
+    ...(warehousesQuery.data ?? []).map((w) => ({
+      value: w.id,
+      label: w.name,
+      description: w.code,
+    })),
+  ];
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
@@ -68,6 +80,7 @@ export function ProductStockOpnameListPage() {
     status: statusFilter,
     search: search || undefined,
     reason: "stock_opname",
+    warehouse_id: stallFilter || undefined,
   });
 
   const items = listQuery.data?.data ?? [];
@@ -75,12 +88,14 @@ export function ProductStockOpnameListPage() {
   const totalPages = listQuery.data?.pagination.total_pages ?? 1;
   const loading = listQuery.isLoading;
 
-  const hasActiveFilters = Boolean(search) || statusFilter !== "all" || page > 1;
+  const hasActiveFilters =
+    Boolean(search) || statusFilter !== "all" || Boolean(stallFilter) || page > 1;
 
   const handleResetFilters = () => {
     setSearchQuery("");
     setSearch("");
     setStatusFilter("all");
+    setStallFilter("");
     setPage(1);
   };
 
@@ -165,6 +180,22 @@ export function ProductStockOpnameListPage() {
               )}
             </label>
             <Combobox
+              options={stallOptions}
+              value={stallFilter}
+              onChange={(value) => {
+                setStallFilter(value);
+                setPage(1);
+              }}
+              placeholder={
+                warehousesQuery.isLoading ? STALL_LABELS.loading : `All ${STALL_LABELS.plural}`
+              }
+              searchPlaceholder={STALL_LABELS.search}
+              emptyMessage={STALL_LABELS.empty}
+              disabled={warehousesQuery.isLoading}
+              allowClear
+              className="h-10 w-full lg:w-48"
+            />
+            <Combobox
               value={statusFilter}
               onChange={(value) => {
                 setStatusFilter(value as ProductStockOpnameStatus | "all");
@@ -196,6 +227,7 @@ export function ProductStockOpnameListPage() {
             <thead className="border-b border-gray-100 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
               <tr>
                 <th className="px-4 py-3 text-left font-semibold">Number</th>
+                <th className="px-4 py-3 text-left font-semibold">Stall</th>
                 <th className="px-4 py-3 text-left font-semibold">Date</th>
                 <th className="px-4 py-3 text-right font-semibold">Lines</th>
                 <th className="px-4 py-3 text-right font-semibold">Counted</th>
@@ -207,13 +239,13 @@ export function ProductStockOpnameListPage() {
             <tbody className="divide-y divide-gray-100">
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-12 text-center text-gray-400">
+                  <td colSpan={8} className="px-4 py-12 text-center text-gray-400">
                     Loading stock opname sessions...
                   </td>
                 </tr>
               ) : items.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-12 text-center text-gray-400">
+                  <td colSpan={8} className="px-4 py-12 text-center text-gray-400">
                     <ClipboardDocumentListIcon className="mx-auto mb-2 h-8 w-8 text-gray-300" />
                     No product stock opname sessions yet
                   </td>
@@ -232,6 +264,9 @@ export function ProductStockOpnameListPage() {
                       >
                         {item.opname_number}
                       </Link>
+                    </td>
+                    <td className="px-4 py-3 text-gray-600">
+                      {item.warehouse?.name || item.warehouse?.code || "—"}
                     </td>
                     <td className="px-4 py-3 text-gray-600">{formatOpnameDate(item.opname_date)}</td>
                     <td className="px-4 py-3 text-right text-gray-700">

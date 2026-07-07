@@ -1,0 +1,157 @@
+-- =============================================================================
+-- IAM Menu Seeder — canonical menu tree (generated from active iam.menus)
+-- Idempotent: UPSERT by code, wire module/level/parent_id, prune stale menus.
+-- Run: npm run db:seed:iam-menus
+-- =============================================================================
+
+INSERT INTO iam.menus (code, menu_name, route_path, icon, menu_type, order_number, permission_context) VALUES
+  ('dashboard', 'Beranda', '/dashboard', 'home', 'sidebar', 0, '{"actions":["read"]}'::jsonb),
+  ('hris', 'HRIS', '/dashboard/hris', 'users', 'group', 10, '{"actions":["read"]}'::jsonb),
+  ('items', 'Items', '/dashboard/items', 'cube', 'group', 35, '{"actions":["read"]}'::jsonb),
+  ('pos', 'Point of Sales', '/dashboard/pos', 'shopping', 'group', 70, '{"actions":["read"]}'::jsonb),
+  ('crm', 'CRM', '/dashboard/crm', 'star', 'group', 80, '{"actions":["read"]}'::jsonb),
+  ('business', 'Business', '/dashboard/settings/business', 'building', 'group', 85, '{"actions":["read"]}'::jsonb),
+  ('user-management', 'User Management', NULL, 'users', 'group', 90, '{"actions":["read"]}'::jsonb),
+  ('business.hierarchy', 'Settings', '/dashboard/settings/business', 'building', 'sidebar', 10, '{"actions":["read"]}'::jsonb),
+  ('crm.overview', 'Overview', NULL, 'home', 'group', 10, '{"actions":["read"]}'::jsonb),
+  ('hris.recruitment', 'Rekrutmen', NULL, 'user-plus', 'group', 10, '{"actions":["read"]}'::jsonb),
+  ('items.raw-material', 'Raw Material', NULL, 'cube', 'group', 10, '{"actions":["read"]}'::jsonb),
+  ('pos.operations', 'Operasional', NULL, 'shopping', 'group', 10, '{"actions":["read"]}'::jsonb),
+  ('user-management.master', 'Master Data', NULL, 'database', 'group', 10, '{"actions":["read"]}'::jsonb),
+  ('crm.members', 'Members', NULL, 'users', 'group', 20, '{"actions":["read"]}'::jsonb),
+  ('hris.workforce', 'Kehadiran & Cuti', NULL, 'calendar', 'group', 20, '{"actions":["read"]}'::jsonb),
+  ('items.product', 'Product', NULL, 'cube', 'group', 20, '{"actions":["read"]}'::jsonb),
+  ('pos.catalog', 'Produk & Stok', NULL, 'cube', 'group', 20, '{"actions":["read"]}'::jsonb),
+  ('user-management.users', 'Users', '/dashboard/employees', 'users', 'sidebar', 20, '{"actions":["read"]}'::jsonb),
+  ('crm.loyalty', 'Loyalty', NULL, 'star', 'group', 30, '{"actions":["read"]}'::jsonb),
+  ('hris.organization', 'Struktur Organisasi', NULL, 'sitemap', 'group', 30, '{"actions":["read"]}'::jsonb),
+  ('pos.kitchen', 'Dapur & Cetak', NULL, 'cube', 'group', 30, '{"actions":["read"]}'::jsonb),
+  ('user-management.menus', 'Menu Configuration', '/dashboard/settings/menus', 'sitemap', 'sidebar', 30, '{"actions":["read"]}'::jsonb),
+  ('hris.compensation', 'Penggajian', NULL, 'dollar-sign', 'group', 40, '{"actions":["read"]}'::jsonb),
+  ('pos.loyalty', 'Member', NULL, 'money', 'group', 40, '{"actions":["read"]}'::jsonb),
+  ('user-management.roles', 'Role & Permission', '/dashboard/settings/roles', 'identification', 'sidebar', 40, '{"actions":["read"]}'::jsonb),
+  ('hris.performance', 'Kinerja', NULL, 'chart', 'group', 50, '{"actions":["read"]}'::jsonb),
+  ('pos.reports', 'Laporan', NULL, 'chart', 'group', 50, '{"actions":["read"]}'::jsonb),
+  ('hris.insights', 'Laporan', NULL, 'reports', 'group', 60, '{"actions":["read"]}'::jsonb),
+  ('purchasing.reports', 'Laporan', '/dashboard/purchasing/reports', 'reports', 'group', 60, '{"actions":["read"]}'::jsonb),
+  ('crm.loyalty.rewards', 'Rewards', '/dashboard/crm/rewards', 'star', 'sidebar', 10, '{"actions":["read"]}'::jsonb),
+  ('crm.members.list', 'Members', '/dashboard/crm/members', 'users', 'sidebar', 10, '{"actions":["read"]}'::jsonb),
+  ('crm.overview.dashboard', 'Dashboard', '/dashboard/crm', 'home', 'sidebar', 10, '{"actions":["read"]}'::jsonb),
+  ('hris.compensation.payroll', 'Run Penggajian', '/dashboard/hris/payroll', 'dollar-sign', 'sidebar', 10, '{"actions":["read"]}'::jsonb),
+  ('hris.insights.analytics', 'Analytics', '/dashboard/hris/analytics', 'chart', 'sidebar', 10, '{"actions":["read"]}'::jsonb),
+  ('hris.organization.sections', 'Sections', '/dashboard/hris/sections', 'building', 'sidebar', 10, '{"actions":["read"]}'::jsonb),
+  ('hris.performance.kpi-templates', 'KPI Templates', '/dashboard/hris/kpi-templates', 'clipboard', 'sidebar', 10, '{"actions":["read"]}'::jsonb),
+  ('hris.recruitment.candidates', 'Kandidat', '/dashboard/hris/candidates', 'user-plus', 'sidebar', 10, '{"actions":["read"]}'::jsonb),
+  ('hris.workforce.attendance', 'Absensi', '/dashboard/hris/attendance', 'calendar', 'sidebar', 10, '{"actions":["read"]}'::jsonb),
+  ('items.product.master', 'Master Data', NULL, 'database', 'group', 10, '{"actions":["read"]}'::jsonb),
+  ('items.raw-material.master', 'Master Data', NULL, 'database', 'group', 10, '{"actions":["read"]}'::jsonb),
+  ('pos.catalog.products', 'Produk', '/dashboard/pos/products', 'cube', 'sidebar', 10, '{"actions":["read"]}'::jsonb),
+  ('pos.kitchen.kds', 'KDS', '/dashboard/pos/kds', 'cube', 'sidebar', 10, '{"actions":["read"]}'::jsonb),
+  ('pos.loyalty.topup', 'Topup', '/dashboard/pos/topup', 'money', 'sidebar', 10, '{"actions":["read"]}'::jsonb),
+  ('pos.operations.cashier', 'Kasir', '/dashboard/pos/cashier-new', 'shopping', 'sidebar', 10, '{"actions":["read"]}'::jsonb),
+  ('pos.reports.dashboard', 'Dashboard', '/dashboard/pos', 'home', 'sidebar', 10, '{"actions":["read"]}'::jsonb),
+  ('purchasing.reports.stock-card', 'Stock Card', '/dashboard/purchasing/reports/stock-card', 'clipboard', 'sidebar', 10, '{"actions":["read"]}'::jsonb),
+  ('user-management.master.departments', 'Departemen', '/dashboard/master/departments', 'building', 'sidebar', 10, '{"actions":["read"]}'::jsonb),
+  ('crm.loyalty.avatars', 'Avatars', '/dashboard/crm/avatars', 'star', 'sidebar', 20, '{"actions":["read"]}'::jsonb),
+  ('hris.compensation.salary', 'Salary', '/dashboard/hris/salary', 'money', 'sidebar', 20, '{"actions":["read"]}'::jsonb),
+  ('hris.insights.reports', 'Laporan HRIS', '/dashboard/hris/reports', 'reports', 'sidebar', 20, '{"actions":["read"]}'::jsonb),
+  ('hris.organization.org-chart', 'Struktur Org', '/dashboard/hris/org-chart', 'sitemap', 'sidebar', 20, '{"actions":["read"]}'::jsonb),
+  ('hris.performance.logbook', 'Logbook', '/dashboard/hris/logbook', 'clipboard', 'sidebar', 20, '{"actions":["read"]}'::jsonb),
+  ('hris.recruitment.pipeline', 'Pipeline', '/dashboard/hris/pipeline', 'clipboard', 'sidebar', 20, '{"actions":["read"]}'::jsonb),
+  ('hris.workforce.leaves', 'Cuti & Izin', '/dashboard/hris/leaves', 'file-text', 'sidebar', 20, '{"actions":["read"]}'::jsonb),
+  ('items.product.inventory', 'Inventory', NULL, 'circle-stack', 'group', 20, '{"actions":["read"]}'::jsonb),
+  ('items.raw-material.inventory', 'Inventory', NULL, 'circle-stack', 'group', 20, '{"actions":["read"]}'::jsonb),
+  ('pos.catalog.stock-alerts', 'Stok Alert', '/dashboard/pos/stock-alerts', 'chart-bar', 'sidebar', 20, '{"actions":["read"]}'::jsonb),
+  ('pos.kitchen.print-queue', 'Print Queue', '/dashboard/pos/print-queue', 'document-text', 'sidebar', 20, '{"actions":["read"]}'::jsonb),
+  ('pos.operations.open-bills', 'Open Bills', '/dashboard/pos/open-bills', 'clipboard', 'sidebar', 20, '{"actions":["read"]}'::jsonb),
+  ('pos.reports.profit', 'Profit', '/dashboard/pos/reports/profit', 'chart', 'sidebar', 20, '{"actions":["read"]}'::jsonb),
+  ('purchasing.reports.inventory-valuation', 'Valuasi Inventori', '/dashboard/purchasing/reports/inventory-valuation', 'database', 'sidebar', 20, '{"actions":["read"]}'::jsonb),
+  ('user-management.master.positions', 'Jabatan', '/dashboard/master/positions', 'briefcase', 'sidebar', 20, '{"actions":["read"]}'::jsonb),
+  ('hris.performance.logbook-list', 'Logbook List', '/dashboard/hris/logbook-list', 'clipboard', 'sidebar', 30, '{"actions":["read"]}'::jsonb),
+  ('hris.recruitment.talent-pool', 'Talent Pool', '/dashboard/hris/talent-pool', 'star', 'sidebar', 30, '{"actions":["read"]}'::jsonb),
+  ('hris.workforce.schedules', 'Schedules', '/dashboard/hris/schedules', 'calendar', 'sidebar', 30, '{"actions":["read"]}'::jsonb),
+  ('items.product.purchasing', 'Purchasing', NULL, 'shopping', 'group', 30, '{"actions":["read"]}'::jsonb),
+  ('items.raw-material.purchasing', 'Purchasing', NULL, 'shopping', 'group', 30, '{"actions":["read"]}'::jsonb),
+  ('pos.kitchen.printer-settings', 'Printer', '/dashboard/pos/printer-settings', 'settings', 'sidebar', 30, '{"actions":["read"]}'::jsonb),
+  ('pos.operations.orders', 'Pesanan', '/dashboard/pos/orders', 'clipboard', 'sidebar', 30, '{"actions":["read"]}'::jsonb),
+  ('purchasing.reports.po-summary', 'Ringkasan PO', '/dashboard/purchasing/reports/po-summary', 'shopping', 'sidebar', 30, '{"actions":["read"]}'::jsonb),
+  ('user-management.master.employment-statuses', 'Status Karyawan', '/dashboard/master/employment-statuses', 'identification', 'sidebar', 30, '{"actions":["read"]}'::jsonb),
+  ('hris.performance.review', 'Performance Review', '/dashboard/hris/performance', 'chart', 'sidebar', 40, '{"actions":["read"]}'::jsonb),
+  ('hris.recruitment.job-portal', 'Job Portal', '/dashboard/hris/job-portal', 'briefcase', 'sidebar', 40, '{"actions":["read"]}'::jsonb),
+  ('items.product.approval', 'Approval', NULL, 'check-circle', 'group', 40, '{"actions":["read"]}'::jsonb),
+  ('items.raw-material.approval', 'Approval', NULL, 'check-circle', 'group', 40, '{"actions":["read"]}'::jsonb),
+  ('pos.operations.reservation', 'Reservasi', '/dashboard/pos/reservation', 'calendar', 'sidebar', 40, '{"actions":["read"]}'::jsonb),
+  ('purchasing.reports.po-detail', 'Detail PO', '/dashboard/purchasing/reports/po-detail', 'document-text', 'sidebar', 40, '{"actions":["read"]}'::jsonb),
+  ('items.product.production', 'Production', NULL, 'cube', 'group', 50, '{"actions":["read"]}'::jsonb),
+  ('items.raw-material.production', 'Production', NULL, 'cube', 'group', 50, '{"actions":["read"]}'::jsonb),
+  ('purchasing.reports.supplier-performance', 'Performa Supplier', '/dashboard/purchasing/reports/supplier-performance', 'building', 'sidebar', 50, '{"actions":["read"]}'::jsonb),
+  ('items.product.approval.pr', 'Approval PR', '/dashboard/product/approval/pr', 'file-text', 'sidebar', 10, '{"actions":["read","update"]}'::jsonb),
+  ('items.product.inventory.stock', 'Stock', '/dashboard/product/inventory/stock', 'circle-stack', 'sidebar', 10, '{"actions":["read"]}'::jsonb),
+  ('items.product.master.units', 'Unit', '/dashboard/product/units', 'database', 'sidebar', 10, '{"actions":["read","create","update","delete"]}'::jsonb),
+  ('items.product.production.bom', 'Bill of Materials', '/dashboard/product/production/recipes', 'cube', 'sidebar', 10, '{"actions":["read","create","update","delete"]}'::jsonb),
+  ('items.product.purchasing.vendor', 'Vendor', '/dashboard/product/purchasing/vendor', 'building', 'sidebar', 10, '{"actions":["read","create","update","delete"]}'::jsonb),
+  ('items.raw-material.approval.pr', 'Approval PR', '/dashboard/raw-material/approval/pr', 'file-text', 'sidebar', 10, '{"actions":["read","update"]}'::jsonb),
+  ('items.raw-material.inventory.stock', 'Stock', '/dashboard/raw-material/inventory/stock', 'circle-stack', 'sidebar', 10, '{"actions":["read"]}'::jsonb),
+  ('items.raw-material.master.units', 'Unit', '/dashboard/raw-material/units', 'database', 'sidebar', 10, '{"actions":["read","create","update","delete"]}'::jsonb),
+  ('items.raw-material.production.bom', 'Bill of Materials', '/dashboard/raw-material/production/recipes', 'cube', 'sidebar', 10, '{"actions":["read","create","update","delete"]}'::jsonb),
+  ('items.raw-material.purchasing.suppliers', 'Supplier', '/dashboard/raw-material/purchasing/suppliers', 'building', 'sidebar', 10, '{"actions":["read","create","update","delete"]}'::jsonb),
+  ('items.product.approval.po', 'Approval PO', '/dashboard/product/approval/po', 'clipboard-document-check', 'sidebar', 20, '{"actions":["read","update"]}'::jsonb),
+  ('items.product.inventory.opname', 'Stock Opname', '/dashboard/product/inventory/opname', 'clipboard', 'sidebar', 20, '{"actions":["read","create","update"]}'::jsonb),
+  ('items.product.master.categories', 'Category', '/dashboard/product/categories', 'clipboard', 'sidebar', 20, '{"actions":["read","create","update","delete"]}'::jsonb),
+  ('items.product.production.hub', 'Production In-House', '/dashboard/product/production', 'cube', 'sidebar', 20, '{"actions":["read","create","update"]}'::jsonb),
+  ('items.product.purchasing.price-list', 'Price List', '/dashboard/product/purchasing/price-list', 'clipboard', 'sidebar', 20, '{"actions":["read","create","update","delete"]}'::jsonb),
+  ('items.raw-material.approval.po', 'Approval PO', '/dashboard/raw-material/approval/po', 'clipboard-document-check', 'sidebar', 20, '{"actions":["read","update"]}'::jsonb),
+  ('items.raw-material.inventory.opname', 'Stock Opname', '/dashboard/raw-material/inventory/opname', 'clipboard', 'sidebar', 20, '{"actions":["read","create","update"]}'::jsonb),
+  ('items.raw-material.master.categories', 'Category', '/dashboard/raw-material/categories', 'clipboard', 'sidebar', 20, '{"actions":["read","create","update","delete"]}'::jsonb),
+  ('items.raw-material.production.hub', 'Production In-House', '/dashboard/raw-material/production', 'cube', 'sidebar', 20, '{"actions":["read","create","update"]}'::jsonb),
+  ('items.raw-material.purchasing.price-list', 'Price List', '/dashboard/raw-material/purchasing/price-list', 'clipboard', 'sidebar', 20, '{"actions":["read","create","update","delete"]}'::jsonb),
+  ('items.product.inventory.adjustment', 'Stock Adjustment', '/dashboard/product/inventory/adjustment', 'clipboard-document-check', 'sidebar', 30, '{"actions":["read","create","update"]}'::jsonb),
+  ('items.product.master.products', 'Product', '/dashboard/product/products', 'cube', 'sidebar', 30, '{"actions":["read","create","update","delete"]}'::jsonb),
+  ('items.product.purchasing.pr', 'Purchase Request', '/dashboard/product/purchasing/pr', 'file-text', 'sidebar', 30, '{"actions":["read","create","update","delete"]}'::jsonb),
+  ('items.raw-material.inventory.adjustment', 'Stock Adjustment', '/dashboard/raw-material/inventory/adjustment', 'clipboard-document-check', 'sidebar', 30, '{"actions":["read","create","update"]}'::jsonb),
+  ('items.raw-material.purchasing.pr', 'Purchase Request', '/dashboard/raw-material/purchasing/pr', 'file-text', 'sidebar', 30, '{"actions":["read","create","update","delete"]}'::jsonb),
+  ('items.product.inventory.transfer', 'Stock Transfer', '/dashboard/product/inventory/transfer', 'paper-airplane', 'sidebar', 40, '{"actions":["read","create","update"]}'::jsonb),
+  ('items.product.purchasing.po', 'Purchase Order', '/dashboard/product/purchasing/po', 'clipboard-document-check', 'sidebar', 40, '{"actions":["read","create","update","delete"]}'::jsonb),
+  ('items.raw-material.inventory.transfer', 'Stock Transfer', '/dashboard/raw-material/inventory/transfers', 'paper-airplane', 'sidebar', 40, '{"actions":["read","create","update"]}'::jsonb),
+  ('items.raw-material.master.materials', 'Raw Material', '/dashboard/raw-material/materials', 'cube', 'sidebar', 40, '{"actions":["read","create","update","delete"]}'::jsonb),
+  ('items.raw-material.purchasing.po', 'Purchase Order', '/dashboard/raw-material/purchasing/po', 'clipboard-document-check', 'sidebar', 40, '{"actions":["read","create","update","delete"]}'::jsonb),
+  ('items.product.purchasing.delivery', 'Track Shipment', '/dashboard/product/purchasing/delivery', 'truck', 'sidebar', 50, '{"actions":["read","create","update"]}'::jsonb),
+  ('items.raw-material.purchasing.delivery', 'Track Shipment', '/dashboard/raw-material/purchasing/delivery', 'truck', 'sidebar', 50, '{"actions":["read","create","update"]}'::jsonb),
+  ('items.product.purchasing.grn', 'Receive', '/dashboard/product/purchasing/receive', 'arrow-down-on-square', 'sidebar', 60, '{"actions":["read","create","update"]}'::jsonb),
+  ('items.raw-material.purchasing.grn', 'Receive', '/dashboard/raw-material/purchasing/grn', 'arrow-down-on-square', 'sidebar', 60, '{"actions":["read","create","update"]}'::jsonb),
+  ('items.product.purchasing.returns', 'Return', '/dashboard/product/purchasing/returns', 'truck', 'sidebar', 70, '{"actions":["read","create","update"]}'::jsonb),
+  ('items.raw-material.purchasing.returns', 'Return', '/dashboard/raw-material/purchasing/returns', 'truck', 'sidebar', 70, '{"actions":["read","create","update"]}'::jsonb),
+  ('items.product.purchasing.invoice', 'Invoice', '/dashboard/product/purchasing/invoice', 'money', 'sidebar', 80, '{"actions":["read","create","update"]}'::jsonb),
+  ('items.raw-material.purchasing.invoice', 'Invoice', '/dashboard/raw-material/purchasing/invoice', 'money', 'sidebar', 80, '{"actions":["read","create","update"]}'::jsonb)
+ON CONFLICT (code) DO UPDATE SET
+  menu_name            = EXCLUDED.menu_name,
+  route_path           = EXCLUDED.route_path,
+  icon                 = EXCLUDED.icon,
+  menu_type            = EXCLUDED.menu_type,
+  order_number         = EXCLUDED.order_number,
+  permission_context   = EXCLUDED.permission_context,
+  is_active            = true,
+  is_visible           = true,
+  deleted_at           = NULL,
+  updated_at           = now();
+
+UPDATE iam.menus
+SET module = split_part(code, '.', 1),
+    level  = (length(code) - length(replace(code, '.', ''))) + 1
+WHERE deleted_at IS NULL;
+
+UPDATE iam.menus child
+SET parent_id = parent.id
+FROM iam.menus parent
+WHERE child.code LIKE '%.%'
+  AND parent.code = left(child.code, length(child.code) - position('.' in reverse(child.code)))
+  AND child.deleted_at IS NULL
+  AND parent.deleted_at IS NULL;
+
+UPDATE iam.menus SET parent_id = NULL WHERE code NOT LIKE '%.%' AND deleted_at IS NULL;
+
+-- Soft-delete menus yang tidak ada di canonical tree
+UPDATE iam.menus
+SET is_active = false, is_visible = false, deleted_at = now(), updated_at = now()
+WHERE deleted_at IS NULL
+  AND code NOT IN ('dashboard', 'hris', 'items', 'pos', 'crm', 'business', 'user-management', 'business.hierarchy', 'crm.overview', 'hris.recruitment', 'items.raw-material', 'pos.operations', 'user-management.master', 'crm.members', 'hris.workforce', 'items.product', 'pos.catalog', 'user-management.users', 'crm.loyalty', 'hris.organization', 'pos.kitchen', 'user-management.menus', 'hris.compensation', 'pos.loyalty', 'user-management.roles', 'hris.performance', 'pos.reports', 'hris.insights', 'purchasing.reports', 'crm.loyalty.rewards', 'crm.members.list', 'crm.overview.dashboard', 'hris.compensation.payroll', 'hris.insights.analytics', 'hris.organization.sections', 'hris.performance.kpi-templates', 'hris.recruitment.candidates', 'hris.workforce.attendance', 'items.product.master', 'items.raw-material.master', 'pos.catalog.products', 'pos.kitchen.kds', 'pos.loyalty.topup', 'pos.operations.cashier', 'pos.reports.dashboard', 'purchasing.reports.stock-card', 'user-management.master.departments', 'crm.loyalty.avatars', 'hris.compensation.salary', 'hris.insights.reports', 'hris.organization.org-chart', 'hris.performance.logbook', 'hris.recruitment.pipeline', 'hris.workforce.leaves', 'items.product.inventory', 'items.raw-material.inventory', 'pos.catalog.stock-alerts', 'pos.kitchen.print-queue', 'pos.operations.open-bills', 'pos.reports.profit', 'purchasing.reports.inventory-valuation', 'user-management.master.positions', 'hris.performance.logbook-list', 'hris.recruitment.talent-pool', 'hris.workforce.schedules', 'items.product.purchasing', 'items.raw-material.purchasing', 'pos.kitchen.printer-settings', 'pos.operations.orders', 'purchasing.reports.po-summary', 'user-management.master.employment-statuses', 'hris.performance.review', 'hris.recruitment.job-portal', 'items.product.approval', 'items.raw-material.approval', 'pos.operations.reservation', 'purchasing.reports.po-detail', 'items.product.production', 'items.raw-material.production', 'purchasing.reports.supplier-performance', 'items.product.approval.pr', 'items.product.inventory.stock', 'items.product.master.units', 'items.product.production.bom', 'items.product.purchasing.vendor', 'items.raw-material.approval.pr', 'items.raw-material.inventory.stock', 'items.raw-material.master.units', 'items.raw-material.production.bom', 'items.raw-material.purchasing.suppliers', 'items.product.approval.po', 'items.product.inventory.opname', 'items.product.master.categories', 'items.product.production.hub', 'items.product.purchasing.price-list', 'items.raw-material.approval.po', 'items.raw-material.inventory.opname', 'items.raw-material.master.categories', 'items.raw-material.production.hub', 'items.raw-material.purchasing.price-list', 'items.product.inventory.adjustment', 'items.product.master.products', 'items.product.purchasing.pr', 'items.raw-material.inventory.adjustment', 'items.raw-material.purchasing.pr', 'items.product.inventory.transfer', 'items.product.purchasing.po', 'items.raw-material.inventory.transfer', 'items.raw-material.master.materials', 'items.raw-material.purchasing.po', 'items.product.purchasing.delivery', 'items.raw-material.purchasing.delivery', 'items.product.purchasing.grn', 'items.raw-material.purchasing.grn', 'items.product.purchasing.returns', 'items.raw-material.purchasing.returns', 'items.product.purchasing.invoice', 'items.raw-material.purchasing.invoice');

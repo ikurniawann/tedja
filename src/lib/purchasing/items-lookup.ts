@@ -2,7 +2,6 @@ import { z } from "zod";
 
 export const ITEMS_LOOKUP_TYPES = [
   "raw-material-categories",
-  "storage-conditions",
   "product-categories",
 ] as const;
 
@@ -19,11 +18,6 @@ export const ITEMS_LOOKUP_CONFIG: Record<ItemsLookupType, ItemsLookupConfig> = {
     table: "raw_material_categories",
     title: "Raw Material Categories",
     description: "Manage categories for raw materials",
-  },
-  "storage-conditions": {
-    table: "storage_conditions",
-    title: "Storage Conditions",
-    description: "Manage storage conditions for raw materials",
   },
   "product-categories": {
     table: "product_categories",

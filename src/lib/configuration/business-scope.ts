@@ -14,9 +14,9 @@ export const BUSINESS_SCOPE_LABELS: Record<BusinessScopeLevel, string> = {
 };
 
 export const BUSINESS_SCOPE_DESCRIPTIONS: Record<BusinessScopeLevel, string> = {
-  holding: "Dapat melihat semua company dan branch di holding yang dipilih.",
-  company: "Hanya dapat melihat branch di company yang dipilih.",
-  branch: "Hanya dapat melihat data branch yang dipilih.",
+  holding: "Can view all companies and branches within the selected holding.",
+  company: "Can only view branches within the selected company.",
+  branch: "Can only view data for the selected branch.",
 };
 
 export function normalizeBusinessScopePayload(
@@ -69,22 +69,22 @@ export function validateBusinessScope(
   if (!role || role === "super_admin") return null;
 
   if (!input.business_scope) {
-    return "Scope akses data wajib dipilih untuk role ini";
+    return "Data access scope is required for this role";
   }
 
   if (input.business_scope === "holding" && !input.holding_id) {
-    return "Holding wajib dipilih";
+    return "Holding is required";
   }
 
   if (input.business_scope === "company") {
     if (!input.holding_id || !input.company_id) {
-      return "Holding dan company wajib dipilih";
+      return "Holding and company are required";
     }
   }
 
   if (input.business_scope === "branch") {
     if (!input.holding_id || !input.company_id || !input.branch_id) {
-      return "Holding, company, dan branch wajib dipilih";
+      return "Holding, company, and branch are required";
     }
   }
 

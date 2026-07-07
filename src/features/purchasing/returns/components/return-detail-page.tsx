@@ -329,7 +329,7 @@ export function ReturnDetailPage({
                         <th className="px-4 py-3 text-left font-semibold">
                           {config.isProduct ? "Product" : "Raw Material"}
                         </th>
-                        <th className="px-4 py-3 text-left font-semibold">Warehouse</th>
+                        <th className="px-4 py-3 text-left font-semibold">Stall</th>
                         <th className="px-4 py-3 text-right font-semibold">Batch</th>
                         <th className="px-4 py-3 text-right font-semibold">Expiry</th>
                         <th className="px-4 py-3 text-right font-semibold">Qty</th>
@@ -468,7 +468,7 @@ export function ReturnDetailPage({
                     <div>
                       <p className="font-medium">Return approved</p>
                       <p className="mt-1 text-emerald-700/90">
-                        Stock has been reduced from the receipt warehouse. Goods receipt return
+                        Stock has been reduced from the receipt stall. Goods receipt return
                         quantities have been updated.
                       </p>
                     </div>
@@ -485,7 +485,7 @@ export function ReturnDetailPage({
           <DialogPanelHeader>
             <DialogPanelTitle>Approve Purchase Return?</DialogPanelTitle>
             <DialogPanelDescription>
-              Stock will be reduced from each item&apos;s receipt warehouse. Goods receipt return
+              Stock will be reduced from each item&apos;s receipt stall. Goods receipt return
               quantities will be updated.
             </DialogPanelDescription>
           </DialogPanelHeader>

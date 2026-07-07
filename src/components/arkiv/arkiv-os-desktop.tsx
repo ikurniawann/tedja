@@ -539,7 +539,7 @@ export default function ArkivOsDesktop() {
         <div className="flex h-full items-center gap-5">
           <Link href="/arkiv-os" className="flex items-center gap-2 font-semibold">
             <span className="grid size-5 place-items-center rounded-md bg-white/15 text-[10px]">A</span>
-            Arkiv OS
+            Arkiv
           </Link>
           <nav className="hidden items-center gap-4 text-white/72 md:flex">
             <button onClick={() => setShowLibrary(true)}>Applications</button>
@@ -2243,7 +2243,7 @@ function AboutArkiv({ onClose }: { onClose: () => void }) {
     <WindowShell title="About This Arkiv" onClose={onClose} className="left-1/2 top-24 w-[min(420px,calc(100vw-32px))] -translate-x-1/2">
       <div className="p-6 text-center">
         <div className={`mx-auto mb-4 grid size-16 place-items-center rounded-3xl bg-gradient-to-br ${pinkAccent}`}><MonitorDot className="size-8" /></div>
-        <h2 className="text-xl font-semibold">Arkiv OS</h2>
+        <h2 className="text-xl font-semibold">Arkiv</h2>
         <p className="mt-2 text-sm leading-6 text-white/60">Desktop portal untuk HRIS, Procurement, POS, CRM, dan AI Assistant.</p>
         <div className="mt-5 rounded-2xl bg-white/8 p-3 text-xs text-white/50">Version 1.0 · macOS-inspired shell</div>
       </div>

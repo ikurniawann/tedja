@@ -20,10 +20,11 @@ import {
   PurchasingFormHeader,
 } from "@/modules/purchasing/components/page/purchasing-page-header";
 import { formatAmount } from "@/lib/purchasing/utils";
-import { useProductEditData, useProductCategoryOptions } from "../queries";
+import { useProductEditData, useProductCategoryOptions, useProductWarehouses } from "../queries";
 import { useUpdateProduct } from "../mutations";
 import { mapUnitComboboxOptions } from "../product-unit";
 import { ProductOutputTypeField } from "./product-output-type-field";
+import { STALL_LABELS } from "@/lib/configuration/stall-labels";
 import type { ProductOutputType } from "@/types/purchasing";
 
 function getBomQty(item: Partial<BOMItem>) {
@@ -80,6 +81,7 @@ export function EditProductPage() {
   const loading = editQuery.isLoading;
 
   const categoriesQuery = useProductCategoryOptions();
+  const warehousesQuery = useProductWarehouses();
   const categoryOptions = (categoriesQuery.data ?? []).map((row) => ({
     value: row.code,
     label: row.nama,
@@ -93,12 +95,18 @@ export function EditProductPage() {
     nama: "",
     kategori: "",
     satuan_id: "",
+    warehouse_id: "",
     deskripsi: "",
     harga_jual: 0,
     markup_persen: 30,
     is_active: true,
     production_output_type: "FINISHED_GOOD",
   });
+  const stallOptions = (warehousesQuery.data ?? []).map((w) => ({
+    value: w.id,
+    label: w.name,
+    description: w.code,
+  }));
 
   useEffect(() => {
     if (editQuery.isError) {
@@ -114,6 +122,7 @@ export function EditProductPage() {
       nama: productData.nama || "",
       kategori: productData.kategori || "",
       satuan_id: productData.satuan_id || productData.unit_id || "",
+      warehouse_id: productData.warehouse_id || "",
       deskripsi: productData.deskripsi || "",
       harga_jual: productData.harga_jual || 0,
       markup_persen: productData.markup_persen ?? 30,
@@ -174,6 +183,10 @@ export function EditProductPage() {
       toast.error("Unit is required");
       return;
     }
+    if (!formData.warehouse_id) {
+      toast.error(`${STALL_LABELS.singular} is required`);
+      return;
+    }
 
     try {
       await updateMutation.mutateAsync({
@@ -225,7 +238,7 @@ export function EditProductPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4 p-4">
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
               <div className="space-y-1.5">
                 <Label htmlFor="nama" className="text-xs">
                   Product Name <span className="text-red-500">*</span>
@@ -235,6 +248,23 @@ export function EditProductPage() {
                   value={formData.nama}
                   onChange={(e) => setFormData({ ...formData, nama: e.target.value })}
                   required
+                  className="h-9 text-sm"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="warehouse_id" className="text-xs">
+                  Stall <span className="text-red-500">*</span>
+                </Label>
+                <Combobox
+                  options={stallOptions}
+                  value={formData.warehouse_id || ""}
+                  onChange={(v) => setFormData({ ...formData, warehouse_id: v })}
+                  placeholder={
+                    warehousesQuery.isLoading ? STALL_LABELS.loading : STALL_LABELS.selectPlaceholder
+                  }
+                  searchPlaceholder={STALL_LABELS.search}
+                  emptyMessage={STALL_LABELS.empty}
+                  disabled={warehousesQuery.isLoading || loading}
                   className="h-9 text-sm"
                 />
               </div>

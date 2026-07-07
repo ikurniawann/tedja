@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 /**
- * Seeder: Demo user cabang Sulu Dago (branch-scoped, bukan super_admin).
+ * Seeder: Demo user cabang Sulu Bandung (branch-scoped, bukan super_admin).
  *
  *   Email   : demo@sulu.id
  *   Password: demo
  *   Role    : purchasing_admin (API / auth metadata)
- *   Menus   : sulu_dago_demo (IAM sidebar — Items + POS, tanpa Finance/Accounting/Laporan)
- *   Scope   : Prologe → Sulu → Sulu Dago
+ *   Menus   : sulu_bandung_demo (IAM sidebar — Items + POS, tanpa Finance/Accounting/Laporan)
+ *   Scope   : Prologe → Sulu → Sulu Bandung
  *
  * Usage:
  *   node database/seeders/demo-sulu-user.js
@@ -23,17 +23,17 @@ const ROOT = path.join(__dirname, "..", "..");
 
 const EMAIL = process.env.DEMO_SULU_EMAIL || "demo@sulu.id";
 const PASSWORD = process.env.DEMO_SULU_PASSWORD || "demo";
-const FULL_NAME = process.env.DEMO_SULU_NAME || "Demo Sulu Dago";
+const FULL_NAME = process.env.DEMO_SULU_NAME || "Demo Sulu Bandung";
 const NIP = process.env.DEMO_SULU_NIP || "DEMOSULU";
 const PHONE = process.env.DEMO_SULU_PHONE || "-";
 /** Auth + API role (unchanged for purchasing module access). */
 const PROFILE_ROLE = "purchasing_admin";
-/** IAM sidebar role (see migration 20260703150000_sulu_dago_demo_menu_permissions.sql). */
-const MENU_ROLE = "sulu_dago_demo";
+/** IAM sidebar role (see database/seeders/iam-role-permissions.sql). */
+const MENU_ROLE = "sulu_bandung_demo";
 
 const HOLDING_CODE = "PROLOGE";
 const COMPANY_CODE = "SULU";
-const BRANCH_CODE = "SULU-DAGO";
+const BRANCH_CODE = "SULU-BANDUNG";
 
 function loadEnv() {
   const shellKeys = new Set(Object.keys(process.env));
@@ -164,7 +164,7 @@ async function main() {
     );
     if (!menuRole.rowCount) {
       throw new Error(
-        `IAM role "${MENU_ROLE}" belum ada. Jalankan migration 20260703150000_sulu_dago_demo_menu_permissions.sql dulu.`
+        `IAM role "${MENU_ROLE}" belum ada. Jalankan npm run db:seed:iam-roles dulu.`
       );
     }
     const menuRoleId = menuRole.rows[0].id;
@@ -174,7 +174,7 @@ async function main() {
        USING iam.roles r
        WHERE ur.user_id = $1
          AND ur.role_id = r.id
-         AND r.code IN ('purchasing_admin', 'sulu_dago_demo')`,
+         AND r.code IN ('purchasing_admin', 'sulu_bandung_demo', 'sulu_dago_demo')`,
       [userId]
     );
 

@@ -13,7 +13,7 @@ import { FormFieldLabel, formInputClassName } from "@/components/layout/form-fie
 import { BreadcrumbNav } from "@/modules/purchasing/components/breadcrumb/BreadcrumbNav";
 import { PurchasingPageHeader } from "@/modules/purchasing/components/page/purchasing-page-header";
 import { PurchasingListSection } from "@/modules/purchasing/components/list/PurchasingListSection";
-import { FolderOpen, Loader2, Pencil, Plus, Search, Tags, Trash2, Warehouse, X } from "lucide-react";
+import { FolderOpen, Loader2, Pencil, Plus, Search, Tags, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import type { ItemsLookupRecord, ItemsLookupType } from "@/lib/purchasing/items-lookup";
 import { ITEMS_LOOKUP_CONFIG } from "@/lib/purchasing/items-lookup";
@@ -22,7 +22,6 @@ import { useSaveItemsLookup, useDeleteItemsLookup } from "@/features/purchasing/
 
 const LOOKUP_ICONS: Record<ItemsLookupType, ComponentType<{ className?: string }>> = {
   "raw-material-categories": Tags,
-  "storage-conditions": Warehouse,
   "product-categories": FolderOpen,
 };
 

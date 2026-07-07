@@ -13,14 +13,13 @@ const updateMaterialSchema = z.object({
   kode: z.string().min(1).optional(),
   kategori: z.string().optional(),
   satuan_id: z.string().uuid().optional(),
+  satuan_besar_id: z.string().uuid().optional(),
   is_active: z.boolean().optional(),
 });
 
-// ========================
 // GET /api/purchasing/materials/:id
-// ========================
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
@@ -29,9 +28,10 @@ export async function GET(
     const db = await createServerPgClient();
 
     const { data, error } = await db
-      .from("bahan_baku")
+      .from("raw_materials")
       .select("*")
       .eq("id", id)
+      .is("deleted_at", null)
       .single();
 
     if (error || !data) {
@@ -46,9 +46,7 @@ export async function GET(
   }
 }
 
-// ========================
 // PUT /api/purchasing/materials/:id
-// ========================
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -61,13 +59,21 @@ export async function PUT(
     const body = await request.json();
     const validated = updateMaterialSchema.parse(body);
 
+    const updatePayload: Record<string, unknown> = {
+      updated_by: user.id,
+    };
+    if (validated.nama !== undefined) updatePayload.nama = validated.nama;
+    if (validated.kode !== undefined) updatePayload.kode = validated.kode;
+    if (validated.kategori !== undefined) updatePayload.kategori = validated.kategori;
+    if (validated.is_active !== undefined) updatePayload.is_active = validated.is_active;
+    if (validated.satuan_besar_id) updatePayload.satuan_besar_id = validated.satuan_besar_id;
+    else if (validated.satuan_id) updatePayload.satuan_besar_id = validated.satuan_id;
+
     const { data, error } = await db
-      .from("bahan_baku")
-      .update({
-        ...validated,
-        updated_by: user.id,
-      })
+      .from("raw_materials")
+      .update(updatePayload)
       .eq("id", id)
+      .is("deleted_at", null)
       .select()
       .single();
 
@@ -86,11 +92,9 @@ export async function PUT(
   }
 }
 
-// ========================
-// DELETE /api/purchasing/materials/:id - Soft delete
-// ========================
+// DELETE /api/purchasing/materials/:id — soft delete
 export async function DELETE(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
@@ -99,8 +103,13 @@ export async function DELETE(
     const db = await createServerPgClient();
 
     const { error } = await db
-      .from("bahan_baku")
-      .update({ is_active: false, updated_by: user.id })
+      .from("raw_materials")
+      .update({
+        is_active: false,
+        deleted_at: new Date().toISOString(),
+        deleted_by: user.id,
+        updated_by: user.id,
+      })
       .eq("id", id);
 
     if (error) throw error;

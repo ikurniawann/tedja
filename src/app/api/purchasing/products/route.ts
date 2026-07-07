@@ -9,8 +9,7 @@ import {
   getApiUserScope,
   companyScopeOr,
   branchScopeOr,
-  effectiveCompanyId,
-  effectiveBranchId,
+  validateProductWarehouseScope,
 } from "@/lib/api/scope";
 
 const productSchema = z.object({
@@ -19,6 +18,7 @@ const productSchema = z.object({
   deskripsi: z.string().optional(),
   kategori: z.string().optional(),
   satuan_id: z.string().uuid().optional(),
+  warehouse_id: z.string().uuid("Stall wajib dipilih"),
   harga_jual: z.number().min(0).default(0),
   harga_modal: z.number().min(0).optional(),
   markup_persen: z.number().optional(),
@@ -27,6 +27,34 @@ const productSchema = z.object({
 
 function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
+}
+
+async function generateProductCode(
+  db: Awaited<ReturnType<typeof createServerPgClient>>,
+  companyId: string | null,
+  branchId: string | null,
+  warehouseId: string
+) {
+  const date = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  let codeQuery = db
+    .from("products")
+    .select("kode")
+    .like("kode", `PRD-${date}-%`)
+    .eq("warehouse_id", warehouseId)
+    .is("deleted_at", null)
+    .order("kode", { ascending: false })
+    .limit(1);
+
+  codeQuery = companyId ? codeQuery.eq("company_id", companyId) : codeQuery.is("company_id", null);
+  codeQuery = branchId ? codeQuery.eq("branch_id", branchId) : codeQuery.is("branch_id", null);
+
+  const { data } = await codeQuery;
+  let seq = 1;
+  if (Array.isArray(data) && data.length > 0 && data[0]?.kode) {
+    const parts = data[0].kode.split("-");
+    seq = parseInt(parts[parts.length - 1] || "0", 10) + 1;
+  }
+  return `PRD-${date}-${String(seq).padStart(3, "0")}`;
 }
 
 // GET /api/purchasing/products
@@ -38,6 +66,7 @@ export async function GET(request: NextRequest) {
 
     const search = searchParams.get("search");
     const isActive = searchParams.get("is_active");
+    const warehouseId = searchParams.get("warehouse_id");
     const page = parseInt(searchParams.get("page") || "1");
     const limit = parseInt(searchParams.get("limit") || "20");
 
@@ -46,11 +75,14 @@ export async function GET(request: NextRequest) {
       .select("*", { count: "exact" })
       .is("deleted_at", null);
 
-    // Business scope: company + branch (produk level branch)
     const companyOr = companyScopeOr(scope);
     if (companyOr) query = query.or(companyOr);
     const branchOr = branchScopeOr(scope);
     if (branchOr) query = query.or(branchOr);
+
+    if (warehouseId) {
+      query = query.eq("warehouse_id", warehouseId);
+    }
 
     if (search) {
       query = query.or(`nama.ilike.%${search}%,kode.ilike.%${search}%`);
@@ -92,40 +124,27 @@ export async function POST(request: NextRequest) {
   try {
     const db = await createServerPgClient();
     const scope = await getApiUserScope();
-    const companyId = effectiveCompanyId(scope);
-    const branchId = effectiveBranchId(scope);
     const body = await request.json();
 
     const validated = productSchema.parse(body);
 
-    // Auto-generate kode if not provided
+    const warehouseScope = await validateProductWarehouseScope(validated.warehouse_id, scope);
+    if ("error" in warehouseScope) {
+      return Response.json({ success: false, message: warehouseScope.error }, { status: 400 });
+    }
+
+    const { company_id: companyId, branch_id: branchId, warehouse_id: warehouseId } =
+      warehouseScope;
+
     let kode = validated.kode;
     if (!kode) {
-      // Generate kode: PRD-YYYYMMDD-XXX
-      const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-      
-      // Get last product code for today
-      const { data: productsToday } = await db
-        .from("products")
-        .select("kode")
-        .like("kode", `PRD-${date}-%`)
-        .order("kode", { ascending: false })
-        .limit(1);
-      
-      let seqNum = 1;
-      if (productsToday && productsToday.length > 0 && productsToday[0].kode) {
-        const parts = productsToday[0].kode.split('-');
-        const lastSeq = parseInt(parts[parts.length - 1] || '0', 10);
-        seqNum = lastSeq + 1;
-      }
-      
-      kode = `PRD-${date}-${String(seqNum).padStart(3, '0')}`;
+      kode = await generateProductCode(db, companyId, branchId, warehouseId);
     } else {
-      // Cek kode unik dalam scope (company + branch)
       let existingQuery = db
         .from("products")
         .select("id")
         .eq("kode", kode)
+        .eq("warehouse_id", warehouseId)
         .is("deleted_at", null);
       existingQuery = companyId
         ? existingQuery.eq("company_id", companyId)
@@ -137,7 +156,7 @@ export async function POST(request: NextRequest) {
 
       if (existing) {
         return Response.json(
-          { success: false, message: "Kode produk sudah digunakan" },
+          { success: false, message: "Kode produk sudah digunakan di stall ini" },
           { status: 400 }
         );
       }
@@ -146,10 +165,18 @@ export async function POST(request: NextRequest) {
     const { data, error } = await db
       .from("products")
       .insert({
-        ...validated,
+        nama: validated.nama,
+        deskripsi: validated.deskripsi,
+        kategori: validated.kategori,
+        satuan_id: validated.satuan_id,
+        harga_jual: validated.harga_jual,
+        harga_modal: validated.harga_modal,
+        markup_persen: validated.markup_persen,
+        production_output_type: validated.production_output_type,
         kode,
         company_id: companyId,
         branch_id: branchId,
+        warehouse_id: warehouseId,
         is_active: true,
       })
       .select()

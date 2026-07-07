@@ -85,6 +85,7 @@ interface PRFormProps {
   initialData?: PRFormData;
   mode?: "create" | "edit";
   cancelHref?: string;
+  hideItemPricing?: boolean;
 }
 
 export function PRForm({
@@ -96,6 +97,7 @@ export function PRForm({
   initialData,
   mode = "create",
   cancelHref = "/dashboard/purchasing/pr",
+  hideItemPricing = false,
 }: PRFormProps) {
   const router = useRouter();
   const [submitAction, setSubmitAction] = useState<"draft" | "submit" | null>(null);
@@ -194,6 +196,11 @@ export function PRForm({
     unitId?: string,
     fallbackPrice: unknown = 0
   ) {
+    if (hideItemPricing) {
+      setValue(`items.${index}.estimated_price`, 0);
+      return;
+    }
+
     const fallback = parseLocaleNumber(fallbackPrice) ?? 0;
     setValue(`items.${index}.estimated_price`, fallback);
 
@@ -454,30 +461,37 @@ export function PRForm({
                       />
                     </div>
 
-                    <div className="min-w-0 space-y-1.5 lg:col-span-3">
-                      <Label className="text-xs">
-                        Estimated Price <span className="text-gray-400">(optional)</span>
-                      </Label>
-                      <NumericInput
-                        value={items[index]?.estimated_price || 0}
-                        onValueChange={(value) =>
-                          setValue(`items.${index}.estimated_price`, value, {
-                            shouldDirty: true,
-                            shouldValidate: true,
-                          })
-                        }
-                        decimalScale={0}
-                        placeholder="Leave blank if unknown"
-                        className="h-9 text-sm"
-                      />
-                    </div>
+                    {!hideItemPricing && (
+                      <>
+                        <div className="min-w-0 space-y-1.5 lg:col-span-3">
+                          <Label className="text-xs">
+                            Estimated Price <span className="text-gray-400">(optional)</span>
+                          </Label>
+                          <NumericInput
+                            value={items[index]?.estimated_price || 0}
+                            onValueChange={(value) =>
+                              setValue(`items.${index}.estimated_price`, value, {
+                                shouldDirty: true,
+                                shouldValidate: true,
+                              })
+                            }
+                            decimalScale={0}
+                            placeholder="Leave blank if unknown"
+                            className="h-9 text-sm"
+                          />
+                        </div>
 
-                    <div className="min-w-0 rounded-lg bg-gray-50/80 p-3 lg:col-span-3">
-                      <p className="text-xs text-gray-500">Subtotal</p>
-                      <p className="text-sm font-semibold text-gray-900">
-                        {formatAmount((items[index]?.qty || 0) * (items[index]?.estimated_price || 0))}
-                      </p>
-                    </div>
+                        <div className="min-w-0 rounded-lg bg-gray-50/80 p-3 lg:col-span-3">
+                          <p className="text-xs text-gray-500">Subtotal</p>
+                          <p className="text-sm font-semibold text-gray-900">
+                            {formatAmount((items[index]?.qty || 0) * (items[index]?.estimated_price || 0))}
+                          </p>
+                        </div>
+                      </>
+                    )}
+                    {hideItemPricing && (
+                      <input type="hidden" {...register(`items.${index}.estimated_price`)} />
+                    )}
                   </div>
                 </div>
               ))}
@@ -508,18 +522,32 @@ export function PRForm({
                 />
               </div>
 
-              <div className="rounded-xl border border-gray-200/70 bg-gray-50/70 p-4">
-                <p className="text-sm text-gray-500">Estimated Total</p>
-                <p className="mt-1 text-2xl font-bold text-gray-900">{formatAmount(totalAmount)}</p>
-                <div className="mt-4 rounded-lg bg-white p-3 text-left">
-                  <p className="text-xs font-medium text-gray-500">Approval Required</p>
-                  <p className="mt-1 text-sm font-medium text-gray-900">Head Department</p>
-                  <p className="mt-1 text-xs text-gray-500">
-                    Every submitted purchase request requires requirement approval. Final amount approval
-                    happens on the purchase order.
-                  </p>
+              {!hideItemPricing && (
+                <div className="rounded-xl border border-gray-200/70 bg-gray-50/70 p-4">
+                  <p className="text-sm text-gray-500">Estimated Total</p>
+                  <p className="mt-1 text-2xl font-bold text-gray-900">{formatAmount(totalAmount)}</p>
+                  <div className="mt-4 rounded-lg bg-white p-3 text-left">
+                    <p className="text-xs font-medium text-gray-500">Approval Required</p>
+                    <p className="mt-1 text-sm font-medium text-gray-900">Head Department</p>
+                    <p className="mt-1 text-xs text-gray-500">
+                      Every submitted purchase request requires requirement approval. Final amount approval
+                      happens on the purchase order.
+                    </p>
+                  </div>
                 </div>
-              </div>
+              )}
+              {hideItemPricing && (
+                <div className="rounded-xl border border-gray-200/70 bg-gray-50/70 p-4">
+                  <div className="rounded-lg bg-white p-3 text-left">
+                    <p className="text-xs font-medium text-gray-500">Approval Required</p>
+                    <p className="mt-1 text-sm font-medium text-gray-900">Head Department</p>
+                    <p className="mt-1 text-xs text-gray-500">
+                      Every submitted purchase request requires requirement approval. Final amount approval
+                      happens on the purchase order.
+                    </p>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>

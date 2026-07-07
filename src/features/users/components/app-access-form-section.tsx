@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import { PlusIcon, XMarkIcon } from "@heroicons/react/24/outline";
+import { KeyRound, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Combobox } from "@/components/ui/combobox";
@@ -27,24 +28,36 @@ import {
 } from "../constants";
 import type { UserRole } from "@/types";
 import { BusinessScopePicker } from "./business-scope-picker";
+import { StallAssignmentPicker } from "./stall-assignment-picker";
+import {
+  findBranchStallsFromTree,
+  requiresStallAssignment,
+  shouldShowStallPicker,
+} from "@/lib/users/stall-assignment";
 
 interface AppAccessFormSectionProps {
   form: UserEmployeeFormValues;
   businessTree: BusinessTree;
   isEdit: boolean;
+  hasExistingAppAccount?: boolean;
   onChange: (patch: Partial<UserEmployeeFormValues>) => void;
+  onResetPassword?: () => void;
+  isResettingPassword?: boolean;
 }
 
 const ACCOUNT_STATUS_OPTIONS = [
-  { value: "active", label: "Aktif" },
-  { value: "inactive", label: "Nonaktif" },
+  { value: "active", label: "Active" },
+  { value: "inactive", label: "Inactive" },
 ];
 
 export function AppAccessFormSection({
   form,
   businessTree,
   isEdit,
+  hasExistingAppAccount = false,
   onChange,
+  onResetPassword,
+  isResettingPassword = false,
 }: AppAccessFormSectionProps) {
   const roleOptions = useMemo(
     () => ADMIN_USER_ROLES.map((role) => ({ value: role, label: ROLE_LABELS[role] })),
@@ -84,14 +97,60 @@ export function AppAccessFormSection({
         holding_id: "",
         company_id: "",
         branch_id: "",
+        warehouse_ids: [],
       });
       return;
     }
     onChange({ role });
   }
 
+  const showStallPicker = shouldShowStallPicker({
+    isAccessApp: form.is_access_app,
+    role: form.role,
+    businessScope: form.business_scope || null,
+    branchId: form.branch_id || null,
+    isEdit,
+  });
+
+  const branchStalls = useMemo(() => {
+    if (!form.branch_id) return [];
+    return findBranchStallsFromTree(businessTree, form.branch_id).map((stall) => ({
+      id: stall.id,
+      name: stall.name,
+      code: stall.code,
+    }));
+  }, [businessTree, form.branch_id]);
+
+  const requiresNewPassword = form.is_access_app && (!isEdit || !hasExistingAppAccount);
+
   return (
     <div className="space-y-5">
+      {isEdit && hasExistingAppAccount && form.is_access_app && onResetPassword ? (
+        <div className="flex flex-col gap-3 rounded-lg border border-gray-200/70 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-semibold text-gray-900">Account password</p>
+            <p className="mt-1 text-xs text-gray-500">
+              Generate a new temporary password if the employee cannot sign in.
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-9 shrink-0 gap-1.5 rounded-lg border-gray-200/80"
+            onClick={onResetPassword}
+            disabled={isResettingPassword}
+          >
+            {isResettingPassword ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <KeyRound className="h-4 w-4" />
+            )}
+            Reset Password
+          </Button>
+        </div>
+      ) : null}
+
       <div className="flex items-start gap-3 rounded-lg border border-gray-200/70 bg-gray-50/50 p-4">
         <Checkbox
           id="is_access_app"
@@ -103,10 +162,10 @@ export function AppAccessFormSection({
             htmlFor="is_access_app"
             className="cursor-pointer text-sm font-semibold text-gray-900"
           >
-            Aktifkan akses login Arkiv
+            Enable Arkiv login access
           </label>
           <p className="mt-1 text-xs text-gray-500">
-            Karyawan dapat masuk ke sistem dengan role dan scope data yang ditentukan.
+            Employee can sign in with the assigned role and data scope.
           </p>
         </div>
       </div>
@@ -114,25 +173,25 @@ export function AppAccessFormSection({
       {form.is_access_app ? (
         <div className="space-y-5">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            {!isEdit ? (
+            {!requiresNewPassword ? (
               <div>
-                <FormFieldLabel required>Password sementara</FormFieldLabel>
+                <FormFieldLabel>New password (optional)</FormFieldLabel>
                 <Input
                   type="password"
                   value={form.password}
                   onChange={(e) => onChange({ password: e.target.value })}
-                  placeholder="Minimal 8 karakter"
+                  placeholder="Leave blank to keep current password"
                   className={formInputClassName}
                 />
               </div>
             ) : (
               <div>
-                <FormFieldLabel>Password baru (opsional)</FormFieldLabel>
+                <FormFieldLabel required>Temporary password</FormFieldLabel>
                 <Input
                   type="password"
                   value={form.password}
                   onChange={(e) => onChange({ password: e.target.value })}
-                  placeholder="Kosongkan jika tidak diubah"
+                  placeholder="At least 8 characters"
                   className={formInputClassName}
                 />
               </div>
@@ -143,29 +202,45 @@ export function AppAccessFormSection({
                 options={roleOptions}
                 value={form.role}
                 onChange={handleRoleChange}
-                placeholder="Pilih role"
-                searchPlaceholder="Cari role..."
-                emptyMessage="Role tidak ditemukan"
+                placeholder="Select role"
+                searchPlaceholder="Search role..."
+                emptyMessage="No role found"
                 className={formComboboxClassName}
               />
             </div>
             <div>
-              <FormFieldLabel>Status akun</FormFieldLabel>
+              <FormFieldLabel>Account status</FormFieldLabel>
               <Combobox
                 options={ACCOUNT_STATUS_OPTIONS}
                 value={form.account_status}
                 onChange={(value) =>
                   onChange({ account_status: value as "active" | "inactive" })
                 }
-                placeholder="Pilih status"
-                searchPlaceholder="Cari status..."
-                emptyMessage="Status tidak ditemukan"
+                placeholder="Select status"
+                searchPlaceholder="Search status..."
+                emptyMessage="No status found"
                 className={formComboboxClassName}
               />
             </div>
           </div>
 
-          <BusinessScopePicker form={form} tree={businessTree} onChange={onChange} />
+          <BusinessScopePicker form={form} tree={businessTree} isEdit={isEdit} onChange={onChange} />
+
+          {showStallPicker ? (
+            <div className="space-y-3">
+              {form.role === "super_admin" ? (
+                <p className="rounded-lg border border-amber-200/80 bg-amber-50/60 px-4 py-3 text-xs text-amber-800">
+                  Stall assignments are only saved when the role is changed from Super Admin.
+                </p>
+              ) : null}
+              <StallAssignmentPicker
+                stalls={branchStalls}
+                selectedIds={form.warehouse_ids}
+                required={requiresStallAssignment(form.role, form.business_scope || null, true)}
+                onChange={(warehouse_ids) => onChange({ warehouse_ids })}
+              />
+            </div>
+          ) : null}
 
           <div className="space-y-3">
             <div className="flex items-center justify-between">
@@ -185,13 +260,13 @@ export function AppAccessFormSection({
                 }
               >
                 <PlusIcon className="h-4 w-4" />
-                Tambah
+                Add
               </Button>
             </div>
 
             {form.approval_permissions.length === 0 ? (
               <p className="rounded-lg border border-dashed border-gray-200/70 py-6 text-center text-xs text-gray-400">
-                Belum ada hak approval
+                No approval permissions yet
               </p>
             ) : (
               <div className="space-y-2">
@@ -212,8 +287,8 @@ export function AppAccessFormSection({
                           value={permission.module}
                           onChange={(value) => updatePermission(index, { module: value })}
                           placeholder="Module"
-                          searchPlaceholder="Cari module..."
-                          emptyMessage="Module tidak ditemukan"
+                          searchPlaceholder="Search module..."
+                          emptyMessage="No module found"
                           className={formComboboxClassName}
                         />
                         <Combobox
@@ -221,8 +296,8 @@ export function AppAccessFormSection({
                           value={permission.workflow}
                           onChange={(value) => updatePermission(index, { workflow: value })}
                           placeholder="Workflow"
-                          searchPlaceholder="Cari workflow..."
-                          emptyMessage="Workflow tidak ditemukan"
+                          searchPlaceholder="Search workflow..."
+                          emptyMessage="No workflow found"
                           className={formComboboxClassName}
                         />
                         <Combobox
@@ -234,14 +309,14 @@ export function AppAccessFormSection({
                             })
                           }
                           placeholder="Level"
-                          searchPlaceholder="Cari level..."
-                          emptyMessage="Level tidak ditemukan"
+                          searchPlaceholder="Search level..."
+                          emptyMessage="No level found"
                           className={formComboboxClassName}
                         />
                         <Input
                           type="number"
                           min="0"
-                          placeholder="Limit nominal"
+                          placeholder="Amount limit"
                           value={permission.approval_limit ?? ""}
                           onChange={(e) =>
                             updatePermission(index, {

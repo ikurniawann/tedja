@@ -19,8 +19,10 @@ export async function GET(request: NextRequest) {
       "warehouse_admin",
       "purchasing_admin",
       "purchasing_staff",
+      "purchasing_manager",
       "admin",
       "super_admin",
+      "hrd",
     ]);
 
     const db = await createServerPgClient();
@@ -50,6 +52,6 @@ export async function GET(request: NextRequest) {
       return ApiError.badRequest("Parameter tidak valid", error.issues).toResponse();
     }
     console.error("Error fetching warehouses:", error);
-    return ApiError.server("Gagal memuat data gudang").toResponse();
+    return ApiError.server("Gagal memuat data stall").toResponse();
   }
 }

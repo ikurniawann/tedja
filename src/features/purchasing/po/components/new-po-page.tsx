@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Package, Plus, Trash2, X } from "lucide-react";
+import { ClipboardList, Package, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Combobox } from "@/components/ui/combobox";
 import { DsDateTimePicker } from "@/components/design-system";
@@ -20,7 +20,8 @@ import {
 import { Supplier, RawMaterialWithStock, PurchaseOrderFormData, PurchaseOrderItemFormData, Unit, SupplierPriceList, PurchaseOrderItem } from "@/types/purchasing";
 import { listPriceLists, updatePurchaseOrder } from "../api";
 import { getPurchaseRequest } from "@/features/purchasing/pr/api";
-import { usePOFormData, useApprovedPRsForPO, usePurchaseOrder } from "../queries";
+import { RM_ROUTES } from "@/modules/purchasing/constants/item-routes";
+import { usePOFormData, usePurchaseOrder } from "../queries";
 import { useCreatePurchaseOrder } from "../mutations";
 import { formatAmount } from "@/lib/purchasing/utils";
 
@@ -192,23 +193,9 @@ export function NewPOPage({ poId }: NewPOPageProps = {}) {
   const [editPrefillDone, setEditPrefillDone] = useState(!poId);
   const [isSaving, setIsSaving] = useState(false);
   const loading = formDataQuery.isLoading || (isEditMode && (detailQuery.isLoading || !editPrefillDone));
-  const approvedPRsQuery = useApprovedPRsForPO();
-  const approvedPrs = approvedPRsQuery.data ?? [];
-  const approvedPrsErrorShown = useRef(false);
-
-  useEffect(() => {
-    if (approvedPRsQuery.isError && !approvedPrsErrorShown.current) {
-      approvedPrsErrorShown.current = true;
-      toast.error(getErrorMessage(approvedPRsQuery.error, "Failed to load approved purchase requests"));
-    }
-    if (approvedPRsQuery.isSuccess) {
-      approvedPrsErrorShown.current = false;
-    }
-  }, [approvedPRsQuery.isError, approvedPRsQuery.error, approvedPRsQuery.isSuccess]);
   const createMutation = useCreatePurchaseOrder();
   const isSubmitting = createMutation.isPending || isSaving;
   const prId = isEditMode ? null : searchParams.get("pr_id");
-  const [prefillApplied, setPrefillApplied] = useState(false);
   const [formData, setFormData] = useState<PurchaseOrderFormData>({
     supplier_id: "",
     pr_id: prId || undefined,
@@ -225,7 +212,9 @@ export function NewPOPage({ poId }: NewPOPageProps = {}) {
     items: [],
   });
   const [items, setItems] = useState<POItemForm[]>([]);
-  const itemsLocked = isEditMode;
+  const itemsStructureLocked = isEditMode || Boolean(formData.pr_id || selectedPR);
+  const itemsQtyLocked = isEditMode;
+  const canCreateFromPr = isEditMode || Boolean(prId);
 
   const getConversionFactor = useCallback((materialId: string, unitId?: string) => {
     if (!unitId) return 1;
@@ -339,113 +328,7 @@ export function NewPOPage({ poId }: NewPOPageProps = {}) {
     return pricedItems;
   }, [applySupplierPriceToItem]);
 
-  // Auto-fill from URL query params (from Low Stock Report / Production shortage)
-  useEffect(() => {
-    if (prefillApplied || materials.length === 0 || units.length === 0) return;
-    const itemsJson = searchParams.get("items");
-    const materialCode = searchParams.get('material');
-    const qty = searchParams.get('qty');
-    const supplierName = searchParams.get('supplier');
-
-    if (itemsJson) {
-      try {
-        const parsed = JSON.parse(itemsJson) as Array<{
-          id?: string;
-          kode?: string;
-          qty?: number;
-          price?: number;
-          unit?: string;
-        }>;
-        const nextItems = parsed
-          .map((prefill, index) => {
-            const material =
-              materials.find((m) => m.kode === prefill.kode) ||
-              (prefill.id ? materials.find((m) => m.id === prefill.id) : undefined);
-            if (!material) return null;
-            const qtyOrdered = Math.max(0, Number(prefill.qty || 0));
-            const unitPrice = Number(prefill.price ?? material.harga_terakhir ?? material.avg_cost ?? 0);
-            const unitId = material.satuan_besar_id || material.satuan_kecil_id || "";
-            const unitName =
-              units.find((unit) => unit.id === unitId)?.nama ||
-              material.satuan_besar_nama ||
-              prefill.unit ||
-              material.satuan ||
-              "Unit";
-            return {
-              id: `prefill-${Date.now()}-${index}`,
-              raw_material_id: material.id,
-              qty_ordered: qtyOrdered,
-              harga_satuan: unitPrice,
-              subtotal: qtyOrdered * unitPrice,
-              notes: "Production material requirement",
-              raw_material_name: material.nama,
-              raw_material_unit: unitName,
-              satuan_id: unitId || undefined,
-              requested_qty: qtyOrdered,
-              requested_satuan_id: unitId || undefined,
-              source: "prefill",
-            } as POItemForm;
-          })
-          .filter(Boolean) as POItemForm[];
-
-        if (nextItems.length > 0) {
-          const productionOrderId = searchParams.get("production_order_id");
-          const productionOrderNumber = searchParams.get("production_order");
-          setItems(nextItems);
-          setFormData((prev) => ({
-            ...prev,
-            source_type: searchParams.get("source") === "production" ? "production_order" : prev.source_type,
-            production_order_id: productionOrderId || prev.production_order_id || null,
-            source_reference: productionOrderNumber || prev.source_reference || null,
-            catatan: productionOrderNumber
-              ? `Kebutuhan bahan produksi ${productionOrderNumber}`
-              : prev.catatan,
-          }));
-          setPrefillApplied(true);
-          toast.success(`${nextItems.length} material produksi ditambahkan ke PO`);
-          return;
-        }
-      } catch (error) {
-        console.error("Failed to parse PO prefill items:", error);
-      }
-    }
-    
-    if (materialCode && qty && materials.length > 0) {
-      // Find material by code
-      const material = materials.find(m => m.kode === materialCode);
-      if (material) {
-        if (supplierName && suppliers.length > 0) {
-          const supplier = suppliers.find(s => s.nama_supplier.includes(supplierName));
-          if (supplier) {
-            setFormData(prev => ({ ...prev, supplier_id: supplier.id }));
-          }
-        }
-        
-        // Add item to PO
-        const unitId = material.satuan_besar_id || material.satuan_kecil_id || "";
-        const unit = units.find((u) => u.id === unitId) || units.find((u) => u.nama === material.satuan);
-        const newItem: POItemForm = {
-          id: `temp-${Date.now()}`,
-          raw_material_id: material.id,
-          qty_ordered: parseInt(qty),
-          harga_satuan: material.harga_terakhir || 0,
-          subtotal: parseInt(qty) * (material.harga_terakhir || 0),
-          notes: "",
-          raw_material_name: material.nama,
-          raw_material_unit: unit?.nama || material.satuan_besar_nama || material.satuan || "Pcs",
-          satuan_id: unitId || unit?.id || undefined,
-          requested_qty: parseInt(qty),
-          requested_satuan_id: unitId || unit?.id || undefined,
-          source: "prefill",
-        };
-        
-        setItems([newItem]);
-        setPrefillApplied(true);
-        toast.success(`Material ${material.nama} ditambahkan ke PO (${qty} ${unit?.nama || 'pcs'})`);
-      }
-    }
-  }, [searchParams, materials, suppliers, units, formData.supplier_id, prefillApplied]);
-
+  // Auto-fill from approved purchase request (?pr_id=)
   const loadPRForPO = useCallback(async (id: string) => {
     setLoadingPR(true);
     try {
@@ -549,38 +432,6 @@ export function NewPOPage({ poId }: NewPOPageProps = {}) {
     }
   }, [formDataQuery.isError, formDataQuery.error]);
 
-  const clearSelectedPR = () => {
-    setSelectedPR(null);
-    setItems([]);
-    setFormData((prev) => ({ ...prev, pr_id: undefined }));
-    router.replace("/dashboard/purchasing/po/insert");
-  };
-
-  const handleSelectPR = (id: string) => {
-    if (!id) {
-      clearSelectedPR();
-      return;
-    }
-    router.replace(`/dashboard/purchasing/po/insert?pr_id=${id}`);
-    loadPRForPO(id);
-  };
-
-  const addItem = () => {
-    setItems(prev => [
-      ...prev,
-      {
-        id: `temp-${Date.now()}`,
-        raw_material_id: "",
-        qty_ordered: 1,
-        harga_satuan: 0,
-        subtotal: 0,
-        notes: "",
-        requested_qty: 1,
-        source: "manual",
-      },
-    ]);
-  };
-
   const removeItem = (index: number) => {
     setItems(items.filter((_, i) => i !== index));
   };
@@ -663,6 +514,10 @@ export function NewPOPage({ poId }: NewPOPageProps = {}) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isEditMode && !formData.pr_id) {
+      toast.error("Purchase order must be created from an approved purchase request");
+      return;
+    }
     if (!formData.supplier_id) {
       toast.error("Select a supplier first");
       return;
@@ -750,27 +605,65 @@ export function NewPOPage({ poId }: NewPOPageProps = {}) {
     );
   }
 
+  if (!canCreateFromPr) {
+    return (
+      <div className="space-y-6">
+        <PurchasingFormHeader
+          backHref={RM_ROUTES.purchasingPo}
+          title="Create Purchase Order"
+          description="Purchase orders can only be created from an approved purchase request"
+        />
+
+        <Card className="border-gray-200/70 shadow-xs">
+          <CardContent className="flex flex-col items-center gap-4 px-6 py-14 text-center">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-pink-50 text-pink-600">
+              <ClipboardList className="h-6 w-6" />
+            </div>
+            <div className="space-y-2">
+              <h2 className="text-lg font-semibold text-gray-900">Start from a Purchase Request</h2>
+              <p className="max-w-md text-sm text-gray-500">
+                Open an approved purchase request and use &quot;Create Purchase Order&quot; to start a new PO.
+                Direct purchase order creation is not available from this page.
+              </p>
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Link href={RM_ROUTES.purchasingPo}>
+                <Button variant="outline" className="h-10 w-full sm:w-auto">
+                  Back to Purchase Orders
+                </Button>
+              </Link>
+              <Link href={RM_ROUTES.purchasingPr}>
+                <Button className="h-10 w-full bg-pink-600 hover:bg-pink-700 sm:w-auto">
+                  Go to Purchase Requests
+                </Button>
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <PurchasingFormHeader
-        backHref={isEditMode && poId ? `/dashboard/purchasing/po/${poId}` : "/dashboard/purchasing/po"}
+        backHref={isEditMode && poId ? RM_ROUTES.purchasingPoDetail(poId) : RM_ROUTES.purchasingPo}
         title={isEditMode ? `Edit ${existingPo?.nomor_po || "Purchase Order"}` : "Create Purchase Order"}
         description={
           isEditMode
             ? "Update draft purchase order information. Items cannot be changed."
             : selectedPR
-              ? `From purchase request ${selectedPR.pr_number} — items can be adjusted before submitting`
-              : "Create a manual purchase order or select an approved purchase request as reference"
+              ? `From purchase request ${selectedPR.pr_number} — quantities and prices can be adjusted before submitting`
+              : "Loading purchase request details..."
         }
       />
 
-      {!isEditMode && (
+      {!isEditMode && selectedPR && (
       <Card className="border-gray-200/70 shadow-xs">
         <CardHeader className="pb-3">
           <CardTitle className="text-base">Purchase Request Source</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          {selectedPR ? (
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <div className="flex items-center gap-2">
@@ -783,44 +676,10 @@ export function NewPOPage({ poId }: NewPOPageProps = {}) {
                   {selectedPR.department_name || selectedPR.department?.name || "-"} · {selectedPR.items?.length || 0} item
                 </p>
               </div>
-              <div className="flex gap-2">
-                <Button type="button" variant="outline" onClick={() => router.push(`/dashboard/purchasing/pr/${selectedPR.id}`)}>
-                  View Purchase Request
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={clearSelectedPR}
-                  className="gap-2"
-                >
-                  <X className="h-4 w-4" />
-                  Clear
-                </Button>
-              </div>
+              <Button type="button" variant="outline" onClick={() => router.push(RM_ROUTES.purchasingPrDetail(selectedPR.id))}>
+                View Purchase Request
+              </Button>
             </div>
-          ) : (
-            <div className="min-w-0 space-y-1.5">
-              <Label className="text-xs">Select Approved Purchase Request</Label>
-              <Combobox
-                options={approvedPrs.map((pr) => ({
-                  value: pr.id,
-                  label: pr.pr_number,
-                  description: `${pr.department_name || pr.department?.name || "-"} · ${pr.items?.length || 0} item${(pr.items?.length || 0) === 1 ? "" : "s"}`,
-                }))}
-                value={formData.pr_id || ""}
-                onChange={handleSelectPR}
-                placeholder="Select an approved purchase request without a purchase order..."
-                searchPlaceholder="Search purchase request number or department..."
-                emptyMessage="No approved purchase requests ready for purchase order creation"
-                allowClear
-                disabled={loading || loadingPR}
-                className="w-full! h-9 text-sm"
-              />
-              <p className="text-xs text-gray-500">
-                Only approved purchase requests without a purchase order are shown. You can still create a manual purchase order without a purchase request.
-              </p>
-            </div>
-          )}
         </CardContent>
       </Card>
       )}
@@ -839,7 +698,7 @@ export function NewPOPage({ poId }: NewPOPageProps = {}) {
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => router.push(`/dashboard/purchasing/pr/${selectedPR.id}`)}
+                onClick={() => router.push(RM_ROUTES.purchasingPrDetail(selectedPR.id))}
               >
                 View Purchase Request
               </Button>
@@ -1012,14 +871,8 @@ export function NewPOPage({ poId }: NewPOPageProps = {}) {
         </div>
 
         <Card className="border-gray-200/70 shadow-xs">
-          <CardHeader className="flex flex-col gap-3 pb-3 sm:flex-row sm:items-center sm:justify-between">
+          <CardHeader className="pb-3">
             <CardTitle className="text-base">Purchase Order Items</CardTitle>
-            {!isEditMode && (
-              <Button type="button" onClick={addItem} variant="outline" size="sm" className="purchasing-secondary-button w-full sm:w-auto">
-                <Plus className="mr-1 h-4 w-4" />
-                Add Item
-              </Button>
-            )}
           </CardHeader>
           <CardContent className="space-y-3">
             {items.map((item, index) => (
@@ -1029,7 +882,7 @@ export function NewPOPage({ poId }: NewPOPageProps = {}) {
               >
                 <div className="mb-4 flex items-center justify-between border-b border-gray-200/70 pb-3">
                   <p className="text-sm font-medium text-gray-900">Item #{index + 1}</p>
-                  {!itemsLocked && (
+                  {!itemsStructureLocked && (
                     <Button
                       type="button"
                       variant="ghost"
@@ -1060,7 +913,7 @@ export function NewPOPage({ poId }: NewPOPageProps = {}) {
                       searchPlaceholder="Search raw material (name/code)..."
                       emptyMessage="No raw material found"
                       allowClear
-                      disabled={loading || itemsLocked}
+                      disabled={loading || itemsStructureLocked}
                       className="w-full! h-9 text-sm"
                     />
                   </div>
@@ -1072,7 +925,7 @@ export function NewPOPage({ poId }: NewPOPageProps = {}) {
                       value={item.qty_ordered > 0 ? item.qty_ordered : null}
                       decimalScale={4}
                       placeholder="0"
-                      disabled={itemsLocked}
+                      disabled={itemsQtyLocked}
                       onFocus={(event) => event.currentTarget.select()}
                       onValueChange={(value) => updateItem(index, "qty_ordered", value || 0)}
                       className="h-9 text-sm"
@@ -1096,7 +949,7 @@ export function NewPOPage({ poId }: NewPOPageProps = {}) {
                           : "Select a raw material first"
                       }
                       allowClear={false}
-                      disabled={loading || itemsLocked}
+                      disabled={loading || itemsStructureLocked}
                       className="w-full! h-9 text-sm"
                     />
                   </div>
@@ -1107,7 +960,7 @@ export function NewPOPage({ poId }: NewPOPageProps = {}) {
                       min="0"
                       value={item.harga_satuan}
                       decimalScale={0}
-                      disabled={itemsLocked}
+                      disabled={itemsQtyLocked}
                       onValueChange={(value) => updateItem(index, "harga_satuan", value || 0)}
                       className="h-9 text-sm"
                     />
@@ -1125,7 +978,9 @@ export function NewPOPage({ poId }: NewPOPageProps = {}) {
 
             {items.length === 0 && (
               <div className="rounded-xl border border-gray-200/70 bg-gray-50/60 py-10 text-center text-sm text-gray-500">
-                No items yet. Click &quot;Add Item&quot; to get started.
+                {loadingPR
+                  ? "Loading purchase request items..."
+                  : "No items from the purchase request yet."}
               </div>
             )}
           </CardContent>
@@ -1133,11 +988,11 @@ export function NewPOPage({ poId }: NewPOPageProps = {}) {
 
         <PurchasingFormFooter
           onCancel={() =>
-            router.push(isEditMode && poId ? `/dashboard/purchasing/po/${poId}` : "/dashboard/purchasing/po")
+            router.push(isEditMode && poId ? RM_ROUTES.purchasingPoDetail(poId) : RM_ROUTES.purchasingPo)
           }
           submitLabel="Submit"
           loading={isSubmitting}
-          disabled={isSubmitting}
+          disabled={isSubmitting || (!isEditMode && (loadingPR || !selectedPR))}
           formId="purchase-order-form"
         />
       </form>

@@ -1019,12 +1019,12 @@ BEGIN
     year := EXTRACT(YEAR FROM CURRENT_DATE)::TEXT;
     
     SELECT COALESCE(
-        MAX(CAST(SPLIT_PART(gr_number, '-', 3) AS INTEGER)),
+        MAX(CAST(SPLIT_PART(nomor_grn, '-', 3) AS INTEGER)),
         0
     )
     INTO last_num
-    FROM goods_receipts
-    WHERE gr_number LIKE 'GR-' || year || '-%';
+    FROM grn
+    WHERE nomor_grn LIKE 'GR-' || year || '-%';
     
     new_num := last_num + 1;
     

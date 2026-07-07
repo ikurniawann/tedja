@@ -24,7 +24,7 @@ export const ROLE_LABELS: Record<UserRole, string> = {
   admin: "Admin",
   hrd: "HRD",
   hiring_manager: "Hiring Manager",
-  direksi: "Direksi",
+  direksi: "Executive",
   purchasing_admin: "Purchasing Admin",
   purchasing_manager: "Purchasing Manager",
   purchasing_staff: "Purchasing Staff",
@@ -37,13 +37,13 @@ export const ROLE_LABELS: Record<UserRole, string> = {
 };
 
 export const STATUS_LABELS: Record<string, string> = {
-  probation: "Probasi",
-  contract: "Kontrak",
-  permanent: "Tetap",
-  internship: "Magang",
-  resigned: "Resign",
-  terminated: "PHK",
-  suspended: "Suspend",
+  probation: "Probation",
+  contract: "Contract",
+  permanent: "Permanent",
+  internship: "Internship",
+  resigned: "Resigned",
+  terminated: "Terminated",
+  suspended: "Suspended",
 };
 
 export const STATUS_COLORS: Record<string, string> = {
@@ -57,15 +57,15 @@ export const STATUS_COLORS: Record<string, string> = {
 };
 
 export const GENDER_OPTIONS = [
-  { value: "male", label: "Laki-laki" },
-  { value: "female", label: "Perempuan" },
+  { value: "male", label: "Male" },
+  { value: "female", label: "Female" },
 ];
 
 export const MARITAL_OPTIONS = [
-  { value: "single", label: "Lajang" },
-  { value: "married", label: "Menikah" },
-  { value: "divorced", label: "Cerai" },
-  { value: "widowed", label: "Duda/Janda" },
+  { value: "single", label: "Single" },
+  { value: "married", label: "Married" },
+  { value: "divorced", label: "Divorced" },
+  { value: "widowed", label: "Widowed" },
 ];
 
 export const emptyApprovalPermission: ApprovalPermission = {
@@ -113,6 +113,7 @@ export const emptyUserForm: UserEmployeeFormValues = {
   holding_id: "",
   company_id: "",
   branch_id: "",
+  warehouse_ids: [],
   account_status: "active",
   approval_permissions: [],
 };
@@ -134,7 +135,7 @@ export function levelLabel(value: string) {
 }
 
 export function formatCurrency(value: number | null) {
-  if (value == null) return "Tanpa limit";
+  if (value == null) return "No limit";
   return new Intl.NumberFormat("id-ID", {
     style: "currency",
     currency: "IDR",

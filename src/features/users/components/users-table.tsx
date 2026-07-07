@@ -6,6 +6,7 @@ import {
   EnvelopeIcon,
   EyeIcon,
   KeyIcon,
+  MapPinIcon,
   PencilIcon,
   PhoneIcon,
   ShieldCheckIcon,
@@ -18,7 +19,7 @@ import { ROLE_LABELS, STATUS_COLORS, STATUS_LABELS } from "../constants";
 
 function formatDate(dateStr: string | null) {
   if (!dateStr) return "-";
-  return new Date(dateStr).toLocaleDateString("id-ID", {
+  return new Date(dateStr).toLocaleDateString("en-US", {
     day: "2-digit",
     month: "short",
     year: "numeric",
@@ -31,6 +32,7 @@ interface UsersTableProps {
   onEdit: (id: string) => void;
   onResetPassword?: (row: UserEmployeeItem) => void;
   showAppActions?: boolean;
+  resettingEmployeeId?: string | null;
 }
 
 export function UsersTable({
@@ -39,19 +41,23 @@ export function UsersTable({
   onEdit,
   onResetPassword,
   showAppActions = false,
+  resettingEmployeeId = null,
 }: UsersTableProps) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
           <TableRow className="border-b border-gray-200/70 bg-gray-50/80 text-xs uppercase tracking-wide text-gray-500 hover:bg-gray-50/80">
-            <th className="px-4 py-3 text-left font-semibold">Karyawan</th>
-            <th className="px-4 py-3 text-left font-semibold">NIP</th>
-            <th className="px-4 py-3 text-left font-semibold">Departemen</th>
+            <th className="px-4 py-3 text-left font-semibold">Employee</th>
+            <th className="px-4 py-3 text-left font-semibold">Employee ID</th>
+            <th className="px-4 py-3 text-left font-semibold">Department</th>
             <th className="px-4 py-3 text-left font-semibold">Status</th>
-            <th className="px-4 py-3 text-left font-semibold">Akses App</th>
-            <th className="px-4 py-3 text-left font-semibold">Kontak</th>
-            <th className="px-4 py-3 text-right font-semibold">Aksi</th>
+            <th className="px-4 py-3 text-left font-semibold">App Access</th>
+            {showAppActions ? (
+              <th className="px-4 py-3 text-left font-semibold">Stall</th>
+            ) : null}
+            <th className="px-4 py-3 text-left font-semibold">Contact</th>
+            <th className="px-4 py-3 text-right font-semibold">Actions</th>
           </TableRow>
         </thead>
         <tbody className="divide-y divide-gray-200/50">
@@ -78,9 +84,9 @@ export function UsersTable({
                     <p className="font-medium text-gray-900">{emp.fullName}</p>
                     <p className="text-xs text-gray-400">
                       {emp.isActive ? (
-                        <span className="text-green-600">● Aktif</span>
+                        <span className="text-green-600">● Active</span>
                       ) : (
-                        <span className="text-gray-400">● Nonaktif</span>
+                        <span className="text-gray-400">● Inactive</span>
                       )}
                       {emp.jobTitle?.title ? ` · ${emp.jobTitle.title}` : ""}
                     </p>
@@ -115,13 +121,36 @@ export function UsersTable({
                       {ROLE_LABELS[emp.appAccount.role]}
                     </Badge>
                     <p className="text-[11px] text-gray-400">
-                      {emp.appAccount.status === "active" ? "Akun aktif" : "Akun nonaktif"}
+                      {emp.appAccount.status === "active" ? "Active account" : "Inactive account"}
                     </p>
                   </div>
                 ) : (
-                  <span className="text-xs text-gray-400">Tidak ada</span>
+                  <span className="text-xs text-gray-400">None</span>
                 )}
               </td>
+              {showAppActions ? (
+                <td className="px-4 py-3">
+                  {emp.isAccessApp && emp.appAccount?.warehouses?.length ? (
+                    <div className="space-y-1">
+                      {emp.appAccount.warehouses.map((warehouse) => (
+                        <p
+                          key={warehouse.id}
+                          className="flex items-center gap-1 text-xs text-gray-600"
+                        >
+                          <MapPinIcon className="h-3 w-3 shrink-0 text-gray-400" />
+                          <span>{warehouse.name}</span>
+                        </p>
+                      ))}
+                    </div>
+                  ) : emp.isAccessApp && emp.appAccount?.businessScope === "branch" ? (
+                    <span className="text-xs text-amber-600">Not assigned</span>
+                  ) : emp.isAccessApp ? (
+                    <span className="text-xs text-gray-400">-</span>
+                  ) : (
+                    <span className="text-xs text-gray-400">-</span>
+                  )}
+                </td>
+              ) : null}
               <td className="px-4 py-3">
                 <div className="space-y-0.5 text-xs text-gray-500">
                   {emp.phone && (
@@ -151,7 +180,7 @@ export function UsersTable({
                     variant="ghost"
                     className="h-8 w-8 p-0 text-gray-500 hover:bg-gray-100 hover:text-gray-800"
                     onClick={() => onView(emp.id)}
-                    aria-label={`Lihat ${emp.fullName}`}
+                    aria-label={`View ${emp.fullName}`}
                   >
                     <EyeIcon className="h-4 w-4" />
                   </Button>
@@ -170,9 +199,15 @@ export function UsersTable({
                       variant="ghost"
                       className="h-8 w-8 p-0 text-gray-500 hover:bg-gray-100 hover:text-gray-800"
                       onClick={() => onResetPassword(emp)}
+                      disabled={resettingEmployeeId === emp.id}
                       aria-label={`Reset password ${emp.fullName}`}
+                      title="Reset password"
                     >
-                      <KeyIcon className="h-4 w-4" />
+                      {resettingEmployeeId === emp.id ? (
+                        <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-pink-500" />
+                      ) : (
+                        <KeyIcon className="h-4 w-4" />
+                      )}
                     </Button>
                   ) : null}
                 </div>

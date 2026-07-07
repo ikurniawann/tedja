@@ -20,7 +20,6 @@ import {
   useRawMaterial,
   useRawMaterialUnits,
   useRawMaterialCategoryOptions,
-  useStorageConditionOptions,
 } from "../queries";
 import { useUpdateRawMaterial } from "../mutations";
 import { RawMaterialUnitConversionsEditor } from "@/modules/purchasing/components/raw-materials/RawMaterialUnitConversionsEditor";
@@ -42,15 +41,13 @@ export function EditRawMaterialPage() {
   const materialQuery = useRawMaterial(materialId);
   const unitsQuery = useRawMaterialUnits();
   const categoriesQuery = useRawMaterialCategoryOptions();
-  const storageQuery = useStorageConditionOptions();
   const updateMutation = useUpdateRawMaterial();
   const material = materialQuery.data ?? null;
   const units = unitsQuery.data ?? [];
   const categoryOptions = toLookupOptions(categoriesQuery.data);
-  const storageOptions = toLookupOptions(storageQuery.data);
   const loading = materialQuery.isLoading;
   const isSubmitting = updateMutation.isPending;
-  const masterLoading = categoriesQuery.isLoading || storageQuery.isLoading;
+  const masterLoading = categoriesQuery.isLoading;
 
   const [formData, setFormData] = useState({
     nama: "",
@@ -63,7 +60,6 @@ export function EditRawMaterialPage() {
     stok_minimum: 0,
     stok_maximum: 0,
     shelf_life_days: undefined as number | undefined,
-    storage_condition: undefined as string | undefined,
     coa_production: "",
     coa_rnd: "",
     coa_asset: "",
@@ -84,7 +80,6 @@ export function EditRawMaterialPage() {
       stok_minimum: data.stok_minimum || 0,
       stok_maximum: data.stok_maximum || 0,
       shelf_life_days: data.shelf_life_days || undefined,
-      storage_condition: data.storage_condition || undefined,
       coa_production: data.coa_production || "",
       coa_rnd: data.coa_rnd || "",
       coa_asset: data.coa_asset || "",
@@ -389,25 +384,6 @@ export function EditRawMaterialPage() {
                     setFormData({ ...formData, shelf_life_days: parseInt(e.target.value, 10) || undefined })
                   }
                   placeholder="Optional"
-                  className="h-9 text-sm"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="storage" className="text-xs">
-                  Storage Condition
-                </Label>
-                <Combobox
-                  options={[
-                    { value: "", label: "None", description: "No special condition" },
-                    ...storageOptions,
-                  ]}
-                  value={formData.storage_condition || ""}
-                  onChange={(v) => setFormData({ ...formData, storage_condition: v || undefined })}
-                  placeholder={masterLoading ? "Loading storage conditions..." : "Select storage condition..."}
-                  searchPlaceholder="Search storage condition..."
-                  emptyMessage="No storage condition found"
-                  allowClear
                   className="h-9 text-sm"
                 />
               </div>

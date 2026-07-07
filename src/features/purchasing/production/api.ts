@@ -31,7 +31,7 @@ export async function getProductionDashboard(
   const [ordersRes, itemsRes, wipRes] = await Promise.all([
     fetch(`/api/purchasing/production/orders?production_context=${context}`, { cache: "no-store" }),
     context === "product"
-      ? fetch("/api/purchasing/products?limit=100&is_active=true", { cache: "no-store" })
+      ? fetch("/api/purchasing/production/product-recipes", { cache: "no-store" })
       : fetch("/api/purchasing/production/raw-material-recipes", { cache: "no-store" }),
     fetch("/api/purchasing/production/wip", { cache: "no-store" }),
   ]);
@@ -78,12 +78,13 @@ export async function getProductionCogs(
 }
 
 export async function listRecipeProducts(): Promise<ProductRecipe[]> {
-  const response = await fetch(
-    "/api/purchasing/products?limit=100&is_active=true",
-    { cache: "no-store" }
-  );
+  const response = await fetch("/api/purchasing/production/product-recipes", {
+    cache: "no-store",
+  });
   const json = await response.json();
-  if (!response.ok) throw new Error(json.message || "Failed to load product recipes");
+  if (!response.ok) {
+    throw new Error(json.message || json.error || "Failed to load product recipes");
+  }
   return json.data || [];
 }
 
@@ -92,7 +93,9 @@ export async function listRecipeRawMaterials(): Promise<RawMaterialRecipe[]> {
     cache: "no-store",
   });
   const json = await response.json();
-  if (!response.ok) throw new Error(json.message || "Failed to load raw material recipes");
+  if (!response.ok) {
+    throw new Error(json.message || json.error || "Failed to load raw material recipes");
+  }
   return json.data || [];
 }
 

@@ -17,14 +17,14 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     const data = await getUserEmployeeById(id);
 
     if (!data) {
-      return NextResponse.json({ error: "Karyawan tidak ditemukan" }, { status: 404 });
+      return NextResponse.json({ error: "Employee not found" }, { status: 404 });
     }
 
     return NextResponse.json({ data });
   } catch (error) {
     if (error instanceof ApiError) return error.toResponse();
     console.error("[api/users/:id] GET failed:", error);
-    return NextResponse.json({ error: "Gagal mengambil data karyawan" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to load employee" }, { status: 500 });
   }
 }
 
@@ -35,10 +35,10 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     const body = await validateBody(request, updateUserEmployeeSchema);
     const data = await updateUserEmployee(actor.id, id, body);
 
-    return NextResponse.json({ data, message: "Data karyawan berhasil diperbarui" });
+    return NextResponse.json({ data, message: "Employee updated successfully" });
   } catch (error) {
     if (error instanceof ApiError) return error.toResponse();
-    const message = error instanceof Error ? error.message : "Gagal memperbarui karyawan";
+    const message = error instanceof Error ? error.message : "Failed to update employee";
     console.error("[api/users/:id] PUT failed:", error);
     return NextResponse.json({ error: message }, { status: 400 });
   }

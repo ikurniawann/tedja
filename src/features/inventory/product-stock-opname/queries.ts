@@ -5,6 +5,7 @@ import type { ProductStockOpnameListParams } from "./types";
 import {
   getProductStockOpname,
   listProductStockOpnamePreview,
+  listProductStockOpnameWarehouses,
   listProductStockOpnames,
 } from "./api";
 import { productStockOpnameQueryKeys } from "./query-keys";
@@ -23,9 +24,16 @@ export const useProductStockOpname = (id: string) =>
     enabled: !!id,
   });
 
-export const useProductStockOpnamePreview = (enabled = true) =>
+export const useProductStockOpnamePreview = (warehouseId: string) =>
   useQuery({
-    queryKey: productStockOpnameQueryKeys.preview(),
-    queryFn: listProductStockOpnamePreview,
-    enabled,
+    queryKey: productStockOpnameQueryKeys.preview(warehouseId),
+    queryFn: () => listProductStockOpnamePreview(warehouseId),
+    enabled: !!warehouseId,
+  });
+
+export const useProductStockOpnameWarehouses = () =>
+  useQuery({
+    queryKey: productStockOpnameQueryKeys.warehouses(),
+    queryFn: listProductStockOpnameWarehouses,
+    staleTime: 5 * 60 * 1000,
   });

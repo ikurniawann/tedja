@@ -9,6 +9,7 @@ import {
   effectiveCompanyId,
   effectiveBranchId,
 } from "@/lib/api/scope";
+import { MANUFACTURING_SCHEMA, PRODUCTION_API_ROLES } from "@/lib/manufacturing/constants";
 
 const createProductProductionSchema = z.object({
   production_context: z.literal("product").optional().default("product"),
@@ -69,7 +70,7 @@ async function generateProductionNumber(db: import("@/lib/pg/types").DbClient) {
 
 export async function GET(request: NextRequest) {
   try {
-    await requireApiRole(["admin", "purchasing_admin", "purchasing_manager", "warehouse_admin"]);
+    await requireApiRole([...PRODUCTION_API_ROLES]);
     const db = createPgClient();
     const { searchParams } = new URL(request.url);
     const status = searchParams.get("status");
@@ -115,7 +116,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const user = await requireApiRole(["admin", "purchasing_admin", "purchasing_manager", "warehouse_admin"]);
+    const user = await requireApiRole([...PRODUCTION_API_ROLES]);
     const db = createPgClient();
     const body = await request.json();
     const parsed = createProductionSchema.parse(
@@ -163,7 +164,7 @@ async function createProductProductionOrder(
     }
 
     const { data: bomItems, error: bomError } = await db
-      .from("bom_items")
+      .from("bom_items", MANUFACTURING_SCHEMA)
       .select("raw_material_id, satuan_id, qty_required, waste_factor")
       .eq("product_id", validated.product_id)
       .eq("is_active", true);
@@ -276,7 +277,7 @@ async function createRawMaterialProductionOrder(
     }
 
     const { data: bomItems, error: bomError } = await db
-      .from("raw_material_bom_items")
+      .from("raw_material_bom_items", MANUFACTURING_SCHEMA)
       .select("component_raw_material_id, satuan_id, qty_required, waste_factor")
       .eq("output_raw_material_id", validated.raw_material_id)
       .eq("is_active", true);

@@ -133,7 +133,7 @@ export function StockOpnameListPage() {
       <PurchasingListSection
         icon={ClipboardDocumentListIcon}
         title="Stock Opname List"
-        description="Physical stock counting sessions by warehouse"
+        description="Physical stock counting sessions by stall"
         toolbar={
           <div className="flex w-full flex-col gap-3 lg:flex-row lg:items-center">
             <label className="relative flex-1 lg:w-80">
@@ -173,7 +173,7 @@ export function StockOpnameListPage() {
               <tr className="border-b border-gray-200/70 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
                 <th className="px-3 py-3">Number</th>
                 <th className="px-3 py-3">Date</th>
-                <th className="px-3 py-3">Warehouse</th>
+                <th className="px-3 py-3">Stall</th>
                 <th className="px-3 py-3 text-right">Lines</th>
                 <th className="px-3 py-3 text-right">Counted</th>
                 <th className="px-3 py-3 text-right">Variance</th>

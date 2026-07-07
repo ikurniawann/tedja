@@ -62,7 +62,20 @@ export function isNavLinkActive(
 export const DUPLICATE_ROUTE_GROUPS = [
   {
     prefix: "/dashboard/settings",
-    items: ["settings (group)", "settings.general", "settings.users", "settings.menus", "settings.roles"],
+    items: ["user-management (group)", "user-management.menus", "user-management.roles"],
+  },
+  {
+    prefix: "/dashboard/settings/business",
+    items: ["business (group)", "business.hierarchy"],
+  },
+  {
+    prefix: "/dashboard/master",
+    items: [
+      "user-management.master (group)",
+      "user-management.master.departments",
+      "user-management.master.positions",
+      "user-management.master.employment-statuses",
+    ],
   },
   {
     prefix: "/dashboard/employees",
@@ -82,10 +95,10 @@ export const DUPLICATE_ROUTE_GROUPS = [
   },
   {
     prefix: "/dashboard/pos",
-    items: ["pos (group)", "pos.dashboard"],
+    items: ["pos (group)", "pos.reports.dashboard"],
   },
   {
     prefix: "/dashboard/crm",
-    items: ["crm (group)", "crm.membership"],
+    items: ["crm (group)", "crm.overview.dashboard"],
   },
 ] as const;

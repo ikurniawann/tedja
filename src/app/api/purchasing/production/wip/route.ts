@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { ApiError, requireApiRole } from "@/lib/api/auth";
+import { PRODUCTION_API_ROLES } from "@/lib/manufacturing/constants";
 import { createPgClient } from "@/lib/pg/create-client";
 import {
   branchScopeOr,
@@ -53,7 +54,7 @@ type BatchRow = {
 
 export async function GET() {
   try {
-    await requireApiRole(["admin", "purchasing_admin", "purchasing_manager", "warehouse_admin", "warehouse_staff"]);
+    await requireApiRole([...PRODUCTION_API_ROLES]);
     const db = createPgClient();
     const scope = await getApiUserScope();
 

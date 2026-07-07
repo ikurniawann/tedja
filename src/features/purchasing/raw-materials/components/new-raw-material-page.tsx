@@ -18,7 +18,6 @@ import { MaterialCategory, RawMaterialFormData } from "@/types/purchasing";
 import {
   useRawMaterialUnits,
   useRawMaterialCategoryOptions,
-  useStorageConditionOptions,
 } from "../queries";
 import { useCreateRawMaterial } from "../mutations";
 import { Combobox } from "@/components/ui/combobox";
@@ -37,13 +36,11 @@ export function NewRawMaterialPage() {
   const router = useRouter();
   const unitsQuery = useRawMaterialUnits();
   const categoriesQuery = useRawMaterialCategoryOptions();
-  const storageQuery = useStorageConditionOptions();
   const units = unitsQuery.data ?? [];
   const categoryOptions = toLookupOptions(categoriesQuery.data);
-  const storageOptions = toLookupOptions(storageQuery.data);
   const createMutation = useCreateRawMaterial();
   const loading = createMutation.isPending;
-  const masterLoading = categoriesQuery.isLoading || storageQuery.isLoading;
+  const masterLoading = categoriesQuery.isLoading;
 
   const [formData, setFormData] = useState<RawMaterialFormData & { coa_production: string; coa_rnd: string; coa_asset: string }>({
     kode: "",
@@ -57,7 +54,6 @@ export function NewRawMaterialPage() {
     stok_minimum: 0,
     stok_maximum: 0,
     shelf_life_days: undefined,
-    storage_condition: undefined,
     coa_production: "",
     coa_rnd: "",
     coa_asset: "",
@@ -342,25 +338,6 @@ export function NewRawMaterialPage() {
                     setFormData({ ...formData, shelf_life_days: parseInt(e.target.value, 10) || undefined })
                   }
                   placeholder="Optional"
-                  className="h-9 text-sm"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="storage" className="text-xs">
-                  Storage Condition
-                </Label>
-                <Combobox
-                  options={[
-                    { value: "", label: "None", description: "No special condition" },
-                    ...storageOptions,
-                  ]}
-                  value={formData.storage_condition || ""}
-                  onChange={(v) => setFormData({ ...formData, storage_condition: v || undefined })}
-                  placeholder={masterLoading ? "Loading storage conditions..." : "Select storage condition..."}
-                  searchPlaceholder="Search storage condition..."
-                  emptyMessage="No storage condition found"
-                  allowClear
                   className="h-9 text-sm"
                 />
               </div>

@@ -351,7 +351,7 @@ export function BusinessConfigurationPage() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Business</h1>
           <p className="mt-1 text-sm text-gray-500">
-            Kelola struktur organisasi: Holding → Company → Branch → Warehouse
+            Kelola struktur organisasi: Holding → Company → Branch → Stall
           </p>
         </div>
         <Button
@@ -369,7 +369,7 @@ export function BusinessConfigurationPage() {
             ["Holding", counts.holdings, Building2],
             ["Company", counts.companies, Building],
             ["Branch", counts.branches, GitBranch],
-            ["Warehouse", counts.warehouses, Warehouse],
+            ["Stall", counts.warehouses, Warehouse],
           ] as const
         ).map(([label, count, Icon]) => (
           <div
@@ -388,10 +388,10 @@ export function BusinessConfigurationPage() {
       <PurchasingListSection
         icon={Building2}
         title="Struktur Business"
-        description="Holding berisi Company, Company berisi Branch, dan setiap Branch wajib memiliki minimal 1 Warehouse (default)."
+        description="Holding berisi Company, Company berisi Branch, dan setiap Branch wajib memiliki minimal 1 Stall (Main Storage sebagai default)."
         toolbar={
           <p className="text-xs text-gray-400">
-            Contoh: Prologe → Sulu → Sulu Dago → Gudang 1, 2, 3
+            Contoh: Prologe → Sulu → Sulu Bandung → Main Storage, Stall 1, …
           </p>
         }
       >
@@ -439,9 +439,9 @@ export function BusinessConfigurationPage() {
               <DialogPanelTitle>{formTitle}</DialogPanelTitle>
               <DialogPanelDescription>
                 {formMode === "create" && formType === "branch"
-                  ? "Cabang baru otomatis mendapat Gudang 1 sebagai warehouse default."
+                  ? "Cabang baru otomatis mendapat Main Storage sebagai stall default."
                   : formMode === "create" && formType === "warehouse"
-                    ? "Nomor gudang akan di-generate otomatis jika kode dikosongkan."
+                    ? "Nomor stall akan di-generate otomatis jika kode dikosongkan."
                     : "Perbarui informasi entitas business."}
               </DialogPanelDescription>
             </DialogPanelHeader>
@@ -512,7 +512,7 @@ export function BusinessConfigurationPage() {
             </DialogPanelTitle>
             <DialogPanelDescription>
               {deletingNode?.kind === "warehouse" && deletingNode.data.is_default
-                ? "Gudang default tidak dapat dihapus jika masih satu-satunya gudang di cabang ini."
+                ? "Main Storage tidak dapat dihapus jika masih satu-satunya stall di cabang ini."
                 : "Entitas child akan ikut terhapus. Tindakan ini tidak dapat dibatalkan."}
             </DialogPanelDescription>
           </DialogPanelHeader>

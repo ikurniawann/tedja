@@ -13,6 +13,7 @@ const fs = require("fs");
 const path = require("path");
 const { Client } = require("pg");
 const { sslForUrl, assertLocalTarget } = require("../scripts/pg-utils");
+const { resolveSeedBusinessScope } = require("../scripts/items-business-scope");
 
 const ROOT = path.join(__dirname, "..", "..");
 
@@ -74,20 +75,18 @@ const UNITS = [
   { kode: "GAL", nama: "Galon", tipe: "BESAR", deskripsi: "Galon air minum / cairan curah" },
 ];
 
-// Seed sebagai template global (company_id NULL) — berlaku untuk semua company.
-// Cocok dengan partial unique index uq_units_global_kode (kode) WHERE company_id IS NULL.
-async function upsertUnit(c, { kode, nama, tipe, deskripsi }) {
+async function upsertUnit(c, companyId, { kode, nama, tipe, deskripsi }) {
   await c.query(
     `INSERT INTO item.units (kode, nama, tipe, deskripsi, company_id, is_active)
-     VALUES ($1, $2, $3, $4, NULL, true)
-     ON CONFLICT (kode) WHERE company_id IS NULL AND deleted_at IS NULL DO UPDATE
+     VALUES ($1, $2, $3, $4, $5, true)
+     ON CONFLICT (company_id, kode) WHERE company_id IS NOT NULL AND deleted_at IS NULL DO UPDATE
        SET nama = EXCLUDED.nama,
            tipe = EXCLUDED.tipe,
            deskripsi = EXCLUDED.deskripsi,
            is_active = true,
            deleted_at = NULL,
            updated_at = NOW()`,
-    [kode, nama, tipe, deskripsi]
+    [kode, nama, tipe, deskripsi, companyId]
   );
 }
 
@@ -111,9 +110,10 @@ async function main() {
   try {
     await c.query("BEGIN");
 
-    console.log("Seeding item.units (restoran)...");
+    const scope = await resolveSeedBusinessScope(c);
+    console.log(`Seeding item.units (${scope.company_name})...`);
     for (const unit of UNITS) {
-      await upsertUnit(c, unit);
+      await upsertUnit(c, scope.company_id, unit);
       console.log(`  ✓ ${unit.kode} — ${unit.nama} (${unit.tipe})`);
     }
 

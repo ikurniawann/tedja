@@ -335,6 +335,263 @@ export async function addInventoryFromProduction(
   if (movementError) throw movementError;
 }
 
+/** Opening balance when raw materials are bulk-imported. */
+export async function addOpeningStockFromImport(
+  db: DbClient,
+  params: {
+    rawMaterialId: string;
+    qty: number;
+    unitCost: number;
+    userId: string;
+    warehouseId?: string | null;
+    materialKode?: string;
+  }
+): Promise<void> {
+  const qty = toQty(params.qty);
+  if (qty <= 0) return;
+
+  let location: InventoryLocation;
+  if (params.warehouseId) {
+    const { data: warehouse } = await db
+      .from("warehouses", "configuration")
+      .select("branch_id")
+      .eq("id", params.warehouseId)
+      .maybeSingle();
+    location = {
+      branch_id: (warehouse as { branch_id: string | null } | null)?.branch_id ?? null,
+      warehouse_id: params.warehouseId,
+    };
+  } else {
+    location = await resolveInventoryLocation(db, params.rawMaterialId);
+  }
+
+  const cost = toQty(params.unitCost);
+  const referenceNumber = params.materialKode || params.rawMaterialId.slice(0, 8);
+
+  let inventoryQuery = db
+    .from("inventory")
+    .select("id, qty_available, unit_cost")
+    .eq("raw_material_id", params.rawMaterialId)
+    .eq("is_active", true);
+
+  if (location.warehouse_id) {
+    inventoryQuery = inventoryQuery.eq("warehouse_id", location.warehouse_id);
+  } else {
+    inventoryQuery = inventoryQuery.is("warehouse_id", null);
+  }
+
+  const { data: existing, error: existingError } = await inventoryQuery.maybeSingle();
+  if (existingError) throw existingError;
+
+  if (existing) {
+    const qtyBefore = toQty(existing.qty_available);
+    const totalQty = qtyBefore + qty;
+    const prevCost = toQty(existing.unit_cost);
+    const newUnitCost =
+      totalQty > 0 ? (qtyBefore * prevCost + qty * cost) / totalQty : cost;
+
+    const { error: updateError } = await db
+      .from("inventory")
+      .update({
+        qty_available: totalQty,
+        unit_cost: newUnitCost,
+        branch_id: location.branch_id,
+        warehouse_id: location.warehouse_id,
+        last_movement_at: new Date().toISOString(),
+        updated_by: params.userId,
+      })
+      .eq("id", existing.id);
+
+    if (updateError) throw updateError;
+
+    const { error: movementError } = await db.from("inventory_movements").insert({
+      inventory_id: existing.id,
+      raw_material_id: params.rawMaterialId,
+      tipe: "in",
+      jumlah: qty,
+      qty_before: qtyBefore,
+      qty_after: totalQty,
+      unit_cost: newUnitCost,
+      total_cost: qty * newUnitCost,
+      branch_id: location.branch_id,
+      warehouse_id: location.warehouse_id,
+      reference_type: "import",
+      reference_number: referenceNumber,
+      alasan: `Opening stock from raw material import (${referenceNumber})`,
+      created_by: params.userId,
+    });
+
+    if (movementError) throw movementError;
+    return;
+  }
+
+  const { data: newInv, error: insertError } = await db
+    .from("inventory")
+    .insert({
+      raw_material_id: params.rawMaterialId,
+      qty_available: qty,
+      unit_cost: cost,
+      branch_id: location.branch_id,
+      warehouse_id: location.warehouse_id,
+      last_movement_at: new Date().toISOString(),
+      created_by: params.userId,
+    })
+    .select("id")
+    .single();
+
+  if (insertError) throw insertError;
+
+  const { error: movementError } = await db.from("inventory_movements").insert({
+    inventory_id: newInv.id,
+    raw_material_id: params.rawMaterialId,
+    tipe: "in",
+    jumlah: qty,
+    qty_before: 0,
+    qty_after: qty,
+    unit_cost: cost,
+    total_cost: qty * cost,
+    branch_id: location.branch_id,
+    warehouse_id: location.warehouse_id,
+    reference_type: "import",
+    reference_number: referenceNumber,
+    alasan: `Opening stock from raw material import (${referenceNumber})`,
+    created_by: params.userId,
+  });
+
+  if (movementError) throw movementError;
+}
+
+/** Set absolute stock qty at a stall (used when re-importing exported spreadsheets). */
+export async function setStockFromImport(
+  db: DbClient,
+  params: {
+    rawMaterialId: string;
+    qtyActual: number;
+    unitCost: number;
+    userId: string;
+    warehouseId?: string | null;
+    materialKode?: string;
+  }
+): Promise<void> {
+  const qtyActual = toQty(params.qtyActual);
+  if (qtyActual < 0) {
+    throw new Error("Stock quantity cannot be negative");
+  }
+
+  let location: InventoryLocation;
+  if (params.warehouseId) {
+    const { data: warehouse } = await db
+      .from("warehouses", "configuration")
+      .select("branch_id")
+      .eq("id", params.warehouseId)
+      .maybeSingle();
+    location = {
+      branch_id: (warehouse as { branch_id: string | null } | null)?.branch_id ?? null,
+      warehouse_id: params.warehouseId,
+    };
+  } else {
+    location = await resolveInventoryLocation(db, params.rawMaterialId);
+  }
+
+  const cost = toQty(params.unitCost);
+  const referenceNumber = params.materialKode || params.rawMaterialId.slice(0, 8);
+
+  let inventoryQuery = db
+    .from("inventory")
+    .select("id, qty_available, unit_cost")
+    .eq("raw_material_id", params.rawMaterialId)
+    .eq("is_active", true);
+
+  if (location.warehouse_id) {
+    inventoryQuery = inventoryQuery.eq("warehouse_id", location.warehouse_id);
+  } else {
+    inventoryQuery = inventoryQuery.is("warehouse_id", null);
+  }
+
+  const { data: existing, error: existingError } = await inventoryQuery.maybeSingle();
+  if (existingError) throw existingError;
+
+  if (existing) {
+    const qtyBefore = toQty(existing.qty_available);
+    const qtyDiff = qtyActual - qtyBefore;
+    const unitCost = qtyActual > 0 ? cost || toQty(existing.unit_cost) : toQty(existing.unit_cost);
+
+    const { error: updateError } = await db
+      .from("inventory")
+      .update({
+        qty_available: qtyActual,
+        unit_cost: unitCost,
+        branch_id: location.branch_id,
+        warehouse_id: location.warehouse_id,
+        last_movement_at: new Date().toISOString(),
+        updated_by: params.userId,
+      })
+      .eq("id", existing.id);
+
+    if (updateError) throw updateError;
+
+    if (qtyDiff !== 0) {
+      const { error: movementError } = await db.from("inventory_movements").insert({
+        inventory_id: existing.id,
+        raw_material_id: params.rawMaterialId,
+        tipe: "adjustment",
+        jumlah: Math.abs(qtyDiff),
+        qty_before: qtyBefore,
+        qty_after: qtyActual,
+        unit_cost: unitCost,
+        total_cost: Math.abs(qtyDiff) * unitCost,
+        branch_id: location.branch_id,
+        warehouse_id: location.warehouse_id,
+        reference_type: "import",
+        reference_number: referenceNumber,
+        alasan: `Stock updated from import (${referenceNumber})`,
+        created_by: params.userId,
+      });
+
+      if (movementError) throw movementError;
+    }
+
+    return;
+  }
+
+  if (qtyActual === 0) return;
+
+  const { data: newInv, error: insertError } = await db
+    .from("inventory")
+    .insert({
+      raw_material_id: params.rawMaterialId,
+      qty_available: qtyActual,
+      unit_cost: cost,
+      branch_id: location.branch_id,
+      warehouse_id: location.warehouse_id,
+      last_movement_at: new Date().toISOString(),
+      created_by: params.userId,
+    })
+    .select("id")
+    .single();
+
+  if (insertError) throw insertError;
+
+  const { error: movementError } = await db.from("inventory_movements").insert({
+    inventory_id: newInv.id,
+    raw_material_id: params.rawMaterialId,
+    tipe: "in",
+    jumlah: qtyActual,
+    qty_before: 0,
+    qty_after: qtyActual,
+    unit_cost: cost,
+    total_cost: qtyActual * cost,
+    branch_id: location.branch_id,
+    warehouse_id: location.warehouse_id,
+    reference_type: "import",
+    reference_number: referenceNumber,
+    alasan: `Opening stock from import (${referenceNumber})`,
+    created_by: params.userId,
+  });
+
+  if (movementError) throw movementError;
+}
+
 // Kurangi inventory saat GRN dihapus
 export async function removeInventoryFromGrn(
   db: DbClient,

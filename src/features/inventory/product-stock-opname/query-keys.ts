@@ -5,5 +5,7 @@ export const productStockOpnameQueryKeys = {
   list: (params: ProductStockOpnameListParams) =>
     [...productStockOpnameQueryKeys.all, "list", params] as const,
   detail: (id: string) => [...productStockOpnameQueryKeys.all, "detail", id] as const,
-  preview: () => [...productStockOpnameQueryKeys.all, "preview"] as const,
+  preview: (warehouseId: string) =>
+    [...productStockOpnameQueryKeys.all, "preview", warehouseId] as const,
+  warehouses: () => [...productStockOpnameQueryKeys.all, "warehouses"] as const,
 };

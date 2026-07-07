@@ -5,6 +5,15 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useQC } from "../queries";
 import { QCNotFoundError } from "../api";
+import {
+  QC_HASIL_COLORS,
+  QC_HASIL_LABELS,
+  formatQcMaterialsSummary,
+  getQcDisplayNumber,
+  getQcGrnId,
+  getQcItemMaterialLabel,
+  getQcTotals,
+} from "../types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -20,29 +29,18 @@ import { CheckCircleIcon as CheckCircleSolid } from "@heroicons/react/24/solid";
 import { ArrowLeft, ClipboardCheck, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 
-const STATUS_COLORS: Record<string, string> = {
-  passed: "bg-green-100 text-green-800 border-green-200",
-  rejected: "bg-red-100 text-red-800 border-red-200",
-  partial: "bg-yellow-100 text-yellow-800 border-yellow-200",
-};
-
-const STATUS_LABELS: Record<string, string> = {
-  passed: "Lulus QC",
-  rejected: "Ditolak",
-  partial: "Sebagian",
-};
-
-const STATUS_ICONS: Record<string, any> = {
-  passed: CheckCircleSolid,
-  rejected: XCircleIcon,
-  partial: AlertTriangle,
-};
-
 const REKOMENDASI_COLORS: Record<string, string> = {
   ACCEPT: "text-green-700 bg-green-50",
   REJECT: "text-red-700 bg-red-50",
   REWORK: "text-yellow-700 bg-yellow-50",
 };
+
+function getStatusIcon(hasil: string) {
+  const key = hasil.toLowerCase();
+  if (key === "approved" || key === "passed") return CheckCircleSolid;
+  if (key === "rejected") return XCircleIcon;
+  return AlertTriangle;
+}
 
 export function QCDetailPage() {
   const params = useParams();
@@ -61,14 +59,13 @@ export function QCDetailPage() {
       router.push("/dashboard/purchasing/qc");
       return;
     }
-    console.error(error);
     toast.error(error instanceof Error ? error.message : "Terjadi kesalahan");
   }, [detailQuery.isError, detailQuery.error, router]);
 
   if (loading) {
     return (
       <div className="space-y-6">
-        <div className="text-center py-12 text-gray-500">Memuat data QC...</div>
+        <div className="py-12 text-center text-gray-500">Memuat data QC...</div>
       </div>
     );
   }
@@ -77,27 +74,35 @@ export function QCDetailPage() {
     return null;
   }
 
-  const StatusIcon = STATUS_ICONS[qc.hasil] || BeakerIcon;
+  const hasilKey = String(qc.hasil || qc.status || "partial").toLowerCase();
+  const StatusIcon = getStatusIcon(hasilKey);
+  const totals = getQcTotals(qc);
+  const grnId = getQcGrnId(qc);
+  const items = qc.items || [];
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col items-start justify-between gap-4 border-b border-gray-200/70 pb-4 sm:flex-row sm:items-center">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-2xl font-bold text-gray-900">
-              {qc.qc_number || `QC ${qc.id.slice(0, 8)}`}
-            </h1>
-            <Badge className={`${STATUS_COLORS[qc.hasil]} border px-3 py-1.5 text-sm font-medium`}>
-              <StatusIcon className="w-4 h-4 mr-1.5" />
-              {STATUS_LABELS[qc.hasil]}
+            <h1 className="text-2xl font-bold text-gray-900">{getQcDisplayNumber(qc)}</h1>
+            <Badge
+              className={`${QC_HASIL_COLORS[hasilKey] || "bg-gray-100 text-gray-800"} border px-3 py-1.5 text-sm font-medium`}
+            >
+              <StatusIcon className="mr-1.5 h-4 w-4" />
+              {QC_HASIL_LABELS[hasilKey] || hasilKey}
             </Badge>
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-gray-500">
-            <span>{qc.bahan_baku?.nama || qc.bahan_baku_id}</span>
+            <span>{formatQcMaterialsSummary(items)}</span>
             <span className="text-gray-300">•</span>
-            <span>GRN {qc.grn_number || qc.goods_receipt_id.slice(0, 8)}</span>
-            <span className="text-gray-300">•</span>
-            <span>{qc.rekomendasi}</span>
+            <span>GRN {qc.grn_number || "—"}</span>
+            {qc.rekomendasi && (
+              <>
+                <span className="text-gray-300">•</span>
+                <span>{qc.rekomendasi}</span>
+              </>
+            )}
           </div>
         </div>
         <Link href="/dashboard/purchasing/qc" className="w-full sm:w-auto">
@@ -108,80 +113,105 @@ export function QCDetailPage() {
         </Link>
       </div>
 
-      {/* Main Content Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Column - QC Details */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <ClipboardCheck className="w-5 h-5" />
+              <ClipboardCheck className="h-5 w-5" />
               Informasi Inspeksi
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
-            {/* Bahan Baku Info */}
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
-                <label className="text-sm text-gray-500">Bahan Baku</label>
-                <div className="font-medium text-gray-900">
-                  {qc.bahan_baku?.nama || qc.bahan_baku_id}
-                </div>
+                <label className="text-sm text-gray-500">Nomor GRN</label>
+                <div className="font-medium text-gray-900">{qc.grn_number || "—"}</div>
               </div>
               <div>
-                <label className="text-sm text-gray-500">Kode</label>
+                <label className="text-sm text-gray-500">Inspektur</label>
                 <div className="font-medium text-gray-900">
-                  {qc.bahan_baku?.kode || "—"}
+                  {qc.inspector?.name || qc.inspector_id?.slice(0, 8) || "—"}
                 </div>
               </div>
             </div>
 
-            {/* GRN Link */}
-            <div>
-              <label className="text-sm text-gray-500">Goods Receipt</label>
+            {grnId && (
               <div>
-                <Link
-                  href={`/dashboard/purchasing/grn/${qc.goods_receipt_id}`}
-                  className="text-blue-600 hover:text-blue-700 hover:underline font-medium"
-                >
-                  {qc.grn_number || qc.goods_receipt_id.slice(0, 8)}
-                </Link>
+                <label className="text-sm text-gray-500">Goods Receipt</label>
+                <div>
+                  <Link
+                    href={`/dashboard/purchasing/grn/${grnId}`}
+                    className="font-medium text-pink-600 hover:text-pink-700 hover:underline"
+                  >
+                    Buka detail GRN
+                  </Link>
+                </div>
               </div>
-            </div>
+            )}
 
-            {/* Inspection Results */}
-            <div className="border-t pt-4">
-              <h3 className="font-semibold text-gray-900 mb-3">Hasil Inspeksi</h3>
+            <div className="border-t border-gray-200/70 pt-4">
+              <h3 className="mb-3 font-semibold text-gray-900">Ringkasan Hasil</h3>
               <div className="grid grid-cols-3 gap-4">
-                <div className="text-center p-3 bg-gray-50 rounded-lg">
+                <div className="rounded-lg bg-gray-50 p-3 text-center">
                   <div className="text-sm text-gray-500">Diperiksa</div>
-                  <div className="text-2xl font-bold text-gray-900">
-                    {qc.jumlah_diperiksa}
-                  </div>
+                  <div className="text-2xl font-bold text-gray-900">{totals.inspected}</div>
                 </div>
-                <div className="text-center p-3 bg-green-50 rounded-lg">
+                <div className="rounded-lg bg-green-50 p-3 text-center">
                   <div className="text-sm text-green-600">Diterima</div>
-                  <div className="text-2xl font-bold text-green-700">
-                    {qc.jumlah_diterima}
-                  </div>
+                  <div className="text-2xl font-bold text-green-700">{totals.accepted}</div>
                 </div>
-                <div className="text-center p-3 bg-red-50 rounded-lg">
+                <div className="rounded-lg bg-red-50 p-3 text-center">
                   <div className="text-sm text-red-600">Ditolak</div>
-                  <div className="text-2xl font-bold text-red-700">
-                    {qc.jumlah_ditolak}
-                  </div>
+                  <div className="text-2xl font-bold text-red-700">{totals.rejected}</div>
                 </div>
               </div>
             </div>
 
-            {/* Parameter Inspeksi */}
+            {items.length > 0 && (
+              <div className="border-t border-gray-200/70 pt-4">
+                <h3 className="mb-3 font-semibold text-gray-900">Item Inspeksi</h3>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm">
+                    <thead className="border-b border-gray-200/70 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+                      <tr>
+                        {["Bahan Baku", "Diperiksa", "Diterima", "Ditolak"].map((h) => (
+                          <th key={h} className="px-3 py-2 text-left font-semibold">
+                            {h}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200/70">
+                      {items.map((item, index) => (
+                        <tr key={`${item.raw_material_id || item.bahan_baku_id || index}`}>
+                          <td className="px-3 py-2 font-medium text-gray-900">
+                            {getQcItemMaterialLabel(item)}
+                          </td>
+                          <td className="px-3 py-2 text-center">
+                            {item.jumlah_diperiksa ?? item.qty_inspected ?? "—"}
+                          </td>
+                          <td className="px-3 py-2 text-center text-green-700">
+                            {item.jumlah_diterima ?? item.qty_accepted ?? "—"}
+                          </td>
+                          <td className="px-3 py-2 text-center text-red-600">
+                            {item.jumlah_ditolak ?? item.qty_rejected ?? "—"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
             {qc.parameter_inspeksi && Object.keys(qc.parameter_inspeksi).length > 0 && (
-              <div className="border-t pt-4">
-                <h3 className="font-semibold text-gray-900 mb-3">Parameter Inspeksi</h3>
+              <div className="border-t border-gray-200/70 pt-4">
+                <h3 className="mb-3 font-semibold text-gray-900">Parameter Inspeksi</h3>
                 <div className="space-y-2">
                   {Object.entries(qc.parameter_inspeksi).map(([param, value]) => (
                     <div
                       key={param}
-                      className="flex items-center justify-between p-2.5 bg-gray-50 rounded-lg"
+                      className="flex items-center justify-between rounded-lg bg-gray-50 p-2.5"
                     >
                       <span className="text-sm font-medium text-gray-700">{param}</span>
                       <Badge
@@ -190,12 +220,12 @@ export function QCDetailPage() {
                           value === "OK"
                             ? "bg-green-100 text-green-800"
                             : value === "NG"
-                            ? "bg-red-100 text-red-800"
-                            : "bg-gray-100 text-gray-800"
+                              ? "bg-red-100 text-red-800"
+                              : "bg-gray-100 text-gray-800"
                         }
                       >
-                        {value === "OK" && <CheckCircleIcon className="w-3 h-3 mr-1" />}
-                        {value === "NG" && <XCircleIcon className="w-3 h-3 mr-1" />}
+                        {value === "OK" && <CheckCircleIcon className="mr-1 h-3 w-3" />}
+                        {value === "NG" && <XCircleIcon className="mr-1 h-3 w-3" />}
                         {value}
                       </Badge>
                     </div>
@@ -204,14 +234,13 @@ export function QCDetailPage() {
               </div>
             )}
 
-            {/* Catatan QC */}
             {qc.catatan && (
-              <div className="border-t pt-4">
-                <h3 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
-                  <DocumentTextIcon className="w-4 h-4" />
+              <div className="border-t border-gray-200/70 pt-4">
+                <h3 className="mb-2 flex items-center gap-2 font-semibold text-gray-900">
+                  <DocumentTextIcon className="h-4 w-4" />
                   Catatan QC
                 </h3>
-                <div className="p-3 bg-gray-50 rounded-lg text-sm text-gray-700 whitespace-pre-wrap">
+                <div className="whitespace-pre-wrap rounded-lg bg-gray-50 p-3 text-sm text-gray-700">
                   {qc.catatan}
                 </div>
               </div>
@@ -219,53 +248,55 @@ export function QCDetailPage() {
           </CardContent>
         </Card>
 
-        {/* Right Column - Summary & Metadata */}
         <div className="space-y-6">
-          {/* Status Summary */}
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Ringkasan Status</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="flex justify-between items-center">
+              <div className="flex items-center justify-between">
                 <span className="text-sm text-gray-500">Status Hasil</span>
-                <Badge className={`${STATUS_COLORS[qc.hasil]} border`}>
-                  {STATUS_LABELS[qc.hasil]}
+                <Badge className={`${QC_HASIL_COLORS[hasilKey] || "bg-gray-100"} border`}>
+                  {QC_HASIL_LABELS[hasilKey] || hasilKey}
                 </Badge>
               </div>
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-gray-500">Rekomendasi</span>
-                <span className={`px-2 py-1 rounded text-sm font-medium ${REKOMENDASI_COLORS[qc.rekomendasi]}`}>
-                  {qc.rekomendasi}
-                </span>
-              </div>
-              <div className="border-t pt-3">
-                <div className="text-xs text-gray-500 mb-2">Persentase Diterima</div>
-                <div className="w-full bg-gray-200 rounded-full h-2.5">
+              {qc.rekomendasi && (
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-500">Rekomendasi</span>
+                  <span
+                    className={`rounded px-2 py-1 text-sm font-medium ${REKOMENDASI_COLORS[qc.rekomendasi] || "bg-gray-50 text-gray-700"}`}
+                  >
+                    {qc.rekomendasi}
+                  </span>
+                </div>
+              )}
+              <div className="border-t border-gray-200/70 pt-3">
+                <div className="mb-2 text-xs text-gray-500">Persentase Diterima</div>
+                <div className="h-2.5 w-full rounded-full bg-gray-200">
                   <div
-                    className="bg-green-600 h-2.5 rounded-full transition-all"
+                    className="h-2.5 rounded-full bg-green-600 transition-all"
                     style={{
-                      width: `${qc.jumlah_diperiksa > 0 ? (qc.jumlah_diterima / qc.jumlah_diperiksa) * 100 : 0}%`,
+                      width: `${totals.inspected > 0 ? (totals.accepted / totals.inspected) * 100 : 0}%`,
                     }}
                   />
                 </div>
-                <div className="text-right text-xs text-gray-600 mt-1">
-                  {qc.jumlah_diperiksa > 0
-                    ? Math.round((qc.jumlah_diterima / qc.jumlah_diperiksa) * 100)
-                    : 0}%
+                <div className="mt-1 text-right text-xs text-gray-600">
+                  {totals.inspected > 0
+                    ? Math.round((totals.accepted / totals.inspected) * 100)
+                    : 0}
+                  %
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          {/* Metadata */}
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Metadata</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex items-start gap-3">
-                <CalendarIcon className="w-4 h-4 text-gray-400 mt-0.5" />
+                <CalendarIcon className="mt-0.5 h-4 w-4 text-gray-400" />
                 <div>
                   <div className="text-xs text-gray-500">Tanggal Inspeksi</div>
                   <div className="text-sm font-medium">
@@ -281,11 +312,11 @@ export function QCDetailPage() {
                 </div>
               </div>
               <div className="flex items-start gap-3">
-                <UserIcon className="w-4 h-4 text-gray-400 mt-0.5" />
+                <UserIcon className="mt-0.5 h-4 w-4 text-gray-400" />
                 <div>
                   <div className="text-xs text-gray-500">Inspektur</div>
                   <div className="text-sm font-medium">
-                    {qc.inspector?.name || qc.inspector_id.slice(0, 8)}
+                    {qc.inspector?.name || qc.inspector_id?.slice(0, 8) || "—"}
                   </div>
                   {qc.inspector?.email && (
                     <div className="text-xs text-gray-500">{qc.inspector.email}</div>
@@ -293,7 +324,7 @@ export function QCDetailPage() {
                 </div>
               </div>
               <div className="flex items-start gap-3">
-                <CalendarIcon className="w-4 h-4 text-gray-400 mt-0.5" />
+                <BeakerIcon className="mt-0.5 h-4 w-4 text-gray-400" />
                 <div>
                   <div className="text-xs text-gray-500">Dibuat</div>
                   <div className="text-sm font-medium">
@@ -308,22 +339,23 @@ export function QCDetailPage() {
             </CardContent>
           </Card>
 
-          {/* Actions */}
-          <Card>
-            <CardContent className="p-4 space-y-3">
-              <Link href={`/dashboard/purchasing/grn/${qc.goods_receipt_id}`} className="block">
-                <Button variant="outline" className="w-full justify-start">
-                  <ArrowLeft className="w-4 h-4 mr-2" />
-                  Lihat GRN
-                </Button>
-              </Link>
-              <Link href="/dashboard/purchasing/qc" className="block">
-                <Button variant="ghost" className="w-full justify-start">
-                  Kembali ke Daftar QC
-                </Button>
-              </Link>
-            </CardContent>
-          </Card>
+          {grnId && (
+            <Card>
+              <CardContent className="space-y-3 p-4">
+                <Link href={`/dashboard/purchasing/grn/${grnId}`} className="block">
+                  <Button variant="outline" className="w-full justify-start">
+                    <ArrowLeft className="mr-2 h-4 w-4" />
+                    Lihat GRN
+                  </Button>
+                </Link>
+                <Link href="/dashboard/purchasing/qc" className="block">
+                  <Button variant="ghost" className="w-full justify-start">
+                    Kembali ke Daftar QC
+                  </Button>
+                </Link>
+              </CardContent>
+            </Card>
+          )}
         </div>
       </div>
     </div>

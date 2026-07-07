@@ -15,6 +15,12 @@ import {
   deleteBOMItem,
 } from "./api";
 import { productsQueryKeys } from "./query-keys";
+import { productionQueryKeys } from "@/features/purchasing/production/query-keys";
+
+function invalidateProductAndProduction(queryClient: ReturnType<typeof useQueryClient>) {
+  queryClient.invalidateQueries({ queryKey: productsQueryKeys.all });
+  queryClient.invalidateQueries({ queryKey: productionQueryKeys.all });
+}
 
 export const useCreateProduct = () => {
   const queryClient = useQueryClient();
@@ -64,7 +70,7 @@ export const useCreateBOMItem = () => {
     mutationFn: ({ productId, payload }: { productId: string; payload: BOMItemFormData }) =>
       createBOMItem(productId, payload),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: productsQueryKeys.all });
+      invalidateProductAndProduction(queryClient);
     },
   });
 };
@@ -75,7 +81,7 @@ export const useUpdateBOMItem = () => {
     mutationFn: ({ id, payload }: { id: string; payload: Partial<BOMItemFormData> }) =>
       updateBOMItem(id, payload),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: productsQueryKeys.all });
+      invalidateProductAndProduction(queryClient);
     },
   });
 };
@@ -85,7 +91,7 @@ export const useDeleteBOMItem = () => {
   return useMutation({
     mutationFn: (id: string) => deleteBOMItem(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: productsQueryKeys.all });
+      invalidateProductAndProduction(queryClient);
     },
   });
 };

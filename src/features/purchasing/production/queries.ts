@@ -19,6 +19,7 @@ export const useProductionDashboard = (moduleType: PurchasingModuleType = "raw_m
   useQuery({
     queryKey: productionQueryKeys.dashboard(contextKey(moduleType)),
     queryFn: () => getProductionDashboard(moduleType),
+    staleTime: 0,
   });
 
 export const useProductionCogs = (

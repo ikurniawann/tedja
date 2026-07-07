@@ -124,9 +124,10 @@ export async function validatePOCreate(
 
     // Check bahan_baku exists and active
     const { data: bahanBaku } = await db
-      .from("bahan_baku")
+      .from("raw_materials")
       .select("id, nama, is_active")
       .eq("id", item.bahan_baku_id)
+      .is("deleted_at", null)
       .single();
 
     if (!bahanBaku) {
@@ -140,7 +141,7 @@ export async function validatePOCreate(
       errors.push(`Item ${i + 1}: Satuan wajib diisi`);
     } else {
       const { data: satuan } = await db
-        .from("satuan")
+        .from("units")
         .select("id, nama")
         .eq("id", item.satuan_id)
         .eq("is_active", true)
@@ -230,8 +231,9 @@ export async function updateInventoryOnOrder(
     const { data: current } = await db
       .from("inventory")
       .select("qty_on_order")
-      .eq("bahan_baku_id", item.bahan_baku_id)
-      .single();
+      .eq("raw_material_id", item.bahan_baku_id)
+      .eq("is_active", true)
+      .maybeSingle();
 
     const delta = increment ? item.qty : -item.qty;
     const newQty = (current?.qty_on_order || 0) + delta;
@@ -240,13 +242,13 @@ export async function updateInventoryOnOrder(
       await db
         .from("inventory")
         .update({ qty_on_order: Math.max(0, newQty) })
-        .eq("bahan_baku_id", item.bahan_baku_id);
-    } else {
-      // Create inventory record if doesn't exist
+        .eq("raw_material_id", item.bahan_baku_id);
+    } else if (increment) {
       await db.from("inventory").insert({
-        bahan_baku_id: item.bahan_baku_id,
+        raw_material_id: item.bahan_baku_id,
         qty_on_order: Math.max(0, item.qty),
-        qty_in_stock: 0,
+        qty_available: 0,
+        unit_cost: 0,
       });
     }
   }
@@ -266,10 +268,10 @@ export interface POReceiveInput {
 
 type ReceivablePOItem = {
   id: string;
-  qty: number;
+  qty_ordered: number;
   qty_received?: number | null;
-  bahan_baku_id: string;
-  unit_price?: number | null;
+  raw_material_id: string;
+  harga_satuan?: number | null;
 };
 
 export async function receivePOItems(
@@ -277,10 +279,9 @@ export async function receivePOItems(
   input: POReceiveInput,
   userId: string
 ): Promise<{ success: boolean; newStatus: POStatus }> {
-  // Get PO with items
   const { data: po } = await db
     .from("purchase_orders")
-    .select("id, status, items:po_items(*)")
+    .select("id, status, items:purchase_order_items(*)")
     .eq("id", input.po_id)
     .single();
 
@@ -289,7 +290,6 @@ export async function receivePOItems(
   }
 
   let allFullyReceived = true;
-  const receivedItems: { po_item_id: string; qty: number }[] = [];
 
   for (const inputItem of input.items) {
     const poItem = (po.items as ReceivablePOItem[] | undefined)?.find(
@@ -298,33 +298,30 @@ export async function receivePOItems(
     if (!poItem) throw new Error(`PO item ${inputItem.po_item_id} tidak ditemukan`);
 
     const newQtyReceived = toQty(poItem.qty_received) + toQty(inputItem.qty_received);
-    const isFullyReceived = newQtyReceived >= poItem.qty;
+    const isFullyReceived = newQtyReceived >= toQty(poItem.qty_ordered);
 
     if (!isFullyReceived) allFullyReceived = false;
 
-    // Update po_item
     await db
-      .from("po_items")
+      .from("purchase_order_items")
       .update({ qty_received: newQtyReceived })
       .eq("id", inputItem.po_item_id);
 
-    receivedItems.push({ po_item_id: inputItem.po_item_id, qty: inputItem.qty_received });
-
-    // Update inventory stock
     const { data: inventory } = await db
       .from("inventory")
-      .select("qty_in_stock, qty_on_order")
-      .eq("bahan_baku_id", poItem.bahan_baku_id)
-      .single();
+      .select("qty_available, qty_on_order")
+      .eq("raw_material_id", poItem.raw_material_id)
+      .eq("is_active", true)
+      .maybeSingle();
 
     if (inventory) {
       await db
         .from("inventory")
         .update({
-          qty_in_stock: (inventory.qty_in_stock || 0) + inputItem.qty_received,
+          qty_available: (inventory.qty_available || 0) + inputItem.qty_received,
           qty_on_order: Math.max(0, (inventory.qty_on_order || 0) - inputItem.qty_received),
         })
-        .eq("bahan_baku_id", poItem.bahan_baku_id);
+        .eq("raw_material_id", poItem.raw_material_id);
     }
   }
 

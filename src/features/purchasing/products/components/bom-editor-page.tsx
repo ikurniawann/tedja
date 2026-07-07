@@ -8,7 +8,7 @@ import { useParams, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { PRODUCT_ROUTES, RM_ROUTES } from "@/modules/purchasing/constants/item-routes";
+import { PRODUCT_ROUTES } from "@/modules/purchasing/constants/item-routes";
 import { Combobox } from "@/components/ui/combobox";
 import { NumericInput } from "@/components/ui/numeric-input";
 import {
@@ -252,7 +252,7 @@ export function BOMEditorPage() {
   }
 
   const backHref = fromProduction
-    ? RM_ROUTES.productionRecipes
+    ? PRODUCT_ROUTES.productionHub
     : PRODUCT_ROUTES.productsDetail(productId);
 
   return (

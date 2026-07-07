@@ -5,34 +5,23 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { Combobox } from "@/components/ui/combobox";
 import { Switch } from "@/components/ui/switch";
-import {
-  Dialog,
-  DialogPanel,
-  DialogPanelBody,
-  DialogPanelDescription,
-  DialogPanelHeader,
-  DialogPanelTitle,
-} from "@/components/ui/dialog";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { PurchasingPageHeader } from "@/modules/purchasing/components/page/purchasing-page-header";
 import { PurchasingListSection } from "@/modules/purchasing/components/list/PurchasingListSection";
 import { PurchasingTablePagination } from "@/modules/purchasing/components/pagination/PurchasingTablePagination";
-import { CsvImporter } from "@/components/ui/csv-importer";
+import { RM_ROUTES } from "@/modules/purchasing/constants/item-routes";
 import { BuildingOfficeIcon } from "@heroicons/react/24/outline";
-import { Eye, Filter, Loader2, Pencil, Plus, Search, Trash2, Upload, X } from "lucide-react";
+import { Download, Eye, Filter, Loader2, Pencil, Plus, Search, Trash2, Upload, X } from "lucide-react";
 import {
   Supplier,
   SupplierListParams,
   PaymentTerms,
-  PAYMENT_TERMS_OPTIONS,
-  getPaymentTermsLabel,
 } from "@/types/supplier";
-import { exportSuppliersCSV } from "@/lib/purchasing/supplier";
 import { useSupplierList } from "../queries";
 import { useDeleteSupplier, useUpdateSupplierStatus } from "../mutations";
+import { PaymentTermsBadge, PaymentTermsBadgeFilter } from "./payment-terms-badge";
 import PurchasingGuard from "@/modules/purchasing/components/auth/PurchasingGuard";
 import { useAuth } from "@/hooks/use-auth";
 import { toast } from "sonner";
@@ -74,7 +63,7 @@ function SuppliersListInner() {
     supplier: null,
     nextStatus: true,
   });
-  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const listParams: SupplierListParams = {
     search: search || undefined,
@@ -140,13 +129,36 @@ function SuppliersListInner() {
     }
   }
 
-  function handleExportCSV() {
-    if (suppliers.length === 0) {
-      toast.error("No suppliers available to export.");
-      return;
+  async function handleExport() {
+    if (exporting) return;
+
+    setExporting(true);
+    try {
+      const response = await fetch("/api/purchasing/export/suppliers");
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { message?: string } | null;
+        throw new Error(payload?.message || "Export failed");
+      }
+
+      const blob = await response.blob();
+      const disposition = response.headers.get("Content-Disposition") || "";
+      const match = disposition.match(/filename="([^"]+)"/);
+      const filename =
+        match?.[1] || `suppliers-${new Date().toISOString().split("T")[0]}.xlsx`;
+
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      link.click();
+      URL.revokeObjectURL(url);
+
+      toast.success("Suppliers exported to Excel.");
+    } catch (err: unknown) {
+      toast.error(`Failed to export: ${getErrorMessage(err, "Unknown error")}`);
+    } finally {
+      setExporting(false);
     }
-    exportSuppliersCSV(suppliers);
-    toast.success("Supplier export download started.");
   }
 
   function handleResetFilters() {
@@ -168,15 +180,16 @@ function SuppliersListInner() {
         actions={
           canManageSuppliers ? (
             <>
-              <Button
-                variant="outline"
-                onClick={() => setImportDialogOpen(true)}
-                className="purchasing-secondary-button w-full sm:w-auto"
-              >
-                <Upload className="mr-2 h-4 w-4" />
-                Import
-              </Button>
-              <Link href="/dashboard/purchasing/suppliers/insert">
+              <Link href={RM_ROUTES.purchasingSuppliersImport}>
+                <Button
+                  variant="outline"
+                  className="purchasing-secondary-button w-full sm:w-auto"
+                >
+                  <Upload className="mr-2 h-4 w-4" />
+                  Import
+                </Button>
+              </Link>
+              <Link href={RM_ROUTES.purchasingSuppliersInsert}>
                 <Button className="purchasing-main-button w-full sm:w-auto">
                   <Plus className="mr-2 h-4 w-4" />
                   Add Supplier
@@ -234,11 +247,16 @@ function SuppliersListInner() {
 
             <Button
               variant="outline"
-              onClick={handleExportCSV}
-              title="Export CSV"
+              onClick={handleExport}
+              disabled={exporting}
+              title="Export Excel"
               className="purchasing-secondary-button w-full sm:w-auto"
             >
-              <Upload className="mr-2 h-4 w-4" />
+              {exporting ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Download className="mr-2 h-4 w-4" />
+              )}
               Export
             </Button>
 
@@ -278,25 +296,17 @@ function SuppliersListInner() {
                   />
                 </div>
 
-                <div className="space-y-1.5">
+                <div className="space-y-2 md:col-span-2">
                   <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
                     <Filter className="h-3.5 w-3.5 text-pink-500" />
                     Payment Terms
                   </div>
-                  <Combobox
-                    options={[
-                      { value: "all", label: "All Terms" },
-                      ...PAYMENT_TERMS_OPTIONS.map((pt) => ({ value: pt, label: pt })),
-                    ]}
+                  <PaymentTermsBadgeFilter
                     value={paymentFilter}
-                    onChange={(value) => {
-                      setPaymentFilter(value as PaymentTerms | "all");
+                    onChange={(next) => {
+                      setPaymentFilter(next);
                       setPage(1);
                     }}
-                    placeholder="Filter by terms..."
-                    searchPlaceholder="Search terms..."
-                    emptyMessage="No terms found"
-                    className="!w-full h-9 text-sm"
                   />
                 </div>
               </div>
@@ -315,7 +325,7 @@ function SuppliersListInner() {
                 {search ? "No suppliers match your search" : "No suppliers yet"}
               </p>
               {canManageSuppliers && !search && (
-                <Link href="/dashboard/purchasing/suppliers/insert">
+                <Link href={RM_ROUTES.purchasingSuppliersInsert}>
                   <Button variant="outline" className="mt-4 purchasing-secondary-button">
                     Add First Supplier
                   </Button>
@@ -343,7 +353,7 @@ function SuppliersListInner() {
                       <tr
                         key={supplier.id}
                         className="cursor-pointer hover:bg-gray-50"
-                        onClick={() => router.push(`/dashboard/purchasing/suppliers/${supplier.id}`)}
+                        onClick={() => router.push(RM_ROUTES.purchasingSuppliersDetail(supplier.id))}
                       >
                         <td className="px-4 py-3 text-sm text-gray-400">
                           {(page - 1) * limit + idx + 1}
@@ -362,7 +372,7 @@ function SuppliersListInner() {
                           )}
                         </td>
                         <td className="px-4 py-3">
-                          <Badge variant="outline">{getPaymentTermsLabel(supplier.payment_terms)}</Badge>
+                          <PaymentTermsBadge value={supplier.payment_terms} />
                         </td>
                         <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center justify-center">
@@ -379,13 +389,13 @@ function SuppliersListInner() {
                         {canManageSuppliers && (
                           <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                             <div className="flex items-center justify-end gap-2">
-                              <Link href={`/dashboard/purchasing/suppliers/${supplier.id}`}>
+                              <Link href={RM_ROUTES.purchasingSuppliersDetail(supplier.id)}>
                                 <Button variant="ghost" size="sm" title="View detail" className="cursor-pointer">
                                   <Eye className="h-4 w-4" />
                                 </Button>
                               </Link>
                               {(supplier.is_active || supplier.status === "draft") && (
-                                <Link href={`/dashboard/purchasing/suppliers/edit/${supplier.id}`}>
+                                <Link href={RM_ROUTES.purchasingSuppliersEdit(supplier.id)}>
                                   <Button variant="ghost" size="sm" title="Edit" className="cursor-pointer">
                                     <Pencil className="h-4 w-4" />
                                   </Button>
@@ -449,44 +459,6 @@ function SuppliersListInner() {
         loading={deleteLoading}
         onConfirm={handleDelete}
       />
-
-      <Dialog open={importDialogOpen} onOpenChange={setImportDialogOpen}>
-        <DialogPanel size="md">
-          <DialogPanelHeader>
-            <DialogPanelTitle>Import Suppliers from Spreadsheet</DialogPanelTitle>
-            <DialogPanelDescription>
-              Upload a comma-separated values file to add suppliers in bulk.
-            </DialogPanelDescription>
-          </DialogPanelHeader>
-          <DialogPanelBody>
-            <CsvImporter
-              title="Import Suppliers"
-              description="Import supplier data from a comma-separated values file"
-              templateName="template-supplier.csv"
-              apiEndpoint="/api/purchasing/import/suppliers"
-              onSuccess={() => {
-                listQuery.refetch();
-              }}
-              columns={[
-                { key: "kode", label: "Code", required: true, type: "text" },
-                { key: "nama", label: "Supplier Name", required: true, type: "text" },
-                { key: "email", label: "Email", required: false, type: "email" },
-                { key: "telepon", label: "Phone", required: false, type: "text" },
-                { key: "alamat", label: "Address", required: false, type: "text" },
-                { key: "kota", label: "City", required: false, type: "text" },
-                { key: "provinsi", label: "Province", required: false, type: "text" },
-                { key: "kode_pos", label: "Postal Code", required: false, type: "text" },
-                { key: "npwp", label: "Tax ID", required: false, type: "text" },
-                { key: "termin_pembayaran", label: "Payment Term (days)", required: false, type: "number" },
-                { key: "mata_uang", label: "Currency", required: false, type: "text" },
-                { key: "kategori", label: "Category", required: false, type: "text" },
-                { key: "deskripsi", label: "Description", required: false, type: "text" },
-                { key: "status", label: "Status", required: false, type: "text" },
-              ]}
-            />
-          </DialogPanelBody>
-        </DialogPanel>
-      </Dialog>
     </div>
   );
 }

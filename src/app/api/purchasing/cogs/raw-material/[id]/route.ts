@@ -1,4 +1,4 @@
-import { createServerPgClient } from "@/lib/pg/create-client";
+import { MANUFACTURING_SCHEMA } from "@/lib/manufacturing/constants";
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { requireApiUser, ApiError, successResponse } from "@/lib/api/auth";
@@ -34,7 +34,7 @@ export async function GET(
     }
 
     const { data: bomItems, error: bomError } = await db
-      .from("raw_material_bom_items")
+      .from("raw_material_bom_items", MANUFACTURING_SCHEMA)
       .select(`
         *,
         component:raw_materials!component_raw_material_id(id, kode, nama, material_type),

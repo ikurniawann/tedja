@@ -73,11 +73,14 @@ function buildOpnameScopeFilter(
   };
 }
 
-/** Semua produk aktif dalam scope + stok sistem dari finished_goods_inventory. */
+/** Active products in scope for a specific stall + system stock from finished_goods_inventory. */
 export async function listProductInventoryForOpname(
-  scope: UserScope | null
+  scope: UserScope | null,
+  warehouseId: string
 ): Promise<ProductOpnamePreviewLine[]> {
   const productScope = buildProductScopeFilter(scope, "p", 1);
+  const values = [...productScope.values, warehouseId];
+  const warehouseIdx = productScope.nextIdx;
 
   const rows = await query<{
     inventory_id: string | null;
@@ -101,9 +104,10 @@ export async function listProductInventoryForOpname(
      LEFT JOIN units u ON u.id = p.satuan_id
      WHERE p.deleted_at IS NULL
        AND p.is_active = true
+       AND p.warehouse_id = $${warehouseIdx}
        AND ${productScope.sql}
      ORDER BY p.nama ASC`,
-    productScope.values
+    values
   );
 
   return rows.map((row) => ({
@@ -158,6 +162,7 @@ export async function fetchProductStockOpnameDetail(id: string) {
     opname_number: string;
     company_id: string | null;
     branch_id: string | null;
+    warehouse_id: string | null;
     opname_date: string;
     status: string;
     reason: string;
@@ -170,12 +175,17 @@ export async function fetchProductStockOpnameDetail(id: string) {
     updated_at: string;
     branch_name: string | null;
     branch_code: string | null;
+    warehouse_name: string | null;
+    warehouse_code: string | null;
   }>(
     `SELECT pso.*,
             b.name AS branch_name,
-            b.code AS branch_code
+            b.code AS branch_code,
+            wh.name AS warehouse_name,
+            wh.code AS warehouse_code
      FROM inventory.product_stock_opnames pso
      LEFT JOIN configuration.branches b ON b.id = pso.branch_id
+     LEFT JOIN configuration.warehouses wh ON wh.id = pso.warehouse_id
      WHERE pso.id = $1`,
     [id]
   );
@@ -213,6 +223,7 @@ export async function fetchProductStockOpnameDetail(id: string) {
     opname_number: header.opname_number,
     company_id: header.company_id,
     branch_id: header.branch_id,
+    warehouse_id: header.warehouse_id,
     opname_date: header.opname_date,
     status: header.status,
     reason: header.reason,
@@ -228,6 +239,13 @@ export async function fetchProductStockOpnameDetail(id: string) {
           id: header.branch_id,
           name: header.branch_name || "—",
           code: header.branch_code || "",
+        }
+      : null,
+    warehouse: header.warehouse_id
+      ? {
+          id: header.warehouse_id,
+          name: header.warehouse_name || "—",
+          code: header.warehouse_code || "",
         }
       : null,
     lines: lines.map((line) => ({

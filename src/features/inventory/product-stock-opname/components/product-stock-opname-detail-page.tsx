@@ -108,7 +108,17 @@ export function ProductStockOpnameDetailPage({ id }: ProductStockOpnameDetailPag
       <PurchasingFormHeader
         backHref={PRODUCT_ROUTES.inventoryOpname}
         title={detail.opname_number}
-        description={`Product stock opname history · ${formatDate(detail.opname_date)}`}
+        description={
+          <>
+            Product stock opname history · {formatDate(detail.opname_date)}
+            {detail.warehouse?.name ? (
+              <>
+                {" "}
+                · Stall: {detail.warehouse.name}
+              </>
+            ) : null}
+          </>
+        }
         actions={
           canContinue ? (
             <Link href={PRODUCT_ROUTES.inventoryOpnameContinue(detail.id)}>

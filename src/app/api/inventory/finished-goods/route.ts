@@ -14,6 +14,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const search = searchParams.get("search") || "";
     const status = searchParams.get("status") || "";
+    const warehouseId = searchParams.get("warehouse_id") || "";
     const page = Number(searchParams.get("page") || 1);
     const limit = Number(searchParams.get("limit") || 20);
     const offset = (page - 1) * limit;
@@ -36,6 +37,9 @@ export async function GET(request: NextRequest) {
     }
     if (status === "out_of_stock") query = query.lte("qty_available", 0);
     if (status === "in_stock") query = query.gt("qty_available", 0);
+    if (warehouseId && warehouseId !== "all") {
+      query = query.eq("warehouse_id", warehouseId);
+    }
 
     const { data, error, count } = await query;
     if (error) throw error;

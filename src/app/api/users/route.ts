@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     if (error instanceof ApiError) return error.toResponse();
     console.error("[api/users] GET failed:", error);
-    return NextResponse.json({ error: "Gagal mengambil data karyawan" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to load employees" }, { status: 500 });
   }
 }
 
@@ -42,12 +42,12 @@ export async function POST(request: NextRequest) {
     const data = await createUserEmployee(actor.id, body);
 
     return NextResponse.json(
-      { data, message: "Karyawan berhasil ditambahkan" },
+      { data, message: "Employee created successfully" },
       { status: 201 }
     );
   } catch (error) {
     if (error instanceof ApiError) return error.toResponse();
-    const message = error instanceof Error ? error.message : "Gagal membuat karyawan";
+    const message = error instanceof Error ? error.message : "Failed to create employee";
     console.error("[api/users] POST failed:", error);
     return NextResponse.json({ error: message }, { status: 400 });
   }

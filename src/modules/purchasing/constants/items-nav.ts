@@ -55,7 +55,6 @@ export const RAW_MATERIAL_NAV_GROUPS: readonly ItemsNavGroup[] = [
     items: [
       { href: RM_ROUTES.units, label: "Unit" },
       { href: RM_ROUTES.categories, label: "Category" },
-      { href: RM_ROUTES.storage, label: "Condition Storage" },
       { href: RM_ROUTES.materials, label: "Raw Material" },
     ],
   },

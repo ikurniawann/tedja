@@ -69,7 +69,7 @@ export async function PUT(
     // Verify satuan if being updated
     if (validated.satuan_id) {
       const { data: satuan } = await db
-        .from("satuan")
+        .from("units")
         .select("id")
         .eq("id", validated.satuan_id)
         .eq("is_active", true)

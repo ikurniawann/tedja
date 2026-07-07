@@ -1,6 +1,7 @@
 export interface ProductListParams {
   search?: string;
   is_active?: boolean;
+  warehouse_id?: string;
   page?: number;
   limit?: number;
 }
@@ -16,4 +17,5 @@ export const productsQueryKeys = {
   bomEditorData: (id: string) =>
     ["purchasing", "products", "bom-editor-data", id] as const,
   categories: () => ["purchasing", "products", "categories"] as const,
+  warehouses: () => ["purchasing", "products", "warehouses"] as const,
 };

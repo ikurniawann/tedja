@@ -256,6 +256,16 @@ export async function POST(request: NextRequest) {
     let companyId = effectiveCompanyId(scope);
     let branchId = effectiveBranchId(scope);
 
+    if (moduleType === "raw_material" && !validated.pr_id) {
+      return Response.json(
+        {
+          success: false,
+          message: "Purchase order must be created from an approved purchase request",
+        },
+        { status: 400 }
+      );
+    }
+
     if (validated.pr_id) {
       const { data: linkedPr } = await db
         .from("purchase_requests")

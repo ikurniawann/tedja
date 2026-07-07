@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Combobox } from "@/components/ui/combobox";
 import { Switch } from "@/components/ui/switch";
-import { ITEMS_RAW_MATERIALS_PATH } from "@/modules/purchasing/constants/items-nav";
+import { ITEMS_RAW_MATERIALS_PATH, RM_ROUTES } from "@/modules/purchasing/constants/items-nav";
 import { PurchasingListSection } from "@/modules/purchasing/components/list/PurchasingListSection";
 import { PurchasingTablePagination } from "@/modules/purchasing/components/pagination/PurchasingTablePagination";
 import {
@@ -22,21 +22,13 @@ import {
   Search,
   Trash2,
   Upload,
+  Download,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { RawMaterialWithStock, MaterialCategory } from "@/types/purchasing";
 import { useRawMaterialList, useRawMaterialCategoryOptions } from "../queries";
 import { useDeleteRawMaterial, useUpdateRawMaterialStatus } from "../mutations";
-import { CsvImporter } from "@/components/ui/csv-importer";
-import {
-  Dialog,
-  DialogPanel,
-  DialogPanelBody,
-  DialogPanelDescription,
-  DialogPanelHeader,
-  DialogPanelTitle,
-} from "@/components/ui/dialog";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   buildLookupLabelMap,
@@ -78,7 +70,6 @@ export function RawMaterialsPage() {
   const [categoryFilter, setCategoryFilter] = useState<MaterialCategory | "all">("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [filterOpen, setFilterOpen] = useState(false);
-  const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deletingMaterial, setDeletingMaterial] = useState<RawMaterialWithStock | null>(null);
   const [statusDialog, setStatusDialog] = useState<{
@@ -90,6 +81,7 @@ export function RawMaterialsPage() {
     material: null,
     nextStatus: true,
   });
+  const [exporting, setExporting] = useState(false);
 
   const listQuery = useRawMaterialList({
     search: search || undefined,
@@ -205,6 +197,39 @@ export function RawMaterialsPage() {
     }
   };
 
+  const handleExport = async () => {
+    if (exporting) return;
+
+    setExporting(true);
+    try {
+      const response = await fetch("/api/purchasing/export/raw-materials");
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { message?: string } | null;
+        throw new Error(payload?.message || "Export failed");
+      }
+
+      const blob = await response.blob();
+      const disposition = response.headers.get("Content-Disposition") || "";
+      const match = disposition.match(/filename="([^"]+)"/);
+      const filename =
+        match?.[1] || `raw-materials-${new Date().toISOString().split("T")[0]}.xlsx`;
+
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      link.click();
+      URL.revokeObjectURL(url);
+
+      toast.success("Raw materials exported to Excel.");
+    } catch (error: unknown) {
+      console.error("Error exporting raw materials:", error);
+      toast.error(`Failed to export: ${getErrorMessage(error, "Unknown error")}`);
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col items-start justify-between gap-4 border-b border-gray-200/70 pb-4 sm:flex-row sm:items-center">
@@ -215,14 +240,15 @@ export function RawMaterialsPage() {
           </p>
         </div>
         <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
-          <Button
-            variant="outline"
-            onClick={() => setImportDialogOpen(true)}
-            className="purchasing-secondary-button w-full sm:w-auto"
-          >
-            <Upload className="mr-2 h-4 w-4" />
-            Import
-          </Button>
+          <Link href={RM_ROUTES.materialsImport}>
+            <Button
+              variant="outline"
+              className="purchasing-secondary-button w-full sm:w-auto"
+            >
+              <Upload className="mr-2 h-4 w-4" />
+              Import
+            </Button>
+          </Link>
           <Link href={`${ITEMS_RAW_MATERIALS_PATH}/insert`}>
             <Button className="purchasing-main-button w-full sm:w-auto">
               <Plus className="mr-2 h-4 w-4" />
@@ -291,6 +317,22 @@ export function RawMaterialsPage() {
                   {activeFilterCount}
                 </span>
               )}
+            </Button>
+
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleExport}
+              disabled={exporting}
+              title="Export Excel"
+              className="purchasing-secondary-button w-full sm:w-auto"
+            >
+              {exporting ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Download className="mr-2 h-4 w-4" />
+              )}
+              Export
             </Button>
 
             {(search || isFilterActive || page > 1) && (
@@ -534,43 +576,6 @@ export function RawMaterialsPage() {
         loading={isDeleting}
         onConfirm={handleDelete}
       />
-
-      <Dialog open={importDialogOpen} onOpenChange={setImportDialogOpen}>
-        <DialogPanel size="md">
-          <DialogPanelHeader>
-            <DialogPanelTitle>Import Raw Materials from Spreadsheet</DialogPanelTitle>
-            <DialogPanelDescription>
-              Upload a comma-separated values file to add raw materials in bulk.
-            </DialogPanelDescription>
-          </DialogPanelHeader>
-          <DialogPanelBody>
-            <CsvImporter
-              title="Import Raw Materials"
-              description="Import raw material data from a comma-separated values file"
-              templateName="template-bahan-baku.csv"
-              apiEndpoint="/api/purchasing/import/raw-materials"
-              onSuccess={() => listQuery.refetch()}
-              columns={[
-                { key: "kode", label: "Code", required: true },
-                { key: "nama", label: "Name", required: true },
-                { key: "nama_lain", label: "Alternate Name", required: false },
-                { key: "kategori", label: "Category", required: false },
-                { key: "satuan_pembelian", label: "Purchase Unit", required: true },
-                { key: "satuan_penggunaan", label: "Usage Unit", required: false },
-                { key: "qty_per_unit", label: "Quantity Per Unit", required: false, type: "number" },
-                { key: "harga_rata_rata", label: "Average Cost", required: false, type: "number" },
-                { key: "stok_minimum", label: "Minimum Stock", required: false, type: "number" },
-                { key: "stok_maksimum", label: "Maximum Stock", required: false, type: "number" },
-                { key: "tanggal_mulai_produksi", label: "Production Start Date", required: false, type: "date" },
-                { key: "masa_simpan", label: "Shelf Life (months)", required: false, type: "number" },
-                { key: "supplier_utama", label: "Primary Supplier", required: false },
-                { key: "deskripsi", label: "Description", required: false },
-                { key: "status", label: "Status", required: false },
-              ]}
-            />
-          </DialogPanelBody>
-        </DialogPanel>
-      </Dialog>
     </div>
   );
 }

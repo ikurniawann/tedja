@@ -31,9 +31,3 @@ export const useRawMaterialCategoryOptions = () =>
     queryKey: rawMaterialsQueryKeys.categories(),
     queryFn: () => listActiveItemsLookup("raw-material-categories"),
   });
-
-export const useStorageConditionOptions = () =>
-  useQuery({
-    queryKey: rawMaterialsQueryKeys.storageConditions(),
-    queryFn: () => listActiveItemsLookup("storage-conditions"),
-  });

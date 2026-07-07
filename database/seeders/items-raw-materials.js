@@ -7,11 +7,11 @@
  *
  * Catatan:
  *   - `kategori`          = kode master item.raw_material_categories
- *   - `storage_condition` = kode master item.storage_conditions
+ *   - `storage_condition` = enum SUHU_RUANG | DINGIN | BEKU | KHUSUS
  *   - `satuan_besar_id` / `satuan_kecil_id` di-resolve dari kode item.units
  *   - `konversi_factor`   = jumlah satuan kecil dalam 1 satuan besar
  *
- * Prasyarat seeder: items-units, items-raw-material-categories, items-raw-material-storage.
+ * Prasyarat seeder: items-units, items-raw-material-categories.
  *
  * Usage:
  *   node database/seeders/items-raw-materials.js
@@ -22,6 +22,7 @@ const fs = require("fs");
 const path = require("path");
 const { Client } = require("pg");
 const { sslForUrl, assertLocalTarget } = require("../scripts/pg-utils");
+const { resolveSeedBusinessScope } = require("../scripts/items-business-scope");
 
 const ROOT = path.join(__dirname, "..", "..");
 
@@ -88,10 +89,10 @@ const MATERIALS = [
   ["BB-BUM-003", "Kaldu Bubuk Ayam", "BUMBU", "KG", "GR", 1000, 2, 15, 365, "SUHU_RUANG", "Penyedap kaldu ayam", 45000],
   ["BB-BUM-004", "Pala Bubuk", "BUMBU", "KG", "GR", 1000, 1, 5, 365, "SUHU_RUANG", "Bubuk pala", 200000],
 
-  // ── Bahan Kering (DRY / SUHU_RUANG) ──────────────────────────────────────
-  ["BB-KER-001", "Beras", "KERING", "SACK", "KG", 25, 2, 20, 180, "DRY", "Beras premium karung 25kg", 320000],
-  ["BB-KER-002", "Tepung Terigu Protein Tinggi", "KERING", "SACK", "KG", 25, 2, 20, 365, "DRY", "Tepung terigu serbaguna", 230000],
-  ["BB-KER-003", "Gula Pasir", "KERING", "KG", "GR", 1000, 5, 50, 730, "DRY", "Gula pasir putih", 16000],
+  // ── Bahan Kering (SUHU_RUANG) ──────────────────────────────────────────
+  ["BB-KER-001", "Beras", "KERING", "SACK", "KG", 25, 2, 20, 180, "SUHU_RUANG", "Beras premium karung 25kg", 320000],
+  ["BB-KER-002", "Tepung Terigu Protein Tinggi", "KERING", "SACK", "KG", 25, 2, 20, 365, "SUHU_RUANG", "Tepung terigu serbaguna", 230000],
+  ["BB-KER-003", "Gula Pasir", "KERING", "KG", "GR", 1000, 5, 50, 730, "SUHU_RUANG", "Gula pasir putih", 16000],
   ["BB-KER-004", "Spaghetti", "KERING", "BOX", "GR", 5000, 2, 15, 540, "SUHU_RUANG", "Pasta spaghetti per box 5kg", 120000],
   ["BB-KER-005", "Tepung Maizena", "KERING", "KG", "GR", 1000, 1, 10, 365, "SUHU_RUANG", "Tepung jagung", 18000],
 
@@ -123,16 +124,20 @@ const MATERIALS = [
   ["BB-KEM-004", "Paper Bag", "KEMASAN", "PACK", "PCS", 100, 5, 40, null, "SUHU_RUANG", "Kantong kertas takeaway", 60000],
 
   // ── Non-Pangan (CHEM) ────────────────────────────────────────────────────
-  ["BB-NON-001", "Sabun Cuci Piring", "NONPANG", "L", "ML", 1000, 5, 30, null, "CHEM", "Detergen cuci piring konsentrat", 25000],
-  ["BB-NON-002", "Cairan Pembersih Lantai", "NONPANG", "L", "ML", 1000, 3, 20, null, "CHEM", "Pembersih lantai dapur", 20000],
+  ["BB-NON-001", "Sabun Cuci Piring", "NONPANG", "L", "ML", 1000, 5, 30, null, "KHUSUS", "Detergen cuci piring konsentrat", 25000],
+  ["BB-NON-002", "Cairan Pembersih Lantai", "NONPANG", "L", "ML", 1000, 3, 20, null, "KHUSUS", "Pembersih lantai dapur", 20000],
 
   // ── Bahan Bakar (SUHU_RUANG) ─────────────────────────────────────────────
   ["BB-BAK-001", "Gas LPG 12kg", "BAKAR", "CAN", "KG", 12, 2, 12, null, "SUHU_RUANG", "Tabung gas LPG 12kg", 180000],
 ];
 
-async function loadUnitMap(c) {
+async function loadUnitMap(c, companyId) {
   const { rows } = await c.query(
-    "SELECT id, kode FROM item.units WHERE deleted_at IS NULL"
+    `SELECT id, kode
+     FROM item.units
+     WHERE deleted_at IS NULL
+       AND company_id = $1`,
+    [companyId]
   );
   return new Map(rows.map((r) => [r.kode, r.id]));
 }
@@ -142,7 +147,7 @@ const INSERT_SQL = `
     (kode, nama, kategori, deskripsi, satuan_besar_id, satuan_kecil_id, konversi_factor,
      stok_minimum, stok_maximum, shelf_life_days, storage_condition, harga_beli, material_type,
      company_id, branch_id, is_active)
-  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'PURCHASED', NULL, NULL, true)
+  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'PURCHASED', $13, $14, true)
   ON CONFLICT (
     COALESCE(company_id, '00000000-0000-0000-0000-000000000000'::uuid),
     COALESCE(branch_id, '00000000-0000-0000-0000-000000000000'::uuid),
@@ -185,7 +190,8 @@ async function main() {
   try {
     await c.query("BEGIN");
 
-    const unitMap = await loadUnitMap(c);
+    const scope = await resolveSeedBusinessScope(c);
+    const unitMap = await loadUnitMap(c, scope.company_id);
     const uid = (code) => {
       if (!code) return null;
       const id = unitMap.get(code);
@@ -197,7 +203,7 @@ async function main() {
       return id;
     };
 
-    console.log("Seeding item.raw_materials (restoran)...");
+    console.log(`Seeding item.raw_materials (${scope.branch_name})...`);
     for (const [
       kode,
       nama,
@@ -225,6 +231,8 @@ async function main() {
         shelf,
         storage,
         harga,
+        scope.company_id,
+        scope.branch_id,
       ]);
       console.log(`  ✓ ${kode} — ${nama}`);
     }

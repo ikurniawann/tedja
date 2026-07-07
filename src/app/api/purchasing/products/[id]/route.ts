@@ -4,7 +4,7 @@
 
 import { NextRequest } from "next/server";
 import { createServerPgClient } from "@/lib/pg/create-client";
-import { getApiUserScope, isRowInBusinessScope } from "@/lib/api/scope";
+import { getApiUserScope, isRowInBusinessScope, validateProductWarehouseScope } from "@/lib/api/scope";
 import { z } from "zod";
 
 const productSchema = z.object({
@@ -12,6 +12,7 @@ const productSchema = z.object({
   deskripsi: z.string().optional().nullable(),
   kategori: z.string().optional().nullable(),
   satuan_id: z.string().uuid().optional().nullable(),
+  warehouse_id: z.string().uuid().optional(),
   harga_jual: z.number().min(0).optional(),
   harga_modal: z.number().min(0).optional(),
   markup_persen: z.number().optional(),
@@ -156,12 +157,11 @@ export async function PUT(
   try {
     const { id } = await params;
     const db = await createServerPgClient();
+    const scope = await getApiUserScope();
     const body = await request.json();
 
-    // Validasi input
     const validated = productSchema.parse(body);
 
-    // Cek apakah produk ada
     const { data: existingProduct, error: findError } = await db
       .from("products")
       .select("*")
@@ -176,13 +176,36 @@ export async function PUT(
       );
     }
 
-    // Update data
+    if (
+      !isRowInBusinessScope(scope, {
+        company_id: existingProduct.company_id,
+        branch_id: existingProduct.branch_id,
+      })
+    ) {
+      return Response.json(
+        { success: false, message: "Produk tidak ditemukan" },
+        { status: 404 }
+      );
+    }
+
+    const updatePayload: Record<string, unknown> = {
+      ...validated,
+      updated_at: new Date().toISOString(),
+    };
+
+    if (validated.warehouse_id && validated.warehouse_id !== existingProduct.warehouse_id) {
+      const warehouseScope = await validateProductWarehouseScope(validated.warehouse_id, scope);
+      if ("error" in warehouseScope) {
+        return Response.json({ success: false, message: warehouseScope.error }, { status: 400 });
+      }
+      updatePayload.company_id = warehouseScope.company_id;
+      updatePayload.branch_id = warehouseScope.branch_id;
+      updatePayload.warehouse_id = warehouseScope.warehouse_id;
+    }
+
     const { data, error } = await db
       .from("products")
-      .update({
-        ...validated,
-        updated_at: new Date().toISOString(),
-      })
+      .update(updatePayload)
       .eq("id", id)
       .is("deleted_at", null)
       .select()

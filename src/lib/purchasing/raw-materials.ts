@@ -156,7 +156,6 @@ export function exportRawMaterialsCSV(data: RawMaterial[]) {
     "Status Stok",
     "Supplier Utama",
     "Shelf Life (hari)",
-    "Storage Condition",
   ];
 
   const rows = data.map((m) => [
@@ -173,7 +172,6 @@ export function exportRawMaterialsCSV(data: RawMaterial[]) {
     m.status_stok,
     (m as any).supplier_utama?.nama ?? "",
     m.shelf_life_days ?? 0,
-    m.storage_condition ?? "",
   ]);
 
   const csvContent = [

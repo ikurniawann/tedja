@@ -6,6 +6,7 @@ export const usersQueryKeys = {
   detail: (id: string) => ["users", "detail", id] as const,
   directoryStats: () => ["users", "directory-stats"] as const,
   formLookups: () => ["users", "form-lookups"] as const,
+  branchStalls: (branchId: string) => ["users", "branch-stalls", branchId] as const,
   hrisEmployee: (id: string) => ["users", "hris-employee", id] as const,
   documents: (employeeId: string) => ["users", "documents", employeeId] as const,
   employmentHistory: (employeeId: string) => ["users", "employment-history", employeeId] as const,

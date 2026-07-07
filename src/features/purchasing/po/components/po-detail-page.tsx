@@ -74,6 +74,7 @@ export function PODetailPage() {
   const navFrom = useNavFrom();
   const fromInvoiceContext = pathname.includes("/invoice/po/");
   const fromApprovalContext = navFrom === NAV_FROM_APPROVAL_PO;
+  const showPaymentManagement = fromInvoiceContext;
   const backHref = fromInvoiceContext
     ? RM_ROUTES.purchasingInvoice
     : fromApprovalContext
@@ -86,7 +87,7 @@ export function PODetailPage() {
       : "Back";
 
   const detailQuery = usePurchaseOrder(poId);
-  const paymentsQuery = usePurchaseOrderPayments(poId);
+  const paymentsQuery = usePurchaseOrderPayments(poId, showPaymentManagement);
   const po = detailQuery.data ?? null;
   const items: PurchaseOrderItem[] = po?.items ?? [];
   const paymentTerms: PurchaseOrderPaymentTerm[] = paymentsQuery.data?.terms ?? [];
@@ -846,7 +847,7 @@ export function PODetailPage() {
         </Card>
       </div>
 
-      {/* Payment Terms */}
+      {showPaymentManagement && (
       <Card className="border-gray-200/70 shadow-sm">
         <CardHeader className="flex flex-row items-center justify-between gap-4 border-b border-gray-100 pb-4">
           <CardTitle className="flex items-center gap-2 text-base">
@@ -999,6 +1000,7 @@ export function PODetailPage() {
           )}
         </CardContent>
       </Card>
+      )}
 
       {/* Items Table */}
       <Card className="border-gray-200/70 shadow-sm">
@@ -1125,6 +1127,8 @@ export function PODetailPage() {
         </DialogContent>
       </Dialog>
 
+      {showPaymentManagement && (
+      <>
       {/* Payment Term Dialog */}
       <Dialog open={isTermDialogOpen} onOpenChange={setIsTermDialogOpen}>
         <DialogContent className="gap-0 overflow-hidden rounded-2xl border border-gray-200/70 p-0 shadow-xl ring-1 ring-gray-200/60 sm:max-w-[560px]">
@@ -1367,6 +1371,8 @@ export function PODetailPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      </>
+      )}
 
       {/* Cancel Dialog */}
       <Dialog open={isCancelDialogOpen} onOpenChange={setIsCancelDialogOpen}>

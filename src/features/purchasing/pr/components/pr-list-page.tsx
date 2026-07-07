@@ -21,8 +21,10 @@ import {
   Pencil,
   X,
 } from "lucide-react";
-import { formatAmount, formatDate, getPRStatusLabel, getPriorityBadge } from "@/lib/purchasing/utils";
+import { formatDate, getPRStatusLabel, getPriorityBadge } from "@/lib/purchasing/utils";
 import { toast } from "sonner";
+import { RM_ROUTES } from "@/modules/purchasing/constants/item-routes";
+import { useAuth } from "@/hooks/use-auth";
 import { usePurchaseRequestList } from "../queries";
 import type { PRStatusFilter as PRStatus } from "../types";
 
@@ -38,9 +40,21 @@ const PRIORITY_LABEL_OVERRIDES: Record<string, string> = {
   urgent: "Urgent",
 };
 
+function canCreatePurchaseOrder(
+  pr: { status: string; converted_po_id?: string | null },
+  role?: string
+) {
+  return (
+    pr.status === "approved" &&
+    !pr.converted_po_id &&
+    (role === "purchasing_manager" || role === "purchasing_staff")
+  );
+}
+
 export function PRListPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { user } = useAuth();
   const [search, setSearch] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<PRStatus>("all");
@@ -125,7 +139,7 @@ export function PRListPage() {
       <PurchasingListSection
         icon={FileText}
         title="Purchase Request List"
-        description="Track purchase requests by document number, status, priority, and total value."
+        description="Track purchase requests by document number, status, and priority."
         toolbar={
           <div className="flex w-full flex-col gap-3 sm:w-auto md:flex-row md:items-center">
             <label className="relative w-full md:w-80">
@@ -229,7 +243,6 @@ export function PRListPage() {
                       <th className="px-4 py-3 text-left font-semibold">Date</th>
                       <th className="px-4 py-3 text-left font-semibold">Department</th>
                       <th className="px-4 py-3 text-left font-semibold">Requester</th>
-                      <th className="px-4 py-3 text-right font-semibold">Total</th>
                       <th className="px-4 py-3 text-center font-semibold">Priority</th>
                       <th className="px-4 py-3 text-center font-semibold">Status</th>
                       <th className="px-4 py-3 text-right font-semibold">Actions</th>
@@ -254,9 +267,6 @@ export function PRListPage() {
                           <td className="px-4 py-3 text-gray-600">{formatDate(pr.created_at)}</td>
                           <td className="px-4 py-3 text-gray-600">{pr.department_name || "-"}</td>
                           <td className="px-4 py-3 text-gray-600">{pr.requester_name || "-"}</td>
-                          <td className="px-4 py-3 text-right font-medium">
-                            {formatAmount(pr.total_amount)}
-                          </td>
                           <td className="px-4 py-3 text-center">
                             <Badge className={priorityBadge.color}>{priorityLabel}</Badge>
                           </td>
@@ -282,6 +292,30 @@ export function PRListPage() {
                                   <Printer className="h-4 w-4" />
                                 </Button>
                               </Link>
+                              {canCreatePurchaseOrder(pr, user?.role) && (
+                                <Link href={`${RM_ROUTES.purchasingPoInsert}?pr_id=${pr.id}`}>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    title="Create Purchase Order"
+                                    className="cursor-pointer"
+                                  >
+                                    <FileText className="h-4 w-4 text-pink-600" />
+                                  </Button>
+                                </Link>
+                              )}
+                              {(pr.status === "converted" || pr.converted_po_id) && pr.converted_po_id && (
+                                <Link href={RM_ROUTES.purchasingPoDetail(pr.converted_po_id)}>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    title="View Purchase Order"
+                                    className="cursor-pointer"
+                                  >
+                                    <FileText className="h-4 w-4 text-blue-600" />
+                                  </Button>
+                                </Link>
+                              )}
                             </div>
                           </td>
                         </tr>

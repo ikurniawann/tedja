@@ -172,6 +172,28 @@ async function fetchMenusByIds(menuIds: string[]): Promise<MenuRow[]> {
   );
 }
 
+function isNavigableHref(href: string | undefined): href is string {
+  return Boolean(href && href !== "#");
+}
+
+/** Flatten module menu groups into leaf sidebar links for top-nav bars (POS, etc.). */
+export function flattenModuleNavLinks(items: NavItem[]): NavItem[] {
+  const result: NavItem[] = [];
+
+  for (const item of items) {
+    if (item.children?.length) {
+      result.push(...flattenModuleNavLinks(item.children));
+      continue;
+    }
+
+    if (isNavigableHref(item.href)) {
+      result.push({ href: item.href, label: item.label, icon: item.icon });
+    }
+  }
+
+  return result;
+}
+
 function isIamUnavailable(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
   const message = error.message.toLowerCase();
@@ -250,6 +272,7 @@ export function findFirstBackOfficeHref(
 export const getModuleMenus = cache(
   async (userId: string, role: UserRole, moduleHref: string): Promise<NavItem[]> => {
     const tree = await getUserMenus(userId, role);
-    return findNavItem(tree, moduleHref)?.children ?? [];
+    const children = findNavItem(tree, moduleHref)?.children ?? [];
+    return flattenModuleNavLinks(children);
   }
 );

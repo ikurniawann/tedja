@@ -267,7 +267,7 @@ export function StockOpnameCreatePage({ opnameId }: StockOpnameCreatePageProps) 
 
   const handleSaveDraft = async () => {
     if (!warehouseId) {
-      toast.error("Please select a warehouse first");
+      toast.error("Please select a stall first");
       return;
     }
     if (!hasItems) {
@@ -322,7 +322,7 @@ export function StockOpnameCreatePage({ opnameId }: StockOpnameCreatePageProps) 
 
   const handleComplete = async () => {
     if (!warehouseId) {
-      toast.error("Please select a warehouse first");
+      toast.error("Please select a stall first");
       return;
     }
     if (!hasItems) {
@@ -414,7 +414,7 @@ export function StockOpnameCreatePage({ opnameId }: StockOpnameCreatePageProps) 
       <PurchasingFormHeader
         backHref={RM_ROUTES.inventoryOpname}
         title={isContinue ? "Continue Stock Opname" : "Create Stock Opname"}
-        description="Select a warehouse, enter physical quantities, then save as draft or complete the opname"
+        description="Select a stall, enter physical quantities, then save as draft or complete the opname"
         actions={
           hasItems ? (
             <>
@@ -470,14 +470,14 @@ export function StockOpnameCreatePage({ opnameId }: StockOpnameCreatePageProps) 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-12">
             <div className="min-w-0 space-y-1.5 md:col-span-4">
               <Label className="text-xs">
-                Warehouse <span className="text-red-500">*</span>
+                Stall <span className="text-red-500">*</span>
               </Label>
               <Combobox
                 value={warehouseId}
                 onChange={handleWarehouseChange}
                 options={warehouseOptions}
                 placeholder={
-                  warehousesQuery.isLoading ? "Loading warehouses..." : "Select warehouse"
+                  warehousesQuery.isLoading ? "Loading stalls..." : "Select stall"
                 }
                 disabled={warehousesQuery.isLoading || isBusy || isContinue}
                 className="w-full! h-9 border-gray-200/80 text-sm"
@@ -542,8 +542,8 @@ export function StockOpnameCreatePage({ opnameId }: StockOpnameCreatePageProps) 
                   {isPreviewLoading
                     ? "Loading raw materials..."
                     : hasItems
-                      ? "Enter physical quantities from the warehouse count"
-                      : "No active raw materials in this warehouse branch"}
+                      ? "Enter physical quantities from the stall count"
+                      : "No active raw materials in this stall branch"}
                 </p>
               </div>
               {hasItems && (
@@ -584,7 +584,7 @@ export function StockOpnameCreatePage({ opnameId }: StockOpnameCreatePageProps) 
                       <td colSpan={6} className="px-3 py-10 text-center text-gray-400">
                         {hasItems
                           ? "No items match your search"
-                          : "Select a warehouse to load raw materials"}
+                          : "Select a stall to load raw materials"}
                       </td>
                     </tr>
                   ) : (

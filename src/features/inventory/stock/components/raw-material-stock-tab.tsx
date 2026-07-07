@@ -114,7 +114,7 @@ export function RawMaterialStockTab() {
 
   const warehouseOptions = useMemo(
     () => [
-      { value: "all", label: "All Warehouses (Branch Total)" },
+      { value: "all", label: "All Stalls (Branch Total)" },
       ...warehouses.map((w) => ({
         value: w.id,
         label: w.name,
@@ -125,8 +125,8 @@ export function RawMaterialStockTab() {
   );
 
   const selectedWarehouseLabel = useMemo(() => {
-    if (warehouseFilter === "all") return "All Warehouses (Branch Total)";
-    return warehouses.find((w) => w.id === warehouseFilter)?.name || "Warehouse";
+    if (warehouseFilter === "all") return "All Stalls (Branch Total)";
+    return warehouses.find((w) => w.id === warehouseFilter)?.name || "Stall";
   }, [warehouseFilter, warehouses]);
 
   const listQuery = useRawMaterialStock({
@@ -229,9 +229,9 @@ export function RawMaterialStockTab() {
                 setWarehouseFilter(v || "all");
                 setPage(1);
               }}
-              placeholder={loadingWarehouses ? "Loading warehouses..." : "All Warehouses"}
-              searchPlaceholder="Search warehouse..."
-              emptyMessage={loadingWarehouses ? "Loading..." : "No warehouse found"}
+              placeholder={loadingWarehouses ? "Loading stalls..." : "All Stalls"}
+              searchPlaceholder="Search stall..."
+              emptyMessage={loadingWarehouses ? "Loading..." : "No stall found"}
               disabled={loadingWarehouses}
               className="h-10 w-full lg:w-52"
             />
@@ -240,11 +240,11 @@ export function RawMaterialStockTab() {
       >
         {warehouseFilter === "all" ? (
           <p className="border-b border-gray-200/70 px-5 py-2 text-xs text-gray-500">
-            Showing total stock across all warehouses in your branch (not per location).
+            Showing total stock across all stalls in your branch (not per location).
           </p>
         ) : (
           <p className="border-b border-gray-200/70 px-5 py-2 text-xs text-gray-500">
-            Showing stock per warehouse location:{" "}
+            Showing stock per stall location:{" "}
             <span className="font-medium text-gray-700">{selectedWarehouseLabel}</span>
           </p>
         )}

@@ -442,7 +442,7 @@ CREATE OR REPLACE VIEW "public"."v_supplier_price_history" AS
         END AS price_change_percent
    FROM supplier_price_lists spl
      LEFT JOIN suppliers s ON spl.supplier_id = s.id
-     LEFT JOIN bahan_baku bb ON spl.bahan_baku_id = bb.id
+     LEFT JOIN raw_materials bb ON spl.bahan_baku_id = bb.id
      LEFT JOIN units u ON spl.satuan_id = u.id
   WHERE spl.is_active = true
   ORDER BY spl.supplier_id, spl.bahan_baku_id, spl.berlaku_dari DESC;
@@ -500,7 +500,7 @@ CREATE OR REPLACE VIEW "public"."v_supplier_price_stats" AS
     max(spl.berlaku_dari) AS last_updated_date
    FROM supplier_price_lists spl
      LEFT JOIN suppliers s ON spl.supplier_id = s.id
-     LEFT JOIN bahan_baku bb ON spl.bahan_baku_id = bb.id
+     LEFT JOIN raw_materials bb ON spl.bahan_baku_id = bb.id
      LEFT JOIN LATERAL ( SELECT supplier_price_lists.harga
            FROM supplier_price_lists
           WHERE supplier_price_lists.supplier_id = spl.supplier_id AND supplier_price_lists.bahan_baku_id = spl.bahan_baku_id AND supplier_price_lists.is_active = true

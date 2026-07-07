@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Combobox } from "@/components/ui/combobox";
 import { formatAmount, formatDate } from "@/lib/purchasing/utils";
+import { STALL_LABELS } from "@/lib/configuration/stall-labels";
 import {
   CheckCircle2,
   Package,
@@ -20,6 +21,7 @@ import { PRODUCT_ROUTES } from "@/modules/purchasing/constants/item-routes";
 import { PurchasingListSection } from "@/modules/purchasing/components/list/PurchasingListSection";
 import { PurchasingTablePagination } from "@/modules/purchasing/components/pagination/PurchasingTablePagination";
 import { useProductStock } from "../queries";
+import { listStockWarehouses } from "../api";
 
 const STATUS_OPTIONS = [
   { value: "all", label: "All Statuses" },
@@ -35,8 +37,21 @@ export function ProductStockTab() {
   const [searchQuery, setSearchQuery] = useState("");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [stallFilter, setStallFilter] = useState("all");
+  const [warehouses, setWarehouses] = useState<
+    { id: string; name: string; code: string }[]
+  >([]);
+  const [loadingWarehouses, setLoadingWarehouses] = useState(true);
   const [page, setPage] = useState(1);
   const limit = 10;
+
+  useEffect(() => {
+    setLoadingWarehouses(true);
+    listStockWarehouses()
+      .then(setWarehouses)
+      .catch((e) => console.error("Error loading stalls:", e))
+      .finally(() => setLoadingWarehouses(false));
+  }, []);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
@@ -51,7 +66,20 @@ export function ProductStockTab() {
     limit,
     status: statusFilter,
     search: search || undefined,
+    warehouse_id: stallFilter !== "all" ? stallFilter : undefined,
   });
+
+  const stallOptions = useMemo(
+    () => [
+      { value: "all", label: STALL_LABELS.allBranchTotal },
+      ...warehouses.map((w) => ({
+        value: w.id,
+        label: w.name,
+        description: w.code,
+      })),
+    ],
+    [warehouses]
+  );
 
   const items = listQuery.data?.items ?? [];
   const loading = listQuery.isLoading;
@@ -68,10 +96,12 @@ export function ProductStockTab() {
     setSearchQuery("");
     setSearch("");
     setStatusFilter("all");
+    setStallFilter("all");
     setPage(1);
   };
 
-  const hasActiveFilters = Boolean(search) || statusFilter !== "all" || page > 1;
+  const hasActiveFilters =
+    Boolean(search) || statusFilter !== "all" || stallFilter !== "all" || page > 1;
 
   return (
     <div className="space-y-6">
@@ -101,9 +131,22 @@ export function ProductStockTab() {
       <PurchasingListSection
         icon={Package}
         title="Product Stock List"
-        description="Review product code, category, on-hand quantity, unit cost, selling price, stock value, and availability."
+        description="Review product code, stall, category, on-hand quantity, unit cost, selling price, stock value, and availability."
         toolbar={
           <div className="flex w-full flex-col gap-3 lg:flex-row lg:items-center">
+            <Combobox
+              options={stallOptions}
+              value={stallFilter}
+              onChange={(value) => {
+                setStallFilter(value || "all");
+                setPage(1);
+              }}
+              placeholder={loadingWarehouses ? STALL_LABELS.loading : STALL_LABELS.allBranchTotal}
+              searchPlaceholder={STALL_LABELS.search}
+              emptyMessage={STALL_LABELS.empty}
+              disabled={loadingWarehouses}
+              className="h-10 w-full lg:w-48"
+            />
             <label className="relative w-full lg:w-80">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
               <Input
@@ -151,6 +194,7 @@ export function ProductStockTab() {
               <tr>
                 <th className="px-4 py-3 text-left font-semibold">Code</th>
                 <th className="px-4 py-3 text-left font-semibold">Product Name</th>
+                <th className="px-4 py-3 text-left font-semibold">Stall</th>
                 <th className="px-4 py-3 text-left font-semibold">Category</th>
                 <th className="px-4 py-3 text-right font-semibold">On Hand</th>
                 <th className="px-4 py-3 text-left font-semibold">Unit</th>
@@ -164,13 +208,13 @@ export function ProductStockTab() {
             <tbody className="divide-y divide-gray-100">
               {loading ? (
                 <tr>
-                  <td colSpan={10} className="px-4 py-12 text-center text-gray-400">
+                  <td colSpan={11} className="px-4 py-12 text-center text-gray-400">
                     Loading product stock...
                   </td>
                 </tr>
               ) : items.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="px-4 py-16 text-center text-gray-400">
+                  <td colSpan={11} className="px-4 py-16 text-center text-gray-400">
                     <ShoppingBag className="mx-auto mb-3 h-12 w-12 opacity-30" />
                     <p>No product stock data found</p>
                     <p className="mt-1 text-xs text-gray-500">
@@ -198,6 +242,9 @@ export function ProductStockTab() {
                         ) : (
                           <span className="font-medium text-gray-900">{item.product_nama}</span>
                         )}
+                      </td>
+                      <td className="px-4 py-3 text-xs text-gray-600">
+                        {item.warehouse_name || item.warehouse_code || "—"}
                       </td>
                       <td className="px-4 py-3 text-xs text-gray-500">
                         {item.product_kategori || "—"}

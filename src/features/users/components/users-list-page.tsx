@@ -17,7 +17,7 @@ import { filterComboboxClassName } from "@/components/layout/form-field";
 import { useDepartmentList } from "@/features/master-data/departments";
 import { PurchasingListSection } from "@/modules/purchasing/components/list/PurchasingListSection";
 import { PurchasingTablePagination } from "@/modules/purchasing/components/pagination/PurchasingTablePagination";
-import { useResetUserPassword } from "../mutations";
+import { useAuth } from "@/hooks/use-auth";
 import { useUserDirectoryStats, useUserList } from "../queries";
 import {
   ADMIN_USER_ROLES,
@@ -25,6 +25,7 @@ import {
   ROLE_LABELS,
   STATUS_LABELS,
 } from "../constants";
+import { ResetPasswordDialog, type ResetPasswordTarget } from "./reset-password-dialog";
 import { UsersTable } from "./users-table";
 import type { UserEmployeeItem } from "@/lib/users/user-mapper";
 
@@ -32,7 +33,8 @@ export function UsersListPage({ showAppActions = false }: { showAppActions?: boo
   const router = useRouter();
   const pathname = usePathname();
   const { toasts, showToast, removeToast } = useToast();
-  const resetPasswordMutation = useResetUserPassword();
+  const { user } = useAuth();
+  const canResetPassword = user?.role === "super_admin" || user?.role === "admin";
 
   const [searchQuery, setSearchQuery] = useState("");
   const [search, setSearch] = useState("");
@@ -43,6 +45,8 @@ export function UsersListPage({ showAppActions = false }: { showAppActions?: boo
   const [roleFilter, setRoleFilter] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
   const [page, setPage] = useState(1);
+  const [resetTarget, setResetTarget] = useState<ResetPasswordTarget | null>(null);
+  const [resetDialogOpen, setResetDialogOpen] = useState(false);
 
   const perPage = 15;
 
@@ -81,37 +85,37 @@ export function UsersListPage({ showAppActions = false }: { showAppActions?: boo
 
   const departmentFilterOptions = useMemo(
     () => [
-      { value: "all", label: "Semua Departemen" },
+      { value: "all", label: "All Departments" },
       ...departments.map((d) => ({ value: d.id, label: d.name })),
     ],
     [departments]
   );
   const statusFilterOptions = useMemo(
     () => [
-      { value: "all", label: "Semua Status" },
+      { value: "all", label: "All Statuses" },
       ...Object.entries(STATUS_LABELS).map(([value, label]) => ({ value, label })),
     ],
     []
   );
   const activeFilterOptions = useMemo(
     () => [
-      { value: "all", label: "Semua" },
-      { value: "true", label: "Aktif" },
-      { value: "false", label: "Nonaktif" },
+      { value: "all", label: "All" },
+      { value: "true", label: "Active" },
+      { value: "false", label: "Inactive" },
     ],
     []
   );
   const accessFilterOptions = useMemo(
     () => [
-      { value: "all", label: "Semua Akses" },
-      { value: "true", label: "Punya Akses App" },
-      { value: "false", label: "Tanpa Akses App" },
+      { value: "all", label: "All Access" },
+      { value: "true", label: "With App Access" },
+      { value: "false", label: "Without App Access" },
     ],
     []
   );
   const roleFilterOptions = useMemo(
     () => [
-      { value: "all", label: "Semua Role" },
+      { value: "all", label: "All Roles" },
       ...ADMIN_USER_ROLES.map((role) => ({ value: role, label: ROLE_LABELS[role] })),
     ],
     []
@@ -140,19 +144,9 @@ export function UsersListPage({ showAppActions = false }: { showAppActions?: boo
     setPage(1);
   }
 
-  async function handleResetPassword(row: UserEmployeeItem) {
-    if (resetPasswordMutation.isPending) return;
-    try {
-      const res = await resetPasswordMutation.mutateAsync(row.id);
-      showToast(
-        res.tempPassword
-          ? `${res.message}. Password sementara: ${res.tempPassword}`
-          : res.message,
-        "success"
-      );
-    } catch (error) {
-      showToast(error instanceof Error ? error.message : "Gagal reset password", "error");
-    }
+  function handleResetPassword(row: UserEmployeeItem) {
+    setResetTarget({ id: row.id, fullName: row.fullName });
+    setResetDialogOpen(true);
   }
 
   return (
@@ -161,15 +155,15 @@ export function UsersListPage({ showAppActions = false }: { showAppActions?: boo
 
       <div className="flex flex-col items-start justify-between gap-4 border-b border-gray-200/70 pb-4 sm:flex-row sm:items-center">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Karyawan & User</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Employees & Users</h1>
           <p className="text-sm text-gray-500">
-            Direktori karyawan HRIS dengan pengaturan akses aplikasi — {total} total
+            HRIS employee directory with app access settings — {total} total
           </p>
         </div>
         <Link href={EMPLOYEES_ROUTES.insert}>
           <Button className="h-10 w-full gap-2 rounded-lg bg-pink-600 px-3 text-sm font-semibold text-white shadow-sm hover:bg-pink-700 sm:w-auto">
             <PlusIcon className="h-4 w-4" />
-            Tambah Karyawan
+            Add Employee
           </Button>
         </Link>
       </div>
@@ -177,7 +171,7 @@ export function UsersListPage({ showAppActions = false }: { showAppActions?: boo
       <div className="border-b border-gray-200/70">
         <nav className="-mb-px flex space-x-6 overflow-x-auto">
           {[
-            { href: EMPLOYEES_ROUTES.list, label: "Semua Karyawan" },
+            { href: EMPLOYEES_ROUTES.list, label: "All Employees" },
             { href: "/dashboard/hris/schedules", label: "Schedules" },
             { href: "/dashboard/hris/sections", label: "Sections" },
           ].map((tab) => (
@@ -199,10 +193,10 @@ export function UsersListPage({ showAppActions = false }: { showAppActions?: boo
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {[
-          { label: "Total Karyawan", value: stats.total, icon: UserGroupIcon },
-          { label: "Aktif", value: stats.active, icon: UserGroupIcon },
-          { label: "Akses App", value: stats.withAccess, icon: UserGroupIcon },
-          { label: "Departemen", value: departments.length, icon: BuildingOfficeIcon },
+          { label: "Total Employees", value: stats.total, icon: UserGroupIcon },
+          { label: "Active", value: stats.active, icon: UserGroupIcon },
+          { label: "App Access", value: stats.withAccess, icon: UserGroupIcon },
+          { label: "Departments", value: departments.length, icon: BuildingOfficeIcon },
         ].map((item) => (
           <div
             key={item.label}
@@ -219,14 +213,14 @@ export function UsersListPage({ showAppActions = false }: { showAppActions?: boo
 
       <PurchasingListSection
         icon={Users}
-        title="Daftar Karyawan"
-        description="Pantau data karyawan, status kepegawaian, dan akses aplikasi."
+        title="Employee List"
+        description="Track employee records, employment status, and app access."
         toolbar={
           <div className="flex w-full flex-col gap-3 sm:w-auto md:flex-row md:items-center">
             <label className="relative w-full md:w-80">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
               <Input
-                placeholder="Cari nama, NIP, email..."
+                placeholder="Search name, employee ID, email..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="h-10 bg-white pl-10 pr-10 text-sm focus:border-pink-400 focus:ring-2 focus:ring-pink-100"
@@ -236,7 +230,7 @@ export function UsersListPage({ showAppActions = false }: { showAppActions?: boo
                   type="button"
                   onClick={() => setSearchQuery("")}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 transition-colors hover:text-gray-700"
-                  aria-label="Hapus pencarian"
+                  aria-label="Clear search"
                 >
                   <X className="h-4 w-4" />
                 </button>
@@ -279,15 +273,15 @@ export function UsersListPage({ showAppActions = false }: { showAppActions?: boo
             <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
               <div className="space-y-1.5">
                 <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                  Departemen
+                  Department
                 </p>
                 <Combobox
                   options={departmentFilterOptions}
                   value={departmentFilter}
                   onChange={setDepartmentFilter}
-                  placeholder="Departemen"
-                  searchPlaceholder="Cari departemen..."
-                  emptyMessage="Departemen tidak ditemukan"
+                  placeholder="Department"
+                  searchPlaceholder="Search department..."
+                  emptyMessage="No department found"
                   className={filterComboboxClassName}
                 />
               </div>
@@ -298,36 +292,36 @@ export function UsersListPage({ showAppActions = false }: { showAppActions?: boo
                   value={statusFilter}
                   onChange={setStatusFilter}
                   placeholder="Status"
-                  searchPlaceholder="Cari status..."
-                  emptyMessage="Status tidak ditemukan"
+                  searchPlaceholder="Search status..."
+                  emptyMessage="No status found"
                   className={filterComboboxClassName}
                 />
               </div>
               <div className="space-y-1.5">
                 <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                  Keaktifan
+                  Activity
                 </p>
                 <Combobox
                   options={activeFilterOptions}
                   value={activeFilter}
                   onChange={setActiveFilter}
-                  placeholder="Aktif"
-                  searchPlaceholder="Cari..."
-                  emptyMessage="Tidak ditemukan"
+                  placeholder="Active"
+                  searchPlaceholder="Search..."
+                  emptyMessage="Not found"
                   className={filterComboboxClassName}
                 />
               </div>
               <div className="space-y-1.5">
                 <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                  Akses App
+                  App Access
                 </p>
                 <Combobox
                   options={accessFilterOptions}
                   value={accessFilter}
                   onChange={setAccessFilter}
-                  placeholder="Akses App"
-                  searchPlaceholder="Cari..."
-                  emptyMessage="Tidak ditemukan"
+                  placeholder="App Access"
+                  searchPlaceholder="Search..."
+                  emptyMessage="Not found"
                   className={filterComboboxClassName}
                 />
               </div>
@@ -339,8 +333,8 @@ export function UsersListPage({ showAppActions = false }: { showAppActions?: boo
                     value={roleFilter || "all"}
                     onChange={(value) => setRoleFilter(value === "all" ? "" : value)}
                     placeholder="Role"
-                    searchPlaceholder="Cari role..."
-                    emptyMessage="Role tidak ditemukan"
+                    searchPlaceholder="Search role..."
+                    emptyMessage="No role found"
                     className={filterComboboxClassName}
                   />
                 </div>
@@ -352,21 +346,21 @@ export function UsersListPage({ showAppActions = false }: { showAppActions?: boo
         {isLoading ? (
           <div className="py-14 text-center">
             <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-gray-200 border-t-pink-500" />
-            <p className="mt-2 text-sm text-gray-500">Memuat data karyawan...</p>
+            <p className="mt-2 text-sm text-gray-500">Loading employees...</p>
           </div>
         ) : isError ? (
-          <p className="py-14 text-center text-sm text-gray-500">Gagal memuat data karyawan</p>
+          <p className="py-14 text-center text-sm text-gray-500">Failed to load employees</p>
         ) : rows.length === 0 ? (
           <div className="py-14 text-center">
             <Users className="mx-auto mb-4 h-12 w-12 text-gray-300" />
-            <p className="text-gray-500">Tidak ada karyawan ditemukan</p>
+            <p className="text-gray-500">No employees found</p>
             <Link href={EMPLOYEES_ROUTES.insert}>
               <Button
                 variant="outline"
                 className="mt-4 h-10 gap-2 rounded-lg border-pink-200 bg-white px-3 text-sm font-medium text-pink-700 shadow-sm hover:border-pink-200 hover:bg-pink-50 hover:text-pink-700"
               >
                 <PlusIcon className="h-4 w-4" />
-                Tambah Karyawan Pertama
+                Add First Employee
               </Button>
             </Link>
           </div>
@@ -377,7 +371,7 @@ export function UsersListPage({ showAppActions = false }: { showAppActions?: boo
                 rows={rows}
                 onView={(id) => router.push(EMPLOYEES_ROUTES.detail(id))}
                 onEdit={(id) => router.push(EMPLOYEES_ROUTES.edit(id))}
-                onResetPassword={showAppActions ? handleResetPassword : undefined}
+                onResetPassword={showAppActions && canResetPassword ? handleResetPassword : undefined}
                 showAppActions={showAppActions}
               />
             </div>
@@ -391,6 +385,16 @@ export function UsersListPage({ showAppActions = false }: { showAppActions?: boo
           </>
         )}
       </PurchasingListSection>
+
+      <ResetPasswordDialog
+        target={resetTarget}
+        open={resetDialogOpen}
+        onOpenChange={(open) => {
+          setResetDialogOpen(open);
+          if (!open) setResetTarget(null);
+        }}
+        onError={(message) => showToast(message, "error")}
+      />
     </div>
   );
 }
