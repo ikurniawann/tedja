@@ -22,13 +22,6 @@ const KATEGORI_LABELS: Record<string, string> = {
   LAINNYA: "Lainnya",
 };
 
-const STORAGE_LABELS: Record<string, string> = {
-  SUHU_RUANG: "Suhu Ruang",
-  DINGIN: "Dingin (Chiller)",
-  BEKU: "Beku (Freezer)",
-  KHUSUS: "Kondisi Khusus",
-};
-
 interface Unit { id: string; kode: string; nama: string; }
 
 export default function RawMaterialsEditPage({ params }: { params: { id: string } }) {
@@ -42,7 +35,7 @@ export default function RawMaterialsEditPage({ params }: { params: { id: string 
   const [form, setForm] = useState({
     kode: "", nama: "", kategori: "", coa: "", deskripsi: "",
     satuan_besar_id: "", satuan_kecil_id: "", konversi_factor: "1",
-    stok_minimum: "0", stok_maximum: "0", shelf_life_days: "", storage_condition: "",
+    stok_minimum: "0", stok_maximum: "0", shelf_life_days: "",
   });
 
   useEffect(() => {
@@ -71,7 +64,6 @@ export default function RawMaterialsEditPage({ params }: { params: { id: string 
           stok_minimum: String(m.stok_minimum ?? m.minimum_stock ?? 0),
           stok_maximum: String(m.stok_maksimum ?? m.stok_maximum ?? m.maximum_stock ?? 0),
           shelf_life_days: String(m.shelf_life_days ?? ""),
-          storage_condition: m.storage_condition || "",
         });
       } catch {
         setNotFound(true);
@@ -100,7 +92,6 @@ export default function RawMaterialsEditPage({ params }: { params: { id: string 
     if (form.deskripsi) payload.deskripsi = form.deskripsi;
     if (form.satuan_kecil_id) payload.satuan_kecil_id = form.satuan_kecil_id;
     if (form.shelf_life_days) payload.shelf_life_days = parseInt(form.shelf_life_days);
-    if (form.storage_condition) payload.storage_condition = form.storage_condition;
     payload.coa = form.coa || null;
 
     try {
@@ -237,15 +228,6 @@ export default function RawMaterialsEditPage({ params }: { params: { id: string 
                 <div className="space-y-1.5">
                   <Label>Shelf Life (hari)</Label>
                   <Input type="number" min="0" placeholder="—" value={form.shelf_life_days} onChange={e => set("shelf_life_days", e.target.value)} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Kondisi Penyimpanan</Label>
-                  <Select value={form.storage_condition} onValueChange={v => set("storage_condition", v)}>
-                    <SelectTrigger><SelectValue placeholder="Pilih kondisi" /></SelectTrigger>
-                    <SelectContent>
-                      {Object.entries(STORAGE_LABELS).map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
                 </div>
               </CardContent>
             </Card>

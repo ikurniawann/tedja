@@ -63,6 +63,13 @@ export type EmployeeUserRow = {
       approval_limit: number | null;
       is_active: boolean;
     }>;
+    user_warehouses?: Array<{
+      id: string;
+      warehouse_id: string;
+      name: string;
+      code: string;
+      branch_id: string;
+    }>;
   } | null;
 };
 
@@ -123,6 +130,12 @@ export function mapEmployeeUserRow(row: EmployeeUserRow) {
           branchName: row.app_user.branch?.name ?? null,
           lastSignInAt: row.app_user.last_sign_in_at ?? null,
           approvalPermissions: row.app_user.user_approval_permissions ?? [],
+          warehouses: (row.app_user.user_warehouses ?? []).map((warehouse) => ({
+            id: warehouse.warehouse_id,
+            name: warehouse.name,
+            code: warehouse.code,
+            branchId: warehouse.branch_id,
+          })),
         }
       : null,
   };

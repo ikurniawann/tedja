@@ -154,7 +154,7 @@ type CreateGrnPageProps = {
 
 const GUIDELINES = [
   "Select a delivery that has not been received yet.",
-  "Destination warehouse and receipt date are required.",
+  "Destination stall and receipt date are required.",
   "Accepted quantity cannot exceed the remaining purchase order quantity.",
   "Any shortfall is automatically moved to the reject column.",
 ];
@@ -387,7 +387,7 @@ export function CreateGrnPage({ moduleType = "raw_material" }: CreateGrnPageProp
       })
       .catch((error) => {
         console.error("Error fetching warehouses:", error);
-        toast.error("Failed to load warehouses.");
+        toast.error("Failed to load stalls.");
       })
       .finally(() => setFetchingWarehouses(false));
   }, [selectedDelivery, userScope, warehouseBranchId, contextBranchResolved]);
@@ -429,7 +429,7 @@ export function CreateGrnPage({ moduleType = "raw_material" }: CreateGrnPageProp
     }
 
     if (!formData.warehouse_id) {
-      toast.error("Please select a destination warehouse.");
+      toast.error("Please select a destination stall.");
       return;
     }
 
@@ -565,7 +565,7 @@ export function CreateGrnPage({ moduleType = "raw_material" }: CreateGrnPageProp
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                   <div className="min-w-0 space-y-1.5">
                     <Label className="text-xs">
-                      Destination Warehouse <span className="text-red-500">*</span>
+                      Destination Stall <span className="text-red-500">*</span>
                     </Label>
                     <Combobox
                       options={warehouses.map((warehouse) => ({
@@ -577,9 +577,9 @@ export function CreateGrnPage({ moduleType = "raw_material" }: CreateGrnPageProp
                       onChange={(value) =>
                         setFormData((prev) => ({ ...prev, warehouse_id: value }))
                       }
-                      placeholder={fetchingWarehouses ? "Loading warehouses..." : "Select destination warehouse"}
-                      searchPlaceholder="Search warehouse..."
-                      emptyMessage={fetchingWarehouses ? "Loading..." : "No warehouse found"}
+                      placeholder={fetchingWarehouses ? "Loading stalls..." : "Select destination stall"}
+                      searchPlaceholder="Search stall..."
+                      emptyMessage={fetchingWarehouses ? "Loading..." : "No stall found"}
                       allowClear
                       disabled={!selectedDelivery || fetchingWarehouses}
                       className="w-full! h-9 text-sm"

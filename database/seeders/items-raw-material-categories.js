@@ -13,6 +13,7 @@ const fs = require("fs");
 const path = require("path");
 const { Client } = require("pg");
 const { sslForUrl, assertLocalTarget } = require("../scripts/pg-utils");
+const { resolveSeedBusinessScope } = require("../scripts/items-business-scope");
 
 const ROOT = path.join(__dirname, "..", "..");
 
@@ -56,18 +57,17 @@ const CATEGORIES = [
   { code: "LAIN", nama: "Lainnya", deskripsi: "Kategori umum yang tidak termasuk grup di atas" },
 ];
 
-// Seed sebagai template global (company_id NULL) — berlaku untuk semua company.
-async function upsertCategory(c, { code, nama, deskripsi }) {
+async function upsertCategory(c, companyId, { code, nama, deskripsi }) {
   await c.query(
     `INSERT INTO item.raw_material_categories (code, nama, deskripsi, company_id, is_active)
-     VALUES ($1, $2, $3, NULL, true)
-     ON CONFLICT (code) WHERE company_id IS NULL AND deleted_at IS NULL DO UPDATE
+     VALUES ($1, $2, $3, $4, true)
+     ON CONFLICT (company_id, code) WHERE company_id IS NOT NULL AND deleted_at IS NULL DO UPDATE
        SET nama = EXCLUDED.nama,
            deskripsi = EXCLUDED.deskripsi,
            is_active = true,
            deleted_at = NULL,
            updated_at = NOW()`,
-    [code, nama, deskripsi]
+    [code, nama, deskripsi, companyId]
   );
 }
 
@@ -91,9 +91,10 @@ async function main() {
   try {
     await c.query("BEGIN");
 
-    console.log("Seeding item.raw_material_categories (restoran)...");
+    const scope = await resolveSeedBusinessScope(c);
+    console.log(`Seeding item.raw_material_categories (${scope.company_name})...`);
     for (const category of CATEGORIES) {
-      await upsertCategory(c, category);
+      await upsertCategory(c, scope.company_id, category);
       console.log(`  ✓ ${category.code} — ${category.nama}`);
     }
 

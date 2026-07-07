@@ -667,7 +667,7 @@ export function QCInspectionPage({
               <CardContent className="space-y-2 p-4 text-sm text-gray-600">
                 <p className="font-medium text-gray-900">Before you submit</p>
                 <ul className="list-disc space-y-1 pl-5 text-xs leading-5">
-                  <li>Accepted quantity will be posted to warehouse stock.</li>
+                  <li>Accepted quantity will be posted to stall stock.</li>
                   <li>Rejected quantity will not enter available inventory.</li>
                   <li>Inspection results are linked to this goods receipt permanently.</li>
                 </ul>

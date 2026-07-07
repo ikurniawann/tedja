@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { createServerPgClient } from "@/lib/pg/create-client";
 import { ApiError, requireApiRole } from "@/lib/api/auth";
-import { getApiUserScope } from "@/lib/api/scope";
+import { getApiUserScope, validateProductWarehouseScope } from "@/lib/api/scope";
 import { query, queryOne } from "@/lib/db";
 import {
   buildOpnameScopeFilter,
@@ -20,9 +20,11 @@ const listSchema = z.object({
   status: z.string().optional(),
   search: z.string().optional(),
   reason: z.enum(["stock_opname", "manual_adjustment"]).optional(),
+  warehouse_id: z.string().uuid().optional(),
 });
 
 const createSchema = z.object({
+  warehouse_id: z.string().uuid("Stall wajib dipilih"),
   opname_date: z.string().optional(),
   notes: z.string().optional(),
   reason: z.enum(["stock_opname", "manual_adjustment"]).default("stock_opname"),
@@ -55,6 +57,10 @@ export async function GET(request: NextRequest) {
       );
       values.push(`%${params.search}%`);
       idx++;
+    }
+    if (params.warehouse_id) {
+      conditions.push(`pso.warehouse_id = $${idx++}`);
+      values.push(params.warehouse_id);
     }
 
     const scopeFilter = buildOpnameScopeFilter(scope, "pso", idx);
@@ -91,12 +97,18 @@ export async function GET(request: NextRequest) {
       updated_at: string;
       branch_name: string | null;
       branch_code: string | null;
+      warehouse_id: string | null;
+      warehouse_name: string | null;
+      warehouse_code: string | null;
     }>(
       `SELECT pso.*,
               b.name AS branch_name,
-              b.code AS branch_code
+              b.code AS branch_code,
+              wh.name AS warehouse_name,
+              wh.code AS warehouse_code
        FROM inventory.product_stock_opnames pso
        LEFT JOIN configuration.branches b ON b.id = pso.branch_id
+       LEFT JOIN configuration.warehouses wh ON wh.id = pso.warehouse_id
        WHERE ${where}
        ORDER BY pso.opname_date DESC, pso.created_at DESC
        LIMIT $${idx++} OFFSET $${idx++}`,
@@ -123,6 +135,13 @@ export async function GET(request: NextRequest) {
             id: row.branch_id,
             name: row.branch_name || "—",
             code: row.branch_code || "",
+          }
+        : null,
+      warehouse: row.warehouse_id
+        ? {
+            id: row.warehouse_id,
+            name: row.warehouse_name || "—",
+            code: row.warehouse_code || "",
           }
         : null,
       lines: [],
@@ -161,10 +180,18 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const validated = createSchema.parse(body);
 
-    const rows = await listProductInventoryForOpname(scope);
+    const warehouseScope = await validateProductWarehouseScope(
+      validated.warehouse_id,
+      scope
+    );
+    if ("error" in warehouseScope) {
+      return Response.json({ success: false, message: warehouseScope.error }, { status: 400 });
+    }
+
+    const rows = await listProductInventoryForOpname(scope, validated.warehouse_id);
     if (rows.length === 0) {
       return Response.json(
-        { success: false, message: "Tidak ada produk aktif dalam scope ini" },
+        { success: false, message: "No active products found for this stall" },
         { status: 400 }
       );
     }
@@ -175,8 +202,9 @@ export async function POST(request: NextRequest) {
     const { data: header, error: headerError } = await db
       .from("product_stock_opnames")
       .insert({
-        company_id: companyId,
-        branch_id: branchId,
+        company_id: companyId ?? warehouseScope.company_id,
+        branch_id: branchId ?? warehouseScope.branch_id,
+        warehouse_id: validated.warehouse_id,
         opname_date: validated.opname_date || new Date().toISOString().slice(0, 10),
         status: "draft",
         reason: validated.reason,

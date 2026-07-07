@@ -90,3 +90,23 @@ export async function getProductBomEditorData(
     materials: materialsData.data,
   };
 }
+
+export interface ProductWarehouseOption {
+  id: string;
+  name: string;
+  code: string;
+  is_default?: boolean;
+}
+
+export async function listProductWarehouses(): Promise<ProductWarehouseOption[]> {
+  const res = await fetch("/api/purchasing/warehouses");
+  const json = (await res.json()) as {
+    success?: boolean;
+    data?: ProductWarehouseOption[];
+    message?: string;
+  };
+  if (!res.ok) {
+    throw new Error(json.message || "Failed to load stalls");
+  }
+  return json.data ?? [];
+}

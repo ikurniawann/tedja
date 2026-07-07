@@ -25,11 +25,11 @@ export const usePurchaseOrder = (id: string) =>
     enabled: !!id,
   });
 
-export const usePurchaseOrderPayments = (id: string) =>
+export const usePurchaseOrderPayments = (id: string, enabled = true) =>
   useQuery({
     queryKey: poQueryKeys.payments(id),
     queryFn: () => getPurchaseOrderPaymentTerms(id),
-    enabled: !!id,
+    enabled: !!id && enabled,
   });
 
 export const usePOFormData = () =>

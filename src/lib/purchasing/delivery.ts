@@ -263,31 +263,27 @@ export async function updateGRNStatusFromQC(
   db: DbClient,
   grnId: string
 ): Promise<{ newStatus: GRNStatus; isComplete: boolean }> {
-  // Get all QC inspections for this GRN
-  const { data: qcItems } = await db
-    .from("qc_inspections")
-    .select("jumlah_diterima, jumlah_ditolak, hasil")
-    .eq("goods_receipt_id", grnId)
-    .eq("is_active", true);
+  const { data: qc } = await db
+    .from("grn_qc_inspections")
+    .select("id, status, inventory_posted")
+    .eq("grn_id", grnId)
+    .maybeSingle();
 
-  if (!qcItems || qcItems.length === 0) {
+  if (!qc) {
     return { newStatus: "pending", isComplete: false };
   }
 
-  const allCompleted = qcItems.every((q) => q.hasil !== "pending");
-  const anyRejected = qcItems.some((q) => q.hasil === "rejected" || q.jumlah_ditolak > 0);
+  const statusMap: Record<string, GRNStatus> = {
+    approved: "completed",
+    partial: "partial",
+    rejected: "rejected",
+  };
+  const newStatus = statusMap[qc.status as string] || "partial";
+  const isComplete = Boolean(qc.inventory_posted);
 
-  let newStatus: GRNStatus = "pending";
-  if (allCompleted) {
-    newStatus = anyRejected ? "partial" : "completed";
-  } else {
-    newStatus = "partial";
+  if (newStatus !== "pending") {
+    await db.from("grn").update({ status: newStatus === "completed" ? "received" : newStatus }).eq("id", grnId);
   }
 
-  await db
-    .from("goods_receipts")
-    .update({ status: newStatus })
-    .eq("id", grnId);
-
-  return { newStatus, isComplete: allCompleted && !anyRejected };
+  return { newStatus, isComplete };
 }

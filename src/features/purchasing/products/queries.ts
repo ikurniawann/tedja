@@ -8,6 +8,7 @@ import {
   getProductFormData,
   getProductEditData,
   getProductBomEditorData,
+  listProductWarehouses,
 } from "./api";
 import { listActiveItemsLookup } from "@/features/purchasing/items/api";
 import { productsQueryKeys, type ProductListParams } from "./query-keys";
@@ -57,5 +58,12 @@ export const useProductCategoryOptions = () =>
   useQuery({
     queryKey: productsQueryKeys.categories(),
     queryFn: () => listActiveItemsLookup("product-categories"),
+    staleTime: 5 * 60 * 1000,
+  });
+
+export const useProductWarehouses = () =>
+  useQuery({
+    queryKey: productsQueryKeys.warehouses(),
+    queryFn: listProductWarehouses,
     staleTime: 5 * 60 * 1000,
   });

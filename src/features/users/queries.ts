@@ -11,6 +11,7 @@ import {
   fetchUserDirectoryStats,
   fetchUserFormLookups,
   fetchUserList,
+  fetchBranchStalls,
 } from "./api";
 import { usersQueryKeys } from "./query-keys";
 import type { UserListParams } from "./types";
@@ -38,6 +39,13 @@ export const useUserFormLookups = () =>
   useQuery({
     queryKey: usersQueryKeys.formLookups(),
     queryFn: fetchUserFormLookups,
+  });
+
+export const useBranchStalls = (branchId: string | null) =>
+  useQuery({
+    queryKey: usersQueryKeys.branchStalls(branchId ?? ""),
+    queryFn: () => fetchBranchStalls(branchId!),
+    enabled: !!branchId,
   });
 
 export const useHRISEmployeeDetail = (id: string) =>

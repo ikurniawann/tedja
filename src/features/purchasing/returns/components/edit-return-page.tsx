@@ -300,7 +300,7 @@ export function EditReturnPage({
       <PurchasingFormHeader
         backHref={config.detailRoute(returnId)}
         title={`Edit ${existingReturn.return_number}`}
-        description="Update return details before approval. Stock is deducted from the receipt warehouse on approval."
+        description="Update return details before approval. Stock is deducted from the receipt stall on approval."
       />
 
       <form id="purchase-return-edit-form" onSubmit={handleSubmit} className="space-y-6">
@@ -425,7 +425,7 @@ export function EditReturnPage({
                           <th className="px-4 py-3 text-left font-semibold">
                             {config.isProduct ? "Product" : "Raw Material"}
                           </th>
-                          <th className="w-[100px] px-2 py-3 text-center font-semibold">Warehouse</th>
+                          <th className="w-[100px] px-2 py-3 text-center font-semibold">Stall</th>
                           <th className="w-[88px] px-2 py-3 text-center font-semibold">Available</th>
                           <th className="w-[112px] px-2 py-3 text-center font-semibold">Return Qty</th>
                           <th className="min-w-[140px] px-3 py-3 text-left font-semibold">
@@ -523,7 +523,7 @@ export function EditReturnPage({
                   <div className="flex items-start gap-2">
                     <RotateCcw className="mt-0.5 h-4 w-4 shrink-0" />
                     <p>
-                      On approval, stock will be reduced from the same warehouse where goods were
+                      On approval, stock will be reduced from the same stall where goods were
                       received during GRN QC posting.
                     </p>
                   </div>

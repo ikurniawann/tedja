@@ -3,6 +3,7 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { requireApiUser, ApiError, successResponse } from "@/lib/api/auth";
 import { getApiUserScope, isRowInBusinessScope } from "@/lib/api/scope";
+import { MANUFACTURING_SCHEMA } from "@/lib/manufacturing/constants";
 
 type StockRow = {
   id: string;
@@ -69,7 +70,7 @@ export async function GET(
     }
 
     const { data: bomItems, error: bomError } = await db
-      .from("bom_items")
+      .from("bom_items", MANUFACTURING_SCHEMA)
       .select(`
         *,
         raw_material:raw_materials!raw_material_id(id, kode, nama, material_type, source_product_id),

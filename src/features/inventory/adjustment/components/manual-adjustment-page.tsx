@@ -113,7 +113,7 @@ export function ManualAdjustmentPage() {
 
   const validateInputs = () => {
     if (!warehouseId) {
-      toast.error("Please select a warehouse first");
+      toast.error("Please select a stall first");
       return false;
     }
 
@@ -215,7 +215,7 @@ export function ManualAdjustmentPage() {
       <PurchasingFormHeader
         backHref={RM_ROUTES.inventoryStock}
         title="Stock Adjustment"
-        description="Manually correct raw material stock per warehouse"
+        description="Manually correct raw material stock per stall"
         actions={
           hasItems ? (
             <>
@@ -249,14 +249,14 @@ export function ManualAdjustmentPage() {
           <div className="grid grid-cols-1 gap-4 md:grid-cols-12">
             <div className="min-w-0 space-y-1.5 md:col-span-4">
               <Label className="text-xs">
-                Warehouse <span className="text-red-500">*</span>
+                Stall <span className="text-red-500">*</span>
               </Label>
               <Combobox
                 value={warehouseId}
                 onChange={handleWarehouseChange}
                 options={warehouseOptions}
                 placeholder={
-                  warehousesQuery.isLoading ? "Loading warehouses..." : "Select warehouse"
+                  warehousesQuery.isLoading ? "Loading stalls..." : "Select stall"
                 }
                 disabled={warehousesQuery.isLoading || submitting}
                 className="w-full! h-9 border-gray-200/80 text-sm"
@@ -315,14 +315,14 @@ export function ManualAdjustmentPage() {
               <h2 className="text-base font-semibold text-gray-900">Stock Correction</h2>
               <p className="text-sm text-gray-500">
                 {!warehouseId
-                  ? "Select a warehouse to load raw materials"
+                  ? "Select a stall to load raw materials"
                   : loading
                     ? "Loading raw materials..."
                     : hasItems
                       ? `Enter new stock${
                           selectedWarehouse ? ` — ${selectedWarehouse.label}` : ""
                         }`
-                      : "No active raw materials in this warehouse"}
+                      : "No active raw materials in this stall"}
               </p>
             </div>
             {hasItems && (
@@ -355,7 +355,7 @@ export function ManualAdjustmentPage() {
                 {!warehouseId ? (
                   <tr>
                     <td colSpan={6} className="px-3 py-10 text-center text-gray-400">
-                      Please select a warehouse first
+                      Please select a stall first
                     </td>
                   </tr>
                 ) : loading ? (

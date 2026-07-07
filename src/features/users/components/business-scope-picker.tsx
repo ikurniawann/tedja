@@ -17,6 +17,7 @@ interface BusinessScopePickerProps {
     "business_scope" | "holding_id" | "company_id" | "branch_id" | "role"
   >;
   tree: BusinessTree;
+  isEdit?: boolean;
   onChange: (patch: Partial<UserEmployeeFormValues>) => void;
 }
 
@@ -26,8 +27,15 @@ const SCOPE_OPTIONS = [
   { value: "branch", label: BUSINESS_SCOPE_LABELS.branch },
 ];
 
-export function BusinessScopePicker({ form, tree, onChange }: BusinessScopePickerProps) {
+export function BusinessScopePicker({
+  form,
+  tree,
+  isEdit = false,
+  onChange,
+}: BusinessScopePickerProps) {
   const isSuperAdmin = form.role === "super_admin";
+  const scope = form.business_scope as BusinessScopeLevel | "";
+  const showScopePickers = !isSuperAdmin || isEdit;
 
   const holdings = tree.holdings;
   const companies =
@@ -49,12 +57,13 @@ export function BusinessScopePicker({ form, tree, onChange }: BusinessScopePicke
   );
 
   function handleScopeChange(value: string) {
-    const scope = value as BusinessScopeLevel;
+    const nextScope = value as BusinessScopeLevel;
     onChange({
-      business_scope: scope,
+      business_scope: nextScope,
       holding_id: "",
       company_id: "",
       branch_id: "",
+      warehouse_ids: [],
     });
   }
 
@@ -63,6 +72,7 @@ export function BusinessScopePicker({ form, tree, onChange }: BusinessScopePicke
       holding_id: value,
       company_id: "",
       branch_id: "",
+      warehouse_ids: [],
     });
   }
 
@@ -70,90 +80,109 @@ export function BusinessScopePicker({ form, tree, onChange }: BusinessScopePicke
     onChange({
       company_id: value,
       branch_id: "",
+      warehouse_ids: [],
     });
   }
 
-  if (isSuperAdmin) {
+  if (isSuperAdmin && !showScopePickers) {
     return (
       <div className="rounded-lg border border-gray-200/70 bg-gray-50/50 p-4">
-        <p className="text-sm font-medium text-gray-900">Scope Akses Data</p>
+        <p className="text-sm font-medium text-gray-900">Data Access Scope</p>
         <p className="mt-1 text-xs text-gray-500">
-          Super Admin memiliki akses penuh ke seluruh holding, company, dan branch.
+          Super Admin has full access across all holdings, companies, and branches.
+          Change the role first if you want to limit data scope.
         </p>
       </div>
     );
   }
 
-  const scope = form.business_scope as BusinessScopeLevel | "";
-
-  return (
-    <div className="space-y-4 rounded-lg border border-gray-200/70 bg-gray-50/50 p-4">
-      <div>
-        <FormFieldLabel required>Scope Akses Data</FormFieldLabel>
-        <Combobox
-          options={SCOPE_OPTIONS}
-          value={scope || ""}
-          onChange={handleScopeChange}
-          placeholder="Pilih scope"
-          searchPlaceholder="Cari scope..."
-          emptyMessage="Scope tidak ditemukan"
-          className={formComboboxClassName}
-        />
-        {scope ? (
-          <p className="mt-1.5 text-xs text-gray-500">
-            {BUSINESS_SCOPE_DESCRIPTIONS[scope]}
+  if (isSuperAdmin && showScopePickers) {
+    return (
+      <div className="space-y-4">
+        <div className="rounded-lg border border-amber-200/80 bg-amber-50/60 p-4">
+          <p className="text-sm font-medium text-amber-900">Data Access Scope</p>
+          <p className="mt-1 text-xs text-amber-800">
+            Current role is Super Admin. Scope below is only saved when the role is
+            changed to something other than Super Admin.
           </p>
-        ) : null}
+        </div>
+        {renderScopeFields()}
       </div>
+    );
+  }
 
-      {scope ? (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          <div>
-            <FormFieldLabel required>Holding</FormFieldLabel>
-            <Combobox
-              options={holdingOptions}
-              value={form.holding_id || ""}
-              onChange={handleHoldingChange}
-              placeholder="Pilih holding"
-              searchPlaceholder="Cari holding..."
-              emptyMessage="Holding tidak ditemukan"
-              className={formComboboxClassName}
-            />
-          </div>
+  return renderScopeFields();
 
-          {scope === "company" || scope === "branch" ? (
-            <div>
-              <FormFieldLabel required>Company</FormFieldLabel>
-              <Combobox
-                options={companyOptions}
-                value={form.company_id || ""}
-                onChange={handleCompanyChange}
-                placeholder="Pilih company"
-                searchPlaceholder="Cari company..."
-                emptyMessage="Company tidak ditemukan"
-                disabled={!form.holding_id}
-                className={formComboboxClassName}
-              />
-            </div>
-          ) : null}
-
-          {scope === "branch" ? (
-            <div>
-              <FormFieldLabel required>Branch</FormFieldLabel>
-              <Combobox
-                options={branchOptions}
-                value={form.branch_id || ""}
-                onChange={(value) => onChange({ branch_id: value })}
-                placeholder="Pilih branch"
-                searchPlaceholder="Cari branch..."
-                emptyMessage="Branch tidak ditemukan"
-                disabled={!form.company_id}
-                className={formComboboxClassName}
-              />
-            </div>
+  function renderScopeFields() {
+    return (
+      <div className="space-y-4 rounded-lg border border-gray-200/70 bg-gray-50/50 p-4">
+        <div>
+          <FormFieldLabel required>Data Access Scope</FormFieldLabel>
+          <Combobox
+            options={SCOPE_OPTIONS}
+            value={scope || ""}
+            onChange={handleScopeChange}
+            placeholder="Select scope"
+            searchPlaceholder="Search scope..."
+            emptyMessage="No scope found"
+            className={formComboboxClassName}
+          />
+          {scope ? (
+            <p className="mt-1.5 text-xs text-gray-500">
+              {BUSINESS_SCOPE_DESCRIPTIONS[scope]}
+            </p>
           ) : null}
         </div>
-      ) : null}
-    </div>
-  );
+
+        {scope ? (
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <div>
+              <FormFieldLabel required>Holding</FormFieldLabel>
+              <Combobox
+                options={holdingOptions}
+                value={form.holding_id || ""}
+                onChange={handleHoldingChange}
+                placeholder="Select holding"
+                searchPlaceholder="Search holding..."
+                emptyMessage="No holding found"
+                className={formComboboxClassName}
+              />
+            </div>
+
+            {scope === "company" || scope === "branch" ? (
+              <div>
+                <FormFieldLabel required>Company</FormFieldLabel>
+                <Combobox
+                  options={companyOptions}
+                  value={form.company_id || ""}
+                  onChange={handleCompanyChange}
+                  placeholder="Select company"
+                  searchPlaceholder="Search company..."
+                  emptyMessage="No company found"
+                  disabled={!form.holding_id}
+                  className={formComboboxClassName}
+                />
+              </div>
+            ) : null}
+
+            {scope === "branch" ? (
+              <div>
+                <FormFieldLabel required>Branch</FormFieldLabel>
+                <Combobox
+                  options={branchOptions}
+                  value={form.branch_id || ""}
+                  onChange={(value) => onChange({ branch_id: value, warehouse_ids: [] })}
+                  placeholder="Select branch"
+                  searchPlaceholder="Search branch..."
+                  emptyMessage="No branch found"
+                  disabled={!form.company_id}
+                  className={formComboboxClassName}
+                />
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
 }

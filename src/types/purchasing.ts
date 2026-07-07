@@ -242,6 +242,7 @@ export interface ProductFormData {
   category?: string;
   unit_id?: string;
   satuan_id?: string | null;
+  warehouse_id?: string;
   harga_jual?: number;
   notes?: string;
   production_output_type?: ProductOutputType;
@@ -280,6 +281,10 @@ export interface ProductWithCOGS {
   hpp_estimasi?: number;
   satuan_id?: string | null;
   satuan_nama?: string | null;
+  production_output_type?: ProductOutputType;
+  warehouse_id?: string;
+  warehouse_name?: string | null;
+  warehouse_code?: string | null;
 }
 
 export type Product = ProductWithCOGS;

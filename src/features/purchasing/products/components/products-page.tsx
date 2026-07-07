@@ -11,10 +11,12 @@ import { PurchasingListSection } from "@/modules/purchasing/components/list/Purc
 import { PurchasingTablePagination } from "@/modules/purchasing/components/pagination/PurchasingTablePagination";
 import { PRODUCT_ROUTES } from "@/modules/purchasing/constants/item-routes";
 import { formatAmount } from "@/lib/purchasing/utils";
-import { Calculator, Eye, Loader2, Package, Pencil, Plus, Search, Trash2, X } from "lucide-react";
+import { Calculator, Download, Eye, Loader2, Package, Pencil, Plus, Search, Trash2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
+import { Combobox } from "@/components/ui/combobox";
+import { STALL_LABELS } from "@/lib/configuration/stall-labels";
 import { ProductWithCOGS } from "@/types/purchasing";
-import { useProductList, useProductCategoryOptions } from "../queries";
+import { useProductList, useProductCategoryOptions, useProductWarehouses } from "../queries";
 import { useDeleteProduct, useUpdateProductStatus } from "../mutations";
 import { getProductUnitLabel } from "../product-unit";
 
@@ -38,14 +40,33 @@ export function ProductsPage() {
     product: null,
     nextStatus: true,
   });
+  const [exporting, setExporting] = useState(false);
+  const [stallFilter, setStallFilter] = useState("");
 
-  const listQuery = useProductList({ search: search || undefined, page, limit });
+  const listQuery = useProductList({
+    search: search || undefined,
+    warehouse_id: stallFilter || undefined,
+    page,
+    limit,
+  });
   const categoriesQuery = useProductCategoryOptions();
+  const warehousesQuery = useProductWarehouses();
+  const stallOptions = [
+    { value: "", label: `All ${STALL_LABELS.plural}` },
+    ...(warehousesQuery.data ?? []).map((w) => ({
+      value: w.id,
+      label: w.name,
+      description: w.code,
+    })),
+  ];
   const categoryLabelMap = new Map(
     (categoriesQuery.data ?? []).map((row) => [row.code, row.nama])
   );
   const getCategoryLabel = (code?: string | null) =>
     code ? categoryLabelMap.get(code) ?? code : "-";
+
+  const getStallLabel = (product: ProductWithCOGS) =>
+    product.warehouse_name || product.warehouse_code || "-";
 
   const products = listQuery.data?.data ?? [];
   const loading = listQuery.isLoading;
@@ -111,7 +132,41 @@ export function ProductsPage() {
   const handleResetFilters = () => {
     setSearchQuery("");
     setSearch("");
+    setStallFilter("");
     setPage(1);
+  };
+
+  const handleExport = async () => {
+    if (exporting) return;
+
+    setExporting(true);
+    try {
+      const response = await fetch("/api/purchasing/export/products");
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { message?: string } | null;
+        throw new Error(payload?.message || "Export failed");
+      }
+
+      const blob = await response.blob();
+      const disposition = response.headers.get("Content-Disposition") || "";
+      const match = disposition.match(/filename="([^"]+)"/);
+      const filename =
+        match?.[1] || `products-${new Date().toISOString().split("T")[0]}.xlsx`;
+
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      link.click();
+      URL.revokeObjectURL(url);
+
+      toast.success("Products exported to Excel.");
+    } catch (error: unknown) {
+      console.error("Error exporting products:", error);
+      toast.error(`Failed to export: ${getErrorMessage(error, "Unknown error")}`);
+    } finally {
+      setExporting(false);
+    }
   };
 
   return (
@@ -125,12 +180,23 @@ export function ProductsPage() {
           </>
         }
         actions={
-          <Link href={PRODUCT_ROUTES.productsInsert}>
-            <Button className="purchasing-main-button w-full sm:w-auto">
-              <Plus className="mr-2 h-4 w-4" />
-              Create Product
-            </Button>
-          </Link>
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+            <Link href={PRODUCT_ROUTES.productsImport}>
+              <Button
+                variant="outline"
+                className="h-10 w-full gap-2 rounded-lg border-pink-200 bg-white px-3 text-sm font-medium text-pink-700 shadow-sm hover:border-pink-200 hover:bg-pink-50 hover:text-pink-700 sm:w-auto"
+              >
+                <Upload className="h-4 w-4" />
+                Import
+              </Button>
+            </Link>
+            <Link href={PRODUCT_ROUTES.productsInsert}>
+              <Button className="purchasing-main-button w-full sm:w-auto">
+                <Plus className="mr-2 h-4 w-4" />
+                Create Product
+              </Button>
+            </Link>
+          </div>
         }
       />
 
@@ -140,6 +206,22 @@ export function ProductsPage() {
         description="Review product code, category, unit, estimated cost of goods sold, selling price, and active status."
         toolbar={
           <div className="flex w-full flex-col gap-3 sm:w-auto md:flex-row md:items-center">
+            <Combobox
+              options={stallOptions}
+              value={stallFilter}
+              onChange={(value) => {
+                setStallFilter(value);
+                setPage(1);
+              }}
+              placeholder={
+                warehousesQuery.isLoading ? STALL_LABELS.loading : `All ${STALL_LABELS.plural}`
+              }
+              searchPlaceholder={STALL_LABELS.search}
+              emptyMessage={STALL_LABELS.empty}
+              disabled={warehousesQuery.isLoading}
+              allowClear
+              className="h-10 w-full md:w-48"
+            />
             <label className="relative w-full md:w-80">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
               <Input
@@ -159,7 +241,22 @@ export function ProductsPage() {
                 </button>
               )}
             </label>
-            {(search || page > 1) && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleExport}
+              disabled={exporting}
+              className="h-10 gap-2 rounded-lg border-pink-200 bg-white px-3 text-sm font-medium text-pink-700 shadow-sm hover:border-pink-200 hover:bg-pink-50 hover:text-pink-700"
+              title="Export Excel"
+            >
+              {exporting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Download className="h-4 w-4" />
+              )}
+              Export
+            </Button>
+            {(search || stallFilter || page > 1) && (
               <Button
                 variant="outline"
                 onClick={handleResetFilters}
@@ -199,6 +296,7 @@ export function ProductsPage() {
                     <tr>
                       <th className="px-4 py-3 text-left font-semibold">Code</th>
                       <th className="px-4 py-3 text-left font-semibold">Product Name</th>
+                      <th className="px-4 py-3 text-left font-semibold">Stall</th>
                       <th className="px-4 py-3 text-left font-semibold">Category</th>
                       <th className="px-4 py-3 text-left font-semibold">Unit</th>
                       <th className="px-4 py-3 text-right font-semibold">Estimated COGS</th>
@@ -223,6 +321,7 @@ export function ProductsPage() {
                             {product.nama}
                           </Link>
                         </td>
+                        <td className="px-4 py-3 text-gray-700">{getStallLabel(product)}</td>
                         <td className="px-4 py-3 text-gray-700">
                           {getCategoryLabel(product.kategori)}
                         </td>

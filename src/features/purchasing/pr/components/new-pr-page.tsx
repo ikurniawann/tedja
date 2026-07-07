@@ -63,6 +63,7 @@ export function NewPRPage() {
         onSubmit={handleCreatePR}
         isLoading={createMutation.isPending}
         cancelHref="/dashboard/purchasing/pr"
+        hideItemPricing
       />
     </div>
   );

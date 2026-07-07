@@ -6,17 +6,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Combobox } from "@/components/ui/combobox";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Search, Filter, FileText, CheckCircle, Send, XCircle, Download, Trash2, Pencil, Eye, Loader2 } from "lucide-react";
+import { Search, Filter, FileText, CheckCircle, Send, XCircle, Trash2, Pencil, Eye, Loader2, Truck } from "lucide-react";
 import { toast } from "sonner";
 import { PurchaseOrderWithStats, POStatus } from "@/types/purchasing";
-import { listPurchaseOrders } from "../api";
 import { usePurchaseOrderList } from "../queries";
 import {
   useApprovePurchaseOrder,
   useSendPurchaseOrder,
   useCancelPurchaseOrder,
 } from "../mutations";
-import { convertToCSV, downloadCSV, formatDateForCSV, formatCurrencyForCSV } from "@/lib/utils/csv-export";
 import { formatAmount } from "@/lib/purchasing/utils";
 import {
   Dialog,
@@ -49,6 +47,18 @@ function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
 }
 
+function canTrackShipment(status: string) {
+  const normalized = status.toLowerCase();
+  return ["approved", "sent", "partial", "partially_received"].includes(normalized);
+}
+
+function getShipmentHref(po: PurchaseOrderWithStats) {
+  if (po.active_delivery_id) {
+    return `${RM_ROUTES.purchasingDelivery}/${po.active_delivery_id}`;
+  }
+  return `${RM_ROUTES.purchasingDelivery}/insert?po_id=${po.id}`;
+}
+
 export function PurchaseOrdersPage() {
   const [page, setPage] = useState(1);
   const limit = 20;
@@ -68,7 +78,6 @@ export function PurchaseOrdersPage() {
   const [isBulkApproveDialogOpen, setIsBulkApproveDialogOpen] = useState(false);
   const [isBulkDeleteDialogOpen, setIsBulkDeleteDialogOpen] = useState(false);
   const [isProcessingBulk, setIsProcessingBulk] = useState(false);
-  const [isExporting, setIsExporting] = useState(false);
   const [processingPoId, setProcessingPoId] = useState<string | null>(null);
 
   const listQuery = usePurchaseOrderList({
@@ -105,42 +114,6 @@ export function PurchaseOrdersPage() {
 
     return () => window.clearTimeout(timeout);
   }, [searchQuery]);
-
-  const handleExportCSV = async () => {
-    try {
-      setIsExporting(true);
-      // Fetch all data (not paginated)
-      const response = await listPurchaseOrders({
-        search: search || undefined,
-        status: statusFilter === "all" ? undefined : statusFilter,
-        page: 1,
-        limit: 1000,
-      });
-
-      const columns = [
-        { key: "nomor_po", label: "Purchase Order Number" },
-        { key: "pr_number", label: "Purchase Request Number" },
-        { key: "nama_supplier", label: "Supplier" },
-        { key: "supplier_kode", label: "Supplier Code" },
-        { key: "tanggal_po", label: "Purchase Order Date", format: formatDateForCSV },
-        { key: "status", label: "Status" },
-        { key: "subtotal", label: "Total Amount", format: (val: unknown) => val ? formatCurrencyForCSV(Number(val)) : "" },
-        { key: "created_by", label: "Created By" },
-        { key: "catatan", label: "Notes" },
-      ];
-
-      const csvContent = convertToCSV(response.data, columns);
-      const filename = `purchase-orders-${new Date().toISOString().split("T")[0]}.csv`;
-      downloadCSV(csvContent, filename);
-      
-      toast.success(`Exported ${response.data.length} purchase orders`);
-    } catch (error) {
-      console.error("Error exporting CSV:", error);
-      toast.error("Failed to export data");
-    } finally {
-      setIsExporting(false);
-    }
-  };
 
   // Checkbox handlers
   const toggleSelectAll = (checked: boolean) => {
@@ -366,26 +339,7 @@ export function PurchaseOrdersPage() {
     <div className="space-y-6">
       <PurchasingPageHeader
         title="Purchase Order"
-        description={`Manage purchase orders from creation through receipt — ${total} total`}
-        actions={
-          <>
-            <Button
-              variant="outline"
-              onClick={handleExportCSV}
-              disabled={isExporting}
-              className="h-10 flex-1 gap-2 rounded-lg border-pink-200 bg-white px-3 text-sm font-medium text-pink-700 shadow-sm hover:!border-pink-200 hover:!bg-pink-50 hover:!text-pink-700 sm:flex-none"
-            >
-              <Download className="mr-2 h-4 w-4" />
-              {isExporting ? "Exporting..." : "Export CSV"}
-            </Button>
-            <Link href="/dashboard/purchasing/po/insert">
-              <Button className="h-10 w-full gap-2 rounded-lg bg-pink-600 px-3 text-sm font-semibold text-white shadow-sm hover:bg-pink-700 sm:w-auto">
-                <Plus className="mr-2 h-4 w-4" />
-                Create from Purchase Request
-              </Button>
-            </Link>
-          </>
-        }
+        description={`Manage purchase orders from approved purchase requests through receipt — ${total} total`}
       />
 
       <PurchasingListSection
@@ -626,6 +580,22 @@ export function PurchaseOrdersPage() {
                             <Send className="w-4 h-4 text-pink-600" />
                           )}
                         </Button>
+                      )}
+                      {canTrackShipment(po.status) && (
+                        <Link href={getShipmentHref(po)}>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="cursor-pointer"
+                            title={
+                              po.active_delivery_id
+                                ? `Track shipment${po.active_delivery_number ? ` (${po.active_delivery_number})` : ""}`
+                                : "Track shipment"
+                            }
+                          >
+                            <Truck className="h-4 w-4 text-blue-600" />
+                          </Button>
+                        </Link>
                       )}
                       {normalizeStatus(po.status) !== "received" && normalizeStatus(po.status) !== "cancelled" && (
                         <Button variant="ghost" size="sm" onClick={() => handleOpenCancel(po)} title="Cancel">

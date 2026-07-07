@@ -7,6 +7,7 @@ import {
   normalizeBusinessScopePayload,
   validateBusinessScope,
 } from "@/lib/configuration/business-scope";
+import { requiresStallAssignment } from "./stall-assignment";
 
 const employeeCoreSchema = z.object({
   full_name: z.string().min(2),
@@ -45,6 +46,7 @@ const businessScopeFieldsSchema = z.object({
   holding_id: z.string().uuid().nullable().optional(),
   company_id: z.string().uuid().nullable().optional(),
   branch_id: z.string().uuid().nullable().optional(),
+  warehouse_ids: z.array(z.string().uuid()).optional(),
 });
 
 const appAccessSchema = z
@@ -66,14 +68,14 @@ export const createUserEmployeeSchema = employeeCoreSchema
       ctx.addIssue({
         code: "custom",
         path: ["password"],
-        message: "Password wajib diisi untuk akses aplikasi",
+        message: "Password is required for app access",
       });
     }
     if (!data.role) {
       ctx.addIssue({
         code: "custom",
         path: ["role"],
-        message: "Role wajib dipilih untuk akses aplikasi",
+        message: "Role is required for app access",
       });
     }
 
@@ -92,6 +94,23 @@ export const createUserEmployeeSchema = employeeCoreSchema
         code: "custom",
         path: ["business_scope"],
         message: scopeError,
+      });
+    }
+
+    const scopePayload = normalizeBusinessScopePayload(
+      data.business_scope ?? null,
+      data.holding_id,
+      data.company_id,
+      data.branch_id
+    );
+    if (
+      requiresStallAssignment(data.role, scopePayload.business_scope ?? null, true) &&
+      (data.warehouse_ids?.length ?? 0) === 0
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["warehouse_ids"],
+        message: "At least one stall is required for branch scope",
       });
     }
   });
@@ -114,7 +133,7 @@ export const updateUserEmployeeSchema = employeeCoreSchema
       ctx.addIssue({
         code: "custom",
         path: ["password"],
-        message: "Password minimal 8 karakter",
+        message: "Password must be at least 8 characters",
       });
     }
 
@@ -135,6 +154,27 @@ export const updateUserEmployeeSchema = employeeCoreSchema
         code: "custom",
         path: ["business_scope"],
         message: scopeError,
+      });
+    }
+
+    const scopePayload = normalizeBusinessScopePayload(
+      data.business_scope ?? null,
+      data.holding_id,
+      data.company_id,
+      data.branch_id
+    );
+    if (
+      requiresStallAssignment(
+        data.role,
+        scopePayload.business_scope ?? null,
+        data.is_access_app === true
+      ) &&
+      (data.warehouse_ids?.length ?? 0) === 0
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["warehouse_ids"],
+        message: "At least one stall is required for branch scope",
       });
     }
   });

@@ -8,7 +8,7 @@ export function RawMaterialStockPage() {
     <div className="space-y-6">
       <PurchasingPageHeader
         title="Raw Material Stock"
-        description="Monitor raw material balances and stock values. Filter by warehouse to view stock per storage location."
+        description="Monitor raw material balances and stock values. Filter by stall to view stock per storage location."
       />
       <RawMaterialStockTab />
     </div>

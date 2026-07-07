@@ -319,11 +319,18 @@ export async function adjustInventory(
 // ============================================
 
 export async function listProducts(
-  params: { search?: string; is_active?: boolean; page?: number; limit?: number } = {}
+  params: {
+    search?: string;
+    is_active?: boolean;
+    warehouse_id?: string;
+    page?: number;
+    limit?: number;
+  } = {}
 ): Promise<PaginatedResponse<ProductWithCOGS>> {
   const sp = new URLSearchParams();
   if (params.search) sp.set("search", params.search);
   if (params.is_active !== undefined) sp.set("is_active", String(params.is_active));
+  if (params.warehouse_id) sp.set("warehouse_id", params.warehouse_id);
   if (params.page) sp.set("page", String(params.page));
   if (params.limit) sp.set("limit", String(params.limit));
 

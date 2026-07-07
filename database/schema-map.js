@@ -41,6 +41,7 @@ const TABLE_DOMAIN = {
   // ── configuration (identitas & audit app-level) ──────────────────────────
   users: "configuration",
   user_approval_permissions: "configuration",
+  user_warehouses: "configuration",
   admin_user_audit_logs: "configuration",
   activity_logs: "configuration",
 
@@ -103,10 +104,7 @@ const TABLE_DOMAIN = {
   // ── item (master data material/produk/satuan) ────────────────────────────
   raw_materials: "item",
   raw_material_unit_conversions: "item",
-  bahan_baku: "item",
   products: "item",
-  produk: "item",
-  satuan: "item",
   units: "item",
   brands: "item",
 
@@ -120,22 +118,15 @@ const TABLE_DOMAIN = {
   purchase_order_payment_terms: "purchasing",
   purchase_requests: "purchasing",
   pr_items: "purchasing",
-  po_details: "purchasing",
-  po_items: "purchasing",
   purchase_returns: "purchasing",
   purchase_return_items: "purchasing",
   vendor_credits: "purchasing",
   vendor_credit_items: "purchasing",
-  returns: "purchasing",
-  goods_receipts: "purchasing",
-  gr_items: "purchasing",
   grn: "purchasing",
   grn_items: "purchasing",
   grn_qc_inspections: "purchasing",
   grn_qc_inspection_items: "purchasing",
   deliveries: "purchasing",
-  qc_inspections: "purchasing",
-  supplier_price_list: "purchasing",
   supplier_price_lists: "purchasing",
   vendor_price_lists: "purchasing",
   cogs_additional_costs: "purchasing",
@@ -153,8 +144,8 @@ const TABLE_DOMAIN = {
   production_orders: "manufacturing",
   production_order_materials: "manufacturing",
   production_batches: "manufacturing",
-  bom: "manufacturing",
   bom_items: "manufacturing",
+  raw_material_bom_items: "manufacturing",
 
   // ── core / public (lintas domain, fisik di schema public → folder schemas/public/) ──
   notifications: "core",

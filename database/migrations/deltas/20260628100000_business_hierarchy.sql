@@ -78,9 +78,7 @@ DO $$
 DECLARE
     v_holding_id uuid;
     v_sulu_id uuid;
-    v_coffee_id uuid;
-    v_dago_id uuid;
-    v_braga_id uuid;
+    v_bandung_id uuid;
 BEGIN
     SELECT id INTO v_holding_id FROM configuration.holdings WHERE code = 'PROLOGE';
 
@@ -92,50 +90,8 @@ BEGIN
         SELECT id INTO v_sulu_id FROM configuration.companies WHERE holding_id = v_holding_id AND code = 'SULU';
     END IF;
 
-    INSERT INTO configuration.companies (holding_id, name, code)
-    VALUES (v_holding_id, 'Coffee', 'COFFEE')
-    ON CONFLICT (holding_id, code) DO UPDATE SET name = EXCLUDED.name, updated_at = now()
-    RETURNING id INTO v_coffee_id;
-    IF v_coffee_id IS NULL THEN
-        SELECT id INTO v_coffee_id FROM configuration.companies WHERE holding_id = v_holding_id AND code = 'COFFEE';
-    END IF;
-
     INSERT INTO configuration.branches (company_id, name, code)
-    VALUES (v_sulu_id, 'Sulu Dago', 'SULU-DAGO')
+    VALUES (v_sulu_id, 'Sulu Bandung', 'SULU-BANDUNG')
     ON CONFLICT (company_id, code) DO UPDATE SET name = EXCLUDED.name, updated_at = now()
-    RETURNING id INTO v_dago_id;
-    IF v_dago_id IS NULL THEN
-        SELECT id INTO v_dago_id FROM configuration.branches WHERE company_id = v_sulu_id AND code = 'SULU-DAGO';
-    END IF;
-
-    INSERT INTO configuration.branches (company_id, name, code)
-    VALUES (v_sulu_id, 'Sulu Braga', 'SULU-BRAGA')
-    ON CONFLICT (company_id, code) DO UPDATE SET name = EXCLUDED.name, updated_at = now()
-    RETURNING id INTO v_braga_id;
-    IF v_braga_id IS NULL THEN
-        SELECT id INTO v_braga_id FROM configuration.branches WHERE company_id = v_sulu_id AND code = 'SULU-BRAGA';
-    END IF;
-
-    -- Sulu Dago: warehouses 1, 2, 3
-    INSERT INTO configuration.warehouses (branch_id, name, code, is_default, is_active)
-    VALUES (v_dago_id, 'Gudang 1', 'WH-01', true, true)
-    ON CONFLICT (branch_id, code) DO UPDATE SET name = EXCLUDED.name, is_default = EXCLUDED.is_default;
-
-    INSERT INTO configuration.warehouses (branch_id, name, code, is_default, is_active)
-    VALUES (v_dago_id, 'Gudang 2', 'WH-02', false, true)
-    ON CONFLICT (branch_id, code) DO UPDATE SET name = EXCLUDED.name;
-
-    INSERT INTO configuration.warehouses (branch_id, name, code, is_default, is_active)
-    VALUES (v_dago_id, 'Gudang 3', 'WH-03', false, true)
-    ON CONFLICT (branch_id, code) DO UPDATE SET name = EXCLUDED.name;
-
-    -- Sulu Braga: default warehouse only (trigger may have created WH-01)
-    INSERT INTO configuration.warehouses (branch_id, name, code, is_default, is_active)
-    VALUES (v_braga_id, 'Gudang 1', 'WH-01', true, true)
-    ON CONFLICT (branch_id, code) DO UPDATE SET name = EXCLUDED.name, is_default = true;
+    RETURNING id INTO v_bandung_id;
 END $$;
-
--- Update IAM menu route
-UPDATE iam.menus
-SET route_path = '/dashboard/settings/business', updated_at = now()
-WHERE code = 'settings.business';

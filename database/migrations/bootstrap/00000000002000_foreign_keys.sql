@@ -38,14 +38,6 @@ ALTER TABLE ONLY "hris"."attendance"
     ADD CONSTRAINT "attendance_employee_id_fkey" FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE;
 ALTER TABLE ONLY "hris"."attendance"
     ADD CONSTRAINT "attendance_validated_by_fkey" FOREIGN KEY (validated_by) REFERENCES employees(id);
-ALTER TABLE ONLY "item"."bahan_baku"
-    ADD CONSTRAINT "bahan_baku_created_by_fkey" FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL;
-ALTER TABLE ONLY "item"."bahan_baku"
-    ADD CONSTRAINT "bahan_baku_satuan_id_fkey" FOREIGN KEY (satuan_id) REFERENCES satuan(id) ON DELETE RESTRICT;
-ALTER TABLE ONLY "item"."bahan_baku"
-    ADD CONSTRAINT "bahan_baku_satuan_kecil_id_fkey" FOREIGN KEY (satuan_kecil_id) REFERENCES satuan(id) ON DELETE SET NULL;
-ALTER TABLE ONLY "item"."bahan_baku"
-    ADD CONSTRAINT "bahan_baku_updated_by_fkey" FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE SET NULL;
 ALTER TABLE ONLY "performance"."behavioral_assessments"
     ADD CONSTRAINT "behavioral_assessments_assessed_by_fkey" FOREIGN KEY (assessed_by) REFERENCES employees(id) ON DELETE SET NULL;
 ALTER TABLE ONLY "performance"."behavioral_assessments"
@@ -58,16 +50,6 @@ ALTER TABLE ONLY "performance"."behavioral_review_items"
     ADD CONSTRAINT "behavioral_review_items_review_id_fkey" FOREIGN KEY (review_id) REFERENCES performance_reviews(id) ON DELETE CASCADE;
 ALTER TABLE ONLY "performance"."behavioral_review_items"
     ADD CONSTRAINT "behavioral_review_items_template_behavioral_id_fkey" FOREIGN KEY (template_behavioral_id) REFERENCES kpi_template_behavioral(id) ON DELETE SET NULL;
-ALTER TABLE ONLY "manufacturing"."bom"
-    ADD CONSTRAINT "bom_bahan_baku_id_fkey" FOREIGN KEY (bahan_baku_id) REFERENCES bahan_baku(id) ON DELETE RESTRICT;
-ALTER TABLE ONLY "manufacturing"."bom"
-    ADD CONSTRAINT "bom_created_by_fkey" FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL;
-ALTER TABLE ONLY "manufacturing"."bom"
-    ADD CONSTRAINT "bom_produk_id_fkey" FOREIGN KEY (produk_id) REFERENCES produk(id) ON DELETE CASCADE;
-ALTER TABLE ONLY "manufacturing"."bom"
-    ADD CONSTRAINT "bom_satuan_id_fkey" FOREIGN KEY (satuan_id) REFERENCES satuan(id) ON DELETE RESTRICT;
-ALTER TABLE ONLY "manufacturing"."bom"
-    ADD CONSTRAINT "bom_updated_by_fkey" FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE SET NULL;
 ALTER TABLE ONLY "manufacturing"."bom_items"
     ADD CONSTRAINT "bom_items_product_id_fkey" FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE;
 ALTER TABLE ONLY "manufacturing"."bom_items"
@@ -224,18 +206,6 @@ ALTER TABLE ONLY "inventory"."finished_goods_inventory"
     ADD CONSTRAINT "finished_goods_inventory_product_id_fkey" FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE RESTRICT;
 ALTER TABLE ONLY "inventory"."finished_goods_inventory"
     ADD CONSTRAINT "finished_goods_inventory_updated_by_fkey" FOREIGN KEY (updated_by) REFERENCES auth.users(id);
-ALTER TABLE ONLY "purchasing"."goods_receipts"
-    ADD CONSTRAINT "goods_receipts_created_by_fkey" FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL;
-ALTER TABLE ONLY "purchasing"."goods_receipts"
-    ADD CONSTRAINT "goods_receipts_delivery_id_fkey" FOREIGN KEY (delivery_id) REFERENCES deliveries(id) ON DELETE SET NULL;
-ALTER TABLE ONLY "purchasing"."goods_receipts"
-    ADD CONSTRAINT "goods_receipts_penerima_id_fkey" FOREIGN KEY (penerima_id) REFERENCES users(id) ON DELETE SET NULL;
-ALTER TABLE ONLY "purchasing"."goods_receipts"
-    ADD CONSTRAINT "goods_receipts_purchase_order_id_fkey" FOREIGN KEY (purchase_order_id) REFERENCES purchase_orders(id) ON DELETE RESTRICT;
-ALTER TABLE ONLY "purchasing"."goods_receipts"
-    ADD CONSTRAINT "goods_receipts_updated_by_fkey" FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE SET NULL;
-ALTER TABLE ONLY "purchasing"."gr_items"
-    ADD CONSTRAINT "gr_items_po_item_id_fkey" FOREIGN KEY (po_item_id) REFERENCES po_items(id);
 ALTER TABLE ONLY "purchasing"."grn"
     ADD CONSTRAINT "grn_created_by_fkey" FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL;
 ALTER TABLE ONLY "purchasing"."grn"
@@ -356,18 +326,6 @@ ALTER TABLE ONLY "performance"."performance_reviews"
     ADD CONSTRAINT "performance_reviews_manager_id_fkey" FOREIGN KEY (manager_id) REFERENCES employees(id) ON DELETE SET NULL;
 ALTER TABLE ONLY "performance"."performance_reviews"
     ADD CONSTRAINT "performance_reviews_reviewer_id_fkey" FOREIGN KEY (reviewer_id) REFERENCES employees(id) ON DELETE SET NULL;
-ALTER TABLE ONLY "purchasing"."po_details"
-    ADD CONSTRAINT "po_details_bahan_baku_id_fkey" FOREIGN KEY (bahan_baku_id) REFERENCES bahan_baku(id) ON DELETE RESTRICT;
-ALTER TABLE ONLY "purchasing"."po_details"
-    ADD CONSTRAINT "po_details_created_by_fkey" FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL;
-ALTER TABLE ONLY "purchasing"."po_details"
-    ADD CONSTRAINT "po_details_purchase_order_id_fkey" FOREIGN KEY (purchase_order_id) REFERENCES purchase_orders(id) ON DELETE CASCADE;
-ALTER TABLE ONLY "purchasing"."po_details"
-    ADD CONSTRAINT "po_details_satuan_id_fkey" FOREIGN KEY (satuan_id) REFERENCES satuan(id) ON DELETE RESTRICT;
-ALTER TABLE ONLY "purchasing"."po_details"
-    ADD CONSTRAINT "po_details_updated_by_fkey" FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE SET NULL;
-ALTER TABLE ONLY "purchasing"."po_items"
-    ADD CONSTRAINT "po_items_pr_item_id_fkey" FOREIGN KEY (pr_item_id) REFERENCES pr_items(id) ON DELETE SET NULL;
 ALTER TABLE ONLY "pos"."pos_categories"
     ADD CONSTRAINT "pos_categories_parent_id_fkey" FOREIGN KEY (parent_id) REFERENCES pos_categories(id);
 ALTER TABLE ONLY "pos"."pos_customer_vouchers"
@@ -482,12 +440,6 @@ ALTER TABLE ONLY "item"."products"
     ADD CONSTRAINT "products_satuan_id_fkey" FOREIGN KEY (satuan_id) REFERENCES units(id);
 ALTER TABLE ONLY "item"."products"
     ADD CONSTRAINT "products_updated_by_fkey" FOREIGN KEY (updated_by) REFERENCES auth.users(id);
-ALTER TABLE ONLY "item"."produk"
-    ADD CONSTRAINT "produk_created_by_fkey" FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL;
-ALTER TABLE ONLY "item"."produk"
-    ADD CONSTRAINT "produk_satuan_id_fkey" FOREIGN KEY (satuan_id) REFERENCES satuan(id) ON DELETE RESTRICT;
-ALTER TABLE ONLY "item"."produk"
-    ADD CONSTRAINT "produk_updated_by_fkey" FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE SET NULL;
 ALTER TABLE ONLY "hris"."project_assignments"
     ADD CONSTRAINT "project_assignments_employee_id_fkey" FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE;
 ALTER TABLE ONLY "hris"."project_assignments"
@@ -534,16 +486,6 @@ ALTER TABLE ONLY "purchasing"."purchase_returns"
     ADD CONSTRAINT "purchase_returns_grn_id_fkey" FOREIGN KEY (grn_id) REFERENCES grn(id) ON DELETE SET NULL;
 ALTER TABLE ONLY "purchasing"."purchase_returns"
     ADD CONSTRAINT "purchase_returns_supplier_id_fkey" FOREIGN KEY (supplier_id) REFERENCES suppliers(id) ON DELETE RESTRICT;
-ALTER TABLE ONLY "purchasing"."qc_inspections"
-    ADD CONSTRAINT "qc_inspections_bahan_baku_id_fkey" FOREIGN KEY (bahan_baku_id) REFERENCES bahan_baku(id) ON DELETE RESTRICT;
-ALTER TABLE ONLY "purchasing"."qc_inspections"
-    ADD CONSTRAINT "qc_inspections_created_by_fkey" FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL;
-ALTER TABLE ONLY "purchasing"."qc_inspections"
-    ADD CONSTRAINT "qc_inspections_goods_receipt_id_fkey" FOREIGN KEY (goods_receipt_id) REFERENCES goods_receipts(id) ON DELETE CASCADE;
-ALTER TABLE ONLY "purchasing"."qc_inspections"
-    ADD CONSTRAINT "qc_inspections_inspector_id_fkey" FOREIGN KEY (inspector_id) REFERENCES users(id) ON DELETE SET NULL;
-ALTER TABLE ONLY "purchasing"."qc_inspections"
-    ADD CONSTRAINT "qc_inspections_updated_by_fkey" FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE SET NULL;
 ALTER TABLE ONLY "item"."raw_material_unit_conversions"
     ADD CONSTRAINT "raw_material_unit_conversions_raw_material_id_fkey" FOREIGN KEY (raw_material_id) REFERENCES raw_materials(id) ON DELETE CASCADE;
 ALTER TABLE ONLY "item"."raw_material_unit_conversions"
@@ -560,22 +502,6 @@ ALTER TABLE ONLY "item"."raw_materials"
     ADD CONSTRAINT "raw_materials_source_product_id_fkey" FOREIGN KEY (source_product_id) REFERENCES products(id) ON DELETE SET NULL;
 ALTER TABLE ONLY "item"."raw_materials"
     ADD CONSTRAINT "raw_materials_updated_by_fkey" FOREIGN KEY (updated_by) REFERENCES auth.users(id);
-ALTER TABLE ONLY "purchasing"."returns"
-    ADD CONSTRAINT "returns_approved_by_fkey" FOREIGN KEY (approved_by) REFERENCES users(id) ON DELETE SET NULL;
-ALTER TABLE ONLY "purchasing"."returns"
-    ADD CONSTRAINT "returns_bahan_baku_id_fkey" FOREIGN KEY (bahan_baku_id) REFERENCES bahan_baku(id) ON DELETE RESTRICT;
-ALTER TABLE ONLY "purchasing"."returns"
-    ADD CONSTRAINT "returns_created_by_fkey" FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL;
-ALTER TABLE ONLY "purchasing"."returns"
-    ADD CONSTRAINT "returns_goods_receipt_id_fkey" FOREIGN KEY (goods_receipt_id) REFERENCES goods_receipts(id) ON DELETE RESTRICT;
-ALTER TABLE ONLY "purchasing"."returns"
-    ADD CONSTRAINT "returns_satuan_id_fkey" FOREIGN KEY (satuan_id) REFERENCES satuan(id) ON DELETE RESTRICT;
-ALTER TABLE ONLY "purchasing"."returns"
-    ADD CONSTRAINT "returns_updated_by_fkey" FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE SET NULL;
-ALTER TABLE ONLY "item"."satuan"
-    ADD CONSTRAINT "satuan_created_by_fkey" FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL;
-ALTER TABLE ONLY "item"."satuan"
-    ADD CONSTRAINT "satuan_updated_by_fkey" FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE SET NULL;
 ALTER TABLE ONLY "hris"."sections"
     ADD CONSTRAINT "sections_brand_id_fkey" FOREIGN KEY (brand_id) REFERENCES brands(id) ON DELETE CASCADE;
 ALTER TABLE ONLY "hris"."staff"
@@ -588,16 +514,6 @@ ALTER TABLE ONLY "hris"."staff_sections"
     ADD CONSTRAINT "staff_sections_section_id_fkey" FOREIGN KEY (section_id) REFERENCES sections(id) ON DELETE CASCADE;
 ALTER TABLE ONLY "hris"."staff_sections"
     ADD CONSTRAINT "staff_sections_staff_id_fkey" FOREIGN KEY (staff_id) REFERENCES staff(id) ON DELETE CASCADE;
-ALTER TABLE ONLY "purchasing"."supplier_price_list"
-    ADD CONSTRAINT "supplier_price_list_created_by_fkey" FOREIGN KEY (created_by) REFERENCES auth.users(id);
-ALTER TABLE ONLY "purchasing"."supplier_price_list"
-    ADD CONSTRAINT "supplier_price_list_raw_material_id_fkey" FOREIGN KEY (raw_material_id) REFERENCES raw_materials(id) ON DELETE CASCADE;
-ALTER TABLE ONLY "purchasing"."supplier_price_list"
-    ADD CONSTRAINT "supplier_price_list_satuan_id_fkey" FOREIGN KEY (satuan_id) REFERENCES units(id);
-ALTER TABLE ONLY "purchasing"."supplier_price_list"
-    ADD CONSTRAINT "supplier_price_list_supplier_id_fkey" FOREIGN KEY (supplier_id) REFERENCES suppliers(id) ON DELETE CASCADE;
-ALTER TABLE ONLY "purchasing"."supplier_price_list"
-    ADD CONSTRAINT "supplier_price_list_updated_by_fkey" FOREIGN KEY (updated_by) REFERENCES auth.users(id);
 ALTER TABLE ONLY "purchasing"."supplier_price_lists"
     ADD CONSTRAINT "supplier_price_lists_bahan_baku_id_fkey" FOREIGN KEY (bahan_baku_id) REFERENCES raw_materials(id) ON DELETE CASCADE;
 ALTER TABLE ONLY "purchasing"."supplier_price_lists"

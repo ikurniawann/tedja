@@ -117,18 +117,18 @@ export async function GET(
       .from("purchase_orders")
       .select(`
         id,
-        po_items(description)
+        purchase_order_items(raw_material:raw_materials!raw_material_id(nama))
       `)
       .eq("vendor_id", id)
       .limit(5);
 
-    // Extract unique bahan names from PO items
     const bahanSet = new Set<string>();
     if (topBahan) {
       for (const po of topBahan) {
-        if (po.po_items) {
-          for (const item of po.po_items as { description: string }[]) {
-            bahanSet.add(item.description);
+        const items = po.purchase_order_items as Array<{ raw_material?: { nama?: string } | null }> | null;
+        if (items) {
+          for (const item of items) {
+            if (item.raw_material?.nama) bahanSet.add(item.raw_material.nama);
           }
         }
       }

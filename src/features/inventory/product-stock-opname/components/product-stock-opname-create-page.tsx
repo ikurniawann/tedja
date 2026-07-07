@@ -8,12 +8,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Combobox } from "@/components/ui/combobox";
 import { DsDateTimePicker } from "@/components/design-system";
+import { STALL_LABELS } from "@/lib/configuration/stall-labels";
 import { PurchasingFormHeader } from "@/modules/purchasing/components/page/purchasing-page-header";
 import { PRODUCT_ROUTES } from "@/modules/purchasing/constants/item-routes";
 import {
   useProductStockOpname,
   useProductStockOpnamePreview,
+  useProductStockOpnameWarehouses,
 } from "../queries";
 import {
   useCompleteProductStockOpname,
@@ -45,20 +48,30 @@ export function ProductStockOpnameCreatePage({ opnameId }: ProductStockOpnameCre
   const router = useRouter();
   const isContinue = Boolean(opnameId);
 
+  const warehousesQuery = useProductStockOpnameWarehouses();
   const detailQuery = useProductStockOpname(opnameId || "");
   const createMutation = useCreateProductStockOpname();
   const updateMutation = useUpdateProductStockOpname();
   const completeMutation = useCompleteProductStockOpname();
 
+  const [warehouseId, setWarehouseId] = useState("");
   const [opnameDate, setOpnameDate] = useState(new Date().toISOString().slice(0, 10));
   const [notes, setNotes] = useState("");
   const [itemSearch, setItemSearch] = useState("");
   const [lines, setLines] = useState<CountLine[]>([]);
   const [initialized, setInitialized] = useState(false);
 
-  const previewQuery = useProductStockOpnamePreview(!isContinue);
+  const previewQuery = useProductStockOpnamePreview(
+    !isContinue && warehouseId ? warehouseId : ""
+  );
 
   const detail = detailQuery.data;
+  const warehouseOptions = (warehousesQuery.data || []).map((w) => ({
+    value: w.id,
+    label: w.name,
+    description: w.code,
+  }));
+  const selectedWarehouse = warehouseOptions.find((w) => w.value === warehouseId);
   const isEditableContinue =
     isContinue && (detail?.status === "draft" || detail?.status === "in_progress");
 
@@ -75,6 +88,7 @@ export function ProductStockOpnameCreatePage({ opnameId }: ProductStockOpnameCre
 
     setOpnameDate(detail.opname_date?.slice(0, 10) || opnameDate);
     setNotes(detail.notes || "");
+    setWarehouseId(detail.warehouse_id || detail.warehouse?.id || "");
     setLines(
       (detail.lines || []).map((line) => ({
         key: line.id,
@@ -95,6 +109,10 @@ export function ProductStockOpnameCreatePage({ opnameId }: ProductStockOpnameCre
 
   useEffect(() => {
     if (isContinue || previewQuery.isLoading) return;
+    if (!warehouseId) {
+      setLines([]);
+      return;
+    }
 
     const items = previewQuery.data ?? [];
     setLines(
@@ -108,7 +126,7 @@ export function ProductStockOpnameCreatePage({ opnameId }: ProductStockOpnameCre
         qty_counted_input: "",
       }))
     );
-  }, [isContinue, previewQuery.data, previewQuery.isLoading]);
+  }, [isContinue, warehouseId, previewQuery.data, previewQuery.isLoading]);
 
   const filteredLines = useMemo(() => {
     const q = itemSearch.trim().toLowerCase();
@@ -187,6 +205,10 @@ export function ProductStockOpnameCreatePage({ opnameId }: ProductStockOpnameCre
   };
 
   const handleSaveDraft = async () => {
+    if (!warehouseId) {
+      toast.error(`${STALL_LABELS.singular} is required`);
+      return;
+    }
     if (!hasItems) {
       toast.error("No products available for stock opname");
       return;
@@ -210,6 +232,7 @@ export function ProductStockOpnameCreatePage({ opnameId }: ProductStockOpnameCre
       }
 
       const created = await createMutation.mutateAsync({
+        warehouse_id: warehouseId,
         opname_date: opnameDate,
         notes: notes.trim() || undefined,
         reason: "stock_opname",
@@ -237,6 +260,10 @@ export function ProductStockOpnameCreatePage({ opnameId }: ProductStockOpnameCre
   };
 
   const handleComplete = async () => {
+    if (!warehouseId) {
+      toast.error(`${STALL_LABELS.singular} is required`);
+      return;
+    }
     if (!hasItems) {
       toast.error("No products available for stock opname");
       return;
@@ -248,6 +275,7 @@ export function ProductStockOpnameCreatePage({ opnameId }: ProductStockOpnameCre
 
       if (!sessionId) {
         const created = await createMutation.mutateAsync({
+          warehouse_id: warehouseId,
           opname_date: opnameDate,
           notes: notes.trim() || undefined,
           reason: "stock_opname",
@@ -379,6 +407,26 @@ export function ProductStockOpnameCreatePage({ opnameId }: ProductStockOpnameCre
         <CardContent className="space-y-4 p-4">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-12">
             <div className="min-w-0 md:col-span-4">
+              <Label className="text-xs">
+                Stall <span className="text-red-500">*</span>
+              </Label>
+              <Combobox
+                options={warehouseOptions}
+                value={warehouseId}
+                onChange={setWarehouseId}
+                placeholder={
+                  warehousesQuery.isLoading ? STALL_LABELS.loading : STALL_LABELS.selectPlaceholder
+                }
+                searchPlaceholder={STALL_LABELS.search}
+                emptyMessage={STALL_LABELS.empty}
+                disabled={isBusy || isContinue || warehousesQuery.isLoading}
+                className="mt-1.5 h-9 text-sm"
+              />
+              {selectedWarehouse && (
+                <p className="mt-1 text-xs text-gray-500">{selectedWarehouse.description}</p>
+              )}
+            </div>
+            <div className="min-w-0 md:col-span-4">
               <DsDateTimePicker
                 label="Opname Date"
                 value={opnameDate}
@@ -389,7 +437,7 @@ export function ProductStockOpnameCreatePage({ opnameId }: ProductStockOpnameCre
               />
             </div>
 
-            <div className="min-w-0 space-y-1.5 md:col-span-8">
+            <div className="min-w-0 space-y-1.5 md:col-span-4">
               <Label htmlFor="notes" className="text-xs">
                 Notes
               </Label>

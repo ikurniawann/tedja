@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
       .from("vendors")
       .select(
         `
-        id, nama, code, contact_person, telepon, email,
+        id, name, code, contact_person, phone, email,
         is_active
       `
       )
@@ -63,35 +63,50 @@ export async function GET(request: NextRequest) {
         const avgPOValue = totalPO > 0 ? totalSpent / totalPO : 0;
 
         // On-time delivery rate (from GRN)
-        const { data: grns } = await db
-          .from("goods_receipts")
-          .select("id, tanggal_terima, po_id")
-          .not("po_id", "is", null)
-          .contains("vendor_id", [vendor.id]);
+        const poIds = (pos || []).map((p) => p.id);
+        const { data: grns } =
+          poIds.length > 0
+            ? await db
+                .from("grn")
+                .select("id, tanggal_penerimaan, purchase_order_id, status")
+                .in("purchase_order_id", poIds)
+                .eq("is_active", true)
+            : { data: [] as Array<{ id: string; tanggal_penerimaan?: string | null; purchase_order_id?: string | null; status?: string | null }> };
 
-        // Count GRN items with QC
-        const { data: qcData } = await db
-          .from("qc_inspections")
-          .select("id, status, jumlah_qc, jumlah_reject, goods_receipt_id")
-          .in(
-            "goods_receipt_id",
-            (grns || []).map((g) => g.id)
-          );
+        const grnIds = (grns || []).map((g) => g.id);
+
+        const { data: qcData } =
+          grnIds.length > 0
+            ? await db
+                .from("grn_qc_inspections")
+                .select("id, status, grn_id, items:grn_qc_inspection_items(qty_rejected)")
+                .in("grn_id", grnIds)
+            : { data: [] as Array<{ id: string; status?: string | null; grn_id?: string; items?: Array<{ qty_rejected?: number | null }> }> };
 
         const totalQC = qcData?.length || 0;
-        const totalReject = (qcData || []).reduce((sum, q) => sum + (q.jumlah_reject || 0), 0);
+        const totalReject = (qcData || []).reduce((sum, q) => {
+          const itemReject = (q.items || []).reduce(
+            (s, item) => s + Number(item.qty_rejected || 0),
+            0
+          );
+          return sum + itemReject;
+        }, 0);
         const rejectRate = totalQC > 0 ? (totalReject / totalQC) * 100 : 0;
 
-        // On-time: GRN arrived <= PO expected date
-        const { data: deliveryData } = await db
-          .from("delivery_items")
-          .select("id, po_id, received_date, po_item:po_item_id(purchase_order:tanggal_diterima)")
-          .in("po_id", (pos || []).map((p) => p.id));
+        const { data: deliveryData } =
+          poIds.length > 0
+            ? await db
+                .from("deliveries")
+                .select("id, purchase_order_id, tanggal_aktual_tiba, tanggal_estimasi_tiba")
+                .in("purchase_order_id", poIds)
+                .eq("is_active", true)
+            : { data: [] as Array<{ id: string; purchase_order_id?: string | null; tanggal_aktual_tiba?: string | null; tanggal_estimasi_tiba?: string | null }> };
 
         const onTimeCount = (deliveryData || []).filter(
-          (d: any) =>
-            d.received_date &&
-            new Date(d.received_date) <= new Date(d.po_item?.purchase_order || 0)
+          (d) =>
+            d.tanggal_aktual_tiba &&
+            d.tanggal_estimasi_tiba &&
+            new Date(d.tanggal_aktual_tiba) <= new Date(d.tanggal_estimasi_tiba)
         ).length;
 
         const onTimeRate =
@@ -103,10 +118,10 @@ export async function GET(request: NextRequest) {
 
         return {
           vendor_id: vendor.id,
-          vendor_name: vendor.nama,
+          vendor_name: vendor.name,
           vendor_code: vendor.code,
           contact_person: vendor.contact_person,
-          telepon: vendor.telepon,
+          telepon: vendor.phone,
           email: vendor.email,
           total_po: totalPO,
           approved_po: approvedPO,

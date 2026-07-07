@@ -4,6 +4,12 @@ import type { DbClient } from "@/lib/pg/types";
 import { normalizeBusinessScopePayload } from "@/lib/configuration/business-scope";
 import type { CreateUserEmployeeInput, UpdateUserEmployeeInput } from "./schemas";
 import { mapEmployeeUserRow, type EmployeeUserRow } from "./user-mapper";
+import {
+  clearUserWarehouses,
+  loadUserWarehouses,
+  loadUserWarehousesBatch,
+  syncUserWarehouses,
+} from "./user-warehouses";
 
 const EMPLOYEE_SELECT = `
   *,
@@ -142,8 +148,24 @@ export async function listUserEmployees(params: {
 
   const enriched = await Promise.all(rows.map((row) => enrichWithAppUser(row)));
 
+  const userIds = enriched
+    .map((row) => row.user_id)
+    .filter((id): id is string => Boolean(id));
+  const warehouseMap = await loadUserWarehousesBatch(userIds);
+
+  const withWarehouses = enriched.map((row) => {
+    if (!row.user_id || !row.app_user) return row;
+    return {
+      ...row,
+      app_user: {
+        ...row.app_user,
+        user_warehouses: warehouseMap.get(row.user_id) ?? [],
+      },
+    };
+  });
+
   return {
-    data: enriched.map(mapEmployeeUserRow),
+    data: withWarehouses.map(mapEmployeeUserRow),
     total: count ?? 0,
     page,
     perPage: limit,
@@ -164,6 +186,9 @@ export async function getUserEmployeeById(id: string) {
   }
 
   const enriched = await enrichWithAppUser(data as EmployeeUserRow);
+  if (enriched.user_id && enriched.app_user) {
+    enriched.app_user.user_warehouses = await loadUserWarehouses(enriched.user_id);
+  }
   return mapEmployeeUserRow(enriched);
 }
 
@@ -182,7 +207,7 @@ async function generateNip(db: DbClient) {
     seq += 1;
   }
 
-  throw new Error("Tidak dapat generate NIP unik");
+  throw new Error("Unable to generate a unique employee ID");
 }
 
 function buildUserProfileFields(input: {
@@ -225,6 +250,7 @@ async function provisionAppAccount(
     branch_id?: string | null;
     account_status?: "active" | "inactive";
     approval_permissions?: CreateUserEmployeeInput["approval_permissions"];
+    warehouse_ids?: string[];
   }
 ) {
   let authUserId: string | null = null;
@@ -239,7 +265,7 @@ async function provisionAppAccount(
     });
 
     if (authError) throw new Error(authError.message);
-    if (!authData.user) throw new Error("Gagal membuat user auth");
+    if (!authData.user) throw new Error("Failed to create auth user");
     authUserId = authData.user.id;
 
     const status = input.account_status ?? "active";
@@ -291,6 +317,15 @@ async function provisionAppAccount(
       .eq("id", employeeId);
 
     if (linkError) throw linkError;
+
+    if (input.warehouse_ids !== undefined) {
+      await syncUserWarehouses(
+        db,
+        authUserId,
+        input.warehouse_ids,
+        input.branch_id ?? null
+      );
+    }
 
     await db.from("admin_user_audit_logs").insert({
       actor_id: actorId,
@@ -400,6 +435,19 @@ async function syncAppAccount(
     }
   }
 
+  if (input.warehouse_ids !== undefined) {
+    const { data: profile } = await db
+      .from("users")
+      .select("branch_id")
+      .eq("id", userId)
+      .maybeSingle();
+
+    const branchId =
+      input.branch_id !== undefined ? input.branch_id : profile?.branch_id ?? null;
+
+    await syncUserWarehouses(db, userId, input.warehouse_ids, branchId);
+  }
+
   await db.from("admin_user_audit_logs").insert({
     actor_id: actorId,
     target_user_id: userId,
@@ -432,6 +480,8 @@ async function revokeAppAccount(
     })
     .eq("id", employeeId);
 
+  await clearUserWarehouses(db, userId);
+
   await db.from("admin_user_audit_logs").insert({
     actor_id: actorId,
     target_user_id: userId,
@@ -451,7 +501,7 @@ export async function createUserEmployee(
     .select("id")
     .eq("email", input.email)
     .maybeSingle();
-  if (existingEmail) throw new Error("Email sudah digunakan");
+  if (existingEmail) throw new Error("Email is already in use");
 
   const nip = input.nip?.trim() ? input.nip.trim() : await generateNip(db);
 
@@ -504,11 +554,12 @@ export async function createUserEmployee(
       branch_id: input.branch_id,
       account_status: input.account_status,
       approval_permissions: input.approval_permissions,
+      warehouse_ids: input.warehouse_ids,
     });
   }
 
   const created = await getUserEmployeeById(employee.id);
-  if (!created) throw new Error("Gagal memuat data karyawan");
+  if (!created) throw new Error("Failed to load employee data");
   return created;
 }
 
@@ -525,7 +576,7 @@ export async function updateUserEmployee(
     .eq("id", id)
     .single();
 
-  if (fetchError || !existing) throw new Error("Karyawan tidak ditemukan");
+  if (fetchError || !existing) throw new Error("Employee not found");
 
   if (input.email && input.email !== existing.email) {
     const { data: dup } = await db
@@ -534,7 +585,7 @@ export async function updateUserEmployee(
       .eq("email", input.email)
       .neq("id", id)
       .maybeSingle();
-    if (dup) throw new Error("Email sudah digunakan");
+    if (dup) throw new Error("Email is already in use");
   }
 
   const employeePatch: Record<string, unknown> = {
@@ -596,7 +647,7 @@ export async function updateUserEmployee(
 
   if (wantsAccess && !existing.user_id) {
     if (!input.password || !input.role) {
-      throw new Error("Password dan role wajib untuk mengaktifkan akses aplikasi");
+      throw new Error("Password and role are required to enable app access");
     }
     await provisionAppAccount(db, actorId, id, {
       email,
@@ -609,6 +660,7 @@ export async function updateUserEmployee(
       branch_id: input.branch_id,
       account_status: input.account_status,
       approval_permissions: input.approval_permissions,
+      warehouse_ids: input.warehouse_ids,
     });
   } else if (existing.user_id && wantsAccess) {
     await syncAppAccount(db, actorId, existing.user_id, {
@@ -621,7 +673,7 @@ export async function updateUserEmployee(
   }
 
   const updated = await getUserEmployeeById(id);
-  if (!updated) throw new Error("Gagal memuat data karyawan");
+  if (!updated) throw new Error("Failed to load employee data");
   return updated;
 }
 
@@ -635,5 +687,5 @@ export async function resetUserEmployeePassword(userId: string) {
 
   if (error) throw new Error(error.message);
 
-  return { message: "Password berhasil direset", tempPassword };
+  return { message: "Password reset successfully", tempPassword };
 }

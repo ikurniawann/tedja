@@ -5,8 +5,15 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogFooter,
@@ -39,8 +46,10 @@ import {
   PackageCheck,
   Pencil,
   Play,
+  Plus,
   RefreshCw,
   Search,
+  Trash2,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -79,6 +88,51 @@ function statusLabel(status: string) {
   return labels[status] || status;
 }
 
+type AdditionalCostType = "OVERHEAD" | "LABOR" | "PACKAGING" | "OTHER";
+
+type AdditionalCostLine = {
+  id: string;
+  description: string;
+  type: AdditionalCostType;
+  amount: string;
+};
+
+const ADDITIONAL_COST_TYPES: Array<{ value: AdditionalCostType; label: string }> = [
+  { value: "OVERHEAD", label: "Overhead" },
+  { value: "LABOR", label: "Labor" },
+  { value: "PACKAGING", label: "Packaging" },
+  { value: "OTHER", label: "Other" },
+];
+
+function createAdditionalCostLine(): AdditionalCostLine {
+  return {
+    id: crypto.randomUUID(),
+    description: "",
+    type: "OVERHEAD",
+    amount: "",
+  };
+}
+
+function aggregateAdditionalCosts(lines: AdditionalCostLine[]) {
+  let overhead = 0;
+  let labor = 0;
+  let packaging = 0;
+
+  for (const line of lines) {
+    const amount = Math.max(0, toNumber(line.amount));
+    if (line.type === "LABOR") labor += amount;
+    else if (line.type === "PACKAGING") packaging += amount;
+    else overhead += amount;
+  }
+
+  return {
+    overhead,
+    labor,
+    packaging,
+    total: overhead + labor + packaging,
+  };
+}
+
 type ProductionOrderDetail = {
   planned_qty: number | string;
   actual_qty: number | string;
@@ -112,9 +166,7 @@ export function ProductionPage({ moduleType = "raw_material" }: ProductionPagePr
 
   const [productId, setProductId] = useState("");
   const [plannedQty, setPlannedQty] = useState("1");
-  const [overheadCost, setOverheadCost] = useState("0");
-  const [laborCost, setLaborCost] = useState("0");
-  const [packagingCost, setPackagingCost] = useState("0");
+  const [additionalCostLines, setAdditionalCostLines] = useState<AdditionalCostLine[]>([]);
   const [formOpen, setFormOpen] = useState(false);
   const [receiveOrder, setReceiveOrder] = useState<ProductionOrder | null>(null);
   const [receiveLoading, setReceiveLoading] = useState(false);
@@ -194,7 +246,11 @@ export function ProductionPage({ moduleType = "raw_material" }: ProductionPagePr
     ["DRAFT", "RELEASED", "IN_PROGRESS"].includes(order.status)
   ).length;
   const plannedQtyNumber = Math.max(0, toNumber(plannedQty));
-  const additionalCosts = toNumber(overheadCost) + toNumber(laborCost) + toNumber(packagingCost);
+  const aggregatedAdditionalCosts = useMemo(
+    () => aggregateAdditionalCosts(additionalCostLines),
+    [additionalCostLines]
+  );
+  const additionalCosts = aggregatedAdditionalCosts.total;
   const estimatedMaterialCost = toNumber(cogsData?.total_bom_cost) * plannedQtyNumber;
   const estimatedTotalCost = estimatedMaterialCost + additionalCosts;
   const estimatedHpp = plannedQtyNumber > 0 ? estimatedTotalCost / plannedQtyNumber : 0;
@@ -205,10 +261,25 @@ export function ProductionPage({ moduleType = "raw_material" }: ProductionPagePr
   const openProductionForm = (product: Product) => {
     setProductId(product.id);
     setPlannedQty("1");
-    setOverheadCost("0");
-    setLaborCost("0");
-    setPackagingCost("0");
+    setAdditionalCostLines([createAdditionalCostLine()]);
     setFormOpen(true);
+  };
+
+  const addAdditionalCostLine = () => {
+    setAdditionalCostLines((lines) => [...lines, createAdditionalCostLine()]);
+  };
+
+  const updateAdditionalCostLine = (id: string, changes: Partial<AdditionalCostLine>) => {
+    setAdditionalCostLines((lines) =>
+      lines.map((line) => (line.id === id ? { ...line, ...changes } : line))
+    );
+  };
+
+  const removeAdditionalCostLine = (id: string) => {
+    setAdditionalCostLines((lines) => {
+      const next = lines.filter((line) => line.id !== id);
+      return next.length > 0 ? next : [createAdditionalCostLine()];
+    });
   };
 
   const handleRefresh = async () => {
@@ -226,6 +297,7 @@ export function ProductionPage({ moduleType = "raw_material" }: ProductionPagePr
 
     const productOutputType =
       selectedProduct?.production_output_type === "WIP" ? "WIP" : "FINISHED_GOOD";
+    const { overhead, labor, packaging } = aggregatedAdditionalCosts;
 
     try {
       const result = await createMutation.mutateAsync(
@@ -235,17 +307,17 @@ export function ProductionPage({ moduleType = "raw_material" }: ProductionPagePr
               product_id: productId,
               output_type: productOutputType,
               planned_qty: plannedQtyNumber,
-              overhead_cost: toNumber(overheadCost),
-              labor_cost: toNumber(laborCost),
-              packaging_cost: toNumber(packagingCost),
+              overhead_cost: overhead,
+              labor_cost: labor,
+              packaging_cost: packaging,
             }
           : {
               production_context: "raw_material",
               raw_material_id: productId,
               planned_qty: plannedQtyNumber,
-              overhead_cost: toNumber(overheadCost),
-              labor_cost: toNumber(laborCost),
-              packaging_cost: toNumber(packagingCost),
+              overhead_cost: overhead,
+              labor_cost: labor,
+              packaging_cost: packaging,
             }
       );
 
@@ -878,99 +950,26 @@ export function ProductionPage({ moduleType = "raw_material" }: ProductionPagePr
                 </DialogPanelToolbar>
 
                 <DialogPanelBody className="space-y-5">
-                  <div className="grid gap-4 xl:grid-cols-12">
-                    <Card className="border-gray-200/70 shadow-xs xl:col-span-3">
-                      <CardHeader className="pb-3">
-                        <CardTitle className="text-base">Target Quantity</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="space-y-2">
-                          <Label className="text-xs text-gray-600">
-                            Quantity <span className="text-red-500">*</span>
-                          </Label>
-                          <Input
-                            value={plannedQty}
-                            onChange={(event) => setPlannedQty(event.target.value)}
-                            type="number"
-                            min="0"
-                            step="any"
-                            className="h-10 text-sm focus:border-pink-400 focus:ring-1 focus:ring-pink-100"
-                          />
-                        </div>
-                      </CardContent>
-                    </Card>
-
-                    <Card className="border-gray-200/70 shadow-xs xl:col-span-5">
-                      <CardHeader className="pb-3">
-                        <CardTitle className="text-base">Additional Costs</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="grid gap-3 sm:grid-cols-3">
-                          <div className="space-y-2">
-                            <Label className="text-xs text-gray-600">Overhead</Label>
-                            <Input
-                              value={overheadCost}
-                              onChange={(event) => setOverheadCost(event.target.value)}
-                              type="number"
-                              min="0"
-                              step="any"
-                              className="h-10 text-sm focus:border-pink-400 focus:ring-1 focus:ring-pink-100"
-                            />
-                          </div>
-                          <div className="space-y-2">
-                            <Label className="text-xs text-gray-600">Labor</Label>
-                            <Input
-                              value={laborCost}
-                              onChange={(event) => setLaborCost(event.target.value)}
-                              type="number"
-                              min="0"
-                              step="any"
-                              className="h-10 text-sm focus:border-pink-400 focus:ring-1 focus:ring-pink-100"
-                            />
-                          </div>
-                          <div className="space-y-2">
-                            <Label className="text-xs text-gray-600">Packaging</Label>
-                            <Input
-                              value={packagingCost}
-                              onChange={(event) => setPackagingCost(event.target.value)}
-                              type="number"
-                              min="0"
-                              step="any"
-                              className="h-10 text-sm focus:border-pink-400 focus:ring-1 focus:ring-pink-100"
-                            />
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-
-                    <Card className="border-pink-100/80 bg-pink-50/40 shadow-xs xl:col-span-4">
-                      <CardHeader className="pb-3">
-                        <CardTitle className="text-sm font-semibold text-pink-800">
-                          COGS Preview
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent className="space-y-2 text-sm">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-gray-600">Material</span>
-                          <span className="font-semibold tabular-nums text-gray-900">
-                            {formatAmount(estimatedMaterialCost)}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-gray-600">Additional</span>
-                          <span className="font-semibold tabular-nums text-gray-900">
-                            {formatAmount(additionalCosts)}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between gap-2 border-t border-pink-100/80 pt-2">
-                          <span className="font-medium text-pink-700">COGS / Unit</span>
-                          <span className="text-base font-bold tabular-nums text-pink-800">
-                            {formatAmount(estimatedHpp || selectedProduct.hpp_estimasi)}
-                          </span>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </div>
+                  <Card className="border-gray-200/70 shadow-xs">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base">Target Quantity</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="max-w-xs space-y-2">
+                        <Label className="text-xs text-gray-600">
+                          Quantity <span className="text-red-500">*</span>
+                        </Label>
+                        <Input
+                          value={plannedQty}
+                          onChange={(event) => setPlannedQty(event.target.value)}
+                          type="number"
+                          min="0"
+                          step="any"
+                          className="h-10 text-sm focus:border-pink-400 focus:ring-1 focus:ring-pink-100"
+                        />
+                      </div>
+                    </CardContent>
+                  </Card>
 
                   <Card className="border-gray-200/70 shadow-xs">
                     <CardHeader className="flex flex-col gap-3 border-b border-gray-100 pb-4 sm:flex-row sm:items-center sm:justify-between">
@@ -1166,6 +1165,154 @@ export function ProductionPage({ moduleType = "raw_material" }: ProductionPagePr
                             </tfoot>
                           )}
                         </table>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="border-gray-200/70 shadow-xs">
+                    <CardHeader className="flex flex-col gap-3 border-b border-gray-100 pb-4 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <CardTitle className="text-base">Additional Costs</CardTitle>
+                        <p className="mt-1 text-xs text-gray-500">
+                          Add overhead, labor, packaging, or other production costs.
+                        </p>
+                      </div>
+                      <CardAction>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-9 border-gray-200/80 text-xs"
+                          onClick={addAdditionalCostLine}
+                        >
+                          <Plus className="mr-1.5 h-3.5 w-3.5" />
+                          Add Line
+                        </Button>
+                      </CardAction>
+                    </CardHeader>
+                    <CardContent className="p-0">
+                      <div className="overflow-x-auto">
+                        <table className="min-w-[720px] w-full text-sm">
+                          <thead className="border-b border-gray-100 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+                            <tr>
+                              <th className="px-4 py-3 text-left font-semibold">Description</th>
+                              <th className="px-4 py-3 text-left font-semibold whitespace-nowrap">Type</th>
+                              <th className="px-4 py-3 text-right font-semibold whitespace-nowrap">Amount</th>
+                              <th className="px-4 py-3 text-right font-semibold whitespace-nowrap w-16">
+                                Actions
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100">
+                            {additionalCostLines.map((line) => (
+                              <tr key={line.id} className="hover:bg-gray-50/80">
+                                <td className="px-4 py-3 align-middle">
+                                  <Input
+                                    value={line.description}
+                                    onChange={(event) =>
+                                      updateAdditionalCostLine(line.id, {
+                                        description: event.target.value,
+                                      })
+                                    }
+                                    placeholder="e.g. Shift labor, box packaging"
+                                    className="h-10 text-sm focus:border-pink-400 focus:ring-1 focus:ring-pink-100"
+                                  />
+                                </td>
+                                <td className="px-4 py-3 align-middle whitespace-nowrap">
+                                  <Select
+                                    value={line.type}
+                                    onValueChange={(value) =>
+                                      updateAdditionalCostLine(line.id, {
+                                        type: value as AdditionalCostType,
+                                      })
+                                    }
+                                  >
+                                    <SelectTrigger className="h-10 w-full min-w-[140px] border-gray-200/80">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {ADDITIONAL_COST_TYPES.map((option) => (
+                                        <SelectItem key={option.value} value={option.value}>
+                                          {option.label}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </td>
+                                <td className="px-4 py-3 align-middle">
+                                  <Input
+                                    value={line.amount}
+                                    onChange={(event) =>
+                                      updateAdditionalCostLine(line.id, {
+                                        amount: event.target.value,
+                                      })
+                                    }
+                                    type="number"
+                                    min="0"
+                                    step="any"
+                                    placeholder="0"
+                                    className="h-10 text-right text-sm focus:border-pink-400 focus:ring-1 focus:ring-pink-100"
+                                  />
+                                </td>
+                                <td className="px-4 py-3 text-right align-middle">
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => removeAdditionalCostLine(line.id)}
+                                    title="Remove line"
+                                    className="text-gray-400 hover:bg-red-50 hover:text-red-600"
+                                    aria-label="Remove additional cost line"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          <tfoot className="border-t border-gray-200/70 bg-gray-50/80">
+                            <tr>
+                              <td
+                                colSpan={2}
+                                className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500"
+                              >
+                                Total additional costs
+                              </td>
+                              <td className="px-4 py-3 text-right text-base font-bold tabular-nums text-gray-900">
+                                {formatAmount(additionalCosts)}
+                              </td>
+                              <td className="px-4 py-3" />
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="border-pink-100/80 bg-pink-50/40 shadow-xs">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-sm font-semibold text-pink-800">
+                        COGS Preview
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-2 text-sm">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-gray-600">Material</span>
+                        <span className="font-semibold tabular-nums text-gray-900">
+                          {formatAmount(estimatedMaterialCost)}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-gray-600">Additional</span>
+                        <span className="font-semibold tabular-nums text-gray-900">
+                          {formatAmount(additionalCosts)}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between gap-2 border-t border-pink-100/80 pt-2">
+                        <span className="font-medium text-pink-700">COGS / Unit</span>
+                        <span className="text-base font-bold tabular-nums text-pink-800">
+                          {formatAmount(estimatedHpp || selectedProduct.hpp_estimasi)}
+                        </span>
                       </div>
                     </CardContent>
                   </Card>

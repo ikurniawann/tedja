@@ -15,13 +15,11 @@ import { RawMaterialWithStock } from "@/types/purchasing";
 import {
   useRawMaterial,
   useRawMaterialCategoryOptions,
-  useStorageConditionOptions,
 } from "../queries";
 import { useDeleteRawMaterial } from "../mutations";
 import {
   buildLookupLabelMap,
   resolveCategoryLabel,
-  resolveStorageLabel,
 } from "../master-lookups";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { formatAmount } from "@/lib/purchasing/utils";
@@ -51,9 +49,7 @@ export function RawMaterialDetailPage() {
 
   const materialQuery = useRawMaterial(materialId);
   const categoriesQuery = useRawMaterialCategoryOptions();
-  const storageQuery = useStorageConditionOptions();
   const categoryMap = buildLookupLabelMap(categoriesQuery.data);
-  const storageMap = buildLookupLabelMap(storageQuery.data);
   const material = materialQuery.data ?? null;
   const loading = materialQuery.isLoading;
   const deleteMutation = useDeleteRawMaterial();
@@ -93,7 +89,6 @@ export function RawMaterialDetailPage() {
 
   const satuanBesarName = material?.satuan_besar_nama || material?.satuan_besar?.nama || "-";
   const satuanKecilName = material?.satuan_kecil_nama || "-";
-  const storageLabel = resolveStorageLabel(material?.storage_condition, storageMap);
   const unitConversions = material?.unit_conversions?.filter((conversion) => conversion.is_active !== false) || [];
   const baseConversion = unitConversions.find((conversion) => conversion.is_base) || unitConversions[0];
   const baseUnitLabel =
@@ -285,10 +280,6 @@ export function RawMaterialDetailPage() {
                         ? `1 ${satuanBesarName} = ${formatNumber(material.konversi_factor || 1)} ${satuanKecilName}`
                         : "No conversion"}
                     </p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-500">Storage Condition</p>
-                    <p className="font-medium text-gray-900">{storageLabel}</p>
                   </div>
                 </div>
                 {material.shelf_life_days && (

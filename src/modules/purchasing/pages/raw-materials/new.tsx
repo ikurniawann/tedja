@@ -22,13 +22,6 @@ const KATEGORI_LABELS: Record<string, string> = {
   LAINNYA: "Lainnya",
 };
 
-const STORAGE_LABELS: Record<string, string> = {
-  SUHU_RUANG: "Suhu Ruang",
-  DINGIN: "Dingin (Chiller)",
-  BEKU: "Beku (Freezer)",
-  KHUSUS: "Kondisi Khusus",
-};
-
 interface Unit {
   id: string;
   kode: string;
@@ -53,7 +46,6 @@ export default function RawMaterialsNewPage() {
     stok_minimum: "0",
     stok_maximum: "0",
     shelf_life_days: "",
-    storage_condition: "",
   });
 
   useEffect(() => {
@@ -83,7 +75,6 @@ export default function RawMaterialsNewPage() {
     if (form.deskripsi) payload.deskripsi = form.deskripsi;
     if (form.satuan_kecil_id) payload.satuan_kecil_id = form.satuan_kecil_id;
     if (form.shelf_life_days) payload.shelf_life_days = parseInt(form.shelf_life_days);
-    if (form.storage_condition) payload.storage_condition = form.storage_condition;
     if (form.coa) payload.coa = form.coa;
 
     try {
@@ -283,20 +274,6 @@ export default function RawMaterialsNewPage() {
                   value={form.shelf_life_days}
                   onChange={e => set("shelf_life_days", e.target.value)}
                 />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label>Kondisi Penyimpanan</Label>
-                <Select value={form.storage_condition} onValueChange={v => set("storage_condition", v)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Pilih kondisi" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Object.entries(STORAGE_LABELS).map(([value, label]) => (
-                      <SelectItem key={value} value={value}>{label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
               </div>
             </CardContent>
           </Card>

@@ -18,6 +18,7 @@ function buildParams(params: ProductStockOpnameListParams) {
   if (params.status && params.status !== "all") sp.set("status", params.status);
   if (params.search) sp.set("search", params.search);
   if (params.reason) sp.set("reason", params.reason);
+  if (params.warehouse_id) sp.set("warehouse_id", params.warehouse_id);
   return sp;
 }
 
@@ -99,13 +100,25 @@ export async function completeProductStockOpname(
   return json.data;
 }
 
-export async function listProductStockOpnamePreview(): Promise<
-  ProductStockOpnamePreviewLine[]
-> {
-  const res = await fetch("/api/inventory/product-stock-opnames/preview");
+export async function listProductStockOpnamePreview(
+  warehouseId: string
+): Promise<ProductStockOpnamePreviewLine[]> {
+  const sp = new URLSearchParams({ warehouse_id: warehouseId });
+  const res = await fetch(`/api/inventory/product-stock-opnames/preview?${sp.toString()}`);
   const json = await parseJson<{
     success: boolean;
     data: ProductStockOpnamePreviewLine[];
   }>(res);
   return json.data || [];
+}
+
+export async function listProductStockOpnameWarehouses(): Promise<
+  { id: string; name: string; code: string }[]
+> {
+  const res = await fetch("/api/purchasing/warehouses");
+  const json = await res.json();
+  if (!res.ok) {
+    throw new Error(json.message || "Failed to load stalls");
+  }
+  return Array.isArray(json.data) ? json.data : [];
 }

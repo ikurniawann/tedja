@@ -9,7 +9,6 @@ const APPS: Record<string, string> = {
   employee: "/dashboard/hris", payroll: "/dashboard/hris",
   erp: "/dashboard/erp", purchasing: "/dashboard/purchasing",
   procurement: "/dashboard/purchasing", inventory: "/dashboard/erp",
-  finance: "/dashboard/finance", accounting: "/dashboard/finance",
   crm: "/dashboard/crm", customer: "/dashboard/crm", lead: "/dashboard/crm",
   pipeline: "/dashboard/crm",
   pos: "https://suluinwounderland.com/dashboard/pos/cashier-new",

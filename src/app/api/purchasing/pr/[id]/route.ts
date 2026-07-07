@@ -48,21 +48,46 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 
     const { data: pr, error } = await db
       .from("purchase_requests")
-      .select(`
-        *,
-        items:pr_items(
-          *,
-          raw_material:raw_materials!raw_material_id(id, kode, nama),
-          product:products!product_id(id, kode, nama),
-          satuan:units!satuan_id(id, nama)
-        )
-      `)
+      .select("*")
       .eq("id", id)
       .single();
 
     if (error || !pr) {
+      if (error?.message) {
+        console.error("Error fetching PR header:", error.message);
+      }
       return NextResponse.json({ error: "PR tidak ditemukan" }, { status: 404 });
     }
+
+    // Query builder hanya mendukung embed satu level; item relasi di-fetch terpisah.
+    const { data: items, error: itemsError } = await db
+      .from("pr_items")
+      .select(`
+        *,
+        raw_material:raw_materials!raw_material_id(id, kode, nama),
+        satuan:units!satuan_id(id, nama)
+      `)
+      .eq("pr_id", id);
+
+    if (itemsError) throw itemsError;
+
+    const productIds = [
+      ...new Set(
+        (items || [])
+          .map((item) => item.product_id as string | null | undefined)
+          .filter(Boolean)
+      ),
+    ] as string[];
+
+    const { data: products } = productIds.length
+      ? await db.from("products").select("id, kode, nama").in("id", productIds)
+      : { data: [] as Array<{ id: string; kode: string; nama: string }> };
+
+    const productById = new Map((products || []).map((product) => [product.id, product]));
+    const enrichedItems = (items || []).map((item) => ({
+      ...item,
+      product: item.product_id ? productById.get(item.product_id) ?? null : null,
+    }));
 
     const relatedUserIds = [
       pr.requester_id,
@@ -88,6 +113,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     return NextResponse.json({
       data: {
         ...pr,
+        items: enrichedItems,
         department,
         requester_name: userNameById.get(pr.requester_id) || "-",
         approved_head_name: pr.approved_by_head ? userNameById.get(pr.approved_by_head) : null,
@@ -108,9 +134,6 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     const { id } = await params;
     const db = await createServerPgClient();
     const user = await requireUser();
-    const moduleType =
-      existingPR.module_type === "product" ? ("product" as const) : ("raw_material" as const);
-    const validated = parsePrWriteBody(await request.json(), moduleType);
 
     const { data: existingPR, error: findError } = await db
       .from("purchase_requests")
@@ -121,6 +144,10 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     if (findError || !existingPR) {
       return NextResponse.json({ error: "PR tidak ditemukan" }, { status: 404 });
     }
+
+    const moduleType =
+      existingPR.module_type === "product" ? ("product" as const) : ("raw_material" as const);
+    const validated = parsePrWriteBody(await request.json(), moduleType);
 
     const canEdit =
       existingPR.requester_id === user.id ||

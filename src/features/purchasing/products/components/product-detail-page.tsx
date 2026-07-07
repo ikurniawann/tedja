@@ -136,7 +136,7 @@ export function ProductDetailPage() {
   return (
     <div className="space-y-6">
       <PurchasingPageHeader
-        title={product.nama}
+        title={product.nama || product.nama_produk || "Product"}
         description={
           <span className="flex flex-wrap items-center gap-2">
             <span className="rounded-md bg-gray-100 px-2 py-0.5 font-mono text-xs text-gray-700">
@@ -144,6 +144,8 @@ export function ProductDetailPage() {
             </span>
             <span className="text-gray-300">•</span>
             <span>{categoryLabel}</span>
+            <span className="text-gray-300">•</span>
+            <span>{product.warehouse_name || product.warehouse_code || "-"}</span>
             <span className="text-gray-300">•</span>
             <span>{getProductUnitLabel(product)}</span>
             <span className="ml-1">
@@ -190,6 +192,12 @@ export function ProductDetailPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="grid gap-4 p-4 sm:grid-cols-2 md:grid-cols-4">
+            <div>
+              <p className="text-xs font-medium text-gray-500">Stall</p>
+              <p className="font-medium text-gray-900">
+                {product.warehouse_name || product.warehouse_code || "-"}
+              </p>
+            </div>
             <div>
               <p className="text-xs font-medium text-gray-500">Category</p>
               <p className="font-medium text-gray-900">{categoryLabel}</p>

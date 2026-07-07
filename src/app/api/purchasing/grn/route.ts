@@ -275,7 +275,7 @@ export async function POST(request: NextRequest) {
 
     const businessScope =
       (await resolveBusinessScopeFromWarehouse(validated.warehouse_id)) ??
-      (await resolveBusinessScopeByCodes("SULU", "SULU-DAGO"));
+      (await resolveBusinessScopeByCodes("SULU", "SULU-BANDUNG"));
 
     const warehouseCheck = await validateWarehouseForReceivingScope(
       validated.warehouse_id,
@@ -405,7 +405,7 @@ export async function POST(request: NextRequest) {
       grnStatus = "rejected";
     }
 
-    // Scope mengikuti gudang penerimaan (mis. Company Sulu / Cabang Sulu Dago)
+    // Scope mengikuti gudang penerimaan (mis. Company Sulu / Cabang Sulu Bandung)
     const insertData: Record<string, unknown> = {
       nomor_grn: grnNumber,
       delivery_id: validated.delivery_id,

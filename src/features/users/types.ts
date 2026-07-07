@@ -52,6 +52,7 @@ export interface UserEmployeeFormValues {
   holding_id: string;
   company_id: string;
   branch_id: string;
+  warehouse_ids: string[];
   account_status: AccountStatus;
   approval_permissions: ApprovalPermission[];
 }

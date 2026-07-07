@@ -4,6 +4,7 @@
 
 import { NextRequest } from "next/server";
 import { createServerPgClient } from "@/lib/pg/create-client";
+import { MANUFACTURING_SCHEMA } from "@/lib/manufacturing/constants";
 import { z } from "zod";
 
 const bomSchema = z.object({
@@ -87,7 +88,7 @@ export async function GET(
     // Catatan: query builder hanya mendukung embed satu level (alias:table!fk_col),
     // jadi satuan_besar/satuan_kecil di-resolve manual lewat lookup units di bawah.
     const { data, error } = await db
-      .from("bom_items")
+      .from("bom_items", MANUFACTURING_SCHEMA)
       .select(`
         *,
         raw_material:raw_materials!raw_material_id (*),
@@ -212,7 +213,7 @@ export async function POST(
 
     // Cek apakah bahan sudah ada di BOM
     const { data: existingItem } = await db
-      .from("bom_items")
+      .from("bom_items", MANUFACTURING_SCHEMA)
       .select("id")
       .eq("product_id", id)
       .eq("raw_material_id", validated.raw_material_id)
@@ -228,7 +229,7 @@ export async function POST(
 
     // Insert BOM item
     const { data, error } = await db
-      .from("bom_items")
+      .from("bom_items", MANUFACTURING_SCHEMA)
       .insert({
         ...validated,
         product_id: id,

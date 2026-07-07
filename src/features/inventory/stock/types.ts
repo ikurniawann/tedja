@@ -33,6 +33,9 @@ export interface ProductStockItem {
   total_value: number;
   satuan_nama?: string | null;
   last_movement_at?: string | null;
+  warehouse_id?: string | null;
+  warehouse_name?: string | null;
+  warehouse_code?: string | null;
 }
 
 export interface StockListParams {

@@ -3,7 +3,7 @@
 Dokumen ini adalah **acuan utama** saat membuat fitur baru, enhancement, atau refactor UI/API di modul Items (Raw Material & Product) dan Purchasing.
 
 **Status:** Active  
-**Terakhir diperbarui:** 2026-07-01
+**Terakhir diperbarui:** 2026-07-07
 
 ---
 
@@ -79,7 +79,46 @@ Controller (route.ts) → Service/lib → DB (createServerPgClient)
 - Response konsisten: `{ success, data, pagination?, message? }`.
 - Pesan error API untuk user-facing module purchasing: **English**.
 
-### 2.3 Routing & URL
+### 2.3 Hierarki bisnis & Stall
+
+Struktur data operasional mengikuti hierarki:
+
+```
+Holding → Company → Branch → Stall (configuration.warehouses)
+```
+
+| Level | Tabel DB | Label UI | Catatan |
+|-------|----------|----------|---------|
+| Holding | `configuration.holdings` | Holding | Scope user holding-level |
+| Company | `configuration.companies` | Company | Scope user company-level |
+| Branch | `configuration.branches` | Branch | Scope user branch-level |
+| Stall | `configuration.warehouses` | **Stall** | Lokasi operasional per branch |
+
+**Konvensi label UI:**
+
+- Di database & API internal: gunakan `warehouse` / `warehouse_id`.
+- Di UI user-facing: gunakan label **Stall** via `STALL_LABELS` dari `@/lib/configuration/stall-labels`.
+- Jangan tampilkan "Warehouse" / "Gudang" di UI purchasing atau master item kecuali konteks teknis.
+
+**Product master:**
+
+- Setiap product **wajib** punya `warehouse_id` (stall) selain `company_id` + `branch_id`.
+- Unique kode product per `(company, branch, warehouse_id, kode)`.
+- Export/import spreadsheet wajib kolom `stall_code`.
+
+**User / karyawan dengan akses app:**
+
+- Scope **branch** wajib assign minimal **1 stall** (`configuration.user_warehouses`).
+- Stall yang dipilih harus berada di branch yang sama dengan scope user.
+- Tampilkan stall aktif di list `/dashboard/employees` (kolom **Stall**) dan form akses app.
+- Super Admin / scope holding atau company tidak wajib stall assignment.
+
+**Inventory & stock:**
+
+- Stock, stock opname, dan adjustment product difilter per stall (`warehouse_id`).
+- Stock opname create wajib pilih stall; preview scoped ke stall tersebut.
+
+### 2.4 Routing & URL
 
 **Selalu** gunakan konstanta route — jangan hardcode path dashboard.
 
@@ -94,7 +133,7 @@ import { RM_ROUTES, PRODUCT_ROUTES } from "@/modules/purchasing/constants/item-r
 
 Legacy path `/dashboard/purchasing/*` di-rewrite ke raw-material via `next.config.ts`. Untuk link baru, pakai `RM_ROUTES`.
 
-### 2.4 Navigasi dari Approval
+### 2.5 Navigasi dari Approval
 
 Saat buka detail dari list approval, pertahankan menu aktif:
 
@@ -117,6 +156,7 @@ Saat memperbarui atau membuat modul baru, **jangan hanya** menyelaraskan halaman
 |--------------|--------------|----------------|
 | **List** | `/products`, `/delivery` | `PurchasingPageHeader`, `PurchasingListSection`, pagination |
 | **Insert** | `/products/insert` | `PurchasingFormHeader`, `PurchasingFormFooter`, card form |
+| **Import** | `/materials/import` | `PurchasingFormHeader`, `PurchasingFormFooter`, `CsvImporter` embedded |
 | **Edit** | `/products/edit/[id]` | Sama seperti insert + `backHref` ke detail |
 | **Detail** | `/products/[id]` | `PurchasingPageHeader`, card `border-gray-200/70`, aksi kanan |
 | **Sub-form / editor** | `/products/bom/[id]` | `PurchasingFormHeader`, tabel/form standar, loading + toast |
@@ -261,6 +301,14 @@ import { PRODUCT_ROUTES } from "@/modules/purchasing/constants/item-routes";
 | Loading awal | `Loader2` + teks English, bukan teks statis saja |
 | Redirect setelah sukses | `PRODUCT_ROUTES.products` / `productsDetail(id)` — jangan path legacy |
 
+**Halaman import (bulk CSV):**
+
+- Route dedicated, contoh `RM_ROUTES.materialsImport`
+- `PurchasingFormHeader` + tombol **Download Template** di `actions`
+- Card upload: `border-gray-200/70 shadow-xs`, header section dengan ikon pink
+- `CsvImporter` mode `embedded` + `hideActions` + `PurchasingFormFooter` untuk submit
+- Copy English, toast sukses/error, redirect ke list jika tidak ada row skipped
+
 Detail ukuran & Combobox: [`PROJECT_STANDARDS.md`](./purchasing/PROJECT_STANDARDS.md).
 
 ---
@@ -355,6 +403,7 @@ Jangan pakai list API generik jika ada aturan bisnis. Buat endpoint dedicated:
 | Master list | `src/features/purchasing/raw-materials/components/raw-materials-page.tsx` |
 | Master detail | `src/features/purchasing/raw-materials/components/raw-material-detail-page.tsx` |
 | Master insert | `src/features/purchasing/raw-materials/components/new-raw-material-page.tsx` |
+| Master import | `src/features/purchasing/raw-materials/components/raw-materials-import-page.tsx` |
 | Product list (full module) | `src/features/purchasing/products/components/products-page.tsx` |
 | Product insert / edit / detail / BOM | `src/features/purchasing/products/components/*-product-page.tsx`, `bom-editor-page.tsx` |
 | Production recipes list | `src/features/purchasing/production/components/production-recipes-page.tsx` |

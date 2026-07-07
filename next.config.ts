@@ -18,10 +18,6 @@ const nextConfig: NextConfig = {
           source: "/dashboard/raw-material/categories",
           destination: "/dashboard/items/raw-material/categories",
         },
-        {
-          source: "/dashboard/raw-material/storage",
-          destination: "/dashboard/items/raw-material/storage",
-        },
         { source: "/dashboard/raw-material/materials", destination: "/dashboard/items/raw-materials" },
         {
           source: "/dashboard/raw-material/materials/bom/:path*",
@@ -120,11 +116,6 @@ const nextConfig: NextConfig = {
       {
         source: "/dashboard/items/raw-material/categories",
         destination: "/dashboard/raw-material/categories",
-        permanent: false,
-      },
-      {
-        source: "/dashboard/items/raw-material/storage",
-        destination: "/dashboard/raw-material/storage",
         permanent: false,
       },
       {

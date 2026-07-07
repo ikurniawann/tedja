@@ -14,6 +14,14 @@ import type {
   UserListResponse,
 } from "./types";
 
+export type BranchStallOption = {
+  id: string;
+  name: string;
+  code: string;
+  branch_id: string;
+  is_default: boolean;
+};
+
 const BASE = "/api/users";
 
 function buildListUrl(params?: UserListParams) {
@@ -102,3 +110,13 @@ export const updateUser = (id: string, body: UpdateUserEmployeeInput) =>
 
 export const resetUserPassword = (id: string) =>
   apiPost<{ message: string; tempPassword: string }>(`${BASE}/${id}/reset-password`, {});
+
+export const fetchBranchStalls = async (branchId: string): Promise<BranchStallOption[]> => {
+  const params = new URLSearchParams({ branch_id: branchId });
+  const res = await fetch(`/api/purchasing/warehouses?${params.toString()}`);
+  const json = (await res.json()) as { success?: boolean; data?: BranchStallOption[]; error?: string };
+  if (!res.ok) {
+    throw new Error(json.error ?? "Failed to load stalls");
+  }
+  return json.data ?? [];
+};

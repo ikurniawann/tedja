@@ -14,7 +14,7 @@ const DEMO_ACCOUNTS = [
     password: "Arkiv2026*#",
   },
   {
-    label: "Demo Sulu Dago",
+    label: "Demo Sulu Bandung",
     email: "demo@sulu.id",
     password: "demo",
   },
@@ -131,7 +131,7 @@ export default function LoginPage() {
           <div className="mb-5 grid size-24 place-items-center rounded-full border border-white/20 bg-white/15 text-3xl font-semibold shadow-2xl backdrop-blur-2xl">
             {email ? email.charAt(0).toUpperCase() : "A"}
           </div>
-          <h1 className="text-center text-2xl font-semibold tracking-[-0.03em] drop-shadow-lg">Arkiv OS</h1>
+          <h1 className="text-center text-2xl font-semibold tracking-[-0.03em] drop-shadow-lg">Arkiv</h1>
           <p className="mt-1 text-center text-sm text-white/70">
             {requestedModule ? `Verifikasi akun untuk membuka ${requestedModule.toUpperCase()}` : "Verifikasi akun untuk masuk ke desktop"}
           </p>

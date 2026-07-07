@@ -63,7 +63,7 @@ export const BUSINESS_LEVEL_LABELS: Record<BusinessEntityType, string> = {
   holding: "Holding",
   company: "Company",
   branch: "Branch",
-  warehouse: "Warehouse",
+  warehouse: "Stall",
 };
 
 export const BUSINESS_CHILD_TYPE: Partial<Record<BusinessEntityType, BusinessEntityType>> = {

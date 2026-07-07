@@ -1,0 +1,136 @@
+import { NextResponse } from "next/server";
+import { requireApiRole, ApiError } from "@/lib/api/auth";
+import {
+  getApiUserScope,
+  companyScopeOr,
+  branchScopeOr,
+} from "@/lib/api/scope";
+import { query } from "@/lib/db";
+import {
+  buildRawMaterialWorkbook,
+  workbookToBuffer,
+} from "@/lib/purchasing/raw-material-spreadsheet";
+
+type ExportRow = {
+  kode: string;
+  nama: string;
+  kategori: string;
+  satuan_besar_kode: string | null;
+  satuan_kecil_kode: string | null;
+  konversi_factor: number | string;
+  stok_minimum: number | string;
+  stok_maximum: number | string | null;
+  shelf_life_days: number | string | null;
+  coa: string | null;
+  harga_beli: number | string;
+  opening_stock: number | string;
+  stall_code: string;
+  deskripsi: string | null;
+  status: string;
+};
+
+export async function GET() {
+  try {
+    await requireApiRole([
+      "purchasing_admin",
+      "purchasing_staff",
+      "purchasing_manager",
+      "super_admin",
+      "warehouse_admin",
+      "warehouse_staff",
+    ]);
+
+    const scope = await getApiUserScope();
+    const params: unknown[] = [];
+    const filters: string[] = ["rm.deleted_at IS NULL"];
+
+    const companyOr = companyScopeOr(scope);
+    if (companyOr) {
+      const companyId = scope?.companyId;
+      if (companyId) {
+        params.push(companyId);
+        filters.push(`rm.company_id = $${params.length}`);
+      }
+    }
+
+    const branchOr = branchScopeOr(scope);
+    if (branchOr) {
+      const branchId = scope?.branchId;
+      if (branchId) {
+        params.push(branchId);
+        filters.push(`rm.branch_id = $${params.length}`);
+      }
+    }
+
+    const rows = await query<ExportRow>(
+      `SELECT
+         rm.kode,
+         rm.nama,
+         rm.kategori,
+         ub.kode AS satuan_besar_kode,
+         uk.kode AS satuan_kecil_kode,
+         rm.konversi_factor,
+         rm.stok_minimum,
+         rm.stok_maximum,
+         rm.shelf_life_days,
+         rm.coa,
+         COALESCE(rm.harga_beli, 0) AS harga_beli,
+         COALESCE(inv.qty_available, 0) AS opening_stock,
+         COALESCE(wh.code, 'MAIN') AS stall_code,
+         rm.deskripsi,
+         CASE WHEN rm.is_active THEN 'active' ELSE 'inactive' END AS status
+       FROM item.raw_materials rm
+       LEFT JOIN item.units ub ON ub.id = rm.satuan_besar_id
+       LEFT JOIN item.units uk ON uk.id = rm.satuan_kecil_id
+       LEFT JOIN configuration.warehouses wh
+         ON wh.branch_id = rm.branch_id
+        AND wh.code = 'MAIN'
+        AND wh.is_active = true
+       LEFT JOIN inventory.inventory inv
+         ON inv.raw_material_id = rm.id
+        AND inv.warehouse_id = wh.id
+        AND inv.is_active = true
+       WHERE ${filters.join(" AND ")}
+       ORDER BY rm.nama ASC`,
+      params
+    );
+
+    const workbook = buildRawMaterialWorkbook(
+      rows.map((row) => ({
+        kode: row.kode,
+        nama: row.nama,
+        kategori: row.kategori,
+        satuan_besar_kode: row.satuan_besar_kode ?? "",
+        satuan_kecil_kode: row.satuan_kecil_kode ?? "",
+        konversi_factor: row.konversi_factor ?? 1,
+        stok_minimum: row.stok_minimum ?? 0,
+        stok_maximum: row.stok_maximum ?? "",
+        shelf_life_days: row.shelf_life_days ?? "",
+        coa: row.coa ?? "",
+        harga_beli: row.harga_beli ?? 0,
+        opening_stock: row.opening_stock ?? 0,
+        stall_code: row.stall_code || "MAIN",
+        deskripsi: row.deskripsi ?? "",
+        status: row.status,
+      }))
+    );
+
+    const buffer = workbookToBuffer(workbook);
+    const date = new Date().toISOString().split("T")[0];
+
+    return new NextResponse(buffer, {
+      headers: {
+        "Content-Type":
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "Content-Disposition": `attachment; filename="raw-materials-${date}.xlsx"`,
+      },
+    });
+  } catch (error) {
+    if (error instanceof ApiError) return error.toResponse();
+    console.error("Export raw materials error:", error);
+    return NextResponse.json(
+      { message: error instanceof Error ? error.message : "Export failed" },
+      { status: 500 }
+    );
+  }
+}

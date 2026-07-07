@@ -32,8 +32,10 @@ import {
   BuildingOfficeIcon,
   IdentificationIcon,
   BanknotesIcon,
+  KeyIcon,
 } from "@heroicons/react/24/outline";
 import { useToast, ToastContainer } from "@/components/ui/toast";
+import { useAuth } from "@/hooks/use-auth";
 import {
   useCreateEmployeeDocument,
   useDeleteEmployeeDocument,
@@ -45,15 +47,16 @@ import {
   useEmploymentHistory,
   useHRISEmployeeDetail,
 } from "../queries";
+import { ResetPasswordDialog } from "./reset-password-dialog";
 
 const STATUS_LABELS: Record<string, string> = {
-  probation: "Probasi",
-  contract: "Kontrak",
-  permanent: "Tetap",
-  internship: "Magang",
-  resigned: "Resign",
-  terminated: "PHK",
-  suspended: "Suspend",
+  probation: "Probation",
+  contract: "Contract",
+  permanent: "Permanent",
+  internship: "Internship",
+  resigned: "Resigned",
+  terminated: "Terminated",
+  suspended: "Suspended",
 };
 
 const STATUS_COLORS: Record<string, string> = {
@@ -67,24 +70,24 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 const DOC_TYPE_LABELS: Record<string, string> = {
-  ktp: "KTP",
-  npwp: "NPWP",
-  ijazah: "Ijazah",
+  ktp: "National ID (KTP)",
+  npwp: "Tax ID (NPWP)",
+  ijazah: "Diploma",
   cv: "CV / Resume",
-  kontrak: "Kontrak Kerja",
-  bpjs_tk: "BPJS Ketenagakerjaan",
-  bpjs_kes: "BPJS Kesehatan",
-  sertifikat: "Sertifikat",
-  other: "Lainnya",
+  kontrak: "Employment Contract",
+  bpjs_tk: "BPJS Employment",
+  bpjs_kes: "BPJS Health",
+  sertifikat: "Certificate",
+  other: "Other",
 };
 
 const HISTORY_TYPE_LABELS: Record<string, string> = {
-  hire: "Bergabung",
-  promotion: "Promosi",
-  transfer: "Mutasi",
-  demotion: "Demosi",
-  status_change: "Perubahan Status",
-  salary_change: "Perubahan Gaji",
+  hire: "Hired",
+  promotion: "Promotion",
+  transfer: "Transfer",
+  demotion: "Demotion",
+  status_change: "Status Change",
+  salary_change: "Salary Change",
 };
 
 const HISTORY_COLORS: Record<string, string> = {
@@ -98,7 +101,7 @@ const HISTORY_COLORS: Record<string, string> = {
 
 function formatDate(d: string | null) {
   if (!d) return "-";
-  return new Date(d).toLocaleDateString("id-ID", { day: "2-digit", month: "long", year: "numeric" });
+  return new Date(d).toLocaleDateString("en-US", { day: "2-digit", month: "long", year: "numeric" });
 }
 
 function calculateTenure(joinDate: string) {
@@ -106,9 +109,9 @@ function calculateTenure(joinDate: string) {
   const now = new Date();
   const years = now.getFullYear() - join.getFullYear();
   const months = now.getMonth() - join.getMonth();
-  if (years > 0) return `${years} tahun ${Math.max(0, months)} bulan`;
-  if (months > 0) return `${months} bulan`;
-  return "Baru bergabung";
+  if (years > 0) return `${years} yr ${Math.max(0, months)} mo`;
+  if (months > 0) return `${months} mo`;
+  return "Just joined";
 }
 
 type Tab = "info" | "employment" | "documents" | "attendance" | "leave";
@@ -117,9 +120,12 @@ export function UserDetailPage({ params }: { params: Promise<{ id: string }> }) 
   const { id } = use(params);
   const router = useRouter();
   const pathname = usePathname();
+  const { user } = useAuth();
   const { toasts, showToast, removeToast } = useToast();
+  const canResetPassword = user?.role === "super_admin" || user?.role === "admin";
 
   const [activeTab, setActiveTab] = useState<Tab>("info");
+  const [resetDialogOpen, setResetDialogOpen] = useState(false);
 
   const { data: employee, isLoading: loading } = useHRISEmployeeDetail(id);
   const { data: documents = [], isLoading: documentsLoading } = useEmployeeDocuments(
@@ -168,13 +174,13 @@ export function UserDetailPage({ params }: { params: Promise<{ id: string }> }) 
 
   async function handleSaveDocument() {
     if (!docForm.document_name || !docForm.file_url) {
-      showToast("Nama dokumen dan URL file wajib diisi", "error");
+      showToast("Document name and file URL are required", "error");
       return;
     }
     setSavingDoc(true);
     try {
       await createDocumentMutation.mutateAsync(docForm);
-      showToast("Dokumen berhasil disimpan");
+      showToast("Document saved successfully");
       setDocDialog(false);
       setDocForm({
         document_type: "ktp",
@@ -185,28 +191,28 @@ export function UserDetailPage({ params }: { params: Promise<{ id: string }> }) 
         notes: "",
       });
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "Gagal menyimpan dokumen", "error");
+      showToast(error instanceof Error ? error.message : "Failed to save document", "error");
     } finally {
       setSavingDoc(false);
     }
   }
 
   async function handleDeleteDocument(docId: string) {
-    if (!confirm("Hapus dokumen ini?")) return;
+    if (!confirm("Delete this document?")) return;
     try {
       await deleteDocumentMutation.mutateAsync(docId);
-      showToast("Dokumen dihapus");
+      showToast("Document deleted");
     } catch {
-      showToast("Gagal menghapus dokumen", "error");
+      showToast("Failed to delete document", "error");
     }
   }
 
   const tabs: { key: Tab; label: string; icon: React.ReactNode }[] = [
-    { key: "info", label: "Info Personal", icon: <UserCircleIcon className="w-4 h-4" /> },
-    { key: "employment", label: "Riwayat Kerja", icon: <BriefcaseIcon className="w-4 h-4" /> },
-    { key: "documents", label: "Dokumen", icon: <DocumentTextIcon className="w-4 h-4" /> },
-    { key: "attendance", label: "Absensi", icon: <ClockIcon className="w-4 h-4" /> },
-    { key: "leave", label: "Saldo Cuti", icon: <CalendarDaysIcon className="w-4 h-4" /> },
+    { key: "info", label: "Personal Info", icon: <UserCircleIcon className="w-4 h-4" /> },
+    { key: "employment", label: "Employment History", icon: <BriefcaseIcon className="w-4 h-4" /> },
+    { key: "documents", label: "Documents", icon: <DocumentTextIcon className="w-4 h-4" /> },
+    { key: "attendance", label: "Attendance", icon: <ClockIcon className="w-4 h-4" /> },
+    { key: "leave", label: "Leave Balance", icon: <CalendarDaysIcon className="w-4 h-4" /> },
   ];
 
   if (loading) {
@@ -220,8 +226,8 @@ export function UserDetailPage({ params }: { params: Promise<{ id: string }> }) 
   if (!employee) {
     return (
       <div className="text-center py-20">
-        <p className="text-gray-500">Karyawan tidak ditemukan</p>
-        <Button className="mt-4" onClick={() => router.back()}>Kembali</Button>
+        <p className="text-gray-500">Employee not found</p>
+        <Button className="mt-4" onClick={() => router.back()}>Back</Button>
       </div>
     );
   }
@@ -231,16 +237,16 @@ export function UserDetailPage({ params }: { params: Promise<{ id: string }> }) 
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-sm text-gray-500">
         <button onClick={() => router.push("/dashboard/employees")} className="hover:text-gray-900">
-          Direktori Karyawan
+          Employee Directory
         </button>
         <span>/</span>
-        <span className="text-gray-900 font-medium">{employee?.full_name || "Detail Karyawan"}</span>
+        <span className="text-gray-900 font-medium">{employee?.full_name || "Employee Detail"}</span>
       </div>
 
       {/* Back + Header */}
       <div className="flex items-center gap-4">
         <Button variant="ghost" size="sm" onClick={() => router.back()} className="gap-1">
-          <ArrowLeftIcon className="w-4 h-4" /> Kembali
+          <ArrowLeftIcon className="w-4 h-4" /> Back
         </Button>
       </div>
 
@@ -267,11 +273,11 @@ export function UserDetailPage({ params }: { params: Promise<{ id: string }> }) 
                 </Badge>
                 {employee.is_active ? (
                   <span className="flex items-center gap-1 text-xs text-green-600">
-                    <CheckCircleIcon className="w-3.5 h-3.5" /> Aktif
+                    <CheckCircleIcon className="w-3.5 h-3.5" /> Active
                   </span>
                 ) : (
                   <span className="flex items-center gap-1 text-xs text-red-500">
-                    <XCircleIcon className="w-3.5 h-3.5" /> Nonaktif
+                    <XCircleIcon className="w-3.5 h-3.5" /> Inactive
                   </span>
                 )}
               </div>
@@ -293,11 +299,21 @@ export function UserDetailPage({ params }: { params: Promise<{ id: string }> }) 
                 )}
                 <span className="flex items-center gap-1">
                   <CalendarDaysIcon className="w-3.5 h-3.5" />
-                  Bergabung {formatDate(employee.join_date)} · {calculateTenure(employee.join_date)}
+                  Joined {formatDate(employee.join_date)} · {calculateTenure(employee.join_date)}
                 </span>
               </div>
             </div>
             <div className="flex gap-2 shrink-0">
+              {canResetPassword && employee.user_id ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setResetDialogOpen(true)}
+                  className="gap-1"
+                >
+                  <KeyIcon className="w-4 h-4" /> Reset Password
+                </Button>
+              ) : null}
               <Button
                 variant="outline"
                 size="sm"
@@ -352,15 +368,15 @@ export function UserDetailPage({ params }: { params: Promise<{ id: string }> }) 
               <Card>
                 <CardHeader className="pb-3">
                   <CardTitle className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-                    <UserCircleIcon className="w-4 h-4" /> Data Pribadi
+                    <UserCircleIcon className="w-4 h-4" /> Personal Data
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
                   {[
-                    { label: "Nama Lengkap", value: employee.full_name },
-                    { label: "Jenis Kelamin", value: employee.gender === "male" ? "Laki-laki" : employee.gender === "female" ? "Perempuan" : "-" },
-                    { label: "Tanggal Lahir", value: formatDate(employee.birth_date) },
-                    { label: "Status Nikah", value: { single: "Belum Menikah", married: "Menikah", divorced: "Cerai", widowed: "Duda/Janda" }[employee.marital_status as string] || "-" },
+                    { label: "Full Name", value: employee.full_name },
+                    { label: "Gender", value: employee.gender === "male" ? "Male" : employee.gender === "female" ? "Female" : "-" },
+                    { label: "Date of Birth", value: formatDate(employee.birth_date) },
+                    { label: "Marital Status", value: { single: "Single", married: "Married", divorced: "Divorced", widowed: "Widowed" }[employee.marital_status as string] || "-" },
                     { label: "KTP", value: employee.ktp || "-" },
                     { label: "NPWP", value: employee.npwp || "-" },
                   ].map(({ label, value }) => (
@@ -376,17 +392,17 @@ export function UserDetailPage({ params }: { params: Promise<{ id: string }> }) 
               <Card>
                 <CardHeader className="pb-3">
                   <CardTitle className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-                    <MapPinIcon className="w-4 h-4" /> Kontak & Alamat
+                    <MapPinIcon className="w-4 h-4" /> Contact & Address
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
                   {[
                     { label: "Email", value: employee.email },
-                    { label: "Telepon", value: employee.phone || "-" },
-                    { label: "Alamat", value: employee.address || "-" },
-                    { label: "Kota", value: employee.city || "-" },
-                    { label: "Provinsi", value: employee.province || "-" },
-                    { label: "Kode Pos", value: employee.postal_code || "-" },
+                    { label: "Phone", value: employee.phone || "-" },
+                    { label: "Address", value: employee.address || "-" },
+                    { label: "City", value: employee.city || "-" },
+                    { label: "Province", value: employee.province || "-" },
+                    { label: "Postal Code", value: employee.postal_code || "-" },
                   ].map(({ label, value }) => (
                     <div key={label} className="flex justify-between text-sm">
                       <span className="text-gray-500 shrink-0 w-36">{label}</span>
@@ -400,19 +416,19 @@ export function UserDetailPage({ params }: { params: Promise<{ id: string }> }) 
               <Card>
                 <CardHeader className="pb-3">
                   <CardTitle className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-                    <BuildingOfficeIcon className="w-4 h-4" /> Info Kepegawaian
+                    <BuildingOfficeIcon className="w-4 h-4" /> Employment Info
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
                   {[
                     { label: "NIP", value: employee.nip },
-                    { label: "Departemen", value: employee.department?.name || "-" },
-                    { label: "Seksi", value: employee.section?.name || "-" },
-                    { label: "Jabatan", value: employee.job_title?.title || "-" },
-                    { label: "Atasan", value: employee.manager?.full_name || "-" },
-                    { label: "Tanggal Bergabung", value: formatDate(employee.join_date) },
+                    { label: "Department", value: employee.department?.name || "-" },
+                    { label: "Section", value: employee.section?.name || "-" },
+                    { label: "Job Title", value: employee.job_title?.title || "-" },
+                    { label: "Manager", value: employee.manager?.full_name || "-" },
+                    { label: "Join Date", value: formatDate(employee.join_date) },
                     { label: "Status", value: STATUS_LABELS[employee.employment_status] || employee.employment_status },
-                    { label: "Masa Kerja", value: calculateTenure(employee.join_date) },
+                    { label: "Tenure", value: calculateTenure(employee.join_date) },
                   ].map(({ label, value }) => (
                     <div key={label} className="flex justify-between text-sm">
                       <span className="text-gray-500 shrink-0 w-36">{label}</span>
@@ -431,10 +447,10 @@ export function UserDetailPage({ params }: { params: Promise<{ id: string }> }) 
                 </CardHeader>
                 <CardContent className="space-y-3">
                   {[
-                    { label: "Nama Bank", value: employee.bank_name || "-" },
-                    { label: "No. Rekening", value: employee.bank_account || "-" },
-                    { label: "BPJS TK", value: employee.bpjs_tk || "-" },
-                    { label: "BPJS Kesehatan", value: employee.bpjs_kesehatan || "-" },
+                    { label: "Bank Name", value: employee.bank_name || "-" },
+                    { label: "Account No.", value: employee.bank_account || "-" },
+                    { label: "BPJS Employment", value: employee.bpjs_tk || "-" },
+                    { label: "BPJS Health", value: employee.bpjs_kesehatan || "-" },
                   ].map(({ label, value }) => (
                     <div key={label} className="flex justify-between text-sm">
                       <span className="text-gray-500 shrink-0 w-36">{label}</span>
@@ -449,14 +465,14 @@ export function UserDetailPage({ params }: { params: Promise<{ id: string }> }) 
                 <Card>
                   <CardHeader className="pb-3">
                     <CardTitle className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-                      <PhoneIcon className="w-4 h-4" /> Kontak Darurat
+                      <PhoneIcon className="w-4 h-4" /> Emergency Contact
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-3">
                     {[
-                      { label: "Nama", value: employee.emergency_contact_name || "-" },
-                      { label: "Telepon", value: employee.emergency_contact_phone || "-" },
-                      { label: "Hubungan", value: employee.emergency_contact_relationship || "-" },
+                      { label: "Name", value: employee.emergency_contact_name || "-" },
+                      { label: "Phone", value: employee.emergency_contact_phone || "-" },
+                      { label: "Relationship", value: employee.emergency_contact_relationship || "-" },
                     ].map(({ label, value }) => (
                       <div key={label} className="flex justify-between text-sm">
                         <span className="text-gray-500 shrink-0 w-36">{label}</span>
@@ -473,13 +489,13 @@ export function UserDetailPage({ params }: { params: Promise<{ id: string }> }) 
           {activeTab === "employment" && (
             <div className="space-y-4">
               <div className="flex justify-between items-center">
-                <h3 className="font-semibold text-gray-700">Riwayat Kepegawaian</h3>
+                <h3 className="font-semibold text-gray-700">Employment History</h3>
               </div>
               {history.length === 0 ? (
                 <Card>
                   <CardContent className="py-12 text-center text-gray-400">
                     <BriefcaseIcon className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-                    Belum ada riwayat kerja
+                    No employment history yet
                   </CardContent>
                 </Card>
               ) : (
@@ -500,37 +516,37 @@ export function UserDetailPage({ params }: { params: Promise<{ id: string }> }) 
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
                               {h.prev_department && (
                                 <div>
-                                  <p className="text-xs text-gray-400">Dari Departemen</p>
+                                  <p className="text-xs text-gray-400">From Department</p>
                                   <p className="text-gray-700">{h.prev_department.name}</p>
                                 </div>
                               )}
                               {h.new_department && (
                                 <div>
-                                  <p className="text-xs text-gray-400">Ke Departemen</p>
+                                  <p className="text-xs text-gray-400">To Department</p>
                                   <p className="text-gray-700 font-medium">{h.new_department.name}</p>
                                 </div>
                               )}
                               {h.prev_job_title && (
                                 <div>
-                                  <p className="text-xs text-gray-400">Dari Jabatan</p>
+                                  <p className="text-xs text-gray-400">From Job Title</p>
                                   <p className="text-gray-700">{h.prev_job_title.title}</p>
                                 </div>
                               )}
                               {h.new_job_title && (
                                 <div>
-                                  <p className="text-xs text-gray-400">Ke Jabatan</p>
+                                  <p className="text-xs text-gray-400">To Job Title</p>
                                   <p className="text-gray-700 font-medium">{h.new_job_title.title}</p>
                                 </div>
                               )}
                               {h.prev_employment_status && (
                                 <div>
-                                  <p className="text-xs text-gray-400">Dari Status</p>
+                                  <p className="text-xs text-gray-400">From Status</p>
                                   <p className="text-gray-700">{STATUS_LABELS[h.prev_employment_status]}</p>
                                 </div>
                               )}
                               {h.new_employment_status && (
                                 <div>
-                                  <p className="text-xs text-gray-400">Ke Status</p>
+                                  <p className="text-xs text-gray-400">To Status</p>
                                   <p className="text-gray-700 font-medium">{STATUS_LABELS[h.new_employment_status]}</p>
                                 </div>
                               )}
@@ -552,16 +568,16 @@ export function UserDetailPage({ params }: { params: Promise<{ id: string }> }) 
           {activeTab === "documents" && (
             <div className="space-y-4">
               <div className="flex justify-between items-center">
-                <h3 className="font-semibold text-gray-700">Dokumen Karyawan</h3>
+                <h3 className="font-semibold text-gray-700">Employee Documents</h3>
                 <Button size="sm" onClick={() => setDocDialog(true)} className="gap-1">
-                  <ArrowUpTrayIcon className="w-4 h-4" /> Upload Dokumen
+                  <ArrowUpTrayIcon className="w-4 h-4" /> Upload Document
                 </Button>
               </div>
               {documents.length === 0 ? (
                 <Card>
                   <CardContent className="py-12 text-center text-gray-400">
                     <DocumentTextIcon className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-                    Belum ada dokumen. Klik "Upload Dokumen" untuk menambahkan.
+                    No documents yet. Click "Upload Document" to add one.
                   </CardContent>
                 </Card>
               ) : (
@@ -579,12 +595,12 @@ export function UserDetailPage({ params }: { params: Promise<{ id: string }> }) 
                             </p>
                             {doc.issue_date && (
                               <p className="text-xs text-gray-400 mt-1">
-                                Terbit: {formatDate(doc.issue_date)}
+                                Issued: {formatDate(doc.issue_date)}
                               </p>
                             )}
                             {doc.expiry_date && (
                               <p className={`text-xs mt-0.5 ${new Date(doc.expiry_date) < new Date() ? "text-red-500" : "text-gray-400"}`}>
-                                Berlaku: {formatDate(doc.expiry_date)}
+                                Expires: {formatDate(doc.expiry_date)}
                               </p>
                             )}
                           </div>
@@ -594,7 +610,7 @@ export function UserDetailPage({ params }: { params: Promise<{ id: string }> }) 
                               variant="ghost"
                               onClick={() => window.open(doc.file_url, "_blank")}
                               className="text-blue-600 hover:bg-blue-50 p-1.5"
-                              title="Lihat dokumen"
+                              title="View document"
                             >
                               <IdentificationIcon className="w-4 h-4" />
                             </Button>
@@ -603,7 +619,7 @@ export function UserDetailPage({ params }: { params: Promise<{ id: string }> }) 
                               variant="ghost"
                               onClick={() => handleDeleteDocument(doc.id)}
                               className="text-red-500 hover:bg-red-50 p-1.5"
-                              title="Hapus"
+                              title="Delete"
                             >
                               <TrashIcon className="w-4 h-4" />
                             </Button>
@@ -611,7 +627,7 @@ export function UserDetailPage({ params }: { params: Promise<{ id: string }> }) 
                         </div>
                         {doc.is_verified && (
                           <div className="flex items-center gap-1 mt-2 text-xs text-green-600">
-                            <CheckCircleIcon className="w-3.5 h-3.5" /> Terverifikasi
+                            <CheckCircleIcon className="w-3.5 h-3.5" /> Verified
                           </div>
                         )}
                       </CardContent>
@@ -625,12 +641,12 @@ export function UserDetailPage({ params }: { params: Promise<{ id: string }> }) 
           {/* ABSENSI */}
           {activeTab === "attendance" && (
             <div className="space-y-4">
-              <h3 className="font-semibold text-gray-700">Ringkasan Absensi (Bulan Ini)</h3>
+              <h3 className="font-semibold text-gray-700">Attendance Summary (This Month)</h3>
               {attendance.length === 0 ? (
                 <Card>
                   <CardContent className="py-12 text-center text-gray-400">
                     <ClockIcon className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-                    Belum ada data absensi bulan ini
+                    No attendance data for this month
                   </CardContent>
                 </Card>
               ) : (
@@ -638,10 +654,10 @@ export function UserDetailPage({ params }: { params: Promise<{ id: string }> }) 
                   {/* Summary Stats */}
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                     {[
-                      { label: "Hadir", value: attendance.filter(a => a.status === "present").length, color: "text-green-700" },
-                      { label: "Terlambat", value: attendance.filter(a => a.is_late).length, color: "text-yellow-700" },
-                      { label: "Tidak Hadir", value: attendance.filter(a => a.status === "absent").length, color: "text-red-700" },
-                      { label: "Total Jam", value: attendance.reduce((sum: number, a: any) => sum + (a.work_hours || 0), 0).toFixed(1) + "j", color: "text-blue-700" },
+                      { label: "Present", value: attendance.filter(a => a.status === "present").length, color: "text-green-700" },
+                      { label: "Late", value: attendance.filter(a => a.is_late).length, color: "text-yellow-700" },
+                      { label: "Absent", value: attendance.filter(a => a.status === "absent").length, color: "text-red-700" },
+                      { label: "Total Hours", value: attendance.reduce((sum: number, a: any) => sum + (a.work_hours || 0), 0).toFixed(1) + "h", color: "text-blue-700" },
                     ].map((s) => (
                       <Card key={s.label}>
                         <CardContent className="pt-4 pb-3">
@@ -658,10 +674,10 @@ export function UserDetailPage({ params }: { params: Promise<{ id: string }> }) 
                         <table className="w-full text-sm">
                           <thead>
                             <tr className="border-b border-gray-100 bg-gray-50">
-                              <th className="text-left p-3">Tanggal</th>
+                              <th className="text-left p-3">Date</th>
                               <th className="text-left p-3">Clock In</th>
                               <th className="text-left p-3">Clock Out</th>
-                              <th className="text-left p-3">Jam Kerja</th>
+                              <th className="text-left p-3">Work Hours</th>
                               <th className="text-left p-3">Status</th>
                             </tr>
                           </thead>
@@ -669,15 +685,15 @@ export function UserDetailPage({ params }: { params: Promise<{ id: string }> }) 
                             {attendance.map((a) => (
                               <tr key={a.id} className="border-b border-gray-50">
                                 <td className="p-3 text-gray-700">{formatDate(a.date)}</td>
-                                <td className="p-3 text-gray-600">{a.clock_in ? new Date(a.clock_in).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }) : "-"}</td>
-                                <td className="p-3 text-gray-600">{a.clock_out ? new Date(a.clock_out).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }) : "-"}</td>
-                                <td className="p-3 text-gray-600">{a.work_hours ? `${a.work_hours.toFixed(1)}j` : "-"}</td>
+                                <td className="p-3 text-gray-600">{a.clock_in ? new Date(a.clock_in).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }) : "-"}</td>
+                                <td className="p-3 text-gray-600">{a.clock_out ? new Date(a.clock_out).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }) : "-"}</td>
+                                <td className="p-3 text-gray-600">{a.work_hours ? `${a.work_hours.toFixed(1)}h` : "-"}</td>
                                 <td className="p-3">
                                   <div className="flex gap-1">
                                     <Badge className={a.status === "present" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-600"}>
-                                      {a.status === "present" ? "Hadir" : a.status === "absent" ? "Absen" : a.status}
+                                      {a.status === "present" ? "Present" : a.status === "absent" ? "Absent" : a.status}
                                     </Badge>
-                                    {a.is_late && <Badge className="bg-yellow-100 text-yellow-700">Terlambat</Badge>}
+                                    {a.is_late && <Badge className="bg-yellow-100 text-yellow-700">Late</Badge>}
                                   </div>
                                 </td>
                               </tr>
@@ -695,12 +711,12 @@ export function UserDetailPage({ params }: { params: Promise<{ id: string }> }) 
           {/* SALDO CUTI */}
           {activeTab === "leave" && (
             <div className="space-y-4">
-              <h3 className="font-semibold text-gray-700">Saldo Cuti</h3>
+              <h3 className="font-semibold text-gray-700">Leave Balance</h3>
               {leaveBalances.length === 0 ? (
                 <Card>
                   <CardContent className="py-12 text-center text-gray-400">
                     <CalendarDaysIcon className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-                    Belum ada data saldo cuti
+                    No leave balance data yet
                   </CardContent>
                 </Card>
               ) : (
@@ -713,11 +729,11 @@ export function UserDetailPage({ params }: { params: Promise<{ id: string }> }) 
                         </p>
                         <div className="flex items-end gap-1">
                           <span className="text-3xl font-bold text-blue-600">{lb.remaining_days ?? lb.balance}</span>
-                          <span className="text-sm text-gray-400 mb-0.5">/ {lb.total_days ?? lb.quota} hari</span>
+                          <span className="text-sm text-gray-400 mb-0.5">/ {lb.total_days ?? lb.quota} days</span>
                         </div>
                         {(lb.used_days !== undefined || lb.used !== undefined) && (
                           <p className="text-xs text-gray-400 mt-1">
-                            Terpakai: {lb.used_days ?? lb.used} hari
+                            Used: {lb.used_days ?? lb.used} days
                           </p>
                         )}
                         {/* Progress bar */}
@@ -743,27 +759,27 @@ export function UserDetailPage({ params }: { params: Promise<{ id: string }> }) 
       <Dialog open={docDialog} onOpenChange={(o) => !o && setDocDialog(false)}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Upload Dokumen</DialogTitle>
+            <DialogTitle>Upload Document</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-2">
             <div>
-              <label className="text-xs font-medium text-gray-600">Tipe Dokumen *</label>
+              <label className="text-xs font-medium text-gray-600">Document Type *</label>
               <Combobox
                 options={Object.entries(DOC_TYPE_LABELS).map(([value, label]) => ({ value, label }))}
                 value={docForm.document_type}
                 onChange={(value) => setDocForm((f) => ({ ...f, document_type: value }))}
-                placeholder="Pilih tipe dokumen"
-                searchPlaceholder="Cari tipe..."
-                emptyMessage="Tipe tidak ditemukan"
+                placeholder="Select document type"
+                searchPlaceholder="Search type..."
+                emptyMessage="Type not found"
                 className="!w-full h-9 text-sm"
               />
             </div>
             <div>
-              <label className="text-xs font-medium text-gray-600">Nama Dokumen *</label>
+              <label className="text-xs font-medium text-gray-600">Document Name *</label>
               <Input
                 value={docForm.document_name}
                 onChange={(e) => setDocForm((f) => ({ ...f, document_name: e.target.value }))}
-                placeholder="e.g. KTP Atas Nama Budi"
+                placeholder="e.g. National ID - John Doe"
               />
             </div>
             <div>
@@ -771,15 +787,15 @@ export function UserDetailPage({ params }: { params: Promise<{ id: string }> }) 
               <Input
                 value={docForm.file_url}
                 onChange={(e) => setDocForm((f) => ({ ...f, file_url: e.target.value }))}
-                placeholder="https://... atau path ke file"
+                placeholder="https://... or file path"
               />
               <p className="text-xs text-gray-400 mt-1">
-                Upload file ke storage, lalu paste URL-nya di sini
+                Upload the file to storage, then paste the URL here
               </p>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-xs font-medium text-gray-600">Tanggal Terbit</label>
+                <label className="text-xs font-medium text-gray-600">Issue Date</label>
                 <Input
                   type="date"
                   value={docForm.issue_date}
@@ -787,7 +803,7 @@ export function UserDetailPage({ params }: { params: Promise<{ id: string }> }) 
                 />
               </div>
               <div>
-                <label className="text-xs font-medium text-gray-600">Berlaku Sampai</label>
+                <label className="text-xs font-medium text-gray-600">Expiry Date</label>
                 <Input
                   type="date"
                   value={docForm.expiry_date}
@@ -796,24 +812,31 @@ export function UserDetailPage({ params }: { params: Promise<{ id: string }> }) 
               </div>
             </div>
             <div>
-              <label className="text-xs font-medium text-gray-600">Catatan</label>
+              <label className="text-xs font-medium text-gray-600">Notes</label>
               <Input
                 value={docForm.notes}
                 onChange={(e) => setDocForm((f) => ({ ...f, notes: e.target.value }))}
-                placeholder="Opsional"
+                placeholder="Optional"
               />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDocDialog(false)}>Batal</Button>
+            <Button variant="outline" onClick={() => setDocDialog(false)}>Cancel</Button>
             <Button onClick={handleSaveDocument} disabled={savingDoc}>
-              {savingDoc ? "Menyimpan..." : "Simpan"}
+              {savingDoc ? "Saving..." : "Save"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       <ToastContainer toasts={toasts} removeToast={removeToast} />
+
+      <ResetPasswordDialog
+        target={{ id, fullName: employee.full_name }}
+        open={resetDialogOpen}
+        onOpenChange={setResetDialogOpen}
+        onError={(message) => showToast(message, "error")}
+      />
     </div>
   );
 }

@@ -25,6 +25,7 @@ import { ShiftModal } from "@/components/pos/ShiftModal";
 import { createBrowserClient } from "@/lib/pg/browser-client";
 import { usePosShift } from "@/hooks/use-pos-shift";
 import { formatAmount } from "@/lib/purchasing/utils";
+import { POS_SHIFT_MANAGEMENT_ENABLED } from "@/lib/pos/feature-flags";
 import { useState } from "react";
 import type { NavItem } from "@/lib/iam/types";
 
@@ -98,7 +99,7 @@ export function PosLayout({
               const Icon = POS_ICON_MAP[item.icon] ?? ClipboardListIcon;
               return (
                 <Link
-                  key={item.href}
+                  key={`${item.href}:${item.label}`}
                   href={item.href}
                   className={clsx(
                     "flex items-center gap-1.5 px-2 sm:px-3 py-2 text-xs sm:text-sm font-medium border-b-2 transition-colors whitespace-nowrap",
@@ -117,28 +118,34 @@ export function PosLayout({
           {/* Right - Bell icon, user profile, logout */}
           <div className="flex items-center gap-2 sm:gap-4 pl-2 sm:pl-4 border-l border-gray-200 flex-shrink-0">
             <ActivityLogBell
-              posShift={{
-                isActive: hasShift,
-                loading: loadingShift,
-                shiftNumber: shift?.shift_number,
-                totalOrders: shift?.total_orders || 0,
-                totalSales: shift?.total_sales || 0,
-                onClick: () => setShowShiftModal(true),
-                formatCurrency: formatAmount,
-              }}
+              posShift={
+                POS_SHIFT_MANAGEMENT_ENABLED
+                  ? {
+                      isActive: hasShift,
+                      loading: loadingShift,
+                      shiftNumber: shift?.shift_number,
+                      totalOrders: shift?.total_orders || 0,
+                      totalSales: shift?.total_sales || 0,
+                      onClick: () => setShowShiftModal(true),
+                      formatCurrency: formatAmount,
+                    }
+                  : undefined
+              }
             />
-            <button
-              type="button"
-              onClick={() => setShowShiftModal(true)}
-              className={clsx(
-                "hidden sm:inline-flex h-8 items-center rounded-lg border px-3 text-xs font-semibold transition-colors",
-                hasShift
-                  ? "border-green-200/80 bg-green-50 text-green-700 hover:bg-green-100"
-                  : "border-amber-200/80 bg-amber-50 text-amber-700 hover:bg-amber-100"
-              )}
-            >
-              {hasShift ? "Close Shift" : "Open Shift"}
-            </button>
+            {POS_SHIFT_MANAGEMENT_ENABLED ? (
+              <button
+                type="button"
+                onClick={() => setShowShiftModal(true)}
+                className={clsx(
+                  "hidden sm:inline-flex h-8 items-center rounded-lg border px-3 text-xs font-semibold transition-colors",
+                  hasShift
+                    ? "border-green-200/80 bg-green-50 text-green-700 hover:bg-green-100"
+                    : "border-amber-200/80 bg-amber-50 text-amber-700 hover:bg-amber-100"
+                )}
+              >
+                {hasShift ? "Close Shift" : "Open Shift"}
+              </button>
+            ) : null}
             <div className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm text-gray-900">
               <UserCircle className="w-4 h-4 sm:w-5 sm:h-5 text-gray-900" />
               <span className="hidden md:inline-block font-medium">User</span>
@@ -160,13 +167,15 @@ export function PosLayout({
         {children}
       </main>
 
-      <ShiftModal
-        open={showShiftModal}
-        shift={shift}
-        onClose={() => setShowShiftModal(false)}
-        onOpenShift={openShift}
-        onCloseShift={closeShift}
-      />
+      {POS_SHIFT_MANAGEMENT_ENABLED ? (
+        <ShiftModal
+          open={showShiftModal}
+          shift={shift}
+          onClose={() => setShowShiftModal(false)}
+          onOpenShift={openShift}
+          onCloseShift={closeShift}
+        />
+      ) : null}
     </div>
   );
 }

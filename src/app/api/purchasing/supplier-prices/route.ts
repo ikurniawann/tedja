@@ -127,19 +127,19 @@ export async function POST(request: NextRequest) {
 
     // Verify bahan_baku exists
     const { data: bahanBaku } = await db
-      .from("bahan_baku")
+      .from("raw_materials")
       .select("id")
       .eq("id", validated.bahan_baku_id)
       .eq("is_active", true)
+      .is("deleted_at", null)
       .single();
 
     if (!bahanBaku) {
       throw ApiError.badRequest("Bahan baku tidak ditemukan");
     }
 
-    // Verify satuan exists
     const { data: satuan } = await db
-      .from("satuan")
+      .from("units")
       .select("id")
       .eq("id", validated.satuan_id)
       .eq("is_active", true)

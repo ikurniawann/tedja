@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Combobox } from "@/components/ui/combobox";
 import { Input } from "@/components/ui/input";
 import { ToastContainer, useToast } from "@/components/ui/toast";
+import { useAuth } from "@/hooks/use-auth";
 import { useBusinessTree } from "@/features/configuration/business";
 import { normalizeBusinessScopePayload } from "@/lib/configuration/business-scope";
 import { useCreateUser, useUpdateUser } from "../mutations";
@@ -33,6 +34,7 @@ import {
   workflowsForModule,
 } from "../constants";
 import { AppAccessFormSection } from "./app-access-form-section";
+import { ResetPasswordDialog } from "./reset-password-dialog";
 
 function toFormValues(detail: NonNullable<ReturnType<typeof useUserDetail>["data"]>["data"]): UserEmployeeFormValues {
   return {
@@ -72,6 +74,7 @@ function toFormValues(detail: NonNullable<ReturnType<typeof useUserDetail>["data
     holding_id: detail.appAccount?.holdingId ?? "",
     company_id: detail.appAccount?.companyId ?? "",
     branch_id: detail.appAccount?.branchId ?? "",
+    warehouse_ids: detail.appAccount?.warehouses?.map((warehouse) => warehouse.id) ?? [],
     account_status: detail.appAccount?.status ?? "active",
     approval_permissions:
       detail.appAccount?.approvalPermissions
@@ -99,6 +102,7 @@ function buildPayload(form: UserEmployeeFormValues, isEdit: boolean) {
       key === "holding_id" ||
       key === "company_id" ||
       key === "branch_id" ||
+      key === "warehouse_ids" ||
       key === "account_status" ||
       key === "approval_permissions" ||
       key === "is_access_app"
@@ -115,6 +119,7 @@ function buildPayload(form: UserEmployeeFormValues, isEdit: boolean) {
     base.role = form.role;
     base.account_status = form.account_status;
     base.approval_permissions = form.approval_permissions;
+    base.warehouse_ids = form.warehouse_ids;
 
     const scope = normalizeBusinessScopePayload(
       form.role === "super_admin" ? null : form.business_scope || null,
@@ -138,8 +143,10 @@ interface UserFormPageProps {
 
 export function UserFormPage({ mode, employeeId }: UserFormPageProps) {
   const router = useRouter();
+  const { user } = useAuth();
   const { toasts, showToast, removeToast } = useToast();
   const isEdit = mode === "edit";
+  const canResetPassword = user?.role === "super_admin" || user?.role === "admin";
 
   const { data: detailRes, isLoading: detailLoading } = useUserDetail(
     isEdit && employeeId ? employeeId : null
@@ -151,6 +158,8 @@ export function UserFormPage({ mode, employeeId }: UserFormPageProps) {
   const updateMutation = useUpdateUser();
 
   const [form, setForm] = useState<UserEmployeeFormValues>(emptyUserForm);
+  const formInitializedRef = useRef(false);
+  const [resetDialogOpen, setResetDialogOpen] = useState(false);
 
   const departments = lookups?.departments ?? [];
   const sections = lookups?.sections ?? [];
@@ -161,10 +170,13 @@ export function UserFormPage({ mode, employeeId }: UserFormPageProps) {
   const isSubmitting = createMutation.isPending || updateMutation.isPending;
 
   useEffect(() => {
-    if (isEdit && detailRes?.data) {
+    if (isEdit && detailRes?.data && !formInitializedRef.current) {
       setForm(toFormValues(detailRes.data));
+      formInitializedRef.current = true;
     }
   }, [isEdit, detailRes?.data]);
+
+  const hasExistingAppAccount = Boolean(detailRes?.data?.userId);
 
   const selectedDeptName = departments.find((d) => d.id === form.department_id)?.name;
   const filteredPositions = useMemo(
@@ -211,25 +223,26 @@ export function UserFormPage({ mode, employeeId }: UserFormPageProps) {
 
   async function handleSubmit() {
     if (!form.full_name || !form.email || !form.join_date || !form.employment_status) {
-      showToast("Nama, email, tanggal bergabung, dan status kepegawaian wajib diisi", "error");
+      showToast("Full name, email, join date, and employment status are required", "error");
       return;
     }
 
     if (form.is_access_app) {
-      if (!isEdit && form.password.length < 8) {
-        showToast("Password minimal 8 karakter untuk akses aplikasi", "error");
+      const needsNewPassword = !isEdit || !hasExistingAppAccount;
+      if (needsNewPassword && form.password.length < 8) {
+        showToast("Password must be at least 8 characters for app access", "error");
         return;
       }
       if (!form.role) {
-        showToast("Role wajib dipilih untuk akses aplikasi", "error");
+        showToast("Role is required for app access", "error");
         return;
       }
       if (form.role !== "super_admin" && !form.business_scope) {
-        showToast("Scope akses data wajib dipilih", "error");
+        showToast("Data access scope is required", "error");
         return;
       }
       if (form.role !== "super_admin" && form.business_scope === "holding" && !form.holding_id) {
-        showToast("Holding wajib dipilih", "error");
+        showToast("Holding is required", "error");
         return;
       }
       if (
@@ -237,7 +250,7 @@ export function UserFormPage({ mode, employeeId }: UserFormPageProps) {
         form.business_scope === "company" &&
         (!form.holding_id || !form.company_id)
       ) {
-        showToast("Holding dan company wajib dipilih", "error");
+        showToast("Holding and company are required", "error");
         return;
       }
       if (
@@ -245,7 +258,15 @@ export function UserFormPage({ mode, employeeId }: UserFormPageProps) {
         form.business_scope === "branch" &&
         (!form.holding_id || !form.company_id || !form.branch_id)
       ) {
-        showToast("Holding, company, dan branch wajib dipilih", "error");
+        showToast("Holding, company, and branch are required", "error");
+        return;
+      }
+      if (
+        form.role !== "super_admin" &&
+        form.business_scope === "branch" &&
+        form.warehouse_ids.length === 0
+      ) {
+        showToast("At least one stall is required for branch scope", "error");
         return;
       }
     }
@@ -254,7 +275,7 @@ export function UserFormPage({ mode, employeeId }: UserFormPageProps) {
       workflowsForModule(permission.module).every((w) => w.value !== permission.workflow)
     );
     if (invalidWorkflow) {
-      showToast("Workflow approval harus sesuai module", "error");
+      showToast("Approval workflow must match the selected module", "error");
       return;
     }
 
@@ -263,15 +284,15 @@ export function UserFormPage({ mode, employeeId }: UserFormPageProps) {
     try {
       if (isEdit && employeeId) {
         const res = await updateMutation.mutateAsync({ id: employeeId, ...payload });
-        showToast(res.message || "Data berhasil diperbarui", "success");
+        showToast(res.message || "Employee updated successfully", "success");
         router.push(EMPLOYEES_ROUTES.detail(employeeId));
       } else {
         const res = await createMutation.mutateAsync(payload as Parameters<typeof createMutation.mutateAsync>[0]);
-        showToast(res.message || "Karyawan berhasil ditambahkan", "success");
+        showToast(res.message || "Employee created successfully", "success");
         router.push(EMPLOYEES_ROUTES.detail(res.data.id));
       }
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "Gagal menyimpan data", "error");
+      showToast(error instanceof Error ? error.message : "Failed to save data", "error");
     }
   }
 
@@ -297,16 +318,16 @@ export function UserFormPage({ mode, employeeId }: UserFormPageProps) {
           </Link>
           <div>
             <h1 className="text-2xl font-bold text-gray-900">
-              {isEdit ? "Edit Karyawan" : "Tambah Karyawan"}
+              {isEdit ? "Edit Employee" : "Add Employee"}
             </h1>
             <p className="text-sm text-gray-500">
-              Data kepegawaian dan akses aplikasi dalam satu formulir
+              Employment data and app access in one form
             </p>
           </div>
         </div>
         <Link href={backHref}>
           <Button variant="outline" className="h-10 rounded-lg border-gray-200/80">
-            Kembali
+            Back
           </Button>
         </Link>
       </div>
@@ -314,12 +335,12 @@ export function UserFormPage({ mode, employeeId }: UserFormPageProps) {
       <FormPageBody>
         <FormSectionCard
           icon={UserCircleIcon}
-          title="Informasi Personal"
-          description="Data identitas dan kontak dasar karyawan."
+          title="Personal Information"
+          description="Basic identity and contact details."
         >
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <div className="sm:col-span-2">
-              <FormFieldLabel required>Nama Lengkap</FormFieldLabel>
+              <FormFieldLabel required>Full Name</FormFieldLabel>
               <Input
                 value={form.full_name}
                 onChange={(e) => setField({ full_name: e.target.value })}
@@ -336,7 +357,7 @@ export function UserFormPage({ mode, employeeId }: UserFormPageProps) {
               />
             </div>
             <div>
-              <FormFieldLabel>Telepon</FormFieldLabel>
+              <FormFieldLabel>Phone</FormFieldLabel>
               <Input
                 value={form.phone}
                 onChange={(e) => setField({ phone: e.target.value })}
@@ -352,7 +373,7 @@ export function UserFormPage({ mode, employeeId }: UserFormPageProps) {
               />
             </div>
             <div>
-              <FormFieldLabel>Tanggal Lahir</FormFieldLabel>
+              <FormFieldLabel>Date of Birth</FormFieldLabel>
               <Input
                 type="date"
                 value={form.birth_date}
@@ -361,20 +382,20 @@ export function UserFormPage({ mode, employeeId }: UserFormPageProps) {
               />
             </div>
             <div>
-              <FormFieldLabel>Jenis Kelamin</FormFieldLabel>
+              <FormFieldLabel>Gender</FormFieldLabel>
               <Combobox
                 options={genderOptions}
                 value={form.gender}
                 onChange={(value) => setField({ gender: value })}
-                placeholder="Pilih"
-                searchPlaceholder="Cari..."
-                emptyMessage="Tidak ditemukan"
+                placeholder="Select"
+                searchPlaceholder="Search..."
+                emptyMessage="Not found"
                 allowClear
                 className={formComboboxClassName}
               />
             </div>
             <div className="sm:col-span-2 lg:col-span-4">
-              <FormFieldLabel>Alamat</FormFieldLabel>
+              <FormFieldLabel>Address</FormFieldLabel>
               <Input
                 value={form.address}
                 onChange={(e) => setField({ address: e.target.value })}
@@ -386,12 +407,12 @@ export function UserFormPage({ mode, employeeId }: UserFormPageProps) {
 
         <FormSectionCard
           icon={BriefcaseIcon}
-          title="Data Kepegawaian"
-          description="Penempatan organisasi internal dan status kepegawaian."
+          title="Employment Details"
+          description="Internal organization placement and employment status."
         >
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
-              <FormFieldLabel required>Tanggal Bergabung</FormFieldLabel>
+              <FormFieldLabel required>Join Date</FormFieldLabel>
               <Input
                 type="date"
                 value={form.join_date}
@@ -400,66 +421,66 @@ export function UserFormPage({ mode, employeeId }: UserFormPageProps) {
               />
             </div>
             <div>
-              <FormFieldLabel required>Status Kepegawaian</FormFieldLabel>
+              <FormFieldLabel required>Employment Status</FormFieldLabel>
               <Combobox
                 options={employmentStatusOptions}
                 value={form.employment_status}
                 onChange={(value) => setField({ employment_status: value })}
-                placeholder="Pilih"
-                searchPlaceholder="Cari status..."
-                emptyMessage="Status tidak ditemukan"
+                placeholder="Select"
+                searchPlaceholder="Search status..."
+                emptyMessage="No status found"
                 className={formComboboxClassName}
               />
             </div>
             <div>
-              <FormFieldLabel>Departemen</FormFieldLabel>
+              <FormFieldLabel>Department</FormFieldLabel>
               <Combobox
                 options={departmentOptions}
                 value={form.department_id}
                 onChange={(value) => setField({ department_id: value, job_title_id: "" })}
-                placeholder="Pilih"
-                searchPlaceholder="Cari departemen..."
-                emptyMessage="Departemen tidak ditemukan"
+                placeholder="Select"
+                searchPlaceholder="Search department..."
+                emptyMessage="No department found"
                 allowClear
                 className={formComboboxClassName}
               />
             </div>
             <div>
-              <FormFieldLabel>Jabatan</FormFieldLabel>
+              <FormFieldLabel>Position</FormFieldLabel>
               <Combobox
                 options={positionOptions}
                 value={form.job_title_id}
                 onChange={(value) => setField({ job_title_id: value })}
-                placeholder="Pilih"
-                searchPlaceholder="Cari jabatan..."
-                emptyMessage="Jabatan tidak ditemukan"
+                placeholder="Select"
+                searchPlaceholder="Search position..."
+                emptyMessage="No position found"
                 disabled={!form.department_id}
                 allowClear
                 className={formComboboxClassName}
               />
             </div>
             <div>
-              <FormFieldLabel>Seksi</FormFieldLabel>
+              <FormFieldLabel>Section</FormFieldLabel>
               <Combobox
                 options={sectionOptions}
                 value={form.section_id}
                 onChange={(value) => setField({ section_id: value })}
-                placeholder="Pilih"
-                searchPlaceholder="Cari seksi..."
-                emptyMessage="Seksi tidak ditemukan"
+                placeholder="Select"
+                searchPlaceholder="Search section..."
+                emptyMessage="No section found"
                 allowClear
                 className={formComboboxClassName}
               />
             </div>
             <div>
-              <FormFieldLabel>Atasan</FormFieldLabel>
+              <FormFieldLabel>Manager</FormFieldLabel>
               <Combobox
                 options={managerOptions}
                 value={form.reporting_to}
                 onChange={(value) => setField({ reporting_to: value })}
-                placeholder="Pilih"
-                searchPlaceholder="Cari atasan..."
-                emptyMessage="Atasan tidak ditemukan"
+                placeholder="Select"
+                searchPlaceholder="Search manager..."
+                emptyMessage="No manager found"
                 allowClear
                 className={formComboboxClassName}
               />
@@ -479,7 +500,7 @@ export function UserFormPage({ mode, employeeId }: UserFormPageProps) {
                 />
               </div>
               <div>
-                <FormFieldLabel>Rekening</FormFieldLabel>
+                <FormFieldLabel>Account Number</FormFieldLabel>
                 <Input
                   value={form.bank_account}
                   onChange={(e) => setField({ bank_account: e.target.value })}
@@ -489,10 +510,10 @@ export function UserFormPage({ mode, employeeId }: UserFormPageProps) {
             </div>
           </FormSectionCard>
 
-          <FormSectionCard icon={PhoneIcon} title="Kontak Darurat" bodyClassName="space-y-4">
+          <FormSectionCard icon={PhoneIcon} title="Emergency Contact" bodyClassName="space-y-4">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
-                <FormFieldLabel>Nama</FormFieldLabel>
+                <FormFieldLabel>Name</FormFieldLabel>
                 <Input
                   value={form.emergency_contact_name}
                   onChange={(e) => setField({ emergency_contact_name: e.target.value })}
@@ -500,7 +521,7 @@ export function UserFormPage({ mode, employeeId }: UserFormPageProps) {
                 />
               </div>
               <div>
-                <FormFieldLabel>Telepon</FormFieldLabel>
+                <FormFieldLabel>Phone</FormFieldLabel>
                 <Input
                   value={form.emergency_contact_phone}
                   onChange={(e) => setField({ emergency_contact_phone: e.target.value })}
@@ -513,8 +534,8 @@ export function UserFormPage({ mode, employeeId }: UserFormPageProps) {
 
         <FormSectionCard
           icon={ShieldCheck}
-          title="Akses Aplikasi"
-          description="Login Arkiv, role, scope business, dan hak approval."
+          title="App Access"
+          description="Arkiv login, role, business scope, and approval permissions."
           bodyClassName="p-0"
         >
           <div className="px-5 py-5">
@@ -522,7 +543,13 @@ export function UserFormPage({ mode, employeeId }: UserFormPageProps) {
               form={form}
               businessTree={businessTree}
               isEdit={isEdit}
+              hasExistingAppAccount={hasExistingAppAccount}
               onChange={setField}
+              onResetPassword={
+                isEdit && employeeId && canResetPassword && hasExistingAppAccount
+                  ? () => setResetDialogOpen(true)
+                  : undefined
+              }
             />
           </div>
         </FormSectionCard>
@@ -535,7 +562,7 @@ export function UserFormPage({ mode, employeeId }: UserFormPageProps) {
           disabled={isSubmitting}
           className="h-10 rounded-lg border-gray-200/80"
         >
-          Batal
+          Cancel
         </Button>
         <Button
           onClick={handleSubmit}
@@ -543,9 +570,18 @@ export function UserFormPage({ mode, employeeId }: UserFormPageProps) {
           className="h-10 gap-2 rounded-lg bg-pink-600 px-4 text-sm font-semibold text-white shadow-sm hover:bg-pink-700"
         >
           {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-          {isSubmitting ? "Menyimpan..." : isEdit ? "Simpan Perubahan" : "Tambah Karyawan"}
+          {isSubmitting ? "Saving..." : isEdit ? "Save Changes" : "Add Employee"}
         </Button>
       </FormPageFooter>
+
+      {isEdit && employeeId ? (
+        <ResetPasswordDialog
+          target={{ id: employeeId, fullName: form.full_name || detailRes?.data?.fullName || "Employee" }}
+          open={resetDialogOpen}
+          onOpenChange={setResetDialogOpen}
+          onError={(message) => showToast(message, "error")}
+        />
+      ) : null}
     </FormPageLayout>
   );
 }

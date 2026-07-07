@@ -77,6 +77,24 @@ export function effectiveBranchId(scope: UserScope | null): string | null {
 }
 
 /**
+ * Scope bisnis untuk operasi import CSV.
+ * Menggunakan company/branch dari profil user meskipun role super_admin,
+ * agar master company-scoped (kategori, satuan) tetap bisa di-resolve.
+ */
+export function importBusinessIds(scope: UserScope | null): {
+  companyId: string | null;
+  branchId: string | null;
+} {
+  if (!scope) return { companyId: null, branchId: null };
+
+  const branchId = scope.businessScope === "branch" ? scope.branchId : null;
+  return {
+    companyId: scope.companyId,
+    branchId,
+  };
+}
+
+/**
  * Ekspresi `.or()` untuk membaca data master level company (ketat).
  * Hanya baris milik company user — tanpa template global (company_id IS NULL).
  */
@@ -241,4 +259,42 @@ export async function resolveDefaultWarehouseId(
     [branchId]
   );
   return row?.id ?? null;
+}
+
+const WAREHOUSE_SCOPE_ERRORS: Record<WarehouseReceivingScopeError, string> = {
+  not_found: "Stall not found",
+  inactive: "Stall is inactive",
+  branch_mismatch: "Stall is outside your branch scope",
+};
+
+/** Validate stall for product master (mandatory warehouse_id). */
+export async function validateProductWarehouseScope(
+  warehouseId: string,
+  scope: UserScope | null
+): Promise<
+  { company_id: string; branch_id: string; warehouse_id: string } | { error: string }
+> {
+  const business = await resolveBusinessScopeFromWarehouse(warehouseId);
+  if (!business) return { error: "Stall not found or inactive" };
+
+  const warehouseCheck = await validateWarehouseForReceivingScope(
+    warehouseId,
+    scope,
+    business.branch_id
+  );
+  if ("error" in warehouseCheck) {
+    return { error: WAREHOUSE_SCOPE_ERRORS[warehouseCheck.error] };
+  }
+
+  if (scope && !scope.isUnscoped && scope.businessScope === "company") {
+    if (scope.companyId && business.company_id !== scope.companyId) {
+      return { error: "Stall is outside your company scope" };
+    }
+  }
+
+  return {
+    company_id: business.company_id,
+    branch_id: business.branch_id,
+    warehouse_id: warehouseId,
+  };
 }

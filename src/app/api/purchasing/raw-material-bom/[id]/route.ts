@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { createServerPgClient } from "@/lib/pg/create-client";
+import { MANUFACTURING_SCHEMA } from "@/lib/manufacturing/constants";
 import { z } from "zod";
 
 const bomSchema = z.object({
@@ -23,7 +24,7 @@ export async function PUT(
     const validated = bomSchema.parse(await request.json());
 
     const { data: existingItem, error: findError } = await db
-      .from("raw_material_bom_items")
+      .from("raw_material_bom_items", MANUFACTURING_SCHEMA)
       .select("id")
       .eq("id", id)
       .single();
@@ -33,7 +34,7 @@ export async function PUT(
     }
 
     const { data, error } = await db
-      .from("raw_material_bom_items")
+      .from("raw_material_bom_items", MANUFACTURING_SCHEMA)
       .update({ ...validated, updated_at: new Date().toISOString() })
       .eq("id", id)
       .select()
@@ -60,7 +61,7 @@ export async function DELETE(
     const db = await createServerPgClient();
 
     const { error } = await db
-      .from("raw_material_bom_items")
+      .from("raw_material_bom_items", MANUFACTURING_SCHEMA)
       .update({ is_active: false, updated_at: new Date().toISOString() })
       .eq("id", id);
 

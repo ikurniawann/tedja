@@ -6,8 +6,8 @@ const navItems: NavItem[] = [
   { href: "/dashboard", label: "Beranda", icon: "home" },
   {
     href: "#",
-    label: "Pengaturan",
-    icon: "settings",
+    label: "User Management",
+    icon: "users",
     children: [
       {
         href: "/dashboard/settings/menus",
@@ -15,8 +15,8 @@ const navItems: NavItem[] = [
         icon: "sitemap",
       },
       {
-        href: "/dashboard/settings/users",
-        label: "User Management",
+        href: "/dashboard/employees",
+        label: "Users",
         icon: "users",
       },
     ],
@@ -31,7 +31,7 @@ describe("buildNavBreadcrumbs", () => {
   it("builds nested trail from IAM nav tree", () => {
     expect(buildNavBreadcrumbs(navItems, "/dashboard/settings/menus")).toEqual([
       { label: "Beranda", href: "/dashboard" },
-      { label: "Pengaturan" },
+      { label: "User Management" },
       { label: "Menu Configuration" },
     ]);
   });
@@ -39,7 +39,7 @@ describe("buildNavBreadcrumbs", () => {
   it("appends detail segment for deeper paths", () => {
     expect(buildNavBreadcrumbs(navItems, "/dashboard/settings/menus/new")).toEqual([
       { label: "Beranda", href: "/dashboard" },
-      { label: "Pengaturan" },
+      { label: "User Management" },
       { label: "Menu Configuration", href: "/dashboard/settings/menus" },
       { label: "New" },
     ]);

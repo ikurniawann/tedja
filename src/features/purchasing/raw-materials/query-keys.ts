@@ -7,5 +7,4 @@ export const rawMaterialsQueryKeys = {
   detail: (id: string) => ["purchasing", "raw-materials", "detail", id] as const,
   units: () => ["purchasing", "raw-materials", "units"] as const,
   categories: () => ["purchasing", "raw-materials", "categories"] as const,
-  storageConditions: () => ["purchasing", "raw-materials", "storage-conditions"] as const,
 };

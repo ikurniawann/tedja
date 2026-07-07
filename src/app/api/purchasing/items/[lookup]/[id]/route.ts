@@ -8,7 +8,6 @@ import {
 
 const COMPANY_SCOPED_TABLES = new Set([
   "raw_material_categories",
-  "storage_conditions",
   "product_categories",
 ]);
 

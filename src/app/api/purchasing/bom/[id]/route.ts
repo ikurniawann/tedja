@@ -4,6 +4,7 @@
 
 import { NextRequest } from "next/server";
 import { createServerPgClient } from "@/lib/pg/create-client";
+import { MANUFACTURING_SCHEMA } from "@/lib/manufacturing/constants";
 import { z } from "zod";
 
 const bomSchema = z.object({
@@ -43,7 +44,7 @@ export async function PUT(
 
     // Cek apakah BOM item ada
     const { data: existingItem, error: findError } = await db
-      .from("bom_items")
+      .from("bom_items", MANUFACTURING_SCHEMA)
       .select("*")
       .eq("id", id)
       .single();
@@ -57,7 +58,7 @@ export async function PUT(
 
     // Update data
     const { data, error } = await db
-      .from("bom_items")
+      .from("bom_items", MANUFACTURING_SCHEMA)
       .update({
         ...validated,
         updated_at: new Date().toISOString(),
@@ -105,7 +106,7 @@ export async function DELETE(
 
     // Soft delete dengan set is_active = false
     const { error } = await db
-      .from("bom_items")
+      .from("bom_items", MANUFACTURING_SCHEMA)
       .update({ is_active: false })
       .eq("id", id);
 
