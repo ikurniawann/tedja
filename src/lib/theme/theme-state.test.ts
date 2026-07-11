@@ -38,6 +38,13 @@ describe("parseThemeState", () => {
     const parsed = parseThemeState(JSON.stringify({ mode: "weird" }));
     expect(parsed.mode).toBe("light");
   });
+  it("returns defaults when stored value parses to null", () => {
+    expect(parseThemeState("null")).toEqual(DEFAULT_THEME_STATE);
+  });
+  it("falls back to default preset for unknown presetId", () => {
+    const parsed = parseThemeState(JSON.stringify({ presetId: "does-not-exist" }));
+    expect(parsed.presetId).toBe(DEFAULT_THEME_STATE.presetId);
+  });
 });
 
 describe("applyThemeState", () => {

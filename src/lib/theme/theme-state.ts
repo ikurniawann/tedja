@@ -41,12 +41,14 @@ export function resolveBrand(state: ThemeState): { primary: string; secondary: s
 
 export function parseThemeState(raw: string | null): ThemeState {
   if (!raw) return DEFAULT_THEME_STATE;
-  let obj: Record<string, unknown>;
+  let parsed: unknown;
   try {
-    obj = JSON.parse(raw) as Record<string, unknown>;
+    parsed = JSON.parse(raw);
   } catch {
     return DEFAULT_THEME_STATE;
   }
+  if (!parsed || typeof parsed !== "object") return DEFAULT_THEME_STATE;
+  const obj = parsed as Record<string, unknown>;
   const mode = MODES.includes(obj.mode as ThemeMode)
     ? (obj.mode as ThemeMode)
     : "light";
