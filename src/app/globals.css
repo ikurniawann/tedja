@@ -1,6 +1,161 @@
 @import url("https://api.fontshare.com/v2/css?f[]=roundo@400,500,600,700&display=swap");
 
 @import "tailwindcss";
+@import "tw-animate-css";
+
+/* Bind the `dark:` variant to our explicit theme attribute (manual + auto). */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/* Expose CSS variables to Tailwind's utility generator. */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-md: var(--radius);
+}
+
+:root {
+  /* Brand inputs — overridden at runtime by ThemeProvider. */
+  --brand-primary: #db2777;
+  --brand-secondary: #ec4899;
+  --primary-foreground: #ffffff;
+
+  /* Derived brand scales (perceptual mix in OKLCH). */
+  --primary-50: color-mix(in oklch, var(--brand-primary) 8%, white);
+  --primary-100: color-mix(in oklch, var(--brand-primary) 16%, white);
+  --primary-200: color-mix(in oklch, var(--brand-primary) 30%, white);
+  --primary-300: color-mix(in oklch, var(--brand-primary) 46%, white);
+  --primary-400: color-mix(in oklch, var(--brand-primary) 70%, white);
+  --primary-500: var(--brand-primary);
+  --primary-600: color-mix(in oklch, var(--brand-primary) 88%, black);
+  --primary-700: color-mix(in oklch, var(--brand-primary) 74%, black);
+  --primary-800: color-mix(in oklch, var(--brand-primary) 60%, black);
+  --primary-900: color-mix(in oklch, var(--brand-primary) 46%, black);
+  --primary-950: color-mix(in oklch, var(--brand-primary) 34%, black);
+
+  --brand-secondary-400: color-mix(in oklch, var(--brand-secondary) 70%, white);
+  --brand-secondary-500: var(--brand-secondary);
+  --brand-secondary-600: color-mix(in oklch, var(--brand-secondary) 88%, black);
+
+  /* Semantic — light. */
+  --background: #ffffff;
+  --foreground: #0f172a;
+  --card: rgba(255, 255, 255, 0.72);
+  --card-foreground: #0f172a;
+  --popover: #ffffff;
+  --popover-foreground: #0f172a;
+  --primary: var(--primary-500);
+  --secondary: #f1f5f9;
+  --secondary-foreground: #0f172a;
+  --muted: #f1f5f9;
+  --muted-foreground: #64748b;
+  --accent: #f1f5f9;
+  --accent-foreground: #0f172a;
+  --destructive: #dc2626;
+  --success: #16a34a;
+  --warning: #d97706;
+  --border: rgba(209, 213, 219, 0.5);
+  --input: rgba(209, 213, 219, 0.6);
+  --ring: color-mix(in oklch, var(--brand-primary) 45%, white);
+
+  /* Glass — light. */
+  --glass-bg: rgba(255, 255, 255, 0.7);
+  --glass-border: rgba(209, 213, 219, 0.35);
+  --glass-blur: 24px;
+  --glass-saturate: 1.8;
+  --glass-shadow: 0 2px 20px rgba(0, 0, 0, 0.04), 0 1px 4px rgba(0, 0, 0, 0.03);
+  --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.85);
+
+  /* Shape + motion. */
+  --radius: 0.75rem;
+  --dur-fast: 120ms;
+  --dur-base: 220ms;
+  --dur-slow: 360ms;
+  --ease-glass: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  /* Page mesh background (brand-tinted). */
+  --page-mesh: linear-gradient(
+    135deg,
+    color-mix(in oklch, var(--brand-primary) 6%, #eef2ff) 0%,
+    #faf5ff 40%,
+    #f0f9ff 75%,
+    color-mix(in oklch, var(--brand-primary) 8%, #fef3ff) 100%
+  );
+}
+
+[data-theme="dark"] {
+  --background: #0b1220;
+  --foreground: #e5e7eb;
+  --card: rgba(15, 23, 42, 0.82);
+  --card-foreground: #e5e7eb;
+  --popover: #0f172a;
+  --popover-foreground: #e5e7eb;
+  --secondary: #1e293b;
+  --secondary-foreground: #e5e7eb;
+  --muted: #1e293b;
+  --muted-foreground: #94a3b8;
+  --accent: #1e293b;
+  --accent-foreground: #e5e7eb;
+  --border: rgba(148, 163, 184, 0.28);
+  --input: rgba(148, 163, 184, 0.36);
+  --ring: color-mix(in oklch, var(--brand-primary) 55%, black);
+
+  --glass-bg: rgba(15, 23, 42, 0.72);
+  --glass-border: rgba(148, 163, 184, 0.24);
+  --glass-shadow: 0 2px 24px rgba(0, 0, 0, 0.35), 0 1px 4px rgba(0, 0, 0, 0.3);
+  --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+
+  --page-mesh: linear-gradient(135deg, #020617 0%, #111827 42%, #1e1b4b 74%, #3b1235 100%);
+}
+
+/* Auto mode follows the OS when nothing explicit is chosen. */
+@media (prefers-color-scheme: dark) {
+  [data-theme="auto"] {
+    --background: #0b1220;
+    --foreground: #e5e7eb;
+    --card: rgba(15, 23, 42, 0.82);
+    --card-foreground: #e5e7eb;
+    --popover: #0f172a;
+    --popover-foreground: #e5e7eb;
+    --secondary: #1e293b;
+    --secondary-foreground: #e5e7eb;
+    --muted: #1e293b;
+    --muted-foreground: #94a3b8;
+    --accent: #1e293b;
+    --accent-foreground: #e5e7eb;
+    --border: rgba(148, 163, 184, 0.28);
+    --input: rgba(148, 163, 184, 0.36);
+    --glass-bg: rgba(15, 23, 42, 0.72);
+    --glass-border: rgba(148, 163, 184, 0.24);
+    --page-mesh: linear-gradient(135deg, #020617 0%, #111827 42%, #1e1b4b 74%, #3b1235 100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
 
 @keyframes career-marquee {
   0% {
@@ -154,34 +309,22 @@ button:disabled,
   cursor: not-allowed;
 }
 
-/* ── Liquid Glass Theme ── */
-
-/* Page background — soft pastel gradient mesh that shows through glass */
-.lg\:relative {
-  background: linear-gradient(135deg, #eef2ff 0%, #faf5ff 40%, #f0f9ff 75%, #fef3ff 100%);
-}
-
-/* Main content wrapper background */
+/* ── Liquid glass (token-driven) ── */
 .flex.min-h-screen {
-  background: linear-gradient(135deg, #eef2ff 0%, #faf5ff 40%, #f0f9ff 75%, #fef3ff 100%) !important;
+  background: var(--page-mesh);
 }
 
-/* ── Liquid glass cards ── */
 [data-slot="card"] {
-  background: rgba(255, 255, 255, 0.70) !important;
-  backdrop-filter: blur(24px) saturate(1.8) !important;
-  -webkit-backdrop-filter: blur(24px) saturate(1.8) !important;
-  border: 1px solid rgba(209, 213, 219, 0.35) !important;
-  box-shadow:
-    0 2px 20px rgba(0, 0, 0, 0.04),
-    0 1px 4px rgba(0, 0, 0, 0.03),
-    inset 0 1px 0 rgba(255, 255, 255, 0.85) !important;
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow), var(--glass-highlight);
 }
 
-/* Card footer — match glass */
 [data-slot="card-footer"] {
-  background: rgba(248, 250, 252, 0.6) !important;
-  border-top: 1px solid rgba(209, 213, 219, 0.3) !important;
+  background: color-mix(in srgb, var(--glass-bg) 85%, transparent);
+  border-top: 1px solid var(--glass-border);
 }
 
 /* ── All component borders: very light thin gray ── */
@@ -307,130 +450,8 @@ hr {
   color: #ffffff !important;
 }
 
-/* Dashboard light/dark mode. Scoped so Arkiv OS desktop keeps its own visual language. */
-.arkiv-dashboard-theme {
-  color-scheme: light;
-}
-
-.arkiv-dashboard-theme[data-theme="dark"] {
-  color-scheme: dark;
-}
-
-.arkiv-dashboard-theme[data-theme="dark"] aside,
-.arkiv-dashboard-theme[data-theme="dark"] header,
-.arkiv-dashboard-theme[data-theme="dark"] main,
-.arkiv-dashboard-theme[data-theme="dark"] .bg-white,
-.arkiv-dashboard-theme[data-theme="dark"] .bg-white\/50,
-.arkiv-dashboard-theme[data-theme="dark"] .bg-white\/60,
-.arkiv-dashboard-theme[data-theme="dark"] .bg-white\/70,
-.arkiv-dashboard-theme[data-theme="dark"] .bg-gray-50,
-.arkiv-dashboard-theme[data-theme="dark"] .bg-slate-50,
-.arkiv-dashboard-theme[data-theme="dark"] [data-slot="card"],
-.arkiv-dashboard-theme[data-theme="dark"] [data-slot="dialog-content"] {
-  background: rgba(15, 23, 42, 0.82) !important;
-  background-color: rgba(15, 23, 42, 0.82) !important;
-  color: #e5e7eb !important;
-  border-color: rgba(148, 163, 184, 0.28) !important;
-}
-
-.arkiv-dashboard-theme[data-theme="dark"] aside {
-  background: linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(31, 41, 55, 0.96)) !important;
-}
-
-.arkiv-dashboard-theme[data-theme="dark"] .bg-pink-50,
-.arkiv-dashboard-theme[data-theme="dark"] .bg-pink-100,
-.arkiv-dashboard-theme[data-theme="dark"] .bg-blue-50,
-.arkiv-dashboard-theme[data-theme="dark"] .bg-emerald-50,
-.arkiv-dashboard-theme[data-theme="dark"] .bg-green-50,
-.arkiv-dashboard-theme[data-theme="dark"] .bg-yellow-50,
-.arkiv-dashboard-theme[data-theme="dark"] .bg-red-50 {
-  background-color: rgba(30, 41, 59, 0.86) !important;
-}
-
-.arkiv-dashboard-theme[data-theme="dark"] .text-gray-950,
-.arkiv-dashboard-theme[data-theme="dark"] .text-gray-900,
-.arkiv-dashboard-theme[data-theme="dark"] .text-gray-800,
-.arkiv-dashboard-theme[data-theme="dark"] .text-slate-950,
-.arkiv-dashboard-theme[data-theme="dark"] .text-slate-900,
-.arkiv-dashboard-theme[data-theme="dark"] .text-black {
-  color: #f8fafc !important;
-}
-
-.arkiv-dashboard-theme[data-theme="dark"] .text-gray-700,
-.arkiv-dashboard-theme[data-theme="dark"] .text-gray-600,
-.arkiv-dashboard-theme[data-theme="dark"] .text-slate-700,
-.arkiv-dashboard-theme[data-theme="dark"] .text-slate-600 {
-  color: #cbd5e1 !important;
-}
-
-.arkiv-dashboard-theme[data-theme="dark"] .text-gray-500,
-.arkiv-dashboard-theme[data-theme="dark"] .text-gray-400,
-.arkiv-dashboard-theme[data-theme="dark"] .text-slate-500,
-.arkiv-dashboard-theme[data-theme="dark"] .text-slate-400 {
-  color: #94a3b8 !important;
-}
-
-.arkiv-dashboard-theme[data-theme="dark"] .border-gray-50,
-.arkiv-dashboard-theme[data-theme="dark"] .border-gray-100,
-.arkiv-dashboard-theme[data-theme="dark"] .border-gray-200,
-.arkiv-dashboard-theme[data-theme="dark"] .border-gray-200\/70,
-.arkiv-dashboard-theme[data-theme="dark"] .border-gray-300,
-.arkiv-dashboard-theme[data-theme="dark"] .border-pink-100,
-.arkiv-dashboard-theme[data-theme="dark"] .border-pink-200,
-.arkiv-dashboard-theme[data-theme="dark"] .border-black\/5,
-.arkiv-dashboard-theme[data-theme="dark"] .ring-black\/5 {
-  border-color: rgba(148, 163, 184, 0.28) !important;
-  --tw-ring-color: rgba(148, 163, 184, 0.28) !important;
-}
-
-.arkiv-dashboard-theme[data-theme="dark"] table thead,
-.arkiv-dashboard-theme[data-theme="dark"] tr,
-.arkiv-dashboard-theme[data-theme="dark"] th,
-.arkiv-dashboard-theme[data-theme="dark"] td {
-  border-color: rgba(148, 163, 184, 0.22) !important;
-}
-
-.arkiv-dashboard-theme[data-theme="dark"] tr:hover,
-.arkiv-dashboard-theme[data-theme="dark"] .hover\:bg-gray-50:hover,
-.arkiv-dashboard-theme[data-theme="dark"] .hover\:bg-gray-100:hover,
-.arkiv-dashboard-theme[data-theme="dark"] .hover\:bg-pink-50:hover,
-.arkiv-dashboard-theme[data-theme="dark"] .hover\:bg-pink-100:hover {
-  background-color: rgba(30, 41, 59, 0.92) !important;
-}
-
-.arkiv-dashboard-theme[data-theme="dark"] input:not([type="checkbox"]):not([type="radio"]),
-.arkiv-dashboard-theme[data-theme="dark"] textarea,
-.arkiv-dashboard-theme[data-theme="dark"] select,
-.arkiv-dashboard-theme[data-theme="dark"] [data-slot="input"],
-.arkiv-dashboard-theme[data-theme="dark"] [data-slot="select-trigger"],
-.arkiv-dashboard-theme[data-theme="dark"] [data-slot="textarea"] {
-  background: rgba(15, 23, 42, 0.94) !important;
-  border-color: rgba(148, 163, 184, 0.36) !important;
-  color: #e5e7eb !important;
-}
-
-.arkiv-dashboard-theme[data-theme="dark"] input::placeholder,
-.arkiv-dashboard-theme[data-theme="dark"] textarea::placeholder {
-  color: #94a3b8 !important;
-}
-
-.arkiv-dashboard-theme[data-theme="dark"] [data-slot="popover"],
-.arkiv-dashboard-theme[data-theme="dark"] [data-slot="dropdown-menu"],
-.arkiv-dashboard-theme[data-theme="dark"] [data-slot="combobox"],
-.arkiv-dashboard-theme[data-theme="dark"] .popover,
-.arkiv-dashboard-theme[data-theme="dark"] .dropdown-menu,
-.arkiv-dashboard-theme[data-theme="dark"] [role="listbox"] {
-  background: rgba(15, 23, 42, 0.98) !important;
-  background-color: rgba(15, 23, 42, 0.98) !important;
-  border-color: rgba(148, 163, 184, 0.28) !important;
-  color: #e5e7eb !important;
-}
-
-.arkiv-dashboard-theme[data-theme="dark"] .arkiv-theme-toggle {
-  background: rgba(15, 23, 42, 0.9) !important;
-  border-color: rgba(244, 114, 182, 0.35) !important;
-  color: #f9a8d4 !important;
-}
+.arkiv-dashboard-theme { color-scheme: light; }
+[data-theme="dark"] { color-scheme: dark; }
 
 /* Custom react-datepicker styles */
 .react-datepicker {
