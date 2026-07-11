@@ -165,21 +165,23 @@ export function CartPanel({
           </div>
         )}
         <div className="flex items-center justify-between text-sm">
-          <button
-            type="button"
-            onClick={() => setIncludeTax(!includeTax)}
-            className="flex items-center gap-2 text-gray-600 hover:text-gray-900"
-          >
-            <div
-              className={`flex h-4 w-4 items-center justify-center rounded border ${
-                includeTax ? 'border-primary bg-primary' : 'border-gray-300'
-              }`}
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setIncludeTax(!includeTax)}
+              className="flex items-center gap-2 text-gray-600 hover:text-gray-900"
             >
-              {includeTax && <Check className="h-3 w-3 text-white" />}
-            </div>
-            <span>Tax (10%)</span>
+              <div
+                className={`flex h-4 w-4 items-center justify-center rounded border ${
+                  includeTax ? 'border-primary bg-primary' : 'border-gray-300'
+                }`}
+              >
+                {includeTax && <Check className="h-3 w-3 text-white" />}
+              </div>
+              <span>Tax (10%)</span>
+            </button>
             <HelpHint helpId="pos.tax-toggle" role="default" />
-          </button>
+          </div>
           <div className="text-right">
             <div className="font-medium text-gray-900">{formatCurrency(tax)}</div>
             <div className="text-xs font-medium text-amber-600">{formatArk(tax)}</div>
