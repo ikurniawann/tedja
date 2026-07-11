@@ -37,12 +37,17 @@ describe("pickForeground", () => {
     expect(pickForeground("#db2777")).toBe("#ffffff");
   });
   it("uses dark text on a light brand color", () => {
-    expect(pickForeground("#fde68a")).toBe("#0a0a0a");
+    expect(pickForeground("#fde68a")).toBe("#000000");
   });
   it("guarantees >= 4.5 contrast against the chosen brand", () => {
     for (const c of ["#db2777", "#0ea5e9", "#10b981", "#fde68a", "#111827"]) {
       const fg = pickForeground(c);
       expect(contrastRatio(fg, c)).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+  it("guarantees >= 4.5 contrast on mid-luminance grays", () => {
+    for (const c of ["#777777", "#808080", "#999999", "#6b7280"]) {
+      expect(contrastRatio(pickForeground(c), c)).toBeGreaterThanOrEqual(4.5);
     }
   });
 });

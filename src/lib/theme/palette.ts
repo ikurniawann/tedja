@@ -48,7 +48,7 @@ export function contrastRatio(a: string, b: string): number {
 }
 
 const LIGHT_TEXT = "#ffffff";
-const DARK_TEXT = "#0a0a0a";
+const DARK_TEXT = "#000000";
 
 export function pickForeground(bg: string): typeof LIGHT_TEXT | typeof DARK_TEXT {
   return contrastRatio(LIGHT_TEXT, bg) >= contrastRatio(DARK_TEXT, bg)
