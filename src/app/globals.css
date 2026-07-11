@@ -4,7 +4,16 @@
 @import "tw-animate-css";
 
 /* Bind the `dark:` variant to our explicit theme attribute (manual + auto). */
-@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+@custom-variant dark {
+  &:where([data-theme="dark"], [data-theme="dark"] *) {
+    @slot;
+  }
+  @media (prefers-color-scheme: dark) {
+    &:where([data-theme="auto"], [data-theme="auto"] *) {
+      @slot;
+    }
+  }
+}
 
 /* Expose CSS variables to Tailwind's utility generator. */
 @theme inline {
