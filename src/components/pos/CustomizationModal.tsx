@@ -175,7 +175,7 @@ export function CustomizationModal({
               onChange={(e) => onChange({ ...value!, notes: e.target.value })}
               placeholder="Contoh: Jangan terlalu pedas, kurang manis, dll."
               rows={2}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus-visible:ring-ring"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             />
           </div>
 

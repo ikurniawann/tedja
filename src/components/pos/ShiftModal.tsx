@@ -231,7 +231,7 @@ export function ShiftModal({
                   placeholder="500.000"
                   value={closingCash}
                   onChange={(e) => setClosingCash(formatCashInputDisplay(e.target.value))}
-                  className="h-9 text-sm focus:border-primary/50 focus-visible:ring-ring"
+                  className="h-9 text-sm focus-visible:border-primary/50 focus-visible:ring-2 focus-visible:ring-primary/20"
                   disabled={busy}
                 />
               </div>
@@ -245,7 +245,7 @@ export function ShiftModal({
                   placeholder="Optional closing notes"
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
-                  className="h-9 text-sm focus:border-primary/50 focus-visible:ring-ring"
+                  className="h-9 text-sm focus-visible:border-primary/50 focus-visible:ring-2 focus-visible:ring-primary/20"
                   disabled={busy}
                 />
               </div>
@@ -298,7 +298,7 @@ export function ShiftModal({
                   placeholder="500.000"
                   value={openingCash}
                   onChange={(e) => setOpeningCash(formatCashInputDisplay(e.target.value))}
-                  className="h-9 text-sm focus:border-primary/50 focus-visible:ring-ring"
+                  className="h-9 text-sm focus-visible:border-primary/50 focus-visible:ring-2 focus-visible:ring-primary/20"
                   disabled={busy}
                   autoFocus
                 />
@@ -313,7 +313,7 @@ export function ShiftModal({
                   placeholder="Optional shift notes"
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
-                  className="h-9 text-sm focus:border-primary/50 focus-visible:ring-ring"
+                  className="h-9 text-sm focus-visible:border-primary/50 focus-visible:ring-2 focus-visible:ring-primary/20"
                   disabled={busy}
                 />
               </div>

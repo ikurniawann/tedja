@@ -766,6 +766,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
             <div className="flex items-center gap-2">
               <AlertCircle className="h-4 w-4 shrink-0 text-amber-600" />
               <span className="font-medium">No active shift — open a shift to start transactions</span>
+              {/* role not available in this client component without new session fetching; default copy */}
               <HelpHint helpId="pos.shift" role="default" />
             </div>
             <Button
@@ -870,7 +871,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
                     setShowProductSuggestions(false);
                   }
                 }}
-                className="h-10 pl-10 focus:border-primary/50 focus-visible:ring-ring"
+                className="h-10 pl-10 focus-visible:border-primary/50 focus-visible:ring-2 focus-visible:ring-primary/20"
               />
               {showProductSuggestions && searchTerm.trim() && (
                 <div className="absolute left-0 right-0 top-[calc(100%+6px)] z-40 max-h-80 overflow-y-auto rounded-xl border border-gray-200/70 bg-white p-1 shadow-lg">
@@ -1106,7 +1107,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
                         <span className="text-sm font-bold tracking-normal">{getTableDisplayName(table)}</span>
                         <TableIcon className="h-5 w-5 shrink-0" />
                       </div>
-                      <div className={`mt-3 text-xs font-semibold ${isSelected ? 'text-white/70' : isOccupied ? 'text-gray-400' : 'text-gray-500'}`}>
+                      <div className={`mt-3 text-xs font-semibold ${isSelected ? 'text-primary-foreground/70' : isOccupied ? 'text-gray-400' : 'text-gray-500'}`}>
                         {isOccupied ? activeOrder || 'Occupied' : `${table.capacity} seats`}
                       </div>
                     </button>

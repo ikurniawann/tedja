@@ -117,7 +117,7 @@ export function PaymentModal({
                 value={cashReceived}
                 onChange={(e) => setCashReceived(e.target.value)}
                 disabled={submitting}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus-visible:ring-ring disabled:bg-gray-100 disabled:cursor-not-allowed"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:bg-gray-100 disabled:cursor-not-allowed"
               />
               <div className="text-sm text-gray-500">Kembalian: {formatCurrency(change)}</div>
             </div>
