@@ -58,7 +58,9 @@ export function AppearancePage() {
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             {THEME_PRESETS.map((p) => {
               const active =
-                state.presetId === p.id && !state.customPrimary;
+                state.presetId === p.id &&
+                !state.customPrimary &&
+                !state.customSecondary;
               return (
                 <button
                   key={p.id}

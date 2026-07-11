@@ -246,19 +246,16 @@ function ThemeToggle({ compact = false }: { compact?: boolean }) {
   const Icon = current.icon;
 
   return (
-    <Link
-      href="/dashboard/settings/appearance"
+    <button
+      type="button"
       className="arkiv-theme-toggle group inline-flex items-center gap-2 rounded-lg border border-pink-100 bg-white px-3 py-2 text-sm font-semibold text-gray-700 shadow-sm transition-colors hover:border-pink-200 hover:bg-pink-50"
-      title="Ubah tema"
-      aria-label="Ubah tema tampilan"
-      onClick={(e) => {
-        e.preventDefault();
-        setMode(next.value);
-      }}
+      title={`Tema: ${current.label} — klik untuk ganti`}
+      aria-label={`Tema: ${current.label} — klik untuk ganti`}
+      onClick={() => setMode(next.value)}
     >
       <Icon className="h-4 w-4" />
       {!compact && <span>{current.label}</span>}
-    </Link>
+    </button>
   );
 }
 
