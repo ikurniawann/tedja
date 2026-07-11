@@ -45,6 +45,22 @@ const HELP: Record<string, HelpEntry> = {
     default:
       "Pilih warna primary & secondary; seluruh warna turunan dibuat otomatis dan tersimpan di perangkat ini.",
   },
+  "pos.dashboard.aov": {
+    default:
+      "Average Order Value (AOV) = total pendapatan ÷ jumlah pesanan. Metrik ini menunjukkan rata-rata nilai belanja per transaksi.",
+    kepala_cabang:
+      "AOV yang meningkat menandakan up-selling atau paket bundling berhasil. Bandingkan dengan target bulanan cabang.",
+    direksi:
+      "AOV lintas cabang digunakan untuk analisis performa program loyalitas dan strategi pricing.",
+  },
+  "pos.dashboard.active-cashiers": {
+    default:
+      "Jumlah kasir yang memiliki minimal satu transaksi pada periode yang dipilih.",
+    kepala_cabang:
+      "Pantau kasir aktif vs total kasir terdaftar untuk mengukur efektivitas penugasan shift.",
+    direksi:
+      "Aktivitas kasir per cabang dapat dilihat di laporan operasional untuk perencanaan SDM.",
+  },
 };
 
 export function getHelpText(helpId: string, role: HelpRole): string | null {
