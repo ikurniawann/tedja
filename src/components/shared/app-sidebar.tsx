@@ -2,16 +2,16 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { Moon, Monitor, Sun } from "lucide-react";
 import {
   Bars3Icon,
   ChevronDownIcon,
-  MoonIcon,
-  SunIcon,
   XMarkIcon,
 } from "@heroicons/react/24/outline";
 import { ActivityLogBell } from "@/components/layout/ActivityLogBell";
 import { NotificationBell } from "@/components/hris/NotificationBell";
+import { useTheme } from "@/components/providers/theme-provider";
 import type { NavItem } from "@/lib/iam/types";
 import { AppSidebarNavIcon } from "./app-sidebar-nav-icons";
 import AppSidebarNav from "./app-sidebar-nav";
@@ -43,36 +43,17 @@ const DESKTOP_TOP_BAR_HEIGHT = "lg:h-[4.75rem]";
 export default function AppSidebar({ user, navItems, children }: AppSidebarProps) {
   const pathname = usePathname();
   const allNavItems = [desktopNavItem, ...navItems];
-  const [theme, setTheme] = useState<"light" | "dark">("light");
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const useActivityNotification = pathname.startsWith("/dashboard/purchasing");
 
-  useEffect(() => {
-    const savedTheme = window.localStorage.getItem("arkiv-dashboard-theme");
-    if (savedTheme === "dark" || savedTheme === "light") {
-      setTheme(savedTheme);
-    }
-  }, []);
-
-  useEffect(() => {
-    window.localStorage.setItem("arkiv-dashboard-theme", theme);
-  }, [theme]);
-
-  const toggleTheme = () => setTheme((current) => (current === "dark" ? "light" : "dark"));
   const closeMobile = () => setMobileOpen(false);
 
   return (
     <div
       className="arkiv-dashboard-theme flex min-h-screen"
-      data-theme={theme}
-      style={{
-        background:
-          theme === "dark"
-            ? "linear-gradient(135deg, #020617 0%, #111827 42%, #1e1b4b 74%, #3b1235 100%)"
-            : "linear-gradient(135deg, #eef2ff 0%, #faf5ff 40%, #f0f9ff 75%, #fef3ff 100%)",
-      }}
+      style={{ background: "var(--page-mesh)" }}
     >
       {mobileOpen && (
         <div
@@ -103,8 +84,6 @@ export default function AppSidebar({ user, navItems, children }: AppSidebarProps
           onMenuClick={() => setMobileOpen(true)}
           userName={user.full_name}
           onAccountClick={() => setAccountOpen(true)}
-          theme={theme}
-          onThemeToggle={toggleTheme}
         />
 
         <div
@@ -119,7 +98,7 @@ export default function AppSidebar({ user, navItems, children }: AppSidebarProps
               <AppSidebarNavIcon name="home" className="h-4 w-4" isActive />
               Desktop
             </Link>
-            <ThemeToggle theme={theme} onToggle={toggleTheme} />
+            <ThemeToggle />
             {useActivityNotification ? <ActivityLogBell /> : <NotificationBell />}
             <div className="h-6 w-px bg-gray-200" />
             <button
@@ -223,15 +202,11 @@ function MobileHeader({
   onMenuClick,
   userName,
   onAccountClick,
-  theme,
-  onThemeToggle,
 }: {
   navItems: NavItem[];
   onMenuClick: () => void;
   userName: string;
   onAccountClick: () => void;
-  theme: "light" | "dark";
-  onThemeToggle: () => void;
 }) {
   return (
     <header className="border-b border-gray-200 bg-white lg:hidden">
@@ -245,7 +220,7 @@ function MobileHeader({
         >
           {userName}
         </button>
-        <ThemeToggle theme={theme} onToggle={onThemeToggle} compact />
+        <ThemeToggle compact />
         <Link href="/arkiv-os" className="shrink-0 font-semibold text-pink-600">
           Desktop
         </Link>
@@ -257,30 +232,33 @@ function MobileHeader({
   );
 }
 
-function ThemeToggle({
-  theme,
-  onToggle,
-  compact = false,
-}: {
-  theme: "light" | "dark";
-  onToggle: () => void;
-  compact?: boolean;
-}) {
-  const isDark = theme === "dark";
+const THEME_MODES = [
+  { value: "light" as const, icon: Sun, label: "Terang" },
+  { value: "dark" as const, icon: Moon, label: "Gelap" },
+  { value: "auto" as const, icon: Monitor, label: "Auto" },
+];
+
+function ThemeToggle({ compact = false }: { compact?: boolean }) {
+  const { state, setMode } = useTheme();
+  const currentIdx = THEME_MODES.findIndex((m) => m.value === state.mode);
+  const current = THEME_MODES[currentIdx] ?? THEME_MODES[0];
+  const next = THEME_MODES[(currentIdx + 1) % THEME_MODES.length];
+  const Icon = current.icon;
 
   return (
-    <button
-      type="button"
-      onClick={onToggle}
-      className={`arkiv-theme-toggle inline-flex items-center gap-2 rounded-lg border border-pink-100 bg-white px-3 py-2 text-sm font-semibold text-gray-700 shadow-sm transition-colors hover:border-pink-200 hover:bg-pink-50 ${
-        compact ? "px-2" : ""
-      }`}
-      aria-label={isDark ? "Aktifkan light mode" : "Aktifkan dark mode"}
-      title={isDark ? "Light mode" : "Dark mode"}
+    <Link
+      href="/dashboard/settings/appearance"
+      className="arkiv-theme-toggle group inline-flex items-center gap-2 rounded-lg border border-pink-100 bg-white px-3 py-2 text-sm font-semibold text-gray-700 shadow-sm transition-colors hover:border-pink-200 hover:bg-pink-50"
+      title="Ubah tema"
+      aria-label="Ubah tema tampilan"
+      onClick={(e) => {
+        e.preventDefault();
+        setMode(next.value);
+      }}
     >
-      {isDark ? <SunIcon className="h-4 w-4" /> : <MoonIcon className="h-4 w-4" />}
-      {!compact && <span>{isDark ? "Light" : "Dark"}</span>}
-    </button>
+      <Icon className="h-4 w-4" />
+      {!compact && <span>{current.label}</span>}
+    </Link>
   );
 }
 

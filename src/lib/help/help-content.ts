@@ -38,6 +38,13 @@ const HELP: Record<string, HelpEntry> = {
     direksi:
       "Penjualan bersih lintas cabang menjadi dasar analisis margin di laporan profit.",
   },
+  "appearance.mode": {
+    default: "Auto mengikuti pengaturan terang/gelap perangkat Anda.",
+  },
+  "appearance.custom": {
+    default:
+      "Pilih warna primary & secondary; seluruh warna turunan dibuat otomatis dan tersimpan di perangkat ini.",
+  },
 };
 
 export function getHelpText(helpId: string, role: HelpRole): string | null {
