@@ -36,3 +36,71 @@ export interface ProfitReportParams {
   date_from: string;
   date_to: string;
 }
+
+export interface ClosingReportParams {
+  date: string;
+  shift_id?: string;
+}
+
+export interface ClosingCategoryRow {
+  name: string;
+  amount: number;
+  percentage: number;
+}
+
+export interface ClosingPromoRow {
+  name: string;
+  qty: number;
+}
+
+export interface ClosingTargetRow {
+  target: number;
+  actual: number;
+  variance: number;
+}
+
+export interface ClosingReport {
+  filters: {
+    date: string;
+    shift_id: string | null;
+  };
+  header: {
+    title: string;
+    outlet_line: string;
+    report_date: string;
+  };
+  shift_sessions: Array<{
+    label: string;
+    last_order: string;
+    closed_at: string;
+  }>;
+  sales_summary: {
+    net_sales: number;
+    service: number;
+    tax: number;
+    discount: number;
+    gross: number;
+  };
+  guests: {
+    count: number;
+    average_per_pax: number;
+  };
+  categories_by_segment: Array<{
+    segment: string;
+    title: string;
+    rows: ClosingCategoryRow[];
+  }>;
+  targets: {
+    daily: ClosingTargetRow;
+    monthly: ClosingTargetRow;
+    month_to_date: ClosingTargetRow;
+  };
+  promos_by_segment: Array<{
+    segment: string;
+    title: string;
+    rows: ClosingPromoRow[];
+  }>;
+  footer: {
+    printed_by: string;
+  };
+}

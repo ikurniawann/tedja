@@ -61,6 +61,23 @@ const HELP: Record<string, HelpEntry> = {
     direksi:
       "Aktivitas kasir per cabang dapat dilihat di laporan operasional untuk perencanaan SDM.",
   },
+  "report.closing.target-daily": {
+    default: "Target omset untuk satu hari operasional ini.",
+    kepala_cabang:
+      "Bandingkan aktual vs target harian untuk memantau performa shift hari ini.",
+  },
+  "report.closing.target-monthly": {
+    default: "Target omset untuk keseluruhan bulan berjalan.",
+    kepala_cabang:
+      "Gunakan target bulanan untuk memproyeksikan apakah cabang on-track di akhir bulan.",
+    direksi:
+      "Target bulanan per cabang menjadi dasar evaluasi kinerja operasional periode ini.",
+  },
+  "report.closing.target-mtd": {
+    default: "Akumulasi aktual & target dari tanggal 1 sampai hari ini.",
+    kepala_cabang:
+      "MTD menunjukkan seberapa jauh cabang dari target bulanan pada hari ini.",
+  },
 };
 
 export function getHelpText(helpId: string, role: HelpRole): string | null {
