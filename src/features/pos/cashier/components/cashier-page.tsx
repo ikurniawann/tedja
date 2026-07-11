@@ -6,6 +6,7 @@ import {
   Search, Utensils, ShoppingBag, Table as TableIcon,
   User, X, Sparkles, Printer, CheckCircle, AlertCircle, Loader2,
 } from 'lucide-react';
+import { ArrowsPointingInIcon, ArrowsPointingOutIcon } from '@heroicons/react/24/outline';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -50,6 +51,13 @@ import { printThermalReceipt, type ReceiptPayload } from '@/components/pos/Print
 import type { SplitConfig } from '@/components/pos/SplitBillModal';
 import { SplitBillModal } from '@/components/pos/SplitBillModal';
 import { SplitPaymentScreen } from '@/components/pos/SplitPaymentScreen';
+import {
+  cashierRoute,
+  type CashierPageVariant,
+} from '../constants';
+import { PageTransition } from '@/components/motion';
+import { HelpHint } from '@/components/ui/help-hint';
+import { TooltipProvider } from '@/components/ui/tooltip';
 
 /* ─── helpers ─────────────────────────────────────────────────────── */
 const formatCurrency = (value: number) => formatAmount(value);
@@ -75,9 +83,11 @@ const withCustomerDiscount = (customer: Customer): CustomerWithDiscount => ({
 });
 
 /* ─── page ────────────────────────────────────────────────────────── */
-function CashierPageNewContent() {
+function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const isFullscreen = variant === 'fullscreen';
+  const homeRoute = cashierRoute(variant, searchParams);
   const paymentOrderId = searchParams.get('orderId');
   const loadedPaymentOrderRef = useRef<string | null>(null);
   const { products, categories, loading, error } = usePosProducts();
@@ -403,7 +413,7 @@ function CashierPageNewContent() {
         setPaymentMethod('cash');
         setCurrentArkToUse(0);
         loadedPaymentOrderRef.current = null;
-        router.replace('/dashboard/pos/cashier-new');
+        router.replace(homeRoute);
         setProcessingPayment(false);
         return;
       } catch (e: unknown) {
@@ -680,12 +690,51 @@ function CashierPageNewContent() {
   }, [resultPayload]);
 
   /* ─── Render ───────────────────────────────────────────────────── */
+  const shellHeight = isFullscreen
+    ? 'h-[calc(100dvh-11rem)] min-h-[560px]'
+    : 'h-[calc(100dvh-14rem)] min-h-[480px]';
+
   return (
-    <div className="flex flex-col lg:flex-row h-[calc(100vh-8rem)] gap-4">
+    <TooltipProvider>
+    <PageTransition>
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-xl font-semibold text-gray-900">POS Cashier</h1>
+          <p className="text-sm text-gray-500">
+            {isFullscreen
+              ? 'Fullscreen mode — optimized for checkout'
+              : 'Process orders with the dashboard sidebar available'}
+          </p>
+        </div>
+        {isFullscreen ? (
+          <Button
+            type="button"
+            variant="outline"
+            className="border-gray-200/80 text-gray-700 hover:border-primary/30 hover:bg-primary/10 hover:text-primary"
+            onClick={() => router.push(cashierRoute('embedded', searchParams))}
+          >
+            <ArrowsPointingInIcon className="mr-2 h-4 w-4" />
+            Exit Fullscreen
+          </Button>
+        ) : (
+          <Button
+            type="button"
+            variant="outline"
+            className="border-gray-200/80 text-gray-700 hover:border-primary/30 hover:bg-primary/10 hover:text-primary"
+            onClick={() => router.push(cashierRoute('fullscreen', searchParams))}
+          >
+            <ArrowsPointingOutIcon className="mr-2 h-4 w-4" />
+            Fullscreen
+          </Button>
+        )}
+      </div>
+
+      <div className={`flex flex-col lg:flex-row ${shellHeight} gap-4`}>
       {loading && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="flex items-center gap-3 rounded-xl border border-gray-200/70 bg-white p-6 shadow-xs">
-            <Loader2 className="h-6 w-6 animate-spin text-pink-600" />
+            <Loader2 className="h-6 w-6 animate-spin text-primary" />
             <span className="font-medium text-gray-900">Loading products...</span>
           </div>
         </div>
@@ -717,6 +766,7 @@ function CashierPageNewContent() {
             <div className="flex items-center gap-2">
               <AlertCircle className="h-4 w-4 shrink-0 text-amber-600" />
               <span className="font-medium">No active shift — open a shift to start transactions</span>
+              <HelpHint helpId="pos.shift" role="default" />
             </div>
             <Button
               type="button"
@@ -743,8 +793,8 @@ function CashierPageNewContent() {
                 key: 'dine_in',
                 label: 'Dine-in',
                 icon: Utensils,
-                activeClass: 'border-pink-600 bg-pink-600 text-white shadow-sm',
-                idleClass: 'border-pink-200/80 bg-pink-50 text-pink-700 hover:border-pink-400 hover:bg-pink-100',
+                activeClass: 'border-primary bg-primary text-white shadow-sm',
+                idleClass: 'border-primary/30 bg-primary/10 text-primary hover:border-primary/50 hover:bg-primary/15',
               },
               {
                 key: 'takeaway',
@@ -820,7 +870,7 @@ function CashierPageNewContent() {
                     setShowProductSuggestions(false);
                   }
                 }}
-                className="h-10 pl-10 focus:border-pink-400 focus:ring-2 focus:ring-pink-100"
+                className="h-10 pl-10 focus:border-primary/50 focus-visible:ring-ring"
               />
               {showProductSuggestions && searchTerm.trim() && (
                 <div className="absolute left-0 right-0 top-[calc(100%+6px)] z-40 max-h-80 overflow-y-auto rounded-xl border border-gray-200/70 bg-white p-1 shadow-lg">
@@ -838,7 +888,7 @@ function CashierPageNewContent() {
                           onClick={() => selectProductFromSearch(product)}
                           onMouseEnter={() => setActiveProductSuggestion(index)}
                           className={`flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left transition-colors ${
-                            index === activeProductSuggestion ? 'bg-pink-50' : 'hover:bg-gray-50'
+                            index === activeProductSuggestion ? 'bg-primary/10' : 'hover:bg-gray-50'
                           }`}
                         >
                           <div className="min-w-0">
@@ -864,8 +914,8 @@ function CashierPageNewContent() {
 
         {/* Selected Customer */}
         {selectedCustomer && (
-          <div className="flex items-center gap-3 rounded-lg border border-pink-100/80 bg-gradient-to-r from-pink-50 to-amber-50 p-3">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-pink-100 text-xs font-bold text-pink-600">
+          <div className="flex items-center gap-3 rounded-lg border border-primary/20 bg-gradient-to-r from-primary/5 to-amber-50 p-3">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
               {selectedCustomer.name?.charAt(0)}
             </div>
             <div className="flex-1 min-w-0">
@@ -874,6 +924,7 @@ function CashierPageNewContent() {
                 <span className="capitalize">{selectedCustomer.membership_tier}</span>
                 <span className="text-gray-300">•</span>
                 <span className="font-medium text-green-600">{selectedCustomer.discount}% off</span>
+                <HelpHint helpId="pos.discount" role="default" />
                 <span className="text-gray-300">•</span>
                 <span className="text-amber-600 font-medium">{formatArk(selectedCustomer.ark_coin_balance)}</span>
               </div>
@@ -905,7 +956,7 @@ function CashierPageNewContent() {
                   <div className="min-w-0">
                     <div className="text-xs font-medium text-gray-900 truncate">{product.name}</div>
                     <div className="flex items-baseline gap-1 mt-0.5">
-                      <span className="text-xs text-pink-600 font-semibold">{formatCurrency(product.base_price)}</span>
+                      <span className="text-xs text-primary font-semibold">{formatCurrency(product.base_price)}</span>
                       <span className="text-[10px] text-amber-600 font-medium">{formatArk(product.base_price)}</span>
                     </div>
                   </div>
@@ -922,7 +973,7 @@ function CashierPageNewContent() {
               key={cat}
               onClick={() => setSelectedCategory(cat)}
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all ${
-                selectedCategory === cat ? 'bg-pink-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                selectedCategory === cat ? 'bg-primary text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
             >
               {cat}
@@ -940,7 +991,7 @@ function CashierPageNewContent() {
                   key={product.id}
                   type="button"
                   onClick={() => openCustomization(product)}
-                  className="group flex flex-col overflow-hidden rounded-lg border border-gray-200/70 bg-white text-left transition-all hover:border-pink-400 hover:shadow-sm"
+                  className="group flex flex-col overflow-hidden rounded-lg border border-gray-200/70 bg-white text-left transition-all hover:border-primary/50 hover:shadow-sm"
                 >
                   <div className="aspect-[5/4] w-full overflow-hidden bg-gray-100">
                     <PosProductThumbnail src={product.image_url} alt={product.name} />
@@ -949,7 +1000,7 @@ function CashierPageNewContent() {
                     <div className="line-clamp-2 text-[11px] font-medium leading-tight text-gray-900">
                       {product.name}
                     </div>
-                    <div className="text-[11px] font-bold text-pink-600">{formatCurrency(product.base_price)}</div>
+                    <div className="text-[11px] font-bold text-primary">{formatCurrency(product.base_price)}</div>
                     <div className="flex items-center justify-between gap-1">
                       <span className="text-[9px] font-medium text-amber-600">{formatArk(product.base_price)}</span>
                       <span className="inline-flex items-center gap-0.5 text-[9px] font-semibold text-purple-600">
@@ -1045,17 +1096,17 @@ function CashierPageNewContent() {
                       }}
                       className={`min-h-[92px] rounded-lg border px-4 py-4 text-left transition-all ${
                         isSelected
-                          ? 'border-pink-600 bg-pink-600 text-white shadow-sm'
+                          ? 'border-primary bg-primary text-white shadow-sm'
                           : isOccupied
                             ? 'cursor-not-allowed border-gray-200/70 bg-gray-100 text-gray-400'
-                            : 'border-gray-200/70 bg-white text-gray-800 hover:border-pink-400 hover:bg-pink-50'
+                            : 'border-gray-200/70 bg-white text-gray-800 hover:border-primary/50 hover:bg-primary/10'
                       }`}
                     >
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-sm font-bold tracking-normal">{getTableDisplayName(table)}</span>
                         <TableIcon className="h-5 w-5 shrink-0" />
                       </div>
-                      <div className={`mt-3 text-xs font-semibold ${isSelected ? 'text-pink-100' : isOccupied ? 'text-gray-400' : 'text-gray-500'}`}>
+                      <div className={`mt-3 text-xs font-semibold ${isSelected ? 'text-white/70' : isOccupied ? 'text-gray-400' : 'text-gray-500'}`}>
                         {isOccupied ? activeOrder || 'Occupied' : `${table.capacity} seats`}
                       </div>
                     </button>
@@ -1171,7 +1222,7 @@ function CashierPageNewContent() {
                     type="button"
                     variant="outline"
                     onClick={() => handlePrint('BAR')}
-                    className="border-pink-200/80 text-pink-600 hover:bg-pink-50"
+                    className="border-primary/30 text-primary hover:bg-primary/10"
                   >
                     <Printer className="mr-1.5 h-4 w-4" /> Bar
                   </Button>
@@ -1189,7 +1240,7 @@ function CashierPageNewContent() {
                 <Button
                   type="button"
                   onClick={() => setResultPayload(null)}
-                  className="w-full bg-pink-600 hover:bg-pink-700 sm:w-auto"
+                  className="w-full bg-primary hover:bg-primary/90 sm:w-auto"
                 >
                   New Transaction
                 </Button>
@@ -1217,7 +1268,7 @@ function CashierPageNewContent() {
                 const { synced, failed } = await syncQueue();
                 toast.success(`Sync complete: ${synced} succeeded, ${failed} failed`);
               }}
-              className="bg-pink-600 hover:bg-pink-700"
+              className="bg-primary hover:bg-primary/90"
             >
               Sync Now
             </Button>
@@ -1271,11 +1322,14 @@ function CashierPageNewContent() {
           />
         </div>
       )}
+      </div>
     </div>
+    </PageTransition>
+    </TooltipProvider>
   );
 }
 
-export function CashierPage() {
+export function CashierPage({ variant = 'embedded' }: { variant?: CashierPageVariant }) {
   return (
     <Suspense fallback={
       <div className="flex items-center gap-2 p-6 text-sm text-gray-500">
@@ -1283,7 +1337,7 @@ export function CashierPage() {
         Loading cashier...
       </div>
     }>
-      <CashierPageNewContent />
+      <CashierPageNewContent variant={variant} />
     </Suspense>
   );
 }

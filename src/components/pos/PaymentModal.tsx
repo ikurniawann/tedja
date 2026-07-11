@@ -99,7 +99,7 @@ export function PaymentModal({
                   }
                 }}
                 className={`p-4 rounded-lg border-2 text-left transition-all ${
-                  method === m.key ? "border-pink-600 bg-pink-50" : "border-gray-200 hover:border-gray-300"
+                  method === m.key ? "border-primary bg-primary/10" : "border-gray-200 hover:border-gray-300"
                 }`}
               >
                 <div className="text-lg font-semibold">{m.title}</div>
@@ -117,7 +117,7 @@ export function PaymentModal({
                 value={cashReceived}
                 onChange={(e) => setCashReceived(e.target.value)}
                 disabled={submitting}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus-visible:ring-ring disabled:bg-gray-100 disabled:cursor-not-allowed"
               />
               <div className="text-sm text-gray-500">Kembalian: {formatCurrency(change)}</div>
             </div>
@@ -162,14 +162,14 @@ export function PaymentModal({
           <div className="pt-4 border-t">
             <div className="flex justify-between text-lg font-bold">
               <span>Total</span>
-              <span className="text-pink-600">{formatCurrency(total)}</span>
+              <span className="text-primary">{formatCurrency(total)}</span>
             </div>
           </div>
 
           <button
             onClick={() => onConfirm({ method, cashReceived, arkToUse })}
             disabled={!isValid || submitting}
-            className="w-full py-3 bg-pink-600 text-white rounded-lg font-semibold hover:bg-pink-700 disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
+            className="w-full py-3 bg-primary text-white rounded-lg font-semibold hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
           >
             {submitting ? (
               <>

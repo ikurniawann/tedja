@@ -174,7 +174,7 @@ export function ShiftModal({
               <Button
                 type="button"
                 onClick={handleDismiss}
-                className="bg-pink-600 hover:bg-pink-700"
+                className="bg-primary hover:bg-primary/90"
               >
                 Done
               </Button>
@@ -231,7 +231,7 @@ export function ShiftModal({
                   placeholder="500.000"
                   value={closingCash}
                   onChange={(e) => setClosingCash(formatCashInputDisplay(e.target.value))}
-                  className="h-9 text-sm focus:border-pink-400 focus:ring-2 focus:ring-pink-100"
+                  className="h-9 text-sm focus:border-primary/50 focus-visible:ring-ring"
                   disabled={busy}
                 />
               </div>
@@ -245,7 +245,7 @@ export function ShiftModal({
                   placeholder="Optional closing notes"
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
-                  className="h-9 text-sm focus:border-pink-400 focus:ring-2 focus:ring-pink-100"
+                  className="h-9 text-sm focus:border-primary/50 focus-visible:ring-ring"
                   disabled={busy}
                 />
               </div>
@@ -275,7 +275,7 @@ export function ShiftModal({
           <DialogPanelForm onSubmit={handleOpen}>
             <DialogPanelHeader>
               <DialogPanelTitle className="flex items-center gap-2">
-                <Lock className="h-4 w-4 text-pink-600" />
+                <Lock className="h-4 w-4 text-primary" />
                 Open Shift
               </DialogPanelTitle>
               <DialogPanelDescription>
@@ -298,7 +298,7 @@ export function ShiftModal({
                   placeholder="500.000"
                   value={openingCash}
                   onChange={(e) => setOpeningCash(formatCashInputDisplay(e.target.value))}
-                  className="h-9 text-sm focus:border-pink-400 focus:ring-2 focus:ring-pink-100"
+                  className="h-9 text-sm focus:border-primary/50 focus-visible:ring-ring"
                   disabled={busy}
                   autoFocus
                 />
@@ -313,7 +313,7 @@ export function ShiftModal({
                   placeholder="Optional shift notes"
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
-                  className="h-9 text-sm focus:border-pink-400 focus:ring-2 focus:ring-pink-100"
+                  className="h-9 text-sm focus:border-primary/50 focus-visible:ring-ring"
                   disabled={busy}
                 />
               </div>
@@ -325,7 +325,7 @@ export function ShiftModal({
               <Button
                 type="submit"
                 disabled={busy || !hasCashInput(openingCash)}
-                className="bg-pink-600 hover:bg-pink-700"
+                className="bg-primary hover:bg-primary/90"
               >
                 {busy ? (
                   <>

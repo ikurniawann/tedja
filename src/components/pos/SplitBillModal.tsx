@@ -301,7 +301,7 @@ export function SplitBillModal({
       <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Split className="w-5 h-5 text-pink-600" /> Split Bill
+            <Split className="w-5 h-5 text-primary" /> Split Bill
           </DialogTitle>
         </DialogHeader>
 
@@ -311,7 +311,7 @@ export function SplitBillModal({
             <button
               onClick={() => setMode('equal')}
               className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-md text-sm font-medium transition-all ${
-                mode === 'equal' ? 'bg-white shadow-sm text-pink-600' : 'text-gray-500'
+                mode === 'equal' ? 'bg-white shadow-sm text-primary' : 'text-gray-500'
               }`}
             >
               <Equal className="w-4 h-4" /> Sama Rata
@@ -319,7 +319,7 @@ export function SplitBillModal({
             <button
               onClick={() => setMode('custom')}
               className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-md text-sm font-medium transition-all ${
-                mode === 'custom' ? 'bg-white shadow-sm text-pink-600' : 'text-gray-500'
+                mode === 'custom' ? 'bg-white shadow-sm text-primary' : 'text-gray-500'
               }`}
             >
               <Hash className="w-4 h-4" /> Nominal
@@ -327,7 +327,7 @@ export function SplitBillModal({
             <button
               onClick={() => setMode('per-item')}
               className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-md text-sm font-medium transition-all ${
-                mode === 'per-item' ? 'bg-white shadow-sm text-pink-600' : 'text-gray-500'
+                mode === 'per-item' ? 'bg-white shadow-sm text-primary' : 'text-gray-500'
               }`}
             >
               <UtensilsCrossed className="w-4 h-4" /> Per Item
@@ -372,7 +372,7 @@ export function SplitBillModal({
             <div className="space-y-3">
               {Array.from({ length: count }, (_, idx) => (
                 <div key={idx} className="flex items-center gap-3 bg-gray-50 rounded-lg p-3">
-                  <div className="w-6 h-6 rounded-full bg-pink-600 text-white text-xs font-bold flex items-center justify-center flex-shrink-0">
+                  <div className="w-6 h-6 rounded-full bg-primary text-white text-xs font-bold flex items-center justify-center flex-shrink-0">
                     {idx + 1}
                   </div>
                   <div className="flex-1">
@@ -493,7 +493,7 @@ export function SplitBillModal({
                 const s = splitsToRender[idx];
                 return (
                   <div key={idx} className="flex items-center gap-3 bg-gray-50 rounded-lg p-3">
-                    <div className="w-6 h-6 rounded-full bg-pink-600 text-white text-xs font-bold flex items-center justify-center flex-shrink-0">
+                    <div className="w-6 h-6 rounded-full bg-primary text-white text-xs font-bold flex items-center justify-center flex-shrink-0">
                       {idx + 1}
                     </div>
                     <div className="flex-1">
@@ -505,7 +505,7 @@ export function SplitBillModal({
                       />
                     </div>
                     <div className="text-right">
-                      <p className="text-sm font-bold text-pink-600">{formatCurrency(s.total)}</p>
+                      <p className="text-sm font-bold text-primary">{formatCurrency(s.total)}</p>
                       <p className="text-[10px] text-gray-500">
                         {mode === 'per-item' ? (
                           <>Sub {formatCurrency(s.subtotal)} · Tax {formatCurrency(s.tax)} · Disc {formatCurrency(s.discount)}</>
@@ -537,7 +537,7 @@ export function SplitBillModal({
           <div className="flex gap-3 pt-2">
             <Button variant="outline" className="flex-1" onClick={onClose}>Batal</Button>
             <Button
-              className="flex-1 bg-pink-600 hover:bg-pink-700"
+              className="flex-1 bg-primary hover:bg-primary/90"
               onClick={handleConfirm}
               disabled={!isValid}
             >
