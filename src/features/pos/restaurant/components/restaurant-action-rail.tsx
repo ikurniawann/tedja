@@ -8,8 +8,10 @@ import {
   Clock,
   CreditCard,
   Loader2,
+  Merge,
   MessageSquare,
   MoveRight,
+  Package,
   Printer,
   ReceiptText,
   Split,
@@ -66,6 +68,8 @@ export interface RestaurantActionRailProps {
   onSplitBill: () => void;
   onPaySplits: () => void;
   onMoveTable: () => void;
+  onMoveItems: () => void;
+  onMergeTable: () => void;
   onSelectBill: (selection: RestaurantSelection) => void;
 }
 
@@ -79,6 +83,8 @@ export function RestaurantActionRail({
   onSplitBill,
   onPaySplits,
   onMoveTable,
+  onMoveItems,
+  onMergeTable,
   onSelectBill,
 }: RestaurantActionRailProps) {
   const queryClient = useQueryClient();
@@ -173,6 +179,30 @@ export function RestaurantActionRail({
     onMoveTable();
   };
 
+  const handleMoveItems = () => {
+    if (!selectedOrder) {
+      toast.error("Select an occupied table or bill");
+      return;
+    }
+    if (splitSummary && splitSummary.pending > 0) {
+      toast.error("Finish unpaid splits before moving items");
+      return;
+    }
+    onMoveItems();
+  };
+
+  const handleMergeTable = () => {
+    if (!selectedOrder) {
+      toast.error("Select an occupied table or bill");
+      return;
+    }
+    if (splitSummary && splitSummary.pending > 0) {
+      toast.error("Finish unpaid splits before merging");
+      return;
+    }
+    onMergeTable();
+  };
+
   const handleReprint = () => {
     const raw = window.sessionStorage.getItem(LAST_RECEIPT_KEY);
     if (!raw) {
@@ -218,6 +248,8 @@ export function RestaurantActionRail({
       onClick: handleSplitBill,
     },
     { key: "move-table", label: "Move Table", icon: MoveRight, onClick: handleMoveTable },
+    { key: "move-items", label: "Move Items", icon: Package, onClick: handleMoveItems },
+    { key: "merge-table", label: "Merge Table", icon: Merge, onClick: handleMergeTable },
     { key: "reprint", label: "Reprint", icon: Printer, onClick: handleReprint },
     {
       key: "message",

@@ -21,12 +21,21 @@ import { useCreateOrderSplits } from "@/features/pos/open-bills/mutations";
 import type { Order } from "@/features/pos/open-bills/types";
 import { SplitBillModal, type SplitConfig } from "@/components/pos/SplitBillModal";
 import { SplitPaymentScreen } from "@/components/pos/SplitPaymentScreen";
-import { moveOrderTable, type PosTable } from "@/lib/pos-api";
+import {
+  mergeOrders,
+  moveOrderTable,
+  transferOrderItems,
+  type PosTable,
+} from "@/lib/pos-api";
 import { cn } from "@/lib/utils";
 
+import { MoveItemsDialog, type MoveItemsSelection } from "./move-items-dialog";
 import { RestaurantActionRail } from "./restaurant-action-rail";
 import { RestaurantBillsRail } from "./restaurant-bills-rail";
-import { RestaurantTableBoard } from "./restaurant-table-board";
+import {
+  RestaurantTableBoard,
+  type RestaurantBoardMode,
+} from "./restaurant-table-board";
 import {
   isRestaurantImmersive,
   restaurantPath,
@@ -79,8 +88,10 @@ function RestaurantPageContent() {
   const { data: orders = [], refetch: refetchOrders } = useOpenBills({ limit: 200 });
   const createSplitsMutation = useCreateOrderSplits();
   const [selection, setSelection] = useState<NullableRestaurantSelection>(null);
-  const [moveMode, setMoveMode] = useState(false);
-  const [moving, setMoving] = useState(false);
+  const [boardMode, setBoardMode] = useState<RestaurantBoardMode>(null);
+  const [boardBusy, setBoardBusy] = useState(false);
+  const [transferItems, setTransferItems] = useState<MoveItemsSelection[]>([]);
+  const [showMoveItemsDialog, setShowMoveItemsDialog] = useState(false);
   const [showSplitModal, setShowSplitModal] = useState(false);
   const [splitPaymentOrder, setSplitPaymentOrder] = useState<Order | null>(null);
 
@@ -119,6 +130,25 @@ function RestaurantPageContent() {
     });
   }, [selectedOrder]);
 
+  const moveItemLines = useMemo(() => {
+    if (!selectedOrder) return [];
+    return ((selectedOrder.items || []) as OpenBillItem[])
+      .filter((item) => item.id)
+      .map((item, index) => {
+        const quantity = Number(item.quantity || 1);
+        const totalAmount = Number(item.total_amount || item.subtotal || 0);
+        const unitPrice = Number(
+          item.unit_price || (quantity > 0 ? totalAmount / quantity : 0)
+        );
+        return {
+          id: String(item.id),
+          name: item.product_name || `Item ${index + 1}`,
+          quantity,
+          unitPrice,
+        };
+      });
+  }, [selectedOrder]);
+
   const { availableCount, occupiedCount } = useMemo(() => {
     let available = 0;
     let occupied = 0;
@@ -129,14 +159,15 @@ function RestaurantPageContent() {
     return { availableCount: available, occupiedCount: occupied };
   }, [tables]);
 
-  const exitMoveMode = () => {
-    setMoveMode(false);
-    setMoving(false);
+  const exitBoardMode = () => {
+    setBoardMode(null);
+    setBoardBusy(false);
+    setTransferItems([]);
   };
 
   const handleSelectOccupied = (table: PosTable) => {
-    if (moveMode) {
-      exitMoveMode();
+    if (boardMode) {
+      exitBoardMode();
     }
     const alreadySelected = isTableSelected(selection, table.id);
     setSelection(
@@ -153,45 +184,140 @@ function RestaurantPageContent() {
   };
 
   const handleSelectBill = (nextSelection: RestaurantSelection) => {
-    if (moveMode) {
-      exitMoveMode();
+    if (boardMode) {
+      exitBoardMode();
     }
     setSelection(nextSelection);
   };
 
   const handleStartMove = () => {
-    if (moveMode) {
-      exitMoveMode();
+    if (boardMode === "move") {
+      exitBoardMode();
       toast.message("Move cancelled.");
       return;
     }
-    setMoveMode(true);
+    setTransferItems([]);
+    setBoardMode("move");
     toast.message("Select an available table.", {
       description: "Tap a green table on the floor plan to move this bill.",
     });
   };
 
+  const handleStartMoveItems = () => {
+    if (!selectedOrder) return;
+    if (boardMode) exitBoardMode();
+    setShowMoveItemsDialog(true);
+  };
+
+  const handleStartMerge = () => {
+    if (boardMode === "merge") {
+      exitBoardMode();
+      toast.message("Merge cancelled.");
+      return;
+    }
+    setTransferItems([]);
+    setBoardMode("merge");
+    toast.message("Select an occupied table.", {
+      description: "Tap a destination bill to merge into.",
+    });
+  };
+
+  const refreshBoard = () => {
+    void queryClient.invalidateQueries({ queryKey: cashierQueryKeys.tables() });
+    void queryClient.invalidateQueries({ queryKey: openBillsQueryKeys.all });
+    void refetchOrders();
+  };
+
   const handlePickDestination = async (table: PosTable) => {
-    if (!selectedOrder || moving) return;
+    if (!selectedOrder || boardBusy || !boardMode) return;
 
     const label = table.label || table.table_number || table.name || "table";
-    try {
-      setMoving(true);
-      const res = await moveOrderTable(selectedOrder.id, table.id);
-      if (!res.success) {
-        toast.error(res.error || "Failed to move table");
+
+    if (boardMode === "move") {
+      try {
+        setBoardBusy(true);
+        const res = await moveOrderTable(selectedOrder.id, table.id);
+        if (!res.success) {
+          toast.error(res.error || "Failed to move table");
+          return;
+        }
+        toast.success(`Moved to ${label}.`);
+        exitBoardMode();
+        setSelection(null);
+        refreshBoard();
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to move table");
+      } finally {
+        setBoardBusy(false);
+      }
+      return;
+    }
+
+    if (boardMode === "transfer") {
+      if (transferItems.length === 0) {
+        toast.error("No items selected to move");
         return;
       }
-      toast.success(`Moved to ${label}.`);
-      exitMoveMode();
-      setSelection(null);
-      void queryClient.invalidateQueries({ queryKey: cashierQueryKeys.tables() });
-      void queryClient.invalidateQueries({ queryKey: openBillsQueryKeys.all });
-      void refetchOrders();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to move table");
-    } finally {
-      setMoving(false);
+      try {
+        setBoardBusy(true);
+        const res = await transferOrderItems(selectedOrder.id, {
+          target_table_id: table.id,
+          items: transferItems,
+        });
+        if (!res.success) {
+          toast.error(res.error || "Failed to move items");
+          return;
+        }
+        const qty = transferItems.reduce((sum, item) => sum + item.qty, 0);
+        toast.success(`Moved ${qty} item${qty === 1 ? "" : "s"} to ${label}.`);
+        const targetOrderId = res.data?.target_order_id;
+        const movedAll =
+          moveItemLines.reduce((s, l) => s + l.quantity, 0) === qty;
+        exitBoardMode();
+        if (!movedAll && selectedOrder) {
+          // Keep source selection when items remain.
+          setSelection(
+            tableSelection(
+              selection?.tableId ?? selectedOrder.table_id ?? table.id,
+              selectedOrder.id
+            )
+          );
+        } else if (targetOrderId) {
+          setSelection(tableSelection(table.id, targetOrderId));
+        } else {
+          setSelection(null);
+        }
+        refreshBoard();
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to move items");
+      } finally {
+        setBoardBusy(false);
+      }
+      return;
+    }
+
+    if (boardMode === "merge") {
+      const targetOrderId = table.active_order?.id;
+      if (!targetOrderId) {
+        toast.error("Destination table has no open bill");
+        return;
+      }
+      try {
+        setBoardBusy(true);
+        const res = await mergeOrders(selectedOrder.id, targetOrderId);
+        if (!res.success) {
+          toast.error(res.error || "Failed to merge tables");
+          return;
+        }
+        toast.success(`Merged into ${label}.`);
+        exitBoardMode();
+        setSelection(tableSelection(table.id, targetOrderId));
+        refreshBoard();
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to merge tables");
+      } finally {
+        setBoardBusy(false);
+      }
     }
   };
 
@@ -259,18 +385,26 @@ function RestaurantPageContent() {
         </Button>
       </div>
 
-      {moveMode && selectedOrder ? (
+      {boardMode && selectedOrder ? (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3">
           <div className="min-w-0">
             <p className="text-sm font-medium text-foreground">
-              Move {selectedOrder.order_number} — tap an available table
+              {boardMode === "move"
+                ? `Move ${selectedOrder.order_number} — tap an available table`
+                : boardMode === "transfer"
+                  ? `Move ${transferItems.reduce((s, i) => s + i.qty, 0)} items — tap a table`
+                  : `Merge ${selectedOrder.order_number} — tap an occupied table`}
             </p>
             <p className="text-xs text-muted-foreground">
-              {moving
-                ? "Moving…"
+              {boardBusy
+                ? boardMode === "move"
+                  ? "Moving…"
+                  : boardMode === "transfer"
+                    ? "Transferring…"
+                    : "Merging…"
                 : selectedTableLabel
                   ? `From ${selectedTableLabel}`
-                  : "Choose a free table on the floor plan"}
+                  : "Choose a destination on the floor plan"}
             </p>
           </div>
           <Button
@@ -278,8 +412,14 @@ function RestaurantPageContent() {
             variant="outline"
             className="shrink-0 border-gray-200/80"
             onClick={() => {
-              exitMoveMode();
-              toast.message("Move cancelled.");
+              exitBoardMode();
+              toast.message(
+                boardMode === "merge"
+                  ? "Merge cancelled."
+                  : boardMode === "transfer"
+                    ? "Move items cancelled."
+                    : "Move cancelled."
+              );
             }}
           >
             Cancel
@@ -311,6 +451,8 @@ function RestaurantPageContent() {
             setSplitPaymentOrder(selectedOrder);
           }}
           onMoveTable={handleStartMove}
+          onMoveItems={handleStartMoveItems}
+          onMergeTable={handleStartMerge}
           onSelectBill={handleSelectBill}
         />
 
@@ -322,8 +464,8 @@ function RestaurantPageContent() {
               error={tableError}
               selectedTableId={selection?.tableId ?? null}
               immersive={immersive}
-              moveMode={moveMode}
-              moving={moving}
+              boardMode={boardMode}
+              busy={boardBusy}
               sourceTableId={selection?.tableId ?? null}
               onSelectOccupied={handleSelectOccupied}
               onPickDestination={handlePickDestination}
@@ -339,6 +481,21 @@ function RestaurantPageContent() {
           onPaySplits={(order) => setSplitPaymentOrder(order)}
         />
       </div>
+
+      <MoveItemsDialog
+        open={showMoveItemsDialog}
+        lines={moveItemLines}
+        formatCurrency={formatCurrency}
+        onClose={() => setShowMoveItemsDialog(false)}
+        onContinue={(items) => {
+          setShowMoveItemsDialog(false);
+          setTransferItems(items);
+          setBoardMode("transfer");
+          toast.message("Select a destination table.", {
+            description: "Tap an available or occupied table on the floor plan.",
+          });
+        }}
+      />
 
       <SplitBillModal
         open={showSplitModal}

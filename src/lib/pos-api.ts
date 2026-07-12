@@ -238,10 +238,44 @@ export async function moveOrderTable(
   });
 }
 
-export async function mergeOrders(sourceOrderId: string, targetOrderId: string, supervisorPin: string) {
-  return fetchAPI<{ success: boolean; data: any; error?: string }>(`/orders/${sourceOrderId}/merge`, {
-    method: 'POST',
-    body: JSON.stringify({ target_order_id: targetOrderId, supervisor_pin: supervisorPin }),
+export async function mergeOrders(
+  sourceOrderId: string,
+  targetOrderId: string,
+  supervisorPin?: string
+) {
+  return fetchAPI<{ success: boolean; data: any; error?: string }>(
+    `/orders/${sourceOrderId}/merge`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        target_order_id: targetOrderId,
+        ...(supervisorPin != null && String(supervisorPin).trim() !== ""
+          ? { supervisor_pin: supervisorPin }
+          : {}),
+      }),
+    }
+  );
+}
+
+export async function transferOrderItems(
+  sourceOrderId: string,
+  payload: {
+    target_table_id: string;
+    items: Array<{ order_item_id: string; qty: number }>;
+  }
+) {
+  return fetchAPI<{
+    success: boolean;
+    data?: {
+      source_order_id: string;
+      target_order_id: string;
+      created_target?: boolean;
+      message?: string;
+    };
+    error?: string;
+  }>(`/orders/${sourceOrderId}/transfer-items`, {
+    method: "POST",
+    body: JSON.stringify(payload),
   });
 }
 
@@ -269,6 +303,18 @@ export async function openBill(payload: OpenBillRequest) {
   return fetchAPI<{ success: boolean; data: Order; error?: string }>('/orders/open-bill', {
     method: 'POST',
     body: JSON.stringify(payload),
+  });
+}
+
+export async function preSettleOrder(orderId: string) {
+  return fetchAPI<{
+    success: boolean;
+    data?: { id: string; pre_settled_at?: string | null };
+    error?: string;
+    message?: string;
+  }>(`/orders/${orderId}/pre-settle`, {
+    method: 'POST',
+    body: JSON.stringify({}),
   });
 }
 
@@ -373,16 +419,20 @@ export interface PosTable {
   name: string;
   label: string;
   capacity: number;
-  area: string;
-  status: 'available' | 'occupied' | 'reserved' | 'maintenance' | string;
+  floor?: string | null;
+  area?: string | null;
+  status: 'available' | 'occupied' | 'billing' | 'reserved' | 'maintenance' | string;
   qr_code?: string | null;
   is_active: boolean;
+  pos_x?: number | null;
+  pos_y?: number | null;
   active_order?: {
     id: string;
     order_number?: string;
     status?: string;
     payment_status?: string;
     total_amount: number;
+    pre_settled_at?: string | null;
   } | null;
 }
 

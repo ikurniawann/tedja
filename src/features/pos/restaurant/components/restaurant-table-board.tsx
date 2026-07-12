@@ -11,8 +11,14 @@ import {
 } from "@/features/pos/tables/components/floor-plan-canvas";
 import { floorLabel, floorSortKey } from "@/features/pos/tables/floor-options";
 import { buildCashierHandoffUrl } from "@/features/pos/restaurant/nav";
-import { canPickMoveDestination } from "@/features/pos/restaurant/move-destination";
+import {
+  canPickMergeDestination,
+  canPickMoveDestination,
+  canPickTransferDestination,
+} from "@/features/pos/restaurant/move-destination";
 import type { PosTable } from "@/lib/pos-api";
+
+export type RestaurantBoardMode = "move" | "transfer" | "merge" | null;
 
 interface TableFloorGroup {
   floorKey: string;
@@ -58,13 +64,42 @@ function toNode(table: PosTable): FloorPlanNode {
   };
 }
 
+function canPickForMode(
+  mode: RestaurantBoardMode,
+  table: PosTable,
+  sourceTableId?: string | null
+) {
+  const opts = { sourceTableId };
+  if (mode === "move") return canPickMoveDestination(table, opts);
+  if (mode === "transfer") return canPickTransferDestination(table, opts);
+  if (mode === "merge") return canPickMergeDestination(table, opts);
+  return false;
+}
+
+function modeHint(mode: RestaurantBoardMode) {
+  if (mode === "move") return " · tap available to move";
+  if (mode === "transfer") return " · tap a table for items";
+  if (mode === "merge") return " · tap occupied to merge";
+  return "";
+}
+
+function pickBlockedMessage(mode: RestaurantBoardMode) {
+  if (mode === "move") return "Choose an available table.";
+  if (mode === "transfer") return "Choose an available or occupied table.";
+  if (mode === "merge") return "Choose an occupied table.";
+  return "Choose a destination table.";
+}
+
 export interface RestaurantTableBoardProps {
   tables: PosTable[];
   isLoading?: boolean;
   error?: string | null;
   selectedTableId?: string | null;
   immersive?: boolean;
+  boardMode?: RestaurantBoardMode;
+  /** @deprecated use boardMode */
   moveMode?: boolean;
+  busy?: boolean;
   moving?: boolean;
   sourceTableId?: string | null;
   onSelectOccupied: (table: PosTable) => void;
@@ -78,7 +113,9 @@ export function RestaurantTableBoard({
   error,
   selectedTableId,
   immersive = false,
+  boardMode = null,
   moveMode = false,
+  busy = false,
   moving = false,
   sourceTableId = null,
   onSelectOccupied,
@@ -88,15 +125,22 @@ export function RestaurantTableBoard({
   const router = useRouter();
   const floors = groupTablesByFloor(tables);
   const tablesById = new Map(tables.map((table) => [table.id, table]));
+  const mode: RestaurantBoardMode = boardMode ?? (moveMode ? "move" : null);
+  const isBusy = busy || moving;
+  const inBoardMode = mode != null;
+
+  const handlePick = (table: PosTable) => {
+    if (!inBoardMode || isBusy) return;
+    if (!canPickForMode(mode, table, sourceTableId)) {
+      toast.message(pickBlockedMessage(mode));
+      return;
+    }
+    onPickDestination?.(table);
+  };
 
   const handleAvailableClick = (table: PosTable) => {
-    if (moveMode) {
-      if (moving) return;
-      if (!canPickMoveDestination(table, { sourceTableId })) {
-        toast.message("Choose an available table.");
-        return;
-      }
-      onPickDestination?.(table);
+    if (inBoardMode) {
+      handlePick(table);
       return;
     }
     onOpenAvailable?.(table);
@@ -104,7 +148,7 @@ export function RestaurantTableBoard({
   };
 
   const handleOccupiedDoubleClick = (table: PosTable) => {
-    if (moveMode || moving) return;
+    if (inBoardMode || isBusy) return;
     if (table.active_order?.id) {
       router.push(
         buildCashierHandoffUrl({
@@ -125,7 +169,7 @@ export function RestaurantTableBoard({
           type="button"
           variant="outline"
           className="border-gray-200/70 sm:flex-1"
-          disabled={moveMode || moving}
+          disabled={inBoardMode || isBusy}
           onClick={() =>
             router.push(buildCashierHandoffUrl({ orderType: "dine_in", immersive }))
           }
@@ -136,7 +180,7 @@ export function RestaurantTableBoard({
           type="button"
           variant="outline"
           className="border-gray-200/70 sm:flex-1"
-          disabled={moveMode || moving}
+          disabled={inBoardMode || isBusy}
           onClick={() =>
             router.push(buildCashierHandoffUrl({ orderType: "takeaway", immersive }))
           }
@@ -173,7 +217,7 @@ export function RestaurantTableBoard({
                   <p className="text-xs text-gray-500">
                     {group.tables.length} table
                     {group.tables.length === 1 ? "" : "s"}
-                    {moveMode ? " · tap available to move" : ""}
+                    {modeHint(mode)}
                   </p>
                 </div>
               </div>
@@ -185,10 +229,9 @@ export function RestaurantTableBoard({
                   isDisabled={(node) => {
                     const table = tablesById.get(node.id);
                     if (!table) return true;
-                    if (moveMode) {
+                    if (inBoardMode) {
                       return (
-                        moving ||
-                        !canPickMoveDestination(table, { sourceTableId })
+                        isBusy || !canPickForMode(mode, table, sourceTableId)
                       );
                     }
                     return (
@@ -200,8 +243,8 @@ export function RestaurantTableBoard({
                   onActivate={(node) => {
                     const table = tablesById.get(node.id);
                     if (!table) return;
-                    if (moveMode) {
-                      handleAvailableClick(table);
+                    if (inBoardMode) {
+                      handlePick(table);
                       return;
                     }
                     if (table.status === "available") {
@@ -214,11 +257,12 @@ export function RestaurantTableBoard({
                     }
                   }}
                   onDoubleClick={(node) => {
-                    if (moveMode || moving) return;
+                    if (inBoardMode || isBusy) return;
                     const table = tablesById.get(node.id);
                     if (
                       !table ||
-                      (table.status !== "occupied" && table.status !== "billing")
+                      (table.status !== "occupied" &&
+                        table.status !== "billing")
                     ) {
                       return;
                     }
