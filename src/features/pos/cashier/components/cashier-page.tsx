@@ -91,6 +91,8 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
   const homeRoute = cashierRoute(variant, searchParams);
   const paymentOrderId = searchParams.get('orderId');
   const loadedPaymentOrderRef = useRef<string | null>(null);
+  const autoPay = searchParams.get('pay') === '1';
+  const autoPayAppliedRef = useRef(false);
   const fromRestaurant = searchParams.get('from') === RESTAURANT_FROM;
   const handoffTableId = searchParams.get('tableId');
   const handoffOrderType = searchParams.get('orderType');
@@ -236,6 +238,14 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     setPaymentMethod('cash');
     setCashReceived(String(Number(order.total_amount || 0)));
   }, [paymentOrderId, paymentOrder, cart]);
+
+  /* Auto-open payment when handed off with pay=1 (e.g. Pre Settlement from restaurant) */
+  useEffect(() => {
+    if (!autoPay || autoPayAppliedRef.current) return;
+    if (!paymentOrderId || !paymentOrder) return;
+    autoPayAppliedRef.current = true;
+    setShowPayment(true);
+  }, [autoPay, paymentOrderId, paymentOrder]);
 
   /* Apply restaurant handoff (table / order type) once on mount */
   useEffect(() => {
