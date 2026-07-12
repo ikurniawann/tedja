@@ -16,15 +16,6 @@ type TableRow = {
   pos_y?: number | string | null;
 };
 
-type ActiveOrderRow = {
-  id: string;
-  order_number?: string | null;
-  table_id?: string | null;
-  status?: string | null;
-  payment_status?: string | null;
-  total_amount?: number | string | null;
-};
-
 const TABLE_STATUSES = ["available", "occupied", "reserved", "maintenance"] as const;
 
 function toNumber(value: unknown) {
@@ -32,10 +23,7 @@ function toNumber(value: unknown) {
   return Number.isFinite(numeric) ? numeric : 0;
 }
 
-function normalizeTable(
-  table: TableRow,
-  activeOrder?: ActiveOrderRow | null
-) {
+function normalizeTable(table: TableRow) {
   const tableNumber = table.table_number || table.qr_code || table.id;
   return {
     id: table.id,
@@ -44,21 +32,12 @@ function normalizeTable(
     label: table.name || tableNumber,
     area: table.area || null,
     capacity: toNumber(table.capacity) || 4,
-    status: activeOrder ? "occupied" : table.status || "available",
+    status: table.status || "available",
     qr_code: table.qr_code || null,
     notes: table.notes || null,
     is_active: table.is_active !== false,
     pos_x: table.pos_x == null ? null : Number(table.pos_x),
     pos_y: table.pos_y == null ? null : Number(table.pos_y),
-    active_order: activeOrder
-      ? {
-          id: activeOrder.id,
-          order_number: activeOrder.order_number,
-          status: activeOrder.status,
-          payment_status: activeOrder.payment_status,
-          total_amount: toNumber(activeOrder.total_amount),
-        }
-      : null,
   };
 }
 
@@ -93,7 +72,10 @@ function parsePayload(body: Record<string, unknown>) {
   };
 }
 
-export async function GET(request: NextRequest) {
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
   const sessionUserId = await getPosSession();
   if (!sessionUserId) {
     return NextResponse.json(
@@ -103,66 +85,14 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const db = createPgClient();
-    const includeInactive =
-      request.nextUrl.searchParams.get("include_inactive") === "true";
-
-    let tableQuery = db
-      .from("pos_tables")
-      .select(
-        "id, table_number, name, area, capacity, status, qr_code, notes, is_active, pos_x, pos_y"
-      )
-      .order("table_number");
-
-    if (!includeInactive) tableQuery = tableQuery.eq("is_active", true);
-
-    const { data: tables, error: tableError } = await tableQuery;
-    if (tableError) throw tableError;
-
-    const { data: activeOrders, error: orderError } = await db
-      .from("pos_orders")
-      .select("id, order_number, table_id, status, payment_status, total_amount")
-      .not("table_id", "is", null)
-      .in("status", ["pending", "confirmed", "preparing", "ready", "served"]);
-
-    if (orderError) throw orderError;
-
-    const activeOrderByTable = new Map<string, ActiveOrderRow>();
-    for (const order of (activeOrders ?? []) as ActiveOrderRow[]) {
-      if (order.table_id) activeOrderByTable.set(order.table_id, order);
+    const { id } = await params;
+    if (!id) {
+      return NextResponse.json(
+        { success: false, error: "ID meja wajib" },
+        { status: 400 }
+      );
     }
 
-    const normalizedTables = ((tables ?? []) as TableRow[]).map((table) =>
-      normalizeTable(table, activeOrderByTable.get(table.id) ?? null)
-    );
-
-    return NextResponse.json({
-      success: true,
-      data: normalizedTables,
-    });
-  } catch (error) {
-    console.error("POS tables error:", error);
-    return NextResponse.json(
-      {
-        success: false,
-        error:
-          error instanceof Error ? error.message : "Gagal memuat meja POS",
-      },
-      { status: 500 }
-    );
-  }
-}
-
-export async function POST(request: NextRequest) {
-  const sessionUserId = await getPosSession();
-  if (!sessionUserId) {
-    return NextResponse.json(
-      { success: false, error: "Authentication required" },
-      { status: 401 }
-    );
-  }
-
-  try {
     const body = (await request.json()) as Record<string, unknown>;
     const parsed = parsePayload(body);
     if ("error" in parsed) {
@@ -173,15 +103,16 @@ export async function POST(request: NextRequest) {
     }
 
     const db = createPgClient();
+
+    // Don't force occupied via master form if there is no open bill —
+    // keep reserved/maintenance/available as set by admin.
     const { data, error } = await db
       .from("pos_tables")
-      .insert({
+      .update({
         ...parsed.data,
-        // New tables should not start as occupied/reserved from master form.
-        status:
-          parsed.data.status === "occupied" ? "available" : parsed.data.status,
-        current_order_id: null,
+        updated_at: new Date().toISOString(),
       })
+      .eq("id", id)
       .select(
         "id, table_number, name, area, capacity, status, qr_code, notes, is_active, pos_x, pos_y"
       )
@@ -200,18 +131,102 @@ export async function POST(request: NextRequest) {
       throw error;
     }
 
+    if (!data) {
+      return NextResponse.json(
+        { success: false, error: "Meja tidak ditemukan" },
+        { status: 404 }
+      );
+    }
+
     return NextResponse.json({
       success: true,
-      message: "Meja berhasil ditambahkan",
+      message: "Meja berhasil diperbarui",
       data: normalizeTable(data as TableRow),
     });
   } catch (error) {
-    console.error("POS tables create error:", error);
+    console.error("POS tables update error:", error);
     return NextResponse.json(
       {
         success: false,
         error:
-          error instanceof Error ? error.message : "Gagal menambahkan meja",
+          error instanceof Error ? error.message : "Gagal memperbarui meja",
+      },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const sessionUserId = await getPosSession();
+  if (!sessionUserId) {
+    return NextResponse.json(
+      { success: false, error: "Authentication required" },
+      { status: 401 }
+    );
+  }
+
+  try {
+    const { id } = await params;
+    if (!id) {
+      return NextResponse.json(
+        { success: false, error: "ID meja wajib" },
+        { status: 400 }
+      );
+    }
+
+    const db = createPgClient();
+
+    const { data: activeOrders, error: orderError } = await db
+      .from("pos_orders")
+      .select("id")
+      .eq("table_id", id)
+      .in("status", ["pending", "confirmed", "preparing", "ready", "served"])
+      .limit(1);
+
+    if (orderError) throw orderError;
+    if (activeOrders && activeOrders.length > 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Meja masih punya open bill — nonaktifkan saja, jangan hapus",
+        },
+        { status: 409 }
+      );
+    }
+
+    // Soft-delete by default to preserve history / FK references.
+    const { data, error } = await db
+      .from("pos_tables")
+      .update({
+        is_active: false,
+        status: "maintenance",
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", id)
+      .select("id")
+      .single();
+
+    if (error) throw error;
+    if (!data) {
+      return NextResponse.json(
+        { success: false, error: "Meja tidak ditemukan" },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: "Meja dinonaktifkan",
+    });
+  } catch (error) {
+    console.error("POS tables delete error:", error);
+    return NextResponse.json(
+      {
+        success: false,
+        error: error instanceof Error ? error.message : "Gagal menghapus meja",
       },
       { status: 500 }
     );
