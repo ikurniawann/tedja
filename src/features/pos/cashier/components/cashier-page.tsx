@@ -95,6 +95,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
   const handoffTableId = searchParams.get('tableId');
   const handoffOrderType = searchParams.get('orderType');
   const handoffAppliedRef = useRef(false);
+  const pendingRestaurantReturnRef = useRef(false);
   const { products, categories, loading, error } = usePosProducts();
   const { customers, findCustomer, refetch: refetchCustomers } = usePosCustomers();
   const cart = usePosCart();
@@ -257,6 +258,20 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     router.push(RESTAURANT_PATH);
     return true;
   }, [fromRestaurant, router]);
+
+  const deferReturnToRestaurant = useCallback(() => {
+    if (!fromRestaurant) return false;
+    pendingRestaurantReturnRef.current = true;
+    return true;
+  }, [fromRestaurant]);
+
+  const closeResultModal = useCallback(() => {
+    setResultPayload(null);
+    if (pendingRestaurantReturnRef.current) {
+      pendingRestaurantReturnRef.current = false;
+      router.push(RESTAURANT_PATH);
+    }
+  }, [router]);
 
   const handleBackToRestaurant = useCallback(() => {
     if (cart.items.length > 0 && !window.confirm('Leave cashier and discard cart?')) {
@@ -447,7 +462,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         setPaymentMethod('cash');
         setCurrentArkToUse(0);
         loadedPaymentOrderRef.current = null;
-        if (!maybeReturnToRestaurant()) {
+        if (!deferReturnToRestaurant()) {
           router.replace(homeRoute);
         }
         setProcessingPayment(false);
@@ -510,7 +525,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       setPaymentMethod('cash');
       setCurrentArkToUse(0);
       await refreshCount();
-      maybeReturnToRestaurant();
+      deferReturnToRestaurant();
       setProcessingPayment(false);
       return;
     }
@@ -550,12 +565,12 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       setCashReceived('');
       setPaymentMethod('cash');
       setCurrentArkToUse(0);
-      maybeReturnToRestaurant();
+      deferReturnToRestaurant();
     } else {
       toast.error(res.error || 'Payment failed');
     }
     setProcessingPayment(false);
-  }, [cart, paymentMethod, selectedCustomer, cashReceived, totalAfterArk, checkout, discountAmount, taxAmount, arkToUseCapped, isOnline, enqueue, membershipDiscount, shift, refreshCount, paymentOrderId, payingOrderNumber, router, processingPayment, selectedTableDisplay, requireActiveShift, payOpenOrderMutation, maybeReturnToRestaurant]);
+  }, [cart, paymentMethod, selectedCustomer, cashReceived, totalAfterArk, checkout, discountAmount, taxAmount, arkToUseCapped, isOnline, enqueue, membershipDiscount, shift, refreshCount, paymentOrderId, payingOrderNumber, router, processingPayment, selectedTableDisplay, requireActiveShift, payOpenOrderMutation, deferReturnToRestaurant]);
 
   /* Split Bill */
   const handleConfirmSplit = useCallback(async (config: SplitConfig) => {
@@ -1214,7 +1229,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       />
 
       {/* ── Result Modal ── */}
-      <Dialog open={!!resultPayload} onOpenChange={() => setResultPayload(null)}>
+      <Dialog open={!!resultPayload} onOpenChange={(open) => { if (!open) closeResultModal(); }}>
         <DialogPanel size="sm" showCloseButton={false}>
           {resultPayload && (
             <>
@@ -1292,7 +1307,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
               <DialogFooter>
                 <Button
                   type="button"
-                  onClick={() => setResultPayload(null)}
+                  onClick={closeResultModal}
                   className="w-full bg-primary hover:bg-primary/90 sm:w-auto"
                 >
                   New Transaction
