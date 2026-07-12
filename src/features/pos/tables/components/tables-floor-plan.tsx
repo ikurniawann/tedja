@@ -208,6 +208,13 @@ export function TablesFloorPlan({ tables, onEdit }: Props) {
             key={table.id}
             role="button"
             tabIndex={0}
+            onKeyDown={(e) => {
+              if (isSaving) return;
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onEdit(table);
+              }
+            }}
             onPointerDown={(e) => handlePointerDown(e, table)}
             onPointerMove={(e) => handlePointerMove(e, table)}
             onPointerUp={(e) => handlePointerUp(e, table)}

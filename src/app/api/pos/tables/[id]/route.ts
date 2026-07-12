@@ -116,7 +116,7 @@ export async function PATCH(
       .select(
         "id, table_number, name, area, capacity, status, qr_code, notes, is_active, pos_x, pos_y"
       )
-      .single();
+      .maybeSingle();
 
     if (error) {
       if (/unique|duplicate/i.test(error.message)) {
@@ -207,7 +207,7 @@ export async function DELETE(
       })
       .eq("id", id)
       .select("id")
-      .single();
+      .maybeSingle();
 
     if (error) throw error;
     if (!data) {

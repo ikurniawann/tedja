@@ -20,6 +20,7 @@ export function assignGridPositions(
   ids: string[],
   cols = 6
 ): Record<string, { pos_x: number; pos_y: number }> {
+  if (!(cols > 0)) cols = 6;
   const out: Record<string, { pos_x: number; pos_y: number }> = {};
   const startX = 4;
   const startY = 4;
