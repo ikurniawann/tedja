@@ -74,10 +74,12 @@ border-radius: 1rem;
 
 ## Reference Files
 - `src/app/(auth)/login/page.tsx` — Login page as design reference
-- `src/app/globals.css` — Glass overrides, animations
-- `src/app/pink-buttons.css` — Button color overrides
-- `src/app/blue-theme.css` — Sidebar glass styles
+- `src/app/globals.css` — Token layer, glass, dark-mode compatibility, animations
+- `src/lib/theme/` — Presets, palette, theme state
+- `src/components/providers/theme-provider.tsx` — Runtime theme application
+- `src/features/configuration/appearance/` — Appearance settings UI
 - `src/components/ui/button.tsx` — Base button component
+- `scripts/check-no-hardcoded-brand.mjs` — Phase-1 brand-hex regression gate
 
 ## Checklist Before Sending UI Code
 - [ ] Primary button uses `bg-primary text-primary-foreground` or the shared button variant
