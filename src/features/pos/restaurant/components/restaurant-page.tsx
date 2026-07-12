@@ -2,6 +2,7 @@
 
 import { Suspense, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   ArrowsPointingInIcon,
   ArrowsPointingOutIcon,
@@ -12,14 +13,15 @@ import { toast } from "sonner";
 import { PageTransition } from "@/components/motion";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { cashierQueryKeys } from "@/features/pos/cashier/query-keys";
 import { useCashierTables } from "@/features/pos/cashier/queries";
 import { useOpenBills } from "@/features/pos/open-bills/queries";
+import { openBillsQueryKeys } from "@/features/pos/open-bills/query-keys";
 import { useCreateOrderSplits } from "@/features/pos/open-bills/mutations";
 import type { Order } from "@/features/pos/open-bills/types";
-import { MoveTableModal } from "@/components/pos/MoveTableModal";
 import { SplitBillModal, type SplitConfig } from "@/components/pos/SplitBillModal";
 import { SplitPaymentScreen } from "@/components/pos/SplitPaymentScreen";
-import type { PosTable } from "@/lib/pos-api";
+import { moveOrderTable, type PosTable } from "@/lib/pos-api";
 import { cn } from "@/lib/utils";
 
 import { RestaurantActionRail } from "./restaurant-action-rail";
@@ -71,12 +73,14 @@ export function RestaurantPage() {
 function RestaurantPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const queryClient = useQueryClient();
   const immersive = isRestaurantImmersive(searchParams);
   const { data: tables = [], isLoading, error } = useCashierTables();
   const { data: orders = [], refetch: refetchOrders } = useOpenBills({ limit: 200 });
   const createSplitsMutation = useCreateOrderSplits();
   const [selection, setSelection] = useState<NullableRestaurantSelection>(null);
-  const [showMoveModal, setShowMoveModal] = useState(false);
+  const [moveMode, setMoveMode] = useState(false);
+  const [moving, setMoving] = useState(false);
   const [showSplitModal, setShowSplitModal] = useState(false);
   const [splitPaymentOrder, setSplitPaymentOrder] = useState<Order | null>(null);
 
@@ -125,7 +129,15 @@ function RestaurantPageContent() {
     return { availableCount: available, occupiedCount: occupied };
   }, [tables]);
 
+  const exitMoveMode = () => {
+    setMoveMode(false);
+    setMoving(false);
+  };
+
   const handleSelectOccupied = (table: PosTable) => {
+    if (moveMode) {
+      exitMoveMode();
+    }
     const alreadySelected = isTableSelected(selection, table.id);
     setSelection(
       alreadySelected ? null : tableSelection(table.id, table.active_order?.id)
@@ -141,7 +153,46 @@ function RestaurantPageContent() {
   };
 
   const handleSelectBill = (nextSelection: RestaurantSelection) => {
+    if (moveMode) {
+      exitMoveMode();
+    }
     setSelection(nextSelection);
+  };
+
+  const handleStartMove = () => {
+    if (moveMode) {
+      exitMoveMode();
+      toast.message("Move cancelled.");
+      return;
+    }
+    setMoveMode(true);
+    toast.message("Select an available table.", {
+      description: "Tap a green table on the floor plan to move this bill.",
+    });
+  };
+
+  const handlePickDestination = async (table: PosTable) => {
+    if (!selectedOrder || moving) return;
+
+    const label = table.label || table.table_number || table.name || "table";
+    try {
+      setMoving(true);
+      const res = await moveOrderTable(selectedOrder.id, table.id);
+      if (!res.success) {
+        toast.error(res.error || "Failed to move table");
+        return;
+      }
+      toast.success(`Moved to ${label}.`);
+      exitMoveMode();
+      setSelection(null);
+      void queryClient.invalidateQueries({ queryKey: cashierQueryKeys.tables() });
+      void queryClient.invalidateQueries({ queryKey: openBillsQueryKeys.all });
+      void refetchOrders();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to move table");
+    } finally {
+      setMoving(false);
+    }
   };
 
   const toggleImmersive = () => {
@@ -207,6 +258,34 @@ function RestaurantPageContent() {
         </Button>
       </div>
 
+      {moveMode && selectedOrder ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3">
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-foreground">
+              Move {selectedOrder.order_number} — tap an available table
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {moving
+                ? "Moving…"
+                : selectedTableLabel
+                  ? `From ${selectedTableLabel}`
+                  : "Choose a free table on the floor plan"}
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            className="shrink-0 border-gray-200/80"
+            onClick={() => {
+              exitMoveMode();
+              toast.message("Move cancelled.");
+            }}
+          >
+            Cancel
+          </Button>
+        </div>
+      ) : null}
+
       <div
         className={cn(
           "grid gap-3 lg:grid-cols-[184px_1fr_280px]",
@@ -223,7 +302,7 @@ function RestaurantPageContent() {
           availableCount={availableCount}
           occupiedCount={occupiedCount}
           onSplitBill={() => setShowSplitModal(true)}
-          onMoveTable={() => setShowMoveModal(true)}
+          onMoveTable={handleStartMove}
           onSelectBill={handleSelectBill}
         />
 
@@ -235,7 +314,11 @@ function RestaurantPageContent() {
               error={tableError}
               selectedTableId={selection?.tableId ?? null}
               immersive={immersive}
+              moveMode={moveMode}
+              moving={moving}
+              sourceTableId={selection?.tableId ?? null}
               onSelectOccupied={handleSelectOccupied}
+              onPickDestination={handlePickDestination}
             />
           </CardContent>
         </Card>
@@ -247,18 +330,6 @@ function RestaurantPageContent() {
           onSelect={handleSelectBill}
         />
       </div>
-
-      <MoveTableModal
-        open={showMoveModal}
-        order={selectedOrder}
-        allOrders={orders}
-        onClose={() => setShowMoveModal(false)}
-        onSuccess={() => {
-          toast.success("Table moved.");
-          void refetchOrders();
-          setSelection(null);
-        }}
-      />
 
       <SplitBillModal
         open={showSplitModal}

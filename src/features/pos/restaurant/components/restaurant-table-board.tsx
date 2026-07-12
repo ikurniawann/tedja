@@ -11,6 +11,7 @@ import {
 } from "@/features/pos/tables/components/floor-plan-canvas";
 import { floorLabel, floorSortKey } from "@/features/pos/tables/floor-options";
 import { buildCashierHandoffUrl } from "@/features/pos/restaurant/nav";
+import { canPickMoveDestination } from "@/features/pos/restaurant/move-destination";
 import type { PosTable } from "@/lib/pos-api";
 
 interface TableFloorGroup {
@@ -63,8 +64,12 @@ export interface RestaurantTableBoardProps {
   error?: string | null;
   selectedTableId?: string | null;
   immersive?: boolean;
+  moveMode?: boolean;
+  moving?: boolean;
+  sourceTableId?: string | null;
   onSelectOccupied: (table: PosTable) => void;
   onOpenAvailable?: (table: PosTable) => void;
+  onPickDestination?: (table: PosTable) => void;
 }
 
 export function RestaurantTableBoard({
@@ -73,19 +78,33 @@ export function RestaurantTableBoard({
   error,
   selectedTableId,
   immersive = false,
+  moveMode = false,
+  moving = false,
+  sourceTableId = null,
   onSelectOccupied,
   onOpenAvailable,
+  onPickDestination,
 }: RestaurantTableBoardProps) {
   const router = useRouter();
   const floors = groupTablesByFloor(tables);
   const tablesById = new Map(tables.map((table) => [table.id, table]));
 
   const handleAvailableClick = (table: PosTable) => {
+    if (moveMode) {
+      if (moving) return;
+      if (!canPickMoveDestination(table, { sourceTableId })) {
+        toast.message("Choose an available table.");
+        return;
+      }
+      onPickDestination?.(table);
+      return;
+    }
     onOpenAvailable?.(table);
     router.push(buildCashierHandoffUrl({ tableId: table.id, immersive }));
   };
 
   const handleOccupiedDoubleClick = (table: PosTable) => {
+    if (moveMode || moving) return;
     if (table.active_order?.id) {
       router.push(
         buildCashierHandoffUrl({
@@ -106,6 +125,7 @@ export function RestaurantTableBoard({
           type="button"
           variant="outline"
           className="border-gray-200/70 sm:flex-1"
+          disabled={moveMode || moving}
           onClick={() =>
             router.push(buildCashierHandoffUrl({ orderType: "dine_in", immersive }))
           }
@@ -116,6 +136,7 @@ export function RestaurantTableBoard({
           type="button"
           variant="outline"
           className="border-gray-200/70 sm:flex-1"
+          disabled={moveMode || moving}
           onClick={() =>
             router.push(buildCashierHandoffUrl({ orderType: "takeaway", immersive }))
           }
@@ -152,6 +173,7 @@ export function RestaurantTableBoard({
                   <p className="text-xs text-gray-500">
                     {group.tables.length} table
                     {group.tables.length === 1 ? "" : "s"}
+                    {moveMode ? " · tap available to move" : ""}
                   </p>
                 </div>
               </div>
@@ -163,6 +185,12 @@ export function RestaurantTableBoard({
                   isDisabled={(node) => {
                     const table = tablesById.get(node.id);
                     if (!table) return true;
+                    if (moveMode) {
+                      return (
+                        moving ||
+                        !canPickMoveDestination(table, { sourceTableId })
+                      );
+                    }
                     return (
                       table.status !== "available" &&
                       table.status !== "occupied" &&
@@ -172,6 +200,10 @@ export function RestaurantTableBoard({
                   onActivate={(node) => {
                     const table = tablesById.get(node.id);
                     if (!table) return;
+                    if (moveMode) {
+                      handleAvailableClick(table);
+                      return;
+                    }
                     if (table.status === "available") {
                       handleAvailableClick(table);
                     } else if (
@@ -182,6 +214,7 @@ export function RestaurantTableBoard({
                     }
                   }}
                   onDoubleClick={(node) => {
+                    if (moveMode || moving) return;
                     const table = tablesById.get(node.id);
                     if (
                       !table ||
