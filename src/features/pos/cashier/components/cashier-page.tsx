@@ -4,10 +4,11 @@ import { Suspense, useState, useEffect, useMemo, useCallback, useRef } from 'rea
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Search, Utensils, ShoppingBag, Table as TableIcon,
-  User, X, Sparkles, Printer, CheckCircle, AlertCircle, Loader2,
+  User, X, Sparkles, Printer, CheckCircle, AlertCircle, Loader2, ArrowLeft,
 } from 'lucide-react';
 import { ArrowsPointingInIcon, ArrowsPointingOutIcon } from '@heroicons/react/24/outline';
 import { toast } from 'sonner';
+import { RESTAURANT_FROM, RESTAURANT_PATH } from '@/features/pos/restaurant/nav';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -90,6 +91,10 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
   const homeRoute = cashierRoute(variant, searchParams);
   const paymentOrderId = searchParams.get('orderId');
   const loadedPaymentOrderRef = useRef<string | null>(null);
+  const fromRestaurant = searchParams.get('from') === RESTAURANT_FROM;
+  const handoffTableId = searchParams.get('tableId');
+  const handoffOrderType = searchParams.get('orderType');
+  const handoffAppliedRef = useRef(false);
   const { products, categories, loading, error } = usePosProducts();
   const { customers, findCustomer, refetch: refetchCustomers } = usePosCustomers();
   const cart = usePosCart();
@@ -230,6 +235,35 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     setPaymentMethod('cash');
     setCashReceived(String(Number(order.total_amount || 0)));
   }, [paymentOrderId, paymentOrder, cart]);
+
+  /* Apply restaurant handoff (table / order type) once on mount */
+  useEffect(() => {
+    if (!fromRestaurant || handoffAppliedRef.current) return;
+    handoffAppliedRef.current = true;
+
+    if (handoffOrderType === 'takeaway' || handoffOrderType === 'dine_in') {
+      cart.setOrderType(handoffOrderType);
+    }
+    if (handoffTableId) {
+      cart.setOrderType('dine_in');
+      cart.setTable(handoffTableId);
+    }
+    // cart setters are stable; this handoff should only ever run once per mount.
+  }, [fromRestaurant, handoffTableId, handoffOrderType, cart]);
+
+  /* Return to restaurant board after a successful pay / open-bill save */
+  const maybeReturnToRestaurant = useCallback(() => {
+    if (!fromRestaurant) return false;
+    router.push(RESTAURANT_PATH);
+    return true;
+  }, [fromRestaurant, router]);
+
+  const handleBackToRestaurant = useCallback(() => {
+    if (cart.items.length > 0 && !window.confirm('Leave cashier and discard cart?')) {
+      return;
+    }
+    router.push(RESTAURANT_PATH);
+  }, [cart.items.length, router]);
 
   /* Financials */
   const membershipDiscount = selectedCustomer ? selectedCustomer.discount : 0;
@@ -413,7 +447,9 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         setPaymentMethod('cash');
         setCurrentArkToUse(0);
         loadedPaymentOrderRef.current = null;
-        router.replace(homeRoute);
+        if (!maybeReturnToRestaurant()) {
+          router.replace(homeRoute);
+        }
         setProcessingPayment(false);
         return;
       } catch (e: unknown) {
@@ -474,6 +510,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       setPaymentMethod('cash');
       setCurrentArkToUse(0);
       await refreshCount();
+      maybeReturnToRestaurant();
       setProcessingPayment(false);
       return;
     }
@@ -513,11 +550,12 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       setCashReceived('');
       setPaymentMethod('cash');
       setCurrentArkToUse(0);
+      maybeReturnToRestaurant();
     } else {
       toast.error(res.error || 'Payment failed');
     }
     setProcessingPayment(false);
-  }, [cart, paymentMethod, selectedCustomer, cashReceived, totalAfterArk, checkout, discountAmount, taxAmount, arkToUseCapped, isOnline, enqueue, membershipDiscount, shift, refreshCount, paymentOrderId, payingOrderNumber, router, processingPayment, selectedTableDisplay, requireActiveShift, payOpenOrderMutation]);
+  }, [cart, paymentMethod, selectedCustomer, cashReceived, totalAfterArk, checkout, discountAmount, taxAmount, arkToUseCapped, isOnline, enqueue, membershipDiscount, shift, refreshCount, paymentOrderId, payingOrderNumber, router, processingPayment, selectedTableDisplay, requireActiveShift, payOpenOrderMutation, maybeReturnToRestaurant]);
 
   /* Split Bill */
   const handleConfirmSplit = useCallback(async (config: SplitConfig) => {
@@ -673,6 +711,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       if (res.success && res.data) {
         toast.success(`Open bill saved — Order ${res.data.order_number}`);
         cart.clearCart();
+        maybeReturnToRestaurant();
       } else {
         toast.error(res.error || 'Failed to save open bill');
       }
@@ -681,7 +720,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     } finally {
       setSavingBill(false);
     }
-  }, [cart, selectedCustomer, discountAmount, taxAmount, total, requireActiveShift, shift]);
+  }, [cart, selectedCustomer, discountAmount, taxAmount, total, requireActiveShift, shift, maybeReturnToRestaurant]);
 
   /* Print helpers */
   const handlePrint = useCallback((label: 'KITCHEN' | 'BAR' | 'CUSTOMER') => {
@@ -707,27 +746,40 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
               : 'Process orders with the dashboard sidebar available'}
           </p>
         </div>
-        {isFullscreen ? (
-          <Button
-            type="button"
-            variant="outline"
-            className="border-gray-200/80 text-gray-700 hover:border-primary/30 hover:bg-primary/10 hover:text-primary"
-            onClick={() => router.push(cashierRoute('embedded', searchParams))}
-          >
-            <ArrowsPointingInIcon className="mr-2 h-4 w-4" />
-            Exit Fullscreen
-          </Button>
-        ) : (
-          <Button
-            type="button"
-            variant="outline"
-            className="border-gray-200/80 text-gray-700 hover:border-primary/30 hover:bg-primary/10 hover:text-primary"
-            onClick={() => router.push(cashierRoute('fullscreen', searchParams))}
-          >
-            <ArrowsPointingOutIcon className="mr-2 h-4 w-4" />
-            Fullscreen
-          </Button>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {fromRestaurant && (
+            <Button
+              type="button"
+              variant="outline"
+              className="border-gray-200/80 text-gray-700 hover:border-primary/30 hover:bg-primary/10 hover:text-primary"
+              onClick={handleBackToRestaurant}
+            >
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Back to Restaurant
+            </Button>
+          )}
+          {isFullscreen ? (
+            <Button
+              type="button"
+              variant="outline"
+              className="border-gray-200/80 text-gray-700 hover:border-primary/30 hover:bg-primary/10 hover:text-primary"
+              onClick={() => router.push(cashierRoute('embedded', searchParams))}
+            >
+              <ArrowsPointingInIcon className="mr-2 h-4 w-4" />
+              Exit Fullscreen
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              variant="outline"
+              className="border-gray-200/80 text-gray-700 hover:border-primary/30 hover:bg-primary/10 hover:text-primary"
+              onClick={() => router.push(cashierRoute('fullscreen', searchParams))}
+            >
+              <ArrowsPointingOutIcon className="mr-2 h-4 w-4" />
+              Fullscreen
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className={`flex flex-col lg:flex-row ${shellHeight} gap-4`}>
