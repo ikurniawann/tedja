@@ -23,6 +23,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
+import { formatIdrInput, parseIdrDigits } from "./idr-input";
+
 export type PaymentMethod = "cash" | "qris" | "credit_card" | "ark_coin";
 
 const PAYMENT_OPTIONS: Array<{
@@ -93,7 +95,7 @@ export function PaymentModal({
     }
   }, [open]);
 
-  const cashAmount = parseFloat(cashReceived) || 0;
+  const cashAmount = parseIdrDigits(cashReceived);
   const change = method === "cash" ? cashAmount - totalAfterArk : 0;
 
   const isValid = (() => {
@@ -170,13 +172,15 @@ export function PaymentModal({
                 Jumlah uang diterima
               </label>
               <Input
-                type="number"
-                min={0}
+                type="text"
+                inputMode="numeric"
                 placeholder="0"
-                value={cashReceived}
-                onChange={(e) => setCashReceived(e.target.value)}
+                value={formatIdrInput(cashReceived)}
+                onChange={(e) =>
+                  setCashReceived(String(parseIdrDigits(e.target.value) || ""))
+                }
                 disabled={submitting}
-                className="h-11 border-gray-200/80 bg-white text-base"
+                className="h-11 border-gray-200/80 bg-white text-base tabular-nums"
               />
               <div className="flex items-center justify-between text-sm">
                 <span className="text-muted-foreground">
@@ -265,7 +269,13 @@ export function PaymentModal({
             type="button"
             className="bg-primary hover:bg-primary/90"
             disabled={!isValid || submitting}
-            onClick={() => onConfirm({ method, cashReceived, arkToUse })}
+            onClick={() =>
+              onConfirm({
+                method,
+                cashReceived: String(cashAmount || ""),
+                arkToUse,
+              })
+            }
           >
             {submitting ? (
               <>
