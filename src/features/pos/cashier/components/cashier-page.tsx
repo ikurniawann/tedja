@@ -66,6 +66,7 @@ const formatCurrency = (value: number) => formatAmount(value);
 const formatArk = (value: number) => `${(value / 1000).toLocaleString('id-ID')} ARK`;
 
 const ARK_RATE = 1000;
+const LAST_RECEIPT_KEY = 'pos:lastReceipt';
 
 const getTableDisplayName = (table?: PosTable | null) =>
   table?.label || table?.table_number || table?.name || table?.qr_code || 'Table';
@@ -136,6 +137,10 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
 
   /* Result */
   const [resultPayload, setResultPayload] = useState<ReceiptPayload | null>(null);
+  const storeResultPayload = useCallback((payload: ReceiptPayload) => {
+    setResultPayload(payload);
+    window.sessionStorage.setItem(LAST_RECEIPT_KEY, JSON.stringify(payload));
+  }, []);
 
   /* Offline */
   const { isOnline } = usePosOnline();
@@ -464,7 +469,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
           discountAmount,
           taxAmount,
         };
-        setResultPayload(receipt);
+        storeResultPayload(receipt);
         setShowPayment(false);
         setLastResultType('standard');
         cart.clearCart();
@@ -527,7 +532,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         discountAmount,
         taxAmount,
       };
-      setResultPayload(receipt);
+      storeResultPayload(receipt);
       setShowPayment(false);
       setLastResultType('offlined');
       cart.clearCart();
@@ -568,7 +573,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         discountAmount,
         taxAmount,
       };
-      setResultPayload(receipt);
+      storeResultPayload(receipt);
       setShowPayment(false);
       setLastResultType('standard');
       cart.clearCart();
@@ -580,7 +585,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       toast.error(res.error || 'Payment failed');
     }
     setProcessingPayment(false);
-  }, [cart, paymentMethod, selectedCustomer, cashReceived, totalAfterArk, checkout, discountAmount, taxAmount, arkToUseCapped, isOnline, enqueue, membershipDiscount, shift, refreshCount, paymentOrderId, payingOrderNumber, router, processingPayment, selectedTableDisplay, requireActiveShift, payOpenOrderMutation, deferReturnToRestaurant]);
+  }, [cart, paymentMethod, selectedCustomer, cashReceived, totalAfterArk, checkout, discountAmount, taxAmount, arkToUseCapped, isOnline, enqueue, membershipDiscount, shift, refreshCount, paymentOrderId, payingOrderNumber, router, processingPayment, selectedTableDisplay, requireActiveShift, payOpenOrderMutation, deferReturnToRestaurant, storeResultPayload]);
 
   /* Split Bill */
   const handleConfirmSplit = useCallback(async (config: SplitConfig) => {
@@ -637,7 +642,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         discountAmount,
         taxAmount,
       };
-      setResultPayload(receipt);
+      storeResultPayload(receipt);
       setLastResultType('offlined');
       cart.clearCart();
       await refreshCount();
@@ -689,7 +694,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     } catch (e: any) {
       toast.error(e.message || 'Failed to create split order');
     }
-  }, [cart, selectedCustomer, discountAmount, taxAmount, total, membershipDiscount, isOnline, enqueue, paymentMethod, shift, refreshCount, selectedTableDisplay, requireActiveShift]);
+  }, [cart, selectedCustomer, discountAmount, taxAmount, total, membershipDiscount, isOnline, enqueue, paymentMethod, shift, refreshCount, selectedTableDisplay, requireActiveShift, storeResultPayload]);
 
   const handleSplitComplete = useCallback(() => {
     setShowSplitPayment(false);

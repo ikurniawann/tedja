@@ -128,8 +128,8 @@ export function RestaurantActionRail({
   ] as const;
 
   return (
-    <aside className="flex h-fit flex-col gap-2 rounded-xl border border-gray-200/70 bg-white p-3 shadow-xs">
-      <div className="flex items-center justify-center gap-2 rounded-lg border border-gray-200/70 bg-gray-50/80 py-2.5 text-sm font-semibold tabular-nums text-gray-900">
+    <aside className="flex h-fit flex-wrap gap-2 rounded-xl border border-gray-200/70 bg-white p-3 shadow-xs lg:flex-col">
+      <div className="flex min-w-[112px] flex-1 items-center justify-center gap-2 rounded-lg border border-gray-200/70 bg-gray-50/80 py-2.5 text-sm font-semibold tabular-nums text-gray-900 lg:w-full lg:flex-none">
         <Clock className="size-4 text-muted-foreground" />
         {clock}
       </div>
@@ -139,7 +139,7 @@ export function RestaurantActionRail({
           key={action.key}
           type="button"
           variant="outline"
-          className="w-full justify-start gap-2 border-gray-200/70 text-gray-700 hover:border-primary/30 hover:bg-primary/5 hover:text-primary"
+          className="min-w-[112px] flex-1 justify-start gap-2 border-gray-200/70 text-gray-700 hover:border-primary/30 hover:bg-primary/5 hover:text-primary lg:w-full lg:flex-none"
           onClick={action.onClick}
         >
           <action.icon className="size-4" />
@@ -150,7 +150,7 @@ export function RestaurantActionRail({
       <Button
         type="button"
         variant="outline"
-        className="w-full justify-start gap-2 border-primary/20 text-primary hover:bg-primary/10"
+        className="min-w-[112px] flex-1 justify-start gap-2 border-primary/20 text-primary hover:bg-primary/10 lg:w-full lg:flex-none"
         onClick={() => router.push(ORDERS_PATH)}
       >
         <ClipboardList className="size-4" />

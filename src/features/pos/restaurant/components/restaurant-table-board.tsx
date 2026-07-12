@@ -46,7 +46,7 @@ const STATUS_TILE_CLASSES: Record<string, string> = {
     "border-gray-200/70 bg-white text-gray-800 hover:border-primary/50 hover:bg-primary/5",
   occupied:
     "border-emerald-200/70 bg-emerald-50 text-emerald-800 hover:border-emerald-300",
-  reserved: "border-blue-200/70 bg-blue-50 text-blue-800",
+  reserved: "cursor-not-allowed border-blue-200/70 bg-blue-50 text-blue-800",
   maintenance:
     "cursor-not-allowed border-gray-200/70 bg-slate-50 text-slate-400",
 };
@@ -137,7 +137,7 @@ export function RestaurantTableBoard({
                   const isSelected = selectedTableId === table.id;
                   const isAvailable = table.status === "available";
                   const isOccupied = table.status === "occupied";
-                  const isMaintenance = table.status === "maintenance";
+                  const isActionable = isAvailable || isOccupied;
                   const tileClass =
                     STATUS_TILE_CLASSES[table.status] ?? STATUS_TILE_CLASSES.available;
 
@@ -145,7 +145,7 @@ export function RestaurantTableBoard({
                     <button
                       key={table.id}
                       type="button"
-                      disabled={isMaintenance}
+                      disabled={!isActionable}
                       onClick={() => {
                         if (isAvailable) {
                           handleAvailableClick(table);

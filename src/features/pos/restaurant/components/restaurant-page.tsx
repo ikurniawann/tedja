@@ -142,7 +142,7 @@ export function RestaurantPage() {
         description={`${availableCount} available · ${occupiedCount} occupied`}
       />
 
-      <div className="grid gap-4 xl:grid-cols-[13rem_minmax(0,1fr)_22rem]">
+      <div className="grid min-h-[70vh] gap-3 lg:grid-cols-[140px_1fr_280px]">
         <RestaurantActionRail
           selection={selection}
           selectedOrder={selectedOrder}
@@ -150,7 +150,7 @@ export function RestaurantPage() {
           onMoveTable={() => setShowMoveModal(true)}
         />
 
-        <Card className="border-gray-200/70 shadow-xs">
+        <Card className="min-w-0 border-gray-200/70 shadow-xs">
           <CardContent className="p-4 sm:p-6">
             <RestaurantTableBoard
               tables={tables}
