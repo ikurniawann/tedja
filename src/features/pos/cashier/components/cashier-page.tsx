@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { ArrowsPointingInIcon, ArrowsPointingOutIcon } from '@heroicons/react/24/outline';
 import { toast } from 'sonner';
-import { RESTAURANT_FROM, RESTAURANT_PATH } from '@/features/pos/restaurant/nav';
+import { RESTAURANT_FROM, isRestaurantImmersive, restaurantPath } from '@/features/pos/restaurant/nav';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -59,6 +59,7 @@ import {
 import { PageTransition } from '@/components/motion';
 import { HelpHint } from '@/components/ui/help-hint';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { floorLabel, floorSortKey } from '@/features/pos/tables/floor-options';
 
 /* ─── helpers ─────────────────────────────────────────────────────── */
 const formatCurrency = (value: number) => formatAmount(value);
@@ -70,6 +71,28 @@ const LAST_RECEIPT_KEY = 'pos:lastReceipt';
 
 const getTableDisplayName = (table?: PosTable | null) =>
   table?.label || table?.table_number || table?.name || table?.qr_code || 'Table';
+
+function groupCashierTablesByFloor(tables: PosTable[]) {
+  const map = new Map<string, PosTable[]>();
+  for (const table of tables) {
+    const key = String(table.floor ?? '').trim();
+    const list = map.get(key) ?? [];
+    list.push(table);
+    map.set(key, list);
+  }
+
+  return [...map.entries()]
+    .sort(([a], [b]) => floorSortKey(a) - floorSortKey(b))
+    .map(([floorKey, groupTables]) => ({
+      floorKey,
+      label: floorLabel(floorKey),
+      tables: [...groupTables].sort((a, b) =>
+        getTableDisplayName(a).localeCompare(getTableDisplayName(b), undefined, {
+          numeric: true,
+        })
+      ),
+    }));
+}
 
 const getCustomerDiscount = (tier?: string) => {
   const normalizedTier = tier?.toLowerCase();
@@ -95,9 +118,12 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
   const autoPay = searchParams.get('pay') === '1';
   const autoPayAppliedRef = useRef(false);
   const fromRestaurant = searchParams.get('from') === RESTAURANT_FROM;
+  const returnToRestaurantPath = restaurantPath({
+    immersive: isRestaurantImmersive(searchParams),
+  });
   const handoffTableId = searchParams.get('tableId');
   const handoffOrderType = searchParams.get('orderType');
-  const handoffAppliedRef = useRef(false);
+  const handoffKeyRef = useRef<string | null>(null);
   const pendingRestaurantReturnRef = useRef(false);
   const { products, categories, loading, error } = usePosProducts();
   const { customers, findCustomer, refetch: refetchCustomers } = usePosCustomers();
@@ -107,6 +133,10 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
   const { data: tables = [], isLoading: loadingTables, error: tablesQueryError } = useCashierTables();
   const tableError = tablesQueryError instanceof Error ? tablesQueryError.message : null;
   const { data: paymentOrder } = useCashierOrder(paymentOrderId);
+
+  // URL tableId from restaurant must win over stale localStorage cart table.
+  const effectiveTableId =
+    fromRestaurant && handoffTableId ? handoffTableId : cart.selectedTable;
 
   /* UI state */
   const [searchTerm, setSearchTerm] = useState('');
@@ -205,11 +235,16 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     return new Map(tables.map((table) => [table.id, table]));
   }, [tables]);
 
+  const tablesByFloor = useMemo(
+    () => groupCashierTablesByFloor(tables),
+    [tables]
+  );
+
   const selectedTableDisplay = useMemo(() => {
-    if (!cart.selectedTable) return null;
-    const selected = tableById.get(cart.selectedTable);
-    return selected ? getTableDisplayName(selected) : cart.selectedTable;
-  }, [cart.selectedTable, tableById]);
+    if (!effectiveTableId) return null;
+    const selected = tableById.get(effectiveTableId);
+    return selected ? getTableDisplayName(selected) : effectiveTableId;
+  }, [effectiveTableId, tableById]);
 
   /* Load existing open bill when redirected from Orders */
   useEffect(() => {
@@ -252,10 +287,13 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     setShowPayment(true);
   }, [autoPay, paymentOrderId, paymentOrder]);
 
-  /* Apply restaurant handoff (table / order type) once on mount */
+  /* Apply restaurant handoff after cart localStorage hydrate so URL table wins. */
   useEffect(() => {
-    if (!fromRestaurant || handoffAppliedRef.current) return;
-    handoffAppliedRef.current = true;
+    if (!fromRestaurant || !cart.hydrated) return;
+
+    const handoffKey = `${handoffTableId ?? ''}|${handoffOrderType ?? ''}|${paymentOrderId ?? ''}`;
+    if (handoffKeyRef.current === handoffKey) return;
+    handoffKeyRef.current = handoffKey;
 
     if (handoffOrderType === 'takeaway' || handoffOrderType === 'dine_in') {
       cart.setOrderType(handoffOrderType);
@@ -263,16 +301,25 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     if (handoffTableId) {
       cart.setOrderType('dine_in');
       cart.setTable(handoffTableId);
+    } else if (handoffOrderType === 'takeaway' || handoffOrderType === 'dine_in') {
+      cart.setTable(null);
     }
-    // cart setters are stable; this handoff should only ever run once per mount.
-  }, [fromRestaurant, handoffTableId, handoffOrderType, cart]);
+  }, [
+    fromRestaurant,
+    handoffTableId,
+    handoffOrderType,
+    paymentOrderId,
+    cart.hydrated,
+    cart.setOrderType,
+    cart.setTable,
+  ]);
 
   /* Return to restaurant board after a successful pay / open-bill save */
   const maybeReturnToRestaurant = useCallback(() => {
     if (!fromRestaurant) return false;
-    router.push(RESTAURANT_PATH);
+    router.push(returnToRestaurantPath);
     return true;
-  }, [fromRestaurant, router]);
+  }, [fromRestaurant, returnToRestaurantPath, router]);
 
   const deferReturnToRestaurant = useCallback(() => {
     if (!fromRestaurant) return false;
@@ -284,16 +331,16 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     setResultPayload(null);
     if (pendingRestaurantReturnRef.current) {
       pendingRestaurantReturnRef.current = false;
-      router.push(RESTAURANT_PATH);
+      router.push(returnToRestaurantPath);
     }
-  }, [router]);
+  }, [returnToRestaurantPath, router]);
 
   const handleBackToRestaurant = useCallback(() => {
     if (cart.items.length > 0 && !window.confirm('Leave cashier and discard cart?')) {
       return;
     }
-    router.push(RESTAURANT_PATH);
-  }, [cart.items.length, router]);
+    router.push(returnToRestaurantPath);
+  }, [cart.items.length, returnToRestaurantPath, router]);
 
   /* Financials */
   const membershipDiscount = selectedCustomer ? selectedCustomer.discount : 0;
@@ -496,6 +543,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         order_type: cart.orderType,
         customer_id: selectedCustomer?.id,
         cashier_id: CASHIER_ID,
+        table_id: effectiveTableId || undefined,
         items: cart.items.map(item => ({
           product_id: item.productId,
           product_name: item.name,
@@ -548,7 +596,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     const res = await checkout({
       cart: cart.items,
       orderType: cart.orderType,
-      selectedTable: cart.selectedTable,
+      selectedTable: effectiveTableId,
       selectedCustomer,
       paymentMethod,
       cashReceived,
@@ -585,7 +633,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       toast.error(res.error || 'Payment failed');
     }
     setProcessingPayment(false);
-  }, [cart, paymentMethod, selectedCustomer, cashReceived, totalAfterArk, checkout, discountAmount, taxAmount, arkToUseCapped, isOnline, enqueue, membershipDiscount, shift, refreshCount, paymentOrderId, payingOrderNumber, router, processingPayment, selectedTableDisplay, requireActiveShift, payOpenOrderMutation, deferReturnToRestaurant, storeResultPayload]);
+  }, [cart, paymentMethod, selectedCustomer, cashReceived, totalAfterArk, checkout, discountAmount, taxAmount, arkToUseCapped, isOnline, enqueue, membershipDiscount, shift, refreshCount, paymentOrderId, payingOrderNumber, router, processingPayment, selectedTableDisplay, effectiveTableId, requireActiveShift, payOpenOrderMutation, deferReturnToRestaurant, storeResultPayload]);
 
   /* Split Bill */
   const handleConfirmSplit = useCallback(async (config: SplitConfig) => {
@@ -599,7 +647,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         customer_id: selectedCustomer?.id,
         cashier_id: CASHIER_ID,
         server_id: undefined,
-        table_id: cart.selectedTable || undefined,
+        table_id: effectiveTableId || undefined,
         shift_id: shift?.id,
         items: cart.items.map(item => ({
           product_id: item.productId,
@@ -655,7 +703,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         customer_id: selectedCustomer?.id,
         cashier_id: CASHIER_ID,
         server_id: undefined,
-        table_id: cart.selectedTable || undefined,
+        table_id: effectiveTableId || undefined,
         shift_id: shift?.id,
         items: cart.items.map(item => ({
           product_id: item.productId,
@@ -694,7 +742,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     } catch (e: any) {
       toast.error(e.message || 'Failed to create split order');
     }
-  }, [cart, selectedCustomer, discountAmount, taxAmount, total, membershipDiscount, isOnline, enqueue, paymentMethod, shift, refreshCount, selectedTableDisplay, requireActiveShift, storeResultPayload]);
+  }, [cart, selectedCustomer, discountAmount, taxAmount, total, membershipDiscount, isOnline, enqueue, paymentMethod, shift, refreshCount, selectedTableDisplay, effectiveTableId, requireActiveShift, storeResultPayload]);
 
   const handleSplitComplete = useCallback(() => {
     setShowSplitPayment(false);
@@ -713,7 +761,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         customer_id: selectedCustomer?.id,
         cashier_id: CASHIER_ID,
         server_id: undefined,
-        table_id: cart.selectedTable || undefined,
+        table_id: effectiveTableId || undefined,
         shift_id: shift?.id || undefined,
         items: cart.items.map(item => ({
           product_id: item.productId,
@@ -750,7 +798,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     } finally {
       setSavingBill(false);
     }
-  }, [cart, selectedCustomer, discountAmount, taxAmount, total, requireActiveShift, shift, maybeReturnToRestaurant]);
+  }, [cart, selectedCustomer, discountAmount, taxAmount, total, requireActiveShift, shift, maybeReturnToRestaurant, effectiveTableId]);
 
   /* Print helpers */
   const handlePrint = useCallback((label: 'KITCHEN' | 'BAR' | 'CUSTOMER') => {
@@ -771,9 +819,44 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         <div className="min-w-0">
           <h1 className="text-xl font-semibold text-gray-900">POS Cashier</h1>
           <p className="text-sm text-gray-500">
-            {isFullscreen
-              ? 'Fullscreen mode — optimized for checkout'
-              : 'Process orders with the dashboard sidebar available'}
+            {cart.orderType === 'dine_in' ||
+            cart.orderType === 'takeaway' ||
+            selectedTableDisplay ? (
+              <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
+                {selectedTableDisplay ? (
+                  <span className="inline-flex items-center gap-1.5 font-medium text-primary">
+                    <TableIcon className="h-3.5 w-3.5" />
+                    Table {selectedTableDisplay}
+                  </span>
+                ) : cart.orderType === 'takeaway' ? (
+                  <span className="inline-flex items-center gap-1.5 font-medium text-amber-700">
+                    <ShoppingBag className="h-3.5 w-3.5" />
+                    Take Away
+                  </span>
+                ) : cart.orderType === 'dine_in' ? (
+                  <span className="inline-flex items-center gap-1.5 font-medium text-gray-700">
+                    <TableIcon className="h-3.5 w-3.5" />
+                    Without Table
+                  </span>
+                ) : null}
+                {selectedTableDisplay || cart.orderType === 'dine_in' ? (
+                  <>
+                    <span className="text-gray-300">·</span>
+                    <span>Dine-in</span>
+                  </>
+                ) : null}
+                {fromRestaurant ? (
+                  <>
+                    <span className="text-gray-300">·</span>
+                    <span>From restaurant</span>
+                  </>
+                ) : null}
+              </span>
+            ) : isFullscreen ? (
+              'Fullscreen mode — optimized for checkout'
+            ) : (
+              'Process orders with the dashboard sidebar available'
+            )}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -871,35 +954,43 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
 
         <div className="rounded-xl border border-gray-200/70 bg-white p-4 shadow-xs">
           <div className="flex flex-wrap items-center gap-2">
-            {[
-              {
-                key: 'dine_in',
-                label: 'Dine-in',
-                icon: Utensils,
-                activeClass: 'border-primary bg-primary text-white shadow-sm',
-                idleClass: 'border-primary/30 bg-primary/10 text-primary hover:border-primary/50 hover:bg-primary/15',
-              },
-              {
-                key: 'takeaway',
-                label: 'Takeaway',
-                icon: ShoppingBag,
-                activeClass: 'border-amber-500 bg-amber-500 text-white shadow-sm',
-                idleClass: 'border-amber-200 bg-amber-50 text-amber-700 hover:border-amber-400 hover:bg-amber-100',
-              },
-            ].map(t => (
-              <button
-                key={t.key}
-                onClick={() => {
-                  cart.setOrderType(t.key as any);
-                  if (t.key === 'dine_in') setShowTableModal(true);
-                }}
-                className={`flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition-all ${
-                  cart.orderType === t.key ? t.activeClass : t.idleClass
-                }`}
-              >
-                <t.icon className="w-4 h-4" /> {t.label}
-              </button>
-            ))}
+            <button
+              type="button"
+              onClick={() => {
+                cart.setOrderType('dine_in');
+                cart.setTable(null);
+              }}
+              className={`flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition-all ${
+                cart.orderType === 'dine_in'
+                  ? 'border-primary bg-primary text-white shadow-sm'
+                  : 'border-primary/30 bg-primary/10 text-primary hover:border-primary/50 hover:bg-primary/15'
+              }`}
+            >
+              <Utensils className="h-4 w-4" /> Dine-in
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowTableModal(true)}
+              className={
+                selectedTableDisplay
+                  ? 'flex items-center gap-2 rounded-lg border border-primary/40 bg-primary/10 px-4 py-2 text-sm font-semibold text-primary transition-all hover:border-primary/60 hover:bg-primary/15'
+                  : cart.orderType === 'takeaway'
+                    ? 'flex items-center gap-2 rounded-lg border border-amber-400 bg-amber-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:bg-amber-600'
+                    : 'flex items-center gap-2 rounded-lg border border-gray-200/80 bg-gray-50 px-4 py-2 text-sm font-semibold text-gray-700 transition-all hover:border-primary/30 hover:bg-primary/5 hover:text-primary'
+              }
+              title="Service / table mode"
+            >
+              {cart.orderType === 'takeaway' ? (
+                <ShoppingBag className="h-4 w-4" />
+              ) : (
+                <TableIcon className="h-4 w-4" />
+              )}
+              {selectedTableDisplay
+                ? `Table ${selectedTableDisplay}`
+                : cart.orderType === 'takeaway'
+                  ? 'Take Away'
+                  : 'Without Table'}
+            </button>
             <button
               onClick={() => setShowCustomerModal(true)}
               className={`flex min-w-[150px] items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition-all ${
@@ -1139,15 +1230,48 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
 
       {/* ── Table Modal ── */}
       <Dialog open={showTableModal} onOpenChange={setShowTableModal}>
-        <DialogPanel
-          size="2xl"
-          className="!h-[88vh] !w-[calc(100vw-24px)] !max-w-none sm:!max-w-none"
-        >
+        <DialogPanel size="lg" className="max-h-[80vh]">
           <DialogPanelHeader>
-            <DialogPanelTitle>Select Table</DialogPanelTitle>
-            <DialogPanelDescription>Dine-in service</DialogPanelDescription>
+            <DialogPanelTitle>Service / Table</DialogPanelTitle>
+            <DialogPanelDescription>
+              Choose Without Table, Take Away, or a dine-in table
+            </DialogPanelDescription>
           </DialogPanelHeader>
           <DialogPanelBody className="flex min-h-0 flex-col">
+            <div className="mb-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => {
+                  cart.setTable(null);
+                  cart.setOrderType('dine_in');
+                  setShowTableModal(false);
+                }}
+                className={`flex items-center justify-center gap-2 rounded-lg border px-4 py-3 text-sm font-semibold transition-all ${
+                  cart.orderType === 'dine_in' && !effectiveTableId
+                    ? 'border-primary bg-primary/10 text-primary ring-1 ring-primary/30'
+                    : 'border-gray-200/70 bg-white text-gray-700 hover:border-primary/40 hover:bg-primary/5'
+                }`}
+              >
+                <TableIcon className="h-4 w-4" />
+                Without Table
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  cart.setTable(null);
+                  cart.setOrderType('takeaway');
+                  setShowTableModal(false);
+                }}
+                className={`flex items-center justify-center gap-2 rounded-lg border px-4 py-3 text-sm font-semibold transition-all ${
+                  cart.orderType === 'takeaway' && !effectiveTableId
+                    ? 'border-amber-400 bg-amber-50 text-amber-800 ring-1 ring-amber-300'
+                    : 'border-gray-200/70 bg-white text-gray-700 hover:border-amber-300 hover:bg-amber-50'
+                }`}
+              >
+                <ShoppingBag className="h-4 w-4" />
+                Take Away
+              </button>
+            </div>
             {loadingTables ? (
               <div className="flex items-center gap-2 rounded-lg border border-gray-200/70 bg-gray-50/80 p-4 text-sm text-gray-500">
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -1162,39 +1286,78 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
                 No active tables available.
               </div>
             ) : (
-              <div className="grid min-h-0 flex-1 grid-cols-2 gap-3 overflow-y-auto pr-1 sm:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7">
-                {tables.map((table) => {
-                  const isSelected = cart.selectedTable === table.id;
-                  const isOccupied = table.status === 'occupied' && !isSelected;
-                  const activeOrder = table.active_order?.order_number;
+              <div className="min-h-0 flex-1 space-y-5 overflow-y-auto pr-1">
+                {tablesByFloor.map((group) => (
+                  <section key={group.floorKey || '__unassigned'} className="space-y-2">
+                    <div className="sticky top-0 z-10 -mx-1 flex items-center justify-between gap-2 border-b border-gray-200/70 bg-white/95 px-1 py-2 backdrop-blur-sm">
+                      <h3 className="text-sm font-semibold text-gray-900">
+                        {group.label}
+                      </h3>
+                      <span className="text-xs text-gray-500">
+                        {group.tables.length} table
+                        {group.tables.length === 1 ? '' : 's'}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 md:grid-cols-4">
+                      {group.tables.map((table) => {
+                        const isSelected = effectiveTableId === table.id;
+                        const isOccupied = table.status === 'occupied' && !isSelected;
+                        const activeOrder = table.active_order?.order_number;
 
-                  return (
-                    <button
-                      key={table.id}
-                      type="button"
-                      disabled={isOccupied}
-                      onClick={() => {
-                        cart.setTable(isSelected ? null : table.id);
-                        setShowTableModal(false);
-                      }}
-                      className={`min-h-[92px] rounded-lg border px-4 py-4 text-left transition-all ${
-                        isSelected
-                          ? 'border-primary bg-primary text-white shadow-sm'
-                          : isOccupied
-                            ? 'cursor-not-allowed border-gray-200/70 bg-gray-100 text-gray-400'
-                            : 'border-gray-200/70 bg-white text-gray-800 hover:border-primary/50 hover:bg-primary/10'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-sm font-bold tracking-normal">{getTableDisplayName(table)}</span>
-                        <TableIcon className="h-5 w-5 shrink-0" />
-                      </div>
-                      <div className={`mt-3 text-xs font-semibold ${isSelected ? 'text-primary-foreground/70' : isOccupied ? 'text-gray-400' : 'text-gray-500'}`}>
-                        {isOccupied ? activeOrder || 'Occupied' : `${table.capacity} seats`}
-                      </div>
-                    </button>
-                  );
-                })}
+                        return (
+                          <button
+                            key={table.id}
+                            type="button"
+                            disabled={isOccupied}
+                            onClick={() => {
+                              cart.setOrderType('dine_in');
+                              cart.setTable(isSelected ? null : table.id);
+                              setShowTableModal(false);
+                            }}
+                            className={`min-h-[84px] rounded-lg border px-3 py-3 text-left transition-all ${
+                              isSelected
+                                ? 'border-primary bg-primary text-white shadow-sm'
+                                : isOccupied
+                                  ? 'cursor-not-allowed border-gray-200/70 bg-gray-100 text-gray-400'
+                                  : 'border-gray-200/70 bg-white text-gray-800 hover:border-primary/50 hover:bg-primary/10'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="truncate text-sm font-bold tracking-normal">
+                                {getTableDisplayName(table)}
+                              </span>
+                              <TableIcon className="h-4 w-4 shrink-0" />
+                            </div>
+                            <div
+                              className={`mt-2 text-[11px] font-medium ${
+                                isSelected
+                                  ? 'text-primary-foreground/70'
+                                  : isOccupied
+                                    ? 'text-gray-400'
+                                    : 'text-gray-500'
+                              }`}
+                            >
+                              {table.area || '—'}
+                            </div>
+                            <div
+                              className={`mt-1 text-xs font-semibold ${
+                                isSelected
+                                  ? 'text-primary-foreground/70'
+                                  : isOccupied
+                                    ? 'text-gray-400'
+                                    : 'text-gray-500'
+                              }`}
+                            >
+                              {isOccupied
+                                ? activeOrder || 'Occupied'
+                                : `${table.capacity} seats`}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </section>
+                ))}
               </div>
             )}
           </DialogPanelBody>

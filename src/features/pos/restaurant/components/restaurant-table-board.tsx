@@ -2,9 +2,13 @@
 
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Loader2, Users } from "lucide-react";
+import { Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import {
+  FloorPlanCanvas,
+  type FloorPlanNode,
+} from "@/features/pos/tables/components/floor-plan-canvas";
 import { floorLabel, floorSortKey } from "@/features/pos/tables/floor-options";
 import { buildCashierHandoffUrl } from "@/features/pos/restaurant/nav";
 import type { PosTable } from "@/lib/pos-api";
@@ -41,23 +45,24 @@ function groupTablesByFloor(tables: PosTable[]): TableFloorGroup[] {
     }));
 }
 
-const STATUS_TILE_CLASSES: Record<string, string> = {
-  available:
-    "border-gray-200/70 bg-white text-gray-800 hover:border-primary/50 hover:bg-primary/5",
-  occupied:
-    "border-emerald-200/70 bg-emerald-50 text-emerald-800 hover:border-emerald-300",
-  reserved: "cursor-not-allowed border-blue-200/70 bg-blue-50 text-blue-800",
-  maintenance:
-    "cursor-not-allowed border-gray-200/70 bg-slate-50 text-slate-400",
-};
-
-const SELECTED_TILE_CLASS = "border-primary bg-primary/10 ring-1 ring-primary/40";
+function toNode(table: PosTable): FloorPlanNode {
+  return {
+    id: table.id,
+    table_number: getTableDisplayName(table),
+    capacity: table.capacity,
+    status: table.status,
+    is_active: table.is_active,
+    pos_x: table.pos_x,
+    pos_y: table.pos_y,
+  };
+}
 
 export interface RestaurantTableBoardProps {
   tables: PosTable[];
   isLoading?: boolean;
   error?: string | null;
   selectedTableId?: string | null;
+  immersive?: boolean;
   onSelectOccupied: (table: PosTable) => void;
   onOpenAvailable?: (table: PosTable) => void;
 }
@@ -67,21 +72,27 @@ export function RestaurantTableBoard({
   isLoading,
   error,
   selectedTableId,
+  immersive = false,
   onSelectOccupied,
   onOpenAvailable,
 }: RestaurantTableBoardProps) {
   const router = useRouter();
   const floors = groupTablesByFloor(tables);
+  const tablesById = new Map(tables.map((table) => [table.id, table]));
 
   const handleAvailableClick = (table: PosTable) => {
     onOpenAvailable?.(table);
-    router.push(buildCashierHandoffUrl({ tableId: table.id }));
+    router.push(buildCashierHandoffUrl({ tableId: table.id, immersive }));
   };
 
   const handleOccupiedDoubleClick = (table: PosTable) => {
     if (table.active_order?.id) {
       router.push(
-        buildCashierHandoffUrl({ orderId: table.active_order.id, tableId: table.id })
+        buildCashierHandoffUrl({
+          orderId: table.active_order.id,
+          tableId: table.id,
+          immersive,
+        })
       );
       return;
     }
@@ -95,7 +106,9 @@ export function RestaurantTableBoard({
           type="button"
           variant="outline"
           className="border-gray-200/70 sm:flex-1"
-          onClick={() => router.push(buildCashierHandoffUrl({ orderType: "dine_in" }))}
+          onClick={() =>
+            router.push(buildCashierHandoffUrl({ orderType: "dine_in", immersive }))
+          }
         >
           Without Table
         </Button>
@@ -103,7 +116,9 @@ export function RestaurantTableBoard({
           type="button"
           variant="outline"
           className="border-gray-200/70 sm:flex-1"
-          onClick={() => router.push(buildCashierHandoffUrl({ orderType: "takeaway" }))}
+          onClick={() =>
+            router.push(buildCashierHandoffUrl({ orderType: "takeaway", immersive }))
+          }
         >
           Take Away
         </Button>
@@ -125,59 +140,58 @@ export function RestaurantTableBoard({
       ) : (
         <div className="space-y-5">
           {floors.map((group) => (
-            <section key={group.floorKey || "__unassigned"} className="space-y-2">
-              <div className="flex items-center justify-between gap-2 border-b border-gray-200/70 pb-1.5">
-                <h3 className="text-sm font-semibold text-gray-900">{group.label}</h3>
-                <span className="text-xs text-gray-500">
-                  {group.tables.length} table{group.tables.length === 1 ? "" : "s"}
-                </span>
+            <section
+              key={group.floorKey || "__unassigned"}
+              className="overflow-hidden rounded-xl border border-gray-200/70 bg-white"
+            >
+              <div className="flex items-center justify-between gap-3 border-b border-gray-200/70 px-4 py-3">
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-900">
+                    {group.label}
+                  </h3>
+                  <p className="text-xs text-gray-500">
+                    {group.tables.length} table
+                    {group.tables.length === 1 ? "" : "s"}
+                  </p>
+                </div>
               </div>
-              <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-                {group.tables.map((table) => {
-                  const isSelected = selectedTableId === table.id;
-                  const isAvailable = table.status === "available";
-                  const isOccupied = table.status === "occupied";
-                  const isActionable = isAvailable || isOccupied;
-                  const tileClass =
-                    STATUS_TILE_CLASSES[table.status] ?? STATUS_TILE_CLASSES.available;
-
-                  return (
-                    <button
-                      key={table.id}
-                      type="button"
-                      disabled={!isActionable}
-                      onClick={() => {
-                        if (isAvailable) {
-                          handleAvailableClick(table);
-                        } else if (isOccupied) {
-                          onSelectOccupied(table);
-                        }
-                      }}
-                      onDoubleClick={() => {
-                        if (isOccupied) handleOccupiedDoubleClick(table);
-                      }}
-                      className={`min-h-[84px] rounded-lg border px-3 py-3 text-left transition-all ${
-                        isSelected ? SELECTED_TILE_CLASS : tileClass
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="truncate text-sm font-bold">
-                          {getTableDisplayName(table)}
-                        </span>
-                        <Users className="h-4 w-4 shrink-0 opacity-60" />
-                      </div>
-                      <div className="mt-2 text-[11px] font-medium opacity-70">
-                        {table.capacity} seats
-                        {table.area ? ` · ${table.area}` : ""}
-                      </div>
-                      {isOccupied && table.active_order?.order_number ? (
-                        <div className="mt-1 truncate text-xs font-semibold opacity-80">
-                          {table.active_order.order_number}
-                        </div>
-                      ) : null}
-                    </button>
-                  );
-                })}
+              <div className="p-3">
+                <FloorPlanCanvas
+                  mode="operate"
+                  tables={group.tables.map(toNode)}
+                  selectedId={selectedTableId}
+                  isDisabled={(node) => {
+                    const table = tablesById.get(node.id);
+                    if (!table) return true;
+                    return (
+                      table.status !== "available" &&
+                      table.status !== "occupied" &&
+                      table.status !== "billing"
+                    );
+                  }}
+                  onActivate={(node) => {
+                    const table = tablesById.get(node.id);
+                    if (!table) return;
+                    if (table.status === "available") {
+                      handleAvailableClick(table);
+                    } else if (
+                      table.status === "occupied" ||
+                      table.status === "billing"
+                    ) {
+                      onSelectOccupied(table);
+                    }
+                  }}
+                  onDoubleClick={(node) => {
+                    const table = tablesById.get(node.id);
+                    if (
+                      !table ||
+                      (table.status !== "occupied" && table.status !== "billing")
+                    ) {
+                      return;
+                    }
+                    handleOccupiedDoubleClick(table);
+                  }}
+                />
               </div>
             </section>
           ))}

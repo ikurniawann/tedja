@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Clock, Loader2, ReceiptText, Table2 } from "lucide-react";
 
@@ -47,6 +47,21 @@ function formatRelativeTime(value?: string) {
   return formatter.format(Math.round(diffHours / 24), "day");
 }
 
+/** Avoid SSR/client Date.now() drift during hydration. */
+function RelativeTime({ value }: { value?: string }) {
+  const [label, setLabel] = useState("-");
+
+  useEffect(() => {
+    setLabel(formatRelativeTime(value));
+    const timer = window.setInterval(() => {
+      setLabel(formatRelativeTime(value));
+    }, 60_000);
+    return () => window.clearInterval(timer);
+  }, [value]);
+
+  return <span suppressHydrationWarning>{label}</span>;
+}
+
 function getTableDisplayName(table?: PosTable) {
   return table?.label || table?.table_number || table?.name || null;
 }
@@ -72,12 +87,14 @@ function isOpenBill(order: Order) {
 export interface RestaurantBillsRailProps {
   tablesById: Map<string, PosTable>;
   selection: NullableRestaurantSelection;
+  immersive?: boolean;
   onSelect: (selection: RestaurantSelection) => void;
 }
 
 export function RestaurantBillsRail({
   tablesById,
   selection,
+  immersive = false,
   onSelect,
 }: RestaurantBillsRailProps) {
   const router = useRouter();
@@ -94,6 +111,7 @@ export function RestaurantBillsRail({
       buildCashierHandoffUrl({
         orderId: order.id,
         tableId: order.table_id,
+        immersive,
       })
     );
   };
@@ -174,7 +192,7 @@ export function RestaurantBillsRail({
                 <div className="mt-3 flex items-center justify-between gap-2">
                   <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
                     <Clock className="size-3.5" />
-                    {formatRelativeTime(order.ordered_at)}
+                    <RelativeTime value={order.ordered_at} />
                   </span>
                   <Button
                     type="button"

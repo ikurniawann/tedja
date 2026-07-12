@@ -1,11 +1,17 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import {
+  ArrowsPointingInIcon,
+  ArrowsPointingOutIcon,
+} from "@heroicons/react/24/outline";
+import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { PageTransition } from "@/components/motion";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { PurchasingPageHeader } from "@/modules/purchasing/components/page/purchasing-page-header";
 import { useCashierTables } from "@/features/pos/cashier/queries";
 import { useOpenBills } from "@/features/pos/open-bills/queries";
 import { useCreateOrderSplits } from "@/features/pos/open-bills/mutations";
@@ -14,10 +20,15 @@ import { MoveTableModal } from "@/components/pos/MoveTableModal";
 import { SplitBillModal, type SplitConfig } from "@/components/pos/SplitBillModal";
 import { SplitPaymentScreen } from "@/components/pos/SplitPaymentScreen";
 import type { PosTable } from "@/lib/pos-api";
+import { cn } from "@/lib/utils";
 
 import { RestaurantActionRail } from "./restaurant-action-rail";
 import { RestaurantBillsRail } from "./restaurant-bills-rail";
 import { RestaurantTableBoard } from "./restaurant-table-board";
+import {
+  isRestaurantImmersive,
+  restaurantPath,
+} from "../nav";
 import {
   isTableSelected,
   tableSelection,
@@ -43,6 +54,24 @@ type OpenBillItem = {
 };
 
 export function RestaurantPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center gap-2 p-6 text-sm text-gray-500">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Loading restaurant...
+        </div>
+      }
+    >
+      <RestaurantPageContent />
+    </Suspense>
+  );
+}
+
+function RestaurantPageContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const immersive = isRestaurantImmersive(searchParams);
   const { data: tables = [], isLoading, error } = useCashierTables();
   const { data: orders = [], refetch: refetchOrders } = useOpenBills({ limit: 200 });
   const createSplitsMutation = useCreateOrderSplits();
@@ -61,6 +90,12 @@ export function RestaurantPage() {
     if (!selection?.orderId) return null;
     return orders.find((order) => order.id === selection.orderId) ?? null;
   }, [orders, selection]);
+
+  const selectedTableLabel = useMemo(() => {
+    if (!selection?.tableId) return null;
+    const table = tablesById.get(selection.tableId);
+    return table?.label || table?.table_number || table?.name || null;
+  }, [selection?.tableId, tablesById]);
 
   const splitCartItems = useMemo(() => {
     if (!selectedOrder) return [];
@@ -85,7 +120,7 @@ export function RestaurantPage() {
     let occupied = 0;
     for (const table of tables) {
       if (table.status === "available") available += 1;
-      if (table.status === "occupied") occupied += 1;
+      if (table.status === "occupied" || table.status === "billing") occupied += 1;
     }
     return { availableCount: available, occupiedCount: occupied };
   }, [tables]);
@@ -107,6 +142,10 @@ export function RestaurantPage() {
 
   const handleSelectBill = (nextSelection: RestaurantSelection) => {
     setSelection(nextSelection);
+  };
+
+  const toggleImmersive = () => {
+    router.replace(restaurantPath({ immersive: !immersive }));
   };
 
   const handleConfirmSplit = async (config: SplitConfig) => {
@@ -136,27 +175,66 @@ export function RestaurantPage() {
   };
 
   return (
-    <PageTransition className="space-y-6">
-      <PurchasingPageHeader
-        title="Restaurant"
-        description={`${availableCount} available · ${occupiedCount} occupied`}
-      />
+    <PageTransition
+      className={cn("space-y-3", immersive ? "p-3 sm:p-4" : "space-y-4")}
+    >
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-base font-semibold text-foreground">Restaurant</h1>
+          {immersive ? (
+            <p className="text-xs text-muted-foreground">
+              Immersive mode — dashboard chrome hidden
+            </p>
+          ) : null}
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          className="shrink-0 border-gray-200/80 text-gray-700 hover:border-primary/30 hover:bg-primary/10 hover:text-primary"
+          onClick={toggleImmersive}
+        >
+          {immersive ? (
+            <>
+              <ArrowsPointingInIcon className="mr-2 h-4 w-4" />
+              Exit Fullscreen
+            </>
+          ) : (
+            <>
+              <ArrowsPointingOutIcon className="mr-2 h-4 w-4" />
+              Fullscreen
+            </>
+          )}
+        </Button>
+      </div>
 
-      <div className="grid min-h-[70vh] gap-3 lg:grid-cols-[140px_1fr_280px]">
+      <div
+        className={cn(
+          "grid gap-3 lg:grid-cols-[184px_1fr_280px]",
+          immersive
+            ? "h-[calc(100dvh-4.5rem)] min-h-[560px]"
+            : "min-h-[70vh]"
+        )}
+      >
         <RestaurantActionRail
           selection={selection}
           selectedOrder={selectedOrder}
+          selectedTableLabel={selectedTableLabel}
+          tablesById={tablesById}
+          availableCount={availableCount}
+          occupiedCount={occupiedCount}
           onSplitBill={() => setShowSplitModal(true)}
           onMoveTable={() => setShowMoveModal(true)}
+          onSelectBill={handleSelectBill}
         />
 
-        <Card className="min-w-0 border-gray-200/70 shadow-xs">
+        <Card className="min-h-0 min-w-0 overflow-auto border-gray-200/70 shadow-xs">
           <CardContent className="p-4 sm:p-6">
             <RestaurantTableBoard
               tables={tables}
               isLoading={isLoading}
               error={tableError}
               selectedTableId={selection?.tableId ?? null}
+              immersive={immersive}
               onSelectOccupied={handleSelectOccupied}
             />
           </CardContent>
@@ -165,6 +243,7 @@ export function RestaurantPage() {
         <RestaurantBillsRail
           tablesById={tablesById}
           selection={selection}
+          immersive={immersive}
           onSelect={handleSelectBill}
         />
       </div>

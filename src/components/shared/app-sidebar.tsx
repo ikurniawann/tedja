@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
+import { Suspense, useState } from "react";
 import { Moon, Monitor, Sun } from "lucide-react";
 import {
   Bars3Icon,
@@ -12,6 +12,10 @@ import {
 import { ActivityLogBell } from "@/components/layout/ActivityLogBell";
 import { NotificationBell } from "@/components/hris/NotificationBell";
 import { useTheme } from "@/components/providers/theme-provider";
+import {
+  RESTAURANT_PATH,
+  isRestaurantImmersive,
+} from "@/features/pos/restaurant/nav";
 import type { NavItem } from "@/lib/iam/types";
 import { AppSidebarNavIcon } from "./app-sidebar-nav-icons";
 import AppSidebarNav from "./app-sidebar-nav";
@@ -40,7 +44,12 @@ const desktopNavItem: NavItem = {
 /** Tinggi bar atas desktop — sidebar header & navbar utama harus sama agar border sejajar */
 const DESKTOP_TOP_BAR_HEIGHT = "lg:h-[4.75rem]";
 
-export default function AppSidebar({ user, navItems, children }: AppSidebarProps) {
+function AppSidebarContent({
+  user,
+  navItems,
+  children,
+  restaurantImmersive,
+}: AppSidebarProps & { restaurantImmersive: boolean }) {
   const pathname = usePathname();
   const allNavItems = [desktopNavItem, ...navItems];
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -49,6 +58,17 @@ export default function AppSidebar({ user, navItems, children }: AppSidebarProps
   const useActivityNotification = pathname.startsWith("/dashboard/purchasing");
 
   const closeMobile = () => setMobileOpen(false);
+
+  if (restaurantImmersive) {
+    return (
+      <div
+        className="arkiv-dashboard-theme min-h-screen"
+        style={{ background: "var(--page-mesh)" }}
+      >
+        <main className="min-h-screen overflow-auto p-0">{children}</main>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -128,6 +148,27 @@ export default function AppSidebar({ user, navItems, children }: AppSidebarProps
         )}
       </div>
     </div>
+  );
+}
+
+function AppSidebarWithSearch(props: AppSidebarProps) {
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const restaurantImmersive =
+    pathname === RESTAURANT_PATH && isRestaurantImmersive(searchParams);
+
+  return (
+    <AppSidebarContent {...props} restaurantImmersive={restaurantImmersive} />
+  );
+}
+
+export default function AppSidebar(props: AppSidebarProps) {
+  return (
+    <Suspense
+      fallback={<AppSidebarContent {...props} restaurantImmersive={false} />}
+    >
+      <AppSidebarWithSearch {...props} />
+    </Suspense>
   );
 }
 
