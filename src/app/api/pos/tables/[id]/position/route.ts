@@ -43,7 +43,7 @@ export async function PATCH(
       })
       .eq("id", id)
       .select("id, pos_x, pos_y")
-      .single();
+      .maybeSingle();
 
     if (error) throw error;
     if (!data) {
