@@ -1,6 +1,20 @@
 import { NextRequest } from "next/server";
+import { getPool } from "@/lib/db";
 import { createPgClient } from "@/lib/pg/create-client";
 import { getPosSession } from "@/lib/api/auth";
+
+function errorMessage(error: unknown, fallback = "Merge failed") {
+  if (error instanceof Error && error.message) return error.message;
+  if (
+    error &&
+    typeof error === "object" &&
+    "message" in error &&
+    typeof (error as { message: unknown }).message === "string"
+  ) {
+    return (error as { message: string }).message;
+  }
+  return fallback;
+}
 
 async function orderHasUnpaidSplits(
   db: ReturnType<typeof createPgClient>,
@@ -54,7 +68,6 @@ export async function POST(
 
     const db = createPgClient();
 
-    // PIN optional when authenticated POS session; validate when provided.
     if (supervisor_pin != null && String(supervisor_pin).trim() !== "") {
       const { data: supervisor } = await db
         .from("users")
@@ -71,23 +84,25 @@ export async function POST(
       }
     }
 
-    const { data: source } = await db
+    const { data: source, error: sourceErr } = await db
       .from("pos_orders")
-      .select("id, status, table_id, subtotal, discount_amount, tax_amount")
+      .select("id, status, table_id, discount_amount, tax_amount")
       .eq("id", sourceOrderId)
       .single();
 
-    const { data: target } = await db
+    const { data: target, error: targetErr } = await db
       .from("pos_orders")
-      .select(
-        "id, status, subtotal, discount_amount, tax_amount, merged_from_orders"
-      )
+      .select("id, status, discount_amount, tax_amount")
       .eq("id", target_order_id)
       .single();
 
-    if (!source || !target) {
+    if (sourceErr || targetErr || !source || !target) {
       return Response.json(
-        { success: false, error: "Order not found" },
+        {
+          success: false,
+          error:
+            errorMessage(sourceErr || targetErr, "Order not found"),
+        },
         { status: 404 }
       );
     }
@@ -132,17 +147,19 @@ export async function POST(
 
     if (moveErr) throw moveErr;
 
-    const { data: itemsAgg } = await db
+    const { data: itemsAgg, error: aggErr } = await db
       .from("pos_order_items")
       .select("subtotal, total_amount")
       .eq("order_id", target_order_id);
 
+    if (aggErr) throw aggErr;
+
     const newSubtotal = (itemsAgg || []).reduce(
-      (s, it) => s + (it.subtotal || 0),
+      (s, it) => s + Number(it.subtotal || 0),
       0
     );
     const newTotal = (itemsAgg || []).reduce(
-      (s, it) => s + (it.total_amount || 0),
+      (s, it) => s + Number(it.total_amount || 0),
       0
     );
 
@@ -152,26 +169,36 @@ export async function POST(
         subtotal: newSubtotal,
         total_amount: newTotal,
         discount_amount:
-          (target.discount_amount || 0) + (source.discount_amount || 0),
-        tax_amount: (target.tax_amount || 0) + (source.tax_amount || 0),
-        merged_from_orders: [
-          ...((target.merged_from_orders as string[]) || []),
-          sourceOrderId,
-        ],
+          Number(target.discount_amount || 0) +
+          Number(source.discount_amount || 0),
+        tax_amount:
+          Number(target.tax_amount || 0) + Number(source.tax_amount || 0),
         updated_at: new Date().toISOString(),
       })
       .eq("id", target_order_id);
 
     if (updTargetErr) throw updTargetErr;
 
-    await db
+    // UUID[] must use array_append — QueryBuilder JS arrays often fail to cast.
+    await getPool().query(
+      `UPDATE pos_orders
+       SET merged_from_orders = array_append(COALESCE(merged_from_orders, '{}'), $1::uuid),
+           updated_at = NOW()
+       WHERE id = $2`,
+      [sourceOrderId, target_order_id]
+    );
+
+    const { error: updSourceErr } = await db
       .from("pos_orders")
       .update({
         status: "merged",
         merged_to_order_id: target_order_id,
+        payment_status: "refunded",
         updated_at: new Date().toISOString(),
       })
       .eq("id", sourceOrderId);
+
+    if (updSourceErr) throw updSourceErr;
 
     if (source.table_id) {
       const { data: otherActive } = await db
@@ -213,7 +240,7 @@ export async function POST(
     return Response.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : "Merge failed",
+        error: errorMessage(error, "Merge failed"),
       },
       { status: 500 }
     );
