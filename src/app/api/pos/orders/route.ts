@@ -90,7 +90,8 @@ export async function GET(request: NextRequest) {
       .select(`
         *,
         customer:pos_customers(name, phone),
-        items:pos_order_items(*)
+        items:pos_order_items(*),
+        splits:pos_order_splits(id, split_index, label, total_amount, amount_paid, status)
       `)
       .order('ordered_at', { ascending: false })
       .limit(limit);

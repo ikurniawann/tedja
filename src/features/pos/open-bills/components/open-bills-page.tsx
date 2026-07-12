@@ -28,6 +28,8 @@ import { MergeTableModal } from "@/components/pos/MergeTableModal";
 import { VoidModal } from "@/components/pos/VoidModal";
 import { SplitBillModal, type SplitConfig } from "@/components/pos/SplitBillModal";
 import { SplitPaymentScreen } from "@/components/pos/SplitPaymentScreen";
+import { getActiveSplitSummary } from "../split-summary";
+import { toast } from "sonner";
 
 type OpenBillItem = {
   id?: string;
@@ -176,8 +178,18 @@ export function OpenBillsPage() {
   }
 
   function openSplit(order: Order) {
+    if (getActiveSplitSummary(order.splits)) {
+      toast.message("This bill is already split.", {
+        description: "Use Pay splits to continue guest payments.",
+      });
+      return;
+    }
     setSelectedOrder(order);
     setShowSplitModal(true);
+  }
+
+  function openPaySplits(order: Order) {
+    setSplitPaymentOrder(order);
   }
 
   const splitCartItems = useMemo(() => {
@@ -281,6 +293,7 @@ export function OpenBillsPage() {
               key={order.id}
               order={order}
               onPay={() => setPaymentOrder(order)}
+              onPaySplits={() => openPaySplits(order)}
               onSplit={() => openSplit(order)}
               onMove={() => openMove(order)}
               onMerge={() => openMerge(order)}
@@ -472,6 +485,7 @@ function Metric({
 function OpenBillCard({
   order,
   onPay,
+  onPaySplits,
   onSplit,
   onMove,
   onMerge,
@@ -479,11 +493,14 @@ function OpenBillCard({
 }: {
   order: Order;
   onPay: () => void;
+  onPaySplits: () => void;
   onSplit: () => void;
   onMove: () => void;
   onMerge: () => void;
   onVoid: () => void;
 }) {
+  const splitSummary = getActiveSplitSummary(order.splits);
+
   return (
     <article className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -494,6 +511,11 @@ function OpenBillCard({
             <Badge variant="outline" className="border-pink-200 bg-pink-50 text-pink-700">
               {paymentStatusLabel(order.payment_status)}
             </Badge>
+            {splitSummary ? (
+              <Badge variant="outline" className="border-primary/20 bg-primary/5 text-primary">
+                Split · {splitSummary.paid}/{splitSummary.total}
+              </Badge>
+            ) : null}
           </div>
           <div className="mt-2 flex flex-wrap gap-3 text-sm text-gray-500">
             <span className="inline-flex items-center gap-1">
@@ -528,14 +550,23 @@ function OpenBillCard({
       </div>
 
       <div className="mt-4 flex flex-wrap gap-2">
-        <Button className="gap-2 bg-pink-600 hover:bg-pink-700" onClick={onPay}>
-          <CreditCard className="size-4" />
-          Bayar
-        </Button>
-        <Button variant="outline" className="gap-2 border-pink-200 text-pink-700 hover:bg-pink-50" onClick={onSplit}>
-          <Split className="size-4" />
-          Split
-        </Button>
+        {splitSummary ? (
+          <Button className="gap-2 bg-pink-600 hover:bg-pink-700" onClick={onPaySplits}>
+            <Split className="size-4" />
+            Pay splits
+          </Button>
+        ) : (
+          <>
+            <Button className="gap-2 bg-pink-600 hover:bg-pink-700" onClick={onPay}>
+              <CreditCard className="size-4" />
+              Bayar
+            </Button>
+            <Button variant="outline" className="gap-2 border-pink-200 text-pink-700 hover:bg-pink-50" onClick={onSplit}>
+              <Split className="size-4" />
+              Split
+            </Button>
+          </>
+        )}
         <Button variant="outline" className="gap-2" onClick={onMove}>
           <MoveRight className="size-4" />
           Pindah

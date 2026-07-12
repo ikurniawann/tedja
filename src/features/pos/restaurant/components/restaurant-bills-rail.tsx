@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import type { PosTable } from "@/lib/pos-api";
 
 import { buildCashierHandoffUrl } from "../nav";
+import { getActiveSplitSummary } from "@/features/pos/open-bills/split-summary";
 import {
   billSelection,
   isBillSelected,
@@ -156,6 +157,7 @@ export function RestaurantBillsRail({
           openBills.map((order) => {
             const selected = isBillSelected(selection, order.id);
             const tableLabel = resolveOrderTableLabel(order, tablesById);
+            const splitSummary = getActiveSplitSummary(order.splits);
 
             return (
               <article
@@ -183,6 +185,14 @@ export function RestaurantBillsRail({
                       <Table2 className="size-3.5" />
                       <span className="truncate">{tableLabel}</span>
                     </div>
+                    {splitSummary ? (
+                      <Badge
+                        variant="outline"
+                        className="mt-2 border-primary/20 bg-primary/5 text-[10px] text-primary"
+                      >
+                        Split · {splitSummary.paid}/{splitSummary.total}
+                      </Badge>
+                    ) : null}
                   </div>
                   <div className="shrink-0 text-right text-sm font-bold text-gray-950">
                     {formatCurrency(Number(order.total_amount || 0))}
