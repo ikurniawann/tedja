@@ -266,35 +266,35 @@
   height: 2.5rem !important;
   gap: 0.5rem !important;
   border-radius: 0.5rem !important;
-  background-color: #db2777 !important;
+  background-color: var(--brand-primary) !important;
   padding-inline: 0.75rem !important;
   font-size: 0.875rem !important;
   font-weight: 600 !important;
-  color: #ffffff !important;
+  color: var(--primary-foreground) !important;
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08) !important;
 }
 
 .purchasing-main-button:hover {
-  background-color: #be185d !important;
+  background-color: var(--primary-700) !important;
 }
 
 .purchasing-secondary-button {
   height: 2.5rem !important;
   gap: 0.5rem !important;
   border-radius: 0.5rem !important;
-  border-color: #fbcfe8 !important;
-  background-color: #ffffff !important;
+  border-color: color-mix(in oklch, var(--brand-primary) 30%, white) !important;
+  background-color: var(--background) !important;
   padding-inline: 0.75rem !important;
   font-size: 0.875rem !important;
   font-weight: 500 !important;
-  color: #be185d !important;
+  color: var(--primary-700) !important;
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08) !important;
 }
 
 .purchasing-secondary-button:hover {
-  border-color: #fbcfe8 !important;
-  background-color: #fdf2f8 !important;
-  color: #be185d !important;
+  border-color: color-mix(in oklch, var(--brand-primary) 30%, white) !important;
+  background-color: var(--primary-50) !important;
+  color: var(--primary-700) !important;
 }
 
 /* Make interactive UI communicate clickability consistently. */

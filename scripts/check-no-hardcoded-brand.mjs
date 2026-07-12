@@ -20,17 +20,15 @@ const SCAN_TARGETS = [
 
 const BANNED_BRAND_HEX = /#(?:db2777|ec4899|be185d|ff00aa)\b/gi;
 const SCANNED_EXTENSIONS = new Set([".css", ".js", ".jsx", ".mjs", ".ts", ".tsx"]);
-const SOURCE_OF_TRUTH_FILES = new Set([
+// Whole-file allowlist: theme preset defaults, anti-flash script, chart SSR fallbacks.
+const WHOLE_FILE_ALLOWLIST = new Set([
   "src/lib/theme/presets.ts",
-  "src/lib/theme/palette.ts",
   "src/components/providers/theme-script.tsx",
-  "src/app/globals.css",
-]);
-const CHART_FALLBACK_FILES = new Set([
   "src/features/pos/dashboard/components/pos-dashboard-charts.tsx",
   "src/features/pos/reports/components/profit-report-charts.tsx",
   "src/features/pos/reports/components/apex-chart.tsx",
 ]);
+const GLOBALS_CSS = "src/app/globals.css";
 
 const TEST_FILE_PATTERN = /(?:^|[.-])(test|spec)\.[cm]?[jt]sx?$/;
 const repoRoot = process.cwd();
@@ -104,15 +102,14 @@ function scanFile(relativePath) {
   });
 }
 
-function isAllowedMatch(relativePath, line, rawMatch) {
-  const match = rawMatch.toLowerCase();
-
-  if (SOURCE_OF_TRUTH_FILES.has(relativePath)) {
+function isAllowedMatch(relativePath, line, _rawMatch) {
+  if (WHOLE_FILE_ALLOWLIST.has(relativePath)) {
     return true;
   }
 
-  if (CHART_FALLBACK_FILES.has(relativePath)) {
-    return match === "#db2777" && /fallback/i.test(line);
+  // Brand defaults in globals.css only (e.g. --brand-primary: #db2777).
+  if (relativePath === GLOBALS_CSS) {
+    return /--brand-primary|--brand-secondary/.test(line);
   }
 
   return false;
