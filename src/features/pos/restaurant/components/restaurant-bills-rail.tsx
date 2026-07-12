@@ -90,6 +90,7 @@ export interface RestaurantBillsRailProps {
   selection: NullableRestaurantSelection;
   immersive?: boolean;
   onSelect: (selection: RestaurantSelection) => void;
+  onPaySplits?: (order: Order) => void;
 }
 
 export function RestaurantBillsRail({
@@ -97,6 +98,7 @@ export function RestaurantBillsRail({
   selection,
   immersive = false,
   onSelect,
+  onPaySplits,
 }: RestaurantBillsRailProps) {
   const router = useRouter();
   const { data: orders = [], isLoading, error } = useOpenBills({
@@ -108,6 +110,11 @@ export function RestaurantBillsRail({
   const errorMessage = error instanceof Error ? error.message : null;
 
   const openBill = (order: Order) => {
+    const splitSummary = getActiveSplitSummary(order.splits);
+    if (splitSummary && onPaySplits) {
+      onPaySplits(order);
+      return;
+    }
     router.push(
       buildCashierHandoffUrl({
         orderId: order.id,
@@ -214,7 +221,7 @@ export function RestaurantBillsRail({
                       openBill(order);
                     }}
                   >
-                    Open
+                    {splitSummary ? "Pay" : "Open"}
                   </Button>
                 </div>
               </article>

@@ -220,6 +220,7 @@ function RestaurantPageContent() {
       toast.success("Split bill created.");
       setShowSplitModal(false);
       setSplitPaymentOrder(selectedOrder);
+      void refetchOrders();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to create split bill");
     }
@@ -302,6 +303,13 @@ function RestaurantPageContent() {
           availableCount={availableCount}
           occupiedCount={occupiedCount}
           onSplitBill={() => setShowSplitModal(true)}
+          onPaySplits={() => {
+            if (!selectedOrder) {
+              toast.error("Select an occupied table or bill");
+              return;
+            }
+            setSplitPaymentOrder(selectedOrder);
+          }}
           onMoveTable={handleStartMove}
           onSelectBill={handleSelectBill}
         />
@@ -328,6 +336,7 @@ function RestaurantPageContent() {
           selection={selection}
           immersive={immersive}
           onSelect={handleSelectBill}
+          onPaySplits={(order) => setSplitPaymentOrder(order)}
         />
       </div>
 
