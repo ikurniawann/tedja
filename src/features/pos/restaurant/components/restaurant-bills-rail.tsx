@@ -81,12 +81,12 @@ export function RestaurantBillsRail({
   onSelect,
 }: RestaurantBillsRailProps) {
   const router = useRouter();
-  const { data: orders = [], isLoading, isFetching, error } = useOpenBills({
+  const { data: orders = [], isLoading, error } = useOpenBills({
     limit: 200,
   });
 
   const openBills = useMemo(() => orders.filter(isOpenBill), [orders]);
-  const loading = isLoading || isFetching;
+  const loading = isLoading;
   const errorMessage = error instanceof Error ? error.message : null;
 
   const openBill = (order: Order) => {
