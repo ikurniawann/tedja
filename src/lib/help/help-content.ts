@@ -22,7 +22,8 @@ const HELP: Record<string, HelpEntry> = {
       "Void memerlukan PIN supervisor; seluruh void tercatat di laporan untuk audit.",
   },
   "pos.split-bill": {
-    default: "Pisahkan satu tagihan menjadi beberapa pembayaran terpisah.",
+    default:
+      "Split one bill into separate payments: equally across guests, or by assigning items to each guest.",
   },
   "pos.tax-toggle": {
     default: "Aktifkan/nonaktifkan pajak 10% pada transaksi ini.",

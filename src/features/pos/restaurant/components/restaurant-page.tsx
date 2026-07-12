@@ -340,6 +340,7 @@ function RestaurantPageContent() {
         cartItems={splitCartItems}
         onClose={() => setShowSplitModal(false)}
         onConfirm={handleConfirmSplit}
+        confirming={createSplitsMutation.isPending}
         formatCurrency={formatCurrency}
       />
 

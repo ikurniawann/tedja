@@ -405,6 +405,7 @@ export function OpenBillsPage() {
           setSelectedOrder(null);
         }}
         onConfirm={handleConfirmSplit}
+        confirming={createSplitsMutation.isPending}
         formatCurrency={formatCurrency}
       />
 
