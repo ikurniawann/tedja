@@ -461,6 +461,154 @@ hr {
 
 .arkiv-dashboard-theme { color-scheme: light; }
 [data-theme="dark"] { color-scheme: dark; }
+@media (prefers-color-scheme: dark) {
+  [data-theme="auto"] { color-scheme: dark; }
+}
+
+/* ──────────────────────────────────────────────────────────────────
+   Dark-mode compatibility for dashboard pages not yet migrated to
+   design tokens. `data-theme` lives on <html>; `.arkiv-dashboard-theme`
+   is the dashboard shell. Declarations use the semantic tokens (which
+   are already dark in this context), so these rules only take effect
+   under explicit dark or auto + OS-dark. As each module migrates to
+   tokens, its selectors here can be removed.
+   Note: popovers/dropdowns/datepicker are portaled to <body>, so they
+   are scoped to [data-theme="dark"] rather than the shell.
+   ────────────────────────────────────────────────────────────────── */
+@media (prefers-color-scheme: dark) {
+  [data-theme="auto"] .arkiv-dashboard-theme :is(
+    .bg-white, .bg-white\/50, .bg-white\/60, .bg-white\/70, .bg-white\/80, .bg-white\/90,
+    .bg-gray-50, .bg-gray-100, .bg-slate-50, .bg-slate-100,
+    [data-slot="card"], [data-slot="dialog-content"]
+  ) {
+    background-color: var(--card) !important;
+    color: var(--card-foreground);
+    border-color: var(--border) !important;
+  }
+  [data-theme="auto"] .arkiv-dashboard-theme aside {
+    background: linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(31, 41, 55, 0.96)) !important;
+    border-color: var(--border) !important;
+  }
+  [data-theme="auto"] .arkiv-dashboard-theme :is(
+    .bg-pink-50, .bg-pink-100, .bg-blue-50, .bg-emerald-50, .bg-green-50,
+    .bg-yellow-50, .bg-amber-50, .bg-red-50, .bg-indigo-50, .bg-purple-50, .bg-orange-50
+  ) {
+    background-color: rgba(30, 41, 59, 0.86) !important;
+  }
+  [data-theme="auto"] .arkiv-dashboard-theme :is(
+    .text-gray-950, .text-gray-900, .text-gray-800,
+    .text-slate-950, .text-slate-900, .text-slate-800, .text-black
+  ) { color: #f8fafc !important; }
+  [data-theme="auto"] .arkiv-dashboard-theme :is(
+    .text-gray-700, .text-gray-600, .text-slate-700, .text-slate-600
+  ) { color: #cbd5e1 !important; }
+  [data-theme="auto"] .arkiv-dashboard-theme :is(
+    .text-gray-500, .text-gray-400, .text-slate-500, .text-slate-400
+  ) { color: #94a3b8 !important; }
+  [data-theme="auto"] .arkiv-dashboard-theme :is(
+    .border-gray-50, .border-gray-100, .border-gray-200, .border-gray-200\/70,
+    .border-gray-300, .border-slate-100, .border-slate-200, .border-pink-100,
+    .border-pink-200, .border-black\/5
+  ) { border-color: var(--border) !important; }
+  [data-theme="auto"] .arkiv-dashboard-theme :is(table thead, tr, th, td) {
+    border-color: rgba(148, 163, 184, 0.22) !important;
+  }
+  [data-theme="auto"] .arkiv-dashboard-theme :is(
+    tr:hover, .hover\:bg-gray-50:hover, .hover\:bg-gray-100:hover,
+    .hover\:bg-slate-50:hover, .hover\:bg-pink-50:hover, .hover\:bg-pink-100:hover
+  ) { background-color: rgba(30, 41, 59, 0.92) !important; }
+  [data-theme="auto"] .arkiv-dashboard-theme :is(
+    input:not([type="checkbox"]):not([type="radio"]), textarea, select,
+    [data-slot="input"], [data-slot="select-trigger"], [data-slot="textarea"]
+  ) {
+    background: rgba(15, 23, 42, 0.94) !important;
+    border-color: var(--input) !important;
+    color: var(--foreground) !important;
+  }
+  [data-theme="auto"] .arkiv-dashboard-theme :is(input, textarea)::placeholder { color: #94a3b8 !important; }
+  [data-theme="auto"] :is(
+    [data-slot="popover"], [data-slot="dropdown-menu"], [data-slot="combobox"],
+    .popover, .dropdown-menu, [role="listbox"]:not([data-arkiv-ai-listbox="true"])
+  ) {
+    background: var(--popover) !important;
+    background-color: var(--popover) !important;
+    border-color: var(--border) !important;
+    color: var(--popover-foreground) !important;
+  }
+}
+
+[data-theme="dark"] .arkiv-dashboard-theme :is(
+  .bg-white, .bg-white\/50, .bg-white\/60, .bg-white\/70, .bg-white\/80, .bg-white\/90,
+  .bg-gray-50, .bg-gray-100, .bg-slate-50, .bg-slate-100,
+  [data-slot="card"], [data-slot="dialog-content"]
+) {
+  background-color: var(--card) !important;
+  color: var(--card-foreground);
+  border-color: var(--border) !important;
+}
+[data-theme="dark"] .arkiv-dashboard-theme aside {
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(31, 41, 55, 0.96)) !important;
+  border-color: var(--border) !important;
+}
+[data-theme="dark"] .arkiv-dashboard-theme :is(
+  .bg-pink-50, .bg-pink-100, .bg-blue-50, .bg-emerald-50, .bg-green-50,
+  .bg-yellow-50, .bg-amber-50, .bg-red-50, .bg-indigo-50, .bg-purple-50, .bg-orange-50
+) {
+  background-color: rgba(30, 41, 59, 0.86) !important;
+}
+[data-theme="dark"] .arkiv-dashboard-theme :is(
+  .text-gray-950, .text-gray-900, .text-gray-800,
+  .text-slate-950, .text-slate-900, .text-slate-800, .text-black
+) { color: #f8fafc !important; }
+[data-theme="dark"] .arkiv-dashboard-theme :is(
+  .text-gray-700, .text-gray-600, .text-slate-700, .text-slate-600
+) { color: #cbd5e1 !important; }
+[data-theme="dark"] .arkiv-dashboard-theme :is(
+  .text-gray-500, .text-gray-400, .text-slate-500, .text-slate-400
+) { color: #94a3b8 !important; }
+[data-theme="dark"] .arkiv-dashboard-theme :is(
+  .border-gray-50, .border-gray-100, .border-gray-200, .border-gray-200\/70,
+  .border-gray-300, .border-slate-100, .border-slate-200, .border-pink-100,
+  .border-pink-200, .border-black\/5
+) { border-color: var(--border) !important; }
+[data-theme="dark"] .arkiv-dashboard-theme :is(table thead, tr, th, td) {
+  border-color: rgba(148, 163, 184, 0.22) !important;
+}
+[data-theme="dark"] .arkiv-dashboard-theme :is(
+  tr:hover, .hover\:bg-gray-50:hover, .hover\:bg-gray-100:hover,
+  .hover\:bg-slate-50:hover, .hover\:bg-pink-50:hover, .hover\:bg-pink-100:hover
+) { background-color: rgba(30, 41, 59, 0.92) !important; }
+[data-theme="dark"] .arkiv-dashboard-theme :is(
+  input:not([type="checkbox"]):not([type="radio"]), textarea, select,
+  [data-slot="input"], [data-slot="select-trigger"], [data-slot="textarea"]
+) {
+  background: rgba(15, 23, 42, 0.94) !important;
+  border-color: var(--input) !important;
+  color: var(--foreground) !important;
+}
+[data-theme="dark"] .arkiv-dashboard-theme :is(input, textarea)::placeholder { color: #94a3b8 !important; }
+[data-theme="dark"] :is(
+  [data-slot="popover"], [data-slot="dropdown-menu"], [data-slot="combobox"],
+  .popover, .dropdown-menu, [role="listbox"]:not([data-arkiv-ai-listbox="true"])
+) {
+  background: var(--popover) !important;
+  background-color: var(--popover) !important;
+  border-color: var(--border) !important;
+  color: var(--popover-foreground) !important;
+}
+
+/* Datepicker — dark surface when portaled inside a dark theme. */
+[data-theme="dark"] .react-datepicker {
+  background-color: #0f172a;
+  border-color: rgba(148, 163, 184, 0.28);
+  color: #e5e7eb;
+}
+[data-theme="dark"] .react-datepicker__header { background-color: #0f172a; }
+[data-theme="dark"] .react-datepicker__current-month { color: #f1f5f9; }
+[data-theme="dark"] .react-datepicker__day-name { color: #94a3b8; }
+[data-theme="dark"] .react-datepicker__day { color: #cbd5e1; }
+[data-theme="dark"] .react-datepicker__day:hover { background-color: rgba(30, 41, 59, 0.9); }
+[data-theme="dark"] .react-datepicker__day--outside-month { color: #475569; }
 
 /* Custom react-datepicker styles */
 .react-datepicker {

@@ -25,11 +25,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="id">
+    // ThemeScript mutates data-theme + brand CSS vars on <html> before React
+    // hydrates; suppress the expected attribute mismatch (same pattern as next-themes).
+    <html lang="id" suppressHydrationWarning>
       <head>
         <ThemeScript />
       </head>
-      <body className={inter.className}>
+      <body className={inter.className} suppressHydrationWarning>
         <ErrorBoundary>
           <ThemeProvider>
             <QueryProvider>
