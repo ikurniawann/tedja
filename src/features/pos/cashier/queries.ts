@@ -9,6 +9,10 @@ export const useCashierTables = () =>
   useQuery({
     queryKey: cashierQueryKeys.tables(),
     queryFn: listCashierTables,
+    // Restaurant board must refresh after cashier handoff returns.
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
   });
 
 export const useCashierOrder = (orderId: string | null) =>

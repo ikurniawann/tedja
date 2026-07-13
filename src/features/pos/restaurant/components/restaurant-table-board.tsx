@@ -13,12 +13,17 @@ import { floorLabel, floorSortKey } from "@/features/pos/tables/floor-options";
 import { buildCashierHandoffUrl } from "@/features/pos/restaurant/nav";
 import {
   canPickMergeDestination,
-  canPickMoveDestination,
+  canPickSeatDestination,
   canPickTransferDestination,
 } from "@/features/pos/restaurant/move-destination";
 import type { PosTable } from "@/lib/pos-api";
 
-export type RestaurantBoardMode = "move" | "transfer" | "merge" | null;
+export type RestaurantBoardMode =
+  | "move"
+  | "transfer"
+  | "merge"
+  | "seat"
+  | null;
 
 interface TableFloorGroup {
   floorKey: string;
@@ -70,7 +75,9 @@ function canPickForMode(
   sourceTableId?: string | null
 ) {
   const opts = { sourceTableId };
-  if (mode === "move") return canPickMoveDestination(table, opts);
+  if (mode === "move" || mode === "seat") {
+    return canPickSeatDestination(table, opts);
+  }
   if (mode === "transfer") return canPickTransferDestination(table, opts);
   if (mode === "merge") return canPickMergeDestination(table, opts);
   return false;
@@ -78,13 +85,14 @@ function canPickForMode(
 
 function modeHint(mode: RestaurantBoardMode) {
   if (mode === "move") return " · tap available to move";
+  if (mode === "seat") return " · tap available to seat";
   if (mode === "transfer") return " · tap a table for items";
   if (mode === "merge") return " · tap occupied to merge";
   return "";
 }
 
 function pickBlockedMessage(mode: RestaurantBoardMode) {
-  if (mode === "move") return "Choose an available table.";
+  if (mode === "move" || mode === "seat") return "Choose an available table.";
   if (mode === "transfer") return "Choose an available or occupied table.";
   if (mode === "merge") return "Choose an occupied table.";
   return "Choose a destination table.";

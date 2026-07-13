@@ -36,6 +36,7 @@ import {
   RestaurantTableBoard,
   type RestaurantBoardMode,
 } from "./restaurant-table-board";
+import { WaitingListDialog } from "./waiting-list-dialog";
 import {
   isRestaurantImmersive,
   restaurantPath,
@@ -46,13 +47,29 @@ import {
   type NullableRestaurantSelection,
   type RestaurantSelection,
 } from "../selection";
+import { canPickSeatDestination } from "../move-destination";
+import { useReservationList } from "@/features/pos/reservation/queries";
+import { reservationQueryKeys } from "@/features/pos/reservation/query-keys";
+import { seatReservation } from "@/features/pos/reservation/api";
+import type { ReservationRow } from "@/features/pos/reservation/types";
 
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat("id-ID", {
-    style: "currency",
-    currency: "IDR",
+    minimumFractionDigits: 0,
     maximumFractionDigits: 0,
-  }).format(value || 0);
+  }).format(Number.isFinite(Number(value)) ? Math.abs(Number(value)) : 0);
+
+function todayIsoDate() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function reservationGuestName(row: ReservationRow) {
+  return row.customer_name?.trim() || row.customer?.name?.trim() || "Guest";
+}
 
 type OpenBillItem = {
   id?: string;
@@ -92,8 +109,32 @@ function RestaurantPageContent() {
   const [boardBusy, setBoardBusy] = useState(false);
   const [transferItems, setTransferItems] = useState<MoveItemsSelection[]>([]);
   const [showMoveItemsDialog, setShowMoveItemsDialog] = useState(false);
+  const [showWaitingList, setShowWaitingList] = useState(false);
+  const [seatingReservation, setSeatingReservation] =
+    useState<ReservationRow | null>(null);
+  const [seatingId, setSeatingId] = useState<string | null>(null);
   const [showSplitModal, setShowSplitModal] = useState(false);
   const [splitPaymentOrder, setSplitPaymentOrder] = useState<Order | null>(null);
+
+  const waitingDate = todayIsoDate();
+  const {
+    data: reservationRows = [],
+    isLoading: waitingLoading,
+    isError: waitingError,
+    refetch: refetchWaitingList,
+  } = useReservationList({ date: waitingDate });
+
+  const waitingList = useMemo(() => {
+    return reservationRows
+      .filter((row) => {
+        const status = String(row.status || "").toLowerCase();
+        return status === "pending" || status === "confirmed";
+      })
+      .slice()
+      .sort((a, b) =>
+        String(a.time_slot || "").localeCompare(String(b.time_slot || ""))
+      );
+  }, [reservationRows]);
 
   const tableError = error instanceof Error ? error.message : null;
 
@@ -163,6 +204,78 @@ function RestaurantPageContent() {
     setBoardMode(null);
     setBoardBusy(false);
     setTransferItems([]);
+    setSeatingReservation(null);
+  };
+
+  const refreshBoard = () => {
+    void queryClient.invalidateQueries({ queryKey: cashierQueryKeys.tables() });
+    void queryClient.invalidateQueries({ queryKey: openBillsQueryKeys.all });
+    void queryClient.invalidateQueries({ queryKey: reservationQueryKeys.all });
+    void refetchOrders();
+  };
+
+  const executeSeat = async (
+    reservation: ReservationRow,
+    tableId?: string | null
+  ) => {
+    const name = reservationGuestName(reservation);
+    try {
+      setSeatingId(reservation.id);
+      setBoardBusy(true);
+      const data = await seatReservation(
+        reservation.id,
+        tableId ? { table_id: tableId } : undefined
+      );
+      const order = data.order;
+      const seatedTableId = order.table_id || tableId || null;
+      toast.success(`${name} seated.`, {
+        description: order.order_number
+          ? `Open bill ${order.order_number}`
+          : "Empty open bill created",
+      });
+      setShowWaitingList(false);
+      exitBoardMode();
+      if (seatedTableId && order.id) {
+        setSelection(tableSelection(seatedTableId, order.id));
+      } else {
+        setSelection(null);
+      }
+      refreshBoard();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to seat guest");
+    } finally {
+      setSeatingId(null);
+      setBoardBusy(false);
+    }
+  };
+
+  const handleWaitingListSeat = async (reservation: ReservationRow) => {
+    if (seatingId || boardBusy) return;
+
+    const assignedId = reservation.table_id;
+    const assigned = assignedId ? tablesById.get(assignedId) : undefined;
+    const canUseAssigned =
+      Boolean(assigned) &&
+      canPickSeatDestination(assigned!, { sourceTableId: null });
+
+    if (canUseAssigned && assignedId) {
+      await executeSeat(reservation, assignedId);
+      return;
+    }
+
+    if (assignedId && assigned && !canUseAssigned) {
+      toast.message("Assigned table is not available.", {
+        description: "Pick another available table on the floor plan.",
+      });
+    }
+
+    setShowWaitingList(false);
+    setTransferItems([]);
+    setSeatingReservation(reservation);
+    setBoardMode("seat");
+    toast.message(`Seat ${reservationGuestName(reservation)}`, {
+      description: "Tap an available table on the floor plan.",
+    });
   };
 
   const handleSelectOccupied = (table: PosTable) => {
@@ -197,6 +310,7 @@ function RestaurantPageContent() {
       return;
     }
     setTransferItems([]);
+    setSeatingReservation(null);
     setBoardMode("move");
     toast.message("Select an available table.", {
       description: "Tap a green table on the floor plan to move this bill.",
@@ -216,22 +330,29 @@ function RestaurantPageContent() {
       return;
     }
     setTransferItems([]);
+    setSeatingReservation(null);
     setBoardMode("merge");
     toast.message("Select an occupied table.", {
       description: "Tap a destination bill to merge into.",
     });
   };
 
-  const refreshBoard = () => {
-    void queryClient.invalidateQueries({ queryKey: cashierQueryKeys.tables() });
-    void queryClient.invalidateQueries({ queryKey: openBillsQueryKeys.all });
-    void refetchOrders();
-  };
-
   const handlePickDestination = async (table: PosTable) => {
-    if (!selectedOrder || boardBusy || !boardMode) return;
+    if (boardBusy || !boardMode) return;
 
     const label = table.label || table.table_number || table.name || "table";
+
+    if (boardMode === "seat") {
+      if (!seatingReservation) {
+        toast.error("No reservation selected to seat");
+        exitBoardMode();
+        return;
+      }
+      await executeSeat(seatingReservation, table.id);
+      return;
+    }
+
+    if (!selectedOrder) return;
 
     if (boardMode === "move") {
       try {
@@ -385,7 +506,33 @@ function RestaurantPageContent() {
         </Button>
       </div>
 
-      {boardMode && selectedOrder ? (
+      {boardMode === "seat" && seatingReservation ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3">
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-foreground">
+              Seat {reservationGuestName(seatingReservation)} — tap an available
+              table
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {boardBusy
+                ? "Seating…"
+                : `${seatingReservation.time_slot || "—"} · ${seatingReservation.pax_count} pax`}
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            className="shrink-0 border-gray-200/80"
+            disabled={boardBusy}
+            onClick={() => {
+              exitBoardMode();
+              toast.message("Seat cancelled.");
+            }}
+          >
+            Cancel
+          </Button>
+        </div>
+      ) : boardMode && selectedOrder ? (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3">
           <div className="min-w-0">
             <p className="text-sm font-medium text-foreground">
@@ -453,6 +600,11 @@ function RestaurantPageContent() {
           onMoveTable={handleStartMove}
           onMoveItems={handleStartMoveItems}
           onMergeTable={handleStartMerge}
+          onWaitingList={() => {
+            if (boardMode) exitBoardMode();
+            setShowWaitingList(true);
+            void refetchWaitingList();
+          }}
           onSelectBill={handleSelectBill}
         />
 
@@ -490,11 +642,23 @@ function RestaurantPageContent() {
         onContinue={(items) => {
           setShowMoveItemsDialog(false);
           setTransferItems(items);
+          setSeatingReservation(null);
           setBoardMode("transfer");
           toast.message("Select a destination table.", {
             description: "Tap an available or occupied table on the floor plan.",
           });
         }}
+      />
+
+      <WaitingListDialog
+        open={showWaitingList}
+        onOpenChange={setShowWaitingList}
+        reservations={waitingList}
+        loading={waitingLoading}
+        error={waitingError}
+        seatingId={seatingId}
+        tablesById={tablesById}
+        onSeat={handleWaitingListSeat}
       />
 
       <SplitBillModal

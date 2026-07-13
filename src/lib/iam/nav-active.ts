@@ -62,24 +62,30 @@ export function isNavLinkActive(
 export const DUPLICATE_ROUTE_GROUPS = [
   {
     prefix: "/dashboard/settings",
-    items: ["user-management (group)", "user-management.menus", "user-management.roles"],
+    items: [
+      "settings (group)",
+      "settings.business",
+      "settings.appearance",
+      "settings.menus",
+      "settings.roles",
+    ],
   },
   {
     prefix: "/dashboard/settings/business",
-    items: ["business (group)", "business.hierarchy"],
+    items: ["settings.business"],
   },
   {
     prefix: "/dashboard/master",
     items: [
-      "user-management.master (group)",
-      "user-management.master.departments",
-      "user-management.master.positions",
-      "user-management.master.employment-statuses",
+      "hris.master (group)",
+      "hris.master.departments",
+      "hris.master.positions",
+      "hris.master.employment-statuses",
     ],
   },
   {
     prefix: "/dashboard/employees",
-    items: ["hris.employees (group)", "hris.employees.all"],
+    items: ["hris.users"],
   },
   {
     prefix: "/dashboard/purchasing/grn",
@@ -95,7 +101,15 @@ export const DUPLICATE_ROUTE_GROUPS = [
   },
   {
     prefix: "/dashboard/pos",
-    items: ["pos (group)", "pos.reports.dashboard"],
+    items: [
+      "pos (group)",
+      "pos.reports.dashboard",
+      "pos.operations.tables",
+      "pos.operations.cashier",
+      "pos.operations.restaurant",
+      "pos.operations.orders",
+      "pos.operations.reservation",
+    ],
   },
   {
     prefix: "/dashboard/crm",

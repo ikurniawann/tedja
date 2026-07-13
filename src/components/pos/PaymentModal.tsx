@@ -33,10 +33,10 @@ const PAYMENT_OPTIONS: Array<{
   desc: string;
   icon: typeof Banknote;
 }> = [
-  { key: "cash", title: "Cash", desc: "Bayar dengan uang tunai", icon: Banknote },
+  { key: "cash", title: "Cash", desc: "Pay with cash", icon: Banknote },
   { key: "qris", title: "QRIS", desc: "Scan QR code", icon: QrCode },
   { key: "credit_card", title: "Credit Card", desc: "Visa / Mastercard", icon: CreditCard },
-  { key: "ark_coin", title: "ARK Coin", desc: "Saldo member", icon: Coins },
+  { key: "ark_coin", title: "ARK Coin", desc: "Member balance", icon: Coins },
 ];
 
 interface Props {
@@ -112,9 +112,9 @@ export function PaymentModal({
     <Dialog open={open} onOpenChange={(v) => !v && !submitting && onClose()}>
       <DialogPanel size="md">
         <DialogPanelHeader>
-          <DialogPanelTitle>Metode Pembayaran</DialogPanelTitle>
+          <DialogPanelTitle>Payment Method</DialogPanelTitle>
           <DialogPanelDescription>
-            Pilih cara bayar untuk tagihan ini.
+            Choose how to pay this bill.
           </DialogPanelDescription>
         </DialogPanelHeader>
 
@@ -169,7 +169,7 @@ export function PaymentModal({
           {method === "cash" && (
             <div className="space-y-3 rounded-xl border border-gray-200/70 bg-muted/30 p-4">
               <label className="text-sm font-medium text-foreground">
-                Jumlah uang diterima
+                Amount received
               </label>
               <Input
                 type="text"
@@ -184,7 +184,7 @@ export function PaymentModal({
               />
               <div className="flex items-center justify-between text-sm">
                 <span className="text-muted-foreground">
-                  {change >= 0 ? "Kembalian" : "Kurang"}
+                  {change >= 0 ? "Change" : "Shortfall"}
                 </span>
                 <span
                   className={cn(
@@ -202,10 +202,10 @@ export function PaymentModal({
             <div className="space-y-3 rounded-xl border border-amber-200/80 bg-amber-50 p-4 text-center">
               <Wifi className="mx-auto h-8 w-8 text-amber-500" />
               <div className="text-sm font-semibold text-amber-800">
-                Member belum dipilih
+                No member selected
               </div>
               <p className="text-xs text-amber-700/80">
-                Tap kartu NFC atau pilih member untuk bayar dengan ARK Coin.
+                Tap an NFC card or select a member to pay with ARK Coin.
               </p>
               <Button
                 type="button"
@@ -213,7 +213,7 @@ export function PaymentModal({
                 disabled={submitting}
                 className="w-full bg-amber-500 text-white hover:bg-amber-600"
               >
-                Tap kartu NFC
+                Tap NFC card
               </Button>
             </div>
           )}
@@ -221,13 +221,13 @@ export function PaymentModal({
           {method === "ark_coin" && selectedCustomer && (
             <div className="space-y-2 rounded-xl border border-amber-200/80 bg-amber-50 p-4">
               <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Saldo ARK</span>
+                <span className="text-muted-foreground">ARK balance</span>
                 <span className="font-semibold text-amber-700">
                   {formatArk(selectedCustomer.ark_coin_balance)}
                 </span>
               </div>
               <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Total tagihan</span>
+                <span className="text-muted-foreground">Bill total</span>
                 <span className="font-semibold text-foreground">
                   {formatArk(total)}
                 </span>
@@ -241,8 +241,8 @@ export function PaymentModal({
                 )}
               >
                 {selectedCustomer.ark_coin_balance >= total
-                  ? "Saldo cukup untuk membayar penuh"
-                  : `Saldo kurang ${formatArk(total - selectedCustomer.ark_coin_balance)}`}
+                  ? "Balance covers the full amount"
+                  : `Short by ${formatArk(total - selectedCustomer.ark_coin_balance)}`}
               </p>
             </div>
           )}
@@ -263,7 +263,7 @@ export function PaymentModal({
             onClick={onClose}
             disabled={submitting}
           >
-            Batal
+            Cancel
           </Button>
           <Button
             type="button"
@@ -280,10 +280,10 @@ export function PaymentModal({
             {submitting ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Memproses…
+                Processing…
               </>
             ) : (
-              "Konfirmasi pembayaran"
+              "Confirm payment"
             )}
           </Button>
         </DialogFooter>

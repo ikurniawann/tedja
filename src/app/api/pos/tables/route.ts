@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createPgClient } from "@/lib/pg/create-client";
 import { getPosSession } from "@/lib/api/auth";
+import { generateTableQrCode } from "@/features/pos/tables/qr-code";
+import { resolveTableBoardStatus } from "@/features/pos/restaurant/table-board-status";
 
 type TableRow = {
   id: string;
   table_number?: string | null;
   name?: string | null;
+  floor?: string | null;
   area?: string | null;
   capacity?: number | string | null;
   status?: string | null;
@@ -23,9 +26,12 @@ type ActiveOrderRow = {
   status?: string | null;
   payment_status?: string | null;
   total_amount?: number | string | null;
+  pre_settled_at?: string | null;
 };
 
 const TABLE_STATUSES = ["available", "occupied", "reserved", "maintenance"] as const;
+const SELECT_COLS =
+  "id, table_number, name, floor, area, capacity, status, qr_code, notes, is_active, pos_x, pos_y";
 
 function toNumber(value: unknown) {
   const numeric = Number(value);
@@ -37,36 +43,44 @@ function normalizeTable(
   activeOrder?: ActiveOrderRow | null
 ) {
   const tableNumber = table.table_number || table.qr_code || table.id;
+  const orderPayload = activeOrder
+    ? {
+        id: activeOrder.id,
+        order_number: activeOrder.order_number,
+        status: activeOrder.status,
+        payment_status: activeOrder.payment_status,
+        total_amount: toNumber(activeOrder.total_amount),
+        pre_settled_at: activeOrder.pre_settled_at ?? null,
+      }
+    : null;
+
   return {
     id: table.id,
     table_number: tableNumber,
     name: table.name || tableNumber,
     label: table.name || tableNumber,
+    floor: table.floor || null,
     area: table.area || null,
     capacity: toNumber(table.capacity) || 4,
-    status: activeOrder ? "occupied" : table.status || "available",
+    status: resolveTableBoardStatus({
+      tableStatus: table.status || "available",
+      activeOrder: orderPayload,
+    }),
     qr_code: table.qr_code || null,
     notes: table.notes || null,
     is_active: table.is_active !== false,
     pos_x: table.pos_x == null ? null : Number(table.pos_x),
     pos_y: table.pos_y == null ? null : Number(table.pos_y),
-    active_order: activeOrder
-      ? {
-          id: activeOrder.id,
-          order_number: activeOrder.order_number,
-          status: activeOrder.status,
-          payment_status: activeOrder.payment_status,
-          total_amount: toNumber(activeOrder.total_amount),
-        }
-      : null,
+    active_order: orderPayload,
   };
 }
 
-function parsePayload(body: Record<string, unknown>) {
+function parsePayload(body: Record<string, unknown>, { autoQr }: { autoQr: boolean }) {
   const table_number = String(body.table_number ?? "").trim();
   const name = body.name != null ? String(body.name).trim() || null : null;
+  const floor = body.floor != null ? String(body.floor).trim() || null : null;
   const area = body.area != null ? String(body.area).trim() || null : null;
-  const qr_code = body.qr_code != null ? String(body.qr_code).trim() || null : null;
+  let qr_code = body.qr_code != null ? String(body.qr_code).trim() || null : null;
   const notes = body.notes != null ? String(body.notes).trim() || null : null;
   const capacity = Math.max(1, Math.floor(toNumber(body.capacity) || 4));
   const is_active = body.is_active !== false;
@@ -76,13 +90,18 @@ function parsePayload(body: Record<string, unknown>) {
     : "available";
 
   if (!table_number) {
-    return { error: "Nomor meja wajib diisi" as const };
+    return { error: "Table number is required" as const };
+  }
+
+  if (!qr_code && autoQr) {
+    qr_code = generateTableQrCode(table_number);
   }
 
   return {
     data: {
       table_number,
       name,
+      floor,
       area,
       qr_code,
       notes,
@@ -109,9 +128,7 @@ export async function GET(request: NextRequest) {
 
     let tableQuery = db
       .from("pos_tables")
-      .select(
-        "id, table_number, name, area, capacity, status, qr_code, notes, is_active, pos_x, pos_y"
-      )
+      .select(SELECT_COLS)
       .order("table_number");
 
     if (!includeInactive) tableQuery = tableQuery.eq("is_active", true);
@@ -121,15 +138,30 @@ export async function GET(request: NextRequest) {
 
     const { data: activeOrders, error: orderError } = await db
       .from("pos_orders")
-      .select("id, order_number, table_id, status, payment_status, total_amount")
+      .select(
+        "id, order_number, table_id, status, payment_status, total_amount, pre_settled_at"
+      )
       .not("table_id", "is", null)
-      .in("status", ["pending", "confirmed", "preparing", "ready", "served"]);
+      .in("status", ["pending", "confirmed", "preparing", "ready", "served"])
+      .neq("payment_status", "paid");
 
     if (orderError) throw orderError;
 
     const activeOrderByTable = new Map<string, ActiveOrderRow>();
     for (const order of (activeOrders ?? []) as ActiveOrderRow[]) {
-      if (order.table_id) activeOrderByTable.set(order.table_id, order);
+      if (!order.table_id) continue;
+      const existing = activeOrderByTable.get(order.table_id);
+      // Prefer a non-pre-settled order when both exist (added food after billing).
+      if (
+        existing?.pre_settled_at &&
+        !order.pre_settled_at
+      ) {
+        activeOrderByTable.set(order.table_id, order);
+        continue;
+      }
+      if (!existing) {
+        activeOrderByTable.set(order.table_id, order);
+      }
     }
 
     const normalizedTables = ((tables ?? []) as TableRow[]).map((table) =>
@@ -146,7 +178,7 @@ export async function GET(request: NextRequest) {
       {
         success: false,
         error:
-          error instanceof Error ? error.message : "Gagal memuat meja POS",
+          error instanceof Error ? error.message : "Failed to load POS tables",
       },
       { status: 500 }
     );
@@ -164,7 +196,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = (await request.json()) as Record<string, unknown>;
-    const parsed = parsePayload(body);
+    const parsed = parsePayload(body, { autoQr: true });
     if ("error" in parsed) {
       return NextResponse.json(
         { success: false, error: parsed.error },
@@ -182,9 +214,7 @@ export async function POST(request: NextRequest) {
           parsed.data.status === "occupied" ? "available" : parsed.data.status,
         current_order_id: null,
       })
-      .select(
-        "id, table_number, name, area, capacity, status, qr_code, notes, is_active, pos_x, pos_y"
-      )
+      .select(SELECT_COLS)
       .single();
 
     if (error) {
@@ -192,7 +222,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json(
           {
             success: false,
-            error: "Nomor meja atau QR code sudah digunakan",
+            error: "Table number or QR code already exists",
           },
           { status: 409 }
         );
@@ -202,7 +232,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: "Meja berhasil ditambahkan",
+      message: "Table created",
       data: normalizeTable(data as TableRow),
     });
   } catch (error) {
@@ -211,7 +241,7 @@ export async function POST(request: NextRequest) {
       {
         success: false,
         error:
-          error instanceof Error ? error.message : "Gagal menambahkan meja",
+          error instanceof Error ? error.message : "Failed to create table",
       },
       { status: 500 }
     );

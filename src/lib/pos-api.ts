@@ -87,14 +87,15 @@ export interface Customer {
   total_spent: number;
   visit_count: number;
   discount?: number; // Discount percentage based on tier
+  nfc_uid?: string | null;
 }
 
-export async function getCustomers(params?: { search?: string; phone?: string }) {
+export async function getCustomers(params?: { search?: string; phone?: string; nfc_uid?: string }) {
   const queryString = params ? new URLSearchParams(params as any).toString() : '';
   return fetchAPI<{ success: boolean; data: Customer[] }>(`/customers${queryString ? '?' + queryString : ''}`);
 }
 
-export async function saveCustomer(customer: Partial<Customer> & { phone: string; enroll_member?: boolean }) {
+export async function saveCustomer(customer: Partial<Customer> & { phone: string; enroll_member?: boolean; nfc_uid?: string }) {
   return fetchAPI<{ success: boolean; data: Customer; message: string }>('/customers', {
     method: 'POST',
     body: JSON.stringify(customer),
@@ -536,8 +537,13 @@ export async function processTopup(data: {
 // ============ RESERVATIONS ============
 
 export async function getReservations(params?: { date?: string; status?: string }) {
-  const queryString = params ? new URLSearchParams(params as any).toString() : '';
-  return fetchAPI<{ success: boolean; data: any[] }>(`/reservations${queryString ? '?' + queryString : ''}`);
+  const search = new URLSearchParams();
+  if (params?.date) search.set("date", params.date);
+  if (params?.status) search.set("status", params.status);
+  const queryString = search.toString();
+  return fetchAPI<{ success: boolean; data: any[] }>(
+    `/reservations${queryString ? `?${queryString}` : ""}`
+  );
 }
 
 export async function createReservation(reservation: {
@@ -547,10 +553,12 @@ export async function createReservation(reservation: {
   time_slot: string;
   pax_count: number;
   table_id?: string;
+  customer_id?: string;
   deposit_amount?: number;
   notes?: string;
+  special_requests?: string;
 }) {
-  return fetchAPI<{ success: boolean; data: any }>('/reservations', {
+  return fetchAPI<{ success: boolean; data: any; error?: string }>('/reservations', {
     method: 'POST',
     body: JSON.stringify(reservation),
   });
@@ -564,6 +572,24 @@ export async function updateReservationStatus(
   return fetchAPI<{ success: boolean; data: any }>(`/reservations/${reservationId}`, {
     method: 'PATCH',
     body: JSON.stringify({ status, ...additionalData }),
+  });
+}
+
+export async function seatReservation(
+  reservationId: string,
+  payload?: { table_id?: string | null }
+) {
+  return fetchAPI<{
+    success: boolean;
+    data?: {
+      reservation: unknown;
+      order: { id: string; table_id?: string | null; order_number?: string };
+      message?: string;
+    };
+    error?: string;
+  }>(`/reservations/${reservationId}/seat`, {
+    method: "POST",
+    body: JSON.stringify(payload ?? {}),
   });
 }
 

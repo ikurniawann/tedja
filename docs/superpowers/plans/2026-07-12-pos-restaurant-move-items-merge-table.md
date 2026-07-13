@@ -69,4 +69,8 @@
 
 ## Execution
 
-User requested immediate implementation — execute inline in this session.
+User requested immediate implementation — Tasks 1–3 done.
+
+- [x] Task 1: Destination helpers + tests
+- [x] Task 2: transfer-items API + merge PIN tweak + client
+- [x] Task 3: MoveItemsDialog + restaurant UI wiring

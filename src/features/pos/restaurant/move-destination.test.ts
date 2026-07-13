@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   canPickMergeDestination,
   canPickMoveDestination,
+  canPickSeatDestination,
   canPickTransferDestination,
 } from "./move-destination";
 
@@ -118,6 +119,23 @@ describe("canPickMergeDestination", () => {
       canPickMergeDestination(
         { id: "t1", status: "occupied", is_active: true },
         { sourceTableId: "t1" }
+      )
+    ).toBe(false);
+  });
+});
+
+describe("canPickSeatDestination", () => {
+  it("matches move eligibility for available tables", () => {
+    expect(
+      canPickSeatDestination(
+        { id: "t2", status: "available", is_active: true },
+        { sourceTableId: null }
+      )
+    ).toBe(true);
+    expect(
+      canPickSeatDestination(
+        { id: "t2", status: "occupied", is_active: true },
+        { sourceTableId: null }
       )
     ).toBe(false);
   });

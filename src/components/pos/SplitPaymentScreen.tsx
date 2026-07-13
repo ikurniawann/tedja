@@ -49,6 +49,7 @@ export function SplitPaymentScreen({
   const [payingSplit, setPayingSplit] = useState<SplitDetail | null>(null);
   const [showPayment, setShowPayment] = useState(false);
   const [resultPayload, setResultPayload] = useState<ReceiptPayload | null>(null);
+  const [paidSplitLabel, setPaidSplitLabel] = useState<string | null>(null);
 
   const fetchSplits = useCallback(async () => {
     try {
@@ -64,10 +65,10 @@ export function SplitPaymentScreen({
           paid_count: res.data.paid_count || 0,
         });
       } else {
-        setError('Gagal memuat split');
+        setError('Failed to load splits');
       }
     } catch (e: any) {
-      setError(e.message || 'Gagal memuat');
+      setError(e.message || 'Failed to load');
     } finally {
       setLoading(false);
     }
@@ -106,6 +107,7 @@ export function SplitPaymentScreen({
           discountAmount: payingSplit.discount_amount,
           taxAmount: payingSplit.tax_amount,
         };
+        setPaidSplitLabel(payingSplit.label || `Guest ${payingSplit.split_index}`);
         setResultPayload(receipt);
         setShowPayment(false);
         setPayingSplit(null);
@@ -117,10 +119,10 @@ export function SplitPaymentScreen({
           setTimeout(() => onComplete(), 1500);
         }
       } else {
-        setError(res.data?.error || 'Pembayaran gagal');
+        setError(res.data?.error || 'Payment failed');
       }
     } catch (e: any) {
-      setError(e.message || 'Pembayaran gagal');
+      setError(e.message || 'Payment failed');
     }
   }, [payingSplit, orderId, orderNumber, orderType, table, items, notes, customerName, fetchSplits, onComplete]);
 
@@ -137,23 +139,23 @@ export function SplitPaymentScreen({
           <ArrowLeft className="w-4 h-4 text-gray-600" />
         </button>
         <div>
-          <h2 className="text-lg font-bold text-gray-900">Pembayaran Split</h2>
-          <p className="text-sm text-gray-500">Order #{orderNumber ? orderNumber.slice(-8).toUpperCase() : orderId.slice(-8).toUpperCase()} · {customerName || 'Tanpa Member'}</p>
+          <h2 className="text-lg font-bold text-gray-900">Split Payment</h2>
+          <p className="text-sm text-gray-500">Order #{orderNumber ? orderNumber.slice(-8).toUpperCase() : orderId.slice(-8).toUpperCase()} · {customerName || 'Walk-in'}</p>
         </div>
       </div>
 
       {/* Summary */}
       <div className="grid grid-cols-3 gap-3">
         <div className="bg-white border border-gray-200 rounded-xl p-3">
-          <p className="text-xs text-gray-500">Total Tagihan</p>
+          <p className="text-xs text-gray-500">Bill total</p>
           <p className="text-sm font-bold text-gray-900">{formatCurrency(total)}</p>
         </div>
         <div className="bg-white border border-gray-200 rounded-xl p-3">
-          <p className="text-xs text-gray-500">Sudah Dibayar</p>
+          <p className="text-xs text-gray-500">Paid</p>
           <p className="text-sm font-bold text-green-600">{formatCurrency(summary.total_paid)}</p>
         </div>
         <div className="bg-white border border-gray-200 rounded-xl p-3">
-          <p className="text-xs text-gray-500">Sisa</p>
+          <p className="text-xs text-gray-500">Remaining</p>
           <p className="text-sm font-bold text-pink-600">{formatCurrency(summary.total_remaining)}</p>
         </div>
       </div>
@@ -165,7 +167,7 @@ export function SplitPaymentScreen({
         ) : error ? (
           <div className="p-8 text-center text-sm text-red-600">{error}</div>
         ) : splits.length === 0 ? (
-          <div className="p-8 text-center text-sm text-gray-500">Tidak ada split ditemukan.</div>
+          <div className="p-8 text-center text-sm text-gray-500">No splits found.</div>
         ) : (
           <div className="divide-y divide-gray-100">
             {splits.map((split) => (
@@ -174,19 +176,19 @@ export function SplitPaymentScreen({
                   {split.split_index}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-900 truncate">{split.label || `Split ${split.split_index}`}</p>
+                  <p className="text-sm font-medium text-gray-900 truncate">{split.label || `Guest ${split.split_index}`}</p>
                   <div className="flex items-center gap-2 mt-0.5">
                     {split.status === 'paid' ? (
                       <span className="inline-flex items-center gap-1 text-xs font-medium text-green-600 bg-green-50 px-2 py-0.5 rounded-full">
-                        <CheckCircle className="w-3 h-3" /> Lunas
+                        <CheckCircle className="w-3 h-3" /> Paid
                       </span>
                     ) : split.status === 'cancelled' ? (
                       <span className="inline-flex items-center gap-1 text-xs font-medium text-red-600 bg-red-50 px-2 py-0.5 rounded-full">
-                        <XCircle className="w-3 h-3" /> Dibatalkan
+                        <XCircle className="w-3 h-3" /> Cancelled
                       </span>
                     ) : (
                       <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">
-                        <Clock className="w-3 h-3" /> Belum Dibayar
+                        <Clock className="w-3 h-3" /> Unpaid
                       </span>
                     )}
                     {split.payment_method && (
@@ -207,7 +209,7 @@ export function SplitPaymentScreen({
                     onClick={() => { setPayingSplit(split); setShowPayment(true); }}
                     className="px-3 py-2 bg-pink-600 text-white text-xs font-semibold rounded-lg hover:bg-pink-700 transition-colors"
                   >
-                    Bayar
+                    Pay
                   </button>
                 )}
               </div>
@@ -237,39 +239,66 @@ export function SplitPaymentScreen({
 
       {/* Success receipt */}
       {resultPayload && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 w-full max-w-sm space-y-5">
-            <div className="text-center">
-              <CheckCircle className="w-14 h-14 text-green-500 mx-auto" />
-              <h2 className="text-xl font-bold text-gray-900 mt-3">Split Berhasil Dibayar!</h2>
-              <p className="text-sm text-gray-500 mt-1">Split #{payingSplit?.label || ''}</p>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-sm space-y-5 rounded-2xl border border-gray-200/70 bg-white p-6 shadow-xs">
+            <div className="space-y-2 text-center">
+              <div className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-emerald-50">
+                <CheckCircle className="h-8 w-8 text-emerald-600" />
+              </div>
+              <h2 className="text-xl font-bold text-foreground">
+                Split paid successfully
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                {paidSplitLabel || "Guest share"}
+                {orderNumber ? ` · ${orderNumber}` : ""}
+              </p>
             </div>
-            <div className="bg-gray-50 rounded-xl p-4 space-y-2">
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-500">Total</span>
-                <span className="font-bold">{formatCurrency(resultPayload.total)}</span>
+
+            <div className="space-y-2.5 rounded-xl border border-gray-200/70 bg-muted/30 px-4 py-3.5">
+              <div className="flex items-center justify-between gap-3 text-sm">
+                <span className="text-muted-foreground">Total</span>
+                <span className="font-semibold tabular-nums text-foreground">
+                  {formatCurrency(resultPayload.total)}
+                </span>
               </div>
               {resultPayload.change > 0 && (
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Kembalian</span>
-                  <span className="font-bold text-green-600">{formatCurrency(resultPayload.change)}</span>
+                <div className="flex items-center justify-between gap-3 text-sm">
+                  <span className="text-muted-foreground">Change</span>
+                  <span className="font-semibold tabular-nums text-emerald-600">
+                    {formatCurrency(resultPayload.change)}
+                  </span>
+                </div>
+              )}
+              {resultPayload.paymentMethod && (
+                <div className="flex items-center justify-between gap-3 text-sm">
+                  <span className="text-muted-foreground">Method</span>
+                  <span className="font-medium capitalize text-foreground">
+                    {resultPayload.paymentMethod.replace("_", " ")}
+                  </span>
                 </div>
               )}
             </div>
-            <div className="grid grid-cols-3 gap-2">
+
+            <div className="space-y-2.5">
               <button
-                onClick={() => handlePrint('CUSTOMER')}
-                className="flex items-center justify-center gap-1.5 py-2.5 border-2 border-purple-400 text-purple-600 rounded-lg text-xs font-semibold hover:bg-purple-50"
+                type="button"
+                onClick={() => handlePrint("CUSTOMER")}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-gray-200/80 bg-white px-4 py-2.5 text-sm font-semibold text-foreground transition-colors hover:border-primary/30 hover:bg-primary/5 hover:text-primary"
               >
-                <Printer className="w-3 h-3" /> Struk
+                <Printer className="h-4 w-4" />
+                Print receipt
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setResultPayload(null);
+                  setPaidSplitLabel(null);
+                }}
+                className="inline-flex w-full items-center justify-center rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
+              >
+                Continue
               </button>
             </div>
-            <button
-              onClick={() => setResultPayload(null)}
-              className="w-full py-3 bg-pink-600 text-white rounded-lg font-semibold hover:bg-pink-700"
-            >
-              Lanjut
-            </button>
           </div>
         </div>
       )}

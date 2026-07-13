@@ -1,54 +1,130 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from "next/server";
 import { createPgClient } from "@/lib/pg/create-client";
-import { getPosSession } from '@/lib/api/auth';
+import { getPosSession } from "@/lib/api/auth";
+
+function formatPgDate(value: unknown): string | null {
+  if (value == null || value === "") return null;
+  if (value instanceof Date) {
+    const y = value.getFullYear();
+    const m = String(value.getMonth() + 1).padStart(2, "0");
+    const day = String(value.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  }
+  const raw = String(value).trim();
+  // Plain date column text
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  // ISO / timestamp — use local calendar day (DATE midnight in TZ)
+  const parsed = new Date(raw);
+  if (!Number.isNaN(parsed.getTime())) {
+    const y = parsed.getFullYear();
+    const m = String(parsed.getMonth() + 1).padStart(2, "0");
+    const day = String(parsed.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  }
+  return raw;
+}
 
 function getErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : 'Unknown error';
+  if (error instanceof Error && error.message) return error.message;
+  if (
+    error &&
+    typeof error === "object" &&
+    "message" in error &&
+    typeof (error as { message: unknown }).message === "string"
+  ) {
+    return (error as { message: string }).message;
+  }
+  return "Unknown error";
+}
+
+function normalizeTimeSlot(value: unknown) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  // Accept HH:MM or HH:MM:SS → store as HH:MM:SS for time columns
+  if (/^\d{1,2}:\d{2}$/.test(raw)) return `${raw}:00`;
+  if (/^\d{1,2}:\d{2}:\d{2}$/.test(raw)) return raw;
+  return raw;
 }
 
 // GET /api/pos/reservations - List reservations with filters
 export async function GET(request: NextRequest) {
   const sessionUserId = await getPosSession();
   if (!sessionUserId) {
-    return NextResponse.json({ success: false, error: 'Authentication required' }, { status: 401 });
+    return NextResponse.json(
+      { success: false, error: "Authentication required" },
+      { status: 401 }
+    );
   }
 
   try {
     const db = createPgClient();
     const searchParams = request.nextUrl.searchParams;
-    const date = searchParams.get('date');
-    const status = searchParams.get('status');
-    const tableId = searchParams.get('table_id');
+    const date = searchParams.get("date");
+    const status = searchParams.get("status");
+    const tableId = searchParams.get("table_id");
 
     let query = db
-      .from('pos_reservations')
-      .select(`
-        *,
-        table:pos_tables(table_number),
-        customer:pos_customers(name, phone)
-      `)
-      .order('reservation_date', { ascending: true })
-      .order('time_slot', { ascending: true });
+      .from("pos_reservations")
+      .select("*")
+      .order("reservation_date", { ascending: true })
+      .order("time_slot", { ascending: true });
 
     if (date) {
-      query = query.eq('reservation_date', date);
+      query = query.eq("reservation_date", date);
     }
 
-    if (status) {
-      query = query.eq('status', status);
+    // Ignore bogus "undefined" from clients that stringify missing params
+    if (status && status !== "undefined" && status !== "all") {
+      query = query.eq("status", status);
     }
 
-    if (tableId) {
-      query = query.eq('table_id', tableId);
+    if (tableId && tableId !== "undefined") {
+      query = query.eq("table_id", tableId);
     }
 
     const { data, error } = await query;
 
     if (error) throw error;
 
-    return NextResponse.json({ success: true, data });
+    const rows = Array.isArray(data) ? data : data ? [data] : [];
+    const enriched = await Promise.all(
+      rows.map(async (row: Record<string, unknown>) => {
+        let table: { table_number?: string | null } | null = null;
+        let customer: { name?: string | null; phone?: string | null } | null =
+          null;
+
+        if (row.table_id) {
+          const { data: tableRow } = await db
+            .from("pos_tables")
+            .select("table_number")
+            .eq("id", row.table_id)
+            .maybeSingle();
+          table = tableRow;
+        }
+
+        if (row.customer_id) {
+          const { data: customerRow } = await db
+            .from("pos_customers")
+            .select("name, phone")
+            .eq("id", row.customer_id)
+            .maybeSingle();
+          customer = customerRow;
+        }
+
+        const normalizedDate = formatPgDate(row.reservation_date);
+
+        return {
+          ...row,
+          reservation_date: normalizedDate,
+          table,
+          customer,
+        };
+      })
+    );
+
+    return NextResponse.json({ success: true, data: enriched });
   } catch (error: unknown) {
-    console.error('Error fetching reservations:', error);
+    console.error("Error fetching reservations:", error);
     return NextResponse.json(
       { success: false, error: getErrorMessage(error) },
       { status: 500 }
@@ -60,7 +136,10 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const sessionUserId = await getPosSession();
   if (!sessionUserId) {
-    return NextResponse.json({ success: false, error: 'Authentication required' }, { status: 401 });
+    return NextResponse.json(
+      { success: false, error: "Authentication required" },
+      { status: 401 }
+    );
   }
 
   try {
@@ -77,65 +156,108 @@ export async function POST(request: NextRequest) {
       pax_count,
       special_requests,
       deposit_amount = 0,
-      notes
+      notes,
     } = body;
 
-    // Validate required fields
-    if (!reservation_date || !time_slot || !pax_count) {
+    const normalizedTime = normalizeTimeSlot(time_slot);
+
+    if (!reservation_date || !normalizedTime || !pax_count) {
       return NextResponse.json(
-        { success: false, error: 'Date, time slot, and party size are required' },
+        {
+          success: false,
+          error: "Date, time slot, and party size are required",
+        },
         { status: 400 }
       );
     }
 
-    // Check table availability
+    if (!String(customer_name || "").trim()) {
+      return NextResponse.json(
+        { success: false, error: "Customer name is required" },
+        { status: 400 }
+      );
+    }
+
     if (table_id) {
       const { data: conflictingReservation } = await db
-        .from('pos_reservations')
-        .select('id')
-        .eq('table_id', table_id)
-        .eq('reservation_date', reservation_date)
-        .eq('time_slot', time_slot)
-        .neq('status', 'cancelled')
-        .single();
+        .from("pos_reservations")
+        .select("id")
+        .eq("table_id", table_id)
+        .eq("reservation_date", reservation_date)
+        .eq("time_slot", normalizedTime)
+        .neq("status", "cancelled")
+        .maybeSingle();
 
       if (conflictingReservation) {
         return NextResponse.json(
-          { success: false, error: 'Table is already reserved for this time slot' },
+          {
+            success: false,
+            error: "Table is already reserved for this time slot",
+          },
           { status: 409 }
         );
       }
     }
 
-    // Insert reservation
+    // Insert without PostgREST embeds — QueryBuilder RETURNING cannot expand embeds.
     const { data: reservation, error: reservationError } = await db
-      .from('pos_reservations')
+      .from("pos_reservations")
       .insert({
         table_id: table_id || null,
         customer_id: customer_id || null,
-        customer_name,
-        customer_phone,
+        customer_name: String(customer_name).trim(),
+        customer_phone: customer_phone
+          ? String(customer_phone).trim()
+          : null,
         reservation_date,
-        time_slot,
+        time_slot: normalizedTime,
         duration_minutes,
-        pax_count,
-        special_requests,
-        deposit_amount,
-        status: 'confirmed',
-        notes
+        pax_count: Number(pax_count),
+        special_requests: special_requests || null,
+        deposit_amount: Number(deposit_amount) || 0,
+        status: "pending",
+        notes: notes || null,
       })
-      .select(`
-        *,
-        table:pos_tables(table_number),
-        customer:pos_customers(name, phone)
-      `)
+      .select("*")
       .single();
 
     if (reservationError) throw reservationError;
 
-    return NextResponse.json({ success: true, data: reservation }, { status: 201 });
+    let table: { table_number?: string | null } | null = null;
+    let customer: { name?: string | null; phone?: string | null } | null =
+      null;
+
+    if (reservation?.table_id) {
+      const { data: tableRow } = await db
+        .from("pos_tables")
+        .select("table_number")
+        .eq("id", reservation.table_id)
+        .maybeSingle();
+      table = tableRow;
+    }
+
+    if (reservation?.customer_id) {
+      const { data: customerRow } = await db
+        .from("pos_customers")
+        .select("name, phone")
+        .eq("id", reservation.customer_id)
+        .maybeSingle();
+      customer = customerRow;
+    }
+
+    return NextResponse.json(
+      {
+        success: true,
+        data: {
+          ...reservation,
+          table,
+          customer,
+        },
+      },
+      { status: 201 }
+    );
   } catch (error: unknown) {
-    console.error('Error creating reservation:', error);
+    console.error("Error creating reservation:", error);
     return NextResponse.json(
       { success: false, error: getErrorMessage(error) },
       { status: 500 }

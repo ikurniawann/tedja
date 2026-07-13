@@ -19,7 +19,7 @@ export async function PATCH(
     const { id } = await params;
     if (!id) {
       return NextResponse.json(
-        { success: false, error: "ID meja wajib" },
+        { success: false, error: "Table ID is required" },
         { status: 400 }
       );
     }
@@ -48,14 +48,14 @@ export async function PATCH(
     if (error) throw error;
     if (!data) {
       return NextResponse.json(
-        { success: false, error: "Meja tidak ditemukan" },
+        { success: false, error: "Table not found" },
         { status: 404 }
       );
     }
 
     return NextResponse.json({
       success: true,
-      message: "Posisi meja disimpan",
+      message: "Table position saved",
       data: {
         id: (data as { id: string }).id,
         pos_x: Number((data as { pos_x: number }).pos_x),
@@ -68,7 +68,7 @@ export async function PATCH(
       {
         success: false,
         error:
-          error instanceof Error ? error.message : "Gagal menyimpan posisi",
+          error instanceof Error ? error.message : "Failed to save position",
       },
       { status: 500 }
     );

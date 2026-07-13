@@ -20,19 +20,32 @@ function navItemKey(item: NavItem): string {
   return `${item.href}::${item.label}`;
 }
 
+/** Flatten every leaf href so prefix active-checks can see cousins (e.g. /dashboard/pos vs /dashboard/pos/tables). */
+function collectLeafHrefs(items: NavItem[]): string[] {
+  const hrefs: string[] = [];
+  for (const item of items) {
+    if (item.children?.length) {
+      hrefs.push(...collectLeafHrefs(item.children));
+    } else if (item.href) {
+      hrefs.push(item.href);
+    }
+  }
+  return hrefs;
+}
+
 function collectActiveGroupKeys(
   items: NavItem[],
   pathname: string,
   navFrom: string | null,
+  allLeafHrefs: string[],
   ancestors: string[] = []
 ): string[] {
   const keys: string[] = [];
 
   for (const item of items) {
-    const childHrefs = item.children?.map((child) => child.href) ?? [];
-    const selfActive = isNavLinkActive(pathname, item.href, childHrefs, navFrom);
+    const selfActive = isNavLinkActive(pathname, item.href, allLeafHrefs, navFrom);
     const childActive = item.children?.some((child) =>
-      isNavLinkActive(pathname, child.href, childHrefs, navFrom)
+      isNavLinkActive(pathname, child.href, allLeafHrefs, navFrom)
     );
     const itemKey = navItemKey(item);
 
@@ -42,7 +55,10 @@ function collectActiveGroupKeys(
 
     if (item.children?.length) {
       keys.push(
-        ...collectActiveGroupKeys(item.children, pathname, navFrom, [...ancestors, itemKey])
+        ...collectActiveGroupKeys(item.children, pathname, navFrom, allLeafHrefs, [
+          ...ancestors,
+          itemKey,
+        ])
       );
     }
   }
@@ -50,15 +66,21 @@ function collectActiveGroupKeys(
   return keys;
 }
 
-function isGroupActive(item: NavItem, pathname: string, navFrom: string | null): boolean {
+function isGroupActive(
+  item: NavItem,
+  pathname: string,
+  navFrom: string | null,
+  allLeafHrefs: string[]
+): boolean {
   if (!item.children?.length) {
-    return isNavLinkActive(pathname, item.href, [], navFrom);
+    return isNavLinkActive(pathname, item.href, allLeafHrefs, navFrom);
   }
 
-  const childHrefs = item.children.map((child) => child.href);
   return (
     pathname === item.href ||
-    item.children.some((child) => isNavLinkActive(pathname, child.href, childHrefs, navFrom))
+    item.children.some((child) =>
+      isNavLinkActive(pathname, child.href, allLeafHrefs, navFrom)
+    )
   );
 }
 
@@ -70,9 +92,10 @@ export default function AppSidebarNav({
 }: AppSidebarNavProps) {
   const pathname = usePathname();
   const navFrom = useNavFrom();
+  const allLeafHrefs = useMemo(() => collectLeafHrefs(navItems), [navItems]);
   const autoExpanded = useMemo(
-    () => [...new Set(collectActiveGroupKeys(navItems, pathname, navFrom))],
-    [navItems, pathname, navFrom]
+    () => [...new Set(collectActiveGroupKeys(navItems, pathname, navFrom, allLeafHrefs))],
+    [navItems, pathname, navFrom, allLeafHrefs]
   );
   const [expandedMenus, setExpandedMenus] = useState<string[]>(autoExpanded);
 
@@ -128,12 +151,11 @@ export default function AppSidebarNav({
       .join(" ");
   };
 
-  const renderItem = (item: NavItem, depth = 0, peerHrefs: string[] = []) => {
+  const renderItem = (item: NavItem, depth = 0) => {
     const hasChildren = Boolean(item.children?.length);
-    const childHrefs = hasChildren ? item.children!.map((child) => child.href) : [];
     const itemActive = hasChildren
-      ? isGroupActive(item, pathname, navFrom)
-      : isNavLinkActive(pathname, item.href, peerHrefs, navFrom);
+      ? isGroupActive(item, pathname, navFrom, allLeafHrefs)
+      : isNavLinkActive(pathname, item.href, allLeafHrefs, navFrom);
     const itemKey = navItemKey(item);
     const isExpanded = expandedMenus.includes(itemKey);
     const showIcon = depth === 0;
@@ -175,7 +197,7 @@ export default function AppSidebarNav({
           </button>
           {isExpanded && !collapsed && (
             <div className="ml-3 mt-1 space-y-0.5 border-l border-gray-200/70 pl-3">
-              {item.children!.map((child) => renderItem(child, depth + 1, childHrefs))}
+              {item.children!.map((child) => renderItem(child, depth + 1))}
             </div>
           )}
         </div>
@@ -200,15 +222,13 @@ export default function AppSidebarNav({
     );
   };
 
-  const topLevelHrefs = navItems.map((item) => item.href);
-
   return (
     <nav
       className={`flex-1 overflow-y-auto ${
         collapsed ? "space-y-1 p-2" : "space-y-1 p-3"
       } ${className}`}
     >
-      {navItems.map((item) => renderItem(item, 0, topLevelHrefs))}
+      {navItems.map((item) => renderItem(item, 0))}
     </nav>
   );
 }

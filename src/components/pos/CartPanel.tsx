@@ -78,9 +78,15 @@ export function CartPanel({
               <Truck className="h-3 w-3" /> Delivery
             </span>
           )}
-          {selectedTable && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
-              {selectedTable}
+          {orderType === 'dine_in' && (
+            <span
+              className={
+                selectedTable
+                  ? 'inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary'
+                  : 'inline-flex items-center gap-1 rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-600'
+              }
+            >
+              {selectedTable ? `Table ${selectedTable}` : 'Without Table'}
             </span>
           )}
         </div>
@@ -246,7 +252,7 @@ export function CartPanel({
               Saving...
             </>
           ) : (
-            'Save Open Bill'
+            'Order'
           )}
         </Button>
       </div>

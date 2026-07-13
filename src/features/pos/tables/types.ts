@@ -10,6 +10,7 @@ export type PosTableRow = {
   name?: string | null;
   label?: string | null;
   capacity: number;
+  floor?: string | null;
   area?: string | null;
   status: string;
   qr_code?: string | null;
@@ -29,6 +30,7 @@ export type PosTableRow = {
 export type PosTablePayload = {
   table_number: string;
   name?: string | null;
+  floor?: string | null;
   area?: string | null;
   capacity: number;
   status: PosTableStatus;

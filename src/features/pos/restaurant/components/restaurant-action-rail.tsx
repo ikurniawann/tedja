@@ -70,6 +70,7 @@ export interface RestaurantActionRailProps {
   onMoveTable: () => void;
   onMoveItems: () => void;
   onMergeTable: () => void;
+  onWaitingList: () => void;
   onSelectBill: (selection: RestaurantSelection) => void;
 }
 
@@ -85,6 +86,7 @@ export function RestaurantActionRail({
   onMoveTable,
   onMoveItems,
   onMergeTable,
+  onWaitingList,
   onSelectBill,
 }: RestaurantActionRailProps) {
   const queryClient = useQueryClient();
@@ -229,7 +231,7 @@ export function RestaurantActionRail({
       key: "waiting-list",
       label: "Waiting List",
       icon: Users,
-      onClick: () => toast.message("Waiting List coming soon"),
+      onClick: onWaitingList,
     },
     { key: "order-check", label: "Order Check", icon: ReceiptText, onClick: handleOrderCheck },
     {

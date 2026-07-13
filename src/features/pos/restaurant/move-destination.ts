@@ -49,3 +49,11 @@ export function canPickMergeDestination(
   const status = normalizedStatus(table);
   return status === "occupied" || status === "billing";
 }
+
+/** Seat reservation: available tables only (same as move). */
+export function canPickSeatDestination(
+  table: MoveDestinationTable,
+  opts: { sourceTableId?: string | null } = {}
+): boolean {
+  return canPickMoveDestination(table, opts);
+}

@@ -3,6 +3,7 @@ import {
   getCustomers,
   getPOSTables,
   getReservations,
+  seatReservation as seatReservationRequest,
   updateReservationStatus,
 } from "@/lib/pos-api";
 import type {
@@ -22,7 +23,7 @@ export async function listReservations(params: ReservationListParams): Promise<R
     status: params.status && params.status !== "all" ? params.status : undefined,
   });
   if (!res.success) {
-    throw new Error("Gagal memuat reservasi");
+    throw new Error("Failed to load reservations");
   }
   return (res.data ?? []) as ReservationRow[];
 }
@@ -30,7 +31,7 @@ export async function listReservations(params: ReservationListParams): Promise<R
 export async function listReservationCustomers(): Promise<ReservationCustomer[]> {
   const res = await getCustomers();
   if (!res.success) {
-    throw new Error("Gagal memuat pelanggan");
+    throw new Error("Failed to load customers");
   }
   return (res.data ?? []) as ReservationCustomer[];
 }
@@ -38,7 +39,7 @@ export async function listReservationCustomers(): Promise<ReservationCustomer[]>
 export async function listReservationTables(): Promise<ReservationTable[]> {
   const res = await getPOSTables();
   if (!res.success) {
-    throw new Error("Gagal memuat meja");
+    throw new Error("Failed to load tables");
   }
   return (res.data ?? []) as ReservationTable[];
 }
@@ -51,17 +52,30 @@ export async function saveReservation(payload: CreateReservationPayload): Promis
     time_slot: payload.time_slot,
     pax_count: payload.pax_count,
     table_id: payload.table_id || undefined,
+    customer_id: payload.customer_id || undefined,
     deposit_amount: payload.deposit_amount,
-    notes: payload.notes || payload.special_requests,
+    notes: payload.notes || undefined,
+    special_requests: payload.special_requests || undefined,
   });
   if (!res.success) {
-    throw new Error((res as { error?: string }).error || "Gagal menyimpan reservasi");
+    throw new Error((res as { error?: string }).error || "Failed to save reservation");
   }
 }
 
 export async function patchReservationStatus(id: string, status: ReservationStatus): Promise<void> {
   const res = await updateReservationStatus(id, status);
   if (!res.success) {
-    throw new Error((res as { error?: string }).error || "Gagal update reservasi");
+    throw new Error((res as { error?: string }).error || "Failed to update reservation");
   }
+}
+
+export async function seatReservation(
+  id: string,
+  payload?: { table_id?: string | null }
+) {
+  const res = await seatReservationRequest(id, payload);
+  if (!res.success || !res.data?.order) {
+    throw new Error(res.error || "Failed to seat guest");
+  }
+  return res.data;
 }

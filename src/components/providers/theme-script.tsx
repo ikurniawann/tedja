@@ -1,3 +1,7 @@
+"use client";
+
+import { useSyncExternalStore } from "react";
+
 import { THEME_STORAGE_KEY } from "@/lib/theme/theme-state";
 
 /** Blocking anti-flash script. Keep in sync with THEME_PRESETS + pickForeground. */
@@ -19,6 +23,26 @@ root.style.setProperty('--brand-secondary',sec);
 root.style.setProperty('--primary-foreground',fg);
 }catch(e){}})();`;
 
+const subscribe = () => () => {};
+
+/**
+ * Emit the anti-flash <script> only during SSR + hydration.
+ * After hydration, render null so React 19 does not warn about creating
+ * a script tag during a client render (scripts would not re-execute anyway).
+ */
 export function ThemeScript() {
-  return <script dangerouslySetInnerHTML={{ __html: SCRIPT }} />;
+  const isServerOrHydration = useSyncExternalStore(
+    subscribe,
+    () => false,
+    () => true
+  );
+
+  if (!isServerOrHydration) return null;
+
+  return (
+    <script
+      id="arkiv-theme-init"
+      dangerouslySetInnerHTML={{ __html: SCRIPT }}
+    />
+  );
 }

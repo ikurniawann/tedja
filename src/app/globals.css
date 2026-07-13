@@ -175,6 +175,24 @@
   }
 }
 
+@keyframes stock-alerts-marquee {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+@keyframes stock-alerts-marquee-y {
+  0% {
+    transform: translateY(0);
+  }
+  100% {
+    transform: translateY(-50%);
+  }
+}
+
 @keyframes arkiv-assistant-shortcut-in {
   0% {
     opacity: 0;
@@ -252,6 +270,21 @@
 
 .career-marquee {
   animation: career-marquee 40s linear infinite;
+}
+
+.stock-alerts-marquee {
+  animation: stock-alerts-marquee 40s linear infinite;
+}
+
+.stock-alerts-marquee-y {
+  animation: stock-alerts-marquee-y 50s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stock-alerts-marquee,
+  .stock-alerts-marquee-y {
+    animation: none;
+  }
 }
 
 .career-roundo details > summary {

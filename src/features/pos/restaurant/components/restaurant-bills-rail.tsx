@@ -22,10 +22,9 @@ import {
 
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat("id-ID", {
-    style: "currency",
-    currency: "IDR",
+    minimumFractionDigits: 0,
     maximumFractionDigits: 0,
-  }).format(value || 0);
+  }).format(Number.isFinite(Number(value)) ? Math.abs(Number(value)) : 0);
 
 function formatRelativeTime(value?: string) {
   if (!value) return "-";

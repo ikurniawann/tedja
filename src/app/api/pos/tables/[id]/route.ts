@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createPgClient } from "@/lib/pg/create-client";
 import { getPosSession } from "@/lib/api/auth";
+import { generateTableQrCode } from "@/features/pos/tables/qr-code";
 
 type TableRow = {
   id: string;
   table_number?: string | null;
   name?: string | null;
+  floor?: string | null;
   area?: string | null;
   capacity?: number | string | null;
   status?: string | null;
@@ -17,6 +19,8 @@ type TableRow = {
 };
 
 const TABLE_STATUSES = ["available", "occupied", "reserved", "maintenance"] as const;
+const SELECT_COLS =
+  "id, table_number, name, floor, area, capacity, status, qr_code, notes, is_active, pos_x, pos_y";
 
 function toNumber(value: unknown) {
   const numeric = Number(value);
@@ -30,6 +34,7 @@ function normalizeTable(table: TableRow) {
     table_number: tableNumber,
     name: table.name || tableNumber,
     label: table.name || tableNumber,
+    floor: table.floor || null,
     area: table.area || null,
     capacity: toNumber(table.capacity) || 4,
     status: table.status || "available",
@@ -44,8 +49,9 @@ function normalizeTable(table: TableRow) {
 function parsePayload(body: Record<string, unknown>) {
   const table_number = String(body.table_number ?? "").trim();
   const name = body.name != null ? String(body.name).trim() || null : null;
+  const floor = body.floor != null ? String(body.floor).trim() || null : null;
   const area = body.area != null ? String(body.area).trim() || null : null;
-  const qr_code = body.qr_code != null ? String(body.qr_code).trim() || null : null;
+  let qr_code = body.qr_code != null ? String(body.qr_code).trim() || null : null;
   const notes = body.notes != null ? String(body.notes).trim() || null : null;
   const capacity = Math.max(1, Math.floor(toNumber(body.capacity) || 4));
   const is_active = body.is_active !== false;
@@ -55,13 +61,18 @@ function parsePayload(body: Record<string, unknown>) {
     : "available";
 
   if (!table_number) {
-    return { error: "Nomor meja wajib diisi" as const };
+    return { error: "Table number is required" as const };
+  }
+
+  if (!qr_code) {
+    qr_code = generateTableQrCode(table_number);
   }
 
   return {
     data: {
       table_number,
       name,
+      floor,
       area,
       qr_code,
       notes,
@@ -88,7 +99,7 @@ export async function PATCH(
     const { id } = await params;
     if (!id) {
       return NextResponse.json(
-        { success: false, error: "ID meja wajib" },
+        { success: false, error: "Table ID is required" },
         { status: 400 }
       );
     }
@@ -113,9 +124,7 @@ export async function PATCH(
         updated_at: new Date().toISOString(),
       })
       .eq("id", id)
-      .select(
-        "id, table_number, name, area, capacity, status, qr_code, notes, is_active, pos_x, pos_y"
-      )
+      .select(SELECT_COLS)
       .maybeSingle();
 
     if (error) {
@@ -123,7 +132,7 @@ export async function PATCH(
         return NextResponse.json(
           {
             success: false,
-            error: "Nomor meja atau QR code sudah digunakan",
+            error: "Table number or QR code already exists",
           },
           { status: 409 }
         );
@@ -133,14 +142,14 @@ export async function PATCH(
 
     if (!data) {
       return NextResponse.json(
-        { success: false, error: "Meja tidak ditemukan" },
+        { success: false, error: "Table not found" },
         { status: 404 }
       );
     }
 
     return NextResponse.json({
       success: true,
-      message: "Meja berhasil diperbarui",
+      message: "Table updated",
       data: normalizeTable(data as TableRow),
     });
   } catch (error) {
@@ -149,7 +158,7 @@ export async function PATCH(
       {
         success: false,
         error:
-          error instanceof Error ? error.message : "Gagal memperbarui meja",
+          error instanceof Error ? error.message : "Failed to update table",
       },
       { status: 500 }
     );
@@ -172,7 +181,7 @@ export async function DELETE(
     const { id } = await params;
     if (!id) {
       return NextResponse.json(
-        { success: false, error: "ID meja wajib" },
+        { success: false, error: "Table ID is required" },
         { status: 400 }
       );
     }
@@ -191,7 +200,7 @@ export async function DELETE(
       return NextResponse.json(
         {
           success: false,
-          error: "Meja masih punya open bill — nonaktifkan saja, jangan hapus",
+          error: "Table still has an open bill — deactivate instead of deleting",
         },
         { status: 409 }
       );
@@ -212,21 +221,21 @@ export async function DELETE(
     if (error) throw error;
     if (!data) {
       return NextResponse.json(
-        { success: false, error: "Meja tidak ditemukan" },
+        { success: false, error: "Table not found" },
         { status: 404 }
       );
     }
 
     return NextResponse.json({
       success: true,
-      message: "Meja dinonaktifkan",
+      message: "Table deactivated",
     });
   } catch (error) {
     console.error("POS tables delete error:", error);
     return NextResponse.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : "Gagal menghapus meja",
+        error: error instanceof Error ? error.message : "Failed to delete table",
       },
       { status: 500 }
     );

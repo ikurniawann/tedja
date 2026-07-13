@@ -24,12 +24,12 @@ ON CONFLICT (code) DO UPDATE SET
   is_active   = true,
   updated_at  = now();
 
--- hrd -> HRIS + User Management + Business
+-- hrd -> HRIS + Settings
 INSERT INTO iam.role_menu_permissions (role_id, menu_id, granted_actions)
 SELECT r.id, m.id, COALESCE(m.permission_context->'actions', '["read"]'::jsonb)
 FROM iam.roles r CROSS JOIN iam.menus m
 WHERE r.code = 'hrd' AND m.deleted_at IS NULL AND m.is_active = true
-  AND (m.code = 'dashboard' OR m.module IN ('hris', 'user-management', 'business'))
+  AND (m.code = 'dashboard' OR m.module IN ('hris', 'settings'))
 ON CONFLICT (role_id, menu_id) DO UPDATE SET is_active = true, granted_actions = EXCLUDED.granted_actions, updated_at = now();
 
 -- hiring_manager -> subset HRIS
@@ -75,7 +75,7 @@ SELECT r.id, m.id, COALESCE(m.permission_context->'actions', '["read"]'::jsonb)
 FROM iam.roles r CROSS JOIN iam.menus m
 WHERE r.code = 'direksi' AND m.deleted_at IS NULL AND m.is_active = true
   AND (
-    m.code IN ('dashboard', 'hris', 'hris.insights.analytics', 'hris.insights.reports', 'pos', 'pos.reports.dashboard', 'pos.reports.profit')
+    m.code IN ('dashboard', 'hris', 'hris.insights.analytics', 'hris.insights.reports', 'pos', 'pos.reports.dashboard', 'pos.reports.profit', 'pos.reports.closing')
     OR m.module = 'crm'
   )
 ON CONFLICT (role_id, menu_id) DO UPDATE SET is_active = true, granted_actions = EXCLUDED.granted_actions, updated_at = now();

@@ -24,9 +24,9 @@ export function AppearancePage() {
 
   return (
     <TooltipProvider>
-      <FadeIn className="mx-auto flex max-w-3xl flex-col gap-6 p-4">
+      <FadeIn className="flex w-full flex-col gap-6">
         <div>
-          <h1 className="text-lg font-semibold text-foreground">Tampilan</h1>
+          <h1 className="text-lg font-semibold text-foreground">Appearance</h1>
           <p className="text-sm text-muted-foreground">
             Sesuaikan tema warna dan mode terang/gelap aplikasi.
           </p>
@@ -36,7 +36,7 @@ export function AppearancePage() {
           <div className="mb-3 flex items-center gap-1.5 text-sm font-medium">
             Mode <HelpHint helpId="appearance.mode" />
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             {MODES.map((m) => {
               const Icon = m.icon;
               const active = state.mode === m.value;
@@ -55,7 +55,7 @@ export function AppearancePage() {
 
         <Card className="p-5">
           <div className="mb-3 text-sm font-medium">Preset Tema</div>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
             {THEME_PRESETS.map((p) => {
               const active =
                 state.presetId === p.id &&

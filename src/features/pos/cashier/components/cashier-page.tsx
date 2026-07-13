@@ -48,6 +48,18 @@ import { CustomizationModal, type SelectedCustomization } from '@/components/pos
 import { PaymentModal, type PaymentMethod } from '@/components/pos/PaymentModal';
 import { NFCModal } from '@/components/pos/NFCModal';
 import { CustomerSearchModal } from '@/components/pos/CustomerSearchModal';
+import { usePosNfcOptional, findCustomerByCard, POS_NFC_CARD_EVENT, buildTopupCardPath } from '@/features/pos/nfc';
+import { resolveCashierNfcAction } from '../nfc-scan-action';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { printThermalReceipt, type ReceiptPayload } from '@/components/pos/PrintReceipt';
 import type { SplitConfig } from '@/components/pos/SplitBillModal';
 import { SplitBillModal } from '@/components/pos/SplitBillModal';
@@ -142,6 +154,14 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [showCustomerModal, setShowCustomerModal] = useState(false);
+  const [pendingNfcUid, setPendingNfcUid] = useState<string | null>(null);
+  const [createMemberPromptUid, setCreateMemberPromptUid] = useState<string | null>(null);
+  const [topupPrompt, setTopupPrompt] = useState<{
+    uid: string;
+    balance: number;
+    name?: string | null;
+  } | null>(null);
+
   const [customerSearch, setCustomerSearch] = useState('');
   const [showProductSuggestions, setShowProductSuggestions] = useState(false);
   const [activeProductSuggestion, setActiveProductSuggestion] = useState(0);
@@ -164,6 +184,14 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
   const [nfcInput, setNfcInput] = useState('');
   const [nfcSearching, setNfcSearching] = useState(false);
   const [nfcError, setNfcError] = useState('');
+  const posNfc = usePosNfcOptional();
+  const setPaymentNfcActive = posNfc?.setPaymentNfcActive;
+
+  useEffect(() => {
+    // Cashier claims all NFC scans so they select/create members instead of redirecting to topup.
+    setPaymentNfcActive?.(true);
+    return () => setPaymentNfcActive?.(false);
+  }, [setPaymentNfcActive]);
 
   /* Result */
   const [resultPayload, setResultPayload] = useState<ReceiptPayload | null>(null);
@@ -219,6 +247,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     phone: string;
     email?: string;
     enroll_member: boolean;
+    nfc_uid?: string;
   }) => {
     const response = await saveCustomer({
       name: payload.name,
@@ -226,6 +255,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       email: payload.email,
       membership_tier: 'bronze',
       enroll_member: payload.enroll_member,
+      nfc_uid: payload.nfc_uid,
     });
     await refetchCustomers();
     return withCustomerDiscount(response.data);
@@ -458,24 +488,53 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     if (!trimmed) return;
     setNfcSearching(true);
     setNfcError('');
-    const found = customers.find(c => c.id === trimmed || c.phone === trimmed);
-    if (!found) {
-      setNfcError('Card not found. Make sure the card is registered as a member.');
-      setNfcSearching(false);
-      setNfcInput('');
-      return;
-    }
-    if (found.ark_coin_balance < total) {
-      setNfcError(`Insufficient ARK balance. Balance: ${formatArk(found.ark_coin_balance)}, Required: ${formatArk(total)}`);
-      setNfcSearching(false);
-      setNfcInput('');
-      return;
-    }
-    cart.setCustomer(found.id);
-    setShowNFC(false);
+
+    const found = findCustomerByCard(customers, trimmed);
+    const enforceArkBalance = showPayment || showNFC;
+    const action = resolveCashierNfcAction({
+      memberFound: Boolean(found),
+      balance: Number(found?.ark_coin_balance || 0),
+      totalDue: total,
+      enforceArkBalance,
+    });
+
     setNfcSearching(false);
     setNfcInput('');
-  }, [customers, total, cart]);
+
+    if (action === 'create') {
+      setShowNFC(false);
+      setCreateMemberPromptUid(trimmed.toUpperCase());
+      return;
+    }
+
+    if (action === 'topup' && found) {
+      setShowNFC(false);
+      setTopupPrompt({
+        uid: (found.nfc_uid || trimmed).toUpperCase(),
+        balance: Number(found.ark_coin_balance || 0),
+        name: found.name,
+      });
+      cart.setCustomer(found.id);
+      return;
+    }
+
+    if (found) {
+      cart.setCustomer(found.id);
+      setShowNFC(false);
+      toast.success(`Member ${found.name || found.phone} selected`);
+    }
+  }, [customers, total, cart, showPayment, showNFC]);
+
+  useEffect(() => {
+    function onBridgeCard(event: Event) {
+      const card = (event as CustomEvent<{ card?: string }>).detail?.card;
+      if (!card) return;
+      processNFCCard(card);
+    }
+
+    window.addEventListener(POS_NFC_CARD_EVENT, onBridgeCard);
+    return () => window.removeEventListener(POS_NFC_CARD_EVENT, onBridgeCard);
+  }, [processNFCCard]);
 
   /* Checkout */
   const handleCreateOrder = useCallback(async () => {
@@ -1224,8 +1283,19 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         selectedCustomerId={cart.selectedCustomerId}
         onSearchChange={setCustomerSearch}
         onCreateCustomer={handleCreateCustomer}
-        onSelect={(c) => { cart.setCustomer(c?.id ?? null); setShowCustomerModal(false); setCustomerSearch(''); }}
-        onClose={() => setShowCustomerModal(false)}
+        initialNfcUid={pendingNfcUid}
+        onInitialNfcUidConsumed={() => setPendingNfcUid(null)}
+        onSelect={(c) => {
+          cart.setCustomer(c?.id ?? null);
+          setShowCustomerModal(false);
+          setCustomerSearch('');
+          setPendingNfcUid(null);
+          if (c) toast.success(`Member ${c.name || c.phone} dipilih`);
+        }}
+        onClose={() => {
+          setShowCustomerModal(false);
+          setPendingNfcUid(null);
+        }}
       />
 
       {/* ── Table Modal ── */}
@@ -1406,93 +1476,180 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         onCancel={() => { setShowNFC(false); setNfcInput(''); setNfcError(''); }}
       />
 
+      <AlertDialog
+        open={Boolean(createMemberPromptUid)}
+        onOpenChange={(open) => {
+          if (!open) setCreateMemberPromptUid(null);
+        }}
+      >
+        <AlertDialogContent size="default">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Card ID has no member</AlertDialogTitle>
+            <AlertDialogDescription>
+              This card ID ({createMemberPromptUid}) is not linked to a member yet.
+              Would you like to create a new member?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-primary hover:bg-primary/90"
+              onClick={() => {
+                if (!createMemberPromptUid) return;
+                setPendingNfcUid(createMemberPromptUid);
+                setCreateMemberPromptUid(null);
+                setShowCustomerModal(true);
+              }}
+            >
+              Yes, create member
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={Boolean(topupPrompt)}
+        onOpenChange={(open) => {
+          if (!open) setTopupPrompt(null);
+        }}
+      >
+        <AlertDialogContent size="default">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Insufficient ARK balance</AlertDialogTitle>
+            <AlertDialogDescription>
+              {topupPrompt
+                ? `Your remaining balance is ${formatArk(topupPrompt.balance)}. Balance is insufficient for this payment. Would you like to top up?`
+                : null}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-primary hover:bg-primary/90"
+              onClick={() => {
+                if (!topupPrompt) return;
+                const href = buildTopupCardPath(topupPrompt.uid);
+                setTopupPrompt(null);
+                setShowPayment(false);
+                router.push(href);
+              }}
+            >
+              Yes, top up
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* ── Result Modal ── */}
       <Dialog open={!!resultPayload} onOpenChange={(open) => { if (!open) closeResultModal(); }}>
         <DialogPanel size="sm" showCloseButton={false}>
-          {resultPayload && (
+          {resultPayload ? (
             <>
-              <DialogPanelBody className="space-y-6 text-center">
-                {lastResultType === 'offlined' ? (
+              <DialogPanelBody className="space-y-5">
+                {lastResultType === "offlined" ? (
                   <>
-                    <AlertCircle className="mx-auto h-16 w-16 text-amber-500" />
-                    <div>
-                      <h2 className="text-xl font-bold text-gray-900">Saved Offline</h2>
-                      <p className="mt-1 text-sm text-gray-500">
+                    <div className="space-y-2 text-center">
+                      <div className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-amber-50">
+                        <AlertCircle className="h-8 w-8 text-amber-600" />
+                      </div>
+                      <h2 className="text-xl font-bold text-foreground">
+                        Saved offline
+                      </h2>
+                      <p className="text-sm text-muted-foreground">
                         Order will sync when connection is restored.
                       </p>
                     </div>
-                    <div className="space-y-2 rounded-xl border border-amber-100/80 bg-amber-50/80 p-4 text-left">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-500">Order ID</span>
-                        <span className="font-bold text-gray-900">{resultPayload.orderNumber}</span>
+                    <div className="space-y-2.5 rounded-xl border border-amber-200/70 bg-amber-50/60 px-4 py-3.5">
+                      <div className="flex items-center justify-between gap-3 text-sm">
+                        <span className="text-muted-foreground">Order</span>
+                        <span className="font-semibold tabular-nums text-foreground">
+                          {resultPayload.orderNumber}
+                        </span>
                       </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-500">Total</span>
-                        <span className="font-bold text-gray-900">{formatCurrency(resultPayload.total)}</span>
+                      <div className="flex items-center justify-between gap-3 text-sm">
+                        <span className="text-muted-foreground">Total</span>
+                        <span className="font-semibold tabular-nums text-foreground">
+                          {formatCurrency(resultPayload.total)}
+                        </span>
                       </div>
                     </div>
                   </>
                 ) : (
                   <>
-                    <CheckCircle className="mx-auto h-16 w-16 text-green-500" />
-                    <div>
-                      <h2 className="text-xl font-bold text-gray-900">Payment Successful</h2>
-                      <p className="mt-1 text-sm text-gray-500">
-                        Order #{resultPayload.orderNumber?.slice(-8).toUpperCase() || resultPayload.orderId?.slice(-8).toUpperCase()}
+                    <div className="space-y-2 text-center">
+                      <div className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-emerald-50">
+                        <CheckCircle className="h-8 w-8 text-emerald-600" />
+                      </div>
+                      <h2 className="text-xl font-bold text-foreground">
+                        Payment successful
+                      </h2>
+                      <p className="text-sm text-muted-foreground">
+                        Order #
+                        {resultPayload.orderNumber?.slice(-8).toUpperCase() ||
+                          resultPayload.orderId?.slice(-8).toUpperCase()}
                       </p>
                     </div>
-                    <div className="space-y-2 rounded-xl border border-gray-200/70 bg-gray-50/80 p-4 text-left">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-500">Amount Paid</span>
-                        <span className="font-bold text-gray-900">{formatCurrency(resultPayload.total)}</span>
+
+                    <div className="space-y-2.5 rounded-xl border border-gray-200/70 bg-muted/30 px-4 py-3.5">
+                      <div className="flex items-center justify-between gap-3 text-sm">
+                        <span className="text-muted-foreground">Amount paid</span>
+                        <span className="font-semibold tabular-nums text-foreground">
+                          {formatCurrency(resultPayload.total)}
+                        </span>
                       </div>
-                      {resultPayload.change > 0 && (
-                        <div className="flex justify-between text-sm">
-                          <span className="text-gray-500">Change</span>
-                          <span className="font-bold text-green-600">{formatCurrency(resultPayload.change)}</span>
+                      {resultPayload.change > 0 ? (
+                        <div className="flex items-center justify-between gap-3 text-sm">
+                          <span className="text-muted-foreground">Change</span>
+                          <span className="font-semibold tabular-nums text-emerald-600">
+                            {formatCurrency(resultPayload.change)}
+                          </span>
                         </div>
-                      )}
+                      ) : null}
+                      {resultPayload.paymentMethod ? (
+                        <div className="flex items-center justify-between gap-3 text-sm">
+                          <span className="text-muted-foreground">Method</span>
+                          <span className="font-medium capitalize text-foreground">
+                            {resultPayload.paymentMethod.replace("_", " ")}
+                          </span>
+                        </div>
+                      ) : null}
                     </div>
                   </>
                 )}
+
                 <div className="grid grid-cols-3 gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => handlePrint('KITCHEN')}
-                    className="border-orange-200/80 text-orange-600 hover:bg-orange-50"
-                  >
-                    <Printer className="mr-1.5 h-4 w-4" /> Kitchen
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => handlePrint('BAR')}
-                    className="border-primary/30 text-primary hover:bg-primary/10"
-                  >
-                    <Printer className="mr-1.5 h-4 w-4" /> Bar
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => handlePrint('CUSTOMER')}
-                    className="border-purple-200/80 text-purple-600 hover:bg-purple-50"
-                  >
-                    <Printer className="mr-1.5 h-4 w-4" /> Receipt
-                  </Button>
+                  {(
+                    [
+                      ["KITCHEN", "Kitchen"],
+                      ["BAR", "Bar"],
+                      ["CUSTOMER", "Receipt"],
+                    ] as const
+                  ).map(([label, text]) => (
+                    <Button
+                      key={label}
+                      type="button"
+                      variant="outline"
+                      onClick={() => handlePrint(label)}
+                      className="h-auto flex-col gap-1 border-gray-200/80 px-2 py-2.5 text-xs font-semibold text-foreground hover:border-primary/30 hover:bg-primary/5 hover:text-primary"
+                    >
+                      <Printer className="h-4 w-4" />
+                      {text}
+                    </Button>
+                  ))}
                 </div>
               </DialogPanelBody>
-              <DialogFooter>
+
+              <DialogFooter className="sm:justify-stretch">
                 <Button
                   type="button"
                   onClick={closeResultModal}
-                  className="w-full bg-primary hover:bg-primary/90 sm:w-auto"
+                  className="w-full bg-primary hover:bg-primary/90"
                 >
-                  New Transaction
+                  New transaction
                 </Button>
               </DialogFooter>
             </>
-          )}
+          ) : null}
         </DialogPanel>
       </Dialog>
 

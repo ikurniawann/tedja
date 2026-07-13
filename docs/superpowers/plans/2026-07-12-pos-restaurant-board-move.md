@@ -42,4 +42,7 @@
 
 ## Execution
 
-User requested immediate implementation — execute Tasks 1–2 in this session.
+User requested immediate implementation — Tasks 1–2 done.
+
+- [x] Task 1: Helper + tests
+- [x] Task 2: Board + page wiring

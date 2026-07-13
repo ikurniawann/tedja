@@ -16,6 +16,7 @@ import {
   RESTAURANT_PATH,
   isRestaurantImmersive,
 } from "@/features/pos/restaurant/nav";
+import { PosNfcShell } from "@/features/pos/nfc";
 import type { NavItem } from "@/lib/iam/types";
 import { AppSidebarNavIcon } from "./app-sidebar-nav-icons";
 import AppSidebarNav from "./app-sidebar-nav";
@@ -61,16 +62,19 @@ function AppSidebarContent({
 
   if (restaurantImmersive) {
     return (
-      <div
-        className="arkiv-dashboard-theme min-h-screen"
-        style={{ background: "var(--page-mesh)" }}
-      >
-        <main className="min-h-screen overflow-auto p-0">{children}</main>
-      </div>
+      <PosNfcShell>
+        <div
+          className="arkiv-dashboard-theme min-h-screen"
+          style={{ background: "var(--page-mesh)" }}
+        >
+          <main className="min-h-screen overflow-auto p-0">{children}</main>
+        </div>
+      </PosNfcShell>
     );
   }
 
   return (
+    <PosNfcShell>
     <div
       className="arkiv-dashboard-theme flex min-h-screen"
       style={{ background: "var(--page-mesh)" }}
@@ -148,6 +152,7 @@ function AppSidebarContent({
         )}
       </div>
     </div>
+    </PosNfcShell>
   );
 }
 
