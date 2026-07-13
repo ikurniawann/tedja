@@ -3,4 +3,3 @@ export * from "./query-keys";
 export * from "./api";
 export * from "./queries";
 export * from "./mutations";
-export { OpenBillsPage } from "./components/open-bills-page";

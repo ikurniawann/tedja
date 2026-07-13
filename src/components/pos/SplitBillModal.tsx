@@ -1,13 +1,37 @@
-'use client';
+"use client";
 
-import { useState, useMemo, useEffect } from 'react';
+import { useEffect, useMemo, useState } from "react";
 import {
-  Users, Minus, Plus, AlertCircle, CheckCircle, Split, UtensilsCrossed, Equal, Hash,
-} from 'lucide-react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import type { PosCartItem } from '@/hooks/use-pos-cart';
+  AlertCircle,
+  CheckCircle,
+  Equal,
+  Minus,
+  Plus,
+  Split,
+  Users,
+  UtensilsCrossed,
+} from "lucide-react";
+
+import {
+  Dialog,
+  DialogFooter,
+  DialogPanel,
+  DialogPanelBody,
+  DialogPanelDescription,
+  DialogPanelHeader,
+  DialogPanelTitle,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import type { PosCartItem } from "@/hooks/use-pos-cart";
+import { cn } from "@/lib/utils";
+
+import {
+  buildEqualSplits,
+  buildPerItemSplits,
+  countUnassignedQty,
+  guestLabel,
+} from "./split-bill-calc";
 
 export interface SplitItemMapping {
   order_item_index: number;
@@ -18,7 +42,7 @@ export interface SplitItemMapping {
 }
 
 export interface SplitConfig {
-  mode: 'equal' | 'per-item' | 'custom';
+  mode: "equal" | "per-item";
   count: number;
   splits: {
     label: string;
@@ -31,6 +55,8 @@ export interface SplitConfig {
   }[];
 }
 
+type SplitMode = SplitConfig["mode"];
+
 interface SplitBillModalProps {
   open: boolean;
   total: number;
@@ -41,27 +67,36 @@ interface SplitBillModalProps {
   onClose: () => void;
   onConfirm: (config: SplitConfig) => void;
   formatCurrency: (n: number) => string;
+  confirming?: boolean;
 }
 
 export function SplitBillModal({
-  open, total, subtotal, taxAmount, discountAmount, cartItems,
-  onClose, onConfirm, formatCurrency,
+  open,
+  total,
+  taxAmount,
+  discountAmount,
+  cartItems,
+  onClose,
+  onConfirm,
+  formatCurrency,
+  confirming = false,
 }: SplitBillModalProps) {
-  const [mode, setMode] = useState<'equal' | 'per-item' | 'custom'>('equal');
+  const [mode, setMode] = useState<SplitMode>("equal");
   const [count, setCount] = useState(2);
-  const [labels, setLabels] = useState<string[]>(['', '']);
-
-  // per-item assignments: itemId -> [qty_split1, qty_split2, ...]
+  const [labels, setLabels] = useState<string[]>(["", ""]);
   const [assignments, setAssignments] = useState<Record<string, number[]>>({});
 
-  // custom nominal per split
-  const [customNominals, setCustomNominals] = useState<number[]>([0, 0]);
+  useEffect(() => {
+    if (!open) return;
+    setMode("equal");
+    setCount(2);
+    setLabels(["", ""]);
+  }, [open]);
 
-  // Initialize / sync assignments when items or count changes
   useEffect(() => {
     setAssignments((prev) => {
       const next: Record<string, number[]> = {};
-      cartItems.forEach((item) => {
+      for (const item of cartItems) {
         const existing = prev[item.id] || [];
         const arr = [...existing];
         while (arr.length < count) arr.push(0);
@@ -71,120 +106,68 @@ export function SplitBillModal({
           arr[0] = item.quantity;
         }
         next[item.id] = arr;
-      });
+      }
       return next;
     });
-    // Keep labels and customNominals in sync with count
     setLabels((prev) => {
       const next = [...prev];
-      while (next.length < count) next.push('');
+      while (next.length < count) next.push("");
       while (next.length > count) next.pop();
       return next;
     });
-    setCustomNominals((prev) => {
-      const next = [...prev];
-      while (next.length < count) {
-        const remainder = total - next.reduce((a, b) => a + b, 0);
-        next.push(Math.max(0, Math.floor(remainder)));
-      }
-      while (next.length > count) next.pop();
-      return next;
-    });
-  }, [cartItems, count, total]);
+  }, [cartItems, count]);
 
-  // ---- EQUAL MODE calculations ----
-  const equalSplits = useMemo(() => {
-    if (count <= 0) return [];
-    const base = Math.floor(total / count);
-    const remainder = total - base * count;
-    return Array.from({ length: count }, (_, i) => {
-      const isLast = i === count - 1;
-      const splitTotal = isLast ? base + remainder : base;
-      return {
-        label: labels[i] || `Orang ${i + 1}`,
-        total: splitTotal,
-        subtotal: 0,
-        tax: Math.round(taxAmount / count),
-        discount: Math.round(discountAmount / count),
-      };
-    });
-  }, [count, total, taxAmount, discountAmount, labels]);
+  const equalSplits = useMemo(
+    () =>
+      buildEqualSplits({
+        count,
+        total,
+        taxAmount,
+        discountAmount,
+        labels,
+      }),
+    [count, total, taxAmount, discountAmount, labels]
+  );
 
-  // ---- PER-ITEM MODE calculations ----
-  const perItemSplits = useMemo(() => {
-    const rawSubtotals = Array.from({ length: count }, (_, splitIdx) => {
-      let s = 0;
-      cartItems.forEach((item) => {
-        const qty = assignments[item.id]?.[splitIdx] || 0;
-        s += qty * item.price;
-      });
-      return s;
-    });
+  const perItemSplits = useMemo(
+    () =>
+      buildPerItemSplits({
+        count,
+        cartItems: cartItems.map((item) => ({
+          id: item.id,
+          name: item.name,
+          productId: item.productId,
+          price: item.price,
+          quantity: item.quantity,
+        })),
+        assignments,
+        taxAmount,
+        discountAmount,
+        labels,
+      }),
+    [count, cartItems, assignments, taxAmount, discountAmount, labels]
+  );
 
-    const rawTotalSubtotal = rawSubtotals.reduce((a, b) => a + b, 0);
+  const unassignedTotal = useMemo(
+    () =>
+      mode === "per-item"
+        ? countUnassignedQty(cartItems, assignments)
+        : 0,
+    [mode, cartItems, assignments]
+  );
 
-    return Array.from({ length: count }, (_, i) => {
-      const ratio = rawTotalSubtotal > 0 ? rawSubtotals[i] / rawTotalSubtotal : 0;
-      const splitTax = Math.round(taxAmount * ratio);
-      const splitDisc = Math.round(discountAmount * ratio);
-      const splitTotal = rawSubtotals[i] + splitTax - splitDisc;
-      return {
-        label: labels[i] || `Orang ${i + 1}`,
-        subtotal: rawSubtotals[i],
-        tax: splitTax,
-        discount: splitDisc,
-        total: splitTotal,
-      };
-    });
-  }, [count, cartItems, assignments, taxAmount, discountAmount, labels]);
+  const splitsToRender = mode === "equal" ? equalSplits : perItemSplits;
+  const splitTotalSum = splitsToRender.reduce((sum, s) => sum + s.total, 0);
 
-  // ---- CUSTOM MODE calculations ----
-  const customSplits = useMemo(() => {
-    return Array.from({ length: count }, (_, i) => {
-      const rawTotal = customNominals[i] || 0;
-      // Distribute tax/discount proportionally based on nominal vs total
-      const ratio = total > 0 ? rawTotal / total : 0;
-      const splitTax = Math.round(taxAmount * ratio);
-      const splitDisc = Math.round(discountAmount * ratio);
-      const splitSubtotal = rawTotal - splitTax + splitDisc;
-      return {
-        label: labels[i] || `Orang ${i + 1}`,
-        total: rawTotal,
-        subtotal: splitSubtotal,
-        tax: splitTax,
-        discount: splitDisc,
-      };
-    });
-  }, [count, customNominals, labels, total, taxAmount, discountAmount]);
+  const isValid = useMemo(() => {
+    if (mode === "equal") {
+      return equalSplits.reduce((sum, s) => sum + s.total, 0) === total;
+    }
+    return unassignedTotal === 0 && cartItems.length > 0;
+  }, [mode, equalSplits, total, unassignedTotal, cartItems.length]);
 
-  // ---- Unassigned calculation ----
-  const unassignedTotal = useMemo(() => {
-    if (mode !== 'per-item') return 0;
-    let u = 0;
-    cartItems.forEach((item) => {
-      const assigned = (assignments[item.id] || []).reduce((a, b) => a + b, 0);
-      u += Math.max(0, item.quantity - assigned);
-    });
-    return u;
-  }, [mode, cartItems, assignments]);
-
-  // ---- Custom remainder ----
-  const customRemainder = useMemo(() => {
-    if (mode !== 'custom') return 0;
-    const sum = customNominals.reduce((a, b) => a + b, 0);
-    return total - sum;
-  }, [mode, customNominals, total]);
-
-  // ---- Handlers ----
   const handleDecrease = () => setCount((c) => Math.max(2, c - 1));
-  const handleIncrease = () => {
-    setCount((c) => c + 1);
-    setLabels((prev) => [...prev, '']);
-    setCustomNominals((prev) => {
-      const sum = prev.reduce((a, b) => a + b, 0);
-      return [...prev, Math.max(0, total - sum)];
-    });
-  };
+  const handleIncrease = () => setCount((c) => c + 1);
 
   const handleLabelChange = (idx: number, val: string) => {
     setLabels((prev) => {
@@ -213,27 +196,22 @@ export function SplitBillModal({
       const item = cartItems.find((i) => i.id === itemId);
       if (!item) return prev;
       const arr = [...(prev[itemId] || Array(count).fill(0))];
-      const currentAssigned = arr.reduce((a, b, idx) => a + (idx === splitIdx ? 0 : b), 0);
+      const currentAssigned = arr.reduce(
+        (a, b, idx) => a + (idx === splitIdx ? 0 : b),
+        0
+      );
       const maxVal = Math.max(0, item.quantity - currentAssigned);
-      const nextVal = Math.max(0, Math.min(val, maxVal));
-      arr[splitIdx] = nextVal;
+      arr[splitIdx] = Math.max(0, Math.min(val, maxVal));
       return { ...prev, [itemId]: arr };
     });
   };
 
-  const handleCustomNominalChange = (idx: number, rawVal: string) => {
-    const val = parseFloat(rawVal.replace(/[^0-9]/g, '')) || 0;
-    setCustomNominals((prev) => {
-      const next = [...prev];
-      next[idx] = Math.max(0, val);
-      return next;
-    });
-  };
-
   const handleConfirm = () => {
-    if (mode === 'equal') {
+    if (!isValid || confirming) return;
+
+    if (mode === "equal") {
       onConfirm({
-        mode: 'equal',
+        mode: "equal",
         count,
         splits: equalSplits.map((s) => ({
           label: s.label,
@@ -243,192 +221,138 @@ export function SplitBillModal({
           discount_amount: s.discount,
         })),
       });
-    } else if (mode === 'custom') {
-      onConfirm({
-        mode: 'custom',
-        count,
-        splits: customSplits.map((s) => ({
-          label: s.label,
-          total: s.total,
-          subtotal: s.subtotal,
-          tax_amount: s.tax,
-          discount_amount: s.discount,
-        })),
-      });
-    } else {
-      const splits: SplitConfig['splits'] = perItemSplits.map((s, splitIdx) => {
-        const items: SplitItemMapping[] = [];
-        cartItems.forEach((item, itemIdx) => {
-          const qty = assignments[item.id]?.[splitIdx] || 0;
-          if (qty > 0) {
-            items.push({
-              order_item_index: itemIdx,
-              quantity: qty,
-              product_id: item.productId,
-              product_name: item.name,
-              unit_price: item.price,
-            });
-          }
-        });
-        return {
-          label: s.label,
-          subtotal: s.subtotal,
-          tax_amount: s.tax,
-          discount_amount: s.discount,
-          total: s.total,
-          items,
-        };
-      });
-      onConfirm({ mode: 'per-item', count, splits });
+      return;
     }
+
+    const splits: SplitConfig["splits"] = perItemSplits.map((s, splitIdx) => {
+      const items: SplitItemMapping[] = [];
+      cartItems.forEach((item, itemIdx) => {
+        const qty = assignments[item.id]?.[splitIdx] || 0;
+        if (qty > 0) {
+          items.push({
+            order_item_index: itemIdx,
+            quantity: qty,
+            product_id: item.productId,
+            product_name: item.name,
+            unit_price: item.price,
+          });
+        }
+      });
+      return {
+        label: s.label,
+        subtotal: s.subtotal,
+        tax_amount: s.tax,
+        discount_amount: s.discount,
+        total: s.total,
+        items,
+      };
+    });
+    onConfirm({ mode: "per-item", count, splits });
   };
 
-  const isValid = useMemo(() => {
-    if (mode === 'equal') {
-      return equalSplits.reduce((sum, s) => sum + s.total, 0) === total;
-    }
-    if (mode === 'custom') {
-      return customRemainder === 0;
-    }
-    return unassignedTotal === 0;
-  }, [mode, equalSplits, total, customRemainder, unassignedTotal]);
-
-  const splitsToRender = mode === 'equal' ? equalSplits : mode === 'custom' ? customSplits : perItemSplits;
-  const splitTotalSum = splitsToRender.reduce((sum, s) => sum + s.total, 0);
-
   return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Split className="w-5 h-5 text-pink-600" /> Split Bill
-          </DialogTitle>
-        </DialogHeader>
+    <Dialog open={open} onOpenChange={(v) => !v && !confirming && onClose()}>
+      <DialogPanel size="lg">
+        <DialogPanelHeader>
+          <DialogPanelTitle className="flex items-center gap-2">
+            <Split className="h-5 w-5 text-primary" />
+            Split Bill
+          </DialogPanelTitle>
+          <DialogPanelDescription>
+            Split equally or by item · Bill total {formatCurrency(total)}
+          </DialogPanelDescription>
+        </DialogPanelHeader>
 
-        <div className="space-y-4 py-2">
-          {/* Mode Toggle */}
-          <div className="flex p-1 bg-gray-100 rounded-lg">
+        <DialogPanelBody className="space-y-4">
+          <div className="flex rounded-lg border border-gray-200/70 bg-muted/40 p-1">
             <button
-              onClick={() => setMode('equal')}
-              className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-md text-sm font-medium transition-all ${
-                mode === 'equal' ? 'bg-white shadow-sm text-pink-600' : 'text-gray-500'
-              }`}
+              type="button"
+              onClick={() => setMode("equal")}
+              className={cn(
+                "flex flex-1 items-center justify-center gap-2 rounded-md py-2 text-sm font-medium transition-colors",
+                mode === "equal"
+                  ? "bg-white text-primary shadow-xs"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
             >
-              <Equal className="w-4 h-4" /> Sama Rata
+              <Equal className="h-4 w-4" />
+              Split equally
             </button>
             <button
-              onClick={() => setMode('custom')}
-              className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-md text-sm font-medium transition-all ${
-                mode === 'custom' ? 'bg-white shadow-sm text-pink-600' : 'text-gray-500'
-              }`}
+              type="button"
+              onClick={() => setMode("per-item")}
+              className={cn(
+                "flex flex-1 items-center justify-center gap-2 rounded-md py-2 text-sm font-medium transition-colors",
+                mode === "per-item"
+                  ? "bg-white text-primary shadow-xs"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
             >
-              <Hash className="w-4 h-4" /> Nominal
-            </button>
-            <button
-              onClick={() => setMode('per-item')}
-              className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-md text-sm font-medium transition-all ${
-                mode === 'per-item' ? 'bg-white shadow-sm text-pink-600' : 'text-gray-500'
-              }`}
-            >
-              <UtensilsCrossed className="w-4 h-4" /> Per Item
+              <UtensilsCrossed className="h-4 w-4" />
+              Split by item
             </button>
           </div>
 
-          {/* Split count */}
-          <div className="flex items-center justify-between bg-gray-50 rounded-xl p-4">
+          <div className="flex items-center justify-between rounded-xl border border-gray-200/70 bg-muted/30 p-4">
             <div className="flex items-center gap-3">
-              <Users className="w-5 h-5 text-gray-500" />
+              <Users className="h-5 w-5 text-muted-foreground" />
               <div>
-                <p className="text-sm font-medium text-gray-900">Jumlah Orang</p>
-                <p className="text-xs text-gray-500">
-                  {mode === 'equal'
-                    ? 'Bagikan sama rata'
-                    : mode === 'custom'
-                    ? 'Atur nominal per orang'
-                    : 'Atur item per orang'}
+                <p className="text-sm font-medium text-foreground">Guests</p>
+                <p className="text-xs text-muted-foreground">
+                  {mode === "equal"
+                    ? "Divide the bill evenly"
+                    : "Assign each item to a guest"}
                 </p>
               </div>
             </div>
             <div className="flex items-center gap-3">
-              <button
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="h-8 w-8 border-gray-200/80"
                 onClick={handleDecrease}
-                className="w-8 h-8 rounded-full border-2 border-gray-200 flex items-center justify-center hover:bg-gray-100 text-gray-600 disabled:opacity-30"
-                disabled={count <= 2}
+                disabled={count <= 2 || confirming}
               >
-                <Minus className="w-4 h-4" />
-              </button>
-              <span className="text-lg font-bold text-gray-900 w-6 text-center">{count}</span>
-              <button
+                <Minus className="h-4 w-4" />
+              </Button>
+              <span className="w-6 text-center text-lg font-bold text-foreground">
+                {count}
+              </span>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="h-8 w-8 border-gray-200/80"
                 onClick={handleIncrease}
-                className="w-8 h-8 rounded-full border-2 border-gray-200 flex items-center justify-center hover:bg-gray-100 text-gray-600"
+                disabled={confirming}
               >
-                <Plus className="w-4 h-4" />
-              </button>
+                <Plus className="h-4 w-4" />
+              </Button>
             </div>
           </div>
 
-          {/* Custom Nominal Inputs */}
-          {mode === 'custom' && (
-            <div className="space-y-3">
-              {Array.from({ length: count }, (_, idx) => (
-                <div key={idx} className="flex items-center gap-3 bg-gray-50 rounded-lg p-3">
-                  <div className="w-6 h-6 rounded-full bg-pink-600 text-white text-xs font-bold flex items-center justify-center flex-shrink-0">
-                    {idx + 1}
-                  </div>
-                  <div className="flex-1">
-                    <Input
-                      placeholder={`Nama orang ${idx + 1}`}
-                      value={labels[idx] || ''}
-                      onChange={(e) => handleLabelChange(idx, e.target.value)}
-                      className="h-8 text-sm border-gray-200 bg-white mb-2"
-                    />
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-gray-500">Nominal</span>
-                      <Input
-                        type="number"
-                        min={0}
-                        value={customNominals[idx] || 0}
-                        onChange={(e) => handleCustomNominalChange(idx, e.target.value)}
-                        className="h-8 text-sm border-gray-200 bg-white flex-1"
-                      />
-                    </div>
-                  </div>
-                  <div className="text-right text-sm font-bold text-gray-900">
-                    {formatCurrency(customNominals[idx] || 0)}
-                  </div>
-                </div>
-              ))}
-              <div className="flex items-center justify-between px-1 text-sm">
-                <span className="text-gray-500">Sisa</span>
-                <span className={`font-bold ${customRemainder !== 0 ? 'text-red-600' : 'text-green-600'}`}>
-                  {formatCurrency(Math.abs(customRemainder))}
-                </span>
-              </div>
-              {customRemainder !== 0 && (
-                <div className="flex items-center gap-2 bg-red-50 text-red-700 text-xs px-3 py-2 rounded-lg">
-                  <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                  Total nominal ({formatCurrency(splitTotalSum)}) harus sama dengan total order ({formatCurrency(total)}).
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Per-Item Assignment UI */}
-          {mode === 'per-item' && (
+          {mode === "per-item" && (
             <div className="space-y-3">
               {cartItems.length === 0 ? (
-                <div className="text-center text-sm text-gray-400 py-4">Tidak ada item di cart.</div>
+                <div className="rounded-lg border border-gray-200/70 bg-muted/30 px-3 py-4 text-center text-sm text-muted-foreground">
+                  No items on this bill.
+                </div>
               ) : (
                 <div className="space-y-2">
-                  {/* Header row with split labels */}
-                  <div className="grid gap-2 text-[10px] text-gray-500 text-center items-end"
-                    style={{ gridTemplateColumns: `1fr repeat(${count + 1}, minmax(48px, 1fr))` }}
+                  <div
+                    className="grid items-end gap-2 text-center text-[10px] text-muted-foreground"
+                    style={{
+                      gridTemplateColumns: `1fr repeat(${count + 1}, minmax(48px, 1fr))`,
+                    }}
                   >
-                    <div className="text-left pl-1">Item / Harga</div>
+                    <div className="pl-1 text-left">Item / price</div>
                     {Array.from({ length: count }, (_, i) => (
-                      <div key={i} className="leading-tight">{labels[i] || `S${i + 1}`}</div>
+                      <div key={i} className="leading-tight">
+                        {labels[i]?.trim() || guestLabel(i)}
+                      </div>
                     ))}
-                    <div>Sisa</div>
+                    <div>Left</div>
                   </div>
 
                   {cartItems.map((item) => {
@@ -436,38 +360,79 @@ export function SplitBillModal({
                     const assigned = arr.reduce((a, b) => a + b, 0);
                     const remaining = Math.max(0, item.quantity - assigned);
                     return (
-                      <div key={item.id} className="bg-gray-50 rounded-lg p-2 space-y-1.5">
-                        <div className="flex justify-between items-center text-xs px-1">
-                          <span className="font-medium text-gray-900 truncate">{item.name}</span>
-                          <span className="text-gray-500">{formatCurrency(item.price)} × {item.quantity}</span>
+                      <div
+                        key={item.id}
+                        className="space-y-1.5 rounded-lg border border-gray-200/70 bg-muted/20 p-2"
+                      >
+                        <div className="flex items-center justify-between gap-2 px-1 text-xs">
+                          <span className="truncate font-medium text-foreground">
+                            {item.name}
+                          </span>
+                          <span className="shrink-0 text-muted-foreground">
+                            {formatCurrency(item.price)} × {item.quantity}
+                          </span>
                         </div>
-                        <div className="grid gap-2 items-center"
-                          style={{ gridTemplateColumns: `1fr repeat(${count + 1}, minmax(48px, 1fr))` }}
+                        <div
+                          className="grid items-center gap-2"
+                          style={{
+                            gridTemplateColumns: `1fr repeat(${count + 1}, minmax(48px, 1fr))`,
+                          }}
                         >
-                          <div className="text-[10px] text-gray-400 pl-1">Sub: {formatCurrency(item.price * item.quantity)}</div>
+                          <div className="pl-1 text-[10px] text-muted-foreground">
+                            Sub {formatCurrency(item.price * item.quantity)}
+                          </div>
                           {Array.from({ length: count }, (_, splitIdx) => (
-                            <div key={splitIdx} className="flex items-center justify-center">
-                              <div className="flex items-center bg-white border border-gray-200 rounded-md overflow-hidden h-7">
+                            <div
+                              key={splitIdx}
+                              className="flex items-center justify-center"
+                            >
+                              <div className="flex h-7 items-center overflow-hidden rounded-md border border-gray-200/80 bg-white">
                                 <button
-                                  onClick={() => handleQtyChange(item.id, splitIdx, -1)}
-                                  className="px-1.5 text-gray-500 hover:bg-gray-100 text-xs"
-                                >−</button>
+                                  type="button"
+                                  onClick={() =>
+                                    handleQtyChange(item.id, splitIdx, -1)
+                                  }
+                                  disabled={confirming}
+                                  className="px-1.5 text-xs text-muted-foreground hover:bg-muted/50"
+                                >
+                                  −
+                                </button>
                                 <input
                                   type="number"
                                   min={0}
                                   max={item.quantity}
                                   value={arr[splitIdx] || 0}
-                                  onChange={(e) => handleSetQty(item.id, splitIdx, parseInt(e.target.value) || 0)}
-                                  className="w-6 text-center text-xs font-semibold text-gray-900 border-0 p-0 focus:ring-0"
+                                  disabled={confirming}
+                                  onChange={(e) =>
+                                    handleSetQty(
+                                      item.id,
+                                      splitIdx,
+                                      parseInt(e.target.value, 10) || 0
+                                    )
+                                  }
+                                  className="w-6 border-0 p-0 text-center text-xs font-semibold text-foreground focus:ring-0"
                                 />
                                 <button
-                                  onClick={() => handleQtyChange(item.id, splitIdx, 1)}
-                                  className="px-1.5 text-gray-500 hover:bg-gray-100 text-xs"
-                                >+</button>
+                                  type="button"
+                                  onClick={() =>
+                                    handleQtyChange(item.id, splitIdx, 1)
+                                  }
+                                  disabled={confirming}
+                                  className="px-1.5 text-xs text-muted-foreground hover:bg-muted/50"
+                                >
+                                  +
+                                </button>
                               </div>
                             </div>
                           ))}
-                          <div className={`text-center text-xs font-bold ${remaining > 0 ? 'text-red-500' : 'text-green-600'}`}>
+                          <div
+                            className={cn(
+                              "text-center text-xs font-bold",
+                              remaining > 0
+                                ? "text-red-600"
+                                : "text-emerald-600"
+                            )}
+                          >
                             {remaining}
                           </div>
                         </div>
@@ -478,74 +443,95 @@ export function SplitBillModal({
               )}
 
               {unassignedTotal > 0 && (
-                <div className="flex items-center gap-2 bg-red-50 text-red-700 text-xs px-3 py-2 rounded-lg">
-                  <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                  Ada {unassignedTotal} item yang belum di-assign.
+                <div className="flex items-center gap-2 rounded-lg border border-red-200/80 bg-red-50 px-3 py-2 text-xs text-red-700">
+                  <AlertCircle className="h-4 w-4 shrink-0" />
+                  {unassignedTotal} item qty still unassigned.
                 </div>
               )}
             </div>
           )}
 
-          {/* Split labels & Totals (Equal or Per-Item) */}
-          {mode !== 'custom' && (
-            <div className="space-y-2">
-              {Array.from({ length: count }, (_, idx) => {
-                const s = splitsToRender[idx];
-                return (
-                  <div key={idx} className="flex items-center gap-3 bg-gray-50 rounded-lg p-3">
-                    <div className="w-6 h-6 rounded-full bg-pink-600 text-white text-xs font-bold flex items-center justify-center flex-shrink-0">
-                      {idx + 1}
-                    </div>
-                    <div className="flex-1">
-                      <Input
-                        placeholder={`Nama orang ${idx + 1}`}
-                        value={labels[idx] || ''}
-                        onChange={(e) => handleLabelChange(idx, e.target.value)}
-                        className="h-8 text-sm border-gray-200 bg-white"
-                      />
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm font-bold text-pink-600">{formatCurrency(s.total)}</p>
-                      <p className="text-[10px] text-gray-500">
-                        {mode === 'per-item' ? (
-                          <>Sub {formatCurrency(s.subtotal)} · Tax {formatCurrency(s.tax)} · Disc {formatCurrency(s.discount)}</>
-                        ) : (
-                          <>Tax {formatCurrency(s.tax)} · Disc {formatCurrency(s.discount)}</>
-                        )}
-                      </p>
-                    </div>
+          <div className="space-y-2">
+            {Array.from({ length: count }, (_, idx) => {
+              const s = splitsToRender[idx];
+              return (
+                <div
+                  key={idx}
+                  className="flex items-center gap-3 rounded-lg border border-gray-200/70 bg-muted/20 p-3"
+                >
+                  <div className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-primary text-xs font-bold text-primary-foreground">
+                    {idx + 1}
                   </div>
-                );
-              })}
-            </div>
-          )}
-
-          {/* Total check */}
-          <div className="flex items-center justify-between text-sm px-1">
-            <span className="text-gray-500">Total Split</span>
-            <span className="font-bold text-gray-900">{formatCurrency(splitTotalSum)}</span>
+                  <div className="min-w-0 flex-1">
+                    <Input
+                      placeholder={guestLabel(idx)}
+                      value={labels[idx] || ""}
+                      onChange={(e) => handleLabelChange(idx, e.target.value)}
+                      disabled={confirming}
+                      className="h-8 border-gray-200/80 bg-white text-sm"
+                    />
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <p className="text-sm font-bold text-primary">
+                      {formatCurrency(s?.total || 0)}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground">
+                      {mode === "per-item" ? (
+                        <>
+                          Sub {formatCurrency(s?.subtotal || 0)} · Tax{" "}
+                          {formatCurrency(s?.tax || 0)} · Disc{" "}
+                          {formatCurrency(s?.discount || 0)}
+                        </>
+                      ) : (
+                        <>
+                          Tax {formatCurrency(s?.tax || 0)} · Disc{" "}
+                          {formatCurrency(s?.discount || 0)}
+                        </>
+                      )}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
           </div>
 
-          {mode === 'equal' && splitTotalSum !== total && (
-            <div className="flex items-center gap-2 bg-red-50 text-red-700 text-xs px-3 py-2 rounded-lg">
-              <AlertCircle className="w-4 h-4 flex-shrink-0" />
-              Total split ({formatCurrency(splitTotalSum)}) ≠ Order ({formatCurrency(total)}).
+          <div className="flex items-center justify-between px-1 text-sm">
+            <span className="text-muted-foreground">Split total</span>
+            <span className="font-bold text-foreground">
+              {formatCurrency(splitTotalSum)}
+            </span>
+          </div>
+
+          {mode === "equal" && splitTotalSum !== total && (
+            <div className="flex items-center gap-2 rounded-lg border border-red-200/80 bg-red-50 px-3 py-2 text-xs text-red-700">
+              <AlertCircle className="h-4 w-4 shrink-0" />
+              Split total ({formatCurrency(splitTotalSum)}) must equal the bill (
+              {formatCurrency(total)}).
             </div>
           )}
+        </DialogPanelBody>
 
-          {/* Actions */}
-          <div className="flex gap-3 pt-2">
-            <Button variant="outline" className="flex-1" onClick={onClose}>Batal</Button>
-            <Button
-              className="flex-1 bg-pink-600 hover:bg-pink-700"
-              onClick={handleConfirm}
-              disabled={!isValid}
-            >
-              <CheckCircle className="w-4 h-4 mr-2" /> Konfirmasi Split
-            </Button>
-          </div>
-        </div>
-      </DialogContent>
+        <DialogFooter>
+          <Button
+            type="button"
+            variant="outline"
+            className="border-gray-200/80"
+            onClick={onClose}
+            disabled={confirming}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            className="bg-primary hover:bg-primary/90"
+            onClick={handleConfirm}
+            disabled={!isValid || confirming}
+          >
+            <CheckCircle className="mr-2 h-4 w-4" />
+            {confirming ? "Creating…" : "Create split"}
+          </Button>
+        </DialogFooter>
+      </DialogPanel>
     </Dialog>
   );
 }

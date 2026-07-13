@@ -6,14 +6,16 @@ export type * from "./types";
 export async function getPosDashboard(period: DashboardPeriod = "today"): Promise<DashboardBundle> {
   const res = await getDashboardStats(period);
   if (!res.success || !res.data) {
-    throw new Error((res as { error?: string }).error || "Gagal memuat data dashboard");
+    throw new Error((res as { error?: string }).error || "Failed to load dashboard data");
   }
 
   const data = res.data as DashboardBundle;
   return {
     stats: data.stats ?? null,
     topProducts: data.topProducts ?? [],
-    lowStock: data.lowStock ?? [],
     recentOrders: data.recentOrders ?? [],
+    arkXp: data.arkXp ?? null,
+    trend: data.trend ?? [],
+    topLoyalMembers: data.topLoyalMembers ?? [],
   };
 }

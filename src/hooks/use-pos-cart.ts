@@ -145,6 +145,7 @@ export function usePosCart() {
 
   return {
     ...state,
+    hydrated,
     subtotal,
     tax,
     total,

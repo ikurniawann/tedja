@@ -182,6 +182,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: orderErr?.message || 'Failed to create order' }, { status: 500 });
     }
 
+    // Adding a new open bill for a table clears Pre Settlement (back to orange).
+    if (table_id) {
+      const now = new Date().toISOString();
+      const { error: clearError } = await db
+        .from('pos_orders')
+        .update({ pre_settled_at: null, updated_at: now })
+        .eq('table_id', table_id)
+        .in('status', ['pending', 'confirmed', 'preparing', 'ready', 'served'])
+        .not('pre_settled_at', 'is', null);
+
+      if (clearError && clearError.code !== '42703' && clearError.code !== 'PGRST204') {
+        console.error('Clear pre_settled_at error:', clearError);
+      }
+    }
+
     // Insert order items
     // Note: pos_order_items stores variant/modifier details in JSON columns.
     // The DB schema does not have separate variant_price_adjustment / modifier_price_adjustment columns,

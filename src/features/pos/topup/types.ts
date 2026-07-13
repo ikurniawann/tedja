@@ -7,6 +7,7 @@ export interface TopupCustomer {
   phone: string;
   membership_tier?: string | null;
   ark_coin_balance: number;
+  nfc_uid?: string | null;
 }
 
 export interface TopupResult {

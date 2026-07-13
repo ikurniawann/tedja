@@ -3,6 +3,7 @@
 import { Minus, Plus, Trash2, ShoppingBag, Utensils, Truck, Check, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { PosCartItem } from '@/hooks/use-pos-cart';
+import { HelpHint } from '@/components/ui/help-hint';
 
 interface CartPanelProps {
   cart: PosCartItem[];
@@ -63,7 +64,7 @@ export function CartPanel({
 
         <div className="flex flex-wrap gap-2">
           {orderType === 'dine_in' && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-pink-50 px-2.5 py-1 text-xs font-medium text-pink-700">
+            <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
               <Utensils className="h-3 w-3" /> Dine-in
             </span>
           )}
@@ -77,9 +78,15 @@ export function CartPanel({
               <Truck className="h-3 w-3" /> Delivery
             </span>
           )}
-          {selectedTable && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-pink-50 px-2.5 py-1 text-xs font-medium text-pink-700">
-              {selectedTable}
+          {orderType === 'dine_in' && (
+            <span
+              className={
+                selectedTable
+                  ? 'inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary'
+                  : 'inline-flex items-center gap-1 rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-600'
+              }
+            >
+              {selectedTable ? `Table ${selectedTable}` : 'Without Table'}
             </span>
           )}
         </div>
@@ -100,7 +107,7 @@ export function CartPanel({
                 {(item.variantName || (item.modifierNames && item.modifierNames.length > 0)) && (
                   <div className="mb-1 mt-1 flex flex-wrap gap-1">
                     {item.variantName && (
-                      <span className="inline-flex items-center rounded bg-pink-50 px-1.5 py-0.5 text-xs font-medium text-pink-700">
+                      <span className="inline-flex items-center rounded bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary">
                         {item.variantName}
                       </span>
                     )}
@@ -164,20 +171,23 @@ export function CartPanel({
           </div>
         )}
         <div className="flex items-center justify-between text-sm">
-          <button
-            type="button"
-            onClick={() => setIncludeTax(!includeTax)}
-            className="flex items-center gap-2 text-gray-600 hover:text-gray-900"
-          >
-            <div
-              className={`flex h-4 w-4 items-center justify-center rounded border ${
-                includeTax ? 'border-pink-600 bg-pink-600' : 'border-gray-300'
-              }`}
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setIncludeTax(!includeTax)}
+              className="flex items-center gap-2 text-gray-600 hover:text-gray-900"
             >
-              {includeTax && <Check className="h-3 w-3 text-white" />}
-            </div>
-            <span>Tax (10%)</span>
-          </button>
+              <div
+                className={`flex h-4 w-4 items-center justify-center rounded border ${
+                  includeTax ? 'border-primary bg-primary' : 'border-gray-300'
+                }`}
+              >
+                {includeTax && <Check className="h-3 w-3 text-white" />}
+              </div>
+              <span>Tax (10%)</span>
+            </button>
+            <HelpHint helpId="pos.tax-toggle" role="default" />
+          </div>
           <div className="text-right">
             <div className="font-medium text-gray-900">{formatCurrency(tax)}</div>
             <div className="text-xs font-medium text-amber-600">{formatArk(tax)}</div>
@@ -201,7 +211,7 @@ export function CartPanel({
               <div className="text-lg font-bold text-gray-900">Total</div>
               <div className="text-xs font-medium text-amber-600">{formatArk(totalAfterArk)}</div>
             </div>
-            <div className="text-2xl font-bold text-pink-600">{formatCurrency(totalAfterArk)}</div>
+            <div className="text-2xl font-bold text-primary">{formatCurrency(totalAfterArk)}</div>
           </div>
         )}
       </div>
@@ -225,7 +235,7 @@ export function CartPanel({
           type="button"
           onClick={setShowPaymentModal}
           disabled={cart.length === 0 || !canTransact}
-          className="h-11 w-full bg-pink-600 font-semibold hover:bg-pink-700"
+          className="h-11 w-full bg-primary font-semibold hover:bg-primary/90"
         >
           Pay {formatCurrency(total)}
         </Button>
@@ -242,7 +252,7 @@ export function CartPanel({
               Saving...
             </>
           ) : (
-            'Save Open Bill'
+            'Order'
           )}
         </Button>
       </div>

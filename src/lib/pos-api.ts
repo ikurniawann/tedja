@@ -87,14 +87,15 @@ export interface Customer {
   total_spent: number;
   visit_count: number;
   discount?: number; // Discount percentage based on tier
+  nfc_uid?: string | null;
 }
 
-export async function getCustomers(params?: { search?: string; phone?: string }) {
+export async function getCustomers(params?: { search?: string; phone?: string; nfc_uid?: string }) {
   const queryString = params ? new URLSearchParams(params as any).toString() : '';
   return fetchAPI<{ success: boolean; data: Customer[] }>(`/customers${queryString ? '?' + queryString : ''}`);
 }
 
-export async function saveCustomer(customer: Partial<Customer> & { phone: string; enroll_member?: boolean }) {
+export async function saveCustomer(customer: Partial<Customer> & { phone: string; enroll_member?: boolean; nfc_uid?: string }) {
   return fetchAPI<{ success: boolean; data: Customer; message: string }>('/customers', {
     method: 'POST',
     body: JSON.stringify(customer),
@@ -238,10 +239,44 @@ export async function moveOrderTable(
   });
 }
 
-export async function mergeOrders(sourceOrderId: string, targetOrderId: string, supervisorPin: string) {
-  return fetchAPI<{ success: boolean; data: any; error?: string }>(`/orders/${sourceOrderId}/merge`, {
-    method: 'POST',
-    body: JSON.stringify({ target_order_id: targetOrderId, supervisor_pin: supervisorPin }),
+export async function mergeOrders(
+  sourceOrderId: string,
+  targetOrderId: string,
+  supervisorPin?: string
+) {
+  return fetchAPI<{ success: boolean; data: any; error?: string }>(
+    `/orders/${sourceOrderId}/merge`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        target_order_id: targetOrderId,
+        ...(supervisorPin != null && String(supervisorPin).trim() !== ""
+          ? { supervisor_pin: supervisorPin }
+          : {}),
+      }),
+    }
+  );
+}
+
+export async function transferOrderItems(
+  sourceOrderId: string,
+  payload: {
+    target_table_id: string;
+    items: Array<{ order_item_id: string; qty: number }>;
+  }
+) {
+  return fetchAPI<{
+    success: boolean;
+    data?: {
+      source_order_id: string;
+      target_order_id: string;
+      created_target?: boolean;
+      message?: string;
+    };
+    error?: string;
+  }>(`/orders/${sourceOrderId}/transfer-items`, {
+    method: "POST",
+    body: JSON.stringify(payload),
   });
 }
 
@@ -269,6 +304,18 @@ export async function openBill(payload: OpenBillRequest) {
   return fetchAPI<{ success: boolean; data: Order; error?: string }>('/orders/open-bill', {
     method: 'POST',
     body: JSON.stringify(payload),
+  });
+}
+
+export async function preSettleOrder(orderId: string) {
+  return fetchAPI<{
+    success: boolean;
+    data?: { id: string; pre_settled_at?: string | null };
+    error?: string;
+    message?: string;
+  }>(`/orders/${orderId}/pre-settle`, {
+    method: 'POST',
+    body: JSON.stringify({}),
   });
 }
 
@@ -373,16 +420,20 @@ export interface PosTable {
   name: string;
   label: string;
   capacity: number;
-  area: string;
-  status: 'available' | 'occupied' | 'reserved' | 'maintenance' | string;
+  floor?: string | null;
+  area?: string | null;
+  status: 'available' | 'occupied' | 'billing' | 'reserved' | 'maintenance' | string;
   qr_code?: string | null;
   is_active: boolean;
+  pos_x?: number | null;
+  pos_y?: number | null;
   active_order?: {
     id: string;
     order_number?: string;
     status?: string;
     payment_status?: string;
     total_amount: number;
+    pre_settled_at?: string | null;
   } | null;
 }
 
@@ -486,8 +537,13 @@ export async function processTopup(data: {
 // ============ RESERVATIONS ============
 
 export async function getReservations(params?: { date?: string; status?: string }) {
-  const queryString = params ? new URLSearchParams(params as any).toString() : '';
-  return fetchAPI<{ success: boolean; data: any[] }>(`/reservations${queryString ? '?' + queryString : ''}`);
+  const search = new URLSearchParams();
+  if (params?.date) search.set("date", params.date);
+  if (params?.status) search.set("status", params.status);
+  const queryString = search.toString();
+  return fetchAPI<{ success: boolean; data: any[] }>(
+    `/reservations${queryString ? `?${queryString}` : ""}`
+  );
 }
 
 export async function createReservation(reservation: {
@@ -497,10 +553,12 @@ export async function createReservation(reservation: {
   time_slot: string;
   pax_count: number;
   table_id?: string;
+  customer_id?: string;
   deposit_amount?: number;
   notes?: string;
+  special_requests?: string;
 }) {
-  return fetchAPI<{ success: boolean; data: any }>('/reservations', {
+  return fetchAPI<{ success: boolean; data: any; error?: string }>('/reservations', {
     method: 'POST',
     body: JSON.stringify(reservation),
   });
@@ -514,6 +572,24 @@ export async function updateReservationStatus(
   return fetchAPI<{ success: boolean; data: any }>(`/reservations/${reservationId}`, {
     method: 'PATCH',
     body: JSON.stringify({ status, ...additionalData }),
+  });
+}
+
+export async function seatReservation(
+  reservationId: string,
+  payload?: { table_id?: string | null }
+) {
+  return fetchAPI<{
+    success: boolean;
+    data?: {
+      reservation: unknown;
+      order: { id: string; table_id?: string | null; order_number?: string };
+      message?: string;
+    };
+    error?: string;
+  }>(`/reservations/${reservationId}/seat`, {
+    method: "POST",
+    body: JSON.stringify(payload ?? {}),
   });
 }
 

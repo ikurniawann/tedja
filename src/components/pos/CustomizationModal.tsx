@@ -69,7 +69,7 @@ export function CustomizationModal({
               <PosProductThumbnail src={product.image_url} alt={product.name} iconClassName="h-8 w-8" />
             </div>
             <div className="flex-1">
-              <div className="text-lg font-bold text-pink-600">{formatCurrency(product.base_price)}</div>
+              <div className="text-lg font-bold text-primary">{formatCurrency(product.base_price)}</div>
               <div className="text-sm text-amber-600 font-medium">{formatArk(product.base_price)}</div>
             </div>
           </div>
@@ -78,7 +78,7 @@ export function CustomizationModal({
           {variants.length > 0 && (
             <div className="space-y-3">
               <label className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-pink-600" />
+                <Sparkles className="w-4 h-4 text-primary" />
                 Pilih Varian
               </label>
               <div className="grid grid-cols-2 gap-2">
@@ -99,8 +99,8 @@ export function CustomizationModal({
                       }
                       className={`p-3 rounded-lg border-2 text-left transition-all ${
                         selected
-                          ? "border-pink-600 bg-pink-50"
-                          : "border-gray-200 hover:border-pink-300"
+                          ? "border-primary bg-primary/10"
+                          : "border-gray-200 hover:border-primary/30"
                       }`}
                     >
                       <div className="font-medium text-gray-900">{variant.name}</div>
@@ -119,7 +119,7 @@ export function CustomizationModal({
             return (
               <div key={group.modifier_group.id} className="space-y-3">
                 <label className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-                  <Utensils className="w-4 h-4 text-pink-600" />
+                  <Utensils className="w-4 h-4 text-primary" />
                   {groupName}
                 </label>
                 <div className="space-y-2">
@@ -153,8 +153,8 @@ export function CustomizationModal({
                         }}
                         className={`w-full p-3 rounded-lg border-2 text-left transition-all flex items-center justify-between ${
                           isSelected
-                            ? "border-pink-600 bg-pink-50"
-                            : "border-gray-200 hover:border-pink-300"
+                          ? "border-primary bg-primary/10"
+                          : "border-gray-200 hover:border-primary/30"
                         }`}
                       >
                         <span className="font-medium text-gray-900">{mod.name}</span>
@@ -175,7 +175,7 @@ export function CustomizationModal({
               onChange={(e) => onChange({ ...value!, notes: e.target.value })}
               placeholder="Contoh: Jangan terlalu pedas, kurang manis, dll."
               rows={2}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-pink-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             />
           </div>
 
@@ -200,21 +200,21 @@ export function CustomizationModal({
               </button>
             </div>
           </div>
-          <div className="pt-4 mt-4 border-t border-pink-200">
+          <div className="pt-4 mt-4 border-t border-primary/30">
             <div className="flex justify-between items-end">
               <div>
                 <div className="text-lg font-bold text-gray-900">Total</div>
                 <div className="text-xs text-gray-600">× {value?.quantity || 1} item</div>
               </div>
               <div className="text-right">
-                <div className="text-2xl font-bold text-pink-600">{formatCurrency(lineTotal)}</div>
+                <div className="text-2xl font-bold text-primary">{formatCurrency(lineTotal)}</div>
                 <div className="text-xs text-amber-600 font-medium">{formatArk(lineTotal)}</div>
               </div>
             </div>
           </div>
           <button
             onClick={onConfirm}
-            className="w-full py-3 bg-pink-600 text-white rounded-lg font-semibold hover:bg-pink-700 transition-colors"
+            className="w-full py-3 bg-primary text-white rounded-lg font-semibold hover:bg-primary/90 transition-colors"
           >
             Tambah ke Keranjang
           </button>

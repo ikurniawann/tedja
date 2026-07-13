@@ -16,14 +16,6 @@ export interface TopProduct {
   revenue: number;
 }
 
-export interface LowStockItem {
-  id: string;
-  name: string;
-  current: number;
-  min: number;
-  unit: string;
-}
-
 export interface RecentOrder {
   id: string;
   cashier: string;
@@ -33,9 +25,37 @@ export interface RecentOrder {
   time: string;
 }
 
+export interface ArkXpStats {
+  totalArkUsed: number;
+  totalArkEarned: number;
+  totalXpEarned: number;
+  arkPaymentOrders: number;
+  membersWithXp: number;
+  totalArkBalance: number;
+}
+
+export interface TrendPoint {
+  label: string;
+  revenue: number;
+  orders: number;
+  arkUsed: number;
+  xpEarned: number;
+}
+
+export interface LoyalMember {
+  id: string;
+  name: string;
+  membershipTier: string;
+  totalXp: number;
+  currentXp: number;
+  arkBalance: number;
+}
+
 export interface DashboardBundle {
   stats: DashboardStats | null;
   topProducts: TopProduct[];
-  lowStock: LowStockItem[];
   recentOrders: RecentOrder[];
+  arkXp: ArkXpStats | null;
+  trend: TrendPoint[];
+  topLoyalMembers: LoyalMember[];
 }

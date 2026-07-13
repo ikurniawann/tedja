@@ -16,8 +16,8 @@ describe("flattenModuleNavLinks", () => {
             icon: "shopping",
           },
           {
-            href: "/dashboard/pos/open-bills",
-            label: "Open Bills",
+            href: "/dashboard/pos/restaurant",
+            label: "Restaurant",
             icon: "clipboard",
           },
         ],
@@ -43,8 +43,8 @@ describe("flattenModuleNavLinks", () => {
         icon: "shopping",
       },
       {
-        href: "/dashboard/pos/open-bills",
-        label: "Open Bills",
+        href: "/dashboard/pos/restaurant",
+        label: "Restaurant",
         icon: "clipboard",
       },
       {

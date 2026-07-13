@@ -37,8 +37,11 @@ export interface ReservationTable {
   id: string;
   table_number?: string | null;
   label?: string | null;
+  name?: string | null;
   capacity?: number;
+  floor?: string | null;
   status?: string | null;
+  is_active?: boolean;
 }
 
 export interface ReservationListParams {

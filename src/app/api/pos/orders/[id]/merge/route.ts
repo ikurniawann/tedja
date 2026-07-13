@@ -1,6 +1,36 @@
-import { NextRequest } from 'next/server';
+import { NextRequest } from "next/server";
+import { getPool } from "@/lib/db";
 import { createPgClient } from "@/lib/pg/create-client";
-import { getPosSession } from '@/lib/api/auth';
+import { getPosSession } from "@/lib/api/auth";
+
+function errorMessage(error: unknown, fallback = "Merge failed") {
+  if (error instanceof Error && error.message) return error.message;
+  if (
+    error &&
+    typeof error === "object" &&
+    "message" in error &&
+    typeof (error as { message: unknown }).message === "string"
+  ) {
+    return (error as { message: string }).message;
+  }
+  return fallback;
+}
+
+async function orderHasUnpaidSplits(
+  db: ReturnType<typeof createPgClient>,
+  orderId: string
+) {
+  const { data, error } = await db
+    .from("pos_order_splits")
+    .select("id, status")
+    .eq("order_id", orderId)
+    .neq("status", "cancelled");
+
+  if (error) throw error;
+  return (data || []).some(
+    (split) => String(split.status || "").toLowerCase() !== "paid"
+  );
+}
 
 export async function POST(
   request: NextRequest,
@@ -8,123 +38,211 @@ export async function POST(
 ) {
   const sessionUserId = await getPosSession();
   if (!sessionUserId) {
-    return Response.json({ success: false, error: 'Authentication required' }, { status: 401 });
+    return Response.json(
+      { success: false, error: "Authentication required" },
+      { status: 401 }
+    );
   }
 
   try {
     const body = await request.json();
-    const { target_order_id, supervisor_pin } = body;
+    const { target_order_id, supervisor_pin } = body as {
+      target_order_id?: string;
+      supervisor_pin?: string;
+    };
     const { id: sourceOrderId } = await params;
 
-    if (!target_order_id || !supervisor_pin) {
-      return Response.json({ success: false, error: 'Target order and supervisor PIN required' }, { status: 400 });
+    if (!target_order_id) {
+      return Response.json(
+        { success: false, error: "Target order required" },
+        { status: 400 }
+      );
     }
 
     if (sourceOrderId === target_order_id) {
-      return Response.json({ success: false, error: 'Cannot merge order with itself' }, { status: 400 });
+      return Response.json(
+        { success: false, error: "Cannot merge order with itself" },
+        { status: 400 }
+      );
     }
 
     const db = createPgClient();
 
-    // 1. Validate supervisor PIN
-    const { data: supervisor } = await db
-      .from('users')
-      .select('id, full_name, role')
-      .eq('role', 'pos_supervisor')
-      .eq('pos_pin', String(supervisor_pin))
-      .single();
+    if (supervisor_pin != null && String(supervisor_pin).trim() !== "") {
+      const { data: supervisor } = await db
+        .from("users")
+        .select("id, full_name, role")
+        .eq("role", "pos_supervisor")
+        .eq("pos_pin", String(supervisor_pin))
+        .single();
 
-    if (!supervisor) {
-      return Response.json({ success: false, error: 'PIN supervisor tidak valid' }, { status: 403 });
+      if (!supervisor) {
+        return Response.json(
+          { success: false, error: "Invalid supervisor PIN" },
+          { status: 403 }
+        );
+      }
     }
 
-    // 2. Check both orders exist and are active
-    const { data: source } = await db
-      .from('pos_orders')
-      .select('id, status, subtotal, discount_amount, tax_amount')
-      .eq('id', sourceOrderId)
+    const { data: source, error: sourceErr } = await db
+      .from("pos_orders")
+      .select("id, status, table_id, discount_amount, tax_amount")
+      .eq("id", sourceOrderId)
       .single();
 
-    const { data: target } = await db
-      .from('pos_orders')
-      .select('id, status, subtotal, discount_amount, tax_amount, merged_from_orders')
-      .eq('id', target_order_id)
+    const { data: target, error: targetErr } = await db
+      .from("pos_orders")
+      .select("id, status, discount_amount, tax_amount")
+      .eq("id", target_order_id)
       .single();
 
-    if (!source || !target) {
-      return Response.json({ success: false, error: 'Order not found' }, { status: 404 });
+    if (sourceErr || targetErr || !source || !target) {
+      return Response.json(
+        {
+          success: false,
+          error:
+            errorMessage(sourceErr || targetErr, "Order not found"),
+        },
+        { status: 404 }
+      );
     }
 
-    const blockedStatuses = ['completed', 'cancelled', 'voided', 'merged'];
+    const blockedStatuses = ["completed", "cancelled", "voided", "merged"];
     if (blockedStatuses.includes(source.status as string)) {
-      return Response.json({ success: false, error: 'Source order cannot be merged' }, { status: 400 });
+      return Response.json(
+        { success: false, error: "Source order cannot be merged" },
+        { status: 400 }
+      );
     }
     if (blockedStatuses.includes(target.status as string)) {
-      return Response.json({ success: false, error: 'Target order cannot receive merge' }, { status: 400 });
+      return Response.json(
+        { success: false, error: "Target order cannot receive merge" },
+        { status: 400 }
+      );
     }
 
-    // 3. Move items from source to target
+    if (await orderHasUnpaidSplits(db, sourceOrderId)) {
+      return Response.json(
+        {
+          success: false,
+          error: "Finish or cancel unpaid splits before merging",
+        },
+        { status: 400 }
+      );
+    }
+    if (await orderHasUnpaidSplits(db, target_order_id)) {
+      return Response.json(
+        {
+          success: false,
+          error: "Target bill has unpaid splits",
+        },
+        { status: 400 }
+      );
+    }
+
     const { error: moveErr } = await db
-      .from('pos_order_items')
+      .from("pos_order_items")
       .update({ order_id: target_order_id })
-      .eq('order_id', sourceOrderId);
+      .eq("order_id", sourceOrderId);
 
     if (moveErr) throw moveErr;
 
-    // 4. Recalculate target totals (sum from its items)
-    const { data: itemsAgg } = await db
-      .from('pos_order_items')
-      .select('subtotal, total_amount')
-      .eq('order_id', target_order_id);
+    const { data: itemsAgg, error: aggErr } = await db
+      .from("pos_order_items")
+      .select("subtotal, total_amount")
+      .eq("order_id", target_order_id);
 
-    const newSubtotal = (itemsAgg || []).reduce((s, it) => s + (it.subtotal || 0), 0);
-    const newTotal = (itemsAgg || []).reduce((s, it) => s + (it.total_amount || 0), 0);
+    if (aggErr) throw aggErr;
 
-    // 5. Update target order
+    const newSubtotal = (itemsAgg || []).reduce(
+      (s, it) => s + Number(it.subtotal || 0),
+      0
+    );
+    const newTotal = (itemsAgg || []).reduce(
+      (s, it) => s + Number(it.total_amount || 0),
+      0
+    );
+
     const { error: updTargetErr } = await db
-      .from('pos_orders')
+      .from("pos_orders")
       .update({
         subtotal: newSubtotal,
         total_amount: newTotal,
-        discount_amount: (target.discount_amount || 0) + (source.discount_amount || 0),
-        tax_amount: (target.tax_amount || 0) + (source.tax_amount || 0),
-        merged_from_orders: [
-          ...(target.merged_from_orders || []),
-          sourceOrderId,
-        ],
+        discount_amount:
+          Number(target.discount_amount || 0) +
+          Number(source.discount_amount || 0),
+        tax_amount:
+          Number(target.tax_amount || 0) + Number(source.tax_amount || 0),
         updated_at: new Date().toISOString(),
       })
-      .eq('id', target_order_id);
+      .eq("id", target_order_id);
 
     if (updTargetErr) throw updTargetErr;
 
-    // 6. Mark source as merged
-    await db
-      .from('pos_orders')
+    // UUID[] must use array_append — QueryBuilder JS arrays often fail to cast.
+    await getPool().query(
+      `UPDATE pos_orders
+       SET merged_from_orders = array_append(COALESCE(merged_from_orders, '{}'), $1::uuid),
+           updated_at = NOW()
+       WHERE id = $2`,
+      [sourceOrderId, target_order_id]
+    );
+
+    const { error: updSourceErr } = await db
+      .from("pos_orders")
       .update({
-        status: 'merged',
+        status: "merged",
         merged_to_order_id: target_order_id,
+        payment_status: "refunded",
         updated_at: new Date().toISOString(),
       })
-      .eq('id', sourceOrderId);
+      .eq("id", sourceOrderId);
 
-    // 7. Cancel pending splits on source
-    await db
-      .from('pos_order_splits')
-      .update({ status: 'cancelled', updated_at: new Date().toISOString() })
-      .eq('order_id', sourceOrderId)
-      .eq('status', 'pending');
+    if (updSourceErr) throw updSourceErr;
+
+    if (source.table_id) {
+      const { data: otherActive } = await db
+        .from("pos_orders")
+        .select("id")
+        .eq("table_id", source.table_id)
+        .in("status", [
+          "pending",
+          "confirmed",
+          "preparing",
+          "ready",
+          "served",
+        ])
+        .neq("id", sourceOrderId)
+        .limit(1)
+        .maybeSingle();
+
+      if (!otherActive) {
+        await db
+          .from("pos_tables")
+          .update({
+            status: "available",
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", source.table_id);
+      }
+    }
 
     return Response.json({
       success: true,
       data: {
         source_order_id: sourceOrderId,
         target_order_id: target_order_id,
-        message: 'Orders merged successfully',
+        message: "Orders merged successfully",
       },
     });
   } catch (error: unknown) {
-    console.error('Merge error:', error);
-    return Response.json({ success: false, error: error instanceof Error ? error.message : 'Merge failed' }, { status: 500 });
+    console.error("Merge error:", error);
+    return Response.json(
+      {
+        success: false,
+        error: errorMessage(error, "Merge failed"),
+      },
+      { status: 500 }
+    );
   }
 }

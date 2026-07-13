@@ -10,6 +10,14 @@ function normalizePhone(value: string) {
   return value.replace(/[^\d+]/g, '').trim();
 }
 
+function normalizeNfcUid(value: unknown) {
+  const raw = String(value ?? '').trim().toUpperCase();
+  return raw || null;
+}
+
+const CUSTOMER_SELECT =
+  'id, name, phone, email, membership_tier, ark_coin_balance, total_xp, current_xp, visit_count, is_active, nfc_uid';
+
 // GET /api/pos/customers - List customers with search
 export async function GET(request: NextRequest) {
   const sessionUserId = await getPosSession();
@@ -22,21 +30,26 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const search = searchParams.get('search');
     const phone = searchParams.get('phone');
+    const nfcUid = normalizeNfcUid(searchParams.get('nfc_uid'));
     const tier = searchParams.get('tier');
 
     let query = db
       .from('pos_customers')
-      .select('id, name, phone, email, membership_tier, ark_coin_balance, total_xp, current_xp, visit_count, is_active')
+      .select(CUSTOMER_SELECT)
       .eq('is_active', true)
       .order('name')
-      .limit(phone ? 1 : 500);
+      .limit(phone || nfcUid ? 1 : 500);
 
     if (search) {
-      query = query.or(`name.ilike.%${search}%,email.ilike.%${search}%`);
+      query = query.or(`name.ilike.%${search}%,email.ilike.%${search}%,phone.ilike.%${search}%,nfc_uid.ilike.%${search}%`);
     }
 
     if (phone) {
       query = query.eq('phone', phone);
+    }
+
+    if (nfcUid) {
+      query = query.eq('nfc_uid', nfcUid);
     }
 
     if (tier) {
@@ -74,10 +87,12 @@ export async function POST(request: NextRequest) {
       membership_tier = 'bronze',
       notes,
       enroll_member = false,
+      nfc_uid,
     } = body;
     const normalizedPhone = normalizePhone(String(phone || ''));
     const normalizedName = String(name || '').trim();
     const normalizedEmail = String(email || '').trim();
+    const normalizedNfcUid = normalizeNfcUid(nfc_uid);
     const tierCode = String(membership_tier || 'bronze').trim().toLowerCase();
 
     // Validate required fields
@@ -86,6 +101,21 @@ export async function POST(request: NextRequest) {
         { success: false, error: 'Nomor HP wajib diisi' },
         { status: 400 }
       );
+    }
+
+    if (normalizedNfcUid) {
+      const { data: uidOwner } = await db
+        .from('pos_customers')
+        .select('id, phone')
+        .eq('nfc_uid', normalizedNfcUid)
+        .maybeSingle();
+
+      if (uidOwner && uidOwner.phone !== normalizedPhone) {
+        return NextResponse.json(
+          { success: false, error: 'Card ID sudah terdaftar pada member lain' },
+          { status: 409 }
+        );
+      }
     }
 
     // Check if customer exists by phone
@@ -97,23 +127,22 @@ export async function POST(request: NextRequest) {
 
     let savedCustomer;
     if (existingCustomer) {
-      // Update existing customer
       const { data, error } = await db
         .from('pos_customers')
         .update({
           name: normalizedName || existingCustomer.name,
           email: normalizedEmail || existingCustomer.email,
           membership_tier: tierCode,
-          notes: notes || existingCustomer.notes
+          notes: notes || existingCustomer.notes,
+          nfc_uid: normalizedNfcUid ?? existingCustomer.nfc_uid ?? null,
         })
         .eq('id', existingCustomer.id)
-        .select()
+        .select(CUSTOMER_SELECT)
         .single();
 
       if (error) throw error;
       savedCustomer = data;
     } else {
-      // Create new customer
       const { data, error } = await db
         .from('pos_customers')
         .insert({
@@ -121,9 +150,10 @@ export async function POST(request: NextRequest) {
           name: normalizedName || '',
           email: normalizedEmail || null,
           membership_tier: tierCode,
-          notes: notes || null
+          notes: notes || null,
+          nfc_uid: normalizedNfcUid,
         })
-        .select()
+        .select(CUSTOMER_SELECT)
         .single();
 
       if (error) throw error;

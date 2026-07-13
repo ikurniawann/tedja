@@ -3,7 +3,9 @@
 import { RefreshCw, AlertTriangle, Package, Beaker } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useStockAlerts } from '../queries';
-import type { ProductAtRiskAlert, RawMaterialAlert } from '../types';
+import { buildStockAlertTickerSegments, hasCriticalStockAlert } from '../ticker';
+import type { ProductAtRiskAlert, RawMaterialAlert, StockAlertsResponse } from '../types';
+import { VerticalMarqueeList } from './vertical-marquee-list';
 
 function formatQty(value: number, unit?: string) {
   const formatted = new Intl.NumberFormat('id-ID', {
@@ -22,6 +24,44 @@ function levelBadge(level: 'critical' | 'warning') {
   return level === 'critical'
     ? 'bg-red-500/20 text-red-300 border-red-500/30'
     : 'bg-amber-500/20 text-amber-300 border-amber-500/30';
+}
+
+function StockAlertMarquee({ data }: { data: StockAlertsResponse }) {
+  const input = {
+    raw_materials: data.raw_materials,
+    products_at_risk: data.products_at_risk,
+    pos_products: data.pos_products,
+  };
+  const segments = buildStockAlertTickerSegments(input);
+  const critical = hasCriticalStockAlert(input);
+
+  const stripTone = critical
+    ? 'bg-red-950/80 border-red-900/50 text-red-200'
+    : segments.length > 0
+      ? 'bg-amber-950/50 border-amber-900/40 text-amber-200'
+      : 'bg-gray-900 border-gray-800 text-gray-400';
+
+  if (segments.length === 0) {
+    return (
+      <div className={`h-9 shrink-0 border-b px-4 flex items-center ${stripTone}`}>
+        <p className="text-xs font-semibold">Semua stok aman</p>
+      </div>
+    );
+  }
+
+  const track = segments.join('  •  ');
+
+  return (
+    <div className={`h-9 shrink-0 border-b overflow-hidden ${stripTone}`} aria-live="polite">
+      <div className="stock-alerts-marquee flex w-max whitespace-nowrap motion-reduce:hidden">
+        <p className="px-4 text-xs font-semibold leading-9">{track}</p>
+        <p className="px-4 text-xs font-semibold leading-9" aria-hidden="true">
+          {track}
+        </p>
+      </div>
+      <p className="hidden motion-reduce:block truncate px-4 text-xs font-semibold leading-9">{track}</p>
+    </div>
+  );
 }
 
 function RawMaterialCard({ item }: { item: RawMaterialAlert }) {
@@ -95,6 +135,8 @@ export function StockAlertsPage() {
 
   return (
     <div className="-m-3 sm:-m-6 min-h-[calc(100vh-3.5rem)] bg-gray-950 text-white flex flex-col overflow-hidden">
+      {data ? <StockAlertMarquee data={data} /> : null}
+
       <header className="flex items-center justify-between px-4 py-3 bg-gray-900 border-b border-gray-800">
         <div className="flex items-center gap-3">
           <AlertTriangle className="w-6 h-6 text-amber-500" />
@@ -135,7 +177,7 @@ export function StockAlertsPage() {
             <h2 className="text-sm font-semibold">Bahan Baku Menipis</h2>
             <span className="text-xs text-gray-500 ml-auto">{rawMaterials.length} item</span>
           </div>
-          <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          <VerticalMarqueeList>
             {rawMaterials.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center text-gray-500 py-12">
                 <Beaker className="w-12 h-12 mb-3 text-gray-700" />
@@ -144,7 +186,7 @@ export function StockAlertsPage() {
             ) : (
               rawMaterials.map((item) => <RawMaterialCard key={item.id} item={item} />)
             )}
-          </div>
+          </VerticalMarqueeList>
         </section>
 
         <section className="flex flex-col min-h-0">
@@ -153,40 +195,44 @@ export function StockAlertsPage() {
             <h2 className="text-sm font-semibold">Produk Terdampak (BOM)</h2>
             <span className="text-xs text-gray-500 ml-auto">{productsAtRisk.length} item</span>
           </div>
-          <div className="flex-1 overflow-y-auto p-4 space-y-3">
-            {productsAtRisk.length === 0 ? (
+          <VerticalMarqueeList>
+            {productsAtRisk.length === 0 && posProducts.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center text-gray-500 py-12">
                 <Package className="w-12 h-12 mb-3 text-gray-700" />
                 <p className="text-sm">Tidak ada produk terdampak bahan menipis</p>
               </div>
             ) : (
-              productsAtRisk.map((item) => <ProductAtRiskCard key={item.product_id} item={item} />)
-            )}
+              <>
+                {productsAtRisk.map((item) => (
+                  <ProductAtRiskCard key={item.product_id} item={item} />
+                ))}
 
-            {posProducts.length > 0 && (
-              <div className="pt-4 mt-2 border-t border-gray-800">
-                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">
-                  Stok POS Langsung
-                </p>
-                <div className="space-y-2">
-                  {posProducts.map((item) => (
-                    <div
-                      key={item.id}
-                      className={`rounded-lg border px-3 py-2 flex items-center justify-between ${levelClasses(item.alert_level)}`}
-                    >
-                      <div>
-                        <p className="text-sm font-medium text-white">{item.name}</p>
-                        <p className="text-xs text-gray-400">{item.sku}</p>
-                      </div>
-                      <span className="text-xs font-mono text-gray-300">
-                        {item.current} / min {item.min}
-                      </span>
+                {posProducts.length > 0 && (
+                  <div className="pt-4 mt-2 border-t border-gray-800">
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">
+                      Stok POS Langsung
+                    </p>
+                    <div className="space-y-2">
+                      {posProducts.map((item) => (
+                        <div
+                          key={item.id}
+                          className={`rounded-lg border px-3 py-2 flex items-center justify-between ${levelClasses(item.alert_level)}`}
+                        >
+                          <div>
+                            <p className="text-sm font-medium text-white">{item.name}</p>
+                            <p className="text-xs text-gray-400">{item.sku}</p>
+                          </div>
+                          <span className="text-xs font-mono text-gray-300">
+                            {item.current} / min {item.min}
+                          </span>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
-              </div>
+                  </div>
+                )}
+              </>
             )}
-          </div>
+          </VerticalMarqueeList>
         </section>
       </main>
 

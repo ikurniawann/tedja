@@ -68,3 +68,43 @@ vi.mock('@/lib/pg/create-client', () => ({
     })),
   })),
 }));
+
+// jsdom under Node 26 does not provide Web Storage; install an in-memory polyfill.
+function createStorageMock(): Storage {
+  let store: Record<string, string> = {};
+  return {
+    get length() {
+      return Object.keys(store).length;
+    },
+    clear() {
+      store = {};
+    },
+    getItem(key: string) {
+      return Object.prototype.hasOwnProperty.call(store, key) ? store[key] : null;
+    },
+    key(index: number) {
+      return Object.keys(store)[index] ?? null;
+    },
+    removeItem(key: string) {
+      delete store[key];
+    },
+    setItem(key: string, value: string) {
+      store[key] = String(value);
+    },
+  } as Storage;
+}
+
+if (typeof window !== "undefined" && !window.localStorage) {
+  Object.defineProperty(window, "localStorage", {
+    value: createStorageMock(),
+    writable: true,
+    configurable: true,
+  });
+}
+if (typeof window !== "undefined" && !window.sessionStorage) {
+  Object.defineProperty(window, "sessionStorage", {
+    value: createStorageMock(),
+    writable: true,
+    configurable: true,
+  });
+}

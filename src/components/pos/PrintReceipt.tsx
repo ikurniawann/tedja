@@ -17,7 +17,9 @@ export interface ReceiptPayload {
   taxAmount: number;
 }
 
-export function printThermalReceipt(payload: ReceiptPayload, label: "KITCHEN" | "BAR" | "CUSTOMER") {
+export type ThermalPrintLabel = "KITCHEN" | "BAR" | "CUSTOMER" | "PREVIEW_BILL";
+
+export function printThermalReceipt(payload: ReceiptPayload, label: ThermalPrintLabel) {
   const {
     orderId,
     orderNumber,
@@ -33,7 +35,17 @@ export function printThermalReceipt(payload: ReceiptPayload, label: "KITCHEN" | 
     taxAmount,
   } = payload;
 
-  const win = window.open("", "_blank", "width=320,height=600");
+  // Wider popup so the browser print dialog has room for settings + preview.
+  // Receipt content stays 72mm for thermal printers.
+  const popupWidth = Math.min(720, Math.max(480, window.screen.availWidth - 80));
+  const popupHeight = Math.min(900, Math.max(640, window.screen.availHeight - 80));
+  const left = Math.max(0, Math.round((window.screen.availWidth - popupWidth) / 2));
+  const top = Math.max(0, Math.round((window.screen.availHeight - popupHeight) / 2));
+  const win = window.open(
+    "",
+    "_blank",
+    `width=${popupWidth},height=${popupHeight},left=${left},top=${top},scrollbars=yes,resizable=yes`
+  );
   if (!win) {
     alert("Izinkan popup untuk print.");
     return;
@@ -61,30 +73,56 @@ export function printThermalReceipt(payload: ReceiptPayload, label: "KITCHEN" | 
 
   const isKitchen = label === "KITCHEN";
   const isBar = label === "BAR";
+  const isPreviewBill = label === "PREVIEW_BILL";
+  const heading = isPreviewBill ? "PREVIEW BILL" : label;
+  const title = isPreviewBill ? "PREVIEW BILL" : label;
 
   win.document.write(`<!DOCTYPE html>
 <html>
   <head>
     <meta charset="utf-8">
-    <title>${label}</title>
+    <title>${title}</title>
     <style>
       * { margin:0; padding:0; box-sizing:border-box; }
-      body { font-family:'Courier New',monospace; font-size:12px; width:72mm; padding:6mm 4mm; }
+      html, body { min-height: 100%; }
+      body {
+        font-family: 'Courier New', monospace;
+        font-size: 12px;
+        background: #f3f4f6;
+        padding: 24px 16px;
+        display: flex;
+        justify-content: center;
+      }
+      .ticket {
+        width: 72mm;
+        max-width: 100%;
+        background: #fff;
+        padding: 6mm 4mm;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.08);
+      }
       h1 { font-size:15px; text-align:center; letter-spacing:2px; margin-bottom:4px; }
       .center { text-align:center; }
       .divider { border-top:1px dashed #000; margin:6px 0; }
       .big { font-size:16px; font-weight:bold; text-align:center; }
+      .row { display:flex; justify-content:space-between; gap:8px; margin:2px 0; }
+      .row.total { font-weight:bold; font-size:14px; margin-top:4px; }
       table { width:100%; border-collapse:collapse; }
-      @media print { @page { margin:0; size:72mm auto; } }
+      @media print {
+        body { background: #fff; padding: 0; display: block; }
+        .ticket { width: 72mm; box-shadow: none; padding: 6mm 4mm; }
+        @page { margin: 0; size: 72mm auto; }
+      }
     </style>
   </head>
   <body>
-    <h1>--- ${label} ---</h1>
+    <div class="ticket">
+    <h1>--- ${heading} ---</h1>
     <div class="big">${orderType.replace(/_/g, "-").toUpperCase()}</div>
     ${table ? `<div class="center">${table}</div>` : ""}
     <div class="center">Order #${(orderNumber || "").slice(-8).toUpperCase() || (orderId || "").slice(-8).toUpperCase()}</div>
     <div class="center">${new Date().toLocaleTimeString("id-ID")}</div>
     ${customerName ? `<div class="center">Customer: ${customerName}</div>` : ""}
+    ${isPreviewBill ? `<div class="center">PRE-SETTLEMENT · UNPAID</div>` : ""}
     <div class="divider"></div>
 
     ${!isKitchen && !isBar ? `
@@ -93,8 +131,12 @@ export function printThermalReceipt(payload: ReceiptPayload, label: "KITCHEN" | 
       ${discountAmount > 0 ? `<div class="row"><span>Diskon</span><span>-${formatCurrency(discountAmount)}</span></div>` : ""}
       ${taxAmount > 0 ? `<div class="row"><span>PPN</span><span>${formatCurrency(taxAmount)}</span></div>` : ""}
       <div class="row total"><span>TOTAL</span><span>${formatCurrency(total)}</span></div>
-      <div class="row"><span>Bayar (${paymentMethod.toUpperCase()})</span><span>${formatCurrency(total + change)}</span></div>
-      ${change > 0 ? `<div class="row"><span>Kembalian</span><span>${formatCurrency(change)}</span></div>` : ""}
+      ${
+        isPreviewBill
+          ? `<div class="row"><span>Status</span><span>UNPAID</span></div>`
+          : `<div class="row"><span>Bayar (${paymentMethod.toUpperCase()})</span><span>${formatCurrency(total + change)}</span></div>
+      ${change > 0 ? `<div class="row"><span>Kembalian</span><span>${formatCurrency(change)}</span></div>` : ""}`
+      }
     ` : `
       <table>${itemsHtml}</table>
     `}
@@ -102,7 +144,8 @@ export function printThermalReceipt(payload: ReceiptPayload, label: "KITCHEN" | 
     ${notes ? `<div class="divider"></div>
     <div><strong>Catatan:</strong> ${notes}</div>` : ""}
     <div class="divider"></div>
-    <div class="center">--- ${label} COPY ---</div>
+    <div class="center">--- ${heading} COPY ---</div>
+    </div>
   </body>
 </html>`);
 
