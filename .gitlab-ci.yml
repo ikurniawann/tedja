@@ -22,7 +22,7 @@ before_script:
 build:
   stage: build
   script:
-    - git pull origin development
+    - git fetch origin development && git reset --hard origin/development
     - docker build -t $DOCKER_IMAGE:latest .
   only:
     - development
