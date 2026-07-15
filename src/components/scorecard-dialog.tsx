@@ -212,7 +212,7 @@ export default function ScorecardDialog({
     // Determine new candidate status based on recommendation
     let newStatus: CandidateStatus | null = null;
     if (values.recommendation === "proceed") {
-      newStatus = interview.type === "hrd" ? "interview_manager" : "hired";
+      newStatus = "offer";
     } else if (values.recommendation === "pool") {
       newStatus = "talent_pool";
     } else if (values.recommendation === "reject") {

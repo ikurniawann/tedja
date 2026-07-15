@@ -48,12 +48,13 @@ export async function GET(request: Request) {
 
   // Count by status
   const statusCounts: Record<string, number> = {
-    new: 0,
+    applied: 0,
     screening: 0,
-    interview_hrd: 0,
-    interview_manager: 0,
-    talent_pool: 0,
+    psikotes: 0,
+    interview: 0,
+    offer: 0,
     hired: 0,
+    talent_pool: 0,
   };
 
   data?.forEach((candidate) => {
@@ -64,12 +65,13 @@ export async function GET(request: Request) {
 
   // Map to funnel stages
   const funnelStages = [
-    { stage: "Applied", count: statusCounts.new },
+    { stage: "Applied", count: statusCounts.applied },
     { stage: "Screening", count: statusCounts.screening },
-    { stage: "Interview HRD", count: statusCounts.interview_hrd },
-    { stage: "Interview Manager", count: statusCounts.interview_manager },
-    { stage: "Talent Pool", count: statusCounts.talent_pool },
+    { stage: "Psikotes", count: statusCounts.psikotes },
+    { stage: "Interview", count: statusCounts.interview },
+    { stage: "Offer", count: statusCounts.offer },
     { stage: "Hired", count: statusCounts.hired },
+    { stage: "Talent Pool", count: statusCounts.talent_pool },
   ];
 
   return NextResponse.json(funnelStages);

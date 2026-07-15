@@ -376,7 +376,7 @@ async function buildSystemSummary(admin: DbAdmin, intent: Intent): Promise<Summa
   ] = await Promise.all([
     safeCount(admin, "candidates"),
     safeCount(admin, "candidates", (q) => q.gte("created_at", todayIso)),
-    safeCount(admin, "candidates", (q) => q.eq("status", "new")),
+    safeCount(admin, "candidates", (q) => q.eq("status", "applied")),
     safeCount(admin, "employees"),
     safeCount(admin, "attendance", (q) => q.gte("created_at", todayIso)),
     safeCount(admin, "leaves"),

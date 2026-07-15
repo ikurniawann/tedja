@@ -19,6 +19,17 @@ export async function updateSession(request: NextRequest) {
     "/photobooth",
     "/api/job-openings/public",
     "/api/portal",
+    // portal psikotes kandidat (anonim, identitas = token sesi);
+    // /api/psikotes lainnya (instruments/questions/files) tetap ber-auth
+    "/psikotes",
+    "/api/psikotes/session",
+    // portal interview AI kandidat (anonim, identitas = token sesi);
+    // /api/interview lainnya (sessions/files) tetap ber-auth
+    "/interview",
+    "/api/interview/session",
+    // portal offer kandidat (anonim, identitas = token offer)
+    "/offer",
+    "/api/offer/session",
     "/api/table-order",
     "/api/auth/login",
     "/api/auth/logout",

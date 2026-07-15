@@ -26,8 +26,8 @@ export async function uploadFile(
       : `${timestamp}-${random}.${ext}`;
 
     const dir = path.join(UPLOAD_ROOT, bucket);
-    await ensureDir(dir);
     const absPath = path.join(dir, fileName);
+    await ensureDir(path.dirname(absPath));
     await fs.writeFile(absPath, fileBuffer);
 
     const url = `/api/files/${bucket}/${fileName.split("/").map(encodeURIComponent).join("/")}`;

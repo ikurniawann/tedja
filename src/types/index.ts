@@ -13,12 +13,13 @@ export type CandidateSource =
   | "jobfair"
   | "other";
 export type CandidateStatus =
-  | "new"
+  | "applied"
   | "screening"
-  | "interview_hrd"
-  | "interview_manager"
-  | "talent_pool"
+  | "psikotes"
+  | "interview"
+  | "offer"
   | "hired"
+  | "talent_pool"
   | "rejected"
   | "archived";
 export type InterviewType = "hrd" | "hiring_manager";
@@ -218,12 +219,13 @@ export interface PositionCreateInput {
 // --- Pipeline ---
 
 export type PipelineStage =
-  | "new"
+  | "applied"
   | "screening"
-  | "interview_hrd"
-  | "interview_manager"
-  | "talent_pool"
+  | "psikotes"
+  | "interview"
+  | "offer"
   | "hired"
+  | "talent_pool"
   | "rejected";
 
 export interface PipelineColumn {

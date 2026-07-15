@@ -142,10 +142,11 @@ export const getStatusBadgeProps = (status: string) => {
     cancelled: STATUS_COLORS.neutral,
     
     // Candidate
-    new: STATUS_COLORS.info,
+    applied: STATUS_COLORS.info,
     screening: STATUS_COLORS.warning,
-    interview_hrd: STATUS_COLORS.purple,
-    interview_manager: STATUS_COLORS.purple,
+    psikotes: STATUS_COLORS.purple,
+    interview: STATUS_COLORS.purple,
+    offer: STATUS_COLORS.warning,
     talent_pool: STATUS_COLORS.info,
     hired: STATUS_COLORS.success,
     rejected: STATUS_COLORS.danger,

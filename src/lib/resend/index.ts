@@ -46,9 +46,11 @@ export function candidateStatusEmail(
   notes?: string
 ) {
   const statusLabels: Record<string, string> = {
+    applied: "Applied",
     screening: "Screening",
-    interview_hrd: "Interview HRD",
-    interview_manager: "Interview Manager",
+    psikotes: "Psikotes",
+    interview: "Interview",
+    offer: "Offer",
     talent_pool: "Talent Pool",
     hired: "Diterima",
     rejected: "Tidak Diterima",

@@ -6,7 +6,37 @@ import { Select as SelectPrimitive } from "@base-ui/react/select"
 import { cn } from "@/lib/utils"
 import { ChevronDownIcon, CheckIcon, ChevronUpIcon } from "lucide-react"
 
-const Select = SelectPrimitive.Root
+/**
+ * Base UI hanya me-render LABEL item terpilih di <Select.Value> jika Root
+ * diberi prop `items` (tanpa itu yang tampil adalah value mentah — kode
+ * status / UUID). Seluruh app memakai pola Radix (label di <SelectItem>),
+ * jadi wrapper ini menderivasi `items` otomatis dari children JSX.
+ */
+function collectSelectItems(
+  children: React.ReactNode,
+  acc: { value: unknown; label: React.ReactNode }[]
+) {
+  React.Children.forEach(children, (child) => {
+    if (!React.isValidElement(child)) return
+    const props = child.props as { value?: unknown; children?: React.ReactNode }
+    if (child.type === SelectItem) {
+      acc.push({ value: props.value, label: props.children })
+      return
+    }
+    if (props?.children) collectSelectItems(props.children, acc)
+  })
+}
+
+function Select(props: React.ComponentProps<typeof SelectPrimitive.Root>) {
+  const { items: itemsProp, children } = props
+  const items = React.useMemo(() => {
+    if (itemsProp) return itemsProp
+    const acc: { value: unknown; label: React.ReactNode }[] = []
+    collectSelectItems(children, acc)
+    return acc.length > 0 ? acc : undefined
+  }, [itemsProp, children])
+  return <SelectPrimitive.Root {...props} items={items as never} />
+}
 
 function SelectGroup({ className, ...props }: SelectPrimitive.Group.Props) {
   return (

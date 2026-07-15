@@ -6,6 +6,8 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  // tesseract.js spawn worker dari file di node_modules — tidak boleh di-bundle
+  serverExternalPackages: ["tesseract.js", "unpdf", "mammoth"],
   turbopack: {
     root: __dirname,
   },

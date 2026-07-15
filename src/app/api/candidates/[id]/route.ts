@@ -1,5 +1,7 @@
 import { createServerPgClient } from "@/lib/pg/create-client";
 import { NextResponse } from "next/server";
+import { requireApiRole, ApiError } from "@/lib/api/auth";
+import { deletePrivateFolder } from "@/lib/storage-private";
 
 // GET /api/candidates/[id]
 export async function GET(
@@ -58,18 +60,45 @@ export async function PUT(
 }
 
 // DELETE /api/candidates/[id]
+// Destruktif & ireversibel (termasuk purge bukti psikotes di storage) —
+// wajib role eksplisit; penghapus dicatat di log server karena
+// candidate_activities ikut ter-CASCADE.
 export async function DELETE(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const db = await createServerPgClient();
-  const { id } = await params;
+  try {
+    const user = await requireApiRole(["super_admin", "admin", "hrd"]);
+    const db = await createServerPgClient();
+    const { id } = await params;
 
-  const { error } = await db.from("candidates").delete().eq("id", id);
+    // retensi psikotes: baris DB terhapus via CASCADE, tapi file di
+    // storage/private (gambar tes + snapshot proctoring) harus dibersihkan manual
+    const { data: psikotesSessions } = await db
+      .from("psikotes_sessions")
+      .select("id")
+      .eq("candidate_id", id);
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 400 });
+    const { error } = await db.from("candidates").delete().eq("id", id);
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+
+    const sessions = (psikotesSessions as { id: string }[] | null) ?? [];
+    if (sessions.length > 0) {
+      console.info(
+        `[candidates] DELETE ${id} oleh ${user.full_name} (${user.id}) — purge ${sessions.length} folder bukti psikotes`
+      );
+    }
+    for (const session of sessions) {
+      await deletePrivateFolder(`psikotes/${session.id}`);
+    }
+
+    return NextResponse.json({ message: "Kandidat dihapus" });
+  } catch (error) {
+    if (error instanceof ApiError) return error.toResponse();
+    console.error("[candidates] DELETE failed:", error);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
-
-  return NextResponse.json({ message: "Kandidat dihapus" });
 }
