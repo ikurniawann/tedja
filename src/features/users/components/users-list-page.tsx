@@ -26,6 +26,7 @@ import {
   STATUS_LABELS,
 } from "../constants";
 import { ResetPasswordDialog, type ResetPasswordTarget } from "./reset-password-dialog";
+import { CreateAccountDialog } from "./create-account-dialog";
 import { UsersTable } from "./users-table";
 import type { UserEmployeeItem } from "@/lib/users/user-mapper";
 
@@ -35,6 +36,9 @@ export function UsersListPage({ showAppActions = false }: { showAppActions?: boo
   const { toasts, showToast, removeToast } = useToast();
   const { user } = useAuth();
   const canResetPassword = user?.role === "super_admin" || user?.role === "admin";
+  // pembuatan akun login oleh Super Admin / Admin / HRD (selaras PUT /api/users)
+  const canCreateAccount =
+    user?.role === "super_admin" || user?.role === "admin" || user?.role === "hrd";
 
   const [searchQuery, setSearchQuery] = useState("");
   const [search, setSearch] = useState("");
@@ -47,6 +51,7 @@ export function UsersListPage({ showAppActions = false }: { showAppActions?: boo
   const [page, setPage] = useState(1);
   const [resetTarget, setResetTarget] = useState<ResetPasswordTarget | null>(null);
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
+  const [createAccountTarget, setCreateAccountTarget] = useState<UserEmployeeItem | null>(null);
 
   const perPage = 15;
 
@@ -372,6 +377,7 @@ export function UsersListPage({ showAppActions = false }: { showAppActions?: boo
                 onView={(id) => router.push(EMPLOYEES_ROUTES.detail(id))}
                 onEdit={(id) => router.push(EMPLOYEES_ROUTES.edit(id))}
                 onResetPassword={showAppActions && canResetPassword ? handleResetPassword : undefined}
+                onCreateAccount={canCreateAccount ? setCreateAccountTarget : undefined}
                 showAppActions={showAppActions}
               />
             </div>
@@ -395,6 +401,22 @@ export function UsersListPage({ showAppActions = false }: { showAppActions?: boo
         }}
         onError={(message) => showToast(message, "error")}
       />
+
+      {createAccountTarget && (
+        <CreateAccountDialog
+          employee={{
+            id: createAccountTarget.id,
+            full_name: createAccountTarget.fullName,
+            email: createAccountTarget.email ?? "",
+          }}
+          open
+          onOpenChange={(open) => {
+            if (!open) setCreateAccountTarget(null);
+          }}
+          onSuccess={(message) => showToast(message)}
+          onError={(message) => showToast(message, "error")}
+        />
+      )}
     </div>
   );
 }

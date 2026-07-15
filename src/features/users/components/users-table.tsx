@@ -31,6 +31,8 @@ interface UsersTableProps {
   onView: (id: string) => void;
   onEdit: (id: string) => void;
   onResetPassword?: (row: UserEmployeeItem) => void;
+  /** Shortcut buat akun login utk karyawan yang belum punya (Super Admin/Admin/HRD). */
+  onCreateAccount?: (row: UserEmployeeItem) => void;
   showAppActions?: boolean;
   resettingEmployeeId?: string | null;
 }
@@ -40,6 +42,7 @@ export function UsersTable({
   onView,
   onEdit,
   onResetPassword,
+  onCreateAccount,
   showAppActions = false,
   resettingEmployeeId = null,
 }: UsersTableProps) {
@@ -193,6 +196,18 @@ export function UsersTable({
                   >
                     <PencilIcon className="h-4 w-4" />
                   </Button>
+                  {!emp.userId && onCreateAccount ? (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-8 w-8 p-0 text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700"
+                      onClick={() => onCreateAccount(emp)}
+                      aria-label={`Buat akun login ${emp.fullName}`}
+                      title="Buat akun login"
+                    >
+                      <KeyIcon className="h-4 w-4" />
+                    </Button>
+                  ) : null}
                   {showAppActions && emp.isAccessApp && emp.userId && onResetPassword ? (
                     <Button
                       size="sm"

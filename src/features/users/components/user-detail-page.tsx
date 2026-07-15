@@ -33,6 +33,7 @@ import {
   IdentificationIcon,
   BanknotesIcon,
   KeyIcon,
+  ArrowPathIcon,
 } from "@heroicons/react/24/outline";
 import { useToast, ToastContainer } from "@/components/ui/toast";
 import { useAuth } from "@/hooks/use-auth";
@@ -48,6 +49,8 @@ import {
   useHRISEmployeeDetail,
 } from "../queries";
 import { ResetPasswordDialog } from "./reset-password-dialog";
+import { CreateAccountDialog } from "./create-account-dialog";
+import { EmployeeLifecycleTab } from "./employee-lifecycle-tab";
 
 const STATUS_LABELS: Record<string, string> = {
   probation: "Probation",
@@ -114,7 +117,7 @@ function calculateTenure(joinDate: string) {
   return "Just joined";
 }
 
-type Tab = "info" | "employment" | "documents" | "attendance" | "leave";
+type Tab = "info" | "lifecycle" | "employment" | "documents" | "attendance" | "leave";
 
 export function UserDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -123,9 +126,13 @@ export function UserDetailPage({ params }: { params: Promise<{ id: string }> }) 
   const { user } = useAuth();
   const { toasts, showToast, removeToast } = useToast();
   const canResetPassword = user?.role === "super_admin" || user?.role === "admin";
+  // pembuatan akun login oleh Super Admin / Admin / HRD (selaras PUT /api/users)
+  const canCreateAccount =
+    user?.role === "super_admin" || user?.role === "admin" || user?.role === "hrd";
 
   const [activeTab, setActiveTab] = useState<Tab>("info");
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
+  const [createAccountOpen, setCreateAccountOpen] = useState(false);
 
   const { data: employee, isLoading: loading } = useHRISEmployeeDetail(id);
   const { data: documents = [], isLoading: documentsLoading } = useEmployeeDocuments(
@@ -209,6 +216,7 @@ export function UserDetailPage({ params }: { params: Promise<{ id: string }> }) 
 
   const tabs: { key: Tab; label: string; icon: React.ReactNode }[] = [
     { key: "info", label: "Personal Info", icon: <UserCircleIcon className="w-4 h-4" /> },
+    { key: "lifecycle", label: "Lifecycle", icon: <ArrowPathIcon className="w-4 h-4" /> },
     { key: "employment", label: "Employment History", icon: <BriefcaseIcon className="w-4 h-4" /> },
     { key: "documents", label: "Documents", icon: <DocumentTextIcon className="w-4 h-4" /> },
     { key: "attendance", label: "Attendance", icon: <ClockIcon className="w-4 h-4" /> },
@@ -304,6 +312,16 @@ export function UserDetailPage({ params }: { params: Promise<{ id: string }> }) 
               </div>
             </div>
             <div className="flex gap-2 shrink-0">
+              {canCreateAccount && !employee.user_id ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCreateAccountOpen(true)}
+                  className="gap-1 text-emerald-700 border-emerald-200 hover:bg-emerald-50"
+                >
+                  <KeyIcon className="w-4 h-4" /> Buat Akun Login
+                </Button>
+              ) : null}
               {canResetPassword && employee.user_id ? (
                 <Button
                   variant="outline"
@@ -484,6 +502,9 @@ export function UserDetailPage({ params }: { params: Promise<{ id: string }> }) 
               )}
             </div>
           )}
+
+          {/* LIFECYCLE */}
+          {activeTab === "lifecycle" && <EmployeeLifecycleTab employeeId={id} />}
 
           {/* RIWAYAT KERJA */}
           {activeTab === "employment" && (
@@ -837,6 +858,16 @@ export function UserDetailPage({ params }: { params: Promise<{ id: string }> }) 
         onOpenChange={setResetDialogOpen}
         onError={(message) => showToast(message, "error")}
       />
+
+      {createAccountOpen && (
+        <CreateAccountDialog
+          employee={{ id, full_name: employee.full_name, email: employee.email }}
+          open
+          onOpenChange={setCreateAccountOpen}
+          onSuccess={(message) => showToast(message)}
+          onError={(message) => showToast(message, "error")}
+        />
+      )}
     </div>
   );
 }

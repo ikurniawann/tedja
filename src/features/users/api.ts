@@ -61,6 +61,59 @@ export const fetchHRISEmployeeDetail = (id: string) =>
 export const fetchEmployeeDocuments = (employeeId: string) =>
   apiGet<{ data: EmployeeDocumentRow[] }>(`/api/hris/employees/documents?employee_id=${employeeId}`);
 
+export interface EmployeeLifecycleData {
+  employee: {
+    join_date: string | null;
+    end_date: string | null;
+    employment_status: string;
+    is_active: boolean;
+    created_at: string;
+    has_account: boolean;
+  };
+  recruitment: {
+    candidate_id: string;
+    applied_at: string;
+    source: string | null;
+    position_title: string | null;
+    offer_accepted_at: string | null;
+    promoted_at: string | null;
+  } | null;
+  account: {
+    email: string;
+    created_at: string;
+    last_sign_in_at: string | null;
+  } | null;
+  onboarding: { total: number; completed: number; last_completed_at: string | null };
+  history: {
+    id: string;
+    change_type: string;
+    effective_date: string;
+    reason: string | null;
+    notes: string | null;
+    prev_employment_status: string | null;
+    new_employment_status: string | null;
+    prev_department_name: string | null;
+    new_department_name: string | null;
+    prev_job_title: string | null;
+    new_job_title: string | null;
+  }[];
+  offboarding: {
+    id: string;
+    status: string;
+    resignation_type: string | null;
+    resignation_date: string | null;
+    last_working_day: string | null;
+    clearance_hrd: boolean | null;
+    clearance_it: boolean | null;
+    clearance_finance: boolean | null;
+    clearance_manager: boolean | null;
+    completed_at: string | null;
+  } | null;
+}
+
+export const fetchEmployeeLifecycle = (employeeId: string) =>
+  apiGet<{ data: EmployeeLifecycleData }>(`/api/hris/employees/${employeeId}/lifecycle`);
+
 export const fetchEmploymentHistory = (employeeId: string) =>
   apiGet<{ data: EmploymentHistoryRow[] }>(`/api/hris/employment-history?employee_id=${employeeId}`);
 
