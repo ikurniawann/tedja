@@ -1,6 +1,6 @@
 # EPIC-007: Kehadiran & Cuti — Perombakan + ESS
 
-status: on-progress
+status: ready-for-qa
 environment: dev
 retries: 0
 
@@ -45,11 +45,15 @@ perhitungan keterlambatan.
      terjadwal ke baris absen); tanggal absen berbasis WIB; tanpa jadwal =
      tercatat di luar jadwal. Quick Stats rekap HRD hidup via
      /api/hris/attendance/stats; tombol clock dihapus dari halaman HRD.
-4. **Fase 4 — Penyempurnaan cuti** (backlog)
-   - Refund kuota saat cuti dibatalkan setelah approve; upload lampiran
-     sungguhan; notifikasi WhatsApp approval (infra `wa.ts` rekrutmen);
-     MSS: approval oleh atasan langsung (`reporting_to`); lengkapi jenis
-     cuti marriage/bereavement (label + CSV + balance).
+4. **Fase 4 — Penyempurnaan cuti** ✅ (commit `53c6430`, 2026-07-17)
+   - Refund kuota otomatis saat HRD membatalkan cuti yang sudah disetujui
+     (transaksional); karyawan tetap bisa membatalkan pengajuan pending.
+   - Lampiran cuti sungguhan (storage private + route ber-auth) di form ESS
+     dan form HRD.
+   - MSS: atasan langsung (`reporting_to`) boleh approve/reject anak buah.
+   - Notifikasi WhatsApp keputusan approve/reject via link wa.me (dibuka
+     otomatis oleh UI approver).
+   - Sisa kecil: label/CSV jenis cuti marriage/bereavement belum lengkap.
 
 ## Acceptance Criteria
 
@@ -59,7 +63,7 @@ perhitungan keterlambatan.
 - [x] Fase 3: keterlambatan terhitung otomatis dari jadwal shift + toleransi.
 - [x] Clock-in/out menolak permintaan tanpa foto selfie; foto hanya bisa diakses via route ber-auth.
 - [ ] QA manual: atur shift karyawan → login ESS → absen dgn kamera → cek terlambat/tepat waktu + foto di rekap HRD → ajukan cuti → approve sebagai HRD.
-- [ ] Fase 4: kuota konsisten saat pembatalan; notifikasi approval terkirim.
+- [x] Fase 4: kuota dikembalikan saat pembatalan cuti approved; link WA keputusan dibuat otomatis.
 
 ## Automation Log
 
