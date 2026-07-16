@@ -16,6 +16,7 @@ export const ADMIN_USER_ROLES = [
   "pos",
   "pos_supervisor",
   "qc_staff",
+  "employee",
 ] as const satisfies readonly UserRole[];
 
 export const APPROVAL_MODULES = [
