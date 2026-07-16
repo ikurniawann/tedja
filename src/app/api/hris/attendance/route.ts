@@ -1,12 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerPgClient } from "@/lib/pg/create-client";
+import { query } from "@/lib/db";
 import { getWorkforceActor } from "@/lib/hris/workforce-auth";
+import { savePrivateImage } from "@/lib/storage-private";
+import {
+  computeLateness,
+  resolveShiftForDate,
+  scheduledWindow,
+  type EmployeeShiftRow,
+} from "@/lib/hris/shifts";
 import { z } from 'zod';
 
-// Validation schemas
+// Validation schemas — foto selfie (data URL) WAJIB utk clock-in & clock-out
+const photoSchema = z
+  .string()
+  .regex(/^data:image\/(jpeg|png|webp);base64,/, "Foto selfie wajib disertakan");
+
 const clockInSchema = z.object({
   employee_id: z.string().uuid().optional(),
   date: z.string().optional(), // defaults to today
+  photo: photoSchema,
   clock_in_location: z.object({
     latitude: z.number(),
     longitude: z.number(),
@@ -19,6 +32,7 @@ const clockInSchema = z.object({
 
 const clockOutSchema = z.object({
   attendance_id: z.string().uuid(),
+  photo: photoSchema,
   clock_out_location: z.object({
     latitude: z.number(),
     longitude: z.number(),
@@ -28,6 +42,77 @@ const clockOutSchema = z.object({
   }).optional(),
   notes: z.string().optional(),
 });
+
+const MAX_PHOTO_BYTES = 2 * 1024 * 1024;
+
+/** Simpan selfie (data URL) ke storage private; return path relatif. */
+async function saveSelfie(
+  dataUrl: string,
+  employeeId: string
+): Promise<{ path: string | null; error: string | null }> {
+  const match = /^data:(image\/(?:jpeg|png|webp));base64,(.+)$/.exec(dataUrl);
+  if (!match) return { path: null, error: "Format foto tidak valid" };
+  const buffer = Buffer.from(match[2], "base64");
+  if (buffer.length > MAX_PHOTO_BYTES) {
+    return { path: null, error: "Ukuran foto maksimal 2 MB" };
+  }
+  return savePrivateImage(buffer, match[1], `attendance/${employeeId}`);
+}
+
+/** Tanggal hari ini menurut WIB (jam kerja operasional). */
+function todayWib(): string {
+  return new Date(Date.now() + 7 * 3600_000).toISOString().split("T")[0];
+}
+
+interface ScheduleJoinRow extends EmployeeShiftRow {
+  name: string | null;
+  start_time: string | null;
+  end_time: string | null;
+  late_tolerance_minutes: number | null;
+  is_overnight: boolean | null;
+}
+
+/** Snapshot shift + keterlambatan utk sebuah clock-in. */
+async function shiftSnapshot(employeeId: string, dateIso: string, clockIn: Date) {
+  const rows = await query<ScheduleJoinRow>(
+    `SELECT es.day_of_week, es.shift_id,
+            es.effective_from::text, es.effective_to::text,
+            s.name, s.start_time::text, s.end_time::text,
+            s.late_tolerance_minutes, s.is_overnight
+     FROM hris.employee_shifts es
+     LEFT JOIN hris.shifts s ON s.id = es.shift_id
+     WHERE es.employee_id = $1`,
+    [employeeId]
+  );
+  const active = resolveShiftForDate(rows, dateIso);
+  const detail = active
+    ? rows.find((row) => row.shift_id === active.shift_id && row.name)
+    : null;
+  if (!active || !detail?.start_time || !detail.end_time) {
+    // tanpa jadwal / libur — absen tetap tercatat, tanpa penilaian terlambat
+    return {
+      shift_id: null,
+      scheduled_start: null,
+      scheduled_end: null,
+      is_late: false,
+      late_minutes: 0,
+    };
+  }
+  const shift = {
+    start_time: detail.start_time,
+    end_time: detail.end_time,
+    is_overnight: detail.is_overnight ?? false,
+    late_tolerance_minutes: detail.late_tolerance_minutes ?? 0,
+  };
+  const window = scheduledWindow(dateIso, shift);
+  const lateness = computeLateness(clockIn, dateIso, shift);
+  return {
+    shift_id: active.shift_id,
+    scheduled_start: window.start.toISOString(),
+    scheduled_end: window.end.toISOString(),
+    ...lateness,
+  };
+}
 
 /**
  * GET /api/hris/attendance
@@ -83,6 +168,11 @@ export async function GET(request: NextRequest) {
         clock_out,
         clock_in_location,
         clock_out_location,
+        clock_in_photo_url,
+        clock_out_photo_url,
+        shift_id,
+        scheduled_start,
+        scheduled_end,
         work_hours,
         break_minutes,
         status,
@@ -91,6 +181,7 @@ export async function GET(request: NextRequest) {
         notes,
         created_at,
         updated_at,
+        shift:shifts(id, name),
         employee:employees!attendance_employee_id_fkey(
           id,
           full_name,
@@ -182,7 +273,7 @@ export async function POST(request: NextRequest) {
       }
 
       // Check if already clocked in today
-      const today = date || new Date().toISOString().split('T')[0];
+      const today = date || todayWib();
       const { data: existing } = await db
         .from('attendance')
         .select('id')
@@ -197,14 +288,33 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      // Selfie wajib — simpan ke storage private
+      const selfie = await saveSelfie(validated.photo, empId);
+      if (!selfie.path) {
+        return NextResponse.json(
+          { error: selfie.error ?? 'Foto selfie tidak valid' },
+          { status: 400 }
+        );
+      }
+
+      // Snapshot shift + keterlambatan dari jadwal karyawan
+      const clockInAt = new Date();
+      const snapshot = await shiftSnapshot(empId, today, clockInAt);
+
       // Create attendance record
       const { data, error } = await db
         .from('attendance')
         .insert({
           employee_id: empId,
           date: today,
-          clock_in: new Date().toISOString(),
+          clock_in: clockInAt.toISOString(),
           clock_in_location: validated.clock_in_location || null,
+          clock_in_photo_url: selfie.path,
+          shift_id: snapshot.shift_id,
+          scheduled_start: snapshot.scheduled_start,
+          scheduled_end: snapshot.scheduled_end,
+          is_late: snapshot.is_late,
+          late_minutes: snapshot.late_minutes,
           notes: validated.notes || null,
           status: 'present',
         })
@@ -256,12 +366,22 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      // Selfie wajib juga saat pulang
+      const selfie = await saveSelfie(validated.photo, attendance.employee_id);
+      if (!selfie.path) {
+        return NextResponse.json(
+          { error: selfie.error ?? 'Foto selfie tidak valid' },
+          { status: 400 }
+        );
+      }
+
       // Update clock-out
       const { data, error } = await db
         .from('attendance')
         .update({
           clock_out: new Date().toISOString(),
           clock_out_location: validated.clock_out_location || null,
+          clock_out_photo_url: selfie.path,
           notes: validated.notes ? `${attendance.notes || ''}\n${validated.notes}`.trim() : attendance.notes,
           // work_hours will be auto-calculated by trigger
         })

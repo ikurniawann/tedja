@@ -1,1 +1,2 @@
-export { EssPage } from "./components/ess-page";
+export { EssAbsensiPage } from "./components/absensi-page";
+export { EssCutiPage } from "./components/cuti-page";

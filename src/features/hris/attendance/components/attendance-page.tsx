@@ -1,7 +1,6 @@
 "use client";
 
-import { useState } from "react";
-import { ClockInOutButton } from "@/components/hris/ClockInOutButton";
+import { useEffect, useState } from "react";
 import { AttendanceCalendar } from "@/components/hris/AttendanceCalendar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -16,22 +15,30 @@ import {
 } from "@/components/ui/select";
 import { exportAttendanceCsv } from "../api";
 
+interface AttendanceStats {
+  present_today: number;
+  late_today: number;
+  active_employees: number | null;
+  month_late: number;
+  avg_work_hours: number | null;
+}
+
 export function AttendancePage() {
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [filterEmployee, setFilterEmployee] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
-  const [refreshKey, setRefreshKey] = useState(0);
+  const [refreshKey] = useState(0);
+  const [stats, setStats] = useState<AttendanceStats | null>(null);
+
+  useEffect(() => {
+    fetch("/api/hris/attendance/stats")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json) => setStats(json?.data ?? null))
+      .catch(() => {});
+  }, []);
 
   const handleDateSelect = (date: Date) => {
     setSelectedDate(date);
-  };
-
-  const handleClockInSuccess = () => {
-    setRefreshKey((key) => key + 1);
-  };
-
-  const handleClockOutSuccess = () => {
-    setRefreshKey((key) => key + 1);
   };
 
   const handleExport = async () => {
@@ -80,37 +87,8 @@ export function AttendancePage() {
         </div>
       </div>
 
-      {/* Clock In/Out Section */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base font-semibold">
-            <Clock className="w-4 h-4" />
-            Clock In / Clock Out
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <ClockInOutButton
-            variant="default"
-            onClockInSuccess={handleClockInSuccess}
-            onClockOutSuccess={handleClockOutSuccess}
-          />
-          
-          <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-            <div className="flex items-start gap-3">
-              <MapPin className="w-4 h-4 text-blue-600 mt-0.5" />
-              <div>
-                <p className="text-xs font-medium text-blue-800">
-                  📍 GPS Location Tracking Aktif
-                </p>
-                <p className="text-xs text-blue-700 mt-1">
-                  Lokasi Anda akan dicatat saat clock-in untuk validasi kehadiran. 
-                  Pastikan GPS device Anda aktif.
-                </p>
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Absen dilakukan karyawan via ESS (/dashboard/me/absensi) dengan
+          selfie + GPS — halaman ini murni rekap & validasi utk HRD. */}
 
       {/* Filters */}
       <Card>
@@ -223,7 +201,7 @@ export function AttendancePage() {
         </Card>
       )}
 
-      {/* Quick Stats */}
+      {/* Quick Stats — data dari /api/hris/attendance/stats */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card>
           <CardContent className="pt-6">
@@ -233,7 +211,9 @@ export function AttendancePage() {
               </div>
               <div>
                 <p className="text-sm text-gray-500">Hadir Hari Ini</p>
-                <p className="text-2xl font-bold text-gray-900">-</p>
+                <p className="text-2xl font-bold text-gray-900">
+                  {stats ? `${stats.present_today}${stats.active_employees ? `/${stats.active_employees}` : ""}` : "…"}
+                </p>
               </div>
             </div>
           </CardContent>
@@ -246,8 +226,10 @@ export function AttendancePage() {
                 <Clock className="w-6 h-6 text-yellow-600" />
               </div>
               <div>
-                <p className="text-sm text-gray-500">Terlambat</p>
-                <p className="text-2xl font-bold text-gray-900">-</p>
+                <p className="text-sm text-gray-500">Terlambat Hari Ini</p>
+                <p className="text-2xl font-bold text-gray-900">
+                  {stats ? stats.late_today : "…"}
+                </p>
               </div>
             </div>
           </CardContent>
@@ -260,8 +242,10 @@ export function AttendancePage() {
                 <Clock className="w-6 h-6 text-red-600" />
               </div>
               <div>
-                <p className="text-sm text-gray-500">Alpha</p>
-                <p className="text-2xl font-bold text-gray-900">-</p>
+                <p className="text-sm text-gray-500">Terlambat Bulan Ini</p>
+                <p className="text-2xl font-bold text-gray-900">
+                  {stats ? stats.month_late : "…"}
+                </p>
               </div>
             </div>
           </CardContent>
@@ -274,8 +258,10 @@ export function AttendancePage() {
                 <Clock className="w-6 h-6 text-blue-600" />
               </div>
               <div>
-                <p className="text-sm text-gray-500">Remote</p>
-                <p className="text-2xl font-bold text-gray-900">-</p>
+                <p className="text-sm text-gray-500">Rata-rata Jam Kerja</p>
+                <p className="text-2xl font-bold text-gray-900">
+                  {stats ? (stats.avg_work_hours != null ? `${stats.avg_work_hours} jam` : "—") : "…"}
+                </p>
               </div>
             </div>
           </CardContent>

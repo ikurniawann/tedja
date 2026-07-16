@@ -14,26 +14,14 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { ToastContainer, useToast } from "@/components/ui/toast";
-import { ClockInOutButton } from "@/components/hris/ClockInOutButton";
-import { AttendanceCalendar } from "@/components/hris/AttendanceCalendar";
 
 /**
- * ESS (Employee Self-Service) — /dashboard/me.
- * Karyawan mengelola dirinya sendiri: clock-in/out, riwayat absensi,
- * pengajuan izin/cuti, dan sisa kuota. Seluruh API di baliknya sudah
- * membatasi non-HR ke datanya sendiri (lib/hris/workforce-auth).
+ * ESS → Izin & Cuti (/dashboard/me/cuti): kuota tahunan, riwayat pengajuan,
+ * dan form pengajuan mandiri (server memaksa employee_id = diri sendiri).
  */
 
 interface MeData {
-  employee: {
-    id: string;
-    full_name: string;
-    nip: string | null;
-    join_date: string | null;
-    employment_status: string;
-    position_title: string | null;
-    department_name: string | null;
-  } | null;
+  employee: { id: string; full_name: string } | null;
   leave_balance: {
     year: number;
     annual_leave_total: string;
@@ -86,18 +74,17 @@ function leaveTypeLabel(value: string): string {
 
 const EMPTY_LEAVE_FORM = { leave_type: "annual", start_date: "", end_date: "", reason: "" };
 
-export function EssPage() {
+export function EssCutiPage() {
   const { toasts, showToast, removeToast } = useToast();
   const [me, setMe] = useState<MeData | null>(null);
   const [loadingMe, setLoadingMe] = useState(true);
   const [leaves, setLeaves] = useState<LeaveRow[]>([]);
-  const [calendarKey, setCalendarKey] = useState(0);
   const [leaveDialog, setLeaveDialog] = useState(false);
   const [leaveForm, setLeaveForm] = useState(EMPTY_LEAVE_FORM);
   const [submitting, setSubmitting] = useState(false);
 
   const loadLeaves = useCallback(() => {
-    fetch("/api/hris/leaves?limit=10")
+    fetch("/api/hris/leaves?limit=20")
       .then((res) => (res.ok ? res.json() : null))
       .then((json) => setLeaves(json?.data ?? []))
       .catch(() => {});
@@ -156,40 +143,25 @@ export function EssPage() {
           Akun ini tidak terhubung ke data karyawan
         </p>
         <p className="mt-2 text-sm text-gray-500">
-          Area Karyawan hanya tersedia untuk akun yang tertaut ke record karyawan HRIS.
-          Hubungi HRD bila menurut Anda ini keliru.
+          Pengajuan izin/cuti hanya tersedia untuk akun yang tertaut ke record karyawan
+          HRIS. Hubungi HRD bila menurut Anda ini keliru.
         </p>
       </div>
     );
   }
 
-  const { employee, leave_balance: balance } = me;
+  const balance = me.leave_balance;
 
   return (
     <div className="space-y-6">
       <ToastContainer toasts={toasts} removeToast={removeToast} />
 
-      {/* Header + clock in/out */}
-      <div className="rounded-2xl border border-gray-200/70 bg-gradient-to-r from-pink-50 to-white p-6 shadow-sm">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Halo, {employee.full_name} 👋</h1>
-            <p className="mt-0.5 text-sm text-gray-500">
-              {[employee.position_title, employee.department_name, employee.nip]
-                .filter(Boolean)
-                .join(" · ") || "Karyawan"}
-            </p>
-          </div>
-          <ClockInOutButton
-            variant="large"
-            onClockInSuccess={() => setCalendarKey((key) => key + 1)}
-            onClockOutSuccess={() => setCalendarKey((key) => key + 1)}
-          />
-        </div>
+      <div className="border-b border-gray-200/70 pb-4">
+        <h1 className="text-2xl font-bold text-gray-900">Izin & Cuti</h1>
+        <p className="text-sm text-gray-500">Ajukan dan pantau izin/cuti Anda</p>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
-        {/* Kuota cuti */}
         <div className="rounded-xl border border-gray-200/70 bg-white p-5 shadow-sm">
           <h3 className="flex items-center gap-2 text-sm font-semibold text-gray-800">
             <CalendarDaysIcon className="h-4 w-4 text-pink-500" /> Kuota Cuti Tahunan{" "}
@@ -208,15 +180,12 @@ export function EssPage() {
           </Button>
         </div>
 
-        {/* Riwayat pengajuan */}
         <div className="rounded-xl border border-gray-200/70 bg-white p-5 shadow-sm lg:col-span-2">
           <h3 className="flex items-center gap-2 text-sm font-semibold text-gray-800">
-            <ClockIcon className="h-4 w-4 text-pink-500" /> Pengajuan Izin & Cuti Saya
+            <ClockIcon className="h-4 w-4 text-pink-500" /> Riwayat Pengajuan
           </h3>
           {leaves.length === 0 ? (
-            <p className="mt-4 py-6 text-center text-sm text-gray-400">
-              Belum ada pengajuan.
-            </p>
+            <p className="mt-4 py-6 text-center text-sm text-gray-400">Belum ada pengajuan.</p>
           ) : (
             <ul className="mt-3 divide-y divide-gray-100">
               {leaves.map((leave) => {
@@ -247,10 +216,6 @@ export function EssPage() {
         </div>
       </div>
 
-      {/* Kalender absensi sendiri */}
-      <AttendanceCalendar employeeId="me" refreshKey={calendarKey} />
-
-      {/* Dialog ajukan cuti */}
       <Dialog open={leaveDialog} onOpenChange={setLeaveDialog}>
         <DialogContent className="max-w-md">
           <DialogHeader>
