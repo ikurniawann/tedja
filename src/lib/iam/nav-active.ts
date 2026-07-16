@@ -85,7 +85,7 @@ export const DUPLICATE_ROUTE_GROUPS = [
   },
   {
     prefix: "/dashboard/employees",
-    items: ["hris.users"],
+    items: ["hris.kepegawaian.users"],
   },
   {
     prefix: "/dashboard/purchasing/grn",
