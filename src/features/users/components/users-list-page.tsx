@@ -25,12 +25,24 @@ import {
   ROLE_LABELS,
   STATUS_LABELS,
 } from "../constants";
+import { ContractExpiryBanner } from "./contract-expiry-banner";
 import { ResetPasswordDialog, type ResetPasswordTarget } from "./reset-password-dialog";
 import { CreateAccountDialog } from "./create-account-dialog";
 import { UsersTable } from "./users-table";
 import type { UserEmployeeItem } from "@/lib/users/user-mapper";
 
-export function UsersListPage({ showAppActions = false }: { showAppActions?: boolean }) {
+interface UsersListPageProps {
+  /**
+   * "directory" — menu Karyawan (/dashboard/employees): direktori karyawan HRIS.
+   * "accounts" — menu Manajemen User (/dashboard/settings/users): akun login,
+   * role, dan akses aplikasi (reset password, buat akun).
+   */
+  variant?: "directory" | "accounts";
+}
+
+export function UsersListPage({ variant = "directory" }: UsersListPageProps) {
+  const isAccountsView = variant === "accounts";
+  const showAppActions = isAccountsView;
   const router = useRouter();
   const pathname = usePathname();
   const { toasts, showToast, removeToast } = useToast();
@@ -160,41 +172,52 @@ export function UsersListPage({ showAppActions = false }: { showAppActions?: boo
 
       <div className="flex flex-col items-start justify-between gap-4 border-b border-gray-200/70 pb-4 sm:flex-row sm:items-center">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Employees & Users</h1>
+          <h1 className="text-2xl font-bold text-gray-900">
+            {isAccountsView ? "Manajemen User" : "Karyawan"}
+          </h1>
           <p className="text-sm text-gray-500">
-            HRIS employee directory with app access settings — {total} total
+            {isAccountsView
+              ? "Kelola akun login, role, dan akses aplikasi"
+              : "Direktori karyawan HRIS"}{" "}
+            — {total} total
           </p>
         </div>
-        <Link href={EMPLOYEES_ROUTES.insert}>
-          <Button className="h-10 w-full gap-2 rounded-lg bg-pink-600 px-3 text-sm font-semibold text-white shadow-sm hover:bg-pink-700 sm:w-auto">
-            <PlusIcon className="h-4 w-4" />
-            Add Employee
-          </Button>
-        </Link>
+        {!isAccountsView && (
+          <Link href={EMPLOYEES_ROUTES.insert}>
+            <Button className="h-10 w-full gap-2 rounded-lg bg-pink-600 px-3 text-sm font-semibold text-white shadow-sm hover:bg-pink-700 sm:w-auto">
+              <PlusIcon className="h-4 w-4" />
+              Add Employee
+            </Button>
+          </Link>
+        )}
       </div>
 
-      <div className="border-b border-gray-200/70">
-        <nav className="-mb-px flex space-x-6 overflow-x-auto">
-          {[
-            { href: EMPLOYEES_ROUTES.list, label: "All Employees" },
-            { href: "/dashboard/hris/schedules", label: "Schedules" },
-            { href: "/dashboard/hris/sections", label: "Sections" },
-          ].map((tab) => (
-            <button
-              key={tab.href}
-              type="button"
-              onClick={() => router.push(tab.href)}
-              className={`whitespace-nowrap border-b-2 px-1 py-4 text-sm font-medium transition-colors ${
-                pathname === tab.href
-                  ? "border-pink-500 text-pink-600"
-                  : "border-transparent text-gray-500 hover:border-gray-200 hover:text-gray-700"
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </nav>
-      </div>
+      {!isAccountsView && <ContractExpiryBanner />}
+
+      {!isAccountsView && (
+        <div className="border-b border-gray-200/70">
+          <nav className="-mb-px flex space-x-6 overflow-x-auto">
+            {[
+              { href: EMPLOYEES_ROUTES.list, label: "All Employees" },
+              { href: "/dashboard/hris/schedules", label: "Schedules" },
+              { href: "/dashboard/hris/sections", label: "Sections" },
+            ].map((tab) => (
+              <button
+                key={tab.href}
+                type="button"
+                onClick={() => router.push(tab.href)}
+                className={`whitespace-nowrap border-b-2 px-1 py-4 text-sm font-medium transition-colors ${
+                  pathname === tab.href
+                    ? "border-pink-500 text-pink-600"
+                    : "border-transparent text-gray-500 hover:border-gray-200 hover:text-gray-700"
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </nav>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {[
@@ -218,8 +241,12 @@ export function UsersListPage({ showAppActions = false }: { showAppActions?: boo
 
       <PurchasingListSection
         icon={Users}
-        title="Employee List"
-        description="Track employee records, employment status, and app access."
+        title={isAccountsView ? "Daftar User" : "Employee List"}
+        description={
+          isAccountsView
+            ? "Akun login karyawan, role, dan status akses aplikasi."
+            : "Track employee records and employment status."
+        }
         toolbar={
           <div className="flex w-full flex-col gap-3 sm:w-auto md:flex-row md:items-center">
             <label className="relative w-full md:w-80">
@@ -377,7 +404,7 @@ export function UsersListPage({ showAppActions = false }: { showAppActions?: boo
                 onView={(id) => router.push(EMPLOYEES_ROUTES.detail(id))}
                 onEdit={(id) => router.push(EMPLOYEES_ROUTES.edit(id))}
                 onResetPassword={showAppActions && canResetPassword ? handleResetPassword : undefined}
-                onCreateAccount={canCreateAccount ? setCreateAccountTarget : undefined}
+                onCreateAccount={showAppActions && canCreateAccount ? setCreateAccountTarget : undefined}
                 showAppActions={showAppActions}
               />
             </div>
