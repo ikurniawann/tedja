@@ -78,7 +78,10 @@ export const getUser = cache(async (): Promise<{
 
 export const requireUser = cache(async (): Promise<AuthUser> => {
   const { user } = await getUser();
-  if (!user) redirect("/login");
+  // Lewat /api/auth/logout (GET) agar cookie session yang tidak valid ikut
+  // terhapus — redirect langsung ke /login membuat middleware memantulkan
+  // balik ke /dashboard selama cookie masih ada (redirect loop).
+  if (!user) redirect("/api/auth/logout");
   return user;
 });
 
