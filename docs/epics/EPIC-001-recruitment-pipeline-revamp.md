@@ -148,6 +148,13 @@ group — diangkat jadi epic tersendiri **EPIC-002: Psikotes Online**.
 
 ## Automation Log
 
+- 2026-07-16 · Laporan pipeline kandidat PDF (commit `d1103fc`): GET
+  /api/candidates/[id]/report — profil, analisis AI CV, screening, psikotes
+  (+insight AI gambar), interview AI, offer, data hired (NIP/onboarding),
+  timeline; tersedia mulai tahap Offer dari halaman detail kandidat. Fix
+  penyerta: redirect loop logout (cookie session tidak valid, commit
+  `cd870d7`). Integrasi hilir: promote kandidat hired kini otomatis membuat
+  draft kontrak (lihat EPIC-006 Fase D).
 - 2026-07-14 · Semua task group 1–6 selesai & terverifikasi di dev
   (localhost:3459 / omnipos.suluinwounderland.com). Belum di-commit atas
   permintaan user — commit menyusul setelah fase development selesai.

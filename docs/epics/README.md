@@ -6,8 +6,13 @@ deploying-dev · ready-for-qa · blocked · done).
 
 | Epic | Judul | Status | Update terakhir |
 |------|-------|--------|-----------------|
-| [EPIC-001](./EPIC-001-recruitment-pipeline-revamp.md) | Recruitment Pipeline Revamp | on-progress | 2026-07-15 |
+| [EPIC-001](./EPIC-001-recruitment-pipeline-revamp.md) | Recruitment Pipeline Revamp | on-progress | 2026-07-16 |
 | [EPIC-002](./EPIC-002-psikotes-online.md) | Psikotes Online | ready-for-qa | 2026-07-15 |
+| [EPIC-003](./EPIC-003-interview-ai.md) | Interview AI | ready-for-qa | 2026-07-15 |
+| [EPIC-004](./EPIC-004-offer.md) | Offer (Penawaran + Portal Respons) | ready-for-qa | 2026-07-15 |
+| [EPIC-005](./EPIC-005-live-monitoring.md) | Live Monitoring Rekrutmen | ready-for-qa | 2026-07-15 |
+| [EPIC-006](./EPIC-006-kontrak-karyawan.md) | Kontrak Karyawan (PKWT/PKWTT) | ready-for-qa | 2026-07-16 |
+| [EPIC-007](./EPIC-007-workforce-ess.md) | Kehadiran & Cuti — Perombakan + ESS | on-progress | 2026-07-16 |
 
 Aturan:
 - Epic + registry ini adalah sumber kebenaran status pekerjaan (canonical).
