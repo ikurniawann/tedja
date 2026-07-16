@@ -58,8 +58,11 @@ export function ApprovalButtons({
 
       toast({
         title: "✅ Pengajuan Disetujui",
-        description: "Leave request telah disetujui",
+        description: result.wa_link
+          ? "Membuka WhatsApp untuk memberi tahu karyawan…"
+          : "Leave request telah disetujui",
       });
+      if (result.wa_link) window.open(result.wa_link, "_blank");
 
       onApprove?.(result.data);
     } catch (error) {
@@ -110,8 +113,11 @@ export function ApprovalButtons({
 
       toast({
         title: "❌ Pengajuan Ditolak",
-        description: rejectionReason.trim(),
+        description: result.wa_link
+          ? "Membuka WhatsApp untuk memberi tahu karyawan…"
+          : rejectionReason.trim(),
       });
+      if (result.wa_link) window.open(result.wa_link, "_blank");
 
       onReject?.(result.data);
       setShowRejectDialog(false);

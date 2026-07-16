@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerPgClient } from "@/lib/pg/create-client";
+import { withTransaction } from "@/lib/db";
+import { getWorkforceActor } from "@/lib/hris/workforce-auth";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -57,7 +59,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
 /**
  * PUT /api/hris/leaves/:id
- * Update leave request (cancel by employee, or edit)
+ * - Karyawan: batalkan pengajuannya sendiri yang masih pending.
+ * - HR: batalkan cuti (termasuk yang SUDAH disetujui — kuota tahunan
+ *   dikembalikan dalam transaksi yang sama) dan edit alasan/lampiran.
  */
 export async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
@@ -65,13 +69,9 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     const { id } = await params;
     const body = await request.json();
 
-    // Check authentication
-    const { data: { user } } = await db.auth.getUser();
-    if (!user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
+    const actor = await getWorkforceActor();
+    if (!actor) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     // Get current leave request
@@ -88,26 +88,59 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Check permissions
-    const isOwner = leave.employee_id === await getCurrentEmployeeId(db, user.id);
-    const isHRD = await checkIsHRD(db, user.id);
-    const isManager = await checkIsManager(db, user.id);
+    const isOwner = actor.employeeId !== null && leave.employee_id === actor.employeeId;
 
-    // Build update object
+    // ── Pembatalan ──────────────────────────────────────────────────────
+    if (body.status === 'cancelled') {
+      const cancellablePending = leave.status === 'pending' && (isOwner || actor.isHr);
+      const cancellableApproved = leave.status === 'approved' && actor.isHr;
+      if (!cancellablePending && !cancellableApproved) {
+        return NextResponse.json(
+          {
+            error:
+              leave.status === 'approved'
+                ? 'Cuti yang sudah disetujui hanya bisa dibatalkan oleh HRD/admin'
+                : 'Pengajuan ini tidak bisa dibatalkan',
+          },
+          { status: 403 }
+        );
+      }
+
+      // batalkan + kembalikan kuota (bila sebelumnya approved & memotong kuota)
+      const refund = cancellableApproved && leave.leave_type === 'annual';
+      await withTransaction(async (client) => {
+        await client.query(
+          `UPDATE hris.leaves SET status = 'cancelled' WHERE id = $1`,
+          [id]
+        );
+        if (refund) {
+          await client.query(
+            `UPDATE hris.leave_balances
+             SET annual_leave_used = GREATEST(annual_leave_used - $3, 0),
+                 updated_at = now()
+             WHERE employee_id = $1 AND year = $2`,
+            [leave.employee_id, new Date(leave.start_date).getFullYear(), leave.total_days]
+          );
+        }
+      });
+
+      return NextResponse.json({
+        message: refund
+          ? `Cuti dibatalkan — kuota ${leave.total_days} hari dikembalikan`
+          : 'Pengajuan dibatalkan',
+      });
+    }
+
+    // ── Edit metadata oleh HR ────────────────────────────────────────────
+    if (!actor.isHr) {
+      return NextResponse.json(
+        { error: 'No valid updates or insufficient permissions' },
+        { status: 403 }
+      );
+    }
     const updateData: any = {};
-    
-    // Employee can only cancel their own pending request
-    if (body.status === 'cancelled' && isOwner && leave.status === 'pending') {
-      updateData.status = 'cancelled';
-    }
-    
-    // HRD/Manager can update other fields
-    if (isHRD || isManager) {
-      if (body.reason !== undefined) updateData.reason = body.reason;
-      if (body.attachment_url !== undefined) updateData.attachment_url = body.attachment_url;
-    }
-
-    // If nothing to update
+    if (body.reason !== undefined) updateData.reason = body.reason;
+    if (body.attachment_url !== undefined) updateData.attachment_url = body.attachment_url;
     if (Object.keys(updateData).length === 0) {
       return NextResponse.json(
         { error: 'No valid updates or insufficient permissions' },
@@ -115,7 +148,6 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Update leave request
     const { data, error } = await db
       .from('leaves')
       .update(updateData)
@@ -198,32 +230,12 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 }
 
 // Helper functions
-async function getCurrentEmployeeId(db: any, userId: string) {
-  const { data } = await db
-    .from('employees')
-    .select('id')
-    .eq('user_id', userId)
-    .single();
-  
-  return data?.id || null;
-}
-
 async function checkIsHRD(db: any, userId: string): Promise<boolean> {
   const { data } = await db
     .from('users')
     .select('role')
     .eq('id', userId)
     .single();
-  
-  return data?.role === 'hrd' || false;
-}
 
-async function checkIsManager(db: any, userId: string): Promise<boolean> {
-  const { data } = await db
-    .from('users')
-    .select('role')
-    .eq('id', userId)
-    .single();
-  
-  return data?.role === 'hiring_manager' || data?.role === 'hrd' || false;
+  return data?.role === 'hrd' || data?.role === 'super_admin' || data?.role === 'admin' || false;
 }

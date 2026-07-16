@@ -81,7 +81,26 @@ export function EssCutiPage() {
   const [leaves, setLeaves] = useState<LeaveRow[]>([]);
   const [leaveDialog, setLeaveDialog] = useState(false);
   const [leaveForm, setLeaveForm] = useState(EMPTY_LEAVE_FORM);
+  const [attachment, setAttachment] = useState<{ name: string; dataUrl: string } | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  function handleAttachmentChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      showToast("Lampiran harus berupa gambar (foto surat dokter dsb.)", "error");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      showToast("Ukuran lampiran maksimal 5 MB", "error");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onloadend = () =>
+      setAttachment({ name: file.name, dataUrl: reader.result as string });
+    reader.readAsDataURL(file);
+  }
 
   const loadLeaves = useCallback(() => {
     fetch("/api/hris/leaves?limit=20")
@@ -110,16 +129,30 @@ export function EssCutiPage() {
     }
     setSubmitting(true);
     try {
+      // upload lampiran dulu (bila ada), lalu kirim pengajuan dgn path-nya
+      let attachmentUrl: string | undefined;
+      if (attachment) {
+        const uploadRes = await fetch("/api/hris/leaves/attachment", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ photo: attachment.dataUrl }),
+        });
+        const uploadJson = await uploadRes.json();
+        if (!uploadRes.ok) throw new Error(uploadJson.error || "Gagal upload lampiran");
+        attachmentUrl = uploadJson.data.path;
+      }
+
       const res = await fetch("/api/hris/leaves", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(leaveForm),
+        body: JSON.stringify({ ...leaveForm, attachment_url: attachmentUrl }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Gagal mengajukan");
       showToast("Pengajuan terkirim — menunggu persetujuan");
       setLeaveDialog(false);
       setLeaveForm(EMPTY_LEAVE_FORM);
+      setAttachment(null);
       loadLeaves();
     } catch (error) {
       showToast(error instanceof Error ? error.message : "Gagal mengajukan", "error");
@@ -258,6 +291,15 @@ export function EssCutiPage() {
                 value={leaveForm.reason}
                 onChange={(e) => setLeaveForm((f) => ({ ...f, reason: e.target.value }))}
               />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-600">
+                Lampiran (ops. — foto surat dokter dsb., maks 5 MB)
+              </label>
+              <Input type="file" accept="image/*" onChange={handleAttachmentChange} />
+              {attachment && (
+                <p className="mt-1 text-xs text-gray-500">📎 {attachment.name}</p>
+              )}
             </div>
             {leaveForm.leave_type === "annual" && balance && (
               <p className="rounded-lg bg-sky-50 px-3 py-2 text-xs text-sky-700">

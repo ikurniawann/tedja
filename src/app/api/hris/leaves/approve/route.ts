@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerPgClient } from "@/lib/pg/create-client";
 import { withTransaction } from "@/lib/db";
 import { getWorkforceActor } from "@/lib/hris/workforce-auth";
+import { buildWaLink } from "@/lib/recruitment/wa";
 import { z } from 'zod';
 
 // Validation schema for approval
@@ -26,12 +27,6 @@ export async function POST(request: NextRequest) {
     if (!actor) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-    if (!actor.isHr) {
-      return NextResponse.json(
-        { error: 'Forbidden: Only managers can approve leave requests' },
-        { status: 403 }
-      );
-    }
 
     // Validate request
     const validated = approvalSchema.parse(body);
@@ -45,6 +40,8 @@ export async function POST(request: NextRequest) {
           id,
           full_name,
           email,
+          phone,
+          reporting_to,
           department:departments(id, name),
           job_title:positions(id, title)
         )
@@ -56,6 +53,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: 'Leave request not found' },
         { status: 404 }
+      );
+    }
+
+    // MSS: selain HR, ATASAN LANGSUNG karyawan (reporting_to) boleh approve
+    const isDirectManager =
+      actor.employeeId !== null && leave.employee?.reporting_to === actor.employeeId;
+    if (!actor.isHr && !isDirectManager) {
+      return NextResponse.json(
+        { error: 'Forbidden: hanya HRD/admin atau atasan langsung yang bisa memproses' },
+        { status: 403 }
       );
     }
 
@@ -124,11 +131,18 @@ export async function POST(request: NextRequest) {
       .eq('id', validated.leave_id)
       .single();
 
-    // TODO: Send notification to employee (WhatsApp/Email)
+    // Notifikasi WhatsApp — pola wa.me link (konsisten dgn modul rekrutmen):
+    // link dikembalikan ke UI utk dibuka approver
+    const rangeLabel = `${leave.start_date} s.d. ${leave.end_date} (${leave.total_days} hari)`;
+    const waMessage = isApprove
+      ? `Halo ${leave.employee?.full_name}, pengajuan izin/cuti Anda ${rangeLabel} telah DISETUJUI. Selamat beristirahat!`
+      : `Halo ${leave.employee?.full_name}, mohon maaf pengajuan izin/cuti Anda ${rangeLabel} DITOLAK. Alasan: ${validated.rejection_reason}. Silakan hubungi HRD untuk diskusi.`;
+    const waLink = buildWaLink(leave.employee?.phone, waMessage);
 
     return NextResponse.json({
       message: `Leave request ${validated.action}d successfully`,
       action: validated.action,
+      wa_link: waLink,
       data,
     });
   } catch (error) {

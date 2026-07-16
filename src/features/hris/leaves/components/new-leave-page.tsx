@@ -82,9 +82,9 @@ export function NewLeavePage() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const validTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/jpg'];
+    const validTypes = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp'];
     if (!validTypes.includes(file.type)) {
-      showToast("Tipe File Tidak Valid: Hanya PDF, JPG, dan PNG yang diperbolehkan", "error");
+      showToast("Tipe File Tidak Valid: gunakan gambar JPG/PNG/WebP (foto dokumen)", "error");
       return;
     }
 
@@ -93,32 +93,42 @@ export function NewLeavePage() {
       return;
     }
 
+    if (!formData.employee_id) {
+      showToast("Pilih karyawan dulu sebelum meng-upload lampiran", "error");
+      return;
+    }
+
     try {
       setUploadingFile(true);
       setSelectedFile(file);
 
-      if (file.type.startsWith('image/')) {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
-        reader.onloadend = () => {
-          setPreviewUrl(reader.result as string);
-        };
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.onerror = () => reject(new Error("Gagal membaca file"));
         reader.readAsDataURL(file);
-      } else {
-        setPreviewUrl(null);
-      }
+      });
+      setPreviewUrl(dataUrl);
 
-      // Penyimpanan lampiran belum tersedia (menyusul) — jangan pura-pura
-      // sukses dan jangan simpan URL palsu; pengajuan tetap bisa dikirim.
-      showToast(
-        `Lampiran "${file.name}" belum bisa disimpan — fitur upload menyusul. Pengajuan tetap bisa dikirim tanpa lampiran.`,
-        "error"
-      );
+      const res = await fetch("/api/hris/leaves/attachment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ photo: dataUrl, employee_id: formData.employee_id }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Gagal upload lampiran");
+
+      setFormData({ ...formData, attachment_url: json.data.path });
+      showToast(`Lampiran "${file.name}" tersimpan`, "success");
+    } catch (error) {
+      console.error("Upload error:", error);
       setSelectedFile(null);
       setPreviewUrl(null);
       setFormData({ ...formData, attachment_url: "" });
-    } catch (error) {
-      console.error("Upload error:", error);
-      showToast("Upload Gagal: Terjadi kesalahan saat upload file", "error");
+      showToast(
+        error instanceof Error ? error.message : "Upload Gagal: Terjadi kesalahan saat upload file",
+        "error"
+      );
     } finally {
       setUploadingFile(false);
     }
