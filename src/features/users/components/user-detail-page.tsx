@@ -52,6 +52,7 @@ import { ResetPasswordDialog } from "./reset-password-dialog";
 import { CreateAccountDialog } from "./create-account-dialog";
 import { EmployeeLifecycleTab } from "./employee-lifecycle-tab";
 import { EmployeeContractsTab } from "./employee-contracts-tab";
+import { EmployeeShiftsTab } from "./employee-shifts-tab";
 
 const STATUS_LABELS: Record<string, string> = {
   probation: "Probation",
@@ -122,6 +123,7 @@ type Tab =
   | "info"
   | "lifecycle"
   | "contracts"
+  | "shifts"
   | "employment"
   | "documents"
   | "attendance"
@@ -131,6 +133,7 @@ const VALID_TABS: Tab[] = [
   "info",
   "lifecycle",
   "contracts",
+  "shifts",
   "employment",
   "documents",
   "attendance",
@@ -241,6 +244,7 @@ export function UserDetailPage({ params }: { params: Promise<{ id: string }> }) 
     { key: "info", label: "Personal Info", icon: <UserCircleIcon className="w-4 h-4" /> },
     { key: "lifecycle", label: "Lifecycle", icon: <ArrowPathIcon className="w-4 h-4" /> },
     { key: "contracts", label: "Kontrak", icon: <BriefcaseIcon className="w-4 h-4" /> },
+    { key: "shifts", label: "Jadwal Shift", icon: <ClockIcon className="w-4 h-4" /> },
     { key: "employment", label: "Employment History", icon: <BriefcaseIcon className="w-4 h-4" /> },
     { key: "documents", label: "Documents", icon: <DocumentTextIcon className="w-4 h-4" /> },
     { key: "attendance", label: "Attendance", icon: <ClockIcon className="w-4 h-4" /> },
@@ -531,6 +535,8 @@ export function UserDetailPage({ params }: { params: Promise<{ id: string }> }) 
           {activeTab === "lifecycle" && <EmployeeLifecycleTab employeeId={id} />}
 
           {activeTab === "contracts" && <EmployeeContractsTab employeeId={id} />}
+
+          {activeTab === "shifts" && <EmployeeShiftsTab employeeId={id} />}
 
           {/* RIWAYAT KERJA */}
           {activeTab === "employment" && (
