@@ -61,7 +61,12 @@ export function PromoteCandidateButton({ candidate, onSuccess }: PromoteCandidat
       }
 
       // Success!
-      alert(`Berhasil mempromosikan ${candidate.full_name} menjadi karyawan!\nNIP: ${result.nip}`);
+      alert(
+        `Berhasil mempromosikan ${candidate.full_name} menjadi karyawan!\nNIP: ${result.nip}` +
+          (result.contract_number
+            ? `\nDraft kontrak ${result.contract_number} dibuat otomatis — cek tab Kontrak.`
+            : '')
+      );
       setOpen(false);
       onSuccess?.();
     } catch (error) {

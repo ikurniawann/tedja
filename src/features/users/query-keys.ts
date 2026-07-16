@@ -14,4 +14,6 @@ export const usersQueryKeys = {
     ["users", "attendance", employeeId, month, year] as const,
   leaveBalances: (employeeId: string) => ["users", "leave-balances", employeeId] as const,
   lifecycle: (employeeId: string) => ["users", "lifecycle", employeeId] as const,
+  contracts: (employeeId: string) => ["users", "contracts", employeeId] as const,
+  expiringContracts: (days: number) => ["users", "expiring-contracts", days] as const,
 };

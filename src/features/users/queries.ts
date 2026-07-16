@@ -3,7 +3,9 @@
 import { useQuery } from "@tanstack/react-query";
 import {
   fetchEmployeeAttendance,
+  fetchEmployeeContracts,
   fetchEmployeeDocuments,
+  fetchExpiringContracts,
   fetchEmployeeLeaveBalances,
   fetchEmploymentHistory,
   fetchEmployeeLifecycle,
@@ -47,6 +49,25 @@ export const useBranchStalls = (branchId: string | null) =>
     queryKey: usersQueryKeys.branchStalls(branchId ?? ""),
     queryFn: () => fetchBranchStalls(branchId!),
     enabled: !!branchId,
+  });
+
+export const useEmployeeContracts = (employeeId: string, enabled = true) =>
+  useQuery({
+    queryKey: usersQueryKeys.contracts(employeeId),
+    queryFn: async () => {
+      const res = await fetchEmployeeContracts(employeeId);
+      return res.data ?? [];
+    },
+    enabled: enabled && !!employeeId,
+  });
+
+export const useExpiringContracts = (days = 30) =>
+  useQuery({
+    queryKey: usersQueryKeys.expiringContracts(days),
+    queryFn: async () => {
+      const res = await fetchExpiringContracts(days);
+      return res.data;
+    },
   });
 
 export const useHRISEmployeeDetail = (id: string) =>

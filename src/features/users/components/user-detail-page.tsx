@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, use } from "react";
-import { useRouter, usePathname } from "next/navigation";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -51,6 +51,7 @@ import {
 import { ResetPasswordDialog } from "./reset-password-dialog";
 import { CreateAccountDialog } from "./create-account-dialog";
 import { EmployeeLifecycleTab } from "./employee-lifecycle-tab";
+import { EmployeeContractsTab } from "./employee-contracts-tab";
 
 const STATUS_LABELS: Record<string, string> = {
   probation: "Probation",
@@ -117,7 +118,24 @@ function calculateTenure(joinDate: string) {
   return "Just joined";
 }
 
-type Tab = "info" | "lifecycle" | "employment" | "documents" | "attendance" | "leave";
+type Tab =
+  | "info"
+  | "lifecycle"
+  | "contracts"
+  | "employment"
+  | "documents"
+  | "attendance"
+  | "leave";
+
+const VALID_TABS: Tab[] = [
+  "info",
+  "lifecycle",
+  "contracts",
+  "employment",
+  "documents",
+  "attendance",
+  "leave",
+];
 
 export function UserDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -130,7 +148,12 @@ export function UserDetailPage({ params }: { params: Promise<{ id: string }> }) 
   const canCreateAccount =
     user?.role === "super_admin" || user?.role === "admin" || user?.role === "hrd";
 
-  const [activeTab, setActiveTab] = useState<Tab>("info");
+  // deep-link tab via ?tab=contracts (dipakai banner pengingat kontrak)
+  const searchParams = useSearchParams();
+  const [activeTab, setActiveTab] = useState<Tab>(() => {
+    const requested = searchParams.get("tab") as Tab | null;
+    return requested && VALID_TABS.includes(requested) ? requested : "info";
+  });
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
   const [createAccountOpen, setCreateAccountOpen] = useState(false);
 
@@ -217,6 +240,7 @@ export function UserDetailPage({ params }: { params: Promise<{ id: string }> }) 
   const tabs: { key: Tab; label: string; icon: React.ReactNode }[] = [
     { key: "info", label: "Personal Info", icon: <UserCircleIcon className="w-4 h-4" /> },
     { key: "lifecycle", label: "Lifecycle", icon: <ArrowPathIcon className="w-4 h-4" /> },
+    { key: "contracts", label: "Kontrak", icon: <BriefcaseIcon className="w-4 h-4" /> },
     { key: "employment", label: "Employment History", icon: <BriefcaseIcon className="w-4 h-4" /> },
     { key: "documents", label: "Documents", icon: <DocumentTextIcon className="w-4 h-4" /> },
     { key: "attendance", label: "Attendance", icon: <ClockIcon className="w-4 h-4" /> },
@@ -505,6 +529,8 @@ export function UserDetailPage({ params }: { params: Promise<{ id: string }> }) 
 
           {/* LIFECYCLE */}
           {activeTab === "lifecycle" && <EmployeeLifecycleTab employeeId={id} />}
+
+          {activeTab === "contracts" && <EmployeeContractsTab employeeId={id} />}
 
           {/* RIWAYAT KERJA */}
           {activeTab === "employment" && (

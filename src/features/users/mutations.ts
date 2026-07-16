@@ -3,11 +3,16 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { CreateUserEmployeeInput, UpdateUserEmployeeInput } from "@/lib/users/schemas";
 import {
+  createEmployeeContract,
   createEmployeeDocument,
   createUser,
+  deleteEmployeeContract,
   deleteEmployeeDocument,
+  patchEmployeeContract,
   resetUserPassword,
   updateUser,
+  type ContractActionInput,
+  type CreateContractInput,
 } from "./api";
 import { usersQueryKeys } from "./query-keys";
 import type { EmployeeDocumentInput } from "./types";
@@ -15,6 +20,40 @@ import type { EmployeeDocumentInput } from "./types";
 function useInvalidateUsers() {
   const qc = useQueryClient();
   return () => qc.invalidateQueries({ queryKey: usersQueryKeys.all });
+}
+
+export function useCreateEmployeeContract(employeeId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: CreateContractInput) => createEmployeeContract(employeeId, payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: usersQueryKeys.contracts(employeeId) });
+    },
+  });
+}
+
+export function useContractAction(employeeId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ contractId, ...payload }: ContractActionInput & { contractId: string }) =>
+      patchEmployeeContract(contractId, payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: usersQueryKeys.contracts(employeeId) });
+      // aktivasi kontrak mengubah employment_status karyawan
+      qc.invalidateQueries({ queryKey: usersQueryKeys.hrisEmployee(employeeId) });
+      qc.invalidateQueries({ queryKey: usersQueryKeys.employmentHistory(employeeId) });
+    },
+  });
+}
+
+export function useDeleteEmployeeContract(employeeId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (contractId: string) => deleteEmployeeContract(contractId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: usersQueryKeys.contracts(employeeId) });
+    },
+  });
 }
 
 export function useCreateUser() {

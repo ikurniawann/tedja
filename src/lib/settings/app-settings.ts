@@ -13,6 +13,13 @@ export const SETTING_KEYS = {
   OPENAI_API_KEY: "openai_api_key",
   OPENAI_MODEL: "openai_model",
   OPENAI_BASE_URL: "openai_base_url",
+  // Profil legal perusahaan — dipakai dokumen kontrak kerja (PIHAK PERTAMA).
+  // Kosong = dirender sebagai garis isian di PDF.
+  COMPANY_LEGAL_NAME: "company_legal_name",
+  COMPANY_ADDRESS: "company_address",
+  COMPANY_CITY: "company_city",
+  COMPANY_SIGNER_NAME: "company_signer_name",
+  COMPANY_SIGNER_TITLE: "company_signer_title",
 } as const;
 
 export const DEEPSEEK_DEFAULTS = {
