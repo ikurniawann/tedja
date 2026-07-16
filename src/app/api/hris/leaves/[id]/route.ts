@@ -18,7 +18,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       .from('leaves')
       .select(`
         *,
-        employee:employees(
+        employee:employees!employee_id(
           id,
           full_name,
           nip,

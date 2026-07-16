@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerPgClient } from "@/lib/pg/create-client";
+import { getWorkforceActor } from "@/lib/hris/workforce-auth";
 import { z } from 'zod';
 
 // Validation schemas
@@ -34,11 +35,36 @@ const clockOutSchema = z.object({
  */
 export async function GET(request: NextRequest) {
   try {
+    const actor = await getWorkforceActor();
+    if (!actor) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const db = await createServerPgClient();
-    
+
     // Get query params
     const searchParams = request.nextUrl.searchParams;
-    const employeeId = searchParams.get('employee_id');
+    let employeeId = searchParams.get('employee_id');
+    // "me" = absensi milik sendiri (dipakai pemulihan state clock-out)
+    if (employeeId === 'me') {
+      if (!actor.employeeId) {
+        return NextResponse.json({
+          data: [],
+          pagination: { page: 1, limit: 0, total: 0, totalPages: 0 },
+        });
+      }
+      employeeId = actor.employeeId;
+    }
+    // non-HR hanya boleh melihat absensinya sendiri
+    if (!actor.isHr) {
+      if (!actor.employeeId) {
+        return NextResponse.json(
+          { error: 'Akun ini tidak terhubung ke data karyawan' },
+          { status: 403 }
+        );
+      }
+      employeeId = actor.employeeId;
+    }
     const date = searchParams.get('date');
     const startDate = searchParams.get('start_date');
     const endDate = searchParams.get('end_date');
@@ -131,30 +157,26 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
+    const actor = await getWorkforceActor();
+    if (!actor) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const db = await createServerPgClient();
     const body = await request.json();
 
-    // Check authentication
-    const { data: { user } } = await db.auth.getUser();
-    if (!user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
-
     // Determine action: clock-in or clock-out
-    const { action, employee_id, date, clock_in_location, clock_out_location, notes } = body;
+    const { action, employee_id, date } = body;
 
     if (action === 'clock-in') {
       // Validate clock-in data
       const validated = clockInSchema.parse(body);
-      
-      // Get current user's employee ID if not provided
-      const empId = employee_id || await getCurrentEmployeeId(db, user.id);
+
+      // non-HR hanya boleh clock-in untuk dirinya sendiri
+      const empId = actor.isHr && employee_id ? employee_id : actor.employeeId;
       if (!empId) {
         return NextResponse.json(
-          { error: 'Employee not found for this user' },
+          { error: 'Akun ini tidak terhubung ke data karyawan' },
           { status: 404 }
         );
       }
@@ -220,6 +242,19 @@ export async function POST(request: NextRequest) {
           { status: 404 }
         );
       }
+      // non-HR hanya boleh clock-out absensinya sendiri
+      if (!actor.isHr && attendance.employee_id !== actor.employeeId) {
+        return NextResponse.json(
+          { error: 'Tidak boleh mengubah absensi karyawan lain' },
+          { status: 403 }
+        );
+      }
+      if (attendance.clock_out) {
+        return NextResponse.json(
+          { error: 'Sudah clock-out untuk absensi ini' },
+          { status: 400 }
+        );
+      }
 
       // Update clock-out
       const { data, error } = await db
@@ -267,15 +302,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
-}
-
-// Helper function to get employee ID from user ID
-async function getCurrentEmployeeId(db: any, userId: string) {
-  const { data } = await db
-    .from('employees')
-    .select('id')
-    .eq('user_id', userId)
-    .single();
-  
-  return data?.id || null;
 }

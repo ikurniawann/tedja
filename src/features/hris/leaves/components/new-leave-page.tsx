@@ -107,9 +107,15 @@ export function NewLeavePage() {
         setPreviewUrl(null);
       }
 
-      showToast(`File Berhasil Diupload: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`, "success");
-
-      setFormData({ ...formData, attachment_url: `/uploads/${file.name}` });
+      // Penyimpanan lampiran belum tersedia (menyusul) — jangan pura-pura
+      // sukses dan jangan simpan URL palsu; pengajuan tetap bisa dikirim.
+      showToast(
+        `Lampiran "${file.name}" belum bisa disimpan — fitur upload menyusul. Pengajuan tetap bisa dikirim tanpa lampiran.`,
+        "error"
+      );
+      setSelectedFile(null);
+      setPreviewUrl(null);
+      setFormData({ ...formData, attachment_url: "" });
     } catch (error) {
       console.error("Upload error:", error);
       showToast("Upload Gagal: Terjadi kesalahan saat upload file", "error");

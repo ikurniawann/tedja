@@ -21,12 +21,15 @@ interface AttendanceCalendarProps {
   employeeId?: string;
   initialDate?: Date;
   onDateSelect?: (date: Date) => void;
+  /** naikkan nilainya untuk memaksa refetch (mis. setelah clock-in/out) */
+  refreshKey?: number;
 }
 
 export function AttendanceCalendar({
   employeeId,
   initialDate = new Date(),
   onDateSelect,
+  refreshKey = 0,
 }: AttendanceCalendarProps) {
   const [currentMonth, setCurrentMonth] = useState(new Date(initialDate));
   const [attendances, setAttendances] = useState<Record<string, AttendanceRecord>>({});
@@ -34,7 +37,8 @@ export function AttendanceCalendar({
 
   useEffect(() => {
     fetchAttendances();
-  }, [currentMonth, employeeId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentMonth, employeeId, refreshKey]);
 
   const fetchAttendances = async () => {
     setIsLoading(true);

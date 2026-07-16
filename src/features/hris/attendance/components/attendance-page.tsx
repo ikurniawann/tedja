@@ -20,21 +20,18 @@ export function AttendancePage() {
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [filterEmployee, setFilterEmployee] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const handleDateSelect = (date: Date) => {
     setSelectedDate(date);
-    console.log("Selected date:", date);
-    // Could navigate to detail page or open dialog
   };
 
-  const handleClockInSuccess = (data: any) => {
-    console.log("Clock-in success:", data);
-    // Refresh calendar or show success state
+  const handleClockInSuccess = () => {
+    setRefreshKey((key) => key + 1);
   };
 
-  const handleClockOutSuccess = (data: any) => {
-    console.log("Clock-out success:", data);
-    // Refresh calendar or show success state
+  const handleClockOutSuccess = () => {
+    setRefreshKey((key) => key + 1);
   };
 
   const handleExport = async () => {
@@ -191,6 +188,7 @@ export function AttendancePage() {
       {/* Calendar */}
       <AttendanceCalendar
         onDateSelect={handleDateSelect}
+        refreshKey={refreshKey}
       />
 
       {/* Selected Date Info */}
