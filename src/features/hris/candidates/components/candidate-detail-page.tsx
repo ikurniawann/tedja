@@ -672,24 +672,49 @@ export function CandidateDetailPage() {
             <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-800">
               <FileText className="size-4 text-gray-400" /> Dokumen
             </h3>
-            {candidate.cv_url ? (
-              <div className="flex items-center justify-between rounded-lg bg-gray-50 p-3">
-                <div className="flex min-w-0 items-center gap-3">
-                  <FileText className="size-7 shrink-0 text-red-500" />
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">CV / Resume</p>
-                    <p className="text-xs text-gray-500">
-                      {candidate.cv_url.split(".").pop()?.toUpperCase()}
-                    </p>
+            <div className="space-y-2">
+              {candidate.cv_url ? (
+                <div className="flex items-center justify-between rounded-lg bg-gray-50 p-3">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <FileText className="size-7 shrink-0 text-red-500" />
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">CV / Resume</p>
+                      <p className="text-xs text-gray-500">
+                        {candidate.cv_url.split(".").pop()?.toUpperCase()}
+                      </p>
+                    </div>
                   </div>
+                  <Button size="sm" variant="outline" onClick={handleDownloadCV}>
+                    <Download className="size-4" />
+                  </Button>
                 </div>
-                <Button size="sm" variant="outline" onClick={handleDownloadCV}>
-                  <Download className="size-4" />
-                </Button>
-              </div>
-            ) : (
-              <p className="text-sm text-gray-400">CV belum diupload.</p>
-            )}
+              ) : (
+                <p className="text-sm text-gray-400">CV belum diupload.</p>
+              )}
+              {/* Laporan pipeline (PDF) — tersedia mulai tahap Offer */}
+              {(status === "offer" || status === "hired") && (
+                <div className="flex items-center justify-between rounded-lg bg-gray-50 p-3">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <FileText className="size-7 shrink-0 text-sky-600" />
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">Laporan Pipeline</p>
+                      <p className="text-xs text-gray-500">
+                        PDF · seluruh tahapan yang telah dilalui kandidat
+                      </p>
+                    </div>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() =>
+                      window.open(`/api/candidates/${candidate.id}/report`, "_blank")
+                    }
+                  >
+                    <Download className="size-4" />
+                  </Button>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Timeline: tab Catatan HR vs Aktivitas pipeline */}

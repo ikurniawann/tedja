@@ -6,8 +6,9 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
-  // tesseract.js spawn worker dari file di node_modules — tidak boleh di-bundle
-  serverExternalPackages: ["tesseract.js", "unpdf", "mammoth"],
+  // tesseract.js spawn worker dari file di node_modules — tidak boleh di-bundle;
+  // pdfkit baca file font AFM dari node_modules saat runtime
+  serverExternalPackages: ["tesseract.js", "unpdf", "mammoth", "pdfkit"],
   turbopack: {
     root: __dirname,
   },
