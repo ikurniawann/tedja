@@ -34,14 +34,16 @@ export function isoDayOfWeek(dateIso: string): number {
 }
 
 /**
- * Cari baris jadwal yang berlaku untuk sebuah tanggal: hari cocok, rentang
+ * Cari baris pola yang berlaku untuk sebuah tanggal: hari cocok, rentang
  * efektif mencakup tanggal, dan pola terbaru (effective_from terbesar)
- * menang. Return null bila libur / tidak ada jadwal.
+ * menang. Return baris pemenang APA ADANYA — termasuk baris libur
+ * (shift_id null) — atau null bila tidak ada pola sama sekali. Dipakai
+ * tampilan jadwal yang perlu membedakan "libur" vs "tanpa jadwal".
  */
-export function resolveShiftForDate(
-  rows: EmployeeShiftRow[],
+export function resolveScheduleRowForDate<T extends EmployeeShiftRow>(
+  rows: T[],
   dateIso: string
-): EmployeeShiftRow | null {
+): T | null {
   const dow = isoDayOfWeek(dateIso);
   const candidates = rows
     .filter(
@@ -52,7 +54,18 @@ export function resolveShiftForDate(
     )
     .sort((a, b) => (a.effective_from < b.effective_from ? 1 : -1));
 
-  const winner = candidates[0] ?? null;
+  return candidates[0] ?? null;
+}
+
+/**
+ * Seperti resolveScheduleRowForDate, tapi hanya mengembalikan baris ber-shift
+ * (libur/tanpa jadwal → null). Dipakai perhitungan keterlambatan clock-in.
+ */
+export function resolveShiftForDate(
+  rows: EmployeeShiftRow[],
+  dateIso: string
+): EmployeeShiftRow | null {
+  const winner = resolveScheduleRowForDate(rows, dateIso);
   if (!winner || winner.shift_id === null) return null;
   return winner;
 }

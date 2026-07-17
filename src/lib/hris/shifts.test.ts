@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
   computeLateness,
+  resolveScheduleRowForDate,
   resolveShiftForDate,
   scheduledWindow,
   type EmployeeShiftRow,
@@ -68,6 +69,25 @@ describe("resolveShiftForDate", () => {
 
   test("tidak ada jadwal sama sekali → null", () => {
     expect(resolveShiftForDate([], "2026-07-20")).toBeNull();
+  });
+});
+
+describe("resolveScheduleRowForDate", () => {
+  test("baris libur (shift_id null) tetap dikembalikan — beda dgn tanpa jadwal", () => {
+    const rows = [row({ shift_id: null })];
+    const winner = resolveScheduleRowForDate(rows, "2026-07-20");
+    expect(winner).not.toBeNull();
+    expect(winner?.shift_id).toBeNull();
+    expect(resolveScheduleRowForDate([], "2026-07-20")).toBeNull();
+  });
+
+  test("pola terbaru menang termasuk saat menimpa libur", () => {
+    const rows = [
+      row({ effective_from: "2026-01-01", shift_id: null }),
+      row({ effective_from: "2026-07-01", shift_id: MALAM.id }),
+    ];
+    expect(resolveScheduleRowForDate(rows, "2026-07-20")?.shift_id).toBe(MALAM.id);
+    expect(resolveScheduleRowForDate(rows, "2026-03-02")?.shift_id).toBeNull();
   });
 });
 
