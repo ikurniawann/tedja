@@ -240,7 +240,7 @@ export function PayrollDetailPage({ params }: PayrollPageProps) {
                 {details.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="py-8 text-center text-gray-500">
-                      Belum ada detail payroll. Klik "Calculate" di halaman sebelumnya.
+                      Belum ada detail payroll. Klik &quot;Calculate&quot; di halaman sebelumnya.
                     </td>
                   </tr>
                 ) : (

@@ -6,6 +6,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerPgClient } from "@/lib/pg/create-client";
 import { calculatePayroll } from '@/lib/payroll/calculator';
+import { loadEmployeePayrollInput } from '@/lib/payroll/inputs';
+import { loadPayrollConfig } from '@/lib/payroll/config';
+import { ApiError, requireApiRole } from '@/lib/api/auth';
+import { PAYROLL_MANAGE_ROLES } from '@/lib/payroll/roles';
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -17,6 +21,7 @@ interface RouteParams {
 
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
+    await requireApiRole([...PAYROLL_MANAGE_ROLES]);
     const db = await createServerPgClient();
     const { id } = await params;
 
@@ -25,7 +30,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       .from('payroll_runs')
       .select('*')
       .eq('id', id)
-      .single();
+      .maybeSingle();
 
     if (!payrollRun) {
       return NextResponse.json(
@@ -45,6 +50,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const body = await request.json().catch(() => ({}));
     const includeThr = body.include_thr ?? false;
 
+    // Konfigurasi tarif dari DB (payroll_settings + tax config tahun periode)
+    const config = await loadPayrollConfig(db, payrollRun.period_year);
+
     // Delete existing payroll details for this run (prevent duplicates on recalculate)
     const { error: deleteError } = await db
       .from('payroll_details')
@@ -53,6 +61,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     if (deleteError) {
       console.error('Error deleting old payroll details:', deleteError);
+      return NextResponse.json(
+        { error: 'Gagal membersihkan hasil kalkulasi sebelumnya' },
+        { status: 500 }
+      );
     }
 
     // Get all active employees
@@ -60,13 +72,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       .from('employees')
       .select('id, full_name, nip, is_active, employment_status, join_date')
       .eq('is_active', true);
-
-    console.log('=== PAYROLL CALCULATE DEBUG ===');
-    console.log('Employees query result:', {
-      count: employees?.length,
-      error: empError,
-      data: employees
-    });
 
     if (empError) {
       console.error('Error fetching employees:', empError);
@@ -77,14 +82,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     if (!employees || employees.length === 0) {
-      console.error('No active employees found in database');
       return NextResponse.json(
         { error: 'Tidak ada karyawan aktif ditemukan' },
         { status: 400 }
       );
     }
 
-    const results: any[] = [];
+    const results: unknown[] = [];
+    const skipped: { employee_id: string; full_name: string; reason: string }[] = [];
     let totalGross = 0;
     let totalDeductions = 0;
     let totalNet = 0;
@@ -94,87 +99,33 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     // Calculate payroll for each employee
     for (const employee of employees) {
-      // Get salary data
-      const { data: salary } = await db
-        .from('employee_salary')
-        .select('*')
-        .eq('employee_id', employee.id)
-        .eq('is_active', true)
-        .order('effective_date', { ascending: false })
-        .limit(1)
-        .single();
+      const input = await loadEmployeePayrollInput(
+        db,
+        employee,
+        payrollRun.period_month,
+        payrollRun.period_year,
+        { includeThr }
+      );
 
-      if (!salary) {
-        console.warn(`No salary data for employee ${employee.id}:`, { 
+      if (!input) {
+        skipped.push({
+          employee_id: employee.id,
           full_name: employee.full_name,
-          emp_id: employee.id 
+          reason: 'Belum ada struktur gaji aktif',
         });
         continue;
       }
-      console.log(`Found salary for ${employee.full_name}:`, salary);
 
-      // Get attendance for the period
-      const startDate = `${payrollRun.period_year}-${String(payrollRun.period_month).padStart(2, '0')}-01`;
-      const endDate = `${payrollRun.period_year}-${String(payrollRun.period_month).padStart(2, '0')}-31`;
-
-      const { data: attendance } = await db
-        .from('attendance')
-        .select('date, work_hours, status')
-        .gte('date', startDate)
-        .lte('date', endDate)
-        .eq('employee_id', employee.id);
-
-      const workingDays = attendance?.filter(d => d.status !== 'absent').length || 20;
-      const presentDays = attendance?.filter(d => d.status === 'present' || d.status === 'late').length || 0;
-      const lateDays = attendance?.filter(d => d.status === 'late').length || 0;
-
-      // Get unpaid leave
-      const { data: leaves } = await db
-        .from('leaves')
-        .select('start_date, end_date')
-        .eq('employee_id', employee.id)
-        .eq('leave_type', 'unpaid')
-        .eq('status', 'approved')
-        .gte('start_date', startDate)
-        .lte('start_date', endDate);
-
-      const unpaidLeaveDays = leaves?.reduce((acc, leave) => {
-        const start = new Date(leave.start_date);
-        const end = new Date(leave.end_date);
-        const days = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-        return acc + days;
-      }, 0) || 0;
-
-      // Calculate payroll
-      console.log(`🔄 Calculating payroll for ${employee.full_name}...`);
       let payrollResult;
       try {
-        payrollResult = await calculatePayroll({
-          employeeId: employee.id,
-          periodMonth: payrollRun.period_month,
-          periodYear: payrollRun.period_year,
-          baseSalary: salary.base_salary || 0,
-          fixedAllowance: salary.fixed_allowance || 0,
-          variableAllowance: salary.variable_allowance || 0,
-          transportAllowance: salary.transport_allowance || 0,
-          mealAllowance: salary.meal_allowance || 0,
-          housingAllowance: salary.housing_allowance || 0,
-          workingDays,
-          presentDays,
-          lateDays,
-          unpaidLeaveDays,
-          joinDate: employee.join_date,
-          employmentStatus: employee.employment_status,
-          ptkpStatus: salary.ptkp_status || 'TK/0',
-          isTaxable: salary.is_taxable ?? true,
-          bpjsTkEnrolled: salary.bpjs_tk_enrolled ?? true,
-          bpjsKesEnrolled: salary.bpjs_kes_enrolled ?? true,
-          taperaEnrolled: salary.tapera_enrolled ?? true,
-          includeThr, // Pass THR option from UI
-        });
-        console.log(`✅ Payroll calculated for ${employee.full_name}: Net=${payrollResult.netSalary}`);
+        payrollResult = await calculatePayroll(input, config);
       } catch (calcError) {
-        console.error(`❌ Calculation error for ${employee.full_name}:`, calcError);
+        console.error(`Calculation error for employee ${employee.id}:`, calcError);
+        skipped.push({
+          employee_id: employee.id,
+          full_name: employee.full_name,
+          reason: 'Gagal menghitung',
+        });
         continue;
       }
 
@@ -214,10 +165,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           ptkp_amount: payrollResult.ptkpAmount,
           pph21_annual: payrollResult.pph21Annual,
           pph21_monthly: payrollResult.pph21Monthly,
-          working_days: workingDays,
-          present_days: presentDays,
-          late_days: lateDays,
-          unpaid_leave_days: unpaidLeaveDays,
+          working_days: input.workingDays,
+          present_days: input.presentDays,
+          late_days: input.lateDays,
+          unpaid_leave_days: input.unpaidLeaveDays,
           status: 'calculated',
         })
         .select(`
@@ -231,11 +182,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         .single();
 
       if (error) {
-        console.error(`❌ Error inserting payroll detail for ${employee.full_name}:`, error);
-        console.error('Error details:', JSON.stringify(error, null, 2));
+        console.error(`Error inserting payroll detail for employee ${employee.id}:`, error);
+        skipped.push({
+          employee_id: employee.id,
+          full_name: employee.full_name,
+          reason: 'Gagal menyimpan detail',
+        });
         continue;
       }
-      console.log(`✅ Inserted payroll detail for ${employee.full_name}:`, detail?.id);
 
       results.push(detail);
 
@@ -249,9 +203,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     // Collect employee names for summary
-    const employeeNames = results.map(r => {
-      const emp = (r as any).employee;
-      return emp ? emp.full_name : 'Unknown';
+    const employeeNames = results.map((r) => {
+      const emp = (r as { employee?: { full_name?: string } }).employee;
+      return emp?.full_name ?? 'Unknown';
     });
 
     // Update payroll run with totals
@@ -274,6 +228,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       summary: {
         total_employees: results.length,
         employee_names: employeeNames,
+        skipped,
         total_gross: totalGross,
         total_deductions: totalDeductions,
         total_net: totalNet,
@@ -281,10 +236,11 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         total_bjtk_employer: totalBjtkEmployer,
         total_pph21: totalPph21,
       },
-      message: `Payroll berhasil dihitung untuk ${results.length} karyawan`
+      message: `Payroll berhasil dihitung untuk ${results.length} karyawan${skipped.length ? `, ${skipped.length} dilewati` : ''}`
     });
 
   } catch (error) {
+    if (error instanceof ApiError) return error.toResponse();
     console.error('Error calculating payroll:', error);
     return NextResponse.json(
       { error: 'Gagal menghitung payroll', details: error instanceof Error ? error.message : 'Unknown error' },

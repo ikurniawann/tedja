@@ -1,9 +1,16 @@
 /**
  * Payroll Calculation Engine
- * Indonesia 2026 Compliance (PPh 21 ETR, BPJS, THR, Tapera)
+ * Indonesia 2026 Compliance (PPh 21 progresif tahunan, BPJS, THR, Tapera)
+ *
+ * Engine ini MURNI (tanpa akses DB). Konfigurasi tarif berasal dari
+ * `loadPayrollConfig` (lib/payroll/config.ts) — konstanta default hanya
+ * fallback. Pemuatan data karyawan ada di lib/payroll/inputs.ts.
  */
 
-import { createServerPgClient } from "@/lib/pg/create-client";
+import {
+  DEFAULT_PAYROLL_CONFIG,
+  type PayrollConfig,
+} from "./config";
 
 // ============================================================
 // TYPES
@@ -13,7 +20,7 @@ export interface PayrollInput {
   employeeId: string;
   periodMonth: number;
   periodYear: number;
-  
+
   // Earnings
   baseSalary: number;
   fixedAllowance: number;
@@ -24,24 +31,24 @@ export interface PayrollInput {
   overtimeHours?: number;
   overtimeRate?: number;
   bonus?: number;
-  
+
   // Attendance
   workingDays: number;
   presentDays: number;
   lateDays?: number;
   unpaidLeaveDays?: number;
-  
+
   // Employee status
   joinDate: string;
   employmentStatus: string;
   ptkpStatus: string;
   isTaxable: boolean;
-  
+
   // Benefits enrollment
   bpjsTkEnrolled: boolean;
   bpjsKesEnrolled: boolean;
   taperaEnrolled: boolean;
-  
+
   // Options
   includeThr?: boolean; // Include THR in calculation (default: false)
 }
@@ -59,7 +66,7 @@ export interface PayrollResult {
   bonus: number;
   otherEarning: number;
   grossSalary: number;
-  
+
   // Deductions (Employee)
   bpjsTkJhtDeduction: number;
   bpjsTkJpDeduction: number;
@@ -69,10 +76,10 @@ export interface PayrollResult {
   unpaidLeaveDeduction: number;
   otherDeduction: number;
   totalDeductions: number;
-  
+
   // Net
   netSalary: number;
-  
+
   // Employer Contributions
   bpjsTkJhtEmployer: number;
   bpjsTkJpEmployer: number;
@@ -81,65 +88,25 @@ export interface PayrollResult {
   bpjsKesEmployer: number;
   taperaEmployer: number;
   totalEmployerContribution: number;
-  
+
   // Tax Details
   taxableIncome: number;
   ptkpAmount: number;
   pph21Annual: number;
   pph21Monthly: number;
-  
+
   // Cost to Company
   costToCompany: number;
 }
 
-export interface PTKPConfig {
-  ptkp_tk_0: number;
-  ptkp_tk_1: number;
-  ptkp_tk_2: number;
-  ptkp_tk_3: number;
-  ptkp_k_0: number;
-  ptkp_k_1: number;
-  ptkp_k_2: number;
-  ptkp_k_3: number;
+export interface BPJSEnrollment {
+  bpjsTkEnrolled: boolean;
+  bpjsKesEnrolled: boolean;
+  taperaEnrolled: boolean;
 }
 
-// ============================================================
-// CONSTANTS (2026 Rates)
-// ============================================================
-
-const BPJS_RATES = {
-  // Employee
-  bpjs_tk_jht: 0.02, // 2%
-  bpjs_tk_jp: 0.01, // 1% (if salary >= 5M)
-  bpjs_kes: 0.01, // 1%
-  tapera: 0.025, // 2.5%
-  
-  // Employer
-  bpjs_tk_jht_employer: 0.037, // 3.7%
-  bpjs_tk_jp_employer: 0.02, // 2%
-  bpjs_tk_jkk_employer: 0.0024, // 0.24%
-  bpjs_tk_jkm_employer: 0.003, // 0.30%
-  bpjs_kes_employer: 0.04, // 4%
-  tapera_employer: 0.005, // 0.5%
-};
-
-const BPJS_CAPS = {
-  bpjs_tk: 10414000, // UMP 2026 cap for BPJS TK
-  bpjs_kes: 12000000, // Cap for BPJS Kesehatan
-};
-
-const PPH21_BRACKETS = [
-  { limit: 60000000, rate: 0.05 }, // 0-60jt: 5%
-  { limit: 190000000, rate: 0.15 }, // 60-250jt: 15%
-  { limit: 250000000, rate: 0.25 }, // 250-500jt: 25%
-  { limit: 4500000000, rate: 0.30 }, // 500jt-5M: 30%
-  { limit: Infinity, rate: 0.35 }, // >5M: 35%
-];
-
-const JABATAN_EXPENSE = {
-  percentage: 0.05, // 5% of gross
-  max: 6000000, // Max 6M per year
-};
+// Ambang gaji minimum kepesertaan Jaminan Pensiun
+const JP_MIN_SALARY = 5_000_000;
 
 // ============================================================
 // HELPER FUNCTIONS
@@ -148,55 +115,47 @@ const JABATAN_EXPENSE = {
 /**
  * Get PTKP amount based on status
  */
-export function getPTKPAmount(ptkpStatus: string, config?: PTKPConfig): number {
-  const defaultConfig: PTKPConfig = {
-    ptkp_tk_0: 54000000,
-    ptkp_tk_1: 58500000,
-    ptkp_tk_2: 63000000,
-    ptkp_tk_3: 67500000,
-    ptkp_k_0: 58500000,
-    ptkp_k_1: 63000000,
-    ptkp_k_2: 67500000,
-    ptkp_k_3: 72000000,
-  };
-  
-  const cfg = config || defaultConfig;
-  
+export function getPTKPAmount(
+  ptkpStatus: string,
+  config: PayrollConfig = DEFAULT_PAYROLL_CONFIG
+): number {
+  const { ptkp } = config;
   switch (ptkpStatus.toUpperCase()) {
-    case 'TK/0': return cfg.ptkp_tk_0;
-    case 'TK/1': return cfg.ptkp_tk_1;
-    case 'TK/2': return cfg.ptkp_tk_2;
-    case 'TK/3': return cfg.ptkp_tk_3;
-    case 'K/0': return cfg.ptkp_k_0;
-    case 'K/1': return cfg.ptkp_k_1;
-    case 'K/2': return cfg.ptkp_k_2;
-    case 'K/3': return cfg.ptkp_k_3;
-    default: return cfg.ptkp_tk_0;
+    case "TK/0": return ptkp.tk0;
+    case "TK/1": return ptkp.tk1;
+    case "TK/2": return ptkp.tk2;
+    case "TK/3": return ptkp.tk3;
+    case "K/0": return ptkp.k0;
+    case "K/1": return ptkp.k1;
+    case "K/2": return ptkp.k2;
+    case "K/3": return ptkp.k3;
+    default: return ptkp.tk0;
   }
 }
 
 /**
- * Calculate PPh 21 using ETR (Effective Tax Rate) progressive method
+ * PPh 21 progresif atas penghasilan kena pajak tahunan.
+ * Bracket dinyatakan sebagai LEBAR per lapisan (bukan batas kumulatif).
  */
 export function calculatePPh21ETR(
   annualTaxableIncome: number,
   ptkpStatus: string,
-  config?: PTKPConfig
+  config: PayrollConfig = DEFAULT_PAYROLL_CONFIG
 ): { annual: number; monthly: number } {
   const ptkpAmount = getPTKPAmount(ptkpStatus, config);
-  const taxableIncome = Math.max(0, annualTaxableIncome - ptkpAmount);
-  
+  // PKP dibulatkan ke ribuan penuh ke bawah sesuai ketentuan DJP
+  const taxableIncome = Math.floor(Math.max(0, annualTaxableIncome - ptkpAmount) / 1000) * 1000;
+
   let taxAmount = 0;
   let remaining = taxableIncome;
-  
-  for (const bracket of PPH21_BRACKETS) {
+
+  for (const bracket of config.pph21Brackets) {
     if (remaining <= 0) break;
-    
-    const taxableInBracket = Math.min(remaining, bracket.limit);
+    const taxableInBracket = Math.min(remaining, bracket.width);
     taxAmount += taxableInBracket * bracket.rate;
-    remaining -= bracket.limit;
+    remaining -= bracket.width;
   }
-  
+
   return {
     annual: Math.round(taxAmount),
     monthly: Math.round(taxAmount / 12),
@@ -204,37 +163,41 @@ export function calculatePPh21ETR(
 }
 
 /**
- * Calculate BPJS deductions
+ * Calculate BPJS deductions & employer contributions.
+ * Tapera dihitung di sini SATU kali, mengikuti flag `taperaEnrolled`
+ * (sebelumnya keliru mengikuti bpjsTkEnrolled dan terhitung ganda).
  */
 export function calculateBPJS(
   monthlySalary: number,
-  bpjsTkEnrolled: boolean = true,
-  bpjsKesEnrolled: boolean = true
+  enrollment: BPJSEnrollment,
+  config: PayrollConfig = DEFAULT_PAYROLL_CONFIG
 ) {
-  const calcSalaryTk = Math.min(monthlySalary, BPJS_CAPS.bpjs_tk);
-  const calcSalaryKes = Math.min(monthlySalary, BPJS_CAPS.bpjs_kes);
-  
+  const { bpjsTkEnrolled, bpjsKesEnrolled, taperaEnrolled } = enrollment;
+  const rates = config.bpjsRates;
+  const calcSalaryTk = Math.min(monthlySalary, config.bpjsCaps.bpjsTk);
+  const calcSalaryKes = Math.min(monthlySalary, config.bpjsCaps.bpjsKes);
+
   // Employee deductions
-  const bpjsTkJht = bpjsTkEnrolled ? calcSalaryTk * BPJS_RATES.bpjs_tk_jht : 0;
-  const bpjsTkJp = bpjsTkEnrolled && monthlySalary >= 5000000 
-    ? calcSalaryTk * BPJS_RATES.bpjs_tk_jp 
+  const bpjsTkJht = bpjsTkEnrolled ? calcSalaryTk * rates.bpjsTkJht : 0;
+  const bpjsTkJp = bpjsTkEnrolled && monthlySalary >= JP_MIN_SALARY
+    ? calcSalaryTk * rates.bpjsTkJp
     : 0;
-  const bpjsKes = bpjsKesEnrolled ? calcSalaryKes * BPJS_RATES.bpjs_kes : 0;
-  const tapera = bpjsTkEnrolled ? calcSalaryTk * BPJS_RATES.tapera : 0;
-  
+  const bpjsKes = bpjsKesEnrolled ? calcSalaryKes * rates.bpjsKes : 0;
+  const tapera = taperaEnrolled ? calcSalaryTk * rates.tapera : 0;
+
   const totalEmployee = bpjsTkJht + bpjsTkJp + bpjsKes + tapera;
-  
+
   // Employer contributions
-  const bpjsTkJhtEmployer = bpjsTkEnrolled ? calcSalaryTk * BPJS_RATES.bpjs_tk_jht_employer : 0;
-  const bpjsTkJpEmployer = bpjsTkEnrolled ? calcSalaryTk * BPJS_RATES.bpjs_tk_jp_employer : 0;
-  const bpjsTkJkkEmployer = bpjsTkEnrolled ? calcSalaryTk * BPJS_RATES.bpjs_tk_jkk_employer : 0;
-  const bpjsTkJkmEmployer = bpjsTkEnrolled ? calcSalaryTk * BPJS_RATES.bpjs_tk_jkm_employer : 0;
-  const bpjsKesEmployer = bpjsKesEnrolled ? calcSalaryKes * BPJS_RATES.bpjs_kes_employer : 0;
-  const taperaEmployer = bpjsTkEnrolled ? calcSalaryTk * BPJS_RATES.tapera_employer : 0;
-  
-  const totalEmployer = bpjsTkJhtEmployer + bpjsTkJpEmployer + bpjsTkJkkEmployer + 
+  const bpjsTkJhtEmployer = bpjsTkEnrolled ? calcSalaryTk * rates.bpjsTkJhtEmployer : 0;
+  const bpjsTkJpEmployer = bpjsTkEnrolled ? calcSalaryTk * rates.bpjsTkJpEmployer : 0;
+  const bpjsTkJkkEmployer = bpjsTkEnrolled ? calcSalaryTk * rates.bpjsTkJkkEmployer : 0;
+  const bpjsTkJkmEmployer = bpjsTkEnrolled ? calcSalaryTk * rates.bpjsTkJkmEmployer : 0;
+  const bpjsKesEmployer = bpjsKesEnrolled ? calcSalaryKes * rates.bpjsKesEmployer : 0;
+  const taperaEmployer = taperaEnrolled ? calcSalaryTk * rates.taperaEmployer : 0;
+
+  const totalEmployer = bpjsTkJhtEmployer + bpjsTkJpEmployer + bpjsTkJkkEmployer +
                         bpjsTkJkmEmployer + bpjsKesEmployer + taperaEmployer;
-  
+
   return {
     employee: {
       bpjsTkJht: Math.round(bpjsTkJht),
@@ -265,16 +228,16 @@ export function calculateTHR(
 ): number {
   const join = new Date(joinDate);
   const currentYear = new Date(periodYear, 0, 1); // Jan 1 of period year
-  
+
   // If joined before this year, full THR
   if (join < currentYear) {
     return baseSalary;
   }
-  
+
   // Prorata based on months worked
   const monthsWorked = Math.floor((new Date(periodYear, 11, 31).getTime() - join.getTime()) / (1000 * 60 * 60 * 24 * 30));
   const prorata = Math.min(12, Math.max(1, monthsWorked)) / 12;
-  
+
   return Math.round(baseSalary * prorata);
 }
 
@@ -284,7 +247,7 @@ export function calculateTHR(
 export function calculateOvertime(
   overtimeHours: number,
   hourlyRate: number,
-  multiplier: number = 1.5
+  multiplier: number = DEFAULT_PAYROLL_CONFIG.overtimeMultiplier
 ): number {
   return Math.round(overtimeHours * hourlyRate * multiplier);
 }
@@ -302,6 +265,19 @@ export function calculateUnpaidLeave(
   return Math.round(dailyRate * unpaidLeaveDays);
 }
 
+/**
+ * Biaya jabatan tahunan: persentase dari bruto, dibatasi maksimum per tahun.
+ */
+export function calculateJabatanExpense(
+  annualGross: number,
+  config: PayrollConfig = DEFAULT_PAYROLL_CONFIG
+): number {
+  return Math.min(
+    annualGross * config.jabatanExpense.percentage,
+    config.jabatanExpense.maxPerYear
+  );
+}
+
 // ============================================================
 // MAIN CALCULATION FUNCTION
 // ============================================================
@@ -309,7 +285,10 @@ export function calculateUnpaidLeave(
 /**
  * Calculate complete payroll for an employee
  */
-export async function calculatePayroll(input: PayrollInput): Promise<PayrollResult> {
+export async function calculatePayroll(
+  input: PayrollInput,
+  config: PayrollConfig = DEFAULT_PAYROLL_CONFIG
+): Promise<PayrollResult> {
   const {
     baseSalary,
     fixedAllowance,
@@ -318,11 +297,9 @@ export async function calculatePayroll(input: PayrollInput): Promise<PayrollResu
     mealAllowance = 0,
     housingAllowance = 0,
     overtimeHours = 0,
-    overtimeRate = 1.5,
+    overtimeRate = config.overtimeMultiplier,
     bonus = 0,
     workingDays,
-    presentDays,
-    lateDays = 0,
     unpaidLeaveDays = 0,
     joinDate,
     employmentStatus,
@@ -332,20 +309,21 @@ export async function calculatePayroll(input: PayrollInput): Promise<PayrollResu
     bpjsKesEnrolled,
     taperaEnrolled,
   } = input;
-  
+
   // ========== EARNINGS ==========
-  
+
   // Calculate hourly rate for overtime (base / working days / 8 hours)
   const hourlyRate = workingDays > 0 ? baseSalary / workingDays / 8 : 0;
   const overtimePay = calculateOvertime(overtimeHours, hourlyRate, overtimeRate);
-  
-  // Calculate THR (only if includeThr option is enabled)
+
+  // TODO(EPIC-008 Fase C): kelayakan THR dari kontrak aktif (pkwt/pkwtt),
+  // bukan string employment_status.
   const thr = (input.includeThr && employmentStatus === 'permanent')
     ? calculateTHR(baseSalary, joinDate, input.periodYear)
     : 0;
-  
+
   // Total gross salary
-  const grossSalary = 
+  const grossSalary =
     baseSalary +
     fixedAllowance +
     variableAllowance +
@@ -355,52 +333,60 @@ export async function calculatePayroll(input: PayrollInput): Promise<PayrollResu
     overtimePay +
     thr +
     bonus;
-  
+
   // ========== DEDUCTIONS ==========
-  
-  // BPJS calculations
-  const bpjsResult = calculateBPJS(baseSalary + fixedAllowance, bpjsTkEnrolled, bpjsKesEnrolled);
-  
-  // Tapera (if enrolled)
-  const taperaDeduction = taperaEnrolled 
-    ? Math.min(baseSalary, BPJS_CAPS.bpjs_tk) * BPJS_RATES.tapera 
-    : 0;
-  
+
+  // BPJS + Tapera dihitung sekali dari basis gaji tetap (base + fixed)
+  const bpjsResult = calculateBPJS(
+    baseSalary + fixedAllowance,
+    { bpjsTkEnrolled, bpjsKesEnrolled, taperaEnrolled },
+    config
+  );
+  const taperaDeduction = bpjsResult.employee.tapera;
+
   // Unpaid leave deduction
   const unpaidLeaveDeduction = calculateUnpaidLeave(baseSalary, workingDays, unpaidLeaveDays);
-  
-  // Calculate taxable income for PPh 21
-  const monthlyTaxableIncome = grossSalary - bpjsResult.employee.total - taperaDeduction;
-  const annualTaxableIncome = monthlyTaxableIncome * 12;
-  
+
+  // Penghasilan neto tahunan untuk PPh21:
+  // bruto − iuran karyawan (BPJS + Tapera) − biaya jabatan
+  const annualGross = grossSalary * 12;
+  const annualContributions = bpjsResult.employee.total * 12;
+  const jabatanExpense = calculateJabatanExpense(annualGross, config);
+  const annualTaxableIncome = Math.max(
+    0,
+    annualGross - annualContributions - jabatanExpense
+  );
+
   // PPh 21 calculation
+  let pph21Annual = 0;
   let pph21Deduction = 0;
   if (isTaxable) {
-    const pph21Result = calculatePPh21ETR(annualTaxableIncome, ptkpStatus);
+    const pph21Result = calculatePPh21ETR(annualTaxableIncome, ptkpStatus, config);
+    pph21Annual = pph21Result.annual;
     pph21Deduction = pph21Result.monthly;
   }
-  
+
   // Total deductions
-  const totalDeductions = 
+  const totalDeductions =
     bpjsResult.employee.bpjsTkJht +
     bpjsResult.employee.bpjsTkJp +
     bpjsResult.employee.bpjsKes +
     taperaDeduction +
     pph21Deduction +
     unpaidLeaveDeduction;
-  
+
   // Net salary (take home pay)
   const netSalary = grossSalary - totalDeductions;
-  
+
   // ========== EMPLOYER CONTRIBUTIONS ==========
-  
+
   const totalEmployerContribution = bpjsResult.employer.total;
-  
+
   // Cost to Company
   const costToCompany = grossSalary + totalEmployerContribution;
-  
+
   // ========== RETURN RESULT ==========
-  
+
   return {
     // Earnings
     baseSalary: Math.round(baseSalary),
@@ -414,7 +400,7 @@ export async function calculatePayroll(input: PayrollInput): Promise<PayrollResu
     bonus: Math.round(bonus),
     otherEarning: 0,
     grossSalary: Math.round(grossSalary),
-    
+
     // Deductions (Employee)
     bpjsTkJhtDeduction: bpjsResult.employee.bpjsTkJht,
     bpjsTkJpDeduction: bpjsResult.employee.bpjsTkJp,
@@ -424,10 +410,10 @@ export async function calculatePayroll(input: PayrollInput): Promise<PayrollResu
     unpaidLeaveDeduction: Math.round(unpaidLeaveDeduction),
     otherDeduction: 0,
     totalDeductions: Math.round(totalDeductions),
-    
+
     // Net
     netSalary: Math.round(netSalary),
-    
+
     // Employer Contributions
     bpjsTkJhtEmployer: bpjsResult.employer.bpjsTkJht,
     bpjsTkJpEmployer: bpjsResult.employer.bpjsTkJp,
@@ -436,100 +422,14 @@ export async function calculatePayroll(input: PayrollInput): Promise<PayrollResu
     bpjsKesEmployer: bpjsResult.employer.bpjsKes,
     taperaEmployer: bpjsResult.employer.tapera,
     totalEmployerContribution: Math.round(totalEmployerContribution),
-    
+
     // Tax Details
     taxableIncome: Math.round(annualTaxableIncome),
-    ptkpAmount: getPTKPAmount(ptkpStatus),
-    pph21Annual: Math.round(pph21Deduction * 12),
+    ptkpAmount: getPTKPAmount(ptkpStatus, config),
+    pph21Annual: Math.round(pph21Annual),
     pph21Monthly: Math.round(pph21Deduction),
-    
+
     // Cost to Company
     costToCompany: Math.round(costToCompany),
   };
-}
-
-/**
- * Fetch employee data and calculate payroll from database
- */
-export async function calculatePayrollForEmployee(
-  employeeId: string,
-  periodMonth: number,
-  periodYear: number
-): Promise<PayrollResult | null> {
-  const db = await createServerPgClient();
-  
-  // Fetch employee data
-  const { data: employee } = await db
-    .from('employees')
-    .select('*')
-    .eq('id', employeeId)
-    .single();
-  
-  if (!employee) return null;
-  
-  // Fetch salary data
-  const { data: salary } = await db
-    .from('employee_salary')
-    .select('*')
-    .eq('employee_id', employeeId)
-    .eq('is_active', true)
-    .order('effective_date', { ascending: false })
-    .limit(1)
-    .single();
-  
-  if (!salary) return null;
-  
-  // Fetch attendance for the period
-  const { data: attendance } = await db
-    .from('attendance')
-    .select('date, work_hours, status')
-    .gte('date', `${periodYear}-${String(periodMonth).padStart(2, '0')}-01`)
-    .lte('date', `${periodYear}-${String(periodMonth).padStart(2, '0')}-31`)
-    .eq('employee_id', employeeId);
-  
-  // Calculate working days and present days
-  const workingDays = attendance?.filter(d => d.status !== 'absent').length || 0;
-  const presentDays = attendance?.filter(d => d.status === 'present' || d.status === 'late').length || 0;
-  const lateDays = attendance?.filter(d => d.status === 'late').length || 0;
-  
-  // Fetch unpaid leave
-  const { data: leaves } = await db
-    .from('leaves')
-    .select('start_date, end_date')
-    .eq('employee_id', employeeId)
-    .eq('leave_type', 'unpaid')
-    .eq('status', 'approved')
-    .gte('start_date', `${periodYear}-${String(periodMonth).padStart(2, '0')}-01`)
-    .lte('start_date', `${periodYear}-${String(periodMonth).padStart(2, '0')}-31`);
-  
-  const unpaidLeaveDays = leaves?.reduce((acc, leave) => {
-    const start = new Date(leave.start_date);
-    const end = new Date(leave.end_date);
-    const days = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-    return acc + days;
-  }, 0) || 0;
-  
-  // Calculate payroll
-  return calculatePayroll({
-    employeeId,
-    periodMonth,
-    periodYear,
-    baseSalary: salary.base_salary || 0,
-    fixedAllowance: salary.fixed_allowance || 0,
-    variableAllowance: salary.variable_allowance || 0,
-    transportAllowance: salary.transport_allowance || 0,
-    mealAllowance: salary.meal_allowance || 0,
-    housingAllowance: salary.housing_allowance || 0,
-    workingDays,
-    presentDays,
-    lateDays,
-    unpaidLeaveDays,
-    joinDate: employee.join_date,
-    employmentStatus: employee.employment_status,
-    ptkpStatus: salary.ptkp_status || 'TK/0',
-    isTaxable: salary.is_taxable ?? true,
-    bpjsTkEnrolled: salary.bpjs_tk_enrolled ?? true,
-    bpjsKesEnrolled: salary.bpjs_kes_enrolled ?? true,
-    taperaEnrolled: salary.tapera_enrolled ?? true,
-  });
 }

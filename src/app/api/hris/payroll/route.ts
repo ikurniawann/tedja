@@ -6,6 +6,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerPgClient } from "@/lib/pg/create-client";
+import { ApiError, requireApiRole } from '@/lib/api/auth';
+import { PAYROLL_MANAGE_ROLES } from '@/lib/payroll/roles';
 
 // ============================================================
 // GET /api/hris/payroll
@@ -13,6 +15,7 @@ import { createServerPgClient } from "@/lib/pg/create-client";
 
 export async function GET(request: NextRequest) {
   try {
+    await requireApiRole([...PAYROLL_MANAGE_ROLES]);
     const db = await createServerPgClient();
     const { searchParams } = new URL(request.url);
     const year = searchParams.get('year');
@@ -61,6 +64,7 @@ export async function GET(request: NextRequest) {
     });
 
   } catch (error) {
+    if (error instanceof ApiError) return error.toResponse();
     console.error('Error in payroll API:', error);
     return NextResponse.json(
       { error: 'Terjadi kesalahan pada server' },
@@ -76,14 +80,19 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const apiUser = await requireApiRole([...PAYROLL_MANAGE_ROLES]);
     const db = await createServerPgClient();
     const body = await request.json();
     const { period_month, period_year, run_name } = body;
 
-    // Validate required fields
-    if (!period_month || !period_year) {
+    const month = Number(period_month);
+    const year = Number(period_year);
+    if (
+      !Number.isInteger(month) || month < 1 || month > 12 ||
+      !Number.isInteger(year) || year < 2000 || year > 2100
+    ) {
       return NextResponse.json(
-        { error: 'Bulan dan tahun periode wajib diisi' },
+        { error: 'Bulan dan tahun periode wajib diisi dengan benar' },
         { status: 400 }
       );
     }
@@ -92,9 +101,9 @@ export async function POST(request: NextRequest) {
     const { data: existing } = await db
       .from('payroll_runs')
       .select('id')
-      .eq('period_month', period_month)
-      .eq('period_year', period_year)
-      .single();
+      .eq('period_month', month)
+      .eq('period_year', year)
+      .maybeSingle();
 
     if (existing) {
       return NextResponse.json(
@@ -103,29 +112,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get current user
-    const { data: { user } } = await db.auth.getUser();
-    if (!user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
-
-    // Get employee record for current user
+    // Get employee record for current user (payroll_runs.processed_by → employees)
     const { data: currentUser } = await db
       .from('employees')
       .select('id')
-      .eq('auth_id', user.id)
-      .single();
+      .eq('auth_id', apiUser.id)
+      .maybeSingle();
 
     // Create payroll run
     const { data, error } = await db
       .from('payroll_runs')
       .insert({
-        run_name: run_name || `Payroll ${getMonthName(period_month)} ${period_year}`,
-        period_month,
-        period_year,
+        run_name: run_name || `Payroll ${getMonthName(month)} ${year}`,
+        period_month: month,
+        period_year: year,
         status: 'draft',
         processed_by: currentUser?.id,
       })
@@ -153,6 +153,7 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error) {
+    if (error instanceof ApiError) return error.toResponse();
     console.error('Error in payroll API:', error);
     return NextResponse.json(
       { error: 'Terjadi kesalahan pada server' },

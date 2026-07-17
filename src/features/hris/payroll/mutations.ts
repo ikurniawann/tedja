@@ -7,6 +7,8 @@ import {
   calculatePayroll,
   updatePayrollStatus,
   deletePayrollRun,
+  savePayrollSettings,
+  type SavePayrollSettingsPayload,
 } from "./api";
 import type { CreatePayrollPayload } from "./types";
 
@@ -40,6 +42,15 @@ export function useDeletePayrollRun() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (runId: string) => deletePayrollRun(runId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: payrollQueryKeys.all }),
+  });
+}
+
+export function useSavePayrollSettings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: SavePayrollSettingsPayload) =>
+      savePayrollSettings(payload),
     onSuccess: () => qc.invalidateQueries({ queryKey: payrollQueryKeys.all }),
   });
 }

@@ -13,6 +13,7 @@ deploying-dev · ready-for-qa · blocked · done).
 | [EPIC-005](./EPIC-005-live-monitoring.md) | Live Monitoring Rekrutmen | ready-for-qa | 2026-07-15 |
 | [EPIC-006](./EPIC-006-kontrak-karyawan.md) | Kontrak Karyawan (PKWT/PKWTT) | ready-for-qa | 2026-07-17 |
 | [EPIC-007](./EPIC-007-workforce-ess.md) | Kehadiran & Cuti — Perombakan + ESS | ready-for-qa | 2026-07-17 |
+| [EPIC-008](./EPIC-008-payroll-revamp.md) | Payroll & Gaji — Integrasi Flow HRIS Terbaru | on-progress | 2026-07-17 |
 
 Aturan:
 - Epic + registry ini adalah sumber kebenaran status pekerjaan (canonical).

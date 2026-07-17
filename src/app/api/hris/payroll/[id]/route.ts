@@ -1,16 +1,27 @@
 // ============================================================
 // API Route: Payroll Run by ID
 // GET: Get payroll run detail with details
-// PUT: Update payroll run (process/approve/pay)
-// DELETE: Delete payroll run
+// PUT: Update payroll run (process/approve/pay) — transisi status divalidasi
+// DELETE: Delete payroll run (run paid tidak bisa dihapus)
 // ============================================================
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerPgClient } from "@/lib/pg/create-client";
+import { ApiError, requireApiRole } from '@/lib/api/auth';
+import { PAYROLL_MANAGE_ROLES } from '@/lib/payroll/roles';
 
 interface RouteParams {
   params: Promise<{ id: string }>;
 }
+
+// Transisi status yang sah (maju saja, mengikuti tombol UI):
+// draft → processing → completed → paid
+const ALLOWED_TRANSITIONS: Record<string, string[]> = {
+  draft: ['processing'],
+  processing: ['completed'],
+  completed: ['paid'],
+  paid: [],
+};
 
 // ============================================================
 // GET /api/hris/payroll/[id]
@@ -18,6 +29,7 @@ interface RouteParams {
 
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
+    await requireApiRole([...PAYROLL_MANAGE_ROLES]);
     const db = await createServerPgClient();
     const { id } = await params;
 
@@ -74,6 +86,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ data });
 
   } catch (error) {
+    if (error instanceof ApiError) return error.toResponse();
     console.error('Error in payroll API:', error);
     return NextResponse.json(
       { error: 'Terjadi kesalahan pada server' },
@@ -89,17 +102,22 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
 export async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
+    const apiUser = await requireApiRole([...PAYROLL_MANAGE_ROLES]);
     const db = await createServerPgClient();
     const { id } = await params;
     const body = await request.json();
     const { status, notes } = body;
 
-    // Get current user
-    const { data: { user } } = await db.auth.getUser();
-    if (!user) {
+    const { data: existing } = await db
+      .from('payroll_runs')
+      .select('id, status')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (!existing) {
       return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
+        { error: 'Payroll run tidak ditemukan' },
+        { status: 404 }
       );
     }
 
@@ -107,11 +125,11 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     const { data: currentUser } = await db
       .from('employees')
       .select('id')
-      .eq('auth_id', user.id)
-      .single();
+      .eq('auth_id', apiUser.id)
+      .maybeSingle();
 
     // Build update data
-    const updateData: Record<string, any> = {
+    const updateData: Record<string, unknown> = {
       updated_at: new Date().toISOString(),
     };
 
@@ -120,16 +138,26 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     }
 
     // Set status timestamps based on status change
-    if (status) {
+    if (status && status !== existing.status) {
+      const allowed = ALLOWED_TRANSITIONS[existing.status] ?? [];
+      if (!allowed.includes(status)) {
+        return NextResponse.json(
+          {
+            error: `Transisi status '${existing.status}' → '${status}' tidak diizinkan`,
+          },
+          { status: 400 }
+        );
+      }
+
       updateData.status = status;
-      
-      if (status === 'processing' && !updateData.processed_at) {
+
+      if (status === 'processing') {
         updateData.processed_by = currentUser?.id;
         updateData.processed_at = new Date().toISOString();
-      } else if (status === 'completed' && !updateData.approved_at) {
+      } else if (status === 'completed') {
         updateData.approved_by = currentUser?.id;
         updateData.approved_at = new Date().toISOString();
-      } else if (status === 'paid' && !updateData.paid_at) {
+      } else if (status === 'paid') {
         updateData.paid_at = new Date().toISOString();
       }
     }
@@ -167,6 +195,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     });
 
   } catch (error) {
+    if (error instanceof ApiError) return error.toResponse();
     console.error('Error in payroll API:', error);
     return NextResponse.json(
       { error: 'Terjadi kesalahan pada server' },
@@ -182,6 +211,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
+    await requireApiRole([...PAYROLL_MANAGE_ROLES]);
     const db = await createServerPgClient();
     const { id } = await params;
 
@@ -190,12 +220,19 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       .from('payroll_runs')
       .select('id, status')
       .eq('id', id)
-      .single();
+      .maybeSingle();
 
     if (!existing) {
       return NextResponse.json(
         { error: 'Payroll run tidak ditemukan' },
         { status: 404 }
+      );
+    }
+
+    if (existing.status === 'paid') {
+      return NextResponse.json(
+        { error: 'Payroll yang sudah dibayar tidak bisa dihapus' },
+        { status: 400 }
       );
     }
 
@@ -224,6 +261,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     });
 
   } catch (error) {
+    if (error instanceof ApiError) return error.toResponse();
     console.error('Error in payroll DELETE API:', error);
     return NextResponse.json(
       { error: 'Terjadi kesalahan pada server' },
