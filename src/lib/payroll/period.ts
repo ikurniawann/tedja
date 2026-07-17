@@ -32,6 +32,32 @@ export interface LeaveRangeRow {
   end_date: string;
 }
 
+/**
+ * Normalisasi nilai kolom `date` Postgres → "YYYY-MM-DD".
+ * Driver pg TIDAK memasang type parser khusus, jadi kolom date top-level
+ * kembali sebagai objek Date JS di TENGAH MALAM WAKTU LOKAL server —
+ * jangan pakai toISOString() (geser -1 hari utk timezone timur/WIB);
+ * ambil komponen lokal. Nilai string (embed row_to_json) dipotong 10 char.
+ */
+export function dateColToIso(value: unknown): string | null {
+  if (value == null) return null;
+  if (value instanceof Date) {
+    const y = value.getFullYear();
+    const m = String(value.getMonth() + 1).padStart(2, "0");
+    const d = String(value.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }
+  const s = String(value).slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
+}
+
+/** Tambah n hari ke tanggal ISO (kalender polos, aman lintas bulan). */
+export function addDaysIso(dateIso: string, days: number): string {
+  const d = new Date(`${dateIso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
 /** Daftar tanggal ISO inklusif [startIso..endIso]. */
 export function eachDateOfPeriod(startIso: string, endIso: string): string[] {
   const dates: string[] = [];
@@ -118,6 +144,50 @@ export function computeLateStats(attendanceRows: AttendancePeriodRow[]): {
     lateMinutes += Number(row.late_minutes) || 0;
   }
   return { lateDays, lateMinutes };
+}
+
+/**
+ * Irisan sebuah rentang (mis. masa berlaku kontrak) dengan periode payroll.
+ * rangeEnd null = tanpa batas (PKWTT). Return null bila tidak bersinggungan.
+ */
+export function periodCoverage(
+  rangeStart: string,
+  rangeEnd: string | null,
+  periodStartIso: string,
+  periodEndIso: string
+): { start: string; end: string } | null {
+  const start = rangeStart > periodStartIso ? rangeStart : periodStartIso;
+  const end =
+    rangeEnd !== null && rangeEnd < periodEndIso ? rangeEnd : periodEndIso;
+  if (start > end) return null;
+  return { start, end };
+}
+
+export interface DateRange {
+  start: string;
+  end: string;
+}
+
+/**
+ * Gabungkan rentang-rentang tanggal yang tumpang tindih ATAU bersambungan
+ * (end + 1 hari = start berikutnya) menjadi rentang kontinu. Dipakai untuk
+ * cakupan kontrak: PKWT yang berakhir tgl 15 lalu diperpanjang mulai tgl 16
+ * harus terhitung SATU cakupan penuh — bukan proraté setengah bulan.
+ */
+export function mergeDateRanges(ranges: DateRange[]): DateRange[] {
+  if (ranges.length === 0) return [];
+  const sorted = [...ranges].sort((a, b) => (a.start < b.start ? -1 : 1));
+  const merged: DateRange[] = [{ ...sorted[0] }];
+  for (let i = 1; i < sorted.length; i++) {
+    const last = merged[merged.length - 1];
+    const next = sorted[i];
+    if (next.start <= addDaysIso(last.end, 1)) {
+      if (next.end > last.end) last.end = next.end;
+    } else {
+      merged.push({ ...next });
+    }
+  }
+  return merged;
 }
 
 /**

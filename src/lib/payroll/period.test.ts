@@ -3,6 +3,10 @@ import {
   eachDateOfPeriod,
   countScheduledDays,
   clampedLeaveDays,
+  periodCoverage,
+  mergeDateRanges,
+  dateColToIso,
+  addDaysIso,
   realizedOvertimeHours,
   computeLateStats,
   overtimeHoursFromTimes,
@@ -152,6 +156,89 @@ describe("computeLateStats", () => {
     ]);
     expect(stats.lateDays).toBe(1);
     expect(stats.lateMinutes).toBe(0);
+  });
+});
+
+describe("periodCoverage", () => {
+  it("clamps a contract range to the period", () => {
+    expect(periodCoverage("2026-06-15", "2026-08-01", "2026-06-01", "2026-06-30")).toEqual({
+      start: "2026-06-15",
+      end: "2026-06-30",
+    });
+  });
+
+  it("treats null end (PKWTT) as unbounded", () => {
+    expect(periodCoverage("2025-01-01", null, "2026-06-01", "2026-06-30")).toEqual({
+      start: "2026-06-01",
+      end: "2026-06-30",
+    });
+  });
+
+  it("returns null when the range misses the period", () => {
+    expect(periodCoverage("2026-07-01", null, "2026-06-01", "2026-06-30")).toBeNull();
+    expect(
+      periodCoverage("2026-01-01", "2026-05-31", "2026-06-01", "2026-06-30")
+    ).toBeNull();
+  });
+
+  it("handles contract ending mid-period", () => {
+    expect(periodCoverage("2026-01-01", "2026-06-10", "2026-06-01", "2026-06-30")).toEqual({
+      start: "2026-06-01",
+      end: "2026-06-10",
+    });
+  });
+});
+
+describe("dateColToIso", () => {
+  it("converts pg Date objects (local midnight) without timezone shift", () => {
+    // Driver pg mengembalikan kolom `date` sebagai Date di tengah malam
+    // WAKTU LOKAL — toISOString() akan geser -1 hari di WIB; helper harus
+    // memakai komponen lokal (regression temuan review Fase C).
+    const localMidnight = new Date(2026, 5, 16); // 16 Juni 2026 lokal
+    expect(dateColToIso(localMidnight)).toBe("2026-06-16");
+  });
+
+  it("slices ISO datetime strings and passes through plain dates", () => {
+    expect(dateColToIso("2026-06-16")).toBe("2026-06-16");
+    expect(dateColToIso("2026-06-16T00:00:00.000Z")).toBe("2026-06-16");
+  });
+
+  it("returns null for null/garbage", () => {
+    expect(dateColToIso(null)).toBeNull();
+    expect(dateColToIso(undefined)).toBeNull();
+    expect(dateColToIso("bukan tanggal")).toBeNull();
+  });
+});
+
+describe("mergeDateRanges / addDaysIso", () => {
+  it("merges back-to-back PKWT renewal into one continuous coverage", () => {
+    // Kontrak lama berakhir 15 Jun, perpanjangan mulai 16 Jun → satu cakupan
+    const merged = mergeDateRanges([
+      { start: "2026-06-16", end: "2026-06-30" },
+      { start: "2026-06-01", end: "2026-06-15" },
+    ]);
+    expect(merged).toEqual([{ start: "2026-06-01", end: "2026-06-30" }]);
+  });
+
+  it("keeps ranges separate when there is a real gap", () => {
+    const merged = mergeDateRanges([
+      { start: "2026-06-01", end: "2026-06-10" },
+      { start: "2026-06-20", end: "2026-06-30" },
+    ]);
+    expect(merged).toHaveLength(2);
+  });
+
+  it("merges overlapping ranges", () => {
+    const merged = mergeDateRanges([
+      { start: "2026-06-01", end: "2026-06-20" },
+      { start: "2026-06-15", end: "2026-06-30" },
+    ]);
+    expect(merged).toEqual([{ start: "2026-06-01", end: "2026-06-30" }]);
+  });
+
+  it("addDaysIso crosses month boundaries", () => {
+    expect(addDaysIso("2026-06-30", 1)).toBe("2026-07-01");
+    expect(addDaysIso("2026-07-01", -1)).toBe("2026-06-30");
   });
 });
 

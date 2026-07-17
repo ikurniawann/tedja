@@ -22,8 +22,13 @@ import {
   clampedLeaveDays,
   computeLateStats,
   countScheduledDays,
+  dateColToIso,
+  eachDateOfPeriod,
+  mergeDateRanges,
+  periodCoverage,
   realizedOvertimeHours,
   type AttendancePeriodRow,
+  type DateRange,
 } from "./period";
 
 type PgClient = Awaited<ReturnType<typeof createServerPgClient>>;
@@ -81,6 +86,7 @@ export async function loadEmployeePayrollInput(
     { data: scheduleRows },
     { data: overtimeRequests },
     { data: leaves },
+    { data: contracts },
   ] = await Promise.all([
     db
       .from("attendance")
@@ -109,58 +115,161 @@ export async function loadEmployeePayrollInput(
       .eq("status", "approved")
       .lte("start_date", endDate)
       .gte("end_date", startDate),
+    // Kontrak yang MENYENTUH periode (Fase C): tipe utk kelayakan THR,
+    // tanggal utk proraté masuk/keluar tengah bulan. Kontrak berstatus
+    // apa pun kecuali draft dihitung (ended/terminated di tengah periode
+    // tetap dibayar porsinya).
+    db
+      .from("employment_contracts")
+      .select("contract_type, status, start_date, end_date")
+      .eq("employee_id", employee.id)
+      .neq("status", "draft")
+      .lte("start_date", endDate)
+      .order("start_date", { ascending: false })
+      .limit(5),
   ]);
 
-  const attendanceRows: AttendancePeriodRow[] = attendance ?? [];
-  const schedule: EmployeeShiftRow[] = (scheduleRows ?? []).filter(
-    (row: EmployeeShiftRow) =>
-      row.effective_to === null || row.effective_to >= startDate
+  // PENTING: kolom `date` Postgres top-level kembali sebagai objek Date JS
+  // (driver pg tanpa type parser khusus) — SEMUA tanggal dinormalisasi ke
+  // string ISO di sini sebelum masuk fungsi murni yang membandingkan string.
+  const attendanceRows: AttendancePeriodRow[] = (attendance ?? []).map(
+    (row: AttendancePeriodRow) => ({
+      ...row,
+      date: dateColToIso(row.date) ?? "",
+    })
   );
+  const schedule: EmployeeShiftRow[] = (scheduleRows ?? [])
+    .map((row: EmployeeShiftRow) => ({
+      ...row,
+      effective_from: dateColToIso(row.effective_from) ?? "",
+      effective_to: dateColToIso(row.effective_to),
+    }))
+    .filter(
+      (row: EmployeeShiftRow) =>
+        row.effective_from !== "" &&
+        (row.effective_to === null || row.effective_to >= startDate)
+    );
 
-  // Hari kerja: pola shift (utama) → hitungan absensi → fallback 20
+  // Cakupan kontrak = GABUNGAN semua kontrak non-draft yang menyentuh
+  // periode (perpanjangan PKWT yang bersambungan tgl 15→16 terhitung satu
+  // cakupan penuh, bukan proraté setengah bulan). Tipe kontrak utk THR
+  // diambil dari kontrak dengan start_date terbaru yang menyentuh periode.
+  type ContractRow = {
+    contract_type: "pkwt" | "pkwtt";
+    status: string;
+    start_date: unknown;
+    end_date: unknown;
+  };
+  const contractRows: ContractRow[] = contracts ?? [];
+  const coverages: DateRange[] = [];
+  let latestContract: ContractRow | null = null;
+  for (const row of contractRows) {
+    const start = dateColToIso(row.start_date);
+    if (start === null) continue;
+    const cov = periodCoverage(start, dateColToIso(row.end_date), startDate, endDate);
+    if (!cov) continue;
+    coverages.push(cov);
+    if (latestContract === null) latestContract = row; // sudah terurut start_date DESC
+  }
+  const mergedCoverage = mergeDateRanges(coverages);
+  const hasContract = mergedCoverage.length > 0;
+  const isPartialCoverage =
+    hasContract &&
+    !(
+      mergedCoverage.length === 1 &&
+      mergedCoverage[0].start === startDate &&
+      mergedCoverage[0].end === endDate
+    );
+
+  // Hari kerja: pola shift (utama) → hitungan absensi → fallback 20.
+  // Bila cakupan kontrak parsial, hari kerja & gaji diproraté ke porsi
+  // cakupan (basis hari terjadwal — keputusan owner; kalender bila tanpa pola).
   const { scheduledDays, hasSchedule } = countScheduledDays(
     schedule,
     startDate,
     endDate
   );
+  const coveredScheduledDays = mergedCoverage.reduce(
+    (acc, range) =>
+      acc + countScheduledDays(schedule, range.start, range.end).scheduledDays,
+    0
+  );
+  const totalCalendarDays = eachDateOfPeriod(startDate, endDate).length;
+  const coveredCalendarDays = mergedCoverage.reduce(
+    (acc, range) => acc + eachDateOfPeriod(range.start, range.end).length,
+    0
+  );
+  const inCoverage = (dateIso: string): boolean =>
+    !hasContract ||
+    mergedCoverage.some((r) => dateIso >= r.start && dateIso <= r.end);
   const attendanceWorkingDays = attendanceRows.filter(
-    (d) => d.status !== "absent"
+    (d) => d.status !== "absent" && (!isPartialCoverage || inCoverage(d.date))
   ).length;
 
   let workingDays: number;
   let workingDaysSource: WorkingDaysSource;
+  let prorateFactor = 1;
   if (hasSchedule && scheduledDays > 0) {
-    workingDays = scheduledDays;
     workingDaysSource = "shift_schedule";
+    if (isPartialCoverage) {
+      workingDays = coveredScheduledDays;
+      prorateFactor = coveredScheduledDays / scheduledDays;
+    } else {
+      workingDays = scheduledDays;
+    }
   } else if (attendanceWorkingDays > 0) {
+    // Tanpa pola shift: denominator = hari hadir DALAM cakupan, proraté
+    // berbasis hari kalender cakupan — keduanya se-basis agar tarif harian
+    // (gaji proraté / hari kerja) tetap konsisten.
     workingDays = attendanceWorkingDays;
     workingDaysSource = "attendance";
+    if (isPartialCoverage) {
+      prorateFactor = coveredCalendarDays / totalCalendarDays;
+    }
   } else {
-    workingDays = FALLBACK_WORKING_DAYS;
     workingDaysSource = "fallback";
+    if (isPartialCoverage) {
+      prorateFactor = coveredCalendarDays / totalCalendarDays;
+      workingDays = Math.max(1, Math.round(FALLBACK_WORKING_DAYS * prorateFactor));
+    } else {
+      workingDays = FALLBACK_WORKING_DAYS;
+    }
   }
 
+  // Cakupan parsial yang seluruhnya jatuh di hari libur terjadwal →
+  // hindari pembagian nol di kalkulator dgn workingDays minimal 1.
+  if (workingDays <= 0) workingDays = isPartialCoverage ? 1 : FALLBACK_WORKING_DAYS;
+
+  // Konsisten dgn workingDays: hanya kehadiran di dalam cakupan kontrak
   const presentDays = attendanceRows.filter(
-    (d) => d.status === "present" || d.status === "late"
+    (d) =>
+      (d.status === "present" || d.status === "late") &&
+      (!isPartialCoverage || inCoverage(d.date))
   ).length;
   const { lateDays, lateMinutes } = computeLateStats(attendanceRows);
 
   // Lembur: hanya pengajuan approved yang terealisasi (ada clock_out)
   const overtimeHours = realizedOvertimeHours(
-    (overtimeRequests ?? []).map(
-      (r: { date: string; hours: unknown }) => ({
-        date: r.date,
-        hours: Number(r.hours) || 0,
-      })
+    (overtimeRequests ?? []).flatMap(
+      (r: { date: unknown; hours: unknown }) => {
+        const date = dateColToIso(r.date);
+        return date ? [{ date, hours: Number(r.hours) || 0 }] : [];
+      }
     ),
     attendanceRows
   );
 
   // Hanya cuti unpaid yang memotong gaji; cuti berbayar = hadir dibayar.
   const leaveRows: { start_date: string; end_date: string; leave_type: string }[] =
-    leaves ?? [];
+    (leaves ?? []).map(
+      (leave: { start_date: unknown; end_date: unknown; leave_type: string }) => ({
+        start_date: dateColToIso(leave.start_date) ?? "",
+        end_date: dateColToIso(leave.end_date) ?? "",
+        leave_type: leave.leave_type,
+      })
+    );
   const unpaidLeaveDays = leaveRows
-    .filter((leave) => leave.leave_type === "unpaid")
+    .filter((leave) => leave.leave_type === "unpaid" && leave.start_date && leave.end_date)
     .reduce(
       (acc, leave) => acc + clampedLeaveDays(leave, startDate, endDate),
       0
@@ -184,6 +293,8 @@ export async function loadEmployeePayrollInput(
     unpaidLeaveDays,
     joinDate: employee.join_date,
     employmentStatus: employee.employment_status,
+    contractType: latestContract?.contract_type ?? null,
+    prorateFactor,
     ptkpStatus: salary.ptkp_status || "TK/0",
     isTaxable: salary.is_taxable ?? true,
     bpjsTkEnrolled: salary.bpjs_tk_enrolled ?? true,

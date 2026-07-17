@@ -132,7 +132,7 @@ skema `database/migrations/schemas/hris/000000000017{0,1,2,3}_*.sql` +
      sebelum commit. Migrasi diapply ke DB dev (termasuk 6 migrasi lama yang
      belum tercatat di tracker; `20260716140000` dibuat idempoten karena
      rename menu bentrok dengan baris yang dibuat ulang migrasi 130000).
-3. **Fase C — Integrasi kontrak PKWT/PKWTT**
+3. **Fase C — Integrasi kontrak PKWT/PKWTT** ✅ (2026-07-17)
    - Kelayakan & basis THR dari `employment_contracts` aktif (tipe pkwtt/pkwt
      + tanggal mulai untuk prorata), bukan magic string `employment_status`.
    - Saat kontrak ditandatangani/aktif, auto-buat versi `employee_salary`
@@ -140,6 +140,22 @@ skema `database/migrations/schemas/hris/000000000017{0,1,2,3}_*.sql` +
      dua sumber gaji tidak menyimpang.
    - Proraté masuk/keluar tengah bulan dari tanggal mulai/berakhir kontrak
      (hari kerja terjadwal aktual dalam periode).
+   - **Realisasi (2026-07-17):** THR kini berhak untuk pemegang kontrak
+     PKWT MAUPUN PKWTT (Permenaker 6/2016); karyawan tanpa record kontrak
+     memakai aturan lama (permanent) sebagai fallback. Proraté diterapkan
+     ke gaji pokok + 5 tunjangan bulanan; THR & tarif per jam lembur tetap
+     dari gaji penuh. Aktivasi kontrak (`activate()` di API contracts)
+     menyinkronkan snapshot gaji kontrak → versi baru `hris.employee_salary`
+     dalam transaksi yang sama (tunjangan/PTKP/flag BPJS dibawa dari versi
+     sebelumnya; upsert aman utk effective_date sama). Temuan review yang
+     diperbaiki: (a) CRITICAL — kolom `date` pg kembali sebagai objek Date
+     lokal, dinormalisasi via `dateColToIso` (komponen lokal, bukan
+     toISOString yang geser -1 hari WIB) di SEMUA tanggal loader — sekaligus
+     memperbaiki bug laten Fase B (map tanggal lembur & perbandingan cuti);
+     (b) CRITICAL — cakupan kontrak = GABUNGAN semua kontrak non-draft
+     (`mergeDateRanges`, perpanjangan PKWT bersambungan 15→16 = cakupan
+     penuh, bukan proraté 50%); (c) HIGH — denominator hari kerja konsisten
+     dengan faktor proraté di semua cabang fallback.
 4. **Fase D — Pinjaman (kasbon) mengalir ke payroll**
    - Kalkulator menarik cicilan `loans` aktif (status approved, periode ≥
      first_installment) → `payroll_details.loan_deduction`.
@@ -154,6 +170,10 @@ skema `database/migrations/schemas/hris/000000000017{0,1,2,3}_*.sql` +
    - Tandai `payslip_sent/payslip_sent_at` saat distribusi; notifikasi
      WhatsApp "slip gaji terbit" via pola wa.me (mengikuti Fase 4 EPIC-007).
 6. **Fase F — Integritas data + QA**
+   - [Dari review Fase C] Test integrasi lewat driver pg sungguhan (tipe
+     Date kolom `date`) + test authz route lembur; pertimbangkan hapus
+     `.limit(5)` di query kontrak inputs.ts bila rekalkulasi payroll periode
+     lama (back-dated) jadi use case yang didukung.
    - FK `payroll_details` → `payroll_runs` (ON DELETE CASCADE) + →
      `employees`; hapus pola delete-before-insert manual jika sudah aman.
    - Unit test kalkulator menyeluruh (PPh21, BPJS caps, THR prorata, proraté
@@ -214,10 +234,10 @@ dengan QA manusia memverifikasi 1 siklus payroll penuh di dev.
    hris sekaligus, bukan tambal sulam di payroll saja).
 4. **Proraté** → basis hari kerja terjadwal dari pola shift (best practice,
    konsisten dengan absensi v2).
-5. **[BARU — dari review Fase A] Segregation of duties** — saat ini satu
-   akun (hrd/finance) bisa memproses, meng-approve, dan menandai paid run
-   yang sama sendirian. Perlu keputusan: wajibkan approver ≠ processor,
-   atau batasi transisi `paid` ke role tertentu? (belum diputuskan)
+5. **Segregation of duties** → DIPUTUSKAN owner 2026-07-17: TIDAK perlu
+   larangan satu akun memproses+approve+mark-paid run yang sama — cukup
+   pembatasan role (sudah terpenuhi via `PAYROLL_MANAGE_ROLES`). Tidak ada
+   pekerjaan lanjutan.
 
 ## Automation Log
 
@@ -247,3 +267,15 @@ dengan QA manusia memverifikasi 1 siklus payroll penuh di dev.
   potongan telat di slip). Catatan: tarif lembur berubah ke standar 1/173 —
   nilai lembur run lama akan berbeda bila dihitung ulang. Test integrasi
   authz route lembur ditunda ke Fase F (test gate).
+- 2026-07-17 — OQ#5 diputuskan owner: TIDAK perlu segregation of duties
+  antar-akun pada run payroll; pembatasan role saja sudah cukup.
+- 2026-07-17 — Fase C selesai. Review gate menemukan 2 CRITICAL penting:
+  (1) kolom date pg = objek Date (bukan string) sehingga seluruh
+  perbandingan tanggal loader mati diam-diam — juga bug laten Fase B;
+  (2) pemilihan kontrak tunggal membuat perpanjangan PKWT tengah bulan
+  terproraté 50% padahal kerja penuh. Keduanya + 1 HIGH diperbaiki
+  (dateColToIso, mergeDateRanges union coverage, denominator konsisten)
+  dan diverifikasi ulang reviewer. Gates: 375 unit test hijau, tsc/eslint
+  bersih, build sukses. PELAJARAN: fungsi murni ber-test hijau bisa mati
+  total di produksi bila asumsi tipe data driver salah — Fase F wajib
+  tambah test integrasi yang lewat driver pg sungguhan.

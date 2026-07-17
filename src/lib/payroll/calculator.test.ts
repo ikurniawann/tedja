@@ -295,3 +295,65 @@ describe("calculatePayroll (integration)", () => {
     expect(result.lateDeduction).toBe(75_000);
   });
 });
+
+describe("calculatePayroll — kontrak (Fase C)", () => {
+  it("prorates monthly components for partial contract coverage", async () => {
+    const result = await calculatePayroll(
+      baseInput({
+        prorateFactor: 0.5,
+        contractType: "pkwt",
+        transportAllowance: 500_000,
+      })
+    );
+    expect(result.baseSalary).toBe(5_000_000);
+    expect(result.fixedAllowance).toBe(1_000_000);
+    expect(result.transportAllowance).toBe(250_000);
+    // BPJS mengikuti gaji yang dibayar (6jt, di bawah cap): JHT 2% = 120rb
+    expect(result.bpjsTkJhtDeduction).toBe(120_000);
+  });
+
+  it("keeps overtime hourly rate on FULL base salary despite proration", async () => {
+    const half = await calculatePayroll(
+      baseInput({ prorateFactor: 0.5, contractType: "pkwt", overtimeHours: 10 })
+    );
+    const full = await calculatePayroll(baseInput({ overtimeHours: 10 }));
+    expect(half.overtimePay).toBe(full.overtimePay);
+  });
+
+  it("computes THR from FULL base salary even when prorated", async () => {
+    const result = await calculatePayroll(
+      baseInput({ prorateFactor: 0.5, contractType: "pkwtt", includeThr: true })
+    );
+    expect(result.thr).toBe(10_000_000);
+  });
+
+  it("makes PKWT employees THR-eligible via contract (bukan magic string)", async () => {
+    const result = await calculatePayroll(
+      baseInput({
+        includeThr: true,
+        contractType: "pkwt",
+        employmentStatus: "contract",
+      })
+    );
+    expect(result.thr).toBe(10_000_000);
+  });
+
+  it("falls back to legacy permanent rule when no contract record", async () => {
+    const probation = await calculatePayroll(
+      baseInput({ includeThr: true, contractType: null, employmentStatus: "probation" })
+    );
+    expect(probation.thr).toBe(0);
+
+    const permanent = await calculatePayroll(
+      baseInput({ includeThr: true, contractType: null, employmentStatus: "permanent" })
+    );
+    expect(permanent.thr).toBe(10_000_000);
+  });
+
+  it("treats prorateFactor 1 as a no-op (regression vs Fase A/B numbers)", async () => {
+    const explicit = await calculatePayroll(baseInput({ prorateFactor: 1 }));
+    const implicit = await calculatePayroll(baseInput());
+    expect(explicit).toEqual(implicit);
+    expect(implicit.netSalary).toBe(10_861_155);
+  });
+});

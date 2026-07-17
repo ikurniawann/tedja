@@ -42,6 +42,16 @@ export interface PayrollInput {
   // Employee status
   joinDate: string;
   employmentStatus: string;
+  /**
+   * Tipe kontrak AKTIF dari hris.employment_contracts (Fase C).
+   * null/undefined = karyawan tanpa record kontrak → fallback aturan lama.
+   */
+  contractType?: "pkwt" | "pkwtt" | null;
+  /**
+   * Faktor proraté masuk/keluar tengah periode (0..1) dari cakupan kontrak —
+   * diterapkan ke gaji pokok + tunjangan bulanan. Default 1 (bulan penuh).
+   */
+  prorateFactor?: number;
   ptkpStatus: string;
   isTaxable: boolean;
 
@@ -310,7 +320,6 @@ export async function calculatePayroll(
   config: PayrollConfig = DEFAULT_PAYROLL_CONFIG
 ): Promise<PayrollResult> {
   const {
-    baseSalary,
     fixedAllowance,
     variableAllowance = 0,
     transportAllowance = 0,
@@ -332,39 +341,56 @@ export async function calculatePayroll(
     taperaEnrolled,
   } = input;
 
+  // Proraté masuk/keluar tengah periode: komponen bulanan tetap dibayar
+  // sebesar porsi cakupan kontrak. Gaji penuh tetap dipakai untuk THR
+  // (hak tahunan) dan tarif per jam lembur.
+  const prorateFactor = Math.min(1, Math.max(0, input.prorateFactor ?? 1));
+  const fullBaseSalary = input.baseSalary;
+  const baseSalary = Math.round(fullBaseSalary * prorateFactor);
+
   // ========== EARNINGS ==========
 
-  // Upah per jam lembur = gaji pokok / pembagi (Kepmenaker: 173) —
-  // menggantikan rumus lama base/hariKerja/8 yang tidak standar.
+  // Upah per jam lembur = gaji pokok penuh / pembagi (Kepmenaker: 173).
   const hourlyRate =
     config.overtimeHourlyDivisor > 0
-      ? baseSalary / config.overtimeHourlyDivisor
+      ? fullBaseSalary / config.overtimeHourlyDivisor
       : 0;
   const overtimePay = calculateOvertime(overtimeHours, hourlyRate, overtimeRate);
 
-  // TODO(EPIC-008 Fase C): kelayakan THR dari kontrak aktif (pkwt/pkwtt),
-  // bukan string employment_status.
-  const thr = (input.includeThr && employmentStatus === 'permanent')
-    ? calculateTHR(baseSalary, joinDate, input.periodYear)
+  // Kelayakan THR (Fase C): karyawan ber-kontrak aktif (PKWT ATAU PKWTT —
+  // keduanya berhak THR per Permenaker 6/2016). Karyawan tanpa record
+  // kontrak memakai aturan lama (employment_status permanent).
+  const thrEligible =
+    input.contractType != null || employmentStatus === 'permanent';
+  const thr = (input.includeThr && thrEligible)
+    ? calculateTHR(fullBaseSalary, joinDate, input.periodYear)
     : 0;
+
+  // Tunjangan bulanan ikut proraté (bonus/lembur/THR tidak)
+  const paidFixedAllowance = Math.round(fixedAllowance * prorateFactor);
+  const paidVariableAllowance = Math.round(variableAllowance * prorateFactor);
+  const paidTransportAllowance = Math.round(transportAllowance * prorateFactor);
+  const paidMealAllowance = Math.round(mealAllowance * prorateFactor);
+  const paidHousingAllowance = Math.round(housingAllowance * prorateFactor);
 
   // Total gross salary
   const grossSalary =
     baseSalary +
-    fixedAllowance +
-    variableAllowance +
-    transportAllowance +
-    mealAllowance +
-    housingAllowance +
+    paidFixedAllowance +
+    paidVariableAllowance +
+    paidTransportAllowance +
+    paidMealAllowance +
+    paidHousingAllowance +
     overtimePay +
     thr +
     bonus;
 
   // ========== DEDUCTIONS ==========
 
-  // BPJS + Tapera dihitung sekali dari basis gaji tetap (base + fixed)
+  // BPJS + Tapera dihitung sekali dari basis gaji tetap yang DIBAYAR
+  // (base + fixed, sudah proraté)
   const bpjsResult = calculateBPJS(
-    baseSalary + fixedAllowance,
+    baseSalary + paidFixedAllowance,
     { bpjsTkEnrolled, bpjsKesEnrolled, taperaEnrolled },
     config
   );
@@ -418,13 +444,13 @@ export async function calculatePayroll(
   // ========== RETURN RESULT ==========
 
   return {
-    // Earnings
+    // Earnings (nilai yang dibayar — sudah proraté bila kontrak parsial)
     baseSalary: Math.round(baseSalary),
-    fixedAllowance: Math.round(fixedAllowance),
-    variableAllowance: Math.round(variableAllowance),
-    transportAllowance: Math.round(transportAllowance),
-    mealAllowance: Math.round(mealAllowance),
-    housingAllowance: Math.round(housingAllowance),
+    fixedAllowance: paidFixedAllowance,
+    variableAllowance: paidVariableAllowance,
+    transportAllowance: paidTransportAllowance,
+    mealAllowance: paidMealAllowance,
+    housingAllowance: paidHousingAllowance,
     overtimePay: Math.round(overtimePay),
     thr: Math.round(thr),
     bonus: Math.round(bonus),

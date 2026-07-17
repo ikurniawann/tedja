@@ -186,6 +186,74 @@ async function activate(contract: ContractRow, body: PatchBody, userId: string) 
         recorder?.id ?? null,
       ]
     );
+
+    // EPIC-008 Fase C: sinkronkan snapshot gaji kontrak → struktur gaji
+    // payroll (versi baru hris.employee_salary) agar dua sumber gaji tidak
+    // menyimpang. Hanya bila kontrak mencantumkan gaji pokok.
+    const contractBase =
+      contract.base_salary !== null ? Number(contract.base_salary) : null;
+    if (contractBase !== null && contractBase > 0) {
+      const { rows } = await client.query(
+        `SELECT * FROM hris.employee_salary
+         WHERE employee_id = $1 AND is_active = true
+         ORDER BY effective_date DESC LIMIT 1`,
+        [contract.employee_id]
+      );
+      const current = rows[0];
+      if (!current || Number(current.base_salary) !== contractBase) {
+        if (current) {
+          await client.query(
+            `UPDATE hris.employee_salary
+             SET is_active = false,
+                 end_date = ($2::date - INTERVAL '1 day')::date,
+                 updated_at = now()
+             WHERE id = $1`,
+            [current.id, contract.start_date]
+          );
+        }
+        // Tunjangan/PTKP/flag BPJS dibawa dari versi sebelumnya (kontrak
+        // hanya menyimpan gaji pokok); karyawan baru memakai default tabel.
+        await client.query(
+          `INSERT INTO hris.employee_salary
+             (employee_id, base_salary, fixed_allowance, variable_allowance,
+              transport_allowance, meal_allowance, housing_allowance,
+              loan_deduction, other_deduction, ptkp_status, is_taxable,
+              bpjs_tk_enrolled, bpjs_kes_enrolled, tapera_enrolled,
+              effective_date, is_active, notes)
+           VALUES ($1, $2,
+                   COALESCE($3, 0), COALESCE($4, 0), COALESCE($5, 0),
+                   COALESCE($6, 0), COALESCE($7, 0),
+                   COALESCE($8, 0), COALESCE($9, 0),
+                   COALESCE($10, 'TK/0'), COALESCE($11, true),
+                   COALESCE($12, true), COALESCE($13, true), COALESCE($14, true),
+                   $15::date, true, $16)
+           ON CONFLICT (employee_id, effective_date) DO UPDATE SET
+             base_salary = EXCLUDED.base_salary,
+             is_active = true,
+             end_date = NULL,
+             notes = EXCLUDED.notes,
+             updated_at = now()`,
+          [
+            contract.employee_id,
+            contractBase,
+            current?.fixed_allowance ?? null,
+            current?.variable_allowance ?? null,
+            current?.transport_allowance ?? null,
+            current?.meal_allowance ?? null,
+            current?.housing_allowance ?? null,
+            current?.loan_deduction ?? null,
+            current?.other_deduction ?? null,
+            current?.ptkp_status ?? null,
+            current?.is_taxable ?? null,
+            current?.bpjs_tk_enrolled ?? null,
+            current?.bpjs_kes_enrolled ?? null,
+            current?.tapera_enrolled ?? null,
+            contract.start_date,
+            `Sinkron dari kontrak ${contract.contract_number}`,
+          ]
+        );
+      }
+    }
   });
 
   return NextResponse.json({ message: `Kontrak ${contract.contract_number} diaktifkan` });
