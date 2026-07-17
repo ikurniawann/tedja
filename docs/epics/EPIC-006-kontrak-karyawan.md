@@ -32,6 +32,12 @@ Scope disepakati: PKWTT + PKWT saja (magang/harian lepas ditunda).
   Kontrak di Settings → Business.
 - Fase D: promote kandidat hired → draft kontrak otomatis (tipe dari
   employment_status; gaji/posisi dari offer accepted terakhir).
+- Fase E (penuntasan): upload/lihat/hapus dokumen kontrak bertanda tangan
+  (PDF/JPG/PNG/WebP maks 10 MB, storage private + sniff magic bytes, endpoint
+  `/api/hris/contracts/[id]/signed-document` ber-auth), aksi `edit` draft
+  (validasi compliance ulang; tipe kontrak terkunci), dialog Administrasi di
+  tab Kontrak (dokumen ttd + tanggal ttd/pencatatan Kemnaker/pembayaran
+  kompensasi) + info TTD & Kemnaker di kartu kontrak.
 
 ## Acceptance Criteria
 
@@ -42,14 +48,16 @@ Scope disepakati: PKWTT + PKWT saja (magang/harian lepas ditunda).
 - [x] Perpanjangan PKWT membuat draft rantai baru dan divalidasi ulang batas 5 tahun.
 - [x] Promote kandidat hired otomatis membuat draft kontrak; gagal draft tidak menggagalkan promote.
 - [x] Pengingat tampil utk kontrak ≤30 hari (merah ≤14/terlewat) & karyawan tanpa kontrak aktif.
-- [ ] QA manual: alur lengkap buat → PDF → aktifkan → perpanjang/akhiri di DEV.
+- [x] Dokumen bertanda tangan bisa diunggah/dilihat/dihapus; re-upload menimpa file lama; hanya PDF/gambar valid (magic bytes) yang diterima.
+- [x] Draft kontrak bisa diedit tanpa hapus-buat-ulang; seluruh aturan compliance divalidasi ulang; tipe kontrak tidak bisa diubah.
+- [x] Tanggal ttd, pencatatan Kemnaker, dan pembayaran kompensasi bisa dicatat dari dialog Administrasi.
+- [ ] QA manual: alur lengkap buat → edit draft → PDF → aktifkan → upload ttd → catat Kemnaker → perpanjang/akhiri di DEV.
 - [ ] Template PDF direview legal sebelum dipakai resmi.
 
 ## Catatan
 
-- Belum ada: UI upload kontrak bertanda tangan (kolom `signed_document_url` +
-  aksi `update` sudah mendukung), edit draft (workaround: hapus + buat ulang),
-  checklist pencatatan Kemnaker.
+- Sisa non-blocking: pencatatan Kemnaker baru berupa tanggal manual (belum
+  integrasi wajiblapor.kemnaker.go.id — memang tidak ada API publiknya).
 
 ## Automation Log
 
@@ -59,3 +67,12 @@ Scope disepakati: PKWTT + PKWT saja (magang/harian lepas ditunda).
   mapping user→employee + transaksi; 3 baris riwayat di-backfill. Keputusan:
   scope PKWTT+PKWT saja; template standar disusun sendiri (perlu review
   legal); record karyawan Super Admin dihapus dari HRIS (akun login murni).
+- 2026-07-17: Fase E menuntaskan sisa catatan — upload dokumen ttd (storage
+  private, sniff magic bytes `%PDF-`/gambar, MIME klaim client diabaikan),
+  aksi `edit` draft (guard `AND status='draft'` di UPDATE utk cegah race dgn
+  aktivasi), dialog Administrasi (ttd/Kemnaker/kompensasi; semantik
+  undefined-pertahankan/null-kosongkan di `update` supaya tanggal salah isi
+  bisa dihapus). Review gate: 0 CRITICAL/HIGH; 2 MEDIUM + 3 LOW semuanya
+  diperbaiki sebelum commit. Bonus: fix test `formatCurrency` yang sudah
+  gagal sebelumnya ("No limit" → "Tanpa limit", UI berbahasa Indonesia).
+  297 unit test hijau.

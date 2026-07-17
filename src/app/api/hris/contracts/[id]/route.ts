@@ -5,6 +5,7 @@ import {
   computeKompensasi,
   monthsWorked,
   pkwtChainTotalMonths,
+  validateContractDates,
   validatePkwtTotal,
 } from "@/lib/hris/contracts";
 import { withContractNumber } from "@/lib/hris/contract-number";
@@ -15,6 +16,8 @@ import { withContractNumber } from "@/lib/hris/contract-number";
  *   end       active → ended   (PKWT: hitung uang kompensasi PP 35/2021)
  *   terminate draft|active → terminated (PKWT aktif: kompensasi pro-rata)
  *   convert   active PKWT → converted (lanjut buat kontrak PKWTT baru)
+ *   renew     active PKWT → draft perpanjangan dalam rantai yang sama
+ *   edit      ubah isi draft (tanggal, gaji, lokasi — validasi compliance ulang)
  *   update    edit metadata (ttd, dokumen, pencatatan Kemnaker, pembayaran)
  * DELETE /api/hris/contracts/[id] — hapus draft saja.
  */
@@ -39,6 +42,10 @@ interface ContractRow {
   position_title: string | null;
   department_name: string | null;
   work_location: string | null;
+  notes: string | null;
+  signed_at: string | null;
+  kemnaker_registered_at: string | null;
+  compensation_paid_at: string | null;
   sequence: number;
 }
 
@@ -46,7 +53,8 @@ async function loadContract(id: string): Promise<ContractRow | null> {
   return queryOne<ContractRow>(
     `SELECT id, employee_id, contract_number, contract_type, status,
             start_date, end_date, probation_end_date, base_salary,
-            position_title, department_name, work_location, sequence
+            position_title, department_name, work_location, notes,
+            signed_at, kemnaker_registered_at, compensation_paid_at, sequence
      FROM hris.employment_contracts WHERE id = $1`,
     [id]
   );
@@ -54,13 +62,19 @@ async function loadContract(id: string): Promise<ContractRow | null> {
 
 interface PatchBody {
   action?: string;
-  end_date?: string;
+  end_date?: string | null;
   reason?: string;
-  signed_at?: string;
+  signed_at?: string | null;
   signed_document_url?: string;
-  kemnaker_registered_at?: string;
-  compensation_paid_at?: string;
-  notes?: string;
+  kemnaker_registered_at?: string | null;
+  compensation_paid_at?: string | null;
+  notes?: string | null;
+  // aksi edit (draft saja)
+  start_date?: string;
+  probation_end_date?: string | null;
+  position_title?: string | null;
+  work_location?: string | null;
+  base_salary?: number | string | null;
 }
 
 export async function PATCH(req: NextRequest, { params }: RouteParams) {
@@ -88,6 +102,8 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
         return convert(contract);
       case "renew":
         return renew(contract, body, user.full_name);
+      case "edit":
+        return editDraft(contract, body);
       case "update":
         return updateMeta(contract, body);
       default:
@@ -326,22 +342,135 @@ async function renew(contract: ContractRow, body: PatchBody, createdByName: stri
   );
 }
 
+/**
+ * Edit isi draft kontrak — tipe kontrak TIDAK bisa diubah (nomor kontrak
+ * mengikat tipe; hapus draft lalu buat ulang bila salah tipe). Field yang
+ * tidak dikirim (undefined) dipertahankan; null mengosongkan. Seluruh aturan
+ * compliance divalidasi ulang atas hasil gabungan.
+ */
+async function editDraft(contract: ContractRow, body: PatchBody) {
+  if (contract.status !== "draft") {
+    return NextResponse.json(
+      { error: "Hanya kontrak berstatus draft yang bisa diedit" },
+      { status: 409 }
+    );
+  }
+
+  const merged = {
+    start_date: body.start_date !== undefined ? body.start_date : contract.start_date,
+    end_date: body.end_date !== undefined ? body.end_date : contract.end_date,
+    probation_end_date:
+      body.probation_end_date !== undefined
+        ? body.probation_end_date
+        : contract.probation_end_date,
+    position_title:
+      body.position_title !== undefined ? body.position_title : contract.position_title,
+    work_location:
+      body.work_location !== undefined ? body.work_location : contract.work_location,
+    base_salary: body.base_salary !== undefined ? body.base_salary : contract.base_salary,
+    notes: body.notes !== undefined ? body.notes : contract.notes,
+  };
+  if (!merged.start_date) {
+    return NextResponse.json({ error: "Tanggal mulai wajib diisi" }, { status: 400 });
+  }
+  if (merged.base_salary !== null && merged.base_salary !== undefined) {
+    const salary = Number(merged.base_salary);
+    if (!Number.isFinite(salary) || salary < 0) {
+      return NextResponse.json({ error: "Gaji pokok tidak valid" }, { status: 400 });
+    }
+  }
+
+  const dateErrors = validateContractDates({
+    contract_type: contract.contract_type,
+    start_date: merged.start_date,
+    end_date: merged.end_date,
+    probation_end_date: merged.probation_end_date,
+  });
+  if (dateErrors.length > 0) {
+    return NextResponse.json({ error: dateErrors.join(" ") }, { status: 400 });
+  }
+
+  // Batas total PKWT 5 tahun — sama seperti saat pembuatan draft
+  if (contract.contract_type === "pkwt") {
+    const chain = await query<{ start_date: string; end_date: string | null }>(
+      `SELECT start_date, end_date FROM hris.employment_contracts
+       WHERE employee_id = $1 AND contract_type = 'pkwt' AND status <> 'draft'`,
+      [contract.employee_id]
+    );
+    const totalError = validatePkwtTotal(
+      pkwtChainTotalMonths(chain),
+      monthsWorked(merged.start_date, merged.end_date ?? merged.start_date)
+    );
+    if (totalError) {
+      return NextResponse.json({ error: totalError }, { status: 422 });
+    }
+  }
+
+  // guard status di UPDATE — draft bisa keburu diaktifkan request lain
+  const updated = await queryOne<{ id: string }>(
+    `UPDATE hris.employment_contracts
+     SET start_date         = $2,
+         end_date           = $3,
+         probation_end_date = $4,
+         position_title     = $5,
+         work_location      = $6,
+         base_salary        = $7,
+         notes              = $8
+     WHERE id = $1 AND status = 'draft' RETURNING id`,
+    [
+      contract.id,
+      merged.start_date,
+      merged.end_date,
+      merged.probation_end_date,
+      merged.position_title,
+      merged.work_location,
+      merged.base_salary,
+      merged.notes,
+    ]
+  );
+  if (!updated) {
+    return NextResponse.json(
+      { error: "Kontrak sudah bukan draft — muat ulang halaman" },
+      { status: 409 }
+    );
+  }
+
+  return NextResponse.json({ message: `Draft kontrak ${contract.contract_number} diperbarui` });
+}
+
+// Field yang tidak dikirim (undefined) dipertahankan; null mengosongkan —
+// supaya tanggal administrasi yang salah isi bisa dikoreksi/dihapus.
 async function updateMeta(contract: ContractRow, body: PatchBody) {
+  const merged = {
+    signed_at: body.signed_at !== undefined ? body.signed_at : contract.signed_at,
+    signed_document_url:
+      body.signed_document_url !== undefined ? body.signed_document_url : undefined,
+    kemnaker_registered_at:
+      body.kemnaker_registered_at !== undefined
+        ? body.kemnaker_registered_at
+        : contract.kemnaker_registered_at,
+    compensation_paid_at:
+      body.compensation_paid_at !== undefined
+        ? body.compensation_paid_at
+        : contract.compensation_paid_at,
+    notes: body.notes !== undefined ? body.notes : contract.notes,
+  };
+
   await queryOne(
     `UPDATE hris.employment_contracts
-     SET signed_at              = COALESCE($2::date, signed_at),
+     SET signed_at              = $2::date,
          signed_document_url    = COALESCE($3, signed_document_url),
-         kemnaker_registered_at = COALESCE($4::date, kemnaker_registered_at),
-         compensation_paid_at   = COALESCE($5::date, compensation_paid_at),
-         notes                  = COALESCE($6, notes)
+         kemnaker_registered_at = $4::date,
+         compensation_paid_at   = $5::date,
+         notes                  = $6
      WHERE id = $1 RETURNING id`,
     [
       contract.id,
-      body.signed_at ?? null,
-      body.signed_document_url ?? null,
-      body.kemnaker_registered_at ?? null,
-      body.compensation_paid_at ?? null,
-      body.notes ?? null,
+      merged.signed_at,
+      merged.signed_document_url ?? null,
+      merged.kemnaker_registered_at,
+      merged.compensation_paid_at,
+      merged.notes,
     ]
   );
   return NextResponse.json({ message: "Kontrak diperbarui" });

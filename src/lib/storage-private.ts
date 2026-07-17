@@ -73,6 +73,50 @@ export async function savePrivateAudio(
   }
 }
 
+/** Dokumen kontrak bertanda tangan (EPIC-006): PDF atau hasil scan gambar. */
+const DOC_EXT_BY_MIME: Record<string, string> = {
+  "application/pdf": "pdf",
+  ...EXT_BY_MIME,
+};
+
+/** Deteksi PDF dari magic bytes (%PDF-). */
+export function sniffDocumentMime(buffer: Buffer): string | null {
+  if (buffer.length >= 5 && buffer.subarray(0, 5).toString("ascii") === "%PDF-") {
+    return "application/pdf";
+  }
+  return sniffImageMime(buffer);
+}
+
+/**
+ * Simpan dokumen (PDF/JPG/PNG/WebP); tipe & ekstensi murni dari sniff magic
+ * bytes — MIME klaim client (File.type) sengaja diabaikan karena bisa kosong/
+ * salah dari sebagian OS picker. Return path relatif thd storage/private.
+ */
+export async function savePrivateDocument(
+  buffer: Buffer,
+  folder: string
+): Promise<{ path: string | null; error: string | null }> {
+  try {
+    const sniffed = sniffDocumentMime(buffer);
+    if (!sniffed) {
+      return { path: null, error: "Isi file bukan PDF/JPG/PNG/WebP yang valid" };
+    }
+    const ext = DOC_EXT_BY_MIME[sniffed];
+    const safeFolder = folder.replace(/[^a-zA-Z0-9/_-]/g, "");
+    const name = `${Date.now()}-${crypto.randomBytes(8).toString("hex")}.${ext}`;
+    const rel = path.posix.join(safeFolder, name);
+    const abs = path.resolve(PRIVATE_ROOT, rel);
+    if (!abs.startsWith(PRIVATE_ROOT + path.sep)) {
+      return { path: null, error: "Path tidak valid" };
+    }
+    await fs.mkdir(path.dirname(abs), { recursive: true });
+    await fs.writeFile(abs, buffer);
+    return { path: rel, error: null };
+  } catch (err) {
+    return { path: null, error: err instanceof Error ? err.message : "Gagal menyimpan file" };
+  }
+}
+
 /**
  * Deteksi tipe gambar dari magic bytes — MIME yang diklaim client bisa
  * dipalsukan, jadi isi buffer yang menentukan.
@@ -200,7 +244,7 @@ export async function readPrivateFile(
     const data = await fs.readFile(abs);
     const ext = path.extname(abs).slice(1).toLowerCase();
     const mime =
-      Object.entries(EXT_BY_MIME).find(([, e]) => e === ext || (e === "jpg" && ext === "jpeg"))?.[0] ??
+      Object.entries(DOC_EXT_BY_MIME).find(([, e]) => e === ext || (e === "jpg" && ext === "jpeg"))?.[0] ??
       Object.entries(AUDIO_EXT_BY_MIME).find(([m, e]) => e === ext && m.startsWith("audio/"))?.[0] ??
       "application/octet-stream";
     return { data, mime };

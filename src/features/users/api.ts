@@ -168,14 +168,20 @@ export interface CreateContractInput {
 }
 
 export interface ContractActionInput {
-  action: "activate" | "end" | "terminate" | "convert" | "renew" | "update";
-  end_date?: string;
+  action: "activate" | "end" | "terminate" | "convert" | "renew" | "edit" | "update";
+  end_date?: string | null;
   reason?: string;
-  signed_at?: string;
+  signed_at?: string | null;
   signed_document_url?: string;
-  kemnaker_registered_at?: string;
-  compensation_paid_at?: string;
-  notes?: string;
+  kemnaker_registered_at?: string | null;
+  compensation_paid_at?: string | null;
+  notes?: string | null;
+  // aksi edit (draft saja)
+  start_date?: string;
+  probation_end_date?: string | null;
+  position_title?: string | null;
+  work_location?: string | null;
+  base_salary?: number | null;
 }
 
 export interface ExpiringContractsData {
@@ -229,6 +235,23 @@ export const patchEmployeeContract = (contractId: string, payload: ContractActio
 
 export const deleteEmployeeContract = (contractId: string) =>
   apiDelete(`/api/hris/contracts/${contractId}`);
+
+export async function uploadContractSignedDocument(contractId: string, file: File) {
+  const formData = new FormData();
+  formData.append("file", file);
+  const res = await fetch(`/api/hris/contracts/${contractId}/signed-document`, {
+    method: "POST",
+    body: formData,
+  });
+  const json = (await res.json().catch(() => ({}))) as { message?: string; error?: string };
+  if (!res.ok) {
+    throw new Error(json.error ?? `Upload gagal (${res.status})`);
+  }
+  return json as { message: string };
+}
+
+export const deleteContractSignedDocument = (contractId: string) =>
+  apiDelete(`/api/hris/contracts/${contractId}/signed-document`);
 
 export const createEmployeeDocument = (payload: EmployeeDocumentInput) =>
   apiPost<{ data: unknown }>("/api/hris/employees/documents", payload);

@@ -11,7 +11,7 @@ deploying-dev · ready-for-qa · blocked · done).
 | [EPIC-003](./EPIC-003-interview-ai.md) | Interview AI | ready-for-qa | 2026-07-15 |
 | [EPIC-004](./EPIC-004-offer.md) | Offer (Penawaran + Portal Respons) | ready-for-qa | 2026-07-15 |
 | [EPIC-005](./EPIC-005-live-monitoring.md) | Live Monitoring Rekrutmen | ready-for-qa | 2026-07-15 |
-| [EPIC-006](./EPIC-006-kontrak-karyawan.md) | Kontrak Karyawan (PKWT/PKWTT) | ready-for-qa | 2026-07-16 |
+| [EPIC-006](./EPIC-006-kontrak-karyawan.md) | Kontrak Karyawan (PKWT/PKWTT) | ready-for-qa | 2026-07-17 |
 | [EPIC-007](./EPIC-007-workforce-ess.md) | Kehadiran & Cuti — Perombakan + ESS | ready-for-qa | 2026-07-17 |
 
 Aturan:

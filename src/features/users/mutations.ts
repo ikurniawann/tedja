@@ -6,11 +6,13 @@ import {
   createEmployeeContract,
   createEmployeeDocument,
   createUser,
+  deleteContractSignedDocument,
   deleteEmployeeContract,
   deleteEmployeeDocument,
   patchEmployeeContract,
   resetUserPassword,
   updateUser,
+  uploadContractSignedDocument,
   type ContractActionInput,
   type CreateContractInput,
 } from "./api";
@@ -50,6 +52,27 @@ export function useDeleteEmployeeContract(employeeId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (contractId: string) => deleteEmployeeContract(contractId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: usersQueryKeys.contracts(employeeId) });
+    },
+  });
+}
+
+export function useUploadContractSignedDocument(employeeId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ contractId, file }: { contractId: string; file: File }) =>
+      uploadContractSignedDocument(contractId, file),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: usersQueryKeys.contracts(employeeId) });
+    },
+  });
+}
+
+export function useDeleteContractSignedDocument(employeeId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (contractId: string) => deleteContractSignedDocument(contractId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: usersQueryKeys.contracts(employeeId) });
     },

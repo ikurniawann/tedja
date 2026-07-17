@@ -1,7 +1,13 @@
 "use client";
 
-import { useState } from "react";
-import { ArrowDownTrayIcon, PlusIcon, TrashIcon } from "@heroicons/react/24/outline";
+import { useRef, useState } from "react";
+import {
+  ArrowDownTrayIcon,
+  ClipboardDocumentCheckIcon,
+  PencilSquareIcon,
+  PlusIcon,
+  TrashIcon,
+} from "@heroicons/react/24/outline";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,7 +24,9 @@ import { useEmployeeContracts } from "../queries";
 import {
   useContractAction,
   useCreateEmployeeContract,
+  useDeleteContractSignedDocument,
   useDeleteEmployeeContract,
+  useUploadContractSignedDocument,
 } from "../mutations";
 import type { EmployeeContractRow } from "../api";
 
@@ -49,6 +57,16 @@ function formatDate(value: string | null): string {
   return date.toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" });
 }
 
+/** Nilai utk <input type="date"> (YYYY-MM-DD, zona waktu lokal). */
+function toDateInput(value: string | null): string {
+  if (!value) return "";
+  // string date-only dipakai apa adanya — lewat new Date() bisa geser sehari
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString("en-CA");
+}
+
 function formatIdr(value: string | number | null): string {
   if (value === null || value === undefined || value === "") return "-";
   const num = Number(value);
@@ -72,33 +90,132 @@ export function EmployeeContractsTab({ employeeId }: { employeeId: string }) {
   const createMutation = useCreateEmployeeContract(employeeId);
   const actionMutation = useContractAction(employeeId);
   const deleteMutation = useDeleteEmployeeContract(employeeId);
+  const uploadMutation = useUploadContractSignedDocument(employeeId);
+  const deleteSignedMutation = useDeleteContractSignedDocument(employeeId);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
+  const [editTarget, setEditTarget] = useState<EmployeeContractRow | null>(null);
   const isPkwt = form.contract_type === "pkwt";
   const [renewTarget, setRenewTarget] = useState<EmployeeContractRow | null>(null);
   const [renewEndDate, setRenewEndDate] = useState("");
+  const [adminTarget, setAdminTarget] = useState<EmployeeContractRow | null>(null);
+  // versi live dari cache query — status upload/hapus dokumen selalu segar
+  const adminContract = adminTarget
+    ? (contracts.find((c) => c.id === adminTarget.id) ?? adminTarget)
+    : null;
+  const [adminForm, setAdminForm] = useState({
+    signed_at: "",
+    kemnaker_registered_at: "",
+    compensation_paid_at: "",
+  });
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  async function handleCreate() {
+  function openCreateDialog() {
+    setEditTarget(null);
+    setForm(EMPTY_FORM);
+    setDialogOpen(true);
+  }
+
+  function openEditDialog(contract: EmployeeContractRow) {
+    setEditTarget(contract);
+    setForm({
+      contract_type: contract.contract_type,
+      start_date: toDateInput(contract.start_date),
+      end_date: toDateInput(contract.end_date),
+      probation_end_date: toDateInput(contract.probation_end_date),
+      work_location: contract.work_location ?? "",
+      base_salary: contract.base_salary ? String(Number(contract.base_salary)) : "",
+      notes: contract.notes ?? "",
+    });
+    setDialogOpen(true);
+  }
+
+  function openAdminDialog(contract: EmployeeContractRow) {
+    setAdminTarget(contract);
+    setAdminForm({
+      signed_at: toDateInput(contract.signed_at),
+      kemnaker_registered_at: toDateInput(contract.kemnaker_registered_at),
+      compensation_paid_at: toDateInput(contract.compensation_paid_at),
+    });
+  }
+
+  async function handleSubmitForm() {
     if (!form.start_date) {
       showToast("Tanggal mulai wajib diisi", "error");
       return;
     }
     try {
-      const res = await createMutation.mutateAsync({
-        contract_type: form.contract_type,
-        start_date: form.start_date,
-        end_date: isPkwt ? form.end_date || null : null,
-        probation_end_date: !isPkwt ? form.probation_end_date || null : null,
-        work_location: form.work_location || null,
-        base_salary: form.base_salary ? Number(form.base_salary) : null,
-        notes: form.notes || null,
-      });
-      showToast(res.message ?? "Draft kontrak dibuat");
+      if (editTarget) {
+        const res = await actionMutation.mutateAsync({
+          contractId: editTarget.id,
+          action: "edit",
+          start_date: form.start_date,
+          end_date: isPkwt ? form.end_date || null : null,
+          probation_end_date: !isPkwt ? form.probation_end_date || null : null,
+          work_location: form.work_location || null,
+          base_salary: form.base_salary ? Number(form.base_salary) : null,
+          notes: form.notes || null,
+        });
+        showToast(res.message ?? "Draft kontrak diperbarui");
+      } else {
+        const res = await createMutation.mutateAsync({
+          contract_type: form.contract_type,
+          start_date: form.start_date,
+          end_date: isPkwt ? form.end_date || null : null,
+          probation_end_date: !isPkwt ? form.probation_end_date || null : null,
+          work_location: form.work_location || null,
+          base_salary: form.base_salary ? Number(form.base_salary) : null,
+          notes: form.notes || null,
+        });
+        showToast(res.message ?? "Draft kontrak dibuat");
+      }
       setDialogOpen(false);
+      setEditTarget(null);
       setForm(EMPTY_FORM);
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "Gagal membuat kontrak", "error");
+      showToast(error instanceof Error ? error.message : "Gagal menyimpan kontrak", "error");
+    }
+  }
+
+  async function handleUploadSigned(file: File) {
+    if (!adminTarget) return;
+    try {
+      const res = await uploadMutation.mutateAsync({ contractId: adminTarget.id, file });
+      showToast(res.message ?? "Dokumen bertanda tangan tersimpan");
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Upload gagal", "error");
+    } finally {
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
+  async function handleDeleteSigned() {
+    if (!adminContract?.signed_document_url) return;
+    if (!confirm("Hapus dokumen bertanda tangan kontrak ini?")) return;
+    try {
+      await deleteSignedMutation.mutateAsync(adminContract.id);
+      showToast("Dokumen bertanda tangan dihapus");
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Gagal menghapus", "error");
+    }
+  }
+
+  async function handleSaveAdmin() {
+    if (!adminTarget) return;
+    try {
+      // string kosong = kosongkan tanggal (server: null mengosongkan)
+      const res = await actionMutation.mutateAsync({
+        contractId: adminTarget.id,
+        action: "update",
+        signed_at: adminForm.signed_at || null,
+        kemnaker_registered_at: adminForm.kemnaker_registered_at || null,
+        compensation_paid_at: adminForm.compensation_paid_at || null,
+      });
+      showToast(res.message ?? "Kontrak diperbarui");
+      setAdminTarget(null);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Gagal menyimpan", "error");
     }
   }
 
@@ -165,7 +282,7 @@ export function EmployeeContractsTab({ employeeId }: { employeeId: string }) {
             (UU 13/2003 jo. PP 35/2021).
           </p>
         </div>
-        <Button size="sm" className="gap-1.5" onClick={() => setDialogOpen(true)}>
+        <Button size="sm" className="gap-1.5" onClick={openCreateDialog}>
           <PlusIcon className="h-4 w-4" /> Buat Kontrak
         </Button>
       </div>
@@ -210,8 +327,26 @@ export function EmployeeContractsTab({ employeeId }: { employeeId: string }) {
                     >
                       <ArrowDownTrayIcon className="h-4 w-4" /> PDF
                     </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="gap-1"
+                      title="Administrasi: dokumen bertanda tangan, pencatatan Kemnaker"
+                      onClick={() => openAdminDialog(contract)}
+                    >
+                      <ClipboardDocumentCheckIcon className="h-4 w-4" /> Administrasi
+                    </Button>
                     {contract.status === "draft" && (
                       <>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="gap-1"
+                          title="Edit isi draft kontrak"
+                          onClick={() => openEditDialog(contract)}
+                        >
+                          <PencilSquareIcon className="h-4 w-4" /> Edit
+                        </Button>
                         <Button
                           size="sm"
                           variant="outline"
@@ -309,9 +444,44 @@ export function EmployeeContractsTab({ employeeId }: { employeeId: string }) {
                   {contract.compensation_amount && (
                     <div>
                       <p className="text-xs text-gray-500">Uang kompensasi (PP 35/2021)</p>
-                      <p className="font-medium">{formatIdr(contract.compensation_amount)}</p>
+                      <p className="font-medium">
+                        {formatIdr(contract.compensation_amount)}
+                        {contract.compensation_paid_at
+                          ? ` — dibayar ${formatDate(contract.compensation_paid_at)}`
+                          : " — belum dibayar"}
+                      </p>
                     </div>
                   )}
+                  <div>
+                    <p className="text-xs text-gray-500">Dokumen bertanda tangan</p>
+                    {contract.signed_document_url ? (
+                      <button
+                        type="button"
+                        className="font-medium text-blue-600 hover:underline"
+                        onClick={() =>
+                          window.open(
+                            `/api/hris/contracts/${contract.id}/signed-document`,
+                            "_blank"
+                          )
+                        }
+                      >
+                        Lihat dokumen
+                        {contract.signed_at ? ` (ttd ${formatDate(contract.signed_at)})` : ""}
+                      </button>
+                    ) : (
+                      <p className="font-medium text-gray-400">Belum diunggah</p>
+                    )}
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">Pencatatan Kemnaker</p>
+                    <p className="font-medium">
+                      {contract.kemnaker_registered_at
+                        ? formatDate(contract.kemnaker_registered_at)
+                        : contract.contract_type === "pkwt"
+                          ? "Belum dicatatkan"
+                          : "-"}
+                    </p>
+                  </div>
                   {contract.terminated_reason && (
                     <div className="col-span-2">
                       <p className="text-xs text-gray-500">Alasan pemutusan</p>
@@ -373,25 +543,177 @@ export function EmployeeContractsTab({ employeeId }: { employeeId: string }) {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      <Dialog
+        open={adminTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setAdminTarget(null);
+        }}
+      >
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Buat Kontrak Baru</DialogTitle>
+            <DialogTitle>Administrasi Kontrak</DialogTitle>
+          </DialogHeader>
+          {adminContract && (
+            <div className="space-y-4">
+              <p className="text-sm text-gray-600">
+                Kontrak <span className="font-mono">{adminContract.contract_number}</span> —
+                dokumen bertanda tangan &amp; tanggal administrasi.
+              </p>
+
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-600">
+                  Dokumen bertanda tangan (PDF/JPG/PNG/WebP, maks 10 MB)
+                </label>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="application/pdf,image/jpeg,image/png,image/webp"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) void handleUploadSigned(file);
+                  }}
+                />
+                <div className="flex flex-wrap gap-1.5">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={uploadMutation.isPending}
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    {uploadMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : adminContract.signed_document_url ? (
+                      "Ganti Dokumen"
+                    ) : (
+                      "Upload Dokumen"
+                    )}
+                  </Button>
+                  {adminContract.signed_document_url && (
+                    <>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() =>
+                          window.open(
+                            `/api/hris/contracts/${adminContract.id}/signed-document`,
+                            "_blank"
+                          )
+                        }
+                      >
+                        Lihat
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-red-600"
+                        disabled={deleteSignedMutation.isPending}
+                        onClick={handleDeleteSigned}
+                      >
+                        Hapus
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-600">
+                    Tanggal tanda tangan
+                  </label>
+                  <Input
+                    type="date"
+                    value={adminForm.signed_at}
+                    onChange={(e) =>
+                      setAdminForm((f) => ({ ...f, signed_at: e.target.value }))
+                    }
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-600">
+                    Dicatatkan ke Kemnaker
+                  </label>
+                  <Input
+                    type="date"
+                    value={adminForm.kemnaker_registered_at}
+                    onChange={(e) =>
+                      setAdminForm((f) => ({ ...f, kemnaker_registered_at: e.target.value }))
+                    }
+                  />
+                </div>
+                {adminContract.compensation_amount && (
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-gray-600">
+                      Kompensasi dibayar tanggal
+                    </label>
+                    <Input
+                      type="date"
+                      value={adminForm.compensation_paid_at}
+                      onChange={(e) =>
+                        setAdminForm((f) => ({ ...f, compensation_paid_at: e.target.value }))
+                      }
+                    />
+                  </div>
+                )}
+              </div>
+              {adminContract.contract_type === "pkwt" && (
+                <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                  PKWT wajib dicatatkan ke Kementerian Ketenagakerjaan paling lambat 3 hari
+                  kerja sejak penandatanganan (daring via wajiblapor.kemnaker.go.id).
+                </p>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAdminTarget(null)}>
+              Tutup
+            </Button>
+            <Button onClick={handleSaveAdmin} disabled={actionMutation.isPending}>
+              {actionMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                "Simpan Tanggal"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={dialogOpen}
+        onOpenChange={(open) => {
+          setDialogOpen(open);
+          if (!open) setEditTarget(null);
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {editTarget ? `Edit Draft ${editTarget.contract_number}` : "Buat Kontrak Baru"}
+            </DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <div>
               <label className="mb-1 block text-xs font-medium text-gray-600">Tipe kontrak</label>
-              <Combobox
-                options={[
-                  { value: "pkwt", label: TYPE_LABELS.pkwt },
-                  { value: "pkwtt", label: TYPE_LABELS.pkwtt },
-                ]}
-                value={form.contract_type}
-                onChange={(value) =>
-                  setForm((f) => ({ ...f, contract_type: value as "pkwt" | "pkwtt" }))
-                }
-                placeholder="Pilih tipe"
-              />
+              {editTarget ? (
+                <p className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-600">
+                  {TYPE_LABELS[form.contract_type]} — tipe tidak bisa diubah (hapus draft lalu
+                  buat ulang bila salah tipe)
+                </p>
+              ) : (
+                <Combobox
+                  options={[
+                    { value: "pkwt", label: TYPE_LABELS.pkwt },
+                    { value: "pkwtt", label: TYPE_LABELS.pkwtt },
+                  ]}
+                  value={form.contract_type}
+                  onChange={(value) =>
+                    setForm((f) => ({ ...f, contract_type: value as "pkwt" | "pkwtt" }))
+                  }
+                  placeholder="Pilih tipe"
+                />
+              )}
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -469,12 +791,23 @@ export function EmployeeContractsTab({ employeeId }: { employeeId: string }) {
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setDialogOpen(false);
+                setEditTarget(null);
+              }}
+            >
               Batal
             </Button>
-            <Button onClick={handleCreate} disabled={createMutation.isPending}>
-              {createMutation.isPending ? (
+            <Button
+              onClick={handleSubmitForm}
+              disabled={createMutation.isPending || actionMutation.isPending}
+            >
+              {createMutation.isPending || actionMutation.isPending ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
+              ) : editTarget ? (
+                "Simpan Perubahan"
               ) : (
                 "Simpan Draft"
               )}

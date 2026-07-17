@@ -136,7 +136,7 @@ export function levelLabel(value: string) {
 }
 
 export function formatCurrency(value: number | null) {
-  if (value == null) return "No limit";
+  if (value == null) return "Tanpa limit";
   return new Intl.NumberFormat("id-ID", {
     style: "currency",
     currency: "IDR",
