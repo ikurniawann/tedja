@@ -61,6 +61,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           total_deductions,
           pph21_deduction,
           status,
+          payslip_sent,
+          payslip_sent_at,
           employee:employees (
             id,
             full_name,

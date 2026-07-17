@@ -180,7 +180,7 @@ skema `database/migrations/schemas/hris/000000000017{0,1,2,3}_*.sql` +
      menampilkan baris Cicilan Pinjaman; pengaturan payroll bertambah kartu
      Limitasi Pinjaman. Catatan LOW ke Fase F: race duplikat pengajuan
      pending (tertahan di approval, dampak rendah).
-5. **Fase E — Slip gaji ESS + distribusi**
+5. **Fase E — Slip gaji ESS + distribusi** ✅ (2026-07-17)
    - Halaman ESS `/dashboard/me/slip-gaji`: daftar slip per periode milik
      sendiri + detail slip (komponen penghasilan/potongan/netto/kehadiran);
      API `payslips` mendukung `employee_id=me` untuk role employee, hanya
@@ -188,6 +188,19 @@ skema `database/migrations/schemas/hris/000000000017{0,1,2,3}_*.sql` +
    - Menu iam `ess.payroll` untuk role employee (pola menu ESS EPIC-007).
    - Tandai `payslip_sent/payslip_sent_at` saat distribusi; notifikasi
      WhatsApp "slip gaji terbit" via pola wa.me (mengikuti Fase 4 EPIC-007).
+   - **Realisasi (2026-07-17):** API payslips dirombak dual-mode via
+     `getWorkforceActor` — non-HR SELALU dipaksa ke slip miliknya sendiri
+     (semua kombinasi parameter IDOR-safe, fail-closed utk run yatim);
+     `employee_id=me` = tampilan personal utk SEMUA role (milik sendiri +
+     paid saja — perbaikan HIGH review: HR yang membuka halaman ESS-nya
+     sempat bisa melihat 60 slip lintas karyawan termasuk run belum final).
+     API baru `POST /api/hris/payslips/notify` (role payroll, run paid
+     saja): tandai `payslip_sent` + link wa.me tanpa nominal gaji; tombol
+     WA per karyawan di halaman detail run (✓ hijau bila sudah terkirim).
+     Halaman ESS: kartu per periode + dialog rincian lengkap (termasuk
+     potongan telat & cicilan pinjaman). Menu ESS → Slip Gaji (migrasi
+     `20260717210000`); bonus: menu Pinjaman dipindah ke grup Kepegawaian
+     (permintaan owner, migrasi `20260717200000`).
 6. **Fase F — Integritas data + QA**
    - [Dari review Fase C] Test integrasi lewat driver pg sungguhan (tipe
      Date kolom `date`) + test authz route lembur; pertimbangkan hapus
@@ -306,3 +319,14 @@ dengan QA manusia memverifikasi 1 siklus payroll penuh di dev.
   transisi paid dgn 409 + daftar selisih; role admin diselaraskan
   menu↔page↔API via LOAN_MANAGE_ROLES). Gates: 389 unit test hijau,
   tsc/eslint bersih, build sukses, migrasi 20260717190000 diapply dev.
+- 2026-07-17 — Menu Pinjaman dipindah ke grup Kepegawaian (permintaan
+  owner; rename in-place hris.compensation.loans → hris.kepegawaian.loans,
+  permissions utuh).
+- 2026-07-17 — Fase E selesai. Karyawan kini melihat slip gajinya sendiri
+  di ESS (run paid saja); HRD bisa kirim notifikasi WA "slip terbit" per
+  karyawan + penanda payslip_sent. Review gate: scoping karyawan
+  terverifikasi IDOR-safe & fail-closed; 1 HIGH diperbaiki (halaman ESS
+  milik user ber-role HR sempat menampilkan slip lintas karyawan termasuk
+  run belum final → employee_id=me kini tampilan personal utk semua role).
+  Gates: 389 unit test hijau, tsc/eslint bersih, build sukses, migrasi
+  20260717200000+210000 diapply dev.
