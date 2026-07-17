@@ -94,7 +94,7 @@ skema `database/migrations/schemas/hris/000000000017{0,1,2,3}_*.sql` +
    - Review gate (code-reviewer): APPROVE, 0 CRITICAL/HIGH. Catatan MEDIUM
      "segregation of duties" (satu akun bisa process+approve+paid sendiri)
      → keputusan produk, lihat Open Questions #5.
-2. **Fase B — Integrasi absensi v2 + shift**
+2. **Fase B — Integrasi absensi v2 + shift + lembur dua arah** ✅ (2026-07-17)
    - `working_days` dihitung dari jadwal shift karyawan
      (`employee_shifts` via `lib/hris/shifts.resolveShiftForDate`) untuk
      periode berjalan, bukan fallback 20; jam kerja harian dari durasi shift,
@@ -111,6 +111,27 @@ skema `database/migrations/schemas/hris/000000000017{0,1,2,3}_*.sql` +
    - Cuti: unpaid leave tetap memotong; cuti berbayar (annual/sick/dll yang
      approved) dihitung hadir-dibayar, tidak memotong; sumber hari dari
      `leaves` approved yang overlap periode.
+   - **Realisasi (2026-07-17):** migrasi `20260717170000` (tabel
+     `hris.overtime_requests` + kolom kebijakan + menu ESS/HRD) &
+     `20260717180000` (unique index anti-duplikat aktif per karyawan+tanggal).
+     Lib murni `lib/payroll/period.ts` (hari terjadwal dari pola shift dgn
+     fallback eksplisit shift→absensi→20 via `workingDaysSource`; clamp cuti
+     lintas bulan; realisasi lembur = approved ∧ ada clock_out, di-cap
+     `attendance.overtime_hours` bila terisi; 17 unit test). Upah/jam lembur
+     kini gaji pokok / `overtime_hourly_divisor` (default 173, Kepmenaker) —
+     menggantikan base/hariKerja/8. Potongan telat konfigurabel
+     (off/per_menit/flat) dari `late_minutes` absensi v2, tampil terpisah di
+     slip (kolom `payroll_details.late_deduction`). API `GET|POST
+     /api/hris/overtime` + `POST /api/hris/overtime/decide` (aturan aktor per
+     sumber; pengaju tak bisa memutuskan pengajuannya sendiri sekalipun HR;
+     guard balapan double-decide → 409). UI: ESS `/dashboard/me/lembur`
+     (pengajuan + konfirmasi penugasan perusahaan), HRD
+     `/dashboard/hris/overtime` (approve/reject + Tugaskan Lembur, page
+     ber-`requireRole`), kartu Potongan Keterlambatan di pengaturan payroll.
+     Review gate: 1 HIGH (self-approval bypass) + 3 MEDIUM — semua diperbaiki
+     sebelum commit. Migrasi diapply ke DB dev (termasuk 6 migrasi lama yang
+     belum tercatat di tracker; `20260716140000` dibuat idempoten karena
+     rename menu bentrok dengan baris yang dibuat ulang migrasi 130000).
 3. **Fase C — Integrasi kontrak PKWT/PKWTT**
    - Kelayakan & basis THR dari `employment_contracts` aktif (tipe pkwtt/pkwt
      + tanggal mulai untuk prorata), bukan magic string `employment_status`.
@@ -218,3 +239,11 @@ dengan QA manusia memverifikasi 1 siklus payroll penuh di dev.
   Question #5). CATATAN DEPLOY: perubahan menaikkan akurasi PPh21 — hasil
   kalkulasi run draft lama akan berubah sedikit saat dihitung ulang (bukan
   bug).
+- 2026-07-17 — Fase B selesai. Lembur dua arah live di dev (tabel, API,
+  ESS, HRD, menu iam); payroll membaca jadwal shift/lembur/telat/cuti
+  sungguhan. Gates: 358 unit test hijau (17 baru utk period.ts), tsc/eslint
+  bersih, build sukses, review WARNING→semua temuan diperbaiki (HIGH
+  self-approval, race duplikat lembur via unique index, role guard page HRD,
+  potongan telat di slip). Catatan: tarif lembur berubah ke standar 1/173 —
+  nilai lembur run lama akan berbeda bila dihitung ulang. Test integrasi
+  authz route lembur ditunda ke Fase F (test gate).

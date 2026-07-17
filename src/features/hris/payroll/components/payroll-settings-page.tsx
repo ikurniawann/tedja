@@ -5,6 +5,13 @@ import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { ArrowLeftIcon, Cog6ToothIcon } from "@heroicons/react/24/outline";
 import { useToast, ToastContainer } from "@/components/ui/toast";
 import { usePayrollSettings } from "../queries";
@@ -38,8 +45,15 @@ const TAPERA_FIELDS: FieldDef[] = [
 
 const LAINNYA_FIELDS: FieldDef[] = [
   { key: "overtime_multiplier", label: "Pengali Lembur", suffix: "×" },
+  { key: "overtime_hourly_divisor", label: "Pembagi Upah/Jam Lembur", suffix: "std 173" },
   { key: "payroll_day", label: "Tanggal Gajian", suffix: "tgl" },
   { key: "thr_eligible_months", label: "Min. Bulan Kerja THR", suffix: "bln" },
+];
+
+const LATE_MODE_OPTIONS = [
+  { value: "off", label: "Nonaktif (tanpa potongan)" },
+  { value: "per_minute", label: "Per menit keterlambatan" },
+  { value: "flat", label: "Flat per kejadian terlambat" },
 ];
 
 const PTKP_FIELDS: FieldDef[] = [
@@ -68,11 +82,15 @@ const BRACKET_FIELDS: FieldDef[] = [
 ];
 
 const SETTINGS_KEYS = [
-  ...BPJS_TK_FIELDS,
-  ...BPJS_KES_FIELDS,
-  ...TAPERA_FIELDS,
-  ...LAINNYA_FIELDS,
-].map((f) => f.key);
+  ...[...BPJS_TK_FIELDS, ...BPJS_KES_FIELDS, ...TAPERA_FIELDS, ...LAINNYA_FIELDS].map(
+    (f) => f.key
+  ),
+  "late_deduction_mode",
+  "late_deduction_amount",
+];
+
+/** Kolom pengaturan bertipe teks — dikirim apa adanya, bukan angka. */
+const STRING_SETTING_KEYS = new Set(["late_deduction_mode"]);
 
 const TAX_KEYS = [...PTKP_FIELDS, ...BRACKET_FIELDS].map((f) => f.key);
 
@@ -90,10 +108,14 @@ function rowToFormState(
   return state;
 }
 
-function formStateToPayload(state: FormState): Record<string, number> {
-  const payload: Record<string, number> = {};
+function formStateToPayload(state: FormState): Record<string, number | string> {
+  const payload: Record<string, number | string> = {};
   for (const [key, value] of Object.entries(state)) {
     if (value === "") continue;
+    if (STRING_SETTING_KEYS.has(key)) {
+      payload[key] = value;
+      continue;
+    }
     const n = Number(value);
     if (Number.isFinite(n)) payload[key] = n;
   }
@@ -282,6 +304,58 @@ export function PayrollSettingsPage() {
                 state={settingsForm}
                 onChange={handleSettingsChange}
               />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Potongan Keterlambatan</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-600">
+                    Mode Potongan
+                  </label>
+                  <Select
+                    value={settingsForm.late_deduction_mode || "off"}
+                    onValueChange={(value) =>
+                      handleSettingsChange("late_deduction_mode", value)
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Pilih mode" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {LATE_MODE_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-600">
+                    Tarif Potongan{" "}
+                    <span className="text-gray-400">
+                      (Rp — per menit / per kejadian sesuai mode)
+                    </span>
+                  </label>
+                  <Input
+                    type="number"
+                    step="any"
+                    value={settingsForm.late_deduction_amount ?? ""}
+                    onChange={(e) =>
+                      handleSettingsChange("late_deduction_amount", e.target.value)
+                    }
+                  />
+                </div>
+              </div>
+              <p className="mt-3 text-xs text-gray-500">
+                Menit keterlambatan diambil dari absensi v2 (dihitung terhadap
+                shift saat clock-in). Mode nonaktif = tidak ada potongan.
+              </p>
             </CardContent>
           </Card>
 

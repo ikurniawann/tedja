@@ -9,9 +9,19 @@ export {
   calculateTHR,
   calculateOvertime,
   calculateUnpaidLeave,
+  calculateLateDeduction,
   calculateJabatanExpense,
   getPTKPAmount,
 } from './calculator';
+
+export {
+  eachDateOfPeriod,
+  countScheduledDays,
+  clampedLeaveDays,
+  realizedOvertimeHours,
+  computeLateStats,
+  overtimeHoursFromTimes,
+} from './period';
 
 export type {
   PayrollInput,

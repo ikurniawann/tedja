@@ -152,6 +152,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           tapera_deduction: payrollResult.taperaDeduction,
           pph21_deduction: payrollResult.pph21Deduction,
           unpaid_leave_deduction: payrollResult.unpaidLeaveDeduction,
+          late_deduction: payrollResult.lateDeduction,
           other_deduction: payrollResult.otherDeduction,
           total_deductions: payrollResult.totalDeductions,
           net_salary: payrollResult.netSalary,
@@ -169,6 +170,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           present_days: input.presentDays,
           late_days: input.lateDays,
           unpaid_leave_days: input.unpaidLeaveDays,
+          overtime_hours: input.overtimeHours,
           status: 'calculated',
         })
         .select(`

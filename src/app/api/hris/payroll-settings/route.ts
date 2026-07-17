@@ -75,6 +75,9 @@ const settingsSchema = z.object({
   thr_prorate: z.boolean().optional(),
   payroll_day: z.coerce.number().int().min(1).max(31).optional(),
   overtime_multiplier: z.coerce.number().min(0).max(10).optional(),
+  overtime_hourly_divisor: z.coerce.number().positive().max(1000).optional(),
+  late_deduction_mode: z.enum(["off", "per_minute", "flat"]).optional(),
+  late_deduction_amount: rupiah.optional(),
 }).superRefine((data, ctx) =>
   refineIncreasingLimits(
     ["pph21_bracket_1", "pph21_bracket_2", "pph21_bracket_3", "pph21_bracket_4"],

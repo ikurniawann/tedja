@@ -253,4 +253,45 @@ describe("calculatePayroll (integration)", () => {
     // 4% dari cap 10.414.000
     expect(result.bpjsTkJhtDeduction).toBe(416_560);
   });
+
+  it("pays overtime at baseSalary/173 × multiplier (Kepmenaker)", async () => {
+    const result = await calculatePayroll(baseInput({ overtimeHours: 10 }));
+    // 10jt/173 = 57.803,47 × 10 jam × 1.5 = 867.052
+    expect(result.overtimePay).toBe(867_052);
+    expect(result.overtimeHours).toBe(10);
+  });
+
+  it("applies no late deduction when mode off (default)", async () => {
+    const result = await calculatePayroll(
+      baseInput({ lateDays: 3, lateMinutes: 45 })
+    );
+    expect(result.lateDeduction).toBe(0);
+  });
+
+  it("applies per-minute late deduction", async () => {
+    const config = {
+      ...DEFAULT_PAYROLL_CONFIG,
+      lateDeduction: { mode: "per_minute" as const, amount: 1000 },
+    };
+    const result = await calculatePayroll(
+      baseInput({ lateDays: 3, lateMinutes: 45 }),
+      config
+    );
+    expect(result.lateDeduction).toBe(45_000);
+    // masuk total potongan → mengurangi take-home
+    const baseline = await calculatePayroll(baseInput(), config);
+    expect(baseline.netSalary - result.netSalary).toBe(45_000);
+  });
+
+  it("applies flat per-occurrence late deduction", async () => {
+    const config = {
+      ...DEFAULT_PAYROLL_CONFIG,
+      lateDeduction: { mode: "flat" as const, amount: 25_000 },
+    };
+    const result = await calculatePayroll(
+      baseInput({ lateDays: 3, lateMinutes: 45 }),
+      config
+    );
+    expect(result.lateDeduction).toBe(75_000);
+  });
 });

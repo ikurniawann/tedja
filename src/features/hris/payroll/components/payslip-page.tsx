@@ -28,6 +28,7 @@ interface PayrollDetail {
   tapera_deduction: number;
   pph21_deduction: number;
   unpaid_leave_deduction: number;
+  late_deduction?: number;
   other_deduction: number;
   total_deductions: number;
   net_salary: number;
@@ -215,6 +216,9 @@ export function PayslipPage() {
               <DeductionRow label="PPh 21" amount={detail.pph21_deduction} />
               {detail.unpaid_leave_deduction > 0 && (
                 <DeductionRow label="Cuti Tanpa Bayaran" amount={detail.unpaid_leave_deduction} />
+              )}
+              {(detail.late_deduction ?? 0) > 0 && (
+                <DeductionRow label="Potongan Keterlambatan" amount={detail.late_deduction ?? 0} />
               )}
               {detail.other_deduction > 0 && (
                 <DeductionRow label="Potongan Lain" amount={detail.other_deduction} />

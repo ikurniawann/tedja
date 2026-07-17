@@ -36,6 +36,7 @@ export interface PayrollInput {
   workingDays: number;
   presentDays: number;
   lateDays?: number;
+  lateMinutes?: number;
   unpaidLeaveDays?: number;
 
   // Employee status
@@ -74,8 +75,12 @@ export interface PayrollResult {
   taperaDeduction: number;
   pph21Deduction: number;
   unpaidLeaveDeduction: number;
+  lateDeduction: number;
   otherDeduction: number;
   totalDeductions: number;
+
+  // Attendance snapshot
+  overtimeHours: number;
 
   // Net
   netSalary: number;
@@ -266,6 +271,21 @@ export function calculateUnpaidLeave(
 }
 
 /**
+ * Potongan keterlambatan sesuai kebijakan (keputusan owner: konfigurabel).
+ * off → 0; per_minute → menit telat × tarif; flat → kejadian telat × tarif.
+ */
+export function calculateLateDeduction(
+  lateMinutes: number,
+  lateDays: number,
+  config: PayrollConfig = DEFAULT_PAYROLL_CONFIG
+): number {
+  const { mode, amount } = config.lateDeduction;
+  if (mode === "per_minute") return Math.round(lateMinutes * amount);
+  if (mode === "flat") return Math.round(lateDays * amount);
+  return 0;
+}
+
+/**
  * Biaya jabatan tahunan: persentase dari bruto, dibatasi maksimum per tahun.
  */
 export function calculateJabatanExpense(
@@ -300,6 +320,8 @@ export async function calculatePayroll(
     overtimeRate = config.overtimeMultiplier,
     bonus = 0,
     workingDays,
+    lateDays = 0,
+    lateMinutes = 0,
     unpaidLeaveDays = 0,
     joinDate,
     employmentStatus,
@@ -312,8 +334,12 @@ export async function calculatePayroll(
 
   // ========== EARNINGS ==========
 
-  // Calculate hourly rate for overtime (base / working days / 8 hours)
-  const hourlyRate = workingDays > 0 ? baseSalary / workingDays / 8 : 0;
+  // Upah per jam lembur = gaji pokok / pembagi (Kepmenaker: 173) —
+  // menggantikan rumus lama base/hariKerja/8 yang tidak standar.
+  const hourlyRate =
+    config.overtimeHourlyDivisor > 0
+      ? baseSalary / config.overtimeHourlyDivisor
+      : 0;
   const overtimePay = calculateOvertime(overtimeHours, hourlyRate, overtimeRate);
 
   // TODO(EPIC-008 Fase C): kelayakan THR dari kontrak aktif (pkwt/pkwtt),
@@ -347,6 +373,9 @@ export async function calculatePayroll(
   // Unpaid leave deduction
   const unpaidLeaveDeduction = calculateUnpaidLeave(baseSalary, workingDays, unpaidLeaveDays);
 
+  // Potongan keterlambatan (konfigurabel; nonaktif by default)
+  const lateDeduction = calculateLateDeduction(lateMinutes, lateDays, config);
+
   // Penghasilan neto tahunan untuk PPh21:
   // bruto − iuran karyawan (BPJS + Tapera) − biaya jabatan
   const annualGross = grossSalary * 12;
@@ -373,7 +402,8 @@ export async function calculatePayroll(
     bpjsResult.employee.bpjsKes +
     taperaDeduction +
     pph21Deduction +
-    unpaidLeaveDeduction;
+    unpaidLeaveDeduction +
+    lateDeduction;
 
   // Net salary (take home pay)
   const netSalary = grossSalary - totalDeductions;
@@ -408,8 +438,12 @@ export async function calculatePayroll(
     taperaDeduction: Math.round(taperaDeduction),
     pph21Deduction: Math.round(pph21Deduction),
     unpaidLeaveDeduction: Math.round(unpaidLeaveDeduction),
+    lateDeduction: Math.round(lateDeduction),
     otherDeduction: 0,
     totalDeductions: Math.round(totalDeductions),
+
+    // Attendance snapshot
+    overtimeHours,
 
     // Net
     netSalary: Math.round(netSalary),

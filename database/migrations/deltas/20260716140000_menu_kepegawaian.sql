@@ -24,13 +24,27 @@ WHERE child.code = 'hris.kepegawaian'
   AND parent.code = 'hris';
 
 -- ── 2. Pindahkan Karyawan & Kontrak ke bawah grup ──────────────────────
+-- Idempoten: rename hanya bila kode tujuan belum ada; bila sudah ada
+-- (migrasi pernah dijalankan manual) baris kode lama yang muncul lagi
+-- (mis. dibuat ulang seeder/migrasi lain) di-soft-delete agar tidak dobel.
 UPDATE iam.menus
 SET code = 'hris.kepegawaian.users', level = 3, order_number = 10, updated_at = now()
-WHERE code = 'hris.users' AND deleted_at IS NULL;
+WHERE code = 'hris.users' AND deleted_at IS NULL
+  AND NOT EXISTS (SELECT 1 FROM iam.menus WHERE code = 'hris.kepegawaian.users');
 
 UPDATE iam.menus
 SET code = 'hris.kepegawaian.contracts', level = 3, order_number = 20, updated_at = now()
-WHERE code = 'hris.contracts' AND deleted_at IS NULL;
+WHERE code = 'hris.contracts' AND deleted_at IS NULL
+  AND NOT EXISTS (SELECT 1 FROM iam.menus WHERE code = 'hris.kepegawaian.contracts');
+
+UPDATE iam.menus stray
+SET deleted_at = now(), is_active = false, is_visible = false, updated_at = now()
+WHERE stray.code IN ('hris.users', 'hris.contracts')
+  AND stray.deleted_at IS NULL
+  AND EXISTS (
+    SELECT 1 FROM iam.menus renamed
+    WHERE renamed.code = 'hris.kepegawaian.' || split_part(stray.code, '.', 2)
+  );
 
 UPDATE iam.menus child
 SET parent_id = parent.id

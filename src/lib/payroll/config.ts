@@ -55,6 +55,14 @@ export interface PayrollConfig {
     maxPerYear: number;
   };
   overtimeMultiplier: number;
+  /** Upah per jam lembur = gaji pokok / pembagi (standar Kepmenaker 173). */
+  overtimeHourlyDivisor: number;
+  /** Kebijakan potongan keterlambatan (keputusan owner: konfigurabel). */
+  lateDeduction: {
+    mode: "off" | "per_minute" | "flat";
+    /** per_minute → Rp/menit; flat → Rp/kejadian terlambat */
+    amount: number;
+  };
   thr: {
     eligibleMonths: number;
     prorate: boolean;
@@ -102,6 +110,11 @@ export const DEFAULT_PAYROLL_CONFIG: PayrollConfig = {
     maxPerYear: 6_000_000,
   },
   overtimeMultiplier: 1.5,
+  overtimeHourlyDivisor: 173,
+  lateDeduction: {
+    mode: "off",
+    amount: 0,
+  },
   thr: {
     eligibleMonths: 12,
     prorate: true,
@@ -230,6 +243,18 @@ export async function loadPayrollConfig(
       maxPerYear: toNumber(taxConfig?.jabatan_expense_max, d.jabatanExpense.maxPerYear),
     },
     overtimeMultiplier: toNumber(settings?.overtime_multiplier, d.overtimeMultiplier),
+    overtimeHourlyDivisor: toNumber(
+      settings?.overtime_hourly_divisor,
+      d.overtimeHourlyDivisor
+    ),
+    lateDeduction: {
+      mode: (["off", "per_minute", "flat"] as const).includes(
+        settings?.late_deduction_mode
+      )
+        ? settings.late_deduction_mode
+        : d.lateDeduction.mode,
+      amount: toNumber(settings?.late_deduction_amount, d.lateDeduction.amount),
+    },
     thr: {
       eligibleMonths: toNumber(settings?.thr_eligible_months, d.thr.eligibleMonths),
       prorate: settings?.thr_prorate ?? d.thr.prorate,
