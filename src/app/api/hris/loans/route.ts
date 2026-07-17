@@ -1,19 +1,21 @@
 // ============================================================
 // API Route: Employee Loans
-// GET: List loans
-// POST: Create loan request
+// GET : HR/finance → semua; karyawan → pinjaman miliknya sendiri (ESS)
+// POST: HR/finance → utk karyawan mana pun; karyawan → utk diri sendiri
+//       (self-request: bunga dipaksa 0, tetap menunggu approval HR)
 // ============================================================
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerPgClient } from "@/lib/pg/create-client";
-import { ApiError, requireApiRole } from '@/lib/api/auth';
+import { getWorkforceActor } from '@/lib/hris/workforce-auth';
 import { loadPayrollConfig } from '@/lib/payroll/config';
 import { validateLoanLimits } from '@/lib/payroll/loans';
 import { LOAN_MANAGE_ROLES } from '@/lib/payroll/roles';
 
-// Loan records are sensitive financial PII — restrict to HR/finance/admin
-// (selaras menu iam + page guard /dashboard/hris/loans).
-const LOAN_VIEW_ROLES = LOAN_MANAGE_ROLES;
+// Akses penuh lintas karyawan (kelola pinjaman) — data finansial PII.
+function hasFullAccess(role: string): boolean {
+  return (LOAN_MANAGE_ROLES as readonly string[]).includes(role);
+}
 
 // ============================================================
 // GET /api/hris/loans
@@ -21,11 +23,27 @@ const LOAN_VIEW_ROLES = LOAN_MANAGE_ROLES;
 
 export async function GET(request: NextRequest) {
   try {
-    await requireApiRole([...LOAN_VIEW_ROLES]);
+    const actor = await getWorkforceActor();
+    if (!actor) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const db = await createServerPgClient();
     const { searchParams } = new URL(request.url);
-    const employeeId = searchParams.get('employee_id');
+    const employeeIdParam = searchParams.get('employee_id');
     const status = searchParams.get('status');
+    const fullAccess = hasFullAccess(actor.role);
+
+    // Scoping: non-HR (atau employee_id=me) dipaksa ke pinjaman sendiri
+    let employeeId: string | null = null;
+    if (!fullAccess || employeeIdParam === 'me') {
+      if (!actor.employeeId) {
+        return NextResponse.json({ data: [] });
+      }
+      employeeId = actor.employeeId;
+    } else if (employeeIdParam) {
+      employeeId = employeeIdParam;
+    }
 
     let query = db
       .from('loans')
@@ -66,7 +84,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ data });
 
   } catch (error) {
-    if (error instanceof ApiError) return error.toResponse();
     console.error('Error in loans API:', error);
     return NextResponse.json(
       { error: 'Terjadi kesalahan pada server' },
@@ -82,7 +99,11 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    await requireApiRole([...LOAN_VIEW_ROLES]);
+    const actor = await getWorkforceActor();
+    if (!actor) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const db = await createServerPgClient();
     const body = await request.json();
     const {
@@ -95,17 +116,34 @@ export async function POST(request: NextRequest) {
       notes,
     } = body;
 
+    const fullAccess = hasFullAccess(actor.role);
+
+    // Resolusi target: HR bisa utk siapa pun; karyawan hanya utk dirinya
+    let targetEmployeeId: string | null;
+    if (fullAccess && employee_id && employee_id !== 'me') {
+      targetEmployeeId = employee_id;
+    } else {
+      targetEmployeeId = actor.employeeId;
+    }
+    if (!targetEmployeeId) {
+      return NextResponse.json(
+        { error: 'Akun ini tidak tertaut ke data karyawan' },
+        { status: 400 }
+      );
+    }
+
+    // Self-request karyawan: bunga selalu 0 (kasbon); HR yang bisa set bunga
     const principal = Number(principal_amount);
     const tenor = Number(tenor_months);
-    const rate = Number(interest_rate) || 0;
+    const rate = fullAccess ? (Number(interest_rate) || 0) : 0;
     if (
-      !employee_id || !loan_type ||
+      !loan_type ||
       !Number.isFinite(principal) || principal <= 0 ||
       !Number.isInteger(tenor) || tenor < 1 || tenor > 60 ||
       rate < 0 || rate > 100
     ) {
       return NextResponse.json(
-        { error: 'Employee ID, jenis pinjaman, jumlah (> 0), dan tenor (1–60 bulan) wajib valid' },
+        { error: 'Jenis pinjaman, jumlah (> 0), dan tenor (1–60 bulan) wajib valid' },
         { status: 400 }
       );
     }
@@ -114,7 +152,7 @@ export async function POST(request: NextRequest) {
     const { data: employee } = await db
       .from('employees')
       .select('id, is_active')
-      .eq('id', employee_id)
+      .eq('id', targetEmployeeId)
       .maybeSingle();
 
     if (!employee) {
@@ -143,7 +181,7 @@ export async function POST(request: NextRequest) {
       db
         .from('employee_salary')
         .select('base_salary')
-        .eq('employee_id', employee_id)
+        .eq('employee_id', targetEmployeeId)
         .eq('is_active', true)
         .order('effective_date', { ascending: false })
         .limit(1)
@@ -151,7 +189,7 @@ export async function POST(request: NextRequest) {
       db
         .from('loans')
         .select('id, status, remaining_balance')
-        .eq('employee_id', employee_id)
+        .eq('employee_id', targetEmployeeId)
         .eq('is_active', true)
         .in('status', ['pending', 'approved']),
     ]);
@@ -180,7 +218,7 @@ export async function POST(request: NextRequest) {
     const { data, error } = await db
       .from('loans')
       .insert({
-        employee_id,
+        employee_id: targetEmployeeId,
         loan_type,
         principal_amount: principal,
         interest_rate: rate,
@@ -215,7 +253,6 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error) {
-    if (error instanceof ApiError) return error.toResponse();
     console.error('Error in loans API:', error);
     return NextResponse.json(
       { error: 'Terjadi kesalahan pada server' },

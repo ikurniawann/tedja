@@ -3,6 +3,12 @@
 import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon } from "lucide-react";
 import {
   resolveScheduleRowForDate,
@@ -78,6 +84,8 @@ export function AttendanceCalendar({
   const [attendances, setAttendances] = useState<Record<string, AttendanceRecord>>({});
   const [schedule, setSchedule] = useState<ScheduleRow[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  // Popup detail hari (terutama mobile — di layar kecil detail sel disembunyikan)
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
   const fetchAttendances = useCallback(async () => {
     setIsLoading(true);
@@ -138,6 +146,23 @@ export function AttendanceCalendar({
   const nextMonth = () => setCurrentMonth(new Date(year, monthIndex + 1, 1));
   const goToToday = () => setCurrentMonth(new Date());
 
+  // Detail hari terpilih (untuk popup — terutama mobile)
+  const selectedInfo = (() => {
+    if (!selectedDate) return null;
+    const attendance = attendances[selectedDate];
+    const scheduleRow =
+      schedule.length > 0 ? resolveScheduleRowForDate(schedule, selectedDate) : null;
+    const isDayOff = scheduleRow !== null && scheduleRow.shift_id === null;
+    const scheduledShift = scheduleRow && scheduleRow.shift_id ? scheduleRow : null;
+    const label = new Date(`${selectedDate}T00:00:00`).toLocaleDateString("id-ID", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
+    return { attendance, scheduledShift, isDayOff, label };
+  })();
+
   const renderDay = (day: number, weekdayIndex: number) => {
     const dateStr = localDateKey(year, monthIndex, day);
     const isToday = dateStr === todayKey;
@@ -151,14 +176,20 @@ export function AttendanceCalendar({
     return (
       <div
         key={day}
-        onClick={() => onDateSelect?.(new Date(year, monthIndex, day))}
-        className={`group relative flex min-h-16 sm:min-h-24 flex-col gap-1 p-1.5 sm:p-2 transition-colors ${
+        onClick={() => {
+          if (onDateSelect) {
+            onDateSelect(new Date(year, monthIndex, day));
+            return;
+          }
+          setSelectedDate(dateStr);
+        }}
+        className={`group relative flex min-h-16 sm:min-h-24 cursor-pointer flex-col gap-1 p-1.5 sm:p-2 transition-colors ${
           isToday
             ? "bg-blue-50/70"
             : isDayOff
               ? "bg-gray-50/80"
               : "bg-white hover:bg-slate-50"
-        } ${onDateSelect ? "cursor-pointer" : ""}`}
+        }`}
       >
         {/* nomor tanggal */}
         <div className="flex items-start justify-between">
@@ -325,7 +356,84 @@ export function AttendanceCalendar({
             Waktu dalam WIB
           </span>
         </div>
+        <p className="mt-2 text-[11px] text-gray-400 sm:hidden">
+          Ketuk tanggal untuk melihat jadwal & jam absen.
+        </p>
       </CardContent>
+
+      {/* Popup detail hari — dipakai terutama di mobile */}
+      <Dialog
+        open={selectedInfo !== null}
+        onOpenChange={(open) => !open && setSelectedDate(null)}
+      >
+        <DialogContent className="max-w-xs">
+          <DialogHeader>
+            <DialogTitle className="text-base">{selectedInfo?.label}</DialogTitle>
+          </DialogHeader>
+          {selectedInfo && (
+            <div className="space-y-3">
+              {/* Jadwal shift */}
+              <div className="rounded-lg border border-indigo-100 bg-indigo-50/60 p-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-indigo-400">
+                  Jadwal Shift
+                </p>
+                {selectedInfo.scheduledShift ? (
+                  <p className="mt-1 text-sm font-semibold text-indigo-800">
+                    {selectedInfo.scheduledShift.shift_name} ·{" "}
+                    {shiftTime(selectedInfo.scheduledShift.start_time)}–
+                    {shiftTime(selectedInfo.scheduledShift.end_time)}
+                    {selectedInfo.scheduledShift.is_overnight ? " (+1 hari)" : ""}
+                  </p>
+                ) : selectedInfo.isDayOff ? (
+                  <p className="mt-1 text-sm font-medium text-gray-500">Libur</p>
+                ) : (
+                  <p className="mt-1 text-sm text-gray-400">
+                    {schedule.length > 0 ? "Tanpa jadwal" : "Jadwal belum diatur"}
+                  </p>
+                )}
+              </div>
+
+              {/* Realisasi absensi */}
+              <div
+                className={`rounded-lg border p-3 ${
+                  selectedInfo.attendance
+                    ? selectedInfo.attendance.is_late
+                      ? "border-amber-200 bg-amber-50/60"
+                      : "border-emerald-200 bg-emerald-50/60"
+                    : "border-gray-100 bg-gray-50/60"
+                }`}
+              >
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+                  Absensi
+                </p>
+                {selectedInfo.attendance ? (
+                  <div className="mt-1 space-y-0.5 text-sm">
+                    <p className="font-semibold text-gray-800">
+                      {clockTime(selectedInfo.attendance.clock_in)} –{" "}
+                      {clockTime(selectedInfo.attendance.clock_out)}
+                    </p>
+                    <p
+                      className={
+                        selectedInfo.attendance.is_late
+                          ? "text-amber-600"
+                          : "text-emerald-600"
+                      }
+                    >
+                      {selectedInfo.attendance.is_late ? "Terlambat" : "Tepat waktu"}
+                      {selectedInfo.attendance.work_hours
+                        ? ` · ${Number(selectedInfo.attendance.work_hours).toFixed(1)} jam kerja`
+                        : ""}
+                    </p>
+                  </div>
+                ) : (
+                  <p className="mt-1 text-sm text-gray-400">Belum ada catatan absen</p>
+                )}
+              </div>
+              <p className="text-center text-[10px] text-gray-300">Waktu dalam WIB</p>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }
