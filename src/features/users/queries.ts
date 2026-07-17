@@ -9,6 +9,7 @@ import {
   fetchEmployeeLeaveBalances,
   fetchEmploymentHistory,
   fetchEmployeeLifecycle,
+  fetchEmployeeRecruitmentDocs,
   fetchHRISEmployeeDetail,
   fetchUserDetail,
   fetchUserDirectoryStats,
@@ -86,6 +87,16 @@ export const useEmployeeDocuments = (employeeId: string, enabled = true) =>
     queryFn: async () => {
       const res = await fetchEmployeeDocuments(employeeId);
       return res.data ?? [];
+    },
+    enabled: enabled && !!employeeId,
+  });
+
+export const useEmployeeRecruitmentDocs = (employeeId: string, enabled = true) =>
+  useQuery({
+    queryKey: usersQueryKeys.recruitmentDocs(employeeId),
+    queryFn: async () => {
+      const res = await fetchEmployeeRecruitmentDocs(employeeId);
+      return res.data ?? null;
     },
     enabled: enabled && !!employeeId,
   });

@@ -114,6 +114,21 @@ export interface EmployeeLifecycleData {
 export const fetchEmployeeLifecycle = (employeeId: string) =>
   apiGet<{ data: EmployeeLifecycleData }>(`/api/hris/employees/${employeeId}/lifecycle`);
 
+// ── Dokumen asal rekrutmen (CV + Laporan Pipeline) ──────────────────────
+export interface EmployeeRecruitmentDocs {
+  candidate_id: string;
+  cv_url: string | null;
+  status: string;
+  applied_at: string;
+  position_title: string | null;
+  report_available: boolean;
+}
+
+export const fetchEmployeeRecruitmentDocs = (employeeId: string) =>
+  apiGet<{ data: EmployeeRecruitmentDocs | null }>(
+    `/api/hris/employees/${employeeId}/recruitment-documents`
+  );
+
 export const fetchEmploymentHistory = (employeeId: string) =>
   apiGet<{ data: EmploymentHistoryRow[] }>(`/api/hris/employment-history?employee_id=${employeeId}`);
 

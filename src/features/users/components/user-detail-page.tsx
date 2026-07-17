@@ -5,15 +5,6 @@ import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import { Combobox } from "@/components/ui/combobox";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
 import {
   ArrowLeftIcon,
   UserCircleIcon,
@@ -24,13 +15,10 @@ import {
   DocumentTextIcon,
   CalendarDaysIcon,
   ClockIcon,
-  ArrowUpTrayIcon,
-  TrashIcon,
   PencilIcon,
   CheckCircleIcon,
   XCircleIcon,
   BuildingOfficeIcon,
-  IdentificationIcon,
   BanknotesIcon,
   KeyIcon,
   ArrowPathIcon,
@@ -38,12 +26,7 @@ import {
 import { useToast, ToastContainer } from "@/components/ui/toast";
 import { useAuth } from "@/hooks/use-auth";
 import {
-  useCreateEmployeeDocument,
-  useDeleteEmployeeDocument,
-} from "../mutations";
-import {
   useEmployeeAttendance,
-  useEmployeeDocuments,
   useEmployeeLeaveBalances,
   useEmploymentHistory,
   useHRISEmployeeDetail,
@@ -52,6 +35,7 @@ import { ResetPasswordDialog } from "./reset-password-dialog";
 import { CreateAccountDialog } from "./create-account-dialog";
 import { EmployeeLifecycleTab } from "./employee-lifecycle-tab";
 import { EmployeeContractsTab } from "./employee-contracts-tab";
+import { EmployeeDocumentsTab } from "./employee-documents-tab";
 import { EmployeeShiftsTab } from "./employee-shifts-tab";
 
 const STATUS_LABELS: Record<string, string> = {
@@ -72,18 +56,6 @@ const STATUS_COLORS: Record<string, string> = {
   resigned: "bg-red-100 text-red-600",
   terminated: "bg-red-200 text-red-700",
   suspended: "bg-orange-100 text-orange-700",
-};
-
-const DOC_TYPE_LABELS: Record<string, string> = {
-  ktp: "National ID (KTP)",
-  npwp: "Tax ID (NPWP)",
-  ijazah: "Diploma",
-  cv: "CV / Resume",
-  kontrak: "Employment Contract",
-  bpjs_tk: "BPJS Employment",
-  bpjs_kes: "BPJS Health",
-  sertifikat: "Certificate",
-  other: "Other",
 };
 
 const HISTORY_TYPE_LABELS: Record<string, string> = {
@@ -161,10 +133,6 @@ export function UserDetailPage({ params }: { params: Promise<{ id: string }> }) 
   const [createAccountOpen, setCreateAccountOpen] = useState(false);
 
   const { data: employee, isLoading: loading } = useHRISEmployeeDetail(id);
-  const { data: documents = [], isLoading: documentsLoading } = useEmployeeDocuments(
-    id,
-    activeTab === "documents"
-  );
   const { data: history = [], isLoading: historyLoading } = useEmploymentHistory(
     id,
     activeTab === "employment"
@@ -184,61 +152,10 @@ export function UserDetailPage({ params }: { params: Promise<{ id: string }> }) 
     activeTab === "leave"
   );
 
-  const createDocumentMutation = useCreateEmployeeDocument(id);
-  const deleteDocumentMutation = useDeleteEmployeeDocument(id);
-
   const tabLoading =
-    (activeTab === "documents" && documentsLoading) ||
     (activeTab === "employment" && historyLoading) ||
     (activeTab === "attendance" && attendanceLoading) ||
     (activeTab === "leave" && leaveLoading);
-
-  // Document upload dialog
-  const [docDialog, setDocDialog] = useState(false);
-  const [docForm, setDocForm] = useState({
-    document_type: "ktp",
-    document_name: "",
-    file_url: "",
-    issue_date: "",
-    expiry_date: "",
-    notes: "",
-  });
-  const [savingDoc, setSavingDoc] = useState(false);
-
-  async function handleSaveDocument() {
-    if (!docForm.document_name || !docForm.file_url) {
-      showToast("Document name and file URL are required", "error");
-      return;
-    }
-    setSavingDoc(true);
-    try {
-      await createDocumentMutation.mutateAsync(docForm);
-      showToast("Document saved successfully");
-      setDocDialog(false);
-      setDocForm({
-        document_type: "ktp",
-        document_name: "",
-        file_url: "",
-        issue_date: "",
-        expiry_date: "",
-        notes: "",
-      });
-    } catch (error) {
-      showToast(error instanceof Error ? error.message : "Failed to save document", "error");
-    } finally {
-      setSavingDoc(false);
-    }
-  }
-
-  async function handleDeleteDocument(docId: string) {
-    if (!confirm("Delete this document?")) return;
-    try {
-      await deleteDocumentMutation.mutateAsync(docId);
-      showToast("Document deleted");
-    } catch {
-      showToast("Failed to delete document", "error");
-    }
-  }
 
   const tabs: { key: Tab; label: string; icon: React.ReactNode }[] = [
     { key: "info", label: "Personal Info", icon: <UserCircleIcon className="w-4 h-4" /> },
@@ -246,7 +163,7 @@ export function UserDetailPage({ params }: { params: Promise<{ id: string }> }) 
     { key: "contracts", label: "Kontrak", icon: <BriefcaseIcon className="w-4 h-4" /> },
     { key: "shifts", label: "Jadwal Shift", icon: <ClockIcon className="w-4 h-4" /> },
     { key: "employment", label: "Employment History", icon: <BriefcaseIcon className="w-4 h-4" /> },
-    { key: "documents", label: "Documents", icon: <DocumentTextIcon className="w-4 h-4" /> },
+    { key: "documents", label: "Dokumen", icon: <DocumentTextIcon className="w-4 h-4" /> },
     { key: "attendance", label: "Attendance", icon: <ClockIcon className="w-4 h-4" /> },
     { key: "leave", label: "Leave Balance", icon: <CalendarDaysIcon className="w-4 h-4" /> },
   ];
@@ -617,79 +534,8 @@ export function UserDetailPage({ params }: { params: Promise<{ id: string }> }) 
             </div>
           )}
 
-          {/* DOKUMEN */}
-          {activeTab === "documents" && (
-            <div className="space-y-4">
-              <div className="flex justify-between items-center">
-                <h3 className="font-semibold text-gray-700">Employee Documents</h3>
-                <Button size="sm" onClick={() => setDocDialog(true)} className="gap-1">
-                  <ArrowUpTrayIcon className="w-4 h-4" /> Upload Document
-                </Button>
-              </div>
-              {documents.length === 0 ? (
-                <Card>
-                  <CardContent className="py-12 text-center text-gray-400">
-                    <DocumentTextIcon className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-                    No documents yet. Click "Upload Document" to add one.
-                  </CardContent>
-                </Card>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {documents.map((doc) => (
-                    <Card key={doc.id} className="hover:shadow-md transition-shadow">
-                      <CardContent className="p-4">
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex-1 min-w-0">
-                            <p className="text-xs font-medium text-blue-600 uppercase tracking-wide">
-                              {DOC_TYPE_LABELS[doc.document_type] || doc.document_type}
-                            </p>
-                            <p className="font-medium text-gray-900 text-sm mt-0.5 truncate">
-                              {doc.document_name}
-                            </p>
-                            {doc.issue_date && (
-                              <p className="text-xs text-gray-400 mt-1">
-                                Issued: {formatDate(doc.issue_date)}
-                              </p>
-                            )}
-                            {doc.expiry_date && (
-                              <p className={`text-xs mt-0.5 ${new Date(doc.expiry_date) < new Date() ? "text-red-500" : "text-gray-400"}`}>
-                                Expires: {formatDate(doc.expiry_date)}
-                              </p>
-                            )}
-                          </div>
-                          <div className="flex gap-1 shrink-0">
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => window.open(doc.file_url, "_blank")}
-                              className="text-blue-600 hover:bg-blue-50 p-1.5"
-                              title="View document"
-                            >
-                              <IdentificationIcon className="w-4 h-4" />
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => handleDeleteDocument(doc.id)}
-                              className="text-red-500 hover:bg-red-50 p-1.5"
-                              title="Delete"
-                            >
-                              <TrashIcon className="w-4 h-4" />
-                            </Button>
-                          </div>
-                        </div>
-                        {doc.is_verified && (
-                          <div className="flex items-center gap-1 mt-2 text-xs text-green-600">
-                            <CheckCircleIcon className="w-3.5 h-3.5" /> Verified
-                          </div>
-                        )}
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
+          {/* DOKUMEN — semua lampiran: rekrutmen, kontrak, upload manual */}
+          {activeTab === "documents" && <EmployeeDocumentsTab employeeId={id} />}
 
           {/* ABSENSI */}
           {activeTab === "attendance" && (
@@ -807,80 +653,6 @@ export function UserDetailPage({ params }: { params: Promise<{ id: string }> }) 
           )}
         </>
       )}
-
-      {/* Document Upload Dialog */}
-      <Dialog open={docDialog} onOpenChange={(o) => !o && setDocDialog(false)}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Upload Document</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3 py-2">
-            <div>
-              <label className="text-xs font-medium text-gray-600">Document Type *</label>
-              <Combobox
-                options={Object.entries(DOC_TYPE_LABELS).map(([value, label]) => ({ value, label }))}
-                value={docForm.document_type}
-                onChange={(value) => setDocForm((f) => ({ ...f, document_type: value }))}
-                placeholder="Select document type"
-                searchPlaceholder="Search type..."
-                emptyMessage="Type not found"
-                className="!w-full h-9 text-sm"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-gray-600">Document Name *</label>
-              <Input
-                value={docForm.document_name}
-                onChange={(e) => setDocForm((f) => ({ ...f, document_name: e.target.value }))}
-                placeholder="e.g. National ID - John Doe"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-gray-600">URL File *</label>
-              <Input
-                value={docForm.file_url}
-                onChange={(e) => setDocForm((f) => ({ ...f, file_url: e.target.value }))}
-                placeholder="https://... or file path"
-              />
-              <p className="text-xs text-gray-400 mt-1">
-                Upload the file to storage, then paste the URL here
-              </p>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-medium text-gray-600">Issue Date</label>
-                <Input
-                  type="date"
-                  value={docForm.issue_date}
-                  onChange={(e) => setDocForm((f) => ({ ...f, issue_date: e.target.value }))}
-                />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-gray-600">Expiry Date</label>
-                <Input
-                  type="date"
-                  value={docForm.expiry_date}
-                  onChange={(e) => setDocForm((f) => ({ ...f, expiry_date: e.target.value }))}
-                />
-              </div>
-            </div>
-            <div>
-              <label className="text-xs font-medium text-gray-600">Notes</label>
-              <Input
-                value={docForm.notes}
-                onChange={(e) => setDocForm((f) => ({ ...f, notes: e.target.value }))}
-                placeholder="Optional"
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDocDialog(false)}>Cancel</Button>
-            <Button onClick={handleSaveDocument} disabled={savingDoc}>
-              {savingDoc ? "Saving..." : "Save"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       <ToastContainer toasts={toasts} removeToast={removeToast} />
 
