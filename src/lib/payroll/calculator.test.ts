@@ -350,6 +350,15 @@ describe("calculatePayroll — kontrak (Fase C)", () => {
     expect(permanent.thr).toBe(10_000_000);
   });
 
+  it("deducts loan installment from net salary (Fase D)", async () => {
+    const withLoan = await calculatePayroll(baseInput({ loanDeduction: 500_000 }));
+    const baseline = await calculatePayroll(baseInput());
+    expect(withLoan.loanDeduction).toBe(500_000);
+    expect(baseline.netSalary - withLoan.netSalary).toBe(500_000);
+    // Cicilan bukan pengurang pajak — PPh21 tidak berubah
+    expect(withLoan.pph21Deduction).toBe(baseline.pph21Deduction);
+  });
+
   it("treats prorateFactor 1 as a no-op (regression vs Fase A/B numbers)", async () => {
     const explicit = await calculatePayroll(baseInput({ prorateFactor: 1 }));
     const implicit = await calculatePayroll(baseInput());

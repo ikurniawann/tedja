@@ -50,6 +50,11 @@ const LAINNYA_FIELDS: FieldDef[] = [
   { key: "thr_eligible_months", label: "Min. Bulan Kerja THR", suffix: "bln" },
 ];
 
+const LOAN_FIELDS: FieldDef[] = [
+  { key: "loan_max_installment_percent", label: "Cicilan Maks dari Gaji Pokok", suffix: "%" },
+  { key: "loan_max_active_per_employee", label: "Maks Pinjaman Aktif/Karyawan", suffix: "buah" },
+];
+
 const LATE_MODE_OPTIONS = [
   { value: "off", label: "Nonaktif (tanpa potongan)" },
   { value: "per_minute", label: "Per menit keterlambatan" },
@@ -82,9 +87,13 @@ const BRACKET_FIELDS: FieldDef[] = [
 ];
 
 const SETTINGS_KEYS = [
-  ...[...BPJS_TK_FIELDS, ...BPJS_KES_FIELDS, ...TAPERA_FIELDS, ...LAINNYA_FIELDS].map(
-    (f) => f.key
-  ),
+  ...[
+    ...BPJS_TK_FIELDS,
+    ...BPJS_KES_FIELDS,
+    ...TAPERA_FIELDS,
+    ...LAINNYA_FIELDS,
+    ...LOAN_FIELDS,
+  ].map((f) => f.key),
   "late_deduction_mode",
   "late_deduction_amount",
 ];
@@ -304,6 +313,24 @@ export function PayrollSettingsPage() {
                 state={settingsForm}
                 onChange={handleSettingsChange}
               />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Limitasi Pinjaman Karyawan</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <FieldGrid
+                fields={LOAN_FIELDS}
+                state={settingsForm}
+                onChange={handleSettingsChange}
+              />
+              <p className="mt-3 text-xs text-gray-500">
+                Divalidasi saat pengajuan dan approval pinjaman. Cicilan
+                pinjaman approved otomatis terpotong di payroll mulai bulan
+                setelah approval; saldo berkurang saat run ditandai dibayar.
+              </p>
             </CardContent>
           </Card>
 

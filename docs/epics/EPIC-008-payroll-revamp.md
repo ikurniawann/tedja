@@ -156,11 +156,30 @@ skema `database/migrations/schemas/hris/000000000017{0,1,2,3}_*.sql` +
      (`mergeDateRanges`, perpanjangan PKWT bersambungan 15→16 = cakupan
      penuh, bukan proraté 50%); (c) HIGH — denominator hari kerja konsisten
      dengan faktor proraté di semua cabang fallback.
-4. **Fase D — Pinjaman (kasbon) mengalir ke payroll**
+4. **Fase D — Pinjaman (kasbon) mengalir ke payroll** ✅ (2026-07-17)
    - Kalkulator menarik cicilan `loans` aktif (status approved, periode ≥
      first_installment) → `payroll_details.loan_deduction`.
    - Saat run ditandai `paid`: kurangi `remaining_balance`, tambah
      `paid_amount`, tandai lunas otomatis (transaksional, idempoten).
+   - **Realisasi (2026-07-17):** lib murni `lib/payroll/loans.ts` (isLoanDue,
+     loanDeductionForPeriod, allocateLoanPayment, validateLoanLimits — 14
+     unit test). Transisi paid = satu transaksi dgn FOR UPDATE + guard
+     status completed (idempoten, anti dobel-potong); bila alokasi < potongan
+     slip (run lain dibayar duluan) transaksi DIBATALKAN dgn 409 + daftar
+     selisih — tidak ada potongan karyawan yang hilang diam-diam (temuan
+     HIGH review). **Limitasi pinjaman BARU (jawaban owner "limitasi udah
+     ada?" → belum):** konfigurabel di pengaturan payroll — cicilan maks %
+     gaji pokok (default 30%) + maks pinjaman aktif/karyawan (default 1),
+     divalidasi saat pengajuan DAN approval. Hardening: POST loans
+     sebelumnya TANPA AUTH → kini role guard (LOAN_MANAGE_ROLES termasuk
+     admin, selaras menu/page — temuan HIGH); cicilan pertama fix ke bulan
+     depan; `remaining_balance` = total kewajiban termasuk bunga; reject
+     menonaktifkan pinjaman; guard balapan approve (409). UI baru:
+     `/dashboard/hris/loans` (menu Penggajian → Pinjaman; migrasi
+     `20260717190000`) — pengajuan + approval + progres pelunasan; slip gaji
+     menampilkan baris Cicilan Pinjaman; pengaturan payroll bertambah kartu
+     Limitasi Pinjaman. Catatan LOW ke Fase F: race duplikat pengajuan
+     pending (tertahan di approval, dampak rendah).
 5. **Fase E — Slip gaji ESS + distribusi**
    - Halaman ESS `/dashboard/me/slip-gaji`: daftar slip per periode milik
      sendiri + detail slip (komponen penghasilan/potongan/netto/kehadiran);
@@ -279,3 +298,11 @@ dengan QA manusia memverifikasi 1 siklus payroll penuh di dev.
   bersih, build sukses. PELAJARAN: fungsi murni ber-test hijau bisa mati
   total di produksi bila asumsi tipe data driver salah — Fase F wajib
   tambah test integrasi yang lewat driver pg sungguhan.
+- 2026-07-17 — Fase D selesai. Modul pinjaman ternyata setengah jadi
+  (POST tanpa auth, tanpa limit, tanpa UI, saldo tak termasuk bunga,
+  cicilan pertama bulan berjalan) — semua dibereskan + cicilan mengalir ke
+  payroll dan saldo berkurang transaksional saat run paid. Review gate:
+  2 HIGH diperbaiki (potongan slip yang tak teralokasi kini membatalkan
+  transisi paid dgn 409 + daftar selisih; role admin diselaraskan
+  menu↔page↔API via LOAN_MANAGE_ROLES). Gates: 389 unit test hijau,
+  tsc/eslint bersih, build sukses, migrasi 20260717190000 diapply dev.

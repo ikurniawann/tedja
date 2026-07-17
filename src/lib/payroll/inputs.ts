@@ -18,6 +18,7 @@ import {
   type PayrollResult,
 } from "./calculator";
 import { loadPayrollConfig, type PayrollConfig } from "./config";
+import { loanDeductionForPeriod, type LoanDeductionRow } from "./loans";
 import {
   clampedLeaveDays,
   computeLateStats,
@@ -87,6 +88,7 @@ export async function loadEmployeePayrollInput(
     { data: overtimeRequests },
     { data: leaves },
     { data: contracts },
+    { data: loans },
   ] = await Promise.all([
     db
       .from("attendance")
@@ -127,6 +129,16 @@ export async function loadEmployeePayrollInput(
       .lte("start_date", endDate)
       .order("start_date", { ascending: false })
       .limit(5),
+    // Pinjaman approved yang masih berjalan → cicilan otomatis (Fase D)
+    db
+      .from("loans")
+      .select(
+        "id, monthly_installment, remaining_balance, first_installment_month, first_installment_year, status, is_active"
+      )
+      .eq("employee_id", employee.id)
+      .eq("status", "approved")
+      .eq("is_active", true)
+      .gt("remaining_balance", 0),
   ]);
 
   // PENTING: kolom `date` Postgres top-level kembali sebagai objek Date JS
@@ -275,6 +287,10 @@ export async function loadEmployeePayrollInput(
       0
     );
 
+  // Cicilan pinjaman jatuh tempo periode ini
+  const loanRows: LoanDeductionRow[] = loans ?? [];
+  const loanDeduction = loanDeductionForPeriod(loanRows, periodMonth, periodYear);
+
   return {
     employeeId: employee.id,
     periodMonth,
@@ -291,6 +307,7 @@ export async function loadEmployeePayrollInput(
     lateDays,
     lateMinutes,
     unpaidLeaveDays,
+    loanDeduction,
     joinDate: employee.join_date,
     employmentStatus: employee.employment_status,
     contractType: latestContract?.contract_type ?? null,

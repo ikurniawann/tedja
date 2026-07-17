@@ -32,6 +32,7 @@ interface PayslipData {
   pph21_deduction: number;
   unpaid_leave_deduction: number;
   late_deduction?: number;
+  loan_deduction?: number;
   total_deductions: number;
   net_salary: number;
 }
@@ -223,6 +224,14 @@ export function PayslipPDF({ data }: PayslipPDFProps) {
                 <td className="py-2">Potongan Keterlambatan</td>
                 <td className="text-right font-medium text-red-600">
                   {formatCurrency(data.late_deduction ?? 0)}
+                </td>
+              </tr>
+            )}
+            {(data.loan_deduction ?? 0) > 0 && (
+              <tr>
+                <td className="py-2">Cicilan Pinjaman</td>
+                <td className="text-right font-medium text-red-600">
+                  {formatCurrency(data.loan_deduction ?? 0)}
                 </td>
               </tr>
             )}

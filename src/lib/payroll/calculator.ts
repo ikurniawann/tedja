@@ -39,6 +39,9 @@ export interface PayrollInput {
   lateMinutes?: number;
   unpaidLeaveDays?: number;
 
+  /** Total cicilan pinjaman jatuh tempo periode ini (lib/payroll/loans) */
+  loanDeduction?: number;
+
   // Employee status
   joinDate: string;
   employmentStatus: string;
@@ -86,6 +89,7 @@ export interface PayrollResult {
   pph21Deduction: number;
   unpaidLeaveDeduction: number;
   lateDeduction: number;
+  loanDeduction: number;
   otherDeduction: number;
   totalDeductions: number;
 
@@ -332,6 +336,7 @@ export async function calculatePayroll(
     lateDays = 0,
     lateMinutes = 0,
     unpaidLeaveDays = 0,
+    loanDeduction = 0,
     joinDate,
     employmentStatus,
     ptkpStatus,
@@ -429,7 +434,8 @@ export async function calculatePayroll(
     taperaDeduction +
     pph21Deduction +
     unpaidLeaveDeduction +
-    lateDeduction;
+    lateDeduction +
+    loanDeduction;
 
   // Net salary (take home pay)
   const netSalary = grossSalary - totalDeductions;
@@ -465,6 +471,7 @@ export async function calculatePayroll(
     pph21Deduction: Math.round(pph21Deduction),
     unpaidLeaveDeduction: Math.round(unpaidLeaveDeduction),
     lateDeduction: Math.round(lateDeduction),
+    loanDeduction: Math.round(loanDeduction),
     otherDeduction: 0,
     totalDeductions: Math.round(totalDeductions),
 

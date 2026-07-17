@@ -67,6 +67,13 @@ export interface PayrollConfig {
     eligibleMonths: number;
     prorate: boolean;
   };
+  /** Limitasi pinjaman karyawan (Fase D). */
+  loan: {
+    /** Cicilan/bulan maksimal sebagai % gaji pokok */
+    maxInstallmentPercent: number;
+    /** Jumlah pinjaman aktif bersamaan per karyawan */
+    maxActivePerEmployee: number;
+  };
 }
 
 /** Fallback saat payroll_settings / payroll_tax_config kosong (tarif 2026). */
@@ -118,6 +125,10 @@ export const DEFAULT_PAYROLL_CONFIG: PayrollConfig = {
   thr: {
     eligibleMonths: 12,
     prorate: true,
+  },
+  loan: {
+    maxInstallmentPercent: 30,
+    maxActivePerEmployee: 1,
   },
 };
 
@@ -258,6 +269,16 @@ export async function loadPayrollConfig(
     thr: {
       eligibleMonths: toNumber(settings?.thr_eligible_months, d.thr.eligibleMonths),
       prorate: settings?.thr_prorate ?? d.thr.prorate,
+    },
+    loan: {
+      maxInstallmentPercent: toNumber(
+        settings?.loan_max_installment_percent,
+        d.loan.maxInstallmentPercent
+      ),
+      maxActivePerEmployee: toNumber(
+        settings?.loan_max_active_per_employee,
+        d.loan.maxActivePerEmployee
+      ),
     },
   };
 }

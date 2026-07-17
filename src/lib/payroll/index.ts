@@ -45,3 +45,12 @@ export {
 } from './config';
 
 export type { PayrollConfig, PPh21Bracket } from './config';
+
+export {
+  isLoanDue,
+  loanDeductionForPeriod,
+  allocateLoanPayment,
+  validateLoanLimits,
+} from './loans';
+
+export type { LoanDeductionRow, LoanAllocation } from './loans';

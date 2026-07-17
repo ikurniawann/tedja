@@ -78,6 +78,8 @@ const settingsSchema = z.object({
   overtime_hourly_divisor: z.coerce.number().positive().max(1000).optional(),
   late_deduction_mode: z.enum(["off", "per_minute", "flat"]).optional(),
   late_deduction_amount: rupiah.optional(),
+  loan_max_installment_percent: percent.optional(),
+  loan_max_active_per_employee: z.coerce.number().int().min(1).max(10).optional(),
 }).superRefine((data, ctx) =>
   refineIncreasingLimits(
     ["pph21_bracket_1", "pph21_bracket_2", "pph21_bracket_3", "pph21_bracket_4"],
