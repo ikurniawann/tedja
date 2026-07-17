@@ -1,4 +1,104 @@
 export interface AttendanceExportParams {
   employee_id?: string;
   status?: string;
+  start_date?: string;
+  end_date?: string;
+}
+
+// ── Roster harian (monitoring HRD) ──────────────────────────────────────
+export type RosterStatus =
+  | "hadir"
+  | "terlambat"
+  | "belum_absen"
+  | "absen"
+  | "cuti"
+  | "libur"
+  | "tanpa_jadwal";
+
+export interface RosterShift {
+  id: string;
+  name: string;
+  start_time: string; // "HH:MM:SS"
+  end_time: string;
+  late_tolerance_minutes: number;
+  is_overnight: boolean;
+}
+
+export interface RosterAttendance {
+  id: string;
+  clock_in: string | null;
+  clock_out: string | null;
+  work_hours: number | null;
+  is_late: boolean;
+  late_minutes: number;
+  clock_in_photo_url: string | null;
+  clock_out_photo_url: string | null;
+  shift_id: string | null;
+}
+
+export interface RosterEmployee {
+  employee_id: string;
+  full_name: string;
+  nip: string | null;
+  photo_url: string | null;
+  department_name: string | null;
+  job_title: string | null;
+  shift: RosterShift | null;
+  status: RosterStatus;
+  is_overdue: boolean;
+  attendance: RosterAttendance | null;
+  leave: { id: string; leave_type: string | null } | null;
+}
+
+export interface DailyRosterData {
+  date: string;
+  day_of_week: number;
+  is_today: boolean;
+  summary: Record<RosterStatus | "scheduled", number>;
+  shifts: {
+    id: string;
+    name: string;
+    start_time: string;
+    end_time: string;
+    is_overnight: boolean;
+    sort_order: number | null;
+  }[];
+  employees: RosterEmployee[];
+}
+
+// ── Rekap (list absensi) ────────────────────────────────────────────────
+export interface AttendanceListParams {
+  employee_id?: string;
+  start_date?: string;
+  end_date?: string;
+  is_late?: boolean;
+  page?: number;
+  limit?: number;
+}
+
+export interface AttendanceListRow {
+  id: string;
+  employee_id: string;
+  date: string;
+  clock_in: string | null;
+  clock_out: string | null;
+  work_hours: number | null;
+  status: string;
+  is_late: boolean;
+  late_minutes: number;
+  clock_in_photo_url: string | null;
+  clock_out_photo_url: string | null;
+  notes: string | null;
+  shift: { id: string; name: string } | null;
+  employee: {
+    id: string;
+    full_name: string;
+    nip: string | null;
+    photo_url: string | null;
+  } | null;
+}
+
+export interface AttendanceListResponse {
+  data: AttendanceListRow[];
+  pagination: { page: number; limit: number; total: number; totalPages: number };
 }

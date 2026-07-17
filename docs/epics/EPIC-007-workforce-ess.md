@@ -54,6 +54,25 @@ perhitungan keterlambatan.
    - Notifikasi WhatsApp keputusan approve/reject via link wa.me (dibuka
      otomatis oleh UI approver).
    - Sisa kecil: label/CSV jenis cuti marriage/bereavement belum lengkap.
+5. **Fase 5 — Monitoring harian + Rekap HRD** ✅ (2026-07-17)
+   - API `GET /api/hris/attendance/daily-roster?date=` (khusus HR): semua
+     karyawan aktif + shift terjadwal (resolve pola `employee_shifts`) LEFT
+     JOIN absensi tanggal itu + cuti approved; status turunan per karyawan
+     hadir/terlambat/belum_absen/absen(tgl lewat)/cuti/libur/tanpa_jadwal.
+     Lib murni `lib/hris/daily-roster.ts` (15 unit test): absensi menang atas
+     cuti; `is_overdue` = terjadwal belum absen melewati jam mulai+toleransi;
+     shift malam masuk roster tanggal MULAI shift (konsisten `date` clock-in).
+   - Halaman Absensi HRD dirombak jadi 2 tab. **Monitoring**: pemilih
+     tanggal, chip ringkasan (klik = filter), grup per shift + grup "tanpa
+     shift", baris karyawan (jam masuk/pulang WIB, menit telat, link selfie,
+     badge status, highlight lewat toleransi), filter shift/status/cari.
+     **Rekap**: tabel absensi berpagination (filter karyawan sungguhan via
+     Combobox, bulan, hanya-terlambat via param baru `is_late=true`),
+     statistik bulan terpilih, export CSV mengikuti filter, kalender
+     per-karyawan hanya saat satu karyawan dipilih (memperbaiki bug kalender
+     org-wide yang saling menimpa record per tanggal).
+   - Filter mati di halaman lama (dropdown karyawan statis, bulan tanpa
+     handler) dihapus/diganti yang berfungsi.
 
 ## Acceptance Criteria
 
@@ -64,6 +83,8 @@ perhitungan keterlambatan.
 - [x] Clock-in/out menolak permintaan tanpa foto selfie; foto hanya bisa diakses via route ber-auth.
 - [ ] QA manual: atur shift karyawan → login ESS → absen dgn kamera → cek terlambat/tepat waktu + foto di rekap HRD → ajukan cuti → approve sebagai HRD.
 - [x] Fase 4: kuota dikembalikan saat pembatalan cuti approved; link WA keputusan dibuat otomatis.
+- [x] Fase 5: HRD melihat roster hari ini per shift (siapa sudah/belum absen, cuti, libur) + rekap tabel berfilter.
+- [ ] QA manual Fase 5: buka Absensi → tab Monitoring (cek grup shift & status) → tab Rekap (filter karyawan/bulan/terlambat, export CSV, kalender per karyawan).
 
 ## Automation Log
 
@@ -73,3 +94,21 @@ perhitungan keterlambatan.
   bukan karyawan HRIS. Keputusan produk: pola ESS/MSS — absen & pengajuan di
   portal karyawan, halaman HRD murni rekap/approval; Fase 1+2 dikerjakan
   langsung, Fase 3+4 menunggu.
+- 2026-07-17: Fase 5 (monitoring harian) — keputusan desain: status
+  kehadiran DITURUNKAN (bukan dibaca dari kolom `status` yang selalu
+  'present'): row absensi menang atas cuti; "absen/mangkir" hanya utk
+  tanggal lewat, hari berjalan memakai "belum_absen" + flag `is_overdue`;
+  filter rekap keterlambatan pakai param baru `is_late=true` di
+  GET /api/hris/attendance. Gate: 312 test lulus, tsc/eslint bersih di file
+  terdampak, build OK, deploy dev PM2 + smoke 200/401.
+- 2026-07-17: Laporan user — kalender ESS (/dashboard/me/absensi) tidak
+  menampilkan jadwal shift. Fix: (1) endpoint baru
+  `GET /api/hris/attendance/schedule?employee_id=me|<uuid>` (karyawan boleh
+  jadwal sendiri, HR semua); (2) AttendanceCalendar merender jadwal per hari
+  (nama shift + jam, "Libur" utk hari libur) via
+  `resolveScheduleRowForDate` baru di lib/hris/shifts.ts (membedakan libur
+  vs tanpa jadwal); (3) BUG LATEN ditemukan: server TZ WIB membuat kolom
+  `date` ter-serialize "T17:00Z hari sebelumnya" sehingga lookup kalender
+  per tanggal TIDAK PERNAH match — tanda absensi tak pernah tampil;
+  dinormalisasi via toLocaleDateString en-CA zona Asia/Jakarta + kunci
+  tanggal lokal tanpa toISOString. 314 test lulus, build + deploy dev OK.

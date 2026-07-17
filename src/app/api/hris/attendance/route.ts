@@ -154,6 +154,7 @@ export async function GET(request: NextRequest) {
     const startDate = searchParams.get('start_date');
     const endDate = searchParams.get('end_date');
     const status = searchParams.get('status');
+    const isLate = searchParams.get('is_late');
     const page = parseInt(searchParams.get('page') || '1');
     const limit = parseInt(searchParams.get('limit') || '20');
 
@@ -207,6 +208,12 @@ export async function GET(request: NextRequest) {
     
     if (status) {
       query = query.eq('status', status);
+    }
+
+    // filter khusus keterlambatan — kolom status selalu 'present', jadi
+    // rekap "Terlambat" harus lewat is_late
+    if (isLate === 'true') {
+      query = query.eq('is_late', true);
     }
 
     // Pagination
