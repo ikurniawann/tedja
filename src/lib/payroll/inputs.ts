@@ -128,7 +128,9 @@ export async function loadEmployeePayrollInput(
       .neq("status", "draft")
       .lte("start_date", endDate)
       .order("start_date", { ascending: false })
-      .limit(5),
+      // longgar (bukan 5) agar rekalkulasi periode LAMA tetap menemukan
+      // kontrak yang berlaku saat itu meski sudah banyak perpanjangan
+      .limit(50),
     // Pinjaman approved yang masih berjalan → cicilan otomatis (Fase D)
     db
       .from("loans")

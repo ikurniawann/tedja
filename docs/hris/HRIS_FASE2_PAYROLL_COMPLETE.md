@@ -1,5 +1,12 @@
 # HRIS FASE 2 - PAYROLL & BENEFITS ✅ COMPLETE
 
+> ⚠️ **SUPERSEDED (2026-07-17) oleh
+> [EPIC-008 Payroll Revamp](../epics/EPIC-008-payroll-revamp.md).**
+> Implementasi payroll dirombak total: konfigurasi tarif dari DB, integrasi
+> shift/absensi v2, kontrak PKWT/PKWTT, pengajuan lembur dua arah, cicilan
+> pinjaman + limitasi, slip gaji ESS, FK integritas. Dokumen ini dipertahankan
+> sebagai catatan sejarah — jangan dijadikan acuan perilaku sistem saat ini.
+
 **Date Completed:** 2026-05-05  
 **Status:** Ready for Testing  
 **Compliance:** Indonesia 2026 (PPh 21 ETR, BPJS, THR, Tapera)

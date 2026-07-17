@@ -15,19 +15,14 @@ import {
   isLoanDue,
   type LoanDeductionRow,
 } from '@/lib/payroll/loans';
+import {
+  canDeleteRun,
+  canTransitionRunStatus,
+} from '@/lib/payroll/run-status';
 
 interface RouteParams {
   params: Promise<{ id: string }>;
 }
-
-// Transisi status yang sah (maju saja, mengikuti tombol UI):
-// draft → processing → completed → paid
-const ALLOWED_TRANSITIONS: Record<string, string[]> = {
-  draft: ['processing'],
-  processing: ['completed'],
-  completed: ['paid'],
-  paid: [],
-};
 
 // ============================================================
 // GET /api/hris/payroll/[id]
@@ -147,8 +142,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
     // Set status timestamps based on status change
     if (status && status !== existing.status) {
-      const allowed = ALLOWED_TRANSITIONS[existing.status] ?? [];
-      if (!allowed.includes(status)) {
+      if (!canTransitionRunStatus(existing.status, status)) {
         return NextResponse.json(
           {
             error: `Transisi status '${existing.status}' → '${status}' tidak diizinkan`,
@@ -385,20 +379,15 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    if (existing.status === 'paid') {
+    if (!canDeleteRun(existing.status)) {
       return NextResponse.json(
         { error: 'Payroll yang sudah dibayar tidak bisa dihapus' },
         { status: 400 }
       );
     }
 
-    // First, delete all payroll details (to avoid FK constraint issues)
-    await db
-      .from('payroll_details')
-      .delete()
-      .eq('payroll_run_id', id);
-
-    // Then delete the payroll run
+    // FK payroll_details_run_fk ON DELETE CASCADE (migrasi Fase F) —
+    // detail ikut terhapus otomatis, tanpa delete manual dua langkah.
     const { error } = await db
       .from('payroll_runs')
       .delete()

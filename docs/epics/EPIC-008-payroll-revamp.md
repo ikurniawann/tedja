@@ -1,6 +1,6 @@
 # EPIC-008: Payroll & Gaji — Integrasi Flow HRIS Terbaru
 
-status: on-progress
+status: ready-for-qa
 environment: dev
 retries: 0
 
@@ -201,7 +201,7 @@ skema `database/migrations/schemas/hris/000000000017{0,1,2,3}_*.sql` +
      potongan telat & cicilan pinjaman). Menu ESS → Slip Gaji (migrasi
      `20260717210000`); bonus: menu Pinjaman dipindah ke grup Kepegawaian
      (permintaan owner, migrasi `20260717200000`).
-6. **Fase F — Integritas data + QA**
+6. **Fase F — Integritas data + QA** ✅ (2026-07-17)
    - [Dari review Fase C] Test integrasi lewat driver pg sungguhan (tipe
      Date kolom `date`) + test authz route lembur; pertimbangkan hapus
      `.limit(5)` di query kontrak inputs.ts bila rekalkulasi payroll periode
@@ -212,24 +212,36 @@ skema `database/migrations/schemas/hris/000000000017{0,1,2,3}_*.sql` +
      tengah bulan, lembur, potongan telat, cicilan) + test guard status flow.
    - Update `docs/hris/HRIS_FASE2_PAYROLL_COMPLETE.md` → tandai superseded
      oleh epic ini.
+   - **Realisasi (2026-07-17):** migrasi `20260717220000` — bersihkan baris
+     yatim, FK run (CASCADE) + employee (RESTRICT: catatan finansial tak
+     boleh ikut terhapus) + index; DELETE run kini mengandalkan cascade.
+     Test integrasi `pg-types.integration.test.ts` lewat driver pg sungguhan
+     (kunci asumsi: date = objek Date lokal, numeric = string; auto-skip
+     tanpa DATABASE_URL). Aturan authz lembur diekstrak ke
+     `lib/hris/overtime-rules.canDecideOvertime` (murni, 12 test — termasuk
+     regression self-approval HR) dan transisi status run ke
+     `lib/payroll/run-status` (9 test); route memakai fungsi teruji ini.
+     `.limit(5)` kontrak → 50 (rekalkulasi back-dated aman). Race duplikat
+     pengajuan pending loans = ACCEPTED RISK (tertahan di approval, aksi
+     internal HR). Doc HRIS Fase 2 lama ditandai superseded.
 
 ## Acceptance Criteria
 
-- [ ] Semua endpoint payroll menolak akses tanpa role yang berhak (403).
-- [ ] Mengubah rate BPJS/PPh21 di pengaturan langsung mengubah hasil
+- [x] Semua endpoint payroll menolak akses tanpa role yang berhak (403).
+- [x] Mengubah rate BPJS/PPh21 di pengaturan langsung mengubah hasil
       kalkulasi tanpa deploy ulang; angka PPh21 cocok dengan acuan resmi.
-- [ ] Hari kerja & jam kerja dihitung dari jadwal shift karyawan; karyawan
+- [x] Hari kerja & jam kerja dihitung dari jadwal shift karyawan; karyawan
       tanpa jadwal ditangani eksplisit (bukan diam-diam 20 hari).
-- [ ] Lembur tervalidasi dan menit keterlambatan tercermin di slip sesuai
+- [x] Lembur tervalidasi dan menit keterlambatan tercermin di slip sesuai
       aturan yang dikonfigurasi.
-- [ ] THR & proraté mengikuti kontrak aktif (PKWT/PKWTT + tanggal).
-- [ ] Cicilan pinjaman terpotong otomatis dan saldo pinjaman berkurang saat
+- [x] THR & proraté mengikuti kontrak aktif (PKWT/PKWTT + tanggal).
+- [x] Cicilan pinjaman terpotong otomatis dan saldo pinjaman berkurang saat
       run paid (idempoten — tidak dobel potong).
-- [ ] Karyawan melihat slip gaji miliknya sendiri (hanya run paid) di ESS;
+- [x] Karyawan melihat slip gaji miliknya sendiri (hanya run paid) di ESS;
       tidak bisa melihat slip orang lain.
-- [ ] Status flow run tidak bisa dilompati/dirusak (calculate non-draft
+- [x] Status flow run tidak bisa dilompati/dirusak (calculate non-draft
       ditolak, run paid tidak bisa dihapus).
-- [ ] Unit test kalkulator hijau; lint + build hijau.
+- [x] Unit test kalkulator hijau; lint + build hijau.
 
 ## Test Plan
 
@@ -330,3 +342,17 @@ dengan QA manusia memverifikasi 1 siklus payroll penuh di dev.
   run belum final → employee_id=me kini tampilan personal utk semua role).
   Gates: 389 unit test hijau, tsc/eslint bersih, build sukses, migrasi
   20260717200000+210000 diapply dev.
+- 2026-07-17 — Fase F selesai → EPIC ready-for-qa. FK integritas
+  payroll_details (temuan menarik: DB dev TERNYATA sudah punya FK auto-named
+  yang tak tercermin di file skema introspeksi — migrasi dibuat cek
+  per-kolom, duplikat di dev dibersihkan; file skema stale, jalankan
+  `npm run db:pull` saat senggang). Aturan authz lembur & transisi status
+  run diekstrak jadi fungsi murni teruji (21 test baru); test integrasi
+  driver pg sungguhan mengunci asumsi tipe (date=Date lokal,
+  numeric=string); limit kontrak 5→50; DELETE run pakai FK cascade.
+  Review: APPROVE, 2 MEDIUM langsung dibereskan (index duplikat; catatan
+  deploy). ⚠️ DEPLOY NOTE: migrasi 20260717220000 WAJIB diapply
+  sebelum/bersamaan deploy kode Fase F di environment mana pun (DELETE run
+  kini bergantung FK cascade). Gates final: 408 unit test hijau, build
+  sukses. Sisa utk QA manusia: 1 siklus payroll penuh di dev
+  (create→calculate→approve→paid→slip ESS→notif WA).

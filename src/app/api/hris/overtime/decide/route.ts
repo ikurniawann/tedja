@@ -11,6 +11,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createServerPgClient } from "@/lib/pg/create-client";
 import { getWorkforceActor } from "@/lib/hris/workforce-auth";
+import { canDecideOvertime } from "@/lib/hris/overtime-rules";
 
 const decideSchema = z.object({
   overtime_id: z.string().uuid(),
@@ -49,48 +50,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const isTargetEmployee =
-      actor.employeeId !== null && overtime.employee_id === actor.employeeId;
-    const isRequester =
-      actor.employeeId !== null && overtime.requested_by === actor.employeeId;
-    const isDirectManager =
-      actor.employeeId !== null &&
-      overtime.employee?.reporting_to === actor.employeeId;
-
-    if (validated.action === 'cancel') {
-      // Pembatalan hanya oleh pembuat pengajuan (atau HR utk penugasan company)
-      const canCancel =
-        isRequester || (overtime.source === 'company' && actor.isHr);
-      if (!canCancel) {
-        return NextResponse.json(
-          { error: 'Hanya pembuat pengajuan yang bisa membatalkan' },
-          { status: 403 }
-        );
-      }
-    } else if (overtime.source === 'company') {
-      // Penugasan perusahaan → hanya karyawan ybs yang mengonfirmasi
-      if (!isTargetEmployee) {
-        return NextResponse.json(
-          { error: 'Hanya karyawan yang ditugaskan yang bisa mengonfirmasi penugasan ini' },
-          { status: 403 }
-        );
-      }
-    } else {
-      // Pengajuan karyawan → HRD atau atasan langsung; pengaju TIDAK boleh
-      // memutuskan pengajuannya sendiri sekalipun ber-role HR (jam lembur
-      // masuk gaji — wajib ada orang kedua).
-      if (isTargetEmployee) {
-        return NextResponse.json(
-          { error: 'Tidak bisa memutuskan pengajuan lembur sendiri' },
-          { status: 403 }
-        );
-      }
-      if (!actor.isHr && !isDirectManager) {
-        return NextResponse.json(
-          { error: 'Hanya HRD/atasan langsung yang bisa memproses pengajuan ini' },
-          { status: 403 }
-        );
-      }
+    // Aturan otorisasi murni & teruji: lib/hris/overtime-rules.ts
+    const decision = canDecideOvertime(
+      { employeeId: actor.employeeId, isHr: actor.isHr },
+      {
+        employee_id: overtime.employee_id,
+        requested_by: overtime.requested_by,
+        source: overtime.source,
+        reporting_to: overtime.employee?.reporting_to ?? null,
+      },
+      validated.action
+    );
+    if (!decision.allowed) {
+      return NextResponse.json({ error: decision.reason }, { status: 403 });
     }
 
     if (validated.action === 'reject' && !validated.rejection_reason?.trim()) {

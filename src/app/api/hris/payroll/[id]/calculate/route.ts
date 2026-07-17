@@ -10,6 +10,7 @@ import { loadEmployeePayrollInput } from '@/lib/payroll/inputs';
 import { loadPayrollConfig } from '@/lib/payroll/config';
 import { ApiError, requireApiRole } from '@/lib/api/auth';
 import { PAYROLL_MANAGE_ROLES } from '@/lib/payroll/roles';
+import { canCalculateRun } from '@/lib/payroll/run-status';
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -39,7 +40,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    if (payrollRun.status !== 'draft') {
+    if (!canCalculateRun(payrollRun.status)) {
       return NextResponse.json(
         { error: 'Hanya payroll draft yang bisa dihitung' },
         { status: 400 }
