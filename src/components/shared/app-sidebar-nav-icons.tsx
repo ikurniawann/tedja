@@ -5,6 +5,7 @@ import type { NavIconName } from "@/lib/iam/types";
 import {
   ArrowDownOnSquareIcon,
   ArrowRightStartOnRectangleIcon,
+  BanknotesIcon,
   BookOpenIcon,
   BriefcaseIcon,
   BuildingOffice2Icon,
@@ -23,6 +24,7 @@ import {
   DocumentTextIcon,
   HomeIcon,
   IdentificationIcon,
+  MegaphoneIcon,
   PaperAirplaneIcon,
   PlusIcon,
   ShoppingCartIcon,
@@ -32,6 +34,7 @@ import {
 } from "@heroicons/react/24/outline";
 import {
   ArrowDownOnSquareIcon as ArrowDownOnSquareIconSolid,
+  BanknotesIcon as BanknotesIconSolid,
   BookOpenIcon as BookOpenIconSolid,
   BriefcaseIcon as BriefcaseIconSolid,
   BuildingOffice2Icon as BuildingOffice2IconSolid,
@@ -50,6 +53,7 @@ import {
   DocumentTextIcon as DocumentTextIconSolid,
   HomeIcon as HomeIconSolid,
   IdentificationIcon as IdentificationIconSolid,
+  MegaphoneIcon as MegaphoneIconSolid,
   PaperAirplaneIcon as PaperAirplaneIconSolid,
   PlusIcon as PlusIconSolid,
   ShoppingCartIcon as ShoppingCartIconSolid,
@@ -103,6 +107,8 @@ const iconMap: Record<NavIconName, IconSet> = {
     outline: ClipboardDocumentCheckIcon,
     solid: ClipboardDocumentCheckIconSolid,
   },
+  megaphone: { outline: MegaphoneIcon, solid: MegaphoneIconSolid },
+  banknotes: { outline: BanknotesIcon, solid: BanknotesIconSolid },
 };
 
 export function AppSidebarNavIcon({

@@ -33,7 +33,9 @@ export type NavIconName =
   | "document-magnifying-glass"
   | "circle-stack"
   | "document-text"
-  | "clipboard-document-check";
+  | "clipboard-document-check"
+  | "megaphone"
+  | "banknotes";
 
 export interface NavItem {
   href: string;

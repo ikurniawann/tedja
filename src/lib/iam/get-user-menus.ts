@@ -40,6 +40,8 @@ const VALID_ICONS = new Set<string>([
   "circle-stack",
   "document-text",
   "clipboard-document-check",
+  "megaphone",
+  "banknotes",
 ]);
 
 function toNavIcon(icon: string | null | undefined): NavIconName {
