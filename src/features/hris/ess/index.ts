@@ -4,3 +4,4 @@ export { EssLemburPage } from "./components/lembur-page";
 export { EssSlipGajiPage } from "./components/slip-gaji-page";
 export { EssPinjamanPage } from "./components/pinjaman-page";
 export { EssPengumumanPage } from "./components/pengumuman-page";
+export { EssBerandaPage } from "./components/beranda-page";

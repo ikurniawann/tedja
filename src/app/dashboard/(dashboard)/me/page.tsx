@@ -1,6 +1,8 @@
-import { redirect } from "next/navigation";
+import { requireUser } from "@/lib/auth/require-user";
+import { EssBerandaPage } from "@/features/hris/ess";
 
-// ESS dipecah menjadi /dashboard/me/absensi dan /dashboard/me/cuti.
-export default function MePage() {
-  redirect("/dashboard/me/absensi");
+// Beranda Karyawan — ringkasan "hari saya" (menggantikan redirect ke absensi).
+export default async function MePage() {
+  await requireUser();
+  return <EssBerandaPage />;
 }

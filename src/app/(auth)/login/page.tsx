@@ -87,15 +87,15 @@ export default function LoginPage() {
         .eq("id", authData.user.id)
         .single();
 
-      // karyawan biasa langsung ke ESS — desktop /arkiv-os & dashboard HRD
-      // bukan area kerjanya; redirect yang diminta dihormati hanya bila
-      // masih di dalam area /dashboard/me
+      // Hanya super_admin yang mendarat di desktop Arkiv OS. Semua role lain
+      // langsung ke Area Karyawan (/dashboard/me = beranda); redirect yang
+      // diminta dihormati hanya bila masih di dalam area /dashboard/me.
       const role = (profile as { role?: string } | null)?.role;
       let target = requestedRedirect || "/arkiv-os";
-      if (role === "employee") {
+      if (role !== "super_admin") {
         target = requestedRedirect?.startsWith("/dashboard/me")
           ? requestedRedirect
-          : "/dashboard/me/absensi";
+          : "/dashboard/me";
       }
       setTransitioning(true);
       window.setTimeout(() => router.replace(target), 450);

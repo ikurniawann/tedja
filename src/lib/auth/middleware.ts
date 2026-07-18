@@ -57,5 +57,9 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  return NextResponse.next({ request });
+  // Teruskan pathname ke server component (guard role ESS-only membacanya via
+  // `headers()`) — middleware Edge tak punya role, jadi enforcement di layout.
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set("x-pathname", pathname);
+  return NextResponse.next({ request: { headers: requestHeaders } });
 }

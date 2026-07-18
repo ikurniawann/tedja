@@ -237,6 +237,24 @@ export const getUserMenus = cache(async (userId: string, role: UserRole): Promis
   }
 });
 
+/**
+ * Saring pohon nav → hanya item Area Karyawan (ESS, di bawah /dashboard/me).
+ * Group (mis. "Area Karyawan") dipertahankan bila punya anak ESS yang lolos.
+ * Dipakai untuk role ESS-only agar sidebar bersih dari modul bisnis.
+ */
+export function filterEssNav(items: NavItem[]): NavItem[] {
+  const keep = (item: NavItem): NavItem | null => {
+    const children =
+      item.children?.map(keep).filter((c): c is NavItem => c !== null) ?? [];
+    const selfEss = item.href.startsWith("/dashboard/me");
+    if (selfEss || children.length > 0) {
+      return { ...item, ...(children.length > 0 ? { children } : {}) };
+    }
+    return null;
+  };
+  return items.map(keep).filter((i): i is NavItem => i !== null);
+}
+
 /** Cari NavItem berdasarkan href (rekursif). */
 export function findNavItem(items: NavItem[], href: string): NavItem | undefined {
   for (const item of items) {
