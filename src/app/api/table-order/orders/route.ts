@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createPgClient } from "@/lib/pg/create-client";
 import { awardCrmXpForPosOrder, syncPosCustomerOrderStats } from "@/lib/crm/loyalty-engine";
+import { getCrmDefaultVenue } from "@/lib/crm/server";
 import { checkProductPrivileges } from "@/lib/crm/product-privilege";
 
 const orderItemSchema = z.object({
@@ -84,6 +85,7 @@ export async function POST(request: NextRequest) {
     const tax = Math.round(subtotal * 0.1);
     const total = subtotal + tax;
     const selfPaid = payload.payment_method === "ark_coin";
+    const venue = await getCrmDefaultVenue(db);
 
     if (payload.payment_method === "ark_coin") {
       if (!payload.customer_id) {
@@ -102,6 +104,8 @@ export async function POST(request: NextRequest) {
         p_type: "payment",
         p_order_id: null,
         p_notes: `Self-service order table ${payload.table_code}`,
+        p_company_id: venue.companyId,
+        p_branch_id: venue.branchId,
       });
 
       if (balanceError) {
@@ -142,6 +146,8 @@ export async function POST(request: NextRequest) {
         notes: payload.notes || `Self-service order table ${payload.table_code}`,
         special_requests: `Self-service table ${payload.table_code}; payment=${payload.payment_method}`,
         ordered_at: new Date().toISOString(),
+        company_id: venue.companyId,
+        branch_id: venue.branchId,
       })
       .select()
       .single();

@@ -28,6 +28,9 @@ export type CrmDashboardData = {
   stats: {
     totalCustomers: number;
     totalMembers: number;
+    cardMembers: number;
+    registeredMembers: number;
+    arkOutstanding: number;
     tierCount: number;
     xpRuleCount: number;
     rewardCount: number;

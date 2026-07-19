@@ -3,8 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Award,
+  BarChart3,
   CheckCircle2,
   Coins,
+  CreditCard,
   Gift,
   Package,
   RefreshCw,
@@ -43,7 +45,7 @@ function formatCurrency(value: number) {
 }
 
 function tierLabel(tier: string) {
-  return tier ? tier.charAt(0).toUpperCase() + tier.slice(1) : "Bronze";
+  return tier ? tier.charAt(0).toUpperCase() + tier.slice(1) : "Regular";
 }
 
 function formatDateTime(value: string) {
@@ -171,12 +173,12 @@ export function CrmDashboardPage() {
   const stats = dashboardData?.stats;
   const statCards = useMemo(
     () => [
-      { label: "Customers", value: stats?.totalCustomers ?? 0, icon: UsersRound, tone: "text-sky-700 bg-sky-50" },
-      { label: "Members", value: stats?.totalMembers ?? 0, icon: UserRound, tone: "text-emerald-700 bg-emerald-50" },
-      { label: "XP Rules", value: stats?.xpRuleCount ?? 0, icon: Sparkles, tone: "text-violet-700 bg-violet-50" },
-      { label: "Rewards", value: stats?.rewardCount ?? 0, icon: Gift, tone: "text-rose-700 bg-rose-50" },
-      { label: "Avatars", value: stats?.avatarCount ?? 0, icon: Award, tone: "text-amber-700 bg-amber-50" },
-      { label: "Partner Events", value: stats?.externalEventCount ?? 0, icon: Trophy, tone: "text-cyan-700 bg-cyan-50" },
+      { label: "Customers", value: formatNumber(stats?.totalCustomers ?? 0), icon: UsersRound, tone: "text-sky-700 bg-sky-50" },
+      { label: "Member Kartu", value: formatNumber(stats?.cardMembers ?? 0), icon: CreditCard, tone: "text-emerald-700 bg-emerald-50" },
+      { label: "Member Terdaftar", value: formatNumber(stats?.registeredMembers ?? 0), icon: UserRound, tone: "text-cyan-700 bg-cyan-50" },
+      { label: "Saldo ARK Beredar", value: formatCurrency(stats?.arkOutstanding ?? 0), icon: Coins, tone: "text-amber-700 bg-amber-50" },
+      { label: "XP Rules", value: formatNumber(stats?.xpRuleCount ?? 0), icon: Sparkles, tone: "text-violet-700 bg-violet-50" },
+      { label: "Tiers", value: formatNumber(stats?.tierCount ?? 0), icon: Trophy, tone: "text-rose-700 bg-rose-50" },
     ],
     [stats]
   );
@@ -196,6 +198,13 @@ export function CrmDashboardPage() {
             >
               <UsersRound className="size-4" />
               Members
+            </Link>
+            <Link
+              href="/dashboard/crm/reports"
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-100"
+            >
+              <BarChart3 className="size-4" />
+              Laporan
             </Link>
             <Link
               href="/dashboard/crm/rewards"
@@ -250,7 +259,7 @@ export function CrmDashboardPage() {
                 <div className={`mb-3 flex size-10 items-center justify-center rounded-md ${item.tone}`}>
                   <Icon className="size-5" />
                 </div>
-                <div className="text-2xl font-semibold text-slate-950">{formatNumber(item.value)}</div>
+                <div className="truncate text-2xl font-semibold text-slate-950" title={item.value}>{item.value}</div>
                 <div className="mt-1 text-sm text-slate-500">{item.label}</div>
               </div>
             );

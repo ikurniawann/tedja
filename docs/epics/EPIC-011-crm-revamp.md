@@ -1,6 +1,6 @@
 # EPIC-011: CRM Revamp — Member Global, XP Lifetime, ARK Coin & Portal Member
 
-status: on-progress
+status: ready-for-qa
 environment: dev
 retries: 0
 
@@ -280,3 +280,51 @@ Hasil diskusi desain — SEMUA sudah diputuskan owner:
     selalu "terisi" utk member baru (kelengkapan efektif 7 field); dinilai
     aman (default opt-out). Upload foto profil = URL dulu; file upload
     menyusul. Sisa: Fase E laporan & rekonsiliasi antar-venue.
+- 2026-07-19 — **Fase E SELESAI: Laporan & Rekonsiliasi — SEMUA FASE A–E
+  TUNTAS.** Migrasi `20260720000000_crm_revamp_fase_e.sql` (applied+tracked):
+  - **RPC `update_ark_coin_balance` v2 stempel venue**: fix gap acceptance —
+    baris wallet `payment` sebelumnya TANPA venue. Venue = eksplisit param >
+    derive dari `p_order_id` (pos_orders) > default venue `crm_settings`.
+    GOTCHA Fase C diulang dengan benar: signature lama 5-arg di-DROP dulu
+    (anti-overload). Backfill venue baris wallet lama dari order terkait /
+    default venue + index `(company_id, branch_id, created_at)` dan
+    `(customer_id, payment_status, created_at)`. Diverifikasi psql (tx
+    rollback): debit payment tanpa venue eksplisit → baris wallet tetap
+    ber-venue (fallback settings).
+  - **Gap ikutan difix**: route table-order (QR publik) tidak menstempel
+    venue di pos_orders + debit wallet-nya — kini keduanya via
+    `getCrmDefaultVenue`.
+  - **API `GET /api/crm/reports?from&to`** (guard role super_admin/admin/
+    direksi = `requireCrmReportRole`): top spender BASIS ORDER paid (semua
+    metode, topup tak dihitung — keputusan #11, exclude status
+    cancelled/voided), frequent visitor (hari kunjungan distinct per zona
+    Asia/Jakarta + lifetime visit_count), rekonsiliasi per venue dari
+    wallet (topup/bonus/spend/net = topup+bonus-spend), saldo ARK beredar
+    (liabilitas platform), breakdown member kartu vs terdaftar. Helper pure
+    `src/lib/crm/reports.ts` + 12 unit test (periode default bulan berjalan,
+    to-eksklusif +1 hari, max 366 hari).
+  - BUG tertangkap saat verifikasi SQL: `COALESCE(o.status,'')` meledak
+    (enum `pos_order_status` tak menerima '') — difix jadi
+    `o.status IS NULL OR o.status NOT IN ('cancelled','voided')`
+    (nilai enum riil: voided, BUKAN void; refunded tidak ada).
+  - **UI `/dashboard/crm/reports`** (`src/features/crm/reports/`): filter
+    periode (preset Bulan ini / 30 hari), 6 kartu ringkasan, tabel
+    rekonsiliasi antar-venue + total, leaderboard Top Spender & Frequent
+    Visitor. Menu sidebar `crm.reports`/`crm.reports.overview` (grant
+    super_admin+admin+direksi, selaras menu CRM lain).
+  - **Dashboard CRM disesuaikan skema baru**: stat cards kini Customers /
+    Member Kartu / Member Terdaftar / Saldo ARK Beredar / XP Rules / Tiers
+    (Rewards & Partner Events dilepas dari kartu), API dashboard tambah
+    `cardMembers`/`registeredMembers`/`arkOutstanding`, tierLabel fallback
+    "Regular" (bukan Bronze), tombol Laporan di header.
+  - Gate: 513 unit test hijau (71 file), `next build` sukses (route
+    `/api/crm/reports` + `/dashboard/crm/reports` ter-generate), tsc 0 error
+    baru (459 = noise lama; 1 error `server.ts:153` pre-existing dari Fase
+    C). Deploy dev: build + `pm2 restart arkiv-pos-saas`; smoke: API 401
+    tanpa sesi, halaman terlayani.
+  - Status epic → **ready-for-qa**. UAT owner tersisa: (1) skenario Fase B
+    (lihat entri deploy Fase B); (2) buka `/dashboard/crm/reports` sebagai
+    super_admin/admin/direksi — filter periode, angka rekonsiliasi cocok
+    dengan topup/belanja uji; (3) role lain tidak melihat menu Laporan; (4)
+    infra di luar repo: ingress Cloudflare Tunnel
+    `member.suluindwounderland.com` → :3459 masih perlu ditambahkan.
