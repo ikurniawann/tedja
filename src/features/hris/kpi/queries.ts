@@ -2,7 +2,12 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { kpiQueryKeys } from "./query-keys";
-import { fetchKpiHistory, fetchKpiScorecards, fetchKpiTargets } from "./api";
+import {
+  fetchKpiHistory,
+  fetchKpiScorecards,
+  fetchKpiTargets,
+  fetchKpiTeam,
+} from "./api";
 
 export const useKpiScorecards = (params: {
   period_year: number;
@@ -18,6 +23,15 @@ export const useKpiHistory = (employeeId: string, n = 12) =>
   useQuery({
     queryKey: kpiQueryKeys.history(employeeId, n),
     queryFn: () => fetchKpiHistory({ employee_id: employeeId, history: n }),
+  });
+
+export const useKpiTeam = (params: {
+  period_year: number;
+  period_month: number;
+}) =>
+  useQuery({
+    queryKey: kpiQueryKeys.team(params),
+    queryFn: () => fetchKpiTeam(params),
   });
 
 export const useKpiTargets = (enabled = true) =>

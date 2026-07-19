@@ -124,11 +124,18 @@ export function KpiScorecardPage() {
   async function toggleStatus(scorecard: KpiScorecardRow) {
     const action = scorecard.status === "draft" ? "finalize" : "reopen";
     try {
-      await statusMutation.mutateAsync({ action, scorecard_id: scorecard.id });
+      const res = await statusMutation.mutateAsync({
+        action,
+        scorecard_id: scorecard.id,
+      });
       showToast(
         action === "finalize" ? "Scorecard difinalkan" : "Scorecard dibuka kembali",
         "success"
       );
+      // Fase E: buka WhatsApp pemberitahuan skor final (bila ada no. HP)
+      if (action === "finalize" && res.wa_link) {
+        window.open(res.wa_link, "_blank", "noopener,noreferrer");
+      }
     } catch (error) {
       showToast(
         error instanceof Error ? error.message : "Gagal mengubah status",

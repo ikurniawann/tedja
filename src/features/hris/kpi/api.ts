@@ -50,7 +50,20 @@ export const saveKpiRubric = (payload: SaveRubricPayload) =>
 export const updateScorecardStatus = (payload: {
   action: "finalize" | "reopen";
   scorecard_id: string;
-}) => mutateKpi("PATCH", "/scorecards", payload);
+}) =>
+  mutateKpi("PATCH", "/scorecards", payload) as Promise<{
+    data: unknown;
+    wa_link?: string | null;
+    message?: string;
+  }>;
+
+export const fetchKpiTeam = (params: {
+  period_year: number;
+  period_month: number;
+}) =>
+  apiGet<KpiScorecardsResult>(
+    buildListUrl(`${BASE}/scorecards`, { ...params, team: "1" })
+  );
 
 export const fetchKpiTargets = () =>
   apiGet<{ data: import("./types").KpiTargetRowUI[] }>(`${BASE}/targets`).then(

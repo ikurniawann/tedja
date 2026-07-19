@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ApiError, requireApiRole } from "@/lib/api/auth";
+import { getWorkforceActor } from "@/lib/hris/workforce-auth";
 import { getPool } from "@/lib/db";
 import { computeAttainment } from "@/lib/kpi/attainment";
 import { recomposeScorecard } from "@/lib/kpi/snapshot";
@@ -12,13 +12,16 @@ const NOTES_MAX = 2000;
 /**
  * POST /api/hris/kpi/rubric — input penilaian atasan (rubrik 1-5) utk satu
  * karyawan-periode; tersimpan sebagai kpi_snapshot manual lalu scorecard
- * disusun ulang. Scorecard final ditolak (409). EPIC-010 Fase C.
- * Catatan: sementara dibatasi KPI_MANAGE_ROLES; penilaian oleh atasan
- * langsung (reporting_to) menyusul bersama integrasi Performance Review.
+ * disusun ulang. Scorecard final ditolak (409).
+ * Akses (Fase E): KPI_MANAGE_ROLES ATAU atasan langsung karyawan tsb
+ * (employees.reporting_to = employee milik penilai).
  */
 export async function POST(request: NextRequest) {
   try {
-    const actor = await requireApiRole([...KPI_MANAGE_ROLES]);
+    const actor = await getWorkforceActor();
+    if (!actor) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
     const body = await request.json().catch(() => ({}));
 
     const employeeId = body.employee_id;
@@ -39,6 +42,25 @@ export async function POST(request: NextRequest) {
     }
 
     const pool = getPool();
+
+    // Otorisasi: manage roles bebas; selain itu wajib atasan langsung.
+    const isManageRole = (KPI_MANAGE_ROLES as readonly string[]).includes(
+      actor.role
+    );
+    if (!isManageRole) {
+      const { rows: targetRows } = await pool.query(
+        `SELECT reporting_to FROM hris.employees WHERE id = $1`,
+        [employeeId]
+      );
+      const reportingTo = targetRows[0]?.reporting_to ?? null;
+      if (!actor.employeeId || reportingTo !== actor.employeeId) {
+        return NextResponse.json(
+          { error: "Hanya HRD atau atasan langsung yang boleh menilai" },
+          { status: 403 }
+        );
+      }
+    }
+
     const [{ rows: indicatorRows }, { rows: scorecardRows }] = await Promise.all([
       pool.query(
         `SELECT id FROM performance.kpi_indicators WHERE code = $1`,
@@ -86,7 +108,7 @@ export async function POST(request: NextRequest) {
         value,
         RUBRIC_MAX,
         attainment,
-        JSON.stringify({ rated_by: actor.id, notes }),
+        JSON.stringify({ rated_by: actor.userId, notes }),
       ]
     );
 
@@ -96,7 +118,6 @@ export async function POST(request: NextRequest) {
       message: "Rubrik tersimpan & scorecard diperbarui",
     });
   } catch (error) {
-    if (error instanceof ApiError) return error.toResponse();
     console.error("Error saving KPI rubric:", error);
     return NextResponse.json(
       { error: "Gagal menyimpan rubrik" },

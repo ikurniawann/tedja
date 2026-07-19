@@ -3,6 +3,12 @@ import { createServerPgClient } from "@/lib/pg/create-client";
 import { getWorkforceActor } from "@/lib/hris/workforce-auth";
 import { ApiError, requireApiRole } from "@/lib/api/auth";
 import { KPI_MANAGE_ROLES } from "@/lib/kpi/roles";
+import { buildWaLink } from "@/lib/recruitment/wa";
+
+const MONTH_NAMES = [
+  "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+  "Juli", "Agustus", "September", "Oktober", "November", "Desember",
+];
 
 /**
  * GET /api/hris/kpi/scorecards?period_year&period_month&employee_id
@@ -24,6 +30,52 @@ export async function GET(request: NextRequest) {
   const periodMonth =
     Number(searchParams.get("period_month")) || now.getMonth() + 1;
 
+  // Peta label indikator utk render breakdown di klien
+  const { data: indicators } = await db
+    .from("kpi_indicators")
+    .select("id, code, name, unit, direction")
+    .eq("is_active", true);
+
+  // Mode TIM (Fase E): atasan langsung melihat scorecard bawahannya
+  // (employees.reporting_to = employee penilai) — MSS, bukan HR-only.
+  if (searchParams.get("team") === "1") {
+    if (!actor.employeeId) return NextResponse.json({ data: [], indicators });
+    const { data: reports } = await db
+      .from("employees")
+      .select("id")
+      .eq("reporting_to", actor.employeeId)
+      .eq("is_active", true);
+    const reportIds = (reports ?? []).map((row: { id: string }) => row.id);
+    if (reportIds.length === 0) {
+      return NextResponse.json({ data: [], indicators });
+    }
+
+    const { data, error } = await db
+      .from("kpi_scorecards")
+      .select(
+        `*, employee:employees ( id, full_name, nip, department_id,
+          department:departments ( name ) )`
+      )
+      .eq("period_year", periodYear)
+      .eq("period_month", periodMonth)
+      .in("employee_id", reportIds)
+      .order("score", { ascending: false, nullsFirst: false })
+      .limit(200);
+    if (error) {
+      console.error("Error fetching team scorecards:", error);
+      return NextResponse.json(
+        { error: "Gagal mengambil scorecard tim" },
+        { status: 500 }
+      );
+    }
+    return NextResponse.json({
+      data,
+      indicators,
+      period_year: periodYear,
+      period_month: periodMonth,
+    });
+  }
+
   const requestedEmployee = searchParams.get("employee_id");
   let employeeFilter: string | null = null;
   if (!actor.isHr) {
@@ -34,12 +86,6 @@ export async function GET(request: NextRequest) {
   } else if (requestedEmployee === "me") {
     employeeFilter = actor.employeeId;
   }
-
-  // Peta label indikator utk render breakdown di klien
-  const { data: indicators } = await db
-    .from("kpi_indicators")
-    .select("id, code, name, unit, direction")
-    .eq("is_active", true);
 
   // Mode riwayat: N scorecard terakhir SATU karyawan (utk ESS/riwayat HRD)
   const historyN = Number(searchParams.get("history")) || 0;
@@ -163,8 +209,29 @@ export async function PATCH(request: NextRequest) {
         { status: 500 }
       );
     }
+
+    // Fase E: saat FINAL, siapkan link WhatsApp pemberitahuan skor
+    // (pola wa.me dibuka UI — konsisten notifikasi slip gaji & cuti).
+    let waLink: string | null = null;
+    if (action === "finalize" && data) {
+      const { data: employee } = await db
+        .from("employees")
+        .select("full_name, phone")
+        .eq("id", data.employee_id)
+        .maybeSingle();
+      const periodLabel = `${MONTH_NAMES[(data.period_month ?? 1) - 1]} ${data.period_year}`;
+      const scoreText =
+        data.score === null ? "belum ada data" : Number(data.score).toLocaleString("id-ID");
+      waLink = buildWaLink(
+        employee?.phone,
+        `Halo ${employee?.full_name}, skor KPI Anda periode ${periodLabel} sudah FINAL: ${scoreText}. ` +
+          `Lihat rinciannya di portal karyawan: menu Area Karyawan → KPI Saya.`
+      );
+    }
+
     return NextResponse.json({
       data,
+      wa_link: waLink,
       message: action === "finalize" ? "Scorecard difinalkan" : "Scorecard dibuka kembali",
     });
   } catch (error) {

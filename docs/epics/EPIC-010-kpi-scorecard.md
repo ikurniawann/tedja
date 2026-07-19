@@ -296,6 +296,20 @@ Semua AC tercentang + Automation Log terisi + ready-for-qa.
   snapshot re-run stabil. Nonaktifkan juga menu KPI Templates &
   Performance Review lama (migrasi 20260719150000 — modul 0 baris,
   digantikan scorecard).
+- 2026-07-19 — **Fase E SELESAI** (go owner): (1) Auto-snapshot bulanan
+  self-healing — `instrumentation.ts` + `lib/kpi/auto-snapshot.ts` (cek
+  saat boot + tiap 6 jam: bulan LALU belum ada scorecard & ada karyawan
+  aktif → jalankan; pergantian bulan dihitung WIB, 4 unit test; tanpa
+  dependency cron; server mati tgl 1 tertangkap cek berikutnya).
+  TERBUKTI: saat deploy, Juni 2026 otomatis terisi 4 scorecard 30 dtk
+  setelah boot. (2) Rubrik oleh ATASAN LANGSUNG: rubric route menerima
+  KPI_MANAGE_ROLES ATAU reporting_to = employee penilai; GET scorecards
+  mode team=1 (bawahan langsung); section "Tim Saya" di ESS /me/kpi
+  (daftar tim + dialog breakdown + input rubrik; final = read-only).
+  (3) Notifikasi WA: finalize mengembalikan wa_link (pola buildWaLink
+  slip gaji) — UI membukanya otomatis. 51 unit test kpi hijau, build
+  sukses. Sisa QA: login sbg atasan langsung → nilai bawahan via ESS;
+  finalisasi → WA terbuka.
 - 2026-07-19 — Kandidat Fase E diusulkan ke owner (menunggu keputusan):
   cron snapshot otomatis tgl 1, rubrik oleh atasan langsung
   (reporting_to/MSS), notifikasi WA saat scorecard final; plus backlog:
