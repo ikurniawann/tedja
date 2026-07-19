@@ -87,19 +87,16 @@ export default function LoginPage() {
         .eq("id", authData.user.id)
         .single();
 
-      const purchasingRoles = [
-        "purchasing_manager",
-        "purchasing_staff",
-        "purchasing_admin",
-        "warehouse_staff",
-        "qc_staff",
-        "finance_staff",
-      ];
-
-      const hrdEmails = ["demo@aapextechnology.com", "hrd@", "hr@", "humanresources@"];
-      const isHrdEmail = hrdEmails.some((h) => email.toLowerCase().includes(h));
-
-      const target = requestedRedirect || "/arkiv-os";
+      // Hanya super_admin yang mendarat di desktop Arkiv OS. Semua role lain
+      // langsung ke Area Karyawan (/dashboard/me = beranda); redirect yang
+      // diminta dihormati hanya bila masih di dalam area /dashboard/me.
+      const role = (profile as { role?: string } | null)?.role;
+      let target = requestedRedirect || "/arkiv-os";
+      if (role !== "super_admin") {
+        target = requestedRedirect?.startsWith("/dashboard/me")
+          ? requestedRedirect
+          : "/dashboard/me";
+      }
       setTransitioning(true);
       window.setTimeout(() => router.replace(target), 450);
     }

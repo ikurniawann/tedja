@@ -411,7 +411,7 @@ export class QueryBuilder<T = any> implements PromiseLike<PgResult<T>> {
         sql = this.buildUpdate(params);
       } else if (this.action === "delete") {
         sql = `DELETE FROM ${this.qt()} ${this.buildWhere(params)}`;
-        if (this.returningSelect) sql += ` RETURNING ${this.returningSelect === "*" ? "*" : splitTopLevel(this.returningSelect).map((c) => qid(c.trim())).join(", ")}`;
+        if (this.returningSelect) sql += ` RETURNING ${this.buildReturning(this.returningSelect)}`;
       }
 
       const { rows } = await this.pool.query(sql, params);
@@ -434,6 +434,17 @@ export class QueryBuilder<T = any> implements PromiseLike<PgResult<T>> {
     }
   }
 
+  // RETURNING hanya menerima kolom polos — segmen embed ("brands(name)",
+  // "brand:brands(name)") dibuang; kalau tidak tersisa kolom, pakai "*".
+  private buildReturning(sel: string): string {
+    if (sel === "*") return "*";
+    const plain = splitTopLevel(sel)
+      .map((c) => c.trim())
+      .filter((c) => !c.includes("("));
+    if (plain.length === 0 || plain.includes("*")) return "*";
+    return plain.map(qid).join(", ");
+  }
+
   private buildInsert(rows: any[], params: any[], upsert = false): string {
     const cols = Array.from(new Set(rows.flatMap((r) => Object.keys(r))));
     const colSql = cols.map(qid).join(", ");
@@ -451,10 +462,7 @@ export class QueryBuilder<T = any> implements PromiseLike<PgResult<T>> {
       }
     }
     if (this.returningSelect || this.singleMode) {
-      const rsel = this.returningSelect && this.returningSelect !== "*"
-        ? splitTopLevel(this.returningSelect).map((c) => qid(c.trim())).join(", ")
-        : "*";
-      sql += ` RETURNING ${rsel}`;
+      sql += ` RETURNING ${this.buildReturning(this.returningSelect ?? "*")}`;
     }
     return sql;
   }
@@ -464,10 +472,7 @@ export class QueryBuilder<T = any> implements PromiseLike<PgResult<T>> {
     const setSql = entries.map(([k, v]) => { params.push(v === undefined ? null : v); return `${qid(k)} = $${params.length}`; }).join(", ");
     let sql = `UPDATE ${this.qt()} SET ${setSql} ${this.buildWhere(params)}`;
     if (this.returningSelect || this.singleMode) {
-      const rsel = this.returningSelect && this.returningSelect !== "*"
-        ? splitTopLevel(this.returningSelect).map((c) => qid(c.trim())).join(", ")
-        : "*";
-      sql += ` RETURNING ${rsel}`;
+      sql += ` RETURNING ${this.buildReturning(this.returningSelect ?? "*")}`;
     }
     return sql;
   }

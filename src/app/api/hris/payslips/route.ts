@@ -1,14 +1,16 @@
 // ============================================================
 // API Route: Payslips
 // GET: List payslips (payroll details)
+//   - HR/finance : semua slip (filter bebas)
+//   - Karyawan   : hanya slip MILIKNYA dari run berstatus PAID (Fase E)
 // ============================================================
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerPgClient } from "@/lib/pg/create-client";
-import { ApiError, requireApiRole } from '@/lib/api/auth';
+import { getWorkforceActor } from '@/lib/hris/workforce-auth';
 
-// Payslips are sensitive financial PII — restrict listing to HR/finance.
-const PAYSLIP_VIEW_ROLES = ['super_admin', 'hrd', 'finance_staff'] as const;
+// Akses penuh lintas karyawan — slip gaji adalah PII finansial.
+const PAYSLIP_FULL_ROLES = ['super_admin', 'hrd', 'finance_staff'] as const;
 
 // ============================================================
 // GET /api/hris/payslips
@@ -16,13 +18,35 @@ const PAYSLIP_VIEW_ROLES = ['super_admin', 'hrd', 'finance_staff'] as const;
 
 export async function GET(request: NextRequest) {
   try {
-    await requireApiRole([...PAYSLIP_VIEW_ROLES]);
+    const actor = await getWorkforceActor();
+    if (!actor) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const isFullAccess = (PAYSLIP_FULL_ROLES as readonly string[]).includes(actor.role);
+
     const db = await createServerPgClient();
     const { searchParams } = new URL(request.url);
-    const employeeId = searchParams.get('employee_id');
+    const employeeIdParam = searchParams.get('employee_id');
     const payrollRunId = searchParams.get('payroll_run_id');
     const year = searchParams.get('year');
     const month = searchParams.get('month');
+
+    // Resolusi scoping:
+    // - employee_id=me → tampilan PERSONAL utk semua role (termasuk HR):
+    //   slip milik sendiri + hanya run paid. Dipakai halaman ESS.
+    // - non-HR tanpa parameter → tetap dipaksa ke miliknya sendiri.
+    // - HR dengan/atau tanpa parameter eksplisit → akses penuh.
+    const isMeView = employeeIdParam === 'me' || !isFullAccess;
+    let employeeId: string | null = null;
+    if (isMeView) {
+      if (!actor.employeeId) {
+        return NextResponse.json({ data: [] });
+      }
+      employeeId = actor.employeeId;
+    } else if (employeeIdParam) {
+      employeeId = employeeIdParam;
+    }
 
     let query = db
       .from('payroll_details')
@@ -45,10 +69,12 @@ export async function GET(request: NextRequest) {
           run_name,
           period_month,
           period_year,
-          status
+          status,
+          paid_at
         )
       `)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .limit(60);
 
     if (employeeId) {
       query = query.eq('employee_id', employeeId);
@@ -76,10 +102,16 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    return NextResponse.json({ data });
+    // Tampilan personal hanya menampilkan slip yang gajinya SUDAH dibayar —
+    // run draft/processing/completed masih bisa berubah.
+    const rows = (data ?? []) as { payroll_run?: { status?: string } | null }[];
+    const visible = isMeView
+      ? rows.filter((row) => row.payroll_run?.status === 'paid')
+      : rows;
+
+    return NextResponse.json({ data: visible });
 
   } catch (error) {
-    if (error instanceof ApiError) return error.toResponse();
     console.error('Error in payslips API:', error);
     return NextResponse.json(
       { error: 'Terjadi kesalahan pada server' },

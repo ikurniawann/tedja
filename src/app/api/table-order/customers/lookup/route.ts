@@ -18,10 +18,9 @@ function normalizeCustomer(customer: Record<string, unknown>) {
     name: String(customer.name || ""),
     phone: String(customer.phone || ""),
     email: customer.email ? String(customer.email) : "",
-    membership_tier: String(customer.membership_tier || "bronze"),
+    membership_tier: String(customer.membership_tier || "regular"),
     ark_coin_balance: toNumber(customer.ark_coin_balance),
     total_xp: toNumber(customer.total_xp),
-    current_xp: toNumber(customer.current_xp),
     visit_count: toNumber(customer.visit_count),
     is_active: customer.is_active !== false,
   };
@@ -34,7 +33,7 @@ export async function POST(request: NextRequest) {
 
     const { data: existing, error: lookupError } = await db
       .from("pos_customers")
-      .select("id, name, phone, email, membership_tier, ark_coin_balance, total_xp, current_xp, visit_count, is_active")
+      .select("id, name, phone, email, membership_tier, ark_coin_balance, total_xp, visit_count, is_active")
       .eq("phone", payload.phone)
       .maybeSingle();
 
@@ -49,10 +48,10 @@ export async function POST(request: NextRequest) {
       .insert({
         phone: payload.phone,
         name: payload.name || `Member ${payload.phone.slice(-4)}`,
-        membership_tier: "bronze",
+        membership_tier: "regular",
         notes: "Created from table self-service ordering",
       })
-      .select("id, name, phone, email, membership_tier, ark_coin_balance, total_xp, current_xp, visit_count, is_active")
+      .select("id, name, phone, email, membership_tier, ark_coin_balance, total_xp, visit_count, is_active")
       .single();
 
     if (createError) throw createError;

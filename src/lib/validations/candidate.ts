@@ -14,12 +14,30 @@ export const candidateSchema = z.object({
 });
 
 export const candidateFilterSchema = z.object({
-  status: z.enum(["new", "screening", "interview_hrd", "interview_manager", "talent_pool", "hired", "rejected", "archived"]).optional(),
+  status: z.enum(["applied", "screening", "psikotes", "interview", "offer", "hired", "talent_pool", "rejected", "archived"]).optional(),
   brand_id: z.string().uuid().optional(),
   search: z.string().min(1).max(100).optional(),
   page: z.coerce.number().min(1).default(1),
   limit: z.coerce.number().min(1).max(100).default(20),
 });
 
+export const screeningSchema = z.object({
+  contacted: z.boolean().default(false),
+  interested: z.boolean().nullable().default(null),
+  availability_note: z.string().max(200, "Ketersediaan maksimal 200 karakter").nullable().default(null),
+  confirmed_salary: z
+    .number()
+    .int("Gaji harus bilangan bulat")
+    .min(0, "Gaji tidak boleh negatif")
+    .max(1_000_000_000_000, "Nominal gaji tidak wajar")
+    .nullable()
+    .default(null),
+  willing_shift: z.boolean().nullable().default(null),
+  willing_placement: z.boolean().nullable().default(null),
+  notes: z.string().max(2000, "Catatan maksimal 2000 karakter").nullable().default(null),
+  recommendation: z.enum(["lolos", "hold", "tidak_lolos"]).nullable().default(null),
+});
+
 export type CandidateInput = z.infer<typeof candidateSchema>;
 export type CandidateFilterInput = z.infer<typeof candidateFilterSchema>;
+export type ScreeningInput = z.infer<typeof screeningSchema>;

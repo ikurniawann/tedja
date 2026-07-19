@@ -34,6 +34,7 @@ export const ROLE_LABELS: Record<UserRole, string> = {
   pos: "POS",
   pos_supervisor: "POS Supervisor",
   qc_staff: "QC Staff",
+  employee: "Karyawan (ESS)",
 };
 
 export const STATUS_LABELS: Record<string, string> = {
@@ -135,7 +136,7 @@ export function levelLabel(value: string) {
 }
 
 export function formatCurrency(value: number | null) {
-  if (value == null) return "No limit";
+  if (value == null) return "Tanpa limit";
   return new Intl.NumberFormat("id-ID", {
     style: "currency",
     currency: "IDR",

@@ -64,7 +64,8 @@ export interface CandidateActivity {
   candidate_id: string;
   activity_type: string;
   description: string;
-  created_by?: string;
+  created_by?: string | null;
+  created_by_name?: string | null;
   created_at: string;
 }
 
@@ -72,7 +73,8 @@ export interface CandidateNote {
   id: string;
   candidate_id: string;
   content: string;
-  created_by?: string;
+  created_by?: string | null;
+  created_by_name?: string | null;
   created_at: string;
 }
 

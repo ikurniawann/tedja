@@ -47,7 +47,6 @@ export interface LoyalMember {
   name: string;
   membershipTier: string;
   totalXp: number;
-  currentXp: number;
   arkBalance: number;
 }
 

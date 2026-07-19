@@ -18,6 +18,7 @@ import {
 } from "@/features/pos/restaurant/nav";
 import { PosNfcShell } from "@/features/pos/nfc";
 import type { NavItem } from "@/lib/iam/types";
+import { isEssOnlyRole } from "@/lib/iam/access";
 import { AppSidebarNavIcon } from "./app-sidebar-nav-icons";
 import AppSidebarNav from "./app-sidebar-nav";
 import { DashboardBreadcrumbs } from "./dashboard-breadcrumbs";
@@ -52,7 +53,9 @@ function AppSidebarContent({
   restaurantImmersive,
 }: AppSidebarProps & { restaurantImmersive: boolean }) {
   const pathname = usePathname();
-  const allNavItems = [desktopNavItem, ...navItems];
+  // Role ESS-only: sembunyikan seluruh jalan menuju desktop Arkiv OS.
+  const essOnly = isEssOnlyRole(user.role);
+  const allNavItems = essOnly ? navItems : [desktopNavItem, ...navItems];
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
@@ -108,6 +111,7 @@ function AppSidebarContent({
           onMenuClick={() => setMobileOpen(true)}
           userName={user.full_name}
           onAccountClick={() => setAccountOpen(true)}
+          essOnly={essOnly}
         />
 
         <div
@@ -115,13 +119,15 @@ function AppSidebarContent({
         >
           <DashboardBreadcrumbs navItems={navItems} className="max-w-[55%]" />
           <div className="flex shrink-0 items-center gap-3">
-            <Link
-              href="/arkiv-os"
-              className="inline-flex items-center gap-2 rounded-lg bg-pink-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-pink-700"
-            >
-              <AppSidebarNavIcon name="home" className="h-4 w-4" isActive />
-              Desktop
-            </Link>
+            {!essOnly && (
+              <Link
+                href="/arkiv-os"
+                className="inline-flex items-center gap-2 rounded-lg bg-pink-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-pink-700"
+              >
+                <AppSidebarNavIcon name="home" className="h-4 w-4" isActive />
+                Desktop
+              </Link>
+            )}
             <ThemeToggle />
             {useActivityNotification ? <ActivityLogBell /> : <NotificationBell />}
             <div className="h-6 w-px bg-gray-200" />
@@ -248,11 +254,13 @@ function MobileHeader({
   onMenuClick,
   userName,
   onAccountClick,
+  essOnly,
 }: {
   navItems: NavItem[];
   onMenuClick: () => void;
   userName: string;
   onAccountClick: () => void;
+  essOnly: boolean;
 }) {
   return (
     <header className="border-b border-gray-200 bg-white lg:hidden">
@@ -267,9 +275,11 @@ function MobileHeader({
           {userName}
         </button>
         <ThemeToggle compact />
-        <Link href="/arkiv-os" className="shrink-0 font-semibold text-pink-600">
-          Desktop
-        </Link>
+        {!essOnly && (
+          <Link href="/arkiv-os" className="shrink-0 font-semibold text-pink-600">
+            Desktop
+          </Link>
+        )}
       </div>
       <div className="border-t border-gray-100 px-4 py-2">
         <DashboardBreadcrumbs navItems={navItems} />
@@ -397,16 +407,18 @@ function AccountPopup({
             />
           </div>
 
-          <div className="grid gap-2">
-            <Link
-              href="/arkiv-os"
-              onClick={onClose}
-              className="flex items-center justify-center gap-2 rounded-xl bg-pink-600 px-4 py-3 text-sm font-semibold text-white hover:bg-pink-700"
-            >
-              <AppSidebarNavIcon name="home" className="h-5 w-5" isActive />
-              Kembali ke Desktop
-            </Link>
-          </div>
+          {!isEssOnlyRole(user.role) && (
+            <div className="grid gap-2">
+              <Link
+                href="/arkiv-os"
+                onClick={onClose}
+                className="flex items-center justify-center gap-2 rounded-xl bg-pink-600 px-4 py-3 text-sm font-semibold text-white hover:bg-pink-700"
+              >
+                <AppSidebarNavIcon name="home" className="h-5 w-5" isActive />
+                Kembali ke Desktop
+              </Link>
+            </div>
+          )}
         </div>
       </div>
     </div>

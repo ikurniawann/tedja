@@ -1,15 +1,21 @@
 // ============================================================
 // API Route: Employee Loans
-// GET: List loans
-// POST: Create loan request
+// GET : HR/finance → semua; karyawan → pinjaman miliknya sendiri (ESS)
+// POST: HR/finance → utk karyawan mana pun; karyawan → utk diri sendiri
+//       (self-request: bunga dipaksa 0, tetap menunggu approval HR)
 // ============================================================
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerPgClient } from "@/lib/pg/create-client";
-import { ApiError, requireApiRole } from '@/lib/api/auth';
+import { getWorkforceActor } from '@/lib/hris/workforce-auth';
+import { loadPayrollConfig } from '@/lib/payroll/config';
+import { validateLoanLimits } from '@/lib/payroll/loans';
+import { LOAN_MANAGE_ROLES } from '@/lib/payroll/roles';
 
-// Loan records are sensitive financial PII — restrict listing to HR/finance.
-const LOAN_VIEW_ROLES = ['super_admin', 'hrd', 'finance_staff'] as const;
+// Akses penuh lintas karyawan (kelola pinjaman) — data finansial PII.
+function hasFullAccess(role: string): boolean {
+  return (LOAN_MANAGE_ROLES as readonly string[]).includes(role);
+}
 
 // ============================================================
 // GET /api/hris/loans
@@ -17,11 +23,27 @@ const LOAN_VIEW_ROLES = ['super_admin', 'hrd', 'finance_staff'] as const;
 
 export async function GET(request: NextRequest) {
   try {
-    await requireApiRole([...LOAN_VIEW_ROLES]);
+    const actor = await getWorkforceActor();
+    if (!actor) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const db = await createServerPgClient();
     const { searchParams } = new URL(request.url);
-    const employeeId = searchParams.get('employee_id');
+    const employeeIdParam = searchParams.get('employee_id');
     const status = searchParams.get('status');
+    const fullAccess = hasFullAccess(actor.role);
+
+    // Scoping: non-HR (atau employee_id=me) dipaksa ke pinjaman sendiri
+    let employeeId: string | null = null;
+    if (!fullAccess || employeeIdParam === 'me') {
+      if (!actor.employeeId) {
+        return NextResponse.json({ data: [] });
+      }
+      employeeId = actor.employeeId;
+    } else if (employeeIdParam) {
+      employeeId = employeeIdParam;
+    }
 
     let query = db
       .from('loans')
@@ -62,7 +84,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ data });
 
   } catch (error) {
-    if (error instanceof ApiError) return error.toResponse();
     console.error('Error in loans API:', error);
     return NextResponse.json(
       { error: 'Terjadi kesalahan pada server' },
@@ -78,6 +99,11 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const actor = await getWorkforceActor();
+    if (!actor) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const db = await createServerPgClient();
     const body = await request.json();
     const {
@@ -90,10 +116,34 @@ export async function POST(request: NextRequest) {
       notes,
     } = body;
 
-    // Validate required fields
-    if (!employee_id || !loan_type || !principal_amount || !tenor_months) {
+    const fullAccess = hasFullAccess(actor.role);
+
+    // Resolusi target: HR bisa utk siapa pun; karyawan hanya utk dirinya
+    let targetEmployeeId: string | null;
+    if (fullAccess && employee_id && employee_id !== 'me') {
+      targetEmployeeId = employee_id;
+    } else {
+      targetEmployeeId = actor.employeeId;
+    }
+    if (!targetEmployeeId) {
       return NextResponse.json(
-        { error: 'Employee ID, jenis pinjaman, jumlah, dan tenor wajib diisi' },
+        { error: 'Akun ini tidak tertaut ke data karyawan' },
+        { status: 400 }
+      );
+    }
+
+    // Self-request karyawan: bunga selalu 0 (kasbon); HR yang bisa set bunga
+    const principal = Number(principal_amount);
+    const tenor = Number(tenor_months);
+    const rate = fullAccess ? (Number(interest_rate) || 0) : 0;
+    if (
+      !loan_type ||
+      !Number.isFinite(principal) || principal <= 0 ||
+      !Number.isInteger(tenor) || tenor < 1 || tenor > 60 ||
+      rate < 0 || rate > 100
+    ) {
+      return NextResponse.json(
+        { error: 'Jenis pinjaman, jumlah (> 0), dan tenor (1–60 bulan) wajib valid' },
         { status: 400 }
       );
     }
@@ -102,8 +152,8 @@ export async function POST(request: NextRequest) {
     const { data: employee } = await db
       .from('employees')
       .select('id, is_active')
-      .eq('id', employee_id)
-      .single();
+      .eq('id', targetEmployeeId)
+      .maybeSingle();
 
     if (!employee) {
       return NextResponse.json(
@@ -119,22 +169,62 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Calculate monthly installment
-    const monthlyInstallment = interest_rate 
-      ? principal_amount * (1 + interest_rate / 100 * tenor_months) / tenor_months
-      : principal_amount / tenor_months;
+    // Calculate monthly installment (bunga flat sederhana)
+    const monthlyInstallment = rate
+      ? principal * (1 + (rate / 100) * tenor) / tenor
+      : principal / tenor;
+
+    // Limitasi pinjaman (konfigurabel di pengaturan payroll):
+    // cicilan maks % gaji pokok + jumlah pinjaman aktif maks per karyawan
+    const config = await loadPayrollConfig(db, new Date().getFullYear());
+    const [{ data: salary }, { data: activeLoans }] = await Promise.all([
+      db
+        .from('employee_salary')
+        .select('base_salary')
+        .eq('employee_id', targetEmployeeId)
+        .eq('is_active', true)
+        .order('effective_date', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      db
+        .from('loans')
+        .select('id, status, remaining_balance')
+        .eq('employee_id', targetEmployeeId)
+        .eq('is_active', true)
+        .in('status', ['pending', 'approved']),
+    ]);
+    const activeLoanCount = (activeLoans ?? []).filter(
+      (loan: { status: string; remaining_balance: unknown }) =>
+        loan.status === 'pending' || Number(loan.remaining_balance) > 0
+    ).length;
+
+    const limitError = validateLoanLimits({
+      monthlyInstallment,
+      baseSalary: salary ? Number(salary.base_salary) : null,
+      maxInstallmentPercent: config.loan.maxInstallmentPercent,
+      activeLoanCount,
+      maxActiveLoans: config.loan.maxActivePerEmployee,
+    });
+    if (limitError) {
+      return NextResponse.json({ error: limitError }, { status: 400 });
+    }
+
+    // Sisa kewajiban = total yang harus dibayar (termasuk bunga) agar
+    // cicilan bulanan bisa mengikisnya sampai 0 — sebelumnya keliru diisi
+    // pokok saja sehingga pinjaman berbunga tidak pernah "lunas" konsisten.
+    const totalRepayment = Math.round(monthlyInstallment) * tenor;
 
     // Create loan request
     const { data, error } = await db
       .from('loans')
       .insert({
-        employee_id,
+        employee_id: targetEmployeeId,
         loan_type,
-        principal_amount,
-        interest_rate: interest_rate || 0,
-        tenor_months,
+        principal_amount: principal,
+        interest_rate: rate,
+        tenor_months: tenor,
         monthly_installment: Math.round(monthlyInstallment),
-        remaining_balance: principal_amount,
+        remaining_balance: totalRepayment,
         purpose,
         notes,
         status: 'pending',

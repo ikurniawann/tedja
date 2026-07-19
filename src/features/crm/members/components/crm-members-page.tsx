@@ -54,11 +54,11 @@ export function CrmMembersPage() {
 
   const filteredMembers = useMemo(() => members, [members]);
   const summary = useMemo(() => {
-    const totalCurrentXp = members.reduce((sum, member) => sum + member.current_xp, 0);
     const totalLifetimeXp = members.reduce((sum, member) => sum + member.lifetime_xp, 0);
     const totalSpend = members.reduce((sum, member) => sum + (member.customer?.total_spent ?? 0), 0);
+    const totalArk = members.reduce((sum, member) => sum + (member.customer?.ark_coin_balance ?? 0), 0);
 
-    return { totalCurrentXp, totalLifetimeXp, totalSpend };
+    return { totalLifetimeXp, totalSpend, totalArk };
   }, [members]);
 
   function applyFilters() {
@@ -117,7 +117,7 @@ export function CrmMembersPage() {
 
         <section className="grid gap-3 md:grid-cols-4">
           <MetricCard icon={UserRound} label="Members" value={formatNumber(members.length)} />
-          <MetricCard icon={Sparkles} label="Current XP" value={formatNumber(summary.totalCurrentXp)} />
+          <MetricCard icon={Sparkles} label="ARK Coin" value={formatNumber(summary.totalArk)} />
           <MetricCard icon={Crown} label="Lifetime XP" value={formatNumber(summary.totalLifetimeXp)} />
           <MetricCard icon={Coins} label="Total Spend" value={formatCurrency(summary.totalSpend)} />
         </section>
@@ -142,6 +142,7 @@ export function CrmMembersPage() {
                 className="h-10 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-100"
               >
                 <option value="all">Semua tier</option>
+                <option value="regular">Regular</option>
                 <option value="bronze">Bronze</option>
                 <option value="silver">Silver</option>
                 <option value="gold">Gold</option>
@@ -161,7 +162,7 @@ export function CrmMembersPage() {
                   <tr className="border-b border-slate-100 text-left text-xs font-medium uppercase text-slate-500">
                     <th className="px-4 py-3">Member</th>
                     <th className="px-4 py-3">Tier</th>
-                    <th className="px-4 py-3 text-right">Current XP</th>
+                    <th className="px-4 py-3 text-right">ARK Coin</th>
                     <th className="px-4 py-3 text-right">Lifetime XP</th>
                     <th className="px-4 py-3 text-right">Spend</th>
                     <th className="px-4 py-3 text-right">Visit</th>
@@ -196,7 +197,7 @@ export function CrmMembersPage() {
                             {tierName(member)}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-right text-sm font-semibold text-emerald-700">{formatNumber(member.current_xp)}</td>
+                        <td className="px-4 py-3 text-right text-sm font-semibold text-emerald-700">{formatNumber(member.customer?.ark_coin_balance ?? 0)}</td>
                         <td className="px-4 py-3 text-right text-sm text-slate-700">{formatNumber(member.lifetime_xp)}</td>
                         <td className="px-4 py-3 text-right text-sm text-slate-700">{formatCurrency(member.customer?.total_spent ?? 0)}</td>
                         <td className="px-4 py-3 text-right text-sm text-slate-700">{formatNumber(member.customer?.visit_count ?? 0)}</td>

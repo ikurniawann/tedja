@@ -13,7 +13,7 @@ import type {
   ChartDatum,
 } from "./types";
 
-const ACTIVE_PIPELINE = ["new", "screening", "interview_hrd", "interview_manager"];
+const ACTIVE_PIPELINE = ["applied", "screening", "psikotes", "interview", "offer"];
 
 export async function fetchCandidateList(
   params: CandidateListParams
@@ -171,35 +171,26 @@ export async function fetchCandidateDetail(id: string): Promise<CandidateDetailR
   return { candidate, activities, notes };
 }
 
-export async function updateCandidateStatus(id: string, status: string, description: string) {
-  const db = createBrowserClient();
-  const { error } = await db.from("candidates").update({ status }).eq("id", id);
-  if (error) throw new Error(error.message);
-
-  await db.from("candidate_activities").insert({
-    candidate_id: id,
-    activity_type: "status_change",
-    description,
+export async function updateCandidateStatus(id: string, status: string, _description?: string) {
+  // endpoint stage mencatat jejak (siapa + dari-ke) secara otomatis
+  const res = await fetch(`/api/candidates/${id}/stage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status }),
   });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error ?? "Gagal mengubah status");
 }
 
 export async function addCandidateNote(id: string, content: string): Promise<CandidateNote> {
-  const db = createBrowserClient();
-  const { data, error } = await db
-    .from("candidate_notes")
-    .insert({ candidate_id: id, content })
-    .select()
-    .single();
-
-  if (error) throw new Error(error.message);
-
-  await db.from("candidate_activities").insert({
-    candidate_id: id,
-    activity_type: "note_added",
-    description: "Catatan internal ditambahkan",
+  const res = await fetch(`/api/candidates/${id}/notes`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content }),
   });
-
-  return data as CandidateNote;
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error ?? "Gagal menyimpan catatan");
+  return json.data as CandidateNote;
 }
 
 export async function fetchAnalyticsBrands(): Promise<CandidateBrand[]> {
@@ -256,12 +247,13 @@ export async function fetchCandidateAnalytics(
   const sourceData = toChartData(sources, 6);
 
   const funnelData = [
-    { stage: "New", count: candidates.filter((c) => c.status === "new").length },
+    { stage: "Applied", count: candidates.filter((c) => c.status === "applied").length },
     { stage: "Screening", count: candidates.filter((c) => c.status === "screening").length },
-    { stage: "Interview HRD", count: candidates.filter((c) => c.status === "interview_hrd").length },
-    { stage: "Interview Manager", count: candidates.filter((c) => c.status === "interview_manager").length },
-    { stage: "Talent Pool", count: candidates.filter((c) => c.status === "talent_pool").length },
+    { stage: "Psikotes", count: candidates.filter((c) => c.status === "psikotes").length },
+    { stage: "Interview", count: candidates.filter((c) => c.status === "interview").length },
+    { stage: "Offer", count: candidates.filter((c) => c.status === "offer").length },
     { stage: "Hired", count: candidates.filter((c) => c.status === "hired").length },
+    { stage: "Talent Pool", count: candidates.filter((c) => c.status === "talent_pool").length },
   ];
 
   const brandCounts: Record<string, number> = {};

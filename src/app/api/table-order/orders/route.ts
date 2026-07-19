@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createPgClient } from "@/lib/pg/create-client";
-import { awardCrmXpForPosOrder } from "@/lib/crm/loyalty-engine";
+import { awardCrmXpForPosOrder, syncPosCustomerOrderStats } from "@/lib/crm/loyalty-engine";
+import { checkProductPrivileges } from "@/lib/crm/product-privilege";
 
 const orderItemSchema = z.object({
   product_id: z.string().uuid(),
@@ -65,6 +66,20 @@ export async function POST(request: NextRequest) {
     const db = createPgClient();
     const tableId = await resolveTableId(db, payload.table_code, payload.table_id);
     const cashierId = await resolveCashierId();
+
+    // Produk privilege (min_xp): pemesan QR publik tanpa member tidak bisa
+    // memesan produk khusus member — EPIC-011 Fase C
+    const privilege = await checkProductPrivileges(
+      db,
+      payload.items.map((item) => String(item.product_id || "")),
+      payload.customer_id ?? null
+    );
+    if (!privilege.allowed) {
+      return NextResponse.json(
+        { success: false, error: privilege.message },
+        { status: 403 }
+      );
+    }
     const subtotal = payload.items.reduce((sum, item) => sum + item.unit_price * item.quantity, 0);
     const tax = Math.round(subtotal * 0.1);
     const total = subtotal + tax;
@@ -175,6 +190,10 @@ export async function POST(request: NextRequest) {
       notes: `Created from table self-service (${payload.payment_method})`,
     });
 
+    if (selfPaid && payload.customer_id) {
+      await syncPosCustomerOrderStats(db, payload.customer_id, total);
+    }
+
     const crmXp = selfPaid
       ? await awardCrmXpForPosOrder(db, {
           orderId,
@@ -182,6 +201,7 @@ export async function POST(request: NextRequest) {
           totalAmount: total,
           items: orderItems,
           outletId: null,
+          paymentMethod: payload.payment_method,
         })
       : { status: "skipped", xpAwarded: 0, reason: "payment_unpaid" };
 

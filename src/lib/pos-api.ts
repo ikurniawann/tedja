@@ -83,10 +83,11 @@ export interface Customer {
   membership_tier: string;
   ark_coin_balance: number;
   total_xp: number;
-  current_xp: number;
   total_spent: number;
   visit_count: number;
   discount?: number; // Discount percentage based on tier
+  discount_percent?: number; // Dari konfigurasi crm_membership_tiers (EPIC-011)
+  member_type?: 'registered' | 'card';
   nfc_uid?: string | null;
 }
 

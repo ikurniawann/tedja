@@ -37,16 +37,10 @@ import { useCandidateList, useCandidateBrands } from "../queries";
 import { useCreateCandidate, useDeleteCandidate } from "../mutations";
 import { fetchCandidatesForExport } from "../api";
 
-const STATUS_LABELS: Record<CandidateStatus, string> = {
-  new: "Baru",
-  screening: "Screening",
-  interview_hrd: "Interview HRD",
-  interview_manager: "Interview Manager",
-  talent_pool: "Talent Pool",
-  hired: "Diterima",
-  rejected: "Ditolak",
-  archived: "Diarsipkan",
-};
+import {
+  CANDIDATE_STATUS_LABELS as STATUS_LABELS,
+  CANDIDATE_STATUS_BADGES,
+} from "@/lib/recruitment/status";
 
 const SOURCE_LABELS: Record<string, string> = {
   portal: "Portal",
@@ -61,16 +55,7 @@ const SOURCE_LABELS: Record<string, string> = {
   other: "Lainnya",
 };
 
-const STATUS_COLORS: Record<CandidateStatus, string> = {
-  new: "bg-blue-100 text-blue-700",
-  screening: "bg-yellow-100 text-yellow-700",
-  interview_hrd: "bg-purple-100 text-purple-700",
-  interview_manager: "bg-indigo-100 text-indigo-700",
-  talent_pool: "bg-pink-100 text-pink-700",
-  hired: "bg-emerald-100 text-emerald-700",
-  rejected: "bg-red-100 text-red-700",
-  archived: "bg-gray-100 text-gray-700",
-};
+const STATUS_COLORS = CANDIDATE_STATUS_BADGES;
 
 export function CandidatesPage() {
   const [filter, setFilter] = useState<{
@@ -132,7 +117,7 @@ export function CandidatesPage() {
   };
 
   const addForm = useForm<AddFormValues>({
-    defaultValues: { status: "new", source: "walk_in" },
+    defaultValues: { status: "applied", source: "walk_in" },
   });
 
   useEffect(() => {
@@ -172,7 +157,7 @@ export function CandidatesPage() {
 
     setCvFile(null);
     setShowAddDialog(false);
-    addForm.reset({ status: "new", source: "walk_in" });
+    addForm.reset({ status: "applied", source: "walk_in" });
   };
 
   const handleCvFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -599,7 +584,7 @@ export function CandidatesPage() {
 
       {/* Add Candidate Dialog */}
       <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
-        <DialogContent className="w-[90vw] max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="w-[90vw] sm:max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-lg font-semibold">Tambah Kandidat Manual</DialogTitle>
             <DialogDescription className="text-sm">
@@ -728,14 +713,14 @@ export function CandidatesPage() {
               <Controller
                 name="status"
                 control={addForm.control}
-                defaultValue="new"
+                defaultValue="applied"
                 render={({ field }) => (
-                  <Select value={field.value || "new"} onValueChange={field.onChange}>
+                  <Select value={field.value || "applied"} onValueChange={field.onChange}>
                     <SelectTrigger className="h-9 text-sm w-[180px]">
                       <SelectValue placeholder="Pilih Status" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="new">Baru (New)</SelectItem>
+                      <SelectItem value="applied">Applied</SelectItem>
                       <SelectItem value="screening">Screening</SelectItem>
                     </SelectContent>
                   </Select>

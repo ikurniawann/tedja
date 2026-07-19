@@ -16,6 +16,9 @@ interface AppSidebarNavProps {
   className?: string;
 }
 
+/** Href item pengumuman ESS — dihiasi badge jumlah belum dibaca. */
+const ANNOUNCEMENTS_HREF = "/dashboard/me/pengumuman";
+
 function navItemKey(item: NavItem): string {
   return `${item.href}::${item.label}`;
 }
@@ -102,6 +105,27 @@ export default function AppSidebarNav({
   useEffect(() => {
     setExpandedMenus((prev) => [...new Set([...prev, ...autoExpanded])]);
   }, [autoExpanded]);
+
+  // Badge jumlah pengumuman belum dibaca (hanya bila item pengumuman tampil).
+  const hasAnnouncementsItem = useMemo(
+    () => allLeafHrefs.includes(ANNOUNCEMENTS_HREF),
+    [allLeafHrefs]
+  );
+  const [unreadAnnouncements, setUnreadAnnouncements] = useState(0);
+  useEffect(() => {
+    if (!hasAnnouncementsItem) return;
+    let active = true;
+    fetch("/api/hris/announcements/unread-count")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json) => {
+        if (active) setUnreadAnnouncements(Number(json?.unread ?? 0));
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+    // Refresh saat pindah halaman (mis. setelah membaca pengumuman)
+  }, [hasAnnouncementsItem, pathname]);
 
   const toggleMenu = (key: string) => {
     setExpandedMenus((prev) =>
@@ -208,16 +232,29 @@ export default function AppSidebarNav({
       ? submenuItemClass(itemActive, false)
       : topLevelItemClass(itemActive);
 
+    const badgeCount =
+      item.href === ANNOUNCEMENTS_HREF && unreadAnnouncements > 0
+        ? unreadAnnouncements
+        : 0;
+
     return (
       <Link
         key={itemKey}
         href={item.href}
         onClick={onNavigate}
-        className={leafShellClass}
+        className={`relative ${leafShellClass}`}
         title={collapsed ? item.label : undefined}
       >
         {showIcon && <AppSidebarNavIcon name={item.icon} isActive={itemActive} />}
-        {!collapsed && <span>{item.label}</span>}
+        {!collapsed && <span className="flex-1">{item.label}</span>}
+        {badgeCount > 0 &&
+          (collapsed ? (
+            <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-pink-600" />
+          ) : (
+            <span className="ml-auto min-w-5 rounded-full bg-pink-600 px-1.5 text-center text-[11px] font-bold leading-5 text-white">
+              {badgeCount > 99 ? "99+" : badgeCount}
+            </span>
+          ))}
       </Link>
     );
   };

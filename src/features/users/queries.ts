@@ -3,9 +3,13 @@
 import { useQuery } from "@tanstack/react-query";
 import {
   fetchEmployeeAttendance,
+  fetchEmployeeContracts,
   fetchEmployeeDocuments,
+  fetchExpiringContracts,
   fetchEmployeeLeaveBalances,
   fetchEmploymentHistory,
+  fetchEmployeeLifecycle,
+  fetchEmployeeRecruitmentDocs,
   fetchHRISEmployeeDetail,
   fetchUserDetail,
   fetchUserDirectoryStats,
@@ -48,6 +52,25 @@ export const useBranchStalls = (branchId: string | null) =>
     enabled: !!branchId,
   });
 
+export const useEmployeeContracts = (employeeId: string, enabled = true) =>
+  useQuery({
+    queryKey: usersQueryKeys.contracts(employeeId),
+    queryFn: async () => {
+      const res = await fetchEmployeeContracts(employeeId);
+      return res.data ?? [];
+    },
+    enabled: enabled && !!employeeId,
+  });
+
+export const useExpiringContracts = (days = 30) =>
+  useQuery({
+    queryKey: usersQueryKeys.expiringContracts(days),
+    queryFn: async () => {
+      const res = await fetchExpiringContracts(days);
+      return res.data;
+    },
+  });
+
 export const useHRISEmployeeDetail = (id: string) =>
   useQuery({
     queryKey: usersQueryKeys.hrisEmployee(id),
@@ -64,6 +87,26 @@ export const useEmployeeDocuments = (employeeId: string, enabled = true) =>
     queryFn: async () => {
       const res = await fetchEmployeeDocuments(employeeId);
       return res.data ?? [];
+    },
+    enabled: enabled && !!employeeId,
+  });
+
+export const useEmployeeRecruitmentDocs = (employeeId: string, enabled = true) =>
+  useQuery({
+    queryKey: usersQueryKeys.recruitmentDocs(employeeId),
+    queryFn: async () => {
+      const res = await fetchEmployeeRecruitmentDocs(employeeId);
+      return res.data ?? null;
+    },
+    enabled: enabled && !!employeeId,
+  });
+
+export const useEmployeeLifecycle = (employeeId: string, enabled = true) =>
+  useQuery({
+    queryKey: usersQueryKeys.lifecycle(employeeId),
+    queryFn: async () => {
+      const res = await fetchEmployeeLifecycle(employeeId);
+      return res.data;
     },
     enabled: enabled && !!employeeId,
   });

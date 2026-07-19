@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { PrinterIcon, ArrowDownOnSquareIcon, ArrowLeftIcon } from "@heroicons/react/24/outline";
 import { usePayslip } from "../queries";
+import { prorateNote } from "@/lib/payroll/prorate-note";
 
 interface PayrollDetail {
   id: string;
@@ -28,6 +29,8 @@ interface PayrollDetail {
   tapera_deduction: number;
   pph21_deduction: number;
   unpaid_leave_deduction: number;
+  late_deduction?: number;
+  loan_deduction?: number;
   other_deduction: number;
   total_deductions: number;
   net_salary: number;
@@ -35,6 +38,10 @@ interface PayrollDetail {
   present_days: number;
   late_days: number;
   unpaid_leave_days: number;
+  /** Faktor proraté cakupan kontrak (0..1); pg numeric datang sebagai string */
+  prorate_factor?: number | string;
+  /** Snapshot gaji pokok penuh sebelum proraté (null utk baris lama) */
+  full_base_salary?: number | string | null;
   status: string;
   created_at: string;
   employee?: {
@@ -83,6 +90,13 @@ export function PayslipPage() {
 
   const payslipQuery = usePayslip(payrollRunId, employeeId);
   const detail = (payslipQuery.data as PayrollDetail | null) ?? null;
+  const slipProrateNote = detail
+    ? prorateNote({
+        factor: detail.prorate_factor,
+        fullBase: detail.full_base_salary,
+        paidBase: detail.base_salary,
+      })
+    : null;
   const loading = payslipQuery.isLoading;
 
   function handlePrint() {
@@ -172,6 +186,11 @@ export function PayslipPage() {
             <h3 className="font-semibold text-lg mb-3 text-gray-700">Penghasilan</h3>
             <div className="space-y-2">
               <EarningRow label="Gaji Pokok" amount={detail.base_salary} />
+              {slipProrateNote && (
+                <p className="text-xs text-amber-700 italic -mt-1">
+                  {slipProrateNote}
+                </p>
+              )}
               <EarningRow label="Tunjangan Tetap" amount={detail.fixed_allowance} />
               {detail.variable_allowance > 0 && (
                 <EarningRow label="Tunjangan Variabel" amount={detail.variable_allowance} />
@@ -215,6 +234,12 @@ export function PayslipPage() {
               <DeductionRow label="PPh 21" amount={detail.pph21_deduction} />
               {detail.unpaid_leave_deduction > 0 && (
                 <DeductionRow label="Cuti Tanpa Bayaran" amount={detail.unpaid_leave_deduction} />
+              )}
+              {(detail.late_deduction ?? 0) > 0 && (
+                <DeductionRow label="Potongan Keterlambatan" amount={detail.late_deduction ?? 0} />
+              )}
+              {(detail.loan_deduction ?? 0) > 0 && (
+                <DeductionRow label="Cicilan Pinjaman" amount={detail.loan_deduction ?? 0} />
               )}
               {detail.other_deduction > 0 && (
                 <DeductionRow label="Potongan Lain" amount={detail.other_deduction} />

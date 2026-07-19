@@ -25,7 +25,6 @@ import {
   ArrowUpIcon,
   ArrowDownIcon,
   CalendarDaysIcon,
-  ArrowUpTrayIcon,
   CheckIcon,
 } from "@heroicons/react/24/outline";
 import { useToast, ToastContainer } from "@/components/ui/toast";
@@ -59,7 +58,6 @@ export function ScheduleStaffPage() {
 
   // Dialogs
   const [scheduleDialog, setScheduleDialog] = useState<{ staff: ScheduleStaffMember; current: StaffScheduleRow[] } | null>(null);
-  const [importDialog, setImportDialog] = useState(false);
 
   // Schedule form: one row per day
   const [scheduleForm, setScheduleForm] = useState<Record<number, {
@@ -146,17 +144,6 @@ export function ScheduleStaffPage() {
     }
   }
 
-  async function handleImportExcel(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    // For now, just show a placeholder message
-    // Full Excel parsing would require xlsx library
-    showToast("Fitur import Excel dalam pengembangan. Silakan input jadwal secara manual.", "error");
-    setImportDialog(false);
-    e.target.value = "";
-  }
-
   const filteredStaff = staff.filter((s) =>
     s.full_name.toLowerCase().includes(staffSearch.toLowerCase()) ||
     s.employee_code.toLowerCase().includes(staffSearch.toLowerCase())
@@ -222,11 +209,6 @@ export function ScheduleStaffPage() {
           <p className="text-gray-500 text-sm mt-1">
             Atur jadwal kerja staff per minggu
           </p>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setImportDialog(true)} className="gap-2">
-            <ArrowUpTrayIcon className="w-4 h-4" /> Import Jadwal
-          </Button>
         </div>
       </div>
 
@@ -401,30 +383,6 @@ export function ScheduleStaffPage() {
             <Button onClick={handleSaveSchedule} disabled={saving}>
               {saving ? "Menyimpan..." : "Simpan Jadwal"}
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Import Dialog */}
-      <Dialog open={importDialog} onOpenChange={(o) => !o && setImportDialog(false)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Import Jadwal dari Excel</DialogTitle>
-          </DialogHeader>
-          <div className="py-4 text-center">
-            <ArrowUpTrayIcon className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-            <p className="text-sm text-gray-600 mb-4">
-              Upload file Excel (.xlsx) berisi jadwal staff. Format kolom: Kode Staff, Hari, Jam Masuk, Jam Pulang.
-            </p>
-            <input
-              type="file"
-              accept=".xlsx,.xls"
-              onChange={handleImportExcel}
-              className="text-sm"
-            />
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setImportDialog(false)}>Tutup</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createPgClient } from "@/lib/pg/create-client";
 import { getPosSession } from '@/lib/api/auth';
-import { awardCrmXpForSplitPayment } from '@/lib/crm/loyalty-engine';
+import { awardCrmXpForSplitPayment, syncPosCustomerOrderStats } from '@/lib/crm/loyalty-engine';
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : 'Unknown error';
@@ -61,6 +61,21 @@ export async function POST(
 
     const changeAmount = amountPaid - splitTotal;
     const arkUsed = Number(ark_coins_used || 0);
+
+    // 1 pembayaran = 1 metode (EPIC-011): ARK Coin tidak dicampur metode lain,
+    // dan harus menutup seluruh total split.
+    if (arkUsed > 0 && payment_method !== 'ark_coin') {
+      return NextResponse.json(
+        { success: false, error: 'ARK Coin tidak bisa dicampur metode lain — 1 pembayaran 1 metode' },
+        { status: 400 }
+      );
+    }
+    if (payment_method === 'ark_coin' && arkUsed < splitTotal) {
+      return NextResponse.json(
+        { success: false, error: 'Pembayaran ARK Coin harus menutup seluruh total split' },
+        { status: 400 }
+      );
+    }
 
     if (arkUsed > 0) {
       if (!split.customer_id) {
@@ -151,12 +166,18 @@ export async function POST(
       changed_at: new Date().toISOString(),
     });
 
+    // Statistik kunjungan/belanja untuk semua metode pembayaran
+    if (split.customer_id) {
+      await syncPosCustomerOrderStats(db, split.customer_id, splitTotal);
+    }
+
     const crmXp = await awardCrmXpForSplitPayment(db, {
       orderId,
       splitId,
       customerId: split.customer_id || null,
       totalAmount: splitTotal,
       outletId: split.branch_id || null,
+      paymentMethod: payment_method,
     });
 
     return NextResponse.json({

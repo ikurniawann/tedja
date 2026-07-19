@@ -5,12 +5,15 @@ import { logbookQueryKeys } from "./query-keys";
 import {
   createLogbookTemplate,
   createLogbookEntry,
-  toggleLogbookItem,
+  updateLogbookItem,
   updateLogbookEntryStatus,
+  deleteLogbookEntry,
+  deleteLogbookTemplate,
 } from "./api";
 import type {
   CreateLogbookTemplatePayload,
   CreateLogbookEntryPayload,
+  UpdateLogbookItemPayload,
   UpdateLogbookEntryStatusPayload,
 } from "./types";
 
@@ -35,11 +38,10 @@ export function useCreateLogbookEntry() {
   });
 }
 
-export function useToggleLogbookItem() {
+export function useUpdateLogbookItem() {
   const invalidate = useInvalidateLogbook();
   return useMutation({
-    mutationFn: ({ itemId, isChecked }: { itemId: string; isChecked: boolean }) =>
-      toggleLogbookItem(itemId, isChecked),
+    mutationFn: (payload: UpdateLogbookItemPayload) => updateLogbookItem(payload),
     onSuccess: invalidate,
   });
 }
@@ -49,6 +51,22 @@ export function useUpdateLogbookEntryStatus() {
   return useMutation({
     mutationFn: (payload: UpdateLogbookEntryStatusPayload) =>
       updateLogbookEntryStatus(payload),
+    onSuccess: invalidate,
+  });
+}
+
+export function useDeleteLogbookEntry() {
+  const invalidate = useInvalidateLogbook();
+  return useMutation({
+    mutationFn: (entryId: string) => deleteLogbookEntry(entryId),
+    onSuccess: invalidate,
+  });
+}
+
+export function useDeleteLogbookTemplate() {
+  const invalidate = useInvalidateLogbook();
+  return useMutation({
+    mutationFn: (templateId: string) => deleteLogbookTemplate(templateId),
     onSuccess: invalidate,
   });
 }

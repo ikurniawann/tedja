@@ -193,7 +193,7 @@ export function TalentPoolPage() {
     if (!selectedCandidate) return;
     try {
       if (actionDialog === "activate") {
-        await updateStatusMutation.mutateAsync({ id: selectedCandidate.id, status: "new" });
+        await updateStatusMutation.mutateAsync({ id: selectedCandidate.id, status: "applied" });
       } else if (actionDialog === "archive") {
         await updateStatusMutation.mutateAsync({ id: selectedCandidate.id, status: "archived" });
       } else if (actionDialog === "whatsapp") {

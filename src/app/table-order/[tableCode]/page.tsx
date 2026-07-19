@@ -54,7 +54,7 @@ type Customer = {
   phone: string;
   membership_tier: string;
   ark_coin_balance: number;
-  current_xp: number;
+  total_xp: number;
 };
 
 type TableSession = {
@@ -488,7 +488,7 @@ export default function TableOrderPage() {
                         <div>
                           <div className="font-semibold text-pink-950">{guest ? "Guest Customer" : memberName}</div>
                           <div className="text-sm text-pink-700">
-                            {guest ? "XP tidak disimpan ke member." : `${formatNumber(arkBalance)} ARK Coin tersedia · ${formatNumber(customer?.current_xp ?? 0)} XP`}
+                            {guest ? "XP tidak disimpan ke member." : `${formatNumber(arkBalance)} ARK Coin tersedia · ${formatNumber(customer?.total_xp ?? 0)} XP`}
                           </div>
                         </div>
                       </div>

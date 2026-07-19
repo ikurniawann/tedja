@@ -9,6 +9,7 @@ import {
   fetchLogbookEntries,
   fetchLogbookSummary,
 } from "./api";
+import type { LogbookEntriesParams, LogbookTemplatesParams } from "./types";
 
 export const useLogbookMe = () =>
   useQuery({ queryKey: logbookQueryKeys.me(), queryFn: fetchLogbookMe });
@@ -16,11 +17,20 @@ export const useLogbookMe = () =>
 export const useLogbookDepartments = () =>
   useQuery({ queryKey: logbookQueryKeys.departments(), queryFn: fetchLogbookDepartments });
 
-export const useLogbookTemplates = () =>
-  useQuery({ queryKey: logbookQueryKeys.templates(), queryFn: fetchLogbookTemplates });
+export const useLogbookTemplates = (params?: LogbookTemplatesParams) =>
+  useQuery({
+    queryKey: logbookQueryKeys.templates(params),
+    queryFn: () => fetchLogbookTemplates(params),
+  });
 
-export const useLogbookEntries = () =>
-  useQuery({ queryKey: logbookQueryKeys.entries(), queryFn: fetchLogbookEntries });
+export const useLogbookEntries = (params?: LogbookEntriesParams) =>
+  useQuery({
+    queryKey: logbookQueryKeys.entries(params),
+    queryFn: () => fetchLogbookEntries(params),
+  });
 
-export const useLogbookSummary = () =>
-  useQuery({ queryKey: logbookQueryKeys.summary(), queryFn: fetchLogbookSummary });
+export const useLogbookSummary = (params?: { department_id?: string }) =>
+  useQuery({
+    queryKey: logbookQueryKeys.summary(params),
+    queryFn: () => fetchLogbookSummary(params),
+  });

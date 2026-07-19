@@ -6,7 +6,6 @@ import { useState, useEffect, useCallback } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { createBrowserClient } from "@/lib/pg/browser-client";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Loader2, Upload, X, CheckCircle, Phone, Mail, MapPin, Briefcase, ArrowUp } from "lucide-react";
@@ -38,7 +37,6 @@ const logoUrl = "/logos/sulu-in-wounderland-logo.png";
 
 export default function PortalPage() {
   const router = useRouter();
-  const db = createBrowserClient();
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -95,95 +93,39 @@ export default function PortalPage() {
     if (brandId) setValue("brand_id", brandId);
     if (positionId) setValue("position_id", positionId);
 
-    // If job_opening_id is present, fetch job details and auto-fill brand & position
-    if (openingId) {
-      setIsBrandReadOnly(true);
-      db
-        .from("job_openings")
-        .select("brand_id, position_id")
-        .eq("id", openingId)
-        .single()
-        .then(({ data }) => {
-          if (data) {
-            if (data.brand_id && !brandId) {
-              setValue("brand_id", data.brand_id);
-            }
-            if (data.position_id && !positionId) {
-              setValue("position_id", data.position_id);
-            }
-          }
-        });
-    }
-  }, [setValue]);
+    if (openingId) setIsBrandReadOnly(true);
 
-  // Fetch brands
-  useEffect(() => {
-    db
-      .from("brands")
-      .select("id, name")
-      .eq("is_active", true)
-      .then(({ data }) => {
-        if (data) setBrands(data);
-      });
-  }, []);
-
-  // Fetch all active positions from master data
-  useEffect(() => {
+    // Outlet (Business level Branch), posisi, dan auto-fill dari job opening
+    // lewat satu endpoint publik (browser client butuh auth, portal tidak).
     let cancelled = false;
-
-    const fetchPositions = async () => {
+    (async () => {
       setPositionsLoading(true);
       try {
-        const { data, error } = await db
-          .from("positions")
-          .select("id, title, brand_id")
-          .eq("is_active", true)
-          .order("title", { ascending: true });
-
+        const qs = openingId ? `?opening=${encodeURIComponent(openingId)}` : "";
+        const res = await fetch(`/api/portal/options${qs}`);
+        const json = await res.json();
         if (cancelled) return;
-
-        if (error) {
-          console.error("[Positions] Error:", error);
-          setPositions([]);
+        if (!res.ok) {
+          console.error("[Portal] Gagal memuat opsi:", json.error);
           return;
         }
-
-        if (data && data.length > 0) {
-          console.log("[Positions] Loaded:", data.length, "positions");
-          setPositions(data);
-          return;
+        setBrands(json.data.outlets ?? []);
+        setPositions(json.data.positions ?? []);
+        const opening = json.data.opening;
+        if (opening) {
+          if (opening.brand_id && !brandId) setValue("brand_id", opening.brand_id);
+          if (opening.position_id && !positionId) setValue("position_id", opening.position_id);
         }
-
-        console.warn("[Positions] No active positions, trying fallback...");
-        const { data: fallbackData, error: fallbackError } = await db
-          .from("positions")
-          .select("id, title, brand_id")
-          .order("title", { ascending: true })
-          .limit(50);
-
-        if (cancelled) return;
-
-        if (fallbackError) {
-          console.error("[Positions] Fallback error:", fallbackError);
-          setPositions([]);
-        } else if (fallbackData && fallbackData.length > 0) {
-          console.log("[Positions] Loaded fallback:", fallbackData.length, "positions");
-          setPositions(fallbackData);
-        } else {
-          console.warn("[Positions] Still no data after fallback");
-          setPositions([]);
-        }
+      } catch (err) {
+        if (!cancelled) console.error("[Portal] Gagal memuat opsi:", err);
       } finally {
-        if (!cancelled) {
-          console.log("[Positions] Fetch complete, loading = false");
-          setPositionsLoading(false);
-        }
+        if (!cancelled) setPositionsLoading(false);
       }
+    })();
+    return () => {
+      cancelled = true;
     };
-
-    fetchPositions();
-    return () => { cancelled = true; };
-  }, []);
+  }, [setValue]);
 
   // File handlers
   const handleCvChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {

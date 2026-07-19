@@ -51,7 +51,7 @@ export async function POST(request: Request) {
   if (body.recommendation) {
     let newStatus: string | null = null;
     if (body.recommendation === "proceed") {
-      newStatus = body.type === "hrd" ? "interview_manager" : "hired";
+      newStatus = "offer";
     } else if (body.recommendation === "pool") {
       newStatus = "talent_pool";
     } else if (body.recommendation === "reject") {

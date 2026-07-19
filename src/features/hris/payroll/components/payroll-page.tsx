@@ -27,6 +27,7 @@ import {
   CheckCircleIcon,
   ClockIcon,
   XCircleIcon,
+  Cog6ToothIcon,
 } from "@heroicons/react/24/outline";
 import { useToast, ToastContainer } from "@/components/ui/toast";
 import { usePayrollRuns } from "../queries";
@@ -170,10 +171,19 @@ export function PayrollPage() {
           <h1 className="text-2xl font-bold text-gray-900">Payroll & Benefits</h1>
           <p className="text-sm text-gray-500">Kelola penggajian, slip gaji, dan pinjaman karyawan</p>
         </div>
-        <Button onClick={() => setShowNewDialog(true)} className="bg-pink-600 hover:bg-pink-700">
-          <PlusIcon className="w-4 h-4 mr-2" />
-          Payroll Baru
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={() => router.push("/dashboard/hris/payroll/settings")}
+          >
+            <Cog6ToothIcon className="w-4 h-4 mr-2" />
+            Pengaturan
+          </Button>
+          <Button onClick={() => setShowNewDialog(true)} className="bg-pink-600 hover:bg-pink-700">
+            <PlusIcon className="w-4 h-4 mr-2" />
+            Payroll Baru
+          </Button>
+        </div>
       </div>
 
       {/* Stats Cards */}
@@ -241,7 +251,7 @@ export function PayrollPage() {
                 {payrollRuns.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="py-8 text-center text-gray-500">
-                      Belum ada payroll run. Klik "Payroll Baru" untuk membuat.
+                      Belum ada payroll run. Klik &quot;Payroll Baru&quot; untuk membuat.
                     </td>
                   </tr>
                 ) : (

@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getPosSession } from "@/lib/api/auth";
 import { createPgClient } from "@/lib/pg/create-client";
-import { apiErrorResponse, isMissingCrmSchema, validationErrorResponse } from "@/lib/crm/server";
+import { apiErrorResponse, isMissingCrmSchema, validationErrorResponse,
+  requireCrmConfigRole,
+} from "@/lib/crm/server";
 
 const rewardSchema = z.object({
   code: z.string().trim().min(1).max(80).transform((value) => value.toLowerCase()),
@@ -56,10 +58,8 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const sessionUserId = await getPosSession();
-  if (!sessionUserId) {
-    return NextResponse.json({ success: false, error: "Authentication required" }, { status: 401 });
-  }
+  const forbidden = await requireCrmConfigRole();
+  if (forbidden) return forbidden;
 
   try {
     const payload = rewardSchema.parse(await request.json());
@@ -91,10 +91,8 @@ export async function POST(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  const sessionUserId = await getPosSession();
-  if (!sessionUserId) {
-    return NextResponse.json({ success: false, error: "Authentication required" }, { status: 401 });
-  }
+  const forbidden = await requireCrmConfigRole();
+  if (forbidden) return forbidden;
 
   try {
     const rewardId = request.nextUrl.searchParams.get("id");

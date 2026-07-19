@@ -46,3 +46,7 @@ Panduan/
 server.log
 assistant-memory/
 storage/uploads/
+# storage private: gambar psikotes, snapshot proctoring, rekaman interview
+storage/private/
+# cache OCR tesseract.js (diunduh runtime)
+*.traineddata

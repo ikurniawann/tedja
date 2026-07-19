@@ -1,6 +1,6 @@
 "use client";
 
-import { use } from "react";
+import { use, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -24,6 +24,7 @@ interface PayrollDetail {
   bpjs_tk_jht_deduction: number;
   bpjs_kes_deduction: number;
   status: string;
+  payslip_sent?: boolean;
   employee?: {
     id: string;
     full_name: string;
@@ -75,10 +76,35 @@ export function PayrollDetailPage({ params }: PayrollPageProps) {
   const router = useRouter();
   const { toasts, showToast, removeToast } = useToast();
 
+  const [notifyingId, setNotifyingId] = useState<string | null>(null);
+
   const runQuery = usePayrollRun(id);
   const payrollRun = (runQuery.data as PayrollRun | undefined) ?? null;
   const details: PayrollDetail[] = runQuery.data?.payroll_details ?? [];
   const loading = runQuery.isLoading;
+
+
+  async function handleNotify(detailId: string) {
+    setNotifyingId(detailId);
+    try {
+      const res = await fetch("/api/hris/payslips/notify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ payroll_detail_id: detailId }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Gagal mengirim notifikasi");
+      if (json.data?.wa_link) {
+        window.open(json.data.wa_link, "_blank");
+      }
+      showToast(json.message || "Slip ditandai terkirim");
+      runQuery.refetch();
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Gagal mengirim notifikasi", "error");
+    } finally {
+      setNotifyingId(null);
+    }
+  }
 
   async function handleExportCSV() {
     if (!details || details.length === 0) {
@@ -240,7 +266,7 @@ export function PayrollDetailPage({ params }: PayrollPageProps) {
                 {details.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="py-8 text-center text-gray-500">
-                      Belum ada detail payroll. Klik "Calculate" di halaman sebelumnya.
+                      Belum ada detail payroll. Klik &quot;Calculate&quot; di halaman sebelumnya.
                     </td>
                   </tr>
                 ) : (
@@ -265,14 +291,32 @@ export function PayrollDetailPage({ params }: PayrollPageProps) {
                         {formatCurrency(detail.net_salary)}
                       </td>
                       <td className="text-right py-3 px-4">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => router.push(`/dashboard/hris/payroll/${id}/payslip/${detail.employee_id}`)}
-                        >
-                          <DocumentTextIcon className="w-4 h-4" />
-                          Slip
-                        </Button>
+                        <div className="flex items-center justify-end gap-2">
+                          {payrollRun?.status === "paid" && (
+                            <Button
+                              size="sm"
+                              variant={detail.payslip_sent ? "ghost" : "outline"}
+                              className={detail.payslip_sent ? "text-green-600" : ""}
+                              disabled={notifyingId === detail.id}
+                              title={
+                                detail.payslip_sent
+                                  ? "Notifikasi sudah dikirim — klik utk kirim ulang"
+                                  : "Kirim notifikasi WhatsApp slip terbit"
+                              }
+                              onClick={() => handleNotify(detail.id)}
+                            >
+                              {detail.payslip_sent ? "✓ WA" : "WA"}
+                            </Button>
+                          )}
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => router.push(`/dashboard/hris/payroll/${id}/payslip/${detail.employee_id}`)}
+                          >
+                            <DocumentTextIcon className="w-4 h-4" />
+                            Slip
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   ))

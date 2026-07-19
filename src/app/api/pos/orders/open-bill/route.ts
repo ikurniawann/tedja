@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createPgClient } from "@/lib/pg/create-client";
 import { getPosSession } from '@/lib/api/auth';
 import { buildCostSnapshot, loadPosProductCostMap } from '@/lib/pos/purchasing-sync';
+import { checkProductPrivileges } from '@/lib/crm/product-privilege';
 
 const STATIONS = ['kitchen', 'bar', 'bakery', 'dessert', 'merchandise', 'photobooth'];
 
@@ -136,6 +137,20 @@ export async function POST(request: NextRequest) {
 
     if (!Array.isArray(items) || items.length === 0) {
       return NextResponse.json({ success: false, error: 'Items are required' }, { status: 400 });
+    }
+
+    // Produk privilege (min_xp) — EPIC-011 Fase C
+    const dbPrivilege = createPgClient();
+    const privilege = await checkProductPrivileges(
+      dbPrivilege,
+      items.map((item) => String(item.product_id || '')),
+      customer_id
+    );
+    if (!privilege.allowed) {
+      return NextResponse.json(
+        { success: false, error: privilege.message },
+        { status: 403 }
+      );
     }
 
     const db = createPgClient();

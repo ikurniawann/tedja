@@ -9,6 +9,7 @@ import {
   Package,
   RefreshCw,
   Save,
+  Settings2,
   Sparkles,
   Trophy,
   UserRound,
@@ -209,6 +210,13 @@ export function CrmDashboardPage() {
             >
               <Award className="size-4" />
               Avatars
+            </Link>
+            <Link
+              href="/dashboard/crm/settings"
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-100"
+            >
+              <Settings2 className="size-4" />
+              Konfigurasi
             </Link>
             <button
               type="button"

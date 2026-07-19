@@ -3,7 +3,7 @@
 // ============================================================
 
 // --- Enums ---
-export type UserRole = "super_admin" | "hrd" | "hiring_manager" | "direksi" | "purchasing_admin" | "purchasing_manager" | "purchasing_staff" | "finance_staff" | "warehouse_staff" | "warehouse_admin" | "pos" | "admin" | "qc_staff" | "pos_supervisor";
+export type UserRole = "super_admin" | "hrd" | "hiring_manager" | "direksi" | "purchasing_admin" | "purchasing_manager" | "purchasing_staff" | "finance_staff" | "warehouse_staff" | "warehouse_admin" | "pos" | "admin" | "qc_staff" | "pos_supervisor" | "employee";
 export type CandidateSource =
   | "portal"
   | "internal"
@@ -13,12 +13,13 @@ export type CandidateSource =
   | "jobfair"
   | "other";
 export type CandidateStatus =
-  | "new"
+  | "applied"
   | "screening"
-  | "interview_hrd"
-  | "interview_manager"
-  | "talent_pool"
+  | "psikotes"
+  | "interview"
+  | "offer"
   | "hired"
+  | "talent_pool"
   | "rejected"
   | "archived";
 export type InterviewType = "hrd" | "hiring_manager";
@@ -218,12 +219,13 @@ export interface PositionCreateInput {
 // --- Pipeline ---
 
 export type PipelineStage =
-  | "new"
+  | "applied"
   | "screening"
-  | "interview_hrd"
-  | "interview_manager"
-  | "talent_pool"
+  | "psikotes"
+  | "interview"
+  | "offer"
   | "hired"
+  | "talent_pool"
   | "rejected";
 
 export interface PipelineColumn {

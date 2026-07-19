@@ -129,13 +129,12 @@ export async function POST(request: NextRequest) {
     // ── Cash / credit: credit wallet immediately ───────────────────────────
     if (payment_method === "cash" || payment_method === "credit") {
       const balanceAfter = balanceBefore + amountValue;
-      const totalSpentAfter = Number(customer.total_spent || 0) + amountValue;
 
+      // Topup tidak menambah total_spent (CRM: dasar top spender = belanja order saja).
       const { error: updateError } = await db
         .from("pos_customers")
         .update({
           ark_coin_balance: balanceAfter,
-          total_spent: totalSpentAfter,
           updated_at: new Date().toISOString(),
         })
         .eq("id", customer_id);

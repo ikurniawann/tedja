@@ -1,4 +1,4 @@
-import { apiGet, apiPost, apiPut, apiDelete } from "@/lib/api-client";
+import { apiGet, apiPost, apiPut, apiPatch, apiDelete } from "@/lib/api-client";
 import type { CreateUserEmployeeInput, UpdateUserEmployeeInput } from "@/lib/users/schemas";
 import type { UserEmployeeItem } from "@/lib/users/user-mapper";
 import type { Employee } from "@/types/hris";
@@ -61,6 +61,74 @@ export const fetchHRISEmployeeDetail = (id: string) =>
 export const fetchEmployeeDocuments = (employeeId: string) =>
   apiGet<{ data: EmployeeDocumentRow[] }>(`/api/hris/employees/documents?employee_id=${employeeId}`);
 
+export interface EmployeeLifecycleData {
+  employee: {
+    join_date: string | null;
+    end_date: string | null;
+    employment_status: string;
+    is_active: boolean;
+    created_at: string;
+    has_account: boolean;
+  };
+  recruitment: {
+    candidate_id: string;
+    applied_at: string;
+    source: string | null;
+    position_title: string | null;
+    offer_accepted_at: string | null;
+    promoted_at: string | null;
+  } | null;
+  account: {
+    email: string;
+    created_at: string;
+    last_sign_in_at: string | null;
+  } | null;
+  onboarding: { total: number; completed: number; last_completed_at: string | null };
+  history: {
+    id: string;
+    change_type: string;
+    effective_date: string;
+    reason: string | null;
+    notes: string | null;
+    prev_employment_status: string | null;
+    new_employment_status: string | null;
+    prev_department_name: string | null;
+    new_department_name: string | null;
+    prev_job_title: string | null;
+    new_job_title: string | null;
+  }[];
+  offboarding: {
+    id: string;
+    status: string;
+    resignation_type: string | null;
+    resignation_date: string | null;
+    last_working_day: string | null;
+    clearance_hrd: boolean | null;
+    clearance_it: boolean | null;
+    clearance_finance: boolean | null;
+    clearance_manager: boolean | null;
+    completed_at: string | null;
+  } | null;
+}
+
+export const fetchEmployeeLifecycle = (employeeId: string) =>
+  apiGet<{ data: EmployeeLifecycleData }>(`/api/hris/employees/${employeeId}/lifecycle`);
+
+// ── Dokumen asal rekrutmen (CV + Laporan Pipeline) ──────────────────────
+export interface EmployeeRecruitmentDocs {
+  candidate_id: string;
+  cv_url: string | null;
+  status: string;
+  applied_at: string;
+  position_title: string | null;
+  report_available: boolean;
+}
+
+export const fetchEmployeeRecruitmentDocs = (employeeId: string) =>
+  apiGet<{ data: EmployeeRecruitmentDocs | null }>(
+    `/api/hris/employees/${employeeId}/recruitment-documents`
+  );
+
 export const fetchEmploymentHistory = (employeeId: string) =>
   apiGet<{ data: EmploymentHistoryRow[] }>(`/api/hris/employment-history?employee_id=${employeeId}`);
 
@@ -75,6 +143,130 @@ export const fetchEmployeeAttendance = (employeeId: string, month: number, year:
 
 export const fetchEmployeeLeaveBalances = (employeeId: string) =>
   apiGet<{ data: LeaveBalanceRow[] }>(`/api/hris/leave-balances/${employeeId}`);
+
+// ── Kontrak karyawan (PKWTT / PKWT) ─────────────────────────────────────
+export interface EmployeeContractRow {
+  id: string;
+  employee_id: string;
+  contract_number: string;
+  contract_type: "pkwtt" | "pkwt";
+  status: "draft" | "active" | "ended" | "terminated" | "converted";
+  start_date: string;
+  end_date: string | null;
+  probation_end_date: string | null;
+  parent_contract_id: string | null;
+  sequence: number;
+  position_title: string | null;
+  department_name: string | null;
+  work_location: string | null;
+  base_salary: string | null;
+  signed_at: string | null;
+  signed_document_url: string | null;
+  kemnaker_registered_at: string | null;
+  compensation_amount: string | null;
+  compensation_paid_at: string | null;
+  terminated_reason: string | null;
+  notes: string | null;
+  created_by_name: string | null;
+  created_at: string;
+}
+
+export interface CreateContractInput {
+  contract_type: "pkwtt" | "pkwt";
+  start_date: string;
+  end_date?: string | null;
+  probation_end_date?: string | null;
+  position_title?: string | null;
+  work_location?: string | null;
+  base_salary?: number | null;
+  notes?: string | null;
+}
+
+export interface ContractActionInput {
+  action: "activate" | "end" | "terminate" | "convert" | "renew" | "edit" | "update";
+  end_date?: string | null;
+  reason?: string;
+  signed_at?: string | null;
+  signed_document_url?: string;
+  kemnaker_registered_at?: string | null;
+  compensation_paid_at?: string | null;
+  notes?: string | null;
+  // aksi edit (draft saja)
+  start_date?: string;
+  probation_end_date?: string | null;
+  position_title?: string | null;
+  work_location?: string | null;
+  base_salary?: number | null;
+}
+
+export interface ExpiringContractsData {
+  days: number;
+  contracts: {
+    contract_id: string;
+    employee_id: string;
+    employee_name: string;
+    contract_number: string;
+    contract_type: "pkwt" | "pkwtt";
+    position_title: string | null;
+    end_date: string;
+    days_left: number;
+  }[];
+  probations: {
+    contract_id: string;
+    employee_id: string;
+    employee_name: string;
+    contract_number: string;
+    position_title: string | null;
+    probation_end_date: string;
+    days_left: number;
+  }[];
+  noContract: {
+    employee_id: string;
+    employee_name: string;
+    employment_status: string;
+    join_date: string | null;
+    draft_contract_number: string | null;
+    draft_start_date: string | null;
+  }[];
+}
+
+export const fetchExpiringContracts = (days = 30) =>
+  apiGet<{ data: ExpiringContractsData }>(`/api/hris/contracts/expiring?days=${days}`);
+
+export const fetchEmployeeContracts = (employeeId: string) =>
+  apiGet<{ data: EmployeeContractRow[] }>(`/api/hris/employees/${employeeId}/contracts`);
+
+export const createEmployeeContract = (employeeId: string, payload: CreateContractInput) =>
+  apiPost<{ data: EmployeeContractRow; message: string }>(
+    `/api/hris/employees/${employeeId}/contracts`,
+    payload
+  );
+
+export const patchEmployeeContract = (contractId: string, payload: ContractActionInput) =>
+  apiPatch<{ message: string; compensation_amount?: number | null }>(
+    `/api/hris/contracts/${contractId}`,
+    payload
+  );
+
+export const deleteEmployeeContract = (contractId: string) =>
+  apiDelete(`/api/hris/contracts/${contractId}`);
+
+export async function uploadContractSignedDocument(contractId: string, file: File) {
+  const formData = new FormData();
+  formData.append("file", file);
+  const res = await fetch(`/api/hris/contracts/${contractId}/signed-document`, {
+    method: "POST",
+    body: formData,
+  });
+  const json = (await res.json().catch(() => ({}))) as { message?: string; error?: string };
+  if (!res.ok) {
+    throw new Error(json.error ?? `Upload gagal (${res.status})`);
+  }
+  return json as { message: string };
+}
+
+export const deleteContractSignedDocument = (contractId: string) =>
+  apiDelete(`/api/hris/contracts/${contractId}/signed-document`);
 
 export const createEmployeeDocument = (payload: EmployeeDocumentInput) =>
   apiPost<{ data: unknown }>("/api/hris/employees/documents", payload);

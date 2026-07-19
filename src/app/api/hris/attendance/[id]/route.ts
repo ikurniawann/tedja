@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerPgClient } from "@/lib/pg/create-client";
+import { getWorkforceActor } from "@/lib/hris/workforce-auth";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -58,26 +59,11 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     const { id } = await params;
     const body = await request.json();
 
-    // Check authentication
-    const { data: { user } } = await db.auth.getUser();
-    if (!user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
+    const actor = await getWorkforceActor();
+    if (!actor) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-
-    // Check if user is HRD or manager
-    const { data: userData } = await db
-      .from('users')
-      .select('role')
-      .eq('id', user.id)
-      .single();
-
-    const isHRD = userData?.role === 'hrd';
-    const isManager = userData?.role === 'hiring_manager' || isHRD;
-
-    if (!isHRD && !isManager) {
+    if (!actor.isHr) {
       return NextResponse.json(
         { error: 'Forbidden: Only HRD or managers can update attendance' },
         { status: 403 }
@@ -86,21 +72,23 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
     // Build update object
     const updateData: any = {};
-    
+
     if (body.status !== undefined) {
       updateData.status = body.status;
     }
-    
+
     if (body.notes !== undefined) {
       updateData.notes = body.notes;
     }
-    
+
     if (body.validation_notes !== undefined) {
       updateData.validation_notes = body.validation_notes;
     }
-    
+
     if (body.validated === true) {
-      updateData.validated_by = user.id;
+      // FK validated_by → hris.employees(id): pakai record karyawan si
+      // validator; null bila akun tidak tertaut karyawan (mis. super admin)
+      updateData.validated_by = actor.employeeId;
       updateData.validated_at = new Date().toISOString();
     }
 
@@ -142,23 +130,11 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     const db = await createServerPgClient();
     const { id } = await params;
 
-    // Check authentication
-    const { data: { user } } = await db.auth.getUser();
-    if (!user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
+    const actor = await getWorkforceActor();
+    if (!actor) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-
-    // Check if user is HRD
-    const { data: userData } = await db
-      .from('users')
-      .select('role')
-      .eq('id', user.id)
-      .single();
-
-    if (userData?.role !== 'hrd') {
+    if (!['super_admin', 'admin', 'hrd'].includes(actor.role)) {
       return NextResponse.json(
         { error: 'Forbidden: Only HRD can delete attendance records' },
         { status: 403 }

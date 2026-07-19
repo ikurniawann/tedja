@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerPgClient } from "@/lib/pg/create-client";
+import { withTransaction } from "@/lib/db";
+import { getWorkforceActor } from "@/lib/hris/workforce-auth";
+import { buildWaLink } from "@/lib/recruitment/wa";
 import { z } from 'zod';
 
 // Validation schema for approval
@@ -11,43 +14,34 @@ const approvalSchema = z.object({
 
 /**
  * POST /api/hris/leaves/approve
- * Approve or reject leave request (Manager only)
+ * Approve / reject pengajuan cuti oleh HRD, manajer, atau admin.
+ * approved_by ber-FK ke hris.employees(id) — diisi record karyawan approver
+ * (null bila akun approver tidak tertaut karyawan, mis. super admin).
+ * Update status + potong kuota berjalan dalam SATU transaksi.
  */
 export async function POST(request: NextRequest) {
   try {
-    const db = await createServerPgClient();
     const body = await request.json();
 
-    // Check authentication
-    const { data: { user } } = await db.auth.getUser();
-    if (!user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
+    const actor = await getWorkforceActor();
+    if (!actor) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     // Validate request
     const validated = approvalSchema.parse(body);
 
-    // Check if user is manager or HRD
-    const isManager = await checkIsManager(db, user.id);
-    if (!isManager) {
-      return NextResponse.json(
-        { error: 'Forbidden: Only managers can approve leave requests' },
-        { status: 403 }
-      );
-    }
-
-    // Get leave request
+    const db = await createServerPgClient();
     const { data: leave, error: fetchError } = await db
       .from('leaves')
       .select(`
         *,
-        employee:employees(
+        employee:employees!employee_id(
           id,
           full_name,
           email,
+          phone,
+          reporting_to,
           department:departments(id, name),
           job_title:positions(id, title)
         )
@@ -59,6 +53,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: 'Leave request not found' },
         { status: 404 }
+      );
+    }
+
+    // MSS: selain HR, ATASAN LANGSUNG karyawan (reporting_to) boleh approve
+    const isDirectManager =
+      actor.employeeId !== null && leave.employee?.reporting_to === actor.employeeId;
+    if (!actor.isHr && !isDirectManager) {
+      return NextResponse.json(
+        { error: 'Forbidden: hanya HRD/admin atau atasan langsung yang bisa memproses' },
+        { status: 403 }
       );
     }
 
@@ -78,62 +82,72 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Update leave status
-    const updateData: any = {
-      status: validated.action === 'approve' ? 'approved' : 'rejected',
-      approved_by: user.id,
-      approved_at: new Date().toISOString(),
-    };
+    const isApprove = validated.action === 'approve';
+    const newStatus = isApprove ? 'approved' : 'rejected';
 
-    if (validated.action === 'reject') {
-      updateData.rejection_reason = validated.rejection_reason;
-    }
+    // Status + potong kuota harus atomik — gagal salah satu, batal semua
+    await withTransaction(async (client) => {
+      await client.query(
+        `UPDATE hris.leaves
+         SET status = $2, approved_by = $3, approved_at = now(),
+             rejection_reason = $4
+         WHERE id = $1 AND status = 'pending'`,
+        [
+          validated.leave_id,
+          newStatus,
+          actor.employeeId,
+          validated.action === 'reject' ? (validated.rejection_reason ?? null) : null,
+        ]
+      );
 
-    const { data, error } = await db
+      if (isApprove && leave.leave_type === 'annual') {
+        await client.query(
+          `INSERT INTO hris.leave_balances (employee_id, year, annual_leave_total, annual_leave_used)
+           VALUES ($1, $2, 12, $3)
+           ON CONFLICT (employee_id, year)
+           DO UPDATE SET annual_leave_used = leave_balances.annual_leave_used + $3,
+                         updated_at = now()`,
+          [leave.employee_id, new Date(leave.start_date).getFullYear(), leave.total_days]
+        );
+      }
+    });
+
+    const { data } = await db
       .from('leaves')
-      .update(updateData)
-      .eq('id', validated.leave_id)
       .select(`
         *,
-        employee:employees(
+        employee:employees!employee_id(
           id,
           full_name,
           email,
           department:departments(name)
         ),
-        approver:employees!leaves_approved_by_fkey(
+        approver:employees!approved_by(
           id,
           full_name,
           email
         )
       `)
+      .eq('id', validated.leave_id)
       .single();
 
-    if (error) {
-      console.error('Error updating leave status:', error);
-      return NextResponse.json(
-        { error: 'Failed to process leave request', details: error.message },
-        { status: 500 }
-      );
-    }
-
-    // If approved and it's annual leave, update leave balance
-    if (validated.action === 'approve' && leave.leave_type === 'annual') {
-      await updateLeaveBalance(db, leave.employee_id, leave.total_days, new Date(leave.start_date).getFullYear());
-    }
-
-    // TODO: Send notification to employee (WhatsApp/Email)
-    // - Approved: "Your leave request has been approved"
-    // - Rejected: "Your leave request has been rejected. Reason: ..."
+    // Notifikasi WhatsApp — pola wa.me link (konsisten dgn modul rekrutmen):
+    // link dikembalikan ke UI utk dibuka approver
+    const rangeLabel = `${leave.start_date} s.d. ${leave.end_date} (${leave.total_days} hari)`;
+    const waMessage = isApprove
+      ? `Halo ${leave.employee?.full_name}, pengajuan izin/cuti Anda ${rangeLabel} telah DISETUJUI. Selamat beristirahat!`
+      : `Halo ${leave.employee?.full_name}, mohon maaf pengajuan izin/cuti Anda ${rangeLabel} DITOLAK. Alasan: ${validated.rejection_reason}. Silakan hubungi HRD untuk diskusi.`;
+    const waLink = buildWaLink(leave.employee?.phone, waMessage);
 
     return NextResponse.json({
       message: `Leave request ${validated.action}d successfully`,
       action: validated.action,
+      wa_link: waLink,
       data,
     });
   } catch (error) {
     console.error('Error in leave approval:', error);
-    
+
     if (error instanceof z.ZodError) {
       return NextResponse.json(
         { error: 'Validation failed', details: error.issues },
@@ -146,51 +160,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
-}
-
-// Helper function to update leave balance
-async function updateLeaveBalance(
-  db: any,
-  employeeId: string,
-  daysUsed: number,
-  year: number
-) {
-  // Try to get existing balance
-  const { data: balance } = await db
-    .from('leave_balances')
-    .select('id, annual_leave_used')
-    .eq('employee_id', employeeId)
-    .eq('year', year)
-    .single();
-
-  if (balance) {
-    // Update existing balance
-    await db
-      .from('leave_balances')
-      .update({
-        annual_leave_used: (balance.annual_leave_used || 0) + daysUsed,
-      })
-      .eq('id', balance.id);
-  } else {
-    // Create new balance record (shouldn't happen normally, but just in case)
-    await db
-      .from('leave_balances')
-      .insert({
-        employee_id: employeeId,
-        year: year,
-        annual_leave_total: 12,
-        annual_leave_used: daysUsed,
-      });
-  }
-}
-
-// Helper functions
-async function checkIsManager(db: any, userId: string): Promise<boolean> {
-  const { data } = await db
-    .from('users')
-    .select('role')
-    .eq('id', userId)
-    .single();
-  
-  return data?.role === 'hiring_manager' || data?.role === 'hrd' || false;
 }

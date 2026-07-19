@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -50,10 +50,35 @@ export function ClockInOutButton({
   const [showLocationDialog, setShowLocationDialog] = useState(false);
   const [location, setLocation] = useState<LocationData | null>(null);
   const [lastAttendanceId, setLastAttendanceId] = useState<string | null>(null);
+  const [hasClockedOut, setHasClockedOut] = useState(false);
+  const [pendingAction, setPendingAction] = useState<"clock-in" | "clock-out" | null>(null);
   const [useManualLocation, setUseManualLocation] = useState(false);
   const [manualLat, setManualLat] = useState("");
   const [manualLng, setManualLng] = useState("");
   const { toast } = useToast();
+
+  // Pulihkan state absensi hari ini — tanpa ini, refresh halaman setelah
+  // clock-in membuat tombol clock-out mati selamanya
+  useEffect(() => {
+    const today = new Date().toISOString().split("T")[0];
+    const params = new URLSearchParams({
+      employee_id: employeeId || "me",
+      date: today,
+      limit: "1",
+    });
+    fetch(`/api/hris/attendance?${params}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json) => {
+        const record = json?.data?.[0];
+        if (!record) return;
+        if (!record.clock_out) {
+          setLastAttendanceId(record.id);
+        } else {
+          setHasClockedOut(true);
+        }
+      })
+      .catch(() => {});
+  }, [employeeId]);
 
   const getLocation = useCallback((useManual: boolean = false): Promise<LocationData | null> => {
     return new Promise((resolve) => {
@@ -102,11 +127,9 @@ export function ClockInOutButton({
       if (action === "clock-in") {
         locationData = await getLocation();
         setLocation(locationData);
-        // Store action in a ref or directly call from dialog
         if (locationData) {
+          setPendingAction(action);
           setShowLocationDialog(true);
-          // Store the action to be used by confirmLocation
-          (window as any).__pendingClockAction = action;
           return;
         }
       }
@@ -155,6 +178,8 @@ export function ClockInOutButton({
         description: `Waktu: ${new Date().toLocaleTimeString("id-ID")}${locData ? " 📍 Lokasi tercatat" : ""}`,
       });
     } else {
+      setLastAttendanceId(null);
+      setHasClockedOut(true);
       onClockOutSuccess?.(result.data);
       toast({
         title: "✅ Clock-out Berhasil",
@@ -166,17 +191,16 @@ export function ClockInOutButton({
   };
 
   const confirmLocation = () => {
-    const action = (window as any).__pendingClockAction as "clock-in" | "clock-out";
-    if (action) {
-      performClockAction(action, location);
-      delete (window as any).__pendingClockAction;
+    if (pendingAction) {
+      performClockAction(pendingAction, location);
+      setPendingAction(null);
     }
   };
 
   const cancelLocation = () => {
     setShowLocationDialog(false);
     setLocation(null);
-    delete (window as any).__pendingClockAction;
+    setPendingAction(null);
   };
 
   const sizeClasses = variant === "large" 
@@ -185,10 +209,10 @@ export function ClockInOutButton({
 
   return (
     <>
-      <div className="flex gap-3">
+      <div className="flex items-center gap-3">
         <Button
           onClick={() => handleClockAction("clock-in")}
-          disabled={isLoading}
+          disabled={isLoading || !!lastAttendanceId || hasClockedOut}
           className={`${sizeClasses} bg-green-600 hover:bg-green-700`}
         >
           {isLoading ? (
@@ -212,6 +236,12 @@ export function ClockInOutButton({
           )}
           Clock Out
         </Button>
+
+        {hasClockedOut && (
+          <Badge variant="outline" className="text-green-700">
+            Absensi hari ini selesai
+          </Badge>
+        )}
       </div>
 
       {/* Location Confirmation Dialog */}

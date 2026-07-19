@@ -144,7 +144,7 @@ export async function POST(request: Request) {
       notes: validatedData.notes || null,
       cv_url: validatedData.cv_url || null,
       photo_url: validatedData.photo_url || null,
-      status: "new",
+      status: "applied",
       created_by: userData.user?.id || null,
     }).select().single();
 

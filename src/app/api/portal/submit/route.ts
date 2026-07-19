@@ -110,7 +110,7 @@ export async function POST(request: NextRequest) {
         cv_url: cvUrl,
         photo_url: photoUrl,
         notes: notes || null,
-        status: "new",
+        status: "applied",
         // New fields
         last_experience: last_experience || null,
         last_education: last_education || null,

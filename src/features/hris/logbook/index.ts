@@ -3,4 +3,4 @@ export * from "./api";
 export * from "./query-keys";
 export * from "./queries";
 export * from "./mutations";
-export { HRISLogbookPage } from "./components/hris-logbook-page";
+export { LogbookPage } from "./components/logbook-page";

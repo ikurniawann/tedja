@@ -109,23 +109,8 @@ export async function updateMember(
   await parseCrmResponse(response, "Gagal menyimpan member");
 }
 
-export async function createRedemption(memberId: string, rewardId: string): Promise<void> {
-  const response = await fetch("/api/crm/redemptions", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ member_id: memberId, reward_id: rewardId }),
-  });
-  await parseCrmResponse(response, "Gagal redeem reward");
-}
-
-export async function redeemAvatar(memberId: string, avatarId: string): Promise<void> {
-  const response = await fetch("/api/crm/avatar-inventory", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ member_id: memberId, avatar_id: avatarId }),
-  });
-  await parseCrmResponse(response, "Gagal redeem avatar");
-}
+// createRedemption & redeemAvatar dihapus (EPIC-011): endpoint redeem XP
+// sudah pensiun (410) — XP lifetime tidak pernah berkurang.
 
 export async function equipAvatar(memberId: string, inventoryId: string): Promise<void> {
   const response = await fetch("/api/crm/avatar-inventory", {

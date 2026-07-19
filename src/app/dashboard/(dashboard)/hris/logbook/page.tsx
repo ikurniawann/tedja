@@ -1,5 +1,5 @@
-import { HRISLogbookPage } from "@/features/hris/logbook";
+import { LogbookPage } from "@/features/hris/logbook";
 
 export default function Page() {
-  return <HRISLogbookPage />;
+  return <LogbookPage />;
 }

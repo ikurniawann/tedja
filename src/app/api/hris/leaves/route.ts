@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerPgClient } from "@/lib/pg/create-client";
 import { createPgClient } from "@/lib/pg/create-client";
+import { getWorkforceActor } from "@/lib/hris/workforce-auth";
 import { z } from 'zod';
 
 // Validation schema for leave request
@@ -19,11 +19,26 @@ const leaveRequestSchema = z.object({
  */
 export async function GET(request: NextRequest) {
   try {
+    const actor = await getWorkforceActor();
+    if (!actor) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const db = createPgClient();
-    
+
     // Get query params
     const searchParams = request.nextUrl.searchParams;
-    const employeeId = searchParams.get('employee_id');
+    let employeeId = searchParams.get('employee_id');
+    // non-HR hanya boleh melihat pengajuan cutinya sendiri
+    if (!actor.isHr) {
+      if (!actor.employeeId) {
+        return NextResponse.json(
+          { error: 'Akun ini tidak terhubung ke data karyawan' },
+          { status: 403 }
+        );
+      }
+      employeeId = actor.employeeId;
+    }
     const status = searchParams.get('status');
     const leaveType = searchParams.get('leave_type');
     const startDate = searchParams.get('start_date');
@@ -106,15 +121,11 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
-    const authClient = await createServerPgClient();
     const db = createPgClient();
     const body = await request.json();
 
-    console.log('POST /api/hris/leaves - Request body:', body);
-
-    // Check authentication
-    const { data: { user } } = await authClient.auth.getUser();
-    if (!user) {
+    const actor = await getWorkforceActor();
+    if (!actor) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
@@ -125,7 +136,6 @@ export async function POST(request: NextRequest) {
     let validated;
     try {
       validated = leaveRequestSchema.parse(body);
-      console.log('Validated data:', validated);
     } catch (validationError) {
       console.error('Validation error:', validationError);
       if (validationError instanceof z.ZodError) {
@@ -138,11 +148,12 @@ export async function POST(request: NextRequest) {
       throw validationError;
     }
 
-    // Get employee ID (from request or current user)
-    const empId = validated.employee_id || await getCurrentEmployeeId(db, user.id);
+    // non-HR hanya boleh mengajukan cuti untuk dirinya sendiri
+    const empId =
+      actor.isHr && validated.employee_id ? validated.employee_id : actor.employeeId;
     if (!empId) {
       return NextResponse.json(
-        { error: 'Employee not found for this user' },
+        { error: 'Akun ini tidak terhubung ke data karyawan' },
         { status: 404 }
       );
     }
@@ -247,15 +258,4 @@ function calculateBusinessDays(startDate: string, endDate: string): number {
   }
   
   return Math.max(1, days);
-}
-
-// Helper function to get employee ID from user ID
-async function getCurrentEmployeeId(db: any, userId: string) {
-  const { data } = await db
-    .from('employees')
-    .select('id')
-    .eq('user_id', userId)
-    .single();
-  
-  return data?.id || null;
 }

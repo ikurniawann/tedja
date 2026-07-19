@@ -2,15 +2,7 @@ import { uploadFile, validateFile } from "@/lib/storage";
 import { createServerPgClient } from "@/lib/pg/create-client";
 import { NextResponse } from "next/server";
 
-const ALLOWED_TYPES = [
-  "application/pdf",
-  "application/msword",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "image/jpeg",
-  "image/png",
-];
 const ALLOWED_EXTENSIONS = ["pdf", "doc", "docx", "jpg", "jpeg", "png"];
-const MAX_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
 
 // POST /api/candidates/[id]/cv-upload
 export async function POST(
@@ -53,10 +45,10 @@ export async function POST(
     );
   }
 
-  // Validate file size
-  const sizeError = validateFile(file, ALLOWED_TYPES, MAX_SIZE_BYTES);
-  if (sizeError) {
-    return NextResponse.json({ error: sizeError }, { status: 400 });
+  // Validate file type + size
+  const validation = validateFile(file);
+  if (!validation.valid) {
+    return NextResponse.json({ error: validation.error }, { status: 400 });
   }
 
   // Upload to local storage

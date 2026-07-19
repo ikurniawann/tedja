@@ -31,3 +31,26 @@ export const fetchPayslip = (payrollRunId: string, employeeId: string) =>
   apiGet<{ data: PayslipDetail[] }>(
     `/api/hris/payslips?payroll_run_id=${payrollRunId}&employee_id=${employeeId}`
   ).then((res) => (res.data && res.data.length > 0 ? res.data[0] : null));
+
+// ---- Pengaturan payroll (payroll_settings + payroll_tax_config) ----
+
+export type PayrollSettingsRow = Record<string, unknown> & { id?: string };
+
+export interface PayrollSettingsData {
+  settings: PayrollSettingsRow | null;
+  tax_config: PayrollSettingsRow | null;
+  tax_year: number;
+}
+
+export interface SavePayrollSettingsPayload {
+  settings?: Record<string, unknown>;
+  tax_config?: Record<string, unknown> & { tax_year: number };
+}
+
+export const fetchPayrollSettings = (taxYear?: number) =>
+  apiGet<{ data: PayrollSettingsData }>(
+    `/api/hris/payroll-settings${taxYear ? `?tax_year=${taxYear}` : ""}`
+  ).then((res) => res.data);
+
+export const savePayrollSettings = (payload: SavePayrollSettingsPayload) =>
+  apiPut<{ data: PayrollSettingsData }>("/api/hris/payroll-settings", payload);

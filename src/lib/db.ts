@@ -46,7 +46,10 @@ export function getPool(): Pool {
       ssl: sslFor(cs),
       max: 10,
       // Set saat startup koneksi (server-side, sebelum query apa pun).
-      options: `-c search_path=${SEARCH_PATH}`,
+      // Timezone dipaksa Asia/Jakarta agar cast `::date`/perbandingan
+      // timestamptz di kolektor KPI & laporan TIDAK bergantung setting
+      // server/role (kalau infra pindah, perilaku tetap sama).
+      options: `-c search_path=${SEARCH_PATH} -c timezone=Asia/Jakarta`,
     });
   }
   return pool;

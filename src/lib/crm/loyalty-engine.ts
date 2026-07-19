@@ -1,12 +1,10 @@
-import type { DbClient as PgDbClient } from "@/lib/pg/types";
-import { isMissingCrmSchema, toNumber } from "@/lib/crm/server";
+import type { DbClient } from "@/lib/pg/types";
+import { getCrmDefaultVenue, isMissingCrmSchema, toNumber } from "@/lib/crm/server";
 import {
   calculateSpendXp,
   calculateTopupXp,
   loadPosLoyaltySettings,
 } from "@/lib/pos/loyalty-settings";
-
-type DbClient = PgDbClient;
 
 type PosOrderItemInput = {
   product_id?: string | null;
@@ -31,9 +29,7 @@ type CrmMemberProfile = {
   id: string;
   customer_id: string;
   tier_id: string;
-  current_xp: number | string;
   lifetime_xp: number | string;
-  spent_xp: number | string;
   loyalty_score: number | string;
   tier?: Pick<CrmTier, "id" | "code" | "name" | "rank" | "xp_multiplier"> | null;
 };
@@ -43,10 +39,16 @@ type PosCustomerLoyaltyRow = {
   phone?: string | null;
   membership_tier?: string | null;
   total_xp?: number | string | null;
-  current_xp?: number | string | null;
   total_spent?: number | string | null;
   visit_count?: number | string | null;
 };
+
+// XP hanya diberikan untuk pembayaran penuh dengan ARK Coin (EPIC-011).
+export const XP_ELIGIBLE_PAYMENT_METHOD = "ark_coin";
+
+function isXpEligiblePayment(paymentMethod?: string | null) {
+  return String(paymentMethod ?? "").toLowerCase() === XP_ELIGIBLE_PAYMENT_METHOD;
+}
 
 type ProductXpRow = {
   id: string;
@@ -86,6 +88,8 @@ type PostXpEventInput = {
   sourceType: string;
   sourceId?: string | null;
   outletId?: string | null;
+  companyId?: string | null;
+  branchId?: string | null;
   xpAmount: number;
   ruleId?: string | null;
   referenceTable: string;
@@ -93,6 +97,8 @@ type PostXpEventInput = {
   idempotencyKey: string;
   description: string;
   metadata?: Record<string, unknown>;
+  /** false = XP nominal apa adanya (mis. Free XP profil) — tanpa multiplier tier */
+  applyTierMultiplier?: boolean;
 };
 
 export async function awardCrmXpForPosOrder(
@@ -103,13 +109,20 @@ export async function awardCrmXpForPosOrder(
     totalAmount: number;
     items: PosOrderItemInput[];
     outletId?: string | null;
+    paymentMethod?: string | null;
   }
 ): Promise<CrmXpAwardResult> {
   if (!payload.customerId) {
     return { status: "skipped", xpAwarded: 0, reason: "no_customer" };
   }
 
+  if (!isXpEligiblePayment(payload.paymentMethod)) {
+    return { status: "skipped", xpAwarded: 0, reason: "non_ark_payment" };
+  }
+
   try {
+    const venue = await getCrmDefaultVenue(db);
+    const branchId = payload.outletId ?? venue.branchId;
     const rules = await loadPosXpRules(db);
     if (!rules.ready) return rules.result;
 
@@ -154,6 +167,8 @@ export async function awardCrmXpForPosOrder(
         sourceType: "product",
         sourceId: productId,
         outletId: payload.outletId,
+        companyId: venue.companyId,
+        branchId,
         xpAmount: xp,
         ruleId,
         referenceTable: "pos_orders",
@@ -195,6 +210,8 @@ export async function awardCrmXpForPosOrder(
           sourceType,
           sourceId: null,
           outletId: payload.outletId,
+          companyId: venue.companyId,
+          branchId,
           xpAmount: xp,
           ruleId,
           referenceTable: "pos_orders",
@@ -211,7 +228,7 @@ export async function awardCrmXpForPosOrder(
     }
 
     if (xpAwarded > 0) {
-      await syncPosCustomerAfterEarn(db, payload.customerId, xpAwarded, payload.totalAmount);
+      await syncPosCustomerAfterEarn(db, payload.customerId, xpAwarded);
       await syncTierAfterEarn(db, payload.customerId);
       return { status: "posted", xpAwarded, ledgerIds };
     }
@@ -243,13 +260,20 @@ export async function awardCrmXpForSplitPayment(
     customerId?: string | null;
     totalAmount: number;
     outletId?: string | null;
+    paymentMethod?: string | null;
   }
 ): Promise<CrmXpAwardResult> {
   if (!payload.customerId) {
     return { status: "skipped", xpAwarded: 0, reason: "no_customer" };
   }
 
+  if (!isXpEligiblePayment(payload.paymentMethod)) {
+    return { status: "skipped", xpAwarded: 0, reason: "non_ark_payment" };
+  }
+
   try {
+    const venue = await getCrmDefaultVenue(db);
+    const branchId = payload.outletId ?? venue.branchId;
     const rules = await loadPosXpRules(db);
     if (!rules.ready) return rules.result;
 
@@ -279,6 +303,8 @@ export async function awardCrmXpForSplitPayment(
       sourceType: "split_payment",
       sourceId: payload.splitId,
       outletId: payload.outletId,
+      companyId: venue.companyId,
+      branchId,
       xpAmount: xp,
       ruleId,
       referenceTable: "pos_order_splits",
@@ -294,7 +320,7 @@ export async function awardCrmXpForSplitPayment(
     });
 
     if (posted.xpAwarded > 0) {
-      await syncPosCustomerAfterEarn(db, payload.customerId, posted.xpAwarded, payload.totalAmount);
+      await syncPosCustomerAfterEarn(db, payload.customerId, posted.xpAwarded);
       await syncTierAfterEarn(db, payload.customerId);
     }
 
@@ -326,6 +352,7 @@ export async function awardCrmXpForTopup(
   }
 
   try {
+    const venue = await getCrmDefaultVenue(db);
     const settings = await loadPosLoyaltySettings(db);
     const xp = calculateTopupXp(payload.topupAmountIdr, settings);
     if (xp <= 0) {
@@ -336,6 +363,8 @@ export async function awardCrmXpForTopup(
       customerId: payload.customerId,
       sourceType: "topup",
       sourceId: payload.transactionId,
+      companyId: venue.companyId,
+      branchId: venue.branchId,
       xpAmount: xp,
       referenceTable: "pos_wallet_transactions",
       referenceId: payload.transactionId,
@@ -349,7 +378,7 @@ export async function awardCrmXpForTopup(
     });
 
     if (posted.xpAwarded > 0) {
-      await syncPosCustomerAfterEarn(db, payload.customerId, posted.xpAwarded, 0, { countVisit: false });
+      await syncPosCustomerAfterEarn(db, payload.customerId, posted.xpAwarded);
       await syncTierAfterEarn(db, payload.customerId);
     }
 
@@ -473,13 +502,16 @@ async function postXpEvent(db: DbClient, input: PostXpEventInput): Promise<CrmXp
   const member = await ensureMemberProfile(db, input.customerId);
   if (!member) return { status: "skipped", xpAwarded: 0, reason: "member_profile_unavailable" };
 
-  const tierMultiplier = input.ruleId ? await getTierMultiplierForRule(db, input.ruleId, member) : toNumber(member.tier?.xp_multiplier) || 1;
+  const tierMultiplier =
+    input.applyTierMultiplier === false
+      ? 1
+      : input.ruleId ? await getTierMultiplierForRule(db, input.ruleId, member) : toNumber(member.tier?.xp_multiplier) || 1;
   const xpDelta = Math.max(0, Math.floor(input.xpAmount * tierMultiplier));
   if (xpDelta <= 0) return { status: "skipped", xpAwarded: 0, reason: "zero_xp" };
 
-  const balanceBefore = toNumber(member.current_xp);
+  // XP lifetime append-only (EPIC-011): tidak ada lagi saldo XP terpisah —
+  // balance_* di ledger diisi nilai lifetime agar kolom NOT NULL tetap valid.
   const lifetimeBefore = toNumber(member.lifetime_xp);
-  const balanceAfter = balanceBefore + xpDelta;
   const lifetimeAfter = lifetimeBefore + xpDelta;
 
   const { data: ledger, error: ledgerError } = await db
@@ -492,9 +524,11 @@ async function postXpEvent(db: DbClient, input: PostXpEventInput): Promise<CrmXp
       source_type: input.sourceType,
       source_id: input.sourceId ?? null,
       outlet_id: input.outletId ?? null,
+      company_id: input.companyId ?? null,
+      branch_id: input.branchId ?? null,
       xp_delta: xpDelta,
-      balance_before: balanceBefore,
-      balance_after: balanceAfter,
+      balance_before: lifetimeBefore,
+      balance_after: lifetimeAfter,
       lifetime_before: lifetimeBefore,
       lifetime_after: lifetimeAfter,
       rule_id: input.ruleId ?? null,
@@ -515,7 +549,6 @@ async function postXpEvent(db: DbClient, input: PostXpEventInput): Promise<CrmXp
   const { error: profileError } = await db
     .from("crm_member_profiles")
     .update({
-      current_xp: balanceAfter,
       lifetime_xp: lifetimeAfter,
       loyalty_score: lifetimeAfter,
       last_activity_at: new Date().toISOString(),
@@ -539,7 +572,7 @@ async function ensureMemberProfile(db: DbClient, customerId: string): Promise<Cr
 
   const { data: customer, error: customerError } = await db
     .from("pos_customers")
-    .select("id, phone, membership_tier, total_xp, current_xp, total_spent")
+    .select("id, phone, membership_tier, total_xp, total_spent")
     .eq("id", customerId)
     .maybeSingle();
 
@@ -547,15 +580,14 @@ async function ensureMemberProfile(db: DbClient, customerId: string): Promise<Cr
   if (!customer) return null;
 
   const customerRow = customer as PosCustomerLoyaltyRow;
-  const tierCode = String(customerRow.membership_tier || "bronze").toLowerCase();
+  const tierCode = String(customerRow.membership_tier || "regular").toLowerCase();
   let tier = await findTierByCode(db, tierCode);
-  if (!tier) tier = await findTierByCode(db, "bronze");
+  if (!tier) tier = await findTierByCode(db, "regular");
   if (!tier) return null;
 
   const memberPayload: Record<string, unknown> = {
     customer_id: customerId,
     tier_id: tier.id,
-    current_xp: toNumber(customerRow.current_xp),
     lifetime_xp: toNumber(customerRow.total_xp),
     loyalty_score: toNumber(customerRow.total_xp),
     status: "active",
@@ -611,37 +643,61 @@ async function getTierMultiplierForRule(db: DbClient, ruleId: string, member: Cr
   return toNumber(member.tier?.xp_multiplier) || 1;
 }
 
-async function syncPosCustomerAfterEarn(
-  db: DbClient,
-  customerId: string,
-  xpAwarded: number,
-  amount: number,
-  options?: { countVisit?: boolean }
-) {
+async function syncPosCustomerAfterEarn(db: DbClient, customerId: string, xpAwarded: number) {
   const { data: customer, error } = await db
     .from("pos_customers")
-    .select("total_xp, current_xp, total_spent, visit_count")
+    .select("total_xp, current_xp")
     .eq("id", customerId)
     .maybeSingle();
 
   if (error || !customer) return;
 
-  const countVisit = options?.countVisit !== false;
-
+  // Visit/spend stats live in syncPosCustomerOrderStats (CRM revamp) —
+  // this helper only mirrors XP onto pos_customers.
   await db
     .from("pos_customers")
     .update({
       total_xp: toNumber((customer as PosCustomerLoyaltyRow).total_xp) + xpAwarded,
       current_xp: toNumber((customer as PosCustomerLoyaltyRow).current_xp) + xpAwarded,
-      total_spent: toNumber((customer as PosCustomerLoyaltyRow).total_spent) + amount,
-      visit_count: toNumber((customer as PosCustomerLoyaltyRow).visit_count) + (countVisit ? 1 : 0),
-      last_visit: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })
     .eq("id", customerId);
 }
 
-async function syncTierAfterEarn(db: DbClient, customerId: string) {
+/**
+ * Statistik kunjungan/belanja customer — dipanggil untuk SETIAP order dibayar
+ * apapun metodenya (terpisah dari XP yang hanya untuk pembayaran ARK Coin).
+ * total_spent = nilai belanja/order (topup TIDAK dihitung) — dasar top spender.
+ */
+export async function syncPosCustomerOrderStats(
+  db: DbClient,
+  customerId: string,
+  amount: number
+) {
+  try {
+    const { data: customer, error } = await db
+      .from("pos_customers")
+      .select("total_spent, visit_count")
+      .eq("id", customerId)
+      .maybeSingle();
+
+    if (error || !customer) return;
+
+    await db
+      .from("pos_customers")
+      .update({
+        total_spent: toNumber((customer as PosCustomerLoyaltyRow).total_spent) + amount,
+        visit_count: toNumber((customer as PosCustomerLoyaltyRow).visit_count) + 1,
+        last_visit: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", customerId);
+  } catch (error) {
+    console.error("CRM customer stats sync failed:", error);
+  }
+}
+
+export async function syncTierAfterEarn(db: DbClient, customerId: string) {
   const { data: profile, error: profileError } = await db
     .from("crm_member_profiles")
     .select("id, tier_id, lifetime_xp")
@@ -649,12 +705,6 @@ async function syncTierAfterEarn(db: DbClient, customerId: string) {
     .maybeSingle();
 
   if (profileError || !profile) return;
-
-  const { data: customer } = await db
-    .from("pos_customers")
-    .select("total_spent")
-    .eq("id", customerId)
-    .maybeSingle();
 
   const { data: tiers, error: tiersError } = await db
     .from("crm_membership_tiers")
@@ -664,12 +714,12 @@ async function syncTierAfterEarn(db: DbClient, customerId: string) {
 
   if (tiersError || !tiers?.length) return;
 
+  // Tier ditentukan MURNI dari lifetime XP (keputusan owner EPIC-011):
+  // tier tertinggi yang ambang min_lifetime_xp-nya sudah terlampaui.
   const profileRow = profile as Pick<CrmMemberProfile, "id" | "tier_id" | "lifetime_xp">;
-  const customerRow = customer as Pick<PosCustomerLoyaltyRow, "total_spent"> | null;
   const lifetimeXp = toNumber(profileRow.lifetime_xp);
-  const totalSpend = toNumber(customerRow?.total_spent);
   const nextTier = (tiers as CrmTier[]).find(
-    (tier) => lifetimeXp >= toNumber(tier.min_lifetime_xp) || totalSpend >= toNumber(tier.min_total_spend)
+    (tier) => lifetimeXp >= toNumber(tier.min_lifetime_xp)
   );
 
   if (nextTier && nextTier.id !== profileRow.tier_id) {
@@ -690,4 +740,42 @@ function itemAmount(item: PosOrderItemInput) {
   if (item.total_amount != null) return toNumber(item.total_amount);
   if (item.subtotal != null) return toNumber(item.subtotal);
   return toNumber(item.unit_price) * quantity;
+}
+
+/**
+ * Free XP kelengkapan profil 100% (EPIC-011 Fase D, keputusan owner #9):
+ * berlaku SEMUA tipe member, sekali seumur hidup, TANPA multiplier tier
+ * (nominal apa adanya dari crm_settings.profile_completion_free_xp).
+ * Idempoten dua lapis: idempotency_key ledger + free_xp_granted_at customer.
+ */
+export async function awardMemberFreeXp(
+  db: DbClient,
+  input: {
+    customerId: string;
+    xpAmount: number;
+    companyId?: string | null;
+    branchId?: string | null;
+  }
+): Promise<CrmXpAwardResult> {
+  const result = await postXpEvent(db, {
+    customerId: input.customerId,
+    sourceType: "profile_completion",
+    sourceId: input.customerId,
+    companyId: input.companyId ?? null,
+    branchId: input.branchId ?? null,
+    xpAmount: Math.max(0, Math.floor(input.xpAmount)),
+    referenceTable: "pos_customers",
+    referenceId: input.customerId,
+    idempotencyKey: `portal:profile-complete:${input.customerId}`,
+    description: "Free XP profil lengkap (portal member)",
+    applyTierMultiplier: false,
+  });
+
+  if (result.status === "posted") {
+    // Salin lifetime XP ke pos_customers.total_xp + evaluasi kenaikan tier —
+    // sama seperti alur XP order (tanpa ini total_xp customer tidak bergerak).
+    await syncPosCustomerAfterEarn(db, input.customerId, result.xpAwarded);
+    await syncTierAfterEarn(db, input.customerId);
+  }
+  return result;
 }

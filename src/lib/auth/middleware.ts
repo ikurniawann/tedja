@@ -19,10 +19,25 @@ export async function updateSession(request: NextRequest) {
     "/photobooth",
     "/api/job-openings/public",
     "/api/portal",
+    // portal psikotes kandidat (anonim, identitas = token sesi);
+    // /api/psikotes lainnya (instruments/questions/files) tetap ber-auth
+    "/psikotes",
+    "/api/psikotes/session",
+    // portal interview AI kandidat (anonim, identitas = token sesi);
+    // /api/interview lainnya (sessions/files) tetap ber-auth
+    "/interview",
+    "/api/interview/session",
+    // portal offer kandidat (anonim, identitas = token offer)
+    "/offer",
+    "/api/offer/session",
     "/api/table-order",
     "/api/auth/login",
     "/api/auth/logout",
     "/api/files",
+    // Portal member publik (member.suluindwounderland.com) — identitas =
+    // sesi OTP WA sendiri (cookie member_session), bukan arkiv_session.
+    "/member",
+    "/api/member-portal",
   ];
   const isPublicRoute =
     pathname === "/" ||
@@ -46,5 +61,9 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  return NextResponse.next({ request });
+  // Teruskan pathname ke server component (guard role ESS-only membacanya via
+  // `headers()`) — middleware Edge tak punya role, jadi enforcement di layout.
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set("x-pathname", pathname);
+  return NextResponse.next({ request: { headers: requestHeaders } });
 }

@@ -1,0 +1,282 @@
+# EPIC-011: CRM Revamp — Member Global, XP Lifetime, ARK Coin & Portal Member
+
+status: on-progress
+environment: dev
+retries: 0
+
+## Goal
+
+Merombak total modul CRM menjadi sistem loyalty berbasis **identitas member
+global lintas tenant**: XP sebagai skor seumur hidup (append-only, penentu
+tier), ARK Coin sebagai satu-satunya jalur perolehan XP, dua tipe member
+(terdaftar vs kartu), dan portal member self-service
+(`member.suluindwounderland.com`) dengan login OTP WhatsApp. Menjadi fondasi
+untuk Omnichannel CRM (broadcast, inbox WA) yang menyusul di epic berikutnya.
+
+## Keputusan Owner (2026-07-19)
+
+Hasil diskusi desain — SEMUA sudah diputuskan owner:
+
+1. **Identitas member GLOBAL lintas tenant** — member, saldo ARK, XP hidup di
+   level platform (bukan per venue). `pos_customers` tanpa `company_id` adalah
+   by design. Konsekuensi: setiap transaksi wallet/XP/order wajib mencatat
+   venue/tenant kejadian untuk laporan rekonsiliasi antar-venue.
+2. **XP = skor seumur hidup**: hanya bertambah, TIDAK PERNAH berkurang.
+   Konsep `current_xp`/`spent_xp` dihapus; ledger jadi append-only earn.
+3. **XP hanya dari belanja dengan metode ARK Coin.** Metode pembayaran TIDAK
+   boleh campur — 1 pembayaran = 1 metode. (Split bill antar orang tetap boleh;
+   tiap split dibayar 1 metode; XP keluar untuk split yang dibayar ARK.)
+4. **"Redeem" berubah jadi privilege**: produk khusus bersyarat `min_xp`
+   (dan/atau min tier). Member yang memenuhi boleh membeli (bayar normal), XP
+   tidak dipotong. Alur `crm_rewards` + `crm_redemptions` lama PENSIUN.
+5. **4 tier default: Regular, Bronze, Silver, Gold** — nama & ambang XP
+   (`min_lifetime_xp`) konfigurable Super Admin (tabel `crm_membership_tiers`
+   existing sudah mendukung). Regular mulai dari 0 XP (tier awal semua member).
+6. **Diskon per tier TETAP ADA**, konfigurable admin — kasir wajib baca
+   `discount_percent` dari konfigurasi tier, bukan hardcode (fix bug audit).
+7. **Dua tipe member**: (a) member terdaftar saja (nama + HP dari POS, tanpa
+   kartu, tanpa topup → tidak pernah dapat XP transaksi); (b) member kartu
+   (punya kartu NFC tertaut + akses topup ARK Coin).
+8. **Topup ARK Coin hanya untuk member kartu.** Bonus topup default 10%
+   (topup 1jt → saldo 1,1jt), persentase konfigurable Super Admin. Bonus
+   dicatat sebagai transaksi wallet terpisah (`topup_bonus`) untuk akuntansi.
+   ARK Coin **non-refundable**.
+9. **Portal member** `member.suluindwounderland.com`, login **OTP WhatsApp**
+   (via Fonnte existing). Member melengkapi profil → 100% komplit dapat
+   **Free XP** (nominal konfigurable Super Admin, sekali seumur hidup,
+   idempotent). Free XP berlaku untuk SEMUA member (satu-satunya pengecualian
+   aturan tanpa-kartu-tanpa-XP).
+10. **Field profil member**: nama, HP (verified via OTP), email, tanggal
+    lahir, jenis kelamin, kota/domisili, foto profil, consent promo WA.
+11. **Top spender = nilai belanja/order** (ARK maupun tunai/QRIS). Topup TIDAK
+    dihitung spend (fix bug existing di route topup yang menambah
+    `total_spent`). Porsi bonus ikut terhitung saat dibelanjakan. Laporan
+    frequent visitor (visit_count/last_visit) dipertahankan.
+12. **Collectible artwork per venue** — masih rancangan, TIDAK masuk scope
+    epic ini (infra `crm_collectible_avatars` + inventory existing jadi bahan
+    nanti).
+
+## Aset Existing yang Dipertahankan vs Pensiun
+
+| Dipertahankan (diperluas) | Pensiun / berubah total |
+|---|---|
+| `pos_customers` (+ tipe member, profil lengkap) | `crm_rewards` + `crm_redemptions` (ganti: produk khusus ber-syarat XP) |
+| Wallet + `pos_wallet_transactions` (+ venue, + `topup_bonus`) | `current_xp`/`spent_xp` di `crm_member_profiles` |
+| `crm_membership_tiers` (name/rank/min_lifetime_xp/discount_percent) | Map `TIER_DISCOUNTS` hardcoded di kasir |
+| `crm_xp_ledger` (jadi append-only earn) | Alur `awardCrmXpForPosOrder` tanpa cek metode bayar |
+| `crm_xp_rules` (basis besaran XP per Rp) | Split payment multi-metode dalam 1 pembayaran |
+| RPC `update_ark_coin_balance` (pola atomik) | Topup menambah `total_spent` |
+| Topup POS + NFC (`nfc_uid`) + struk | |
+| Laporan top spender & frequent visitor | |
+
+## Fase
+
+### Fase A — Fondasi data & fix kritikal
+- Migrasi skema: tipe member (terdaftar/kartu), kolom venue di wallet/XP/order,
+  field profil + consent, hapus konsep current/spent XP, tabel konfigurasi CRM
+  (bonus topup %, free XP, dst).
+- Fix bug audit yang tetap relevan: diskon tier dari konfigurasi (bukan
+  hardcode), role check endpoint konfigurasi CRM, topup tidak menambah
+  `total_spent`, topup atomik via pola RPC, cache customer kasir refresh
+  setelah transaksi, search member, error message leakage.
+
+### Fase B — Engine XP & tier baru
+- XP earn hanya dari pembayaran ARK Coin (cek metode; split per-metode).
+- Auto-naik-tier saat lifetime XP menembus ambang.
+- UI konfigurasi Super Admin: tier (rename, ambang, diskon), XP rules, bonus
+  topup %, free XP.
+- Enforcement 1 pembayaran = 1 metode di kasir.
+
+### Fase C — Topup & member kartu
+- Topup member-only (member kartu), bonus % dari konfigurasi, transaksi
+  `topup_bonus` terpisah, penautan kartu NFC = upgrade member kartu.
+- Produk khusus ber-syarat min XP/tier di kasir.
+
+### Fase D — Portal member
+- `member.suluindwounderland.com`: login OTP WA (Fonnte), lihat saldo/XP/tier,
+  lengkapi profil (progress %), Free XP saat 100% (idempotent), riwayat
+  transaksi.
+
+### Fase E — Laporan & rekonsiliasi
+- Top spender (basis order), frequent visitor, laporan rekonsiliasi
+  antar-venue (topup di A dibelanjakan di B), dashboard CRM menyesuaikan
+  skema baru.
+
+## Acceptance Criteria
+
+- Member tanpa kartu tidak pernah bertambah XP dari transaksi apa pun; Free XP
+  profil 100% tetap masuk untuk semua tipe member, sekali saja.
+- Belanja ARK Coin menambah XP sesuai `crm_xp_rules`; metode lain tidak.
+- XP tidak pernah berkurang oleh operasi apa pun.
+- Ubah `discount_percent` tier di konfigurasi → langsung berlaku di kasir.
+- Topup 1jt dengan bonus 10% → saldo bertambah 1,1jt, tercatat 2 baris wallet
+  (topup + topup_bonus), `total_spent` TIDAK berubah.
+- Dua request redeem/topup/bayar konkuren tidak bisa double-spend saldo
+  (atomik + lock).
+- Login portal hanya bisa dengan OTP WA yang valid.
+- Semua transaksi wallet/XP baru tercatat venue kejadiannya.
+
+## Catatan Keterkaitan
+
+- Prasyarat/lanjutan dari analisa Omnichannel CRM (Qontak) — outbox WA +
+  broadcast + inbox 2-arah menyusul sebagai epic terpisah setelah epic ini.
+  Nomor WA terverifikasi OTP dari portal member = kunci penghubung inbox.
+- Temuan audit CRM 19 Jul 2026 (10 bug): sebagian larut dalam rombakan
+  (race XP spend, formula loyalty_score), sisanya masuk Fase A.
+
+## Automation Log
+
+- 2026-07-19 — Epic dibuat dari hasil diskusi desain owner (12 keputusan
+  terkunci, lihat bagian Keputusan Owner). Status backlog — menunggu owner
+  menandai on-progress.
+- 2026-07-19 — **Fase A SELESAI.** Migrasi
+  `20260719170000_crm_revamp_fase_a.sql` + `20260719171000_crm_seed_default_tiers.sql`
+  diterapkan ke dev:
+  - `pos_customers`: `member_type` (registered/card, backfill dari `nfc_uid`),
+    `card_issued_at`, profil (`birth_date`, `gender`, `city`, `photo_url`),
+    `wa_consent`, `wa_verified_at`, `profile_completed_at`,
+    `free_xp_granted_at`; default tier baru = `regular`.
+  - Tier `Regular` rank 0 (check rank dilonggarkan ke >=0) + seed default
+    Bronze/Silver/Gold (tabel tier dev ternyata kosong sebelumnya).
+  - Kolom venue `company_id`+`branch_id` di `pos_wallet_transactions`,
+    `crm_xp_ledger`, `pos_orders` (+index) — FK ke `configuration.companies/branches`.
+  - `crm.crm_settings` (key-value): `topup_bonus_percent`=10,
+    `profile_completion_free_xp`=100, `default_company_id`/`default_branch_id`
+    terisi otomatis dari hierarchy (single-venue Sulu).
+  - RPC `public.process_ark_topup`: topup atomik (FOR UPDATE), TIDAK menambah
+    `total_spent`, stempel venue; route `POST /api/pos/topup` memakainya.
+  - Fix audit: diskon tier kasir dibaca dari `crm_membership_tiers` via
+    `/api/pos/customers` (`discount_percent`), map `TIER_DISCOUNTS` hardcode
+    dihapus; role guard `requireCrmConfigRole` (super_admin) di POST/DELETE
+    tiers/rewards/xp-rules/avatars; kasir `refetchCustomers()` di semua jalur
+    sukses bayar (incl. split); search members mencakup nama/phone/email;
+    `apiErrorResponse` tidak lagi membocorkan pesan error internal (log
+    server saja), catch-all route customers/topup dibuat generik.
+  - Penautan NFC di POST customers otomatis set `member_type='card'` +
+    `card_issued_at`.
+  - CATATAN: `current_xp`/`spent_xp` sengaja belum di-drop — engine lama masih
+    membacanya; drop di Fase B saat rewrite engine XP.
+  - Gate: 489 unit test hijau (68 file), `next build` sukses, tsc error count
+    identik baseline (466 noise lama, 0 baru).
+- 2026-07-19 — **Fase B SELESAI.** Engine XP lifetime + konfigurasi Super Admin:
+  - Migrasi `20260719180000_crm_revamp_fase_b.sql` diterapkan ke dev: drop
+    `current_xp`/`spent_xp` di `crm_member_profiles`, drop `current_xp` di
+    `pos_customers`, drop RPC legacy `pos_create_order_transaction` (memberi XP
+    untuk semua metode bayar — jalur XP liar).
+  - Engine XP baru di `src/lib/crm/loyalty-engine.ts`: XP earn HANYA dari
+    pembayaran `ark_coin` (`isXpEligiblePayment`), lifetime XP append-only,
+    auto-naik-tier saat `total_xp` menembus `min_lifetime_xp` (tanpa turun
+    tier), stempel venue di `crm_xp_ledger`.
+  - Enforcement 1 pembayaran = 1 metode di semua jalur bayar (`/api/pos/orders`
+    create langsung-bayar, `[id]` pay, split pay): ARK Coin tidak boleh campur
+    metode lain dan wajib menutup total; debit wallet atomik via
+    `update_ark_coin_balance` SEBELUM order ditandai paid (fix bug: checkout
+    langsung sebelumnya tidak pernah memotong saldo ARK).
+  - Alur potong-XP PENSIUN: `POST /api/crm/redemptions` dan aksi `redeem` di
+    avatar-inventory kini 410 Gone; UI redeem reward + beli avatar di detail
+    member dihapus (riwayat redemption lama tetap tampil sebagai arsip).
+  - Halaman konfigurasi Super Admin baru `/dashboard/crm/settings`
+    (`src/features/crm/settings/`): kelola tier (nama, ambang XP, diskon %,
+    warna, aktif), XP rules, bonus topup %, free XP profil — via API baru
+    `GET/PUT /api/crm/settings` (guard super_admin) + API tiers/xp-rules
+    existing. Quick link "Konfigurasi" ditambah di dashboard CRM.
+  - Bersih-bersih referensi `current_xp`/`spent_xp` di seluruh codebase
+    (routes customers/members/dashboard/lookup, types, hooks, UI kasir/topup/
+    table-order/CRM); default tier "bronze" → "regular"; `CRM_DEFAULT_TIERS`
+    fallback kini menyertakan Regular rank 0.
+  - Gate: 489 unit test hijau (68 file), `next build` sukses, tsc 458 error
+    (baseline lama 466, 0 baru — turun karena kode legacy terhapus).
+  - Sisa ke Fase C: topup member-kartu-only + bonus % dari settings dipakai
+    route topup, produk privilege min XP/tier di kasir.
+- 2026-07-19 — **Fase B di-deploy ke dev (sulu.within.ventures) + menu sidebar.**
+  - Deploy: `next build` (BUILD_ID 11:10) + `pm2 restart arkiv-pos-saas`
+    (`next start -p 3459`, Cloudflare Tunnel `sulu.within.ventures` → :3459).
+    Migrasi Fase B sudah masuk DB dev (postgres :5435 `arkiv_local`).
+  - Menu sidebar baru via migrasi `20260719190000_crm_settings_menu.sql`
+    (diterapkan ke dev): grup `crm.settings` "Pengaturan" (level 2, parent
+    `crm`) + item `crm.settings.config` "CRM Settings" →
+    `/dashboard/crm/settings`, grant HANYA `super_admin` (selaras guard
+    `requireCrmConfigRole`). Commit `4ac06f3`; Fase B utama di `e6e731b`.
+  - Status: menunggu hasil UAT owner di dev. Skenario tes yang disepakati:
+    (1) ubah tier/XP rules/bonus topup %/free XP di `/dashboard/crm/settings`
+    lalu verifikasi tersimpan + ditolak untuk non-super-admin;
+    (2) bayar full ARK Coin → `total_xp` naik sesuai rules, saldo terpotong;
+    (3) bayar tunai/QRIS → XP TIDAK naik (stats kunjungan tetap naik);
+    (4) campur ARK + metode lain → ditolak; saldo ARK kurang → ditolak tanpa
+    order/saldo berubah; split per-metode (split ARK dapat XP);
+    (5) auto-naik-tier saat lifetime XP tembus ambang (tidak pernah turun);
+    (6) redeem reward/beli avatar sudah hilang dari detail member.
+  - LANJUTKAN DARI SINI → **Fase C**: (a) topup hanya untuk member kartu
+    (`member_type='card'`) — route `POST /api/pos/topup` saat ini belum
+    menolak member terdaftar; (b) bonus topup dibaca dari
+    `crm_settings.topup_bonus_percent` (RPC `process_ark_topup` masih pakai
+    nilai parameter/default) + baris wallet `topup_bonus` terpisah;
+    (c) penautan kartu NFC = upgrade `member_type` ke `card` (POST customers
+    sudah set — verifikasi jalur update/edit); (d) produk privilege
+    ber-syarat `min_xp`/tier di kasir (pengganti redeem, butuh skema kolom
+    syarat di produk + filter kasir).
+- 2026-07-19 — **Fase C SELESAI.** Migrasi `20260719210000_crm_revamp_fase_c.sql`
+  (applied+tracked):
+  - **RPC `process_ark_topup` v2**: tolak member non-kartu
+    (`CARD_MEMBER_ONLY` → route 403 "tautkan kartu NFC dulu"), parameter
+    `p_bonus_percent`, bonus dicatat baris wallet `topup_bonus` TERPISAH
+    (non-refundable, tak menambah total_spent). GOTCHA penting: signature
+    lama WAJIB di-DROP — parameter baru = overload, pemanggil 6-arg akan
+    tetap kena fungsi lama tanpa cek kartu (tertangkap saat verifikasi,
+    DROP dimasukkan ke migrasi). Route topup membaca
+    `crm_settings.topup_bonus_percent` via helper `getCrmTopupBonusPercent`.
+    Diverifikasi psql (tx rollback): registered ditolak; card topup 100rb
+    bonus 10% → saldo 110rb, 2 baris wallet, total_spent tetap 0.
+  - **(c) penautan NFC jalur update**: diverifikasi POST /api/pos/customers
+    meng-upgrade `member_type='card'` + `card_issued_at` di JALUR create
+    maupun update-existing; PATCH members CRM tidak menyentuh nfc (tidak
+    ada jalur lain). Tanpa perubahan kode.
+  - **(d) produk privilege `min_xp`** (keputusan desain: min_tier TIDAK
+    dibuat — tier = fungsi lifetime XP, min_xp sudah ekuivalen):
+    kolom `pos_products.min_xp` (NULL = umum); guard server
+    `checkProductPrivileges` (lib baru + 5 unit test) di TIGA titik
+    pembuatan order: POST /api/pos/orders, open-bill, table-order publik
+    (QR tanpa member otomatis tertolak) → 403 dgn pesan produk+syarat+XP
+    member; admin: kolom "Min XP" inline-edit di halaman POS Products
+    (PATCH whitelist + POST create); kasir: badge ★/🔒 "N XP" di kartu
+    produk, terkunci+toast bila member belum dipilih/XP kurang.
+    Diverifikasi curl: order produk privilege tanpa member → 403.
+  - Gate: unit test crm hijau, next build sukses, PM2 restart dev.
+  - Sisa ke Fase D: portal member (OTP WA Fonnte, profil, Free XP) — lihat
+    bagian Fase; Fase E laporan/rekonsiliasi.
+- 2026-07-19 — **Fase D SELESAI: Portal Member.** Migrasi
+  `20260719230000_crm_revamp_fase_d_portal.sql` (applied+tracked):
+  `crm.member_portal_otp` (hash sha256, TTL 5 mnt, max 5 percobaan, rate
+  limit 3/10 mnt/nomor) + `crm.member_portal_sessions` (token 32-byte,
+  DB simpan hash, TTL 30 hari; cookie `member_session` httpOnly TERPISAH
+  dari arkiv_session).
+  - **Login OTP WA**: POST /api/member-portal/otp (hanya nomor member
+    terdaftar; kirim via Fonnte `sendWhatsApp`; tanpa FONNTE_API_KEY kode
+    tercetak di log server utk dev) → /verify (konsumsi kode, stempel
+    `wa_verified_at`, set cookie sesi). Lookup nomor toleran format
+    08xx/62xx (regexp_replace digit).
+  - **API member**: /me (profil+saldo+XP+tier+progres tier berikutnya+
+    kelengkapan profil), PUT /profile (zod; nomor HP TIDAK bisa diubah —
+    identitas login), /transactions (wallet+order milik sendiri), /logout.
+  - **Free XP profil 100%**: engine `awardMemberFreeXp` (TANPA multiplier
+    tier, idempotent ledger `portal:profile-complete:<id>` + kolom
+    `free_xp_granted_at`). BUG tertangkap saat uji: lupa
+    `syncPosCustomerAfterEarn` → ledger terisi tapi total_xp 0 — difix;
+    verifikasi ulang: Free XP 100 masuk total_xp DAN tier auto-naik
+    regular→bronze.
+  - **Routing subdomain**: proxy.ts rewrite host `member.*` → /member
+    (API & _next tak disentuh); middleware publicRoutes + `/member` +
+    `/api/member-portal`. ⚠ INFRA di luar repo: tambahkan ingress
+    Cloudflare Tunnel `member.suluindwounderland.com` → :3459.
+  - **UI /member** (mobile-first, layout mandiri): login 2 langkah
+    (nomor→OTP), kartu saldo/tier/progres XP, banner Free XP, tab
+    Beranda/Profil/Riwayat, form profil + consent WA (switch), riwayat
+    wallet & pembelian, logout.
+  - Verifikasi end-to-end dev via curl: OTP nomor asing 404 → nomor
+    member terkirim → kode salah 400 → benar = sesi → me 200 → profil
+    100% = +100 Free XP (ulang = 0, tidak dobel) → logout = 401.
+    Data uji dibersihkan. Gate: 63 unit test hijau, build sukses.
+  - CATATAN: kolom `wa_consent` ber-default false di DB → field consent
+    selalu "terisi" utk member baru (kelengkapan efektif 7 field); dinilai
+    aman (default opt-out). Upload foto profil = URL dulu; file upload
+    menyusul. Sisa: Fase E laporan & rekonsiliasi antar-venue.

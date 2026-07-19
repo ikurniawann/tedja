@@ -89,12 +89,13 @@ export async function GET(request: Request) {
   // 7. Conversion rates (percentage per current status)
   const statusCounts: Record<string, number> = {};
   const allStatuses = [
-    "new",
+    "applied",
     "screening",
-    "interview_hrd",
-    "interview_manager",
-    "talent_pool",
+    "psikotes",
+    "interview",
+    "offer",
     "hired",
+    "talent_pool",
     "rejected",
     "archived",
   ];
@@ -104,13 +105,14 @@ export async function GET(request: Request) {
   });
 
   const stageNames: Record<string, string> = {
-    new: "Applied",
+    applied: "Applied",
     screening: "Screening",
-    interview_hrd: "Interview HRD",
-    interview_manager: "Interview Manager",
-    talent_pool: "Talent Pool",
+    psikotes: "Psikotes",
+    interview: "Interview",
+    offer: "Offer",
     hired: "Hired",
-    rejected: "Rejected",
+    talent_pool: "Talent Pool",
+    rejected: "Tolak",
     archived: "Archived",
   };
 
