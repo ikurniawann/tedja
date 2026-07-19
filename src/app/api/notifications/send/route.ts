@@ -1,7 +1,7 @@
 import { createServerPgClient } from "@/lib/pg/create-client";
 import { NextResponse } from "next/server";
 import { getApiUser } from "@/lib/api/auth";
-import { sendWhatsApp } from "@/lib/fonnte";
+import { sendWhatsAppText } from "@/lib/whatsapp";
 import { sendEmail, candidateStatusEmail } from "@/lib/resend";
 
 // Sending candidate notifications is an HR action — restrict to HR roles.
@@ -96,7 +96,7 @@ export async function POST(request: Request) {
 
     // Format phone number for Fonnte (e.g. 6281234567890)
     const phone = candidate.phone.replace(/\D/g, "");
-    const result = await sendWhatsApp({
+    const result = await sendWhatsAppText({
       target: phone,
       message: notificationMessage,
     });

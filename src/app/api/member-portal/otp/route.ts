@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPool } from "@/lib/db";
-import { sendWhatsApp } from "@/lib/fonnte";
+import { sendWhatsAppOtp } from "@/lib/whatsapp";
 import {
   generateOtpCode,
   hashSecret,
@@ -70,7 +70,11 @@ export async function POST(request: NextRequest) {
       [phone, hashSecret(code), OTP_TTL_MS]
     );
 
-    const sent = await sendWhatsApp({ target: phone, message: otpMessage(code) });
+    const sent = await sendWhatsAppOtp({
+      target: phone,
+      code,
+      fallbackText: otpMessage(code),
+    });
     if (!sent.success) {
       // Kode hanya boleh muncul di log NON-produksi (jalan keluar saat
       // FONNTE_API_KEY belum diisi). Di produksi log cukup mencatat
