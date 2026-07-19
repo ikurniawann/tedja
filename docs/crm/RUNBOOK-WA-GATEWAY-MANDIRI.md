@@ -54,18 +54,29 @@ yang bisa memanggilnya bisa mengirim WhatsApp atas nama bisnis Anda.
 
 ## Pairing pertama kali *(perlu Anda lakukan, sekali)*
 
-1. Tampilkan QR di terminal server:
+**Cara termudah — lewat dashboard (khusus Super Admin):**
 
-   ```bash
+1. Login ke <https://sulu.within.ventures> sebagai Super Admin.
+2. Buka **Settings → WhatsApp Gateway** (`/dashboard/settings/wa-gateway`).
+3. Halaman menampilkan QR yang menyegarkan diri otomatis (QR WhatsApp berganti
+   tiap ±20 detik).
+4. Di HP nomor **+62 858-8097-4659**: **WhatsApp → Setelan → Perangkat
+   Tertaut → Tautkan Perangkat**, pindai QR di layar.
+5. Halaman berubah jadi "Terhubung sebagai +6285880974659" begitu berhasil.
+
+> QR di halaman itu adalah kredensial sesi WhatsApp — jangan bagikan
+> tangkapan layarnya. Karena itu pula halaman & API-nya dikunci super_admin.
+
+**Cara alternatif — lewat terminal server:**
+
+1. ```bash
    pm2 logs wa-gateway --lines 40 --nostream
    ```
 
-   QR ASCII akan tampil di bawah baris *"QR pairing tersedia"*. QR berganti
-   tiap ±20 detik; kalau sudah kedaluwarsa, jalankan perintah itu lagi untuk
-   mengambil yang terbaru.
+   QR ASCII tampil di bawah baris *"QR pairing tersedia"*; jalankan lagi bila
+   kedaluwarsa.
 
-2. Di HP nomor **+62 858-8097-4659**: buka **WhatsApp → Setelan → Perangkat
-   Tertaut → Tautkan Perangkat**, lalu pindai QR tersebut.
+2. Pindai dengan cara yang sama seperti di atas.
 
 3. Pastikan berhasil:
 
