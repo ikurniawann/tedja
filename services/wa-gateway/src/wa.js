@@ -36,10 +36,17 @@ const logger = pino({ level: process.env.WA_LOG_LEVEL || "warn" });
 const APP_INBOUND_URL =
   process.env.APP_INBOUND_URL || "http://127.0.0.1:3459/api/wa/inbound";
 const INBOUND_TOKEN = process.env.WA_GATEWAY_TOKEN;
-const FORWARD_RETRY_MS = [2000, 10000, 30000];
+// Backoff bertingkat lalu MENETAP di 60 dtk — tidak pernah menyerah selama
+// antrean belum penuh, supaya jendela deploy/restart app (bisa >1 menit)
+// tidak menghilangkan pesan customer (temuan review M1).
+const FORWARD_RETRY_MS = [2000, 10000, 30000, 60000];
+const FORWARD_TIMEOUT_MS = 10000;
+const FORWARD_QUEUE_MAX = 2000;
 
 const forwardQueue = [];
 let forwardTimer = null;
+let forwardAttempt = 0;
+let flushing = false;
 
 function extractMessageContent(message) {
   if (!message) return { text: null, mediaType: null };
@@ -68,43 +75,64 @@ function extractMessageContent(message) {
   return { text, mediaType };
 }
 
-async function flushForwardQueue(attempt = 0) {
-  if (forwardQueue.length === 0) return;
-  const batch = forwardQueue.splice(0, 50);
+async function flushForwardQueue() {
+  if (flushing || forwardQueue.length === 0) return;
+  flushing = true;
 
   try {
-    const response = await fetch(APP_INBOUND_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-gateway-token": INBOUND_TOKEN ?? "",
-      },
-      body: JSON.stringify({ messages: batch }),
-    });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  } catch (error) {
-    if (attempt < FORWARD_RETRY_MS.length) {
-      // Kembalikan ke depan antrean, coba lagi nanti.
-      forwardQueue.unshift(...batch);
-      if (!forwardTimer) {
-        forwardTimer = setTimeout(() => {
-          forwardTimer = null;
-          flushForwardQueue(attempt + 1).catch(() => undefined);
-        }, FORWARD_RETRY_MS[attempt]);
+    while (forwardQueue.length > 0) {
+      const batch = forwardQueue.slice(0, 50);
+      try {
+        const response = await fetch(APP_INBOUND_URL, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-gateway-token": INBOUND_TOKEN ?? "",
+          },
+          body: JSON.stringify({ messages: batch }),
+          signal: AbortSignal.timeout(FORWARD_TIMEOUT_MS),
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+        forwardQueue.splice(0, batch.length);
+        forwardAttempt = 0;
+      } catch (error) {
+        // Jangan buang batch — jadwalkan ulang dengan backoff (menetap di
+        // interval terakhir). Antrean tetap utuh untuk percobaan berikutnya.
+        const delay =
+          FORWARD_RETRY_MS[Math.min(forwardAttempt, FORWARD_RETRY_MS.length - 1)];
+        forwardAttempt += 1;
+        if (forwardAttempt === 1 || forwardAttempt % 10 === 0) {
+          console.warn(
+            `[wa-gateway] App belum bisa menerima ${forwardQueue.length} pesan ` +
+              `(percobaan ${forwardAttempt}): ${error?.message ?? error}. Coba lagi ${delay / 1000}s.`
+          );
+        }
+        if (!forwardTimer) {
+          forwardTimer = setTimeout(() => {
+            forwardTimer = null;
+            flushForwardQueue().catch(() => undefined);
+          }, delay);
+        }
+        return;
       }
-    } else {
-      console.error(
-        `[wa-gateway] Gagal meneruskan ${batch.length} pesan ke app (menyerah):`,
-        error?.message ?? error
-      );
     }
+  } finally {
+    flushing = false;
   }
 }
 
 function enqueueForward(payload) {
+  if (forwardQueue.length >= FORWARD_QUEUE_MAX) {
+    // Batas pengaman memori; pesan tertua dibuang dengan log jelas.
+    forwardQueue.shift();
+    console.error(
+      `[wa-gateway] Antrean forward penuh (${FORWARD_QUEUE_MAX}) — pesan tertua dibuang.`
+    );
+  }
   forwardQueue.push(payload);
   // Debounce singkat agar burst pesan terkirim satu batch.
-  if (!forwardTimer) {
+  if (!forwardTimer && !flushing) {
     forwardTimer = setTimeout(() => {
       forwardTimer = null;
       flushForwardQueue().catch(() => undefined);

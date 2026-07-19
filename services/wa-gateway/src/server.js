@@ -6,6 +6,7 @@
  * siapa pun yang bisa memanggilnya bisa mengirim WhatsApp atas nama bisnis.
  */
 
+import { timingSafeEqual } from "node:crypto";
 import http from "node:http";
 import { connect, getQr, getStatus, sendText } from "./wa.js";
 
@@ -57,7 +58,12 @@ const server = http.createServer(async (req, res) => {
     return json(res, status.connected ? 200 : 503, status);
   }
 
-  if (req.headers["x-gateway-token"] !== TOKEN) {
+  const provided = req.headers["x-gateway-token"];
+  const providedBuf = Buffer.from(typeof provided === "string" ? provided : "");
+  const expectedBuf = Buffer.from(TOKEN);
+  const authorized =
+    providedBuf.length === expectedBuf.length && timingSafeEqual(providedBuf, expectedBuf);
+  if (!authorized) {
     return json(res, 401, { success: false, error: "Unauthorized" });
   }
 

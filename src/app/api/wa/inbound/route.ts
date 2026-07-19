@@ -1,23 +1,63 @@
+import { timingSafeEqual } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { normalizeInbound, type GatewayInboundPayload } from "@/lib/whatsapp/inbound";
 import { recordGatewayMessage } from "@/lib/whatsapp/store";
 
 /**
  * EPIC-012 Fase B — penerima event pesan dari wa-gateway (Baileys
- * messages.upsert). Dipanggil HANYA oleh gateway di mesin yang sama; token
- * bersama WA_GATEWAY_TOKEN dipakai dua arah (app→gateway utk kirim,
- * gateway→app utk event masuk).
+ * messages.upsert). Auth = token bersama WA_GATEWAY_TOKEN (dua arah).
+ *
+ * PENTING: app ini terjangkau dari internet lewat cloudflared, jadi endpoint
+ * ini TIDAK boleh dianggap lokal-saja. Pengerasan (hasil review):
+ * - perbandingan token constant-time,
+ * - backoff global untuk percobaan token gagal (anti brute-force),
+ * - batas ukuran body & jumlah pesan per batch.
  */
+
+const MAX_BODY_BYTES = 512 * 1024;
+const MAX_BATCH = 200;
+
+// Anti brute-force token: setelah N kegagalan dalam jendela, tolak 429 dulu.
+const AUTH_FAIL_LIMIT = 10;
+const AUTH_FAIL_WINDOW_MS = 60_000;
+let authFailures: number[] = [];
+
+function tokenMatches(provided: string | null, expected: string): boolean {
+  if (!provided) return false;
+  const a = Buffer.from(provided);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
+}
+
 export async function POST(request: NextRequest) {
   const token = process.env.WA_GATEWAY_TOKEN;
-  if (!token || request.headers.get("x-gateway-token") !== token) {
+  if (!token) {
+    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+  }
+
+  const now = Date.now();
+  authFailures = authFailures.filter((at) => at > now - AUTH_FAIL_WINDOW_MS);
+  if (authFailures.length >= AUTH_FAIL_LIMIT) {
+    return NextResponse.json({ success: false, error: "Too many attempts" }, { status: 429 });
+  }
+
+  if (!tokenMatches(request.headers.get("x-gateway-token"), token)) {
+    authFailures.push(now);
     return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
   }
 
   let payloads: GatewayInboundPayload[];
   try {
-    const json = await request.json();
-    payloads = Array.isArray(json?.messages) ? json.messages : [];
+    const raw = await request.text();
+    if (raw.length > MAX_BODY_BYTES) {
+      return NextResponse.json(
+        { success: false, error: "Payload terlalu besar" },
+        { status: 413 }
+      );
+    }
+    const json = JSON.parse(raw);
+    payloads = Array.isArray(json?.messages) ? json.messages.slice(0, MAX_BATCH) : [];
   } catch {
     return NextResponse.json({ success: false, error: "JSON tidak valid" }, { status: 400 });
   }

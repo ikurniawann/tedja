@@ -117,7 +117,7 @@ export async function POST(request: NextRequest) {
 
     const { rows } = await pool.query(
       `SELECT id, phone, body, message_type, status, conversation_id
-         FROM crm.wa_messages WHERE id = $1`,
+         FROM crm.wa_messages WHERE id = $1 AND direction = 'out'`,
       [payload.id]
     );
     const original = rows[0];
@@ -152,6 +152,15 @@ export async function POST(request: NextRequest) {
         { status: 502 }
       );
     }
+
+    // Tandai baris asal supaya tidak bisa dikirim ulang berkali-kali
+    // (temuan review M2 — spam ke customer). Kiriman baru tercatat sbg baris baru.
+    await pool.query(
+      `UPDATE crm.wa_messages
+          SET status = 'sent', error_reason = 'Dikirim ulang manual — lihat baris terbaru'
+        WHERE id = $1`,
+      [original.id]
+    );
 
     return NextResponse.json({ success: true, data: { messageId: result.messageId } });
   } catch (error) {
