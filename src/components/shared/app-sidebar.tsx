@@ -366,6 +366,20 @@ function AccountPopup({
   user: SidebarUser;
   onClose: () => void;
 }) {
+  const [loggingOut, setLoggingOut] = useState(false);
+
+  // Cookie session dibuang di server; reload penuh (bukan router.push) supaya
+  // seluruh state klien ikut bersih dan guard layout mengarahkan ke /login.
+  async function handleLogout() {
+    setLoggingOut(true);
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+      window.location.href = "/login";
+    } catch {
+      setLoggingOut(false);
+    }
+  }
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-start justify-end bg-black/20 p-4 pt-16 backdrop-blur-sm"
@@ -407,8 +421,8 @@ function AccountPopup({
             />
           </div>
 
-          {!isEssOnlyRole(user.role) && (
-            <div className="grid gap-2">
+          <div className="grid gap-2">
+            {!isEssOnlyRole(user.role) && (
               <Link
                 href="/arkiv-os"
                 onClick={onClose}
@@ -417,8 +431,17 @@ function AccountPopup({
                 <AppSidebarNavIcon name="home" className="h-5 w-5" isActive />
                 Kembali ke Desktop
               </Link>
-            </div>
-          )}
+            )}
+            <button
+              type="button"
+              onClick={() => void handleLogout()}
+              disabled={loggingOut}
+              className="flex items-center justify-center gap-2 rounded-xl border border-red-200 bg-white px-4 py-3 text-sm font-semibold text-red-600 transition hover:bg-red-50 disabled:opacity-60"
+            >
+              <AppSidebarNavIcon name="logout" className="h-5 w-5" isActive={false} />
+              {loggingOut ? "Keluar..." : "Keluar"}
+            </button>
+          </div>
         </div>
       </div>
     </div>
