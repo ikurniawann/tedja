@@ -39,10 +39,28 @@ Saya tidak bisa mendaftarkan akun atau mengunggah dokumen legal atas nama Anda.
    mulai lebih awal, ini penentu jadwal keseluruhan.
 3. Buat **WhatsApp Business Account (WABA)** di Business Manager.
 
-> **Keputusan Anda:** nomor telepon pengirim. Nomor itu **tidak boleh** sedang
-> aktif di aplikasi WhatsApp biasa atau WhatsApp Business biasa. Kalau nomor
-> operasional Anda sekarang dipakai di WhatsApp biasa, siapkan nomor baru —
-> memindahkannya berarti kehilangan riwayat chat di nomor tersebut.
+### Nomor pengirim — sudah ditetapkan
+
+**`+62 858-8097-4659`** (dinormalisasi sistem jadi `6285880974659`).
+Ditetapkan owner 19 Jul 2026.
+
+Sudah diperiksa:
+- ✅ Format lolos normalisasi nomor di aplikasi (`normalizePhoneDigits`).
+- ✅ Belum terdaftar sebagai member di `pos_customers` — tidak bentrok.
+
+Yang **masih perlu Anda pastikan sendiri** sebelum mendaftarkannya ke Meta:
+
+1. **Nomor ini tidak boleh sedang aktif di aplikasi WhatsApp biasa maupun
+   WhatsApp Business biasa.** Kalau sekarang masih dipakai, hapus dulu akun
+   WhatsApp di nomor tersebut — dan sadari **riwayat chat di nomor itu akan
+   hilang**, tidak bisa dikembalikan setelah pindah ke Cloud API.
+2. **Nomor harus bisa menerima SMS atau telepon** saat verifikasi Meta.
+3. **Jangan daftarkan nomor ini sebagai member.** Ia akan jadi pengirim OTP;
+   kalau ikut jadi member, sistem berpotensi mengirim OTP dari nomor itu ke
+   dirinya sendiri.
+4. Setelah tertaut ke Cloud API, nomor ini **tidak bisa lagi dipakai lewat
+   aplikasi WhatsApp biasa** — semua percakapan hanya lewat API/Business
+   Manager. Pastikan tidak ada operasional yang masih bergantung padanya.
 
 ## Langkah 2 — Nomor & kredensial
 
