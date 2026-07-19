@@ -261,3 +261,36 @@ direncanakan setelah EPIC-011, dimulai dari kanal WhatsApp.
     Dua error tsc di analytics HRIS dipastikan pre-existing (uji stash).
   - Badge unread sidebar tetap DITUNDA (perlu sentuh AppSidebar generik).
   - Sisa: Fase E (laporan CS) + UAT owner.
+- 2026-07-20 — **Fase E SELESAI: laporan CS — EPIC-012 TUNTAS A–E.** Tanpa
+  migrasi (agregasi dari kolom Fase D). `GET /api/crm/reports/cs` mengikuti
+  pola laporan CRM existing (guard `requireCrmReportRole` = super_admin/admin/
+  direksi, `resolveReportPeriod` yang sama). **Respons sengaja hanya angka
+  agregat — tanpa isi chat & nomor customer** supaya laporan bisa dibuka
+  manajemen tanpa membuka PII percakapan (peran laporan ≠ peran inbox).
+  - Isi: ringkasan (percakapan, komplain, selesai + persentase, lewat SLA,
+    rata-rata respons pertama, rata-rata waktu selesai, CSAT + jumlah
+    penilaian), volume harian (zona Asia/Jakarta), komplain per kategori ×
+    prioritas dgn rata-rata waktu selesai, sebaran CSAT 1-5, dan kinerja per
+    agent (ditangani/selesai/respons/CSAT).
+  - UI `CsReportSection` menempel di bawah halaman `/dashboard/crm/reports`
+    (bukan halaman baru — satu tempat untuk semua laporan CRM), memakai
+    periode yang sama dengan laporan lain; ada peringatan bila ada percakapan
+    lewat SLA.
+  - **BUG DITEMUKAN & FIX saat verifikasi Fase E**: balasan rating CSAT
+    masuk lewat jalur pesan biasa, yang otomatis **membuka kembali**
+    percakapan `resolved` (aturan Fase B). Akibatnya meminta rating justru
+    membatalkan status selesai dan mengacaukan hitungan laporan. Fix di
+    `onInboundMessage`: saat rating tertangkap, status dikembalikan ke
+    `resolved`, unread dinolkan, dan jam SLA tidak dimulai. Diverifikasi:
+    setelah fix, balasan "5" membuat percakapan tetap `resolved`.
+  - **Verifikasi live** dgn satu siklus penuh (masuk → tandai komplain
+    produk/urgent → balas → selesai → customer balas rating): laporan
+    menampilkan rata-rata respons 11 dtk, waktu selesai 13 dtk, CSAT 4 lalu 5,
+    sebaran CSAT, komplain per kategori, dan kinerja agent — semua terisi
+    benar. Halaman laporan 200.
+  - Gate: 575 unit test hijau, build sukses, restart. Error tsc di
+    `hris/reports` & analytics dipastikan pre-existing.
+  - Data uji dibersihkan. **Status epic → ready-for-qa.**
+  - Sisa opsional (tidak masuk A-E): badge unread di sidebar, eskalasi SLA
+    via WA ke supervisor (sengaja tidak dibuat — menaikkan aktivitas nomor),
+    unduh laporan CSV, broadcast/campaign, chatbot AI.

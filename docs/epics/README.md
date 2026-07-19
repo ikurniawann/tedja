@@ -17,7 +17,7 @@ deploying-dev · ready-for-qa · blocked · done).
 | [EPIC-009](./EPIC-009-logbook-revamp.md) | Logbook Revamp | ready-for-qa | 2026-07-18 |
 | [EPIC-010](./EPIC-010-kpi-scorecard.md) | KPI Scorecard | ready-for-qa | 2026-07-19 |
 | [EPIC-011](./EPIC-011-crm-revamp.md) | CRM Revamp — Member Global, XP Lifetime, ARK Coin & Portal Member | on-progress | 2026-07-19 |
-| [EPIC-012](./EPIC-012-wa-customer-service.md) | WhatsApp Customer Service — Riwayat Pesan, Inbox & Komplain | ready-for-qa | 2026-07-19 |
+| [EPIC-012](./EPIC-012-wa-customer-service.md) | WhatsApp Customer Service — Riwayat Pesan, Inbox & Komplain | ready-for-qa | 2026-07-20 |
 
 Aturan:
 - Epic + registry ini adalah sumber kebenaran status pekerjaan (canonical).

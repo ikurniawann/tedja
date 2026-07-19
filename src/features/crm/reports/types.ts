@@ -60,3 +60,41 @@ export type CrmReportPeriodInput = {
   from: string;
   to: string;
 };
+
+/** EPIC-012 Fase E — laporan customer service. */
+export interface CsReportSummary {
+  total_conversations: number;
+  total_complaints: number;
+  total_resolved: number;
+  total_sla_breached: number;
+  avg_first_response_seconds: number | null;
+  avg_resolution_seconds: number | null;
+  avg_csat: number | null;
+  csat_responses: number;
+}
+
+export interface CsReportData {
+  period: { from: string; to: string };
+  summary: CsReportSummary;
+  daily: {
+    tanggal: string;
+    conversations: number;
+    complaints: number;
+    sla_breached: number;
+  }[];
+  categories: {
+    category: string;
+    priority: string;
+    total: number;
+    resolved: number;
+    avg_resolution_seconds: number | null;
+  }[];
+  csat_distribution: { score: number; total: number }[];
+  agents: {
+    agent_name: string;
+    handled: number;
+    resolved: number;
+    avg_first_response_seconds: number | null;
+    avg_csat: number | null;
+  }[];
+}

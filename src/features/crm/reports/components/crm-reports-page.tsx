@@ -12,6 +12,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { useCrmReports } from "../queries";
+import { CsReportSection } from "./cs-report-section";
 import type { CrmReportPeriodInput } from "../types";
 
 const numberFormat = new Intl.NumberFormat("id-ID");
@@ -233,6 +234,8 @@ export function CrmReportsPage() {
           <TopSpenderTable loading={loading} rows={data?.topSpenders ?? []} />
           <FrequentVisitorTable loading={loading} rows={data?.frequentVisitors ?? []} />
         </section>
+
+        <CsReportSection period={applied} />
       </div>
     </div>
   );

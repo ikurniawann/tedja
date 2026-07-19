@@ -78,16 +78,25 @@ export async function onInboundMessage(
   if (conversation.csat_asked_at && conversation.csat_score == null) {
     const score = parseCsatReply(body);
     if (score != null) {
+      // Balasan rating datang lewat jalur pesan masuk biasa, yang sudah
+      // membuka kembali percakapan 'resolved'. Kembalikan ke resolved:
+      // memberi nilai bukan berarti komplain terbuka lagi.
       await db.query(
-        `UPDATE crm.wa_conversations SET csat_score = $2 WHERE id = $1`,
+        `UPDATE crm.wa_conversations
+            SET csat_score = $2,
+                status = 'resolved',
+                unread_count = 0,
+                awaiting_since = NULL
+          WHERE id = $1`,
         [conversationId, score]
       );
       csatCaptured = score;
     }
   }
 
-  // Mulai jam tunggu SLA hanya bila belum ada yang menunggu.
-  if (!conversation.awaiting_since) {
+  // Mulai jam tunggu SLA hanya bila belum ada yang menunggu — dan bukan
+  // ketika pesan itu justru jawaban rating (percakapan sudah selesai).
+  if (!conversation.awaiting_since && csatCaptured == null) {
     await db.query(
       `UPDATE crm.wa_conversations
           SET awaiting_since = $2, sla_response_breached = false, escalated_at = NULL
