@@ -34,6 +34,10 @@ export async function updateSession(request: NextRequest) {
     "/api/auth/login",
     "/api/auth/logout",
     "/api/files",
+    // Portal member publik (member.suluindwounderland.com) — identitas =
+    // sesi OTP WA sendiri (cookie member_session), bukan arkiv_session.
+    "/member",
+    "/api/member-portal",
   ];
   const isPublicRoute =
     pathname === "/" ||

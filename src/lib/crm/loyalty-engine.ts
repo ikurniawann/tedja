@@ -92,6 +92,8 @@ type PostXpEventInput = {
   idempotencyKey: string;
   description: string;
   metadata?: Record<string, unknown>;
+  /** false = XP nominal apa adanya (mis. Free XP profil) — tanpa multiplier tier */
+  applyTierMultiplier?: boolean;
 };
 
 export async function awardCrmXpForPosOrder(
@@ -411,7 +413,10 @@ async function postXpEvent(db: DbClient, input: PostXpEventInput): Promise<CrmXp
   const member = await ensureMemberProfile(db, input.customerId);
   if (!member) return { status: "skipped", xpAwarded: 0, reason: "member_profile_unavailable" };
 
-  const tierMultiplier = input.ruleId ? await getTierMultiplierForRule(db, input.ruleId, member) : toNumber(member.tier?.xp_multiplier) || 1;
+  const tierMultiplier =
+    input.applyTierMultiplier === false
+      ? 1
+      : input.ruleId ? await getTierMultiplierForRule(db, input.ruleId, member) : toNumber(member.tier?.xp_multiplier) || 1;
   const xpDelta = Math.max(0, Math.floor(input.xpAmount * tierMultiplier));
   if (xpDelta <= 0) return { status: "skipped", xpAwarded: 0, reason: "zero_xp" };
 
@@ -643,4 +648,42 @@ function itemAmount(item: PosOrderItemInput) {
   if (item.total_amount != null) return toNumber(item.total_amount);
   if (item.subtotal != null) return toNumber(item.subtotal);
   return toNumber(item.unit_price) * quantity;
+}
+
+/**
+ * Free XP kelengkapan profil 100% (EPIC-011 Fase D, keputusan owner #9):
+ * berlaku SEMUA tipe member, sekali seumur hidup, TANPA multiplier tier
+ * (nominal apa adanya dari crm_settings.profile_completion_free_xp).
+ * Idempoten dua lapis: idempotency_key ledger + free_xp_granted_at customer.
+ */
+export async function awardMemberFreeXp(
+  db: DbClient,
+  input: {
+    customerId: string;
+    xpAmount: number;
+    companyId?: string | null;
+    branchId?: string | null;
+  }
+): Promise<CrmXpAwardResult> {
+  const result = await postXpEvent(db, {
+    customerId: input.customerId,
+    sourceType: "profile_completion",
+    sourceId: input.customerId,
+    companyId: input.companyId ?? null,
+    branchId: input.branchId ?? null,
+    xpAmount: Math.max(0, Math.floor(input.xpAmount)),
+    referenceTable: "pos_customers",
+    referenceId: input.customerId,
+    idempotencyKey: `portal:profile-complete:${input.customerId}`,
+    description: "Free XP profil lengkap (portal member)",
+    applyTierMultiplier: false,
+  });
+
+  if (result.status === "posted") {
+    // Salin lifetime XP ke pos_customers.total_xp + evaluasi kenaikan tier —
+    // sama seperti alur XP order (tanpa ini total_xp customer tidak bergerak).
+    await syncPosCustomerAfterEarn(db, input.customerId, result.xpAwarded);
+    await syncTierAfterEarn(db, input.customerId);
+  }
+  return result;
 }

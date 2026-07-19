@@ -4,6 +4,20 @@ import { updateSession } from "@/lib/auth/middleware";
 export async function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
 
+  // Portal member: subdomain member.* (member.suluindwounderland.com via
+  // Cloudflare Tunnel) di-rewrite ke /member — API & asset tidak disentuh.
+  const host = request.headers.get("host") ?? "";
+  if (host.startsWith("member.")) {
+    if (
+      !pathname.startsWith("/member") &&
+      !pathname.startsWith("/api") &&
+      !pathname.startsWith("/_next")
+    ) {
+      const target = pathname === "/" ? "/member" : `/member${pathname}`;
+      return NextResponse.rewrite(new URL(`${target}${search}`, request.url));
+    }
+  }
+
   // Legacy employees path (was under /dashboard/hris/employees).
   if (pathname.startsWith("/dashboard/hris/employees")) {
     const target = pathname.replace("/dashboard/hris/employees", "/dashboard/employees");

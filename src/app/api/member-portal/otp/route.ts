@@ -1,0 +1,93 @@
+import { NextRequest, NextResponse } from "next/server";
+import { getPool } from "@/lib/db";
+import { sendWhatsApp } from "@/lib/fonnte";
+import {
+  generateOtpCode,
+  hashSecret,
+  normalizePhoneDigits,
+  otpMessage,
+  OTP_RATE_LIMIT_COUNT,
+  OTP_RATE_LIMIT_WINDOW_MS,
+  OTP_TTL_MS,
+} from "@/lib/member-portal/otp";
+
+/**
+ * POST /api/member-portal/otp { phone } — kirim kode OTP WhatsApp (Fonnte).
+ * Hanya nomor yang TERDAFTAR sebagai member (pos_customers aktif) yang
+ * dikirimi kode. Rate limit 3 permintaan / 10 menit / nomor.
+ * EPIC-011 Fase D.
+ */
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json().catch(() => ({}));
+    const phone = normalizePhoneDigits(body.phone);
+    if (!phone) {
+      return NextResponse.json(
+        { success: false, error: "Nomor WhatsApp tidak valid" },
+        { status: 400 }
+      );
+    }
+
+    const pool = getPool();
+
+    // Member lookup — nomor di DB bisa tersimpan 08xx / 62xx; cocokkan digit.
+    const { rows: customers } = await pool.query(
+      `SELECT id, name FROM pos.pos_customers
+       WHERE is_active IS NOT FALSE
+         AND regexp_replace(COALESCE(phone, ''), '\\D', '', 'g')
+             IN ($1, '0' || substring($1 from 3))
+       LIMIT 1`,
+      [phone]
+    );
+    if (customers.length === 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "Nomor belum terdaftar sebagai member — daftar dulu di kasir venue kami",
+        },
+        { status: 404 }
+      );
+    }
+
+    // Rate limit per nomor
+    const { rows: recent } = await pool.query(
+      `SELECT count(*)::int AS n FROM crm.member_portal_otp
+       WHERE phone = $1 AND created_at > now() - ($2 || ' milliseconds')::interval`,
+      [phone, OTP_RATE_LIMIT_WINDOW_MS]
+    );
+    if (recent[0].n >= OTP_RATE_LIMIT_COUNT) {
+      return NextResponse.json(
+        { success: false, error: "Terlalu banyak permintaan — coba lagi dalam 10 menit" },
+        { status: 429 }
+      );
+    }
+
+    const code = generateOtpCode();
+    await pool.query(
+      `INSERT INTO crm.member_portal_otp (phone, code_hash, expires_at)
+       VALUES ($1, $2, now() + ($3 || ' milliseconds')::interval)`,
+      [phone, hashSecret(code), OTP_TTL_MS]
+    );
+
+    const sent = await sendWhatsApp({ target: phone, message: otpMessage(code) });
+    if (!sent.success) {
+      // Jangan bocorkan kode; di dev tanpa FONNTE_API_KEY cek log server.
+      console.warn(
+        `[member-portal] OTP WA gagal terkirim ke ${phone} (${sent.reason}); kode utk debug dev: ${code}`
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: "Kode OTP dikirim ke WhatsApp Anda",
+      wa_delivered: sent.success,
+    });
+  } catch (error) {
+    console.error("Error requesting member OTP:", error);
+    return NextResponse.json(
+      { success: false, error: "Gagal mengirim OTP" },
+      { status: 500 }
+    );
+  }
+}

@@ -244,3 +244,39 @@ Hasil diskusi desain — SEMUA sudah diputuskan owner:
   - Gate: unit test crm hijau, next build sukses, PM2 restart dev.
   - Sisa ke Fase D: portal member (OTP WA Fonnte, profil, Free XP) — lihat
     bagian Fase; Fase E laporan/rekonsiliasi.
+- 2026-07-19 — **Fase D SELESAI: Portal Member.** Migrasi
+  `20260719230000_crm_revamp_fase_d_portal.sql` (applied+tracked):
+  `crm.member_portal_otp` (hash sha256, TTL 5 mnt, max 5 percobaan, rate
+  limit 3/10 mnt/nomor) + `crm.member_portal_sessions` (token 32-byte,
+  DB simpan hash, TTL 30 hari; cookie `member_session` httpOnly TERPISAH
+  dari arkiv_session).
+  - **Login OTP WA**: POST /api/member-portal/otp (hanya nomor member
+    terdaftar; kirim via Fonnte `sendWhatsApp`; tanpa FONNTE_API_KEY kode
+    tercetak di log server utk dev) → /verify (konsumsi kode, stempel
+    `wa_verified_at`, set cookie sesi). Lookup nomor toleran format
+    08xx/62xx (regexp_replace digit).
+  - **API member**: /me (profil+saldo+XP+tier+progres tier berikutnya+
+    kelengkapan profil), PUT /profile (zod; nomor HP TIDAK bisa diubah —
+    identitas login), /transactions (wallet+order milik sendiri), /logout.
+  - **Free XP profil 100%**: engine `awardMemberFreeXp` (TANPA multiplier
+    tier, idempotent ledger `portal:profile-complete:<id>` + kolom
+    `free_xp_granted_at`). BUG tertangkap saat uji: lupa
+    `syncPosCustomerAfterEarn` → ledger terisi tapi total_xp 0 — difix;
+    verifikasi ulang: Free XP 100 masuk total_xp DAN tier auto-naik
+    regular→bronze.
+  - **Routing subdomain**: proxy.ts rewrite host `member.*` → /member
+    (API & _next tak disentuh); middleware publicRoutes + `/member` +
+    `/api/member-portal`. ⚠ INFRA di luar repo: tambahkan ingress
+    Cloudflare Tunnel `member.suluindwounderland.com` → :3459.
+  - **UI /member** (mobile-first, layout mandiri): login 2 langkah
+    (nomor→OTP), kartu saldo/tier/progres XP, banner Free XP, tab
+    Beranda/Profil/Riwayat, form profil + consent WA (switch), riwayat
+    wallet & pembelian, logout.
+  - Verifikasi end-to-end dev via curl: OTP nomor asing 404 → nomor
+    member terkirim → kode salah 400 → benar = sesi → me 200 → profil
+    100% = +100 Free XP (ulang = 0, tidak dobel) → logout = 401.
+    Data uji dibersihkan. Gate: 63 unit test hijau, build sukses.
+  - CATATAN: kolom `wa_consent` ber-default false di DB → field consent
+    selalu "terisi" utk member baru (kelengkapan efektif 7 field); dinilai
+    aman (default opt-out). Upload foto profil = URL dulu; file upload
+    menyusul. Sisa: Fase E laporan & rekonsiliasi antar-venue.
