@@ -11,6 +11,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { prorateNote } from "@/lib/payroll/prorate-note";
 
 /**
  * ESS → Slip Gaji (/dashboard/me/slip-gaji): karyawan melihat slip gajinya
@@ -49,6 +50,10 @@ interface PayslipRow {
   present_days: number;
   late_days: number;
   overtime_hours?: number;
+  /** Faktor proraté cakupan kontrak (0..1); pg numeric datang sebagai string */
+  prorate_factor?: number | string;
+  /** Snapshot gaji pokok penuh sebelum proraté (null utk baris lama) */
+  full_base_salary?: number | string | null;
   payroll_run?: {
     id: string;
     period_month: number;
@@ -102,6 +107,13 @@ export function EssSlipGajiPage() {
   const [loading, setLoading] = useState(true);
   const [slips, setSlips] = useState<PayslipRow[]>([]);
   const [selected, setSelected] = useState<PayslipRow | null>(null);
+  const selectedProrateNote = selected
+    ? prorateNote({
+        factor: selected.prorate_factor,
+        fullBase: selected.full_base_salary,
+        paidBase: selected.base_salary,
+      })
+    : null;
 
   useEffect(() => {
     Promise.all([
@@ -195,6 +207,11 @@ export function EssSlipGajiPage() {
                   Penghasilan
                 </p>
                 <AmountRow label="Gaji Pokok" amount={selected.base_salary} />
+                {selectedProrateNote && (
+                  <p className="text-xs italic text-amber-700">
+                    {selectedProrateNote}
+                  </p>
+                )}
                 <AmountRow label="Tunjangan Tetap" amount={selected.fixed_allowance} />
                 <AmountRow label="Tunjangan Variabel" amount={selected.variable_allowance} />
                 <AmountRow label="Tunjangan Transport" amount={selected.transport_allowance} />

@@ -173,16 +173,11 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           late_days: input.lateDays,
           unpaid_leave_days: input.unpaidLeaveDays,
           overtime_hours: input.overtimeHours,
+          prorate_factor: input.prorateFactor ?? 1,
+          full_base_salary: input.baseSalary,
           status: 'calculated',
         })
-        .select(`
-          *,
-          employee:employees (
-            id,
-            full_name,
-            nip
-          )
-        `)
+        .select('*')
         .single();
 
       if (error) {
@@ -195,7 +190,16 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         continue;
       }
 
-      results.push(detail);
+      // Embed dibuang oleh wrapper pg di RETURNING — tempelkan data karyawan
+      // dari loop agar respons & summary tetap membawa nama karyawan.
+      results.push({
+        ...detail,
+        employee: {
+          id: employee.id,
+          full_name: employee.full_name,
+          nip: employee.nip,
+        },
+      });
 
       // Accumulate totals
       totalGross += payrollResult.grossSalary;
