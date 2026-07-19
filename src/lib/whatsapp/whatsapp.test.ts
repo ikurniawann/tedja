@@ -13,6 +13,8 @@ const ENV_KEYS = [
   "META_WA_PHONE_NUMBER_ID",
   "META_WA_GRAPH_VERSION",
   "FONNTE_API_KEY",
+  "WA_GATEWAY_TOKEN",
+  "WA_GATEWAY_URL",
 ] as const;
 
 let saved: Record<string, string | undefined> = {};
@@ -147,6 +149,29 @@ describe("resolveProvider", () => {
     process.env.WHATSAPP_PROVIDER = "meta";
     process.env.FONNTE_API_KEY = "fonnte";
 
+    expect(resolveProvider()).toBeNull();
+  });
+});
+
+describe("resolveProvider — gateway mandiri", () => {
+  it("terdeteksi dari WA_GATEWAY_TOKEN saja", () => {
+    process.env.WA_GATEWAY_TOKEN = "rahasia";
+    expect(resolveProvider()).toBe("gateway");
+  });
+
+  it("urutan preferensi otomatis: meta > gateway > fonnte", () => {
+    process.env.WA_GATEWAY_TOKEN = "rahasia";
+    process.env.FONNTE_API_KEY = "fonnte";
+    expect(resolveProvider()).toBe("gateway");
+
+    process.env.META_WA_ACCESS_TOKEN = "token";
+    process.env.META_WA_PHONE_NUMBER_ID = "12345";
+    expect(resolveProvider()).toBe("meta");
+  });
+
+  it("pilihan eksplisit gateway tanpa token → null", () => {
+    process.env.WHATSAPP_PROVIDER = "gateway";
+    process.env.FONNTE_API_KEY = "fonnte";
     expect(resolveProvider()).toBeNull();
   });
 });

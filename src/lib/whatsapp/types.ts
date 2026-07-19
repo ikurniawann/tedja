@@ -5,11 +5,15 @@
  * - `meta`   : WhatsApp Business Cloud API resmi (Meta). Pesan yang diinisiasi
  *              bisnis WAJIB memakai template yang sudah disetujui; teks bebas
  *              hanya boleh dalam jendela layanan 24 jam setelah member membalas.
- * - `fonnte` : gateway tidak resmi. Bebas kirim teks, tapi nomor berisiko
- *              diblokir WhatsApp.
+ * - `gateway`: service WhatsApp mandiri milik sendiri (Baileys) di
+ *              `services/wa-gateway`. Bebas kirim teks, tanpa pihak ketiga dan
+ *              tanpa biaya langganan, tapi memakai protokol tidak resmi yang
+ *              sama seperti Fonnte — risiko nomor diblokir tetap ada.
+ * - `fonnte` : gateway tidak resmi pihak ketiga. Bebas kirim teks, tapi nomor
+ *              berisiko diblokir WhatsApp dan pesan transit di server mereka.
  */
 
-export type WhatsAppProvider = "meta" | "fonnte";
+export type WhatsAppProvider = "meta" | "gateway" | "fonnte";
 
 export interface WhatsAppResult {
   success: boolean;

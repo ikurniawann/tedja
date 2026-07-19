@@ -9,18 +9,24 @@
  */
 
 import { sendWhatsApp as sendViaFonnte } from "@/lib/fonnte";
+import { readGatewayConfig, sendGatewayText } from "./gateway";
 import { readMetaConfig, sendMetaTemplate, sendMetaText } from "./meta";
 import type { TemplateMessage, TextMessage, WhatsAppProvider, WhatsAppResult } from "./types";
 
 export * from "./types";
 export { buildTemplatePayload, buildTextPayload, extractMetaError } from "./meta";
+export { getGatewayStatus, readGatewayConfig } from "./gateway";
 
 export function resolveProvider(): WhatsAppProvider | null {
   const explicit = process.env.WHATSAPP_PROVIDER?.trim().toLowerCase();
   if (explicit === "meta") return readMetaConfig() ? "meta" : null;
+  if (explicit === "gateway") return readGatewayConfig() ? "gateway" : null;
   if (explicit === "fonnte") return process.env.FONNTE_API_KEY ? "fonnte" : null;
 
+  // Urutan deteksi otomatis = urutan preferensi: resmi dulu, lalu gateway
+  // sendiri, pihak ketiga paling akhir.
   if (readMetaConfig()) return "meta";
+  if (readGatewayConfig()) return "gateway";
   if (process.env.FONNTE_API_KEY) return "fonnte";
   return null;
 }
@@ -59,6 +65,12 @@ export async function sendWhatsAppOtp(options: OtpMessageOptions): Promise<Whats
     });
   }
 
+  if (provider === "gateway") {
+    const config = readGatewayConfig();
+    if (!config) return NOT_CONFIGURED;
+    return sendGatewayText(config, { target: options.target, message: options.fallbackText });
+  }
+
   const result = await sendViaFonnte({ target: options.target, message: options.fallbackText });
   return { ...result, provider: "fonnte" };
 }
@@ -77,6 +89,12 @@ export async function sendWhatsAppText(message: TextMessage): Promise<WhatsAppRe
     const config = readMetaConfig();
     if (!config) return NOT_CONFIGURED;
     return sendMetaText(config, message);
+  }
+
+  if (provider === "gateway") {
+    const config = readGatewayConfig();
+    if (!config) return NOT_CONFIGURED;
+    return sendGatewayText(config, message);
   }
 
   const result = await sendViaFonnte(message);
