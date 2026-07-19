@@ -222,3 +222,42 @@ direncanakan setelah EPIC-011, dimulai dari kanal WhatsApp.
     (3) klik Tangani/Status → Selesai; (4) kirim lagi dari HP → percakapan
     re-open otomatis; (5) tab Riwayat Pesan mencatat semua. Fase D (komplain
     berkategori + SLA) menunggu keputusan lanjut.
+- 2026-07-19 — **Fase D SELESAI: penanganan komplain terukur.** Migrasi
+  `20260720080000_wa_cs_fase_d.sql` (applied): kolom komplain/SLA di
+  `wa_conversations` (is_complaint, category, priority, awaiting_since,
+  first_response_*, resolution_*, sla_response_breached, escalated_at,
+  auto_reply_sent_on, csat_*), tabel `crm.wa_internal_notes`, 8 setting CS di
+  `crm_settings`, dan backfill `awaiting_since` untuk percakapan lama.
+  GOTCHA: `crm_settings.value` bertipe **jsonb** — seed teks wajib
+  `to_jsonb(...)::text`, migrasi sempat gagal (ter-rollback utuh) karena ini.
+  - Mesin aturan `src/lib/crm/cs-rules.ts` (fungsi murni, 16 unit test):
+    jam operasional WIB via aritmetika UTC (bebas TZ host, pelajaran Fase F),
+    rentang melewati tengah malam, evaluasi SLA respons, parser CSAT, dan
+    format durasi. Parser CSAT sengaja ketat: angka polos/≤2 kata saja,
+    sehingga "pesanan saya nomor 3 belum datang" TIDAK dibaca sbg rating.
+  - Sisi server `cs-server.ts`: `onInboundMessage` (mulai jam tunggu SLA,
+    tangkap CSAT hanya bila rating memang sedang diminta, auto-reply di luar
+    jam operasional dgn klaim slot harian lewat UPDATE ber-kondisi sehingga
+    aman dari duplikasi), `onAgentReply` (hentikan jam, catat respons pertama
+    sekali saja), `onResolved` (durasi penyelesaian + kirim permintaan CSAT).
+  - Pengawas SLA `cs-sla-watcher.ts` didaftarkan di `instrumentation.ts`
+    (pola KPI auto-snapshot), cek tiap menit, menandai `sla_response_breached`
+    + `escalated_at` sekali. Sengaja TIDAK mengirim WA otomatis ke supervisor
+    — menambah aktivitas nomor = menaikkan risiko blokir; penanda tampil di UI.
+  - API: aksi `set_complaint` & `add_note` di endpoint percakapan; detail kini
+    membawa kolom SLA + catatan internal; daftar percakapan membawa badge
+    komplain/SLA + hitungan `total_breached`/`total_complaints`.
+  - UI: `ComplaintPanel` di kolom kanan inbox (checkbox komplain, kategori,
+    4 prioritas, metrik SLA, catatan internal berlatar kuning dgn penegasan
+    "tidak dikirim ke customer"); badge "Komplain"/"Lewat SLA" di daftar dan
+    ringkasan di header.
+  - **Verifikasi live**: tandai komplain (layanan/high) + catatan internal OK;
+    auto-reply terkirim saat pesan masuk pukul 22:32 WIB (di luar 10-22) dan
+    **tidak terkirim dua kali** pada pesan kedua hari yang sama; balas agent
+    menghentikan jam SLA (first_response 39 dtk); resolve mencatat durasi 42
+    dtk + mengirim permintaan rating; balasan "5" tertangkap sbg csat_score=5;
+    kalimat "pesanan saya nomor 3 belum datang" TIDAK tertangkap sbg rating.
+  - Gate: 575 unit test hijau (+16), build sukses, migrasi applied, restart.
+    Dua error tsc di analytics HRIS dipastikan pre-existing (uji stash).
+  - Badge unread sidebar tetap DITUNDA (perlu sentuh AppSidebar generik).
+  - Sisa: Fase E (laporan CS) + UAT owner.

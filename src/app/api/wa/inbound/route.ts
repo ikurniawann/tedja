@@ -2,6 +2,8 @@ import { timingSafeEqual } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { normalizeInbound, type GatewayInboundPayload } from "@/lib/whatsapp/inbound";
 import { recordGatewayMessage } from "@/lib/whatsapp/store";
+import { onInboundMessage } from "@/lib/crm/cs-server";
+import { sendWhatsAppText } from "@/lib/whatsapp";
 
 /**
  * EPIC-012 Fase B — penerima event pesan dari wa-gateway (Baileys
@@ -74,8 +76,27 @@ export async function POST(request: NextRequest) {
 
     try {
       const result = await recordGatewayMessage(normalized);
-      if (result.stored) stored += 1;
-      else skipped += 1;
+      if (!result.stored) {
+        skipped += 1;
+        continue;
+      }
+      stored += 1;
+
+      // Aturan CS (Fase D) hanya berlaku utk pesan dari customer, bukan
+      // balasan manual dari HP bisnis (direction out).
+      if (normalized.direction === "in" && result.conversationId) {
+        const cs = await onInboundMessage(
+          result.conversationId,
+          normalized.body,
+          normalized.sentAt ?? new Date()
+        );
+        if (cs.autoReplyText) {
+          await sendWhatsAppText(
+            { target: normalized.phone, message: cs.autoReplyText },
+            { messageType: "system", conversationId: result.conversationId }
+          );
+        }
+      }
     } catch (error) {
       // Satu pesan gagal tidak boleh menggagalkan sisanya; gateway tidak
       // mengulang batch yang sudah dijawab 200.

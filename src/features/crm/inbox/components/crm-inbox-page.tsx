@@ -7,12 +7,15 @@ import type {
   ConversationStatus,
   InboxConversation,
   InboxMessage,
+  InternalNote,
   MemberContext,
   ReplyTemplate,
 } from "../types";
+import type { CsCategory, CsPriority } from "@/lib/crm/cs-rules";
 import { STATUS_LABELS, STATUS_STYLES } from "../types";
 import { ChatPanel } from "./chat-panel";
 import { MemberContextPanel } from "./member-context-panel";
+import { ComplaintPanel } from "./complaint-panel";
 
 /**
  * EPIC-012 Fase C — Inbox WhatsApp CS: daftar percakapan, thread chat, dan
@@ -34,7 +37,12 @@ const waktuRelatif = (iso: string | null) => {
 
 export function CrmInboxPage() {
   const [conversations, setConversations] = useState<InboxConversation[]>([]);
-  const [totals, setTotals] = useState<{ total_unread: number; total_active: number } | null>(null);
+  const [totals, setTotals] = useState<{
+    total_unread: number;
+    total_active: number;
+    total_breached?: number;
+    total_complaints?: number;
+  } | null>(null);
   const [statusFilter, setStatusFilter] = useState("all");
   const [assignedFilter, setAssignedFilter] = useState("all");
   const [search, setSearch] = useState("");
@@ -43,6 +51,7 @@ export function CrmInboxPage() {
     conversation: InboxConversation;
     messages: InboxMessage[];
     member: MemberContext | null;
+    notes: InternalNote[];
   } | null>(null);
   const [templates, setTemplates] = useState<ReplyTemplate[]>([]);
   const [gatewayDown, setGatewayDown] = useState(false);
@@ -181,6 +190,31 @@ export function CrmInboxPage() {
     }
   }
 
+  async function postAction(payload: Record<string, unknown>) {
+    if (!selectedId) return;
+    try {
+      const response = await fetch(`/api/crm/inbox/conversations/${selectedId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const json = await response.json();
+      if (!response.ok || !json.success) throw new Error(json.error || "Gagal memproses aksi");
+      await loadDetail(selectedId, false);
+      await loadConversations();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Gagal memproses aksi");
+    }
+  }
+
+  const handleSetComplaint = (payload: {
+    is_complaint: boolean;
+    category?: CsCategory | null;
+    priority?: CsPriority;
+  }) => postAction({ action: "set_complaint", ...payload });
+
+  const handleAddNote = (body: string) => postAction({ action: "add_note", body });
+
   const activeConversation = useMemo(
     () => detail?.conversation ?? conversations.find((item) => item.id === selectedId) ?? null,
     [detail, conversations, selectedId]
@@ -199,6 +233,16 @@ export function CrmInboxPage() {
             {totals && totals.total_unread > 0 && (
               <span className="rounded-full bg-violet-600 px-2 py-0.5 text-xs font-semibold text-white">
                 {totals.total_unread} belum dibaca
+              </span>
+            )}
+            {totals && (totals.total_complaints ?? 0) > 0 && (
+              <span className="rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-xs font-medium text-orange-700">
+                {totals.total_complaints} komplain
+              </span>
+            )}
+            {totals && (totals.total_breached ?? 0) > 0 && (
+              <span className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-700">
+                {totals.total_breached} lewat SLA
               </span>
             )}
           </h1>
@@ -295,6 +339,16 @@ export function CrmInboxPage() {
                     <span className={`rounded-full border px-1.5 py-px text-[10px] font-medium ${STATUS_STYLES[conversation.status]}`}>
                       {STATUS_LABELS[conversation.status]}
                     </span>
+                    {conversation.is_complaint && (
+                      <span className="rounded-full border border-orange-200 bg-orange-50 px-1.5 py-px text-[10px] font-medium text-orange-700">
+                        Komplain
+                      </span>
+                    )}
+                    {conversation.sla_response_breached && (
+                      <span className="rounded-full border border-red-200 bg-red-50 px-1.5 py-px text-[10px] font-semibold text-red-700">
+                        Lewat SLA
+                      </span>
+                    )}
                     {conversation.assigned_name && (
                       <span className="truncate text-[10px] text-slate-400">
                         {conversation.assigned_name}
@@ -344,7 +398,15 @@ export function CrmInboxPage() {
         {/* Kolom 3 — konteks member */}
         <div className="hidden min-h-0 overflow-y-auto border-l border-slate-200 bg-white lg:block">
           {detail ? (
-            <MemberContextPanel member={detail.member} />
+            <>
+              <MemberContextPanel member={detail.member} />
+              <ComplaintPanel
+                conversation={detail.conversation}
+                notes={detail.notes ?? []}
+                onSetComplaint={handleSetComplaint}
+                onAddNote={handleAddNote}
+              />
+            </>
           ) : (
             <div className="p-6 text-center text-xs text-slate-400">
               Profil member tampil di sini.

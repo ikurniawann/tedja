@@ -4,6 +4,15 @@ export type InboxConversation = {
   id: string;
   phone: string;
   status: ConversationStatus;
+  is_complaint?: boolean;
+  category?: "produk" | "layanan" | "pembayaran" | "lainnya" | null;
+  priority?: "low" | "normal" | "high" | "urgent";
+  awaiting_since?: string | null;
+  first_response_seconds?: number | null;
+  resolution_seconds?: number | null;
+  sla_response_breached?: boolean;
+  escalated_at?: string | null;
+  csat_score?: number | null;
   assigned_user_id: string | null;
   assigned_name: string | null;
   unread_count: number;
@@ -72,4 +81,11 @@ export const STATUS_STYLES: Record<ConversationStatus, string> = {
   in_progress: "bg-sky-50 text-sky-700 border-sky-200",
   waiting_customer: "bg-violet-50 text-violet-700 border-violet-200",
   resolved: "bg-emerald-50 text-emerald-700 border-emerald-200",
+};
+
+export type InternalNote = {
+  id: string;
+  body: string;
+  created_at: string;
+  author_name: string | null;
 };

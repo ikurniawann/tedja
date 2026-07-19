@@ -4,6 +4,8 @@ import { getPool } from "@/lib/db";
 import { requireCrmInboxAgent } from "@/lib/crm/server";
 import { sendWhatsAppText } from "@/lib/whatsapp";
 import { messagePreview } from "@/lib/whatsapp/inbound";
+import { CS_CATEGORIES, CS_PRIORITIES } from "@/lib/crm/cs-rules";
+import { onAgentReply, onResolved } from "@/lib/crm/cs-server";
 
 /**
  * EPIC-012 Fase C — detail percakapan (pesan + konteks member) & aksi agent.
@@ -18,6 +20,13 @@ const actionSchema = z.discriminatedUnion("action", [
     status: z.enum(["open", "in_progress", "waiting_customer", "resolved"]),
   }),
   z.object({ action: z.literal("mark_read") }),
+  z.object({
+    action: z.literal("set_complaint"),
+    is_complaint: z.boolean(),
+    category: z.enum(CS_CATEGORIES).nullable().optional(),
+    priority: z.enum(CS_PRIORITIES).optional(),
+  }),
+  z.object({ action: z.literal("add_note"), body: z.string().trim().min(1).max(2000) }),
 ]);
 
 export async function GET(
@@ -34,6 +43,9 @@ export async function GET(
     const { rows: convRows } = await pool.query(
       `SELECT v.id, v.phone, v.status, v.assigned_user_id, v.unread_count,
               v.last_message_at, v.customer_id,
+              v.is_complaint, v.category, v.priority,
+              v.awaiting_since, v.first_response_seconds, v.resolution_seconds,
+              v.sla_response_breached, v.escalated_at, v.csat_score,
               u.full_name AS assigned_name
          FROM crm.wa_conversations v
          LEFT JOIN configuration.users u ON u.id = v.assigned_user_id
@@ -48,7 +60,7 @@ export async function GET(
       );
     }
 
-    const [{ rows: messages }, memberContext] = await Promise.all([
+    const [{ rows: messages }, memberContext, { rows: notes }] = await Promise.all([
       pool.query(
         `SELECT m.id, m.direction, m.message_type, m.body, m.media_type, m.status,
                 m.error_reason, m.wa_from_me, m.created_at,
@@ -61,11 +73,20 @@ export async function GET(
         [id]
       ),
       loadMemberContext(pool, conversation.customer_id),
+      pool.query(
+        `SELECT n.id, n.body, n.created_at, u.full_name AS author_name
+           FROM crm.wa_internal_notes n
+           LEFT JOIN configuration.users u ON u.id = n.author_user_id
+          WHERE n.conversation_id = $1
+          ORDER BY n.created_at DESC
+          LIMIT 50`,
+        [id]
+      ),
     ]);
 
     return NextResponse.json({
       success: true,
-      data: { conversation, messages, member: memberContext },
+      data: { conversation, messages, member: memberContext, notes },
     });
   } catch (error) {
     console.error("Error fetching WA conversation detail:", error);
@@ -173,11 +194,43 @@ export async function POST(
       return NextResponse.json({ success: true });
     }
 
+    if (payload.action === "set_complaint") {
+      await pool.query(
+        `UPDATE crm.wa_conversations
+            SET is_complaint = $2,
+                category = COALESCE($3, category),
+                priority = COALESCE($4, priority)
+          WHERE id = $1`,
+        [id, payload.is_complaint, payload.category ?? null, payload.priority ?? null]
+      );
+      return NextResponse.json({ success: true });
+    }
+
+    if (payload.action === "add_note") {
+      // Catatan internal TIDAK pernah dikirim ke customer.
+      await pool.query(
+        `INSERT INTO crm.wa_internal_notes (conversation_id, author_user_id, body)
+         VALUES ($1, $2, $3)`,
+        [id, guard.user.id, payload.body]
+      );
+      return NextResponse.json({ success: true });
+    }
+
     if (payload.action === "set_status") {
       await pool.query(
         `UPDATE crm.wa_conversations SET status = $2 WHERE id = $1`,
         [id, payload.status]
       );
+
+      if (payload.status === "resolved") {
+        const { csatText } = await onResolved(id, new Date());
+        if (csatText) {
+          await sendWhatsAppText(
+            { target: conversation.phone, message: csatText },
+            { messageType: "system", sentByUserId: guard.user.id, conversationId: id }
+          );
+        }
+      }
       return NextResponse.json({ success: true });
     }
 
@@ -193,6 +246,8 @@ export async function POST(
         { status: 502 }
       );
     }
+
+    await onAgentReply(id, new Date());
 
     await pool.query(
       `UPDATE crm.wa_conversations

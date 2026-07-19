@@ -38,6 +38,8 @@ export async function GET(request: NextRequest) {
     const { rows } = await pool.query(
       `SELECT v.id, v.phone, v.status, v.assigned_user_id, v.unread_count,
               v.last_message_at, v.last_message_preview,
+              v.is_complaint, v.category, v.priority, v.sla_response_breached,
+              v.awaiting_since,
               c.id AS customer_id, c.name AS customer_name,
               c.membership_tier, c.member_type,
               u.full_name AS assigned_name
@@ -52,7 +54,9 @@ export async function GET(request: NextRequest) {
 
     const { rows: totals } = await pool.query(
       `SELECT COALESCE(SUM(unread_count), 0)::int AS total_unread,
-              COUNT(*) FILTER (WHERE status IN ('open','in_progress'))::int AS total_active
+              COUNT(*) FILTER (WHERE status IN ('open','in_progress'))::int AS total_active,
+              COUNT(*) FILTER (WHERE sla_response_breached AND status <> 'resolved')::int AS total_breached,
+              COUNT(*) FILTER (WHERE is_complaint AND status <> 'resolved')::int AS total_complaints
          FROM crm.wa_conversations`
     );
 
