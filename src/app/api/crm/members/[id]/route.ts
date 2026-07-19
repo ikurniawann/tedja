@@ -4,7 +4,7 @@ import { getPosSession } from "@/lib/api/auth";
 import { createPgClient } from "@/lib/pg/create-client";
 import { apiErrorResponse, isMissingCrmSchema, toNumber, validationErrorResponse } from "@/lib/crm/server";
 
-const POS_CUSTOMER_COLUMNS = "id, name, phone, email, membership_tier, ark_coin_balance, total_xp, current_xp, total_spent, visit_count, is_active";
+const POS_CUSTOMER_COLUMNS = "id, name, phone, email, membership_tier, ark_coin_balance, total_xp, total_spent, visit_count, is_active";
 
 type CustomerRow = {
   id: string;
@@ -14,7 +14,6 @@ type CustomerRow = {
   membership_tier: string | null;
   ark_coin_balance: number | string | null;
   total_xp: number | string | null;
-  current_xp: number | string | null;
   total_spent: number | string | null;
   visit_count: number | string | null;
   is_active: boolean | null;
@@ -36,9 +35,7 @@ type MemberProfileRow = {
   customer_id: string;
   member_code: string;
   tier_id: string;
-  current_xp: number | string;
   lifetime_xp: number | string;
-  spent_xp: number | string;
   loyalty_score: number | string;
   active_avatar_id: string | null;
   joined_at: string;
@@ -81,10 +78,9 @@ function normalizeCustomer(customer: CustomerRow) {
     name: customer.name ?? "",
     phone: customer.phone ?? "",
     email: customer.email ?? "",
-    membership_tier: customer.membership_tier ?? "bronze",
+    membership_tier: customer.membership_tier ?? "regular",
     ark_coin_balance: toNumber(customer.ark_coin_balance),
     total_xp: toNumber(customer.total_xp),
-    current_xp: toNumber(customer.current_xp),
     total_spent: toNumber(customer.total_spent),
     visit_count: toNumber(customer.visit_count),
     is_active: customer.is_active !== false,
@@ -97,9 +93,7 @@ function normalizeMember(profile: MemberProfileRow, customer: CustomerRow | null
     customer_id: profile.customer_id,
     member_code: profile.member_code,
     tier: profile.tier ?? null,
-    current_xp: toNumber(profile.current_xp),
     lifetime_xp: toNumber(profile.lifetime_xp),
-    spent_xp: toNumber(profile.spent_xp),
     loyalty_score: toNumber(profile.loyalty_score),
     active_avatar_id: profile.active_avatar_id,
     joined_at: profile.joined_at,
@@ -121,10 +115,8 @@ function syntheticMemberFromCustomer(customer: CustomerRow) {
       code: normalized.membership_tier,
       name: normalized.membership_tier,
     },
-    current_xp: normalized.current_xp,
     lifetime_xp: normalized.total_xp,
-    spent_xp: 0,
-    loyalty_score: normalized.total_xp + normalized.total_spent / 10000,
+    loyalty_score: normalized.total_xp,
     active_avatar_id: null,
     joined_at: null,
     last_activity_at: null,

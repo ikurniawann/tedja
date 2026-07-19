@@ -24,11 +24,9 @@ import {
 import type { CrmAvatarInventory, CrmMember } from "../types";
 import { useMemberDetail } from "../queries";
 import {
-  useCreateRedemption,
   useEnrollMember,
   useEquipAvatar,
   useGrantAvatar,
-  useRedeemAvatar,
   useUpdateMember,
 } from "../mutations";
 
@@ -106,8 +104,6 @@ export function CrmMemberDetailPage() {
   const memberId = params.id;
 
   const { data, isLoading, isFetching, error, refetch } = useMemberDetail(memberId);
-  const redeemMutation = useCreateRedemption();
-  const redeemAvatarMutation = useRedeemAvatar();
   const equipAvatarMutation = useEquipAvatar();
   const grantAvatarMutation = useGrantAvatar();
   const enrollMutation = useEnrollMember();
@@ -119,22 +115,14 @@ export function CrmMemberDetailPage() {
   const member = data?.member ?? null;
   const xpLedger = data?.xpLedger ?? [];
   const recentOrders = data?.recentOrders ?? [];
-  const rewards = data?.rewards ?? [];
   const redemptions = data?.redemptions ?? [];
   const tiers = data?.tiers ?? [];
   const avatars = data?.avatars ?? [];
   const avatarInventory = data?.avatarInventory ?? [];
 
-  const [selectedRewardId, setSelectedRewardId] = useState("");
-  const [selectedAvatarId, setSelectedAvatarId] = useState("");
   const [selectedGrantAvatarId, setSelectedGrantAvatarId] = useState("");
   const [grantSource, setGrantSource] = useState<"manual" | "campaign" | "partner">("manual");
   const [grantEquip, setGrantEquip] = useState(false);
-  const [redeemStatus, setRedeemStatus] = useState<{ loading: boolean; error: string | null; success: string | null }>({
-    loading: false,
-    error: null,
-    success: null,
-  });
   const [avatarStatus, setAvatarStatus] = useState<{ loading: boolean; error: string | null; success: string | null }>({
     loading: false,
     error: null,
@@ -164,27 +152,10 @@ export function CrmMemberDetailPage() {
   });
 
   const crmProfileReady = Boolean(member && !member.id.startsWith("pos-"));
-  const activeRewards = useMemo(
-    () => rewards.filter((reward) => reward.is_active && reward.reward_type !== "avatar"),
-    [rewards]
-  );
-  const selectedReward = activeRewards.find((reward) => reward.id === selectedRewardId) ?? activeRewards[0] ?? null;
-  const rewardStockLeft = selectedReward?.stock_total === null || selectedReward?.stock_total === undefined
-    ? null
-    : Math.max(0, selectedReward.stock_total - selectedReward.stock_redeemed);
-  const canRedeem = Boolean(
-    member
-      && crmProfileReady
-      && selectedReward
-      && member.current_xp >= selectedReward.xp_cost
-      && (rewardStockLeft === null || rewardStockLeft > 0)
-      && !redeemMutation.isPending
-  );
   const activeTiers = useMemo(
     () => tiers.filter((tier) => tier.is_active !== false),
     [tiers]
   );
-  const tierRank = member?.tier?.rank ?? activeTiers.find((tier) => tier.code === member?.tier?.code)?.rank ?? 0;
   const ownedAvatarIds = useMemo(
     () => new Set(avatarInventory.map((item) => item.avatar_id)),
     [avatarInventory]
@@ -195,28 +166,6 @@ export function CrmMemberDetailPage() {
       ?? avatarInventory.find((item) => item.avatar_id === member.active_avatar_id)
       ?? null;
   }, [member, avatarInventory]);
-  const redeemableAvatars = useMemo(() => {
-    return avatars
-      .filter((avatar) => avatar.is_active && !ownedAvatarIds.has(avatar.id))
-      .sort((first, second) => {
-        const firstAffordable = first.xp_cost <= (member?.current_xp ?? 0) ? 0 : 1;
-        const secondAffordable = second.xp_cost <= (member?.current_xp ?? 0) ? 0 : 1;
-        const firstTierRank = first.required_tier?.rank ?? 0;
-        const secondTierRank = second.required_tier?.rank ?? 0;
-        const firstTierOk = firstTierRank <= tierRank ? 0 : 1;
-        const secondTierOk = secondTierRank <= tierRank ? 0 : 1;
-
-        return firstTierOk - secondTierOk
-          || firstAffordable - secondAffordable
-          || first.xp_cost - second.xp_cost
-          || first.name.localeCompare(second.name);
-      });
-  }, [member?.current_xp, ownedAvatarIds, avatars, tierRank]);
-  const selectedAvatar = redeemableAvatars.find((avatar) => avatar.id === selectedAvatarId) ?? redeemableAvatars[0] ?? null;
-  const avatarStockLeft = selectedAvatar?.stock_total === null || selectedAvatar?.stock_total === undefined
-    ? null
-    : Math.max(0, selectedAvatar.stock_total - selectedAvatar.stock_redeemed);
-  const selectedAvatarTierRank = selectedAvatar?.required_tier?.rank ?? 0;
   const grantableAvatars = useMemo(() => {
     return avatars
       .filter((avatar) => avatar.is_active && !ownedAvatarIds.has(avatar.id))
@@ -262,15 +211,6 @@ export function CrmMemberDetailPage() {
       .sort((first, second) => new Date(second.date).getTime() - new Date(first.date).getTime())
       .slice(0, 12);
   }, [avatarInventory]);
-  const canRedeemAvatar = Boolean(
-    member
-      && crmProfileReady
-      && selectedAvatar
-      && selectedAvatarTierRank <= tierRank
-      && member.current_xp >= selectedAvatar.xp_cost
-      && (avatarStockLeft === null || avatarStockLeft > 0)
-      && !redeemAvatarMutation.isPending
-  );
   const canGrantAvatar = Boolean(
     member
       && crmProfileReady
@@ -291,18 +231,6 @@ export function CrmMemberDetailPage() {
   }, [member, xpLedger]);
 
   useEffect(() => {
-    if (!selectedRewardId && activeRewards.length > 0) {
-      setSelectedRewardId(activeRewards[0].id);
-    }
-  }, [activeRewards, selectedRewardId]);
-
-  useEffect(() => {
-    if ((!selectedAvatarId || !redeemableAvatars.some((avatar) => avatar.id === selectedAvatarId)) && redeemableAvatars.length > 0) {
-      setSelectedAvatarId(redeemableAvatars[0].id);
-    }
-  }, [redeemableAvatars, selectedAvatarId]);
-
-  useEffect(() => {
     if ((!selectedGrantAvatarId || !grantableAvatars.some((avatar) => avatar.id === selectedGrantAvatarId)) && grantableAvatars.length > 0) {
       setSelectedGrantAvatarId(grantableAvatars[0].id);
     }
@@ -319,46 +247,6 @@ export function CrmMemberDetailPage() {
       customerActive: member.customer?.is_active !== false,
     });
   }, [activeTiers, member]);
-
-  async function handleRedeem() {
-    if (!member || !selectedReward) return;
-    setRedeemStatus({ loading: true, error: null, success: null });
-
-    try {
-      await redeemMutation.mutateAsync({ memberId: member.id, rewardId: selectedReward.id });
-      setRedeemStatus({
-        loading: false,
-        error: null,
-        success: `Reward ${selectedReward.name} berhasil diredeem`,
-      });
-    } catch (err) {
-      setRedeemStatus({
-        loading: false,
-        error: err instanceof Error ? err.message : "Gagal redeem reward",
-        success: null,
-      });
-    }
-  }
-
-  async function handleRedeemAvatar() {
-    if (!member || !selectedAvatar) return;
-    setAvatarStatus({ loading: true, error: null, success: null });
-
-    try {
-      await redeemAvatarMutation.mutateAsync({ memberId: member.id, avatarId: selectedAvatar.id });
-      setAvatarStatus({
-        loading: false,
-        error: null,
-        success: `Avatar ${selectedAvatar.name} berhasil masuk collection`,
-      });
-    } catch (err) {
-      setAvatarStatus({
-        loading: false,
-        error: err instanceof Error ? err.message : "Gagal redeem avatar",
-        success: null,
-      });
-    }
-  }
 
   async function handleEquipAvatar(inventory: CrmAvatarInventory) {
     if (!member) return;
@@ -543,13 +431,10 @@ export function CrmMemberDetailPage() {
                 <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                   <DetailMetric label="Member Code" value={member.member_code} />
                   <DetailMetric label="Tier" value={tierName(member)} />
-                  <DetailMetric label="Current XP" value={formatNumber(member.current_xp)} />
                   <DetailMetric label="Lifetime XP" value={formatNumber(member.lifetime_xp)} />
-                  <DetailMetric label="Spent XP" value={formatNumber(member.spent_xp)} />
                   <DetailMetric label="ARK Coins" value={formatNumber(member.customer?.ark_coin_balance ?? 0)} />
                   <DetailMetric label="Total Spend" value={formatCurrency(member.customer?.total_spent ?? 0)} />
                   <DetailMetric label="Visit Count" value={formatNumber(member.customer?.visit_count ?? 0)} />
-                  <DetailMetric label="Loyalty Score" value={formatNumber(member.loyalty_score)} />
                 </div>
               </div>
 
@@ -699,64 +584,19 @@ export function CrmMemberDetailPage() {
                       <ImageIcon className="size-4" />
                       Avatar Collection
                     </h3>
-                    <p className="mt-1 text-sm text-slate-500">Redeem avatar collectible dengan XP member.</p>
+                    <p className="mt-1 text-sm text-slate-500">Koleksi avatar member (grant admin/campaign/partner).</p>
                   </div>
                   <span className="rounded-md bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
-                    {formatNumber(member.current_xp)} XP
+                    {formatNumber(member.lifetime_xp)} XP
                   </span>
                 </div>
 
                 <div className="mt-4 grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
                   <div className="space-y-3">
-                    <label className="block text-sm">
-                      <span className="text-xs font-medium text-slate-500">Avatar Catalog</span>
-                      <select
-                        value={selectedAvatar?.id ?? ""}
-                        onChange={(event) => setSelectedAvatarId(event.target.value)}
-                        disabled={redeemableAvatars.length === 0 || redeemAvatarMutation.isPending || equipAvatarMutation.isPending}
-                        className="mt-1 h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
-                      >
-                        {redeemableAvatars.length === 0 ? (
-                          <option value="">Semua avatar aktif sudah dimiliki</option>
-                        ) : (
-                          redeemableAvatars.map((avatar) => (
-                            <option key={avatar.id} value={avatar.id}>
-                              {avatar.name} - {formatNumber(avatar.xp_cost)} XP
-                            </option>
-                          ))
-                        )}
-                      </select>
-                    </label>
-
-                    {selectedAvatar && (
-                      <div className="grid gap-2 rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600 sm:grid-cols-2">
-                        <DetailMetric label="Rarity" value={selectedAvatar.rarity} />
-                        <DetailMetric label="XP Cost" value={formatNumber(selectedAvatar.xp_cost)} />
-                        <DetailMetric label="Required Tier" value={selectedAvatar.required_tier?.name || "All Tier"} />
-                        <DetailMetric label="Stock Left" value={avatarStockLeft === null ? "Unlimited" : formatNumber(avatarStockLeft)} />
-                      </div>
-                    )}
-
-                    {!crmProfileReady && (
-                      <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                        Aktifkan member CRM dulu untuk redeem avatar.
-                      </div>
-                    )}
-                    {selectedAvatar && selectedAvatarTierRank > tierRank && (
-                      <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                        Avatar ini membutuhkan tier {selectedAvatar.required_tier?.name}.
-                      </div>
-                    )}
-                    {selectedAvatar && member.current_xp < selectedAvatar.xp_cost && (
-                      <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                        XP member belum cukup untuk avatar ini.
-                      </div>
-                    )}
-                    {avatarStockLeft === 0 && (
-                      <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                        Stok avatar sudah habis.
-                      </div>
-                    )}
+                    <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                      Redeem avatar dengan XP sudah dipensiunkan (EPIC-011): XP adalah
+                      skor seumur hidup dan tidak pernah berkurang.
+                    </div>
                     {avatarStatus.error && (
                       <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
                         {avatarStatus.error}
@@ -767,16 +607,6 @@ export function CrmMemberDetailPage() {
                         {avatarStatus.success}
                       </div>
                     )}
-
-                    <button
-                      type="button"
-                      onClick={() => void handleRedeemAvatar()}
-                      disabled={!canRedeemAvatar}
-                      className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-slate-950 px-3 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
-                    >
-                      <TicketCheck className="size-4" />
-                      {redeemAvatarMutation.isPending ? "Processing..." : "Redeem Avatar"}
-                    </button>
 
                     <div className="rounded-md border border-slate-200 bg-white p-3 shadow-sm">
                       <div className="flex items-center justify-between gap-2">
@@ -894,7 +724,7 @@ export function CrmMemberDetailPage() {
                             <button
                               type="button"
                               onClick={() => void handleEquipAvatar(inventory)}
-                              disabled={inventory.is_equipped || equipAvatarMutation.isPending || redeemAvatarMutation.isPending}
+                              disabled={inventory.is_equipped || equipAvatarMutation.isPending}
                               className="mt-3 inline-flex h-9 w-full items-center justify-center rounded-md border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-100 disabled:cursor-default disabled:border-emerald-200 disabled:bg-emerald-50 disabled:text-emerald-700"
                             >
                               {inventory.is_equipped ? "Active" : "Use Avatar"}
@@ -943,78 +773,19 @@ export function CrmMemberDetailPage() {
                 <div className="flex items-center justify-between gap-3">
                   <h3 className="flex items-center gap-2 text-base font-semibold text-slate-950">
                     <Gift className="size-4" />
-                    Redeem Reward
+                    Reward & Privilege
                   </h3>
                   <span className="rounded-md bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
-                    {formatNumber(member.current_xp)} XP
+                    {formatNumber(member.lifetime_xp)} XP
                   </span>
                 </div>
 
-                <div className="mt-4 space-y-3">
-                  <label className="block text-sm">
-                    <span className="text-xs font-medium text-slate-500">Reward</span>
-                    <select
-                      value={selectedReward?.id ?? ""}
-                      onChange={(event) => setSelectedRewardId(event.target.value)}
-                      disabled={activeRewards.length === 0 || redeemMutation.isPending}
-                      className="mt-1 h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
-                    >
-                      {activeRewards.length === 0 ? (
-                        <option value="">Belum ada reward aktif</option>
-                      ) : (
-                        activeRewards.map((reward) => (
-                          <option key={reward.id} value={reward.id}>
-                            {reward.name} - {formatNumber(reward.xp_cost)} XP
-                          </option>
-                        ))
-                      )}
-                    </select>
-                  </label>
-
-                  {selectedReward && (
-                    <div className="grid gap-2 rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600 sm:grid-cols-2">
-                      <DetailMetric label="XP Cost" value={formatNumber(selectedReward.xp_cost)} />
-                      <DetailMetric label="Type" value={selectedReward.reward_type} />
-                      <DetailMetric label="Required Tier" value={selectedReward.required_tier?.name || "All Tier"} />
-                      <DetailMetric label="Stock Left" value={rewardStockLeft === null ? "Unlimited" : formatNumber(rewardStockLeft)} />
-                    </div>
-                  )}
-
-                  {!crmProfileReady && (
-                    <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                      Member ini masih data POS fallback. Redemption aktif setelah member memiliki profile CRM dan XP ledger.
-                    </div>
-                  )}
-                  {selectedReward && member.current_xp < selectedReward.xp_cost && (
-                    <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                      XP member belum cukup untuk reward ini.
-                    </div>
-                  )}
-                  {rewardStockLeft === 0 && (
-                    <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                      Stok reward sudah habis.
-                    </div>
-                  )}
-                  {redeemStatus.error && (
-                    <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                      {redeemStatus.error}
-                    </div>
-                  )}
-                  {redeemStatus.success && (
-                    <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-                      {redeemStatus.success}
-                    </div>
-                  )}
-
-                  <button
-                    type="button"
-                    onClick={() => void handleRedeem()}
-                    disabled={!canRedeem}
-                    className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-slate-950 px-3 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
-                  >
-                    <TicketCheck className="size-4" />
-                    {redeemMutation.isPending ? "Processing..." : "Redeem"}
-                  </button>
+                <div className="mt-4 space-y-3 text-sm text-slate-600">
+                  <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+                    Redeem reward dengan potong XP sudah dipensiunkan (EPIC-011).
+                    XP kini menjadi skor seumur hidup yang menentukan tier dan
+                    membuka privilege produk khusus (syarat minimal XP/tier) di kasir.
+                  </div>
                 </div>
               </div>
 

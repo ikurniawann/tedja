@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createPgClient } from "@/lib/pg/create-client";
-import { awardCrmXpForPosOrder } from '@/lib/crm/loyalty-engine';
+import { awardCrmXpForPosOrder, syncPosCustomerOrderStats } from '@/lib/crm/loyalty-engine';
 
 type OrderPatchBody = {
   status?: string;
@@ -43,21 +43,38 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       updateData.payment_status = 'paid';
     }
 
+    const { data: existing, error: fetchErr } = await db
+      .from('pos_orders')
+      .select('customer_id, payment_status, payment_method, total_amount')
+      .eq('id', orderId)
+      .single();
+
+    if (fetchErr || !existing) {
+      return NextResponse.json({ success: false, error: 'Order tidak ditemukan' }, { status: 404 });
+    }
+
+    // 1 pembayaran = 1 metode (EPIC-011): ARK Coin tidak boleh dicampur metode
+    // lain, dan kalau metodenya ARK Coin maka harus menutup seluruh total.
+    const effectiveMethod = payment_method ?? existing.payment_method ?? null;
+    const orderTotal = Number(existing.total_amount) || 0;
+    if (numericArkUsed > 0 && effectiveMethod !== 'ark_coin') {
+      return NextResponse.json(
+        { success: false, error: 'ARK Coin tidak bisa dicampur metode lain — 1 transaksi 1 metode pembayaran' },
+        { status: 400 }
+      );
+    }
+    if (effectiveMethod === 'ark_coin' && ark_coins_used !== undefined && numericArkUsed < orderTotal) {
+      return NextResponse.json(
+        { success: false, error: 'Pembayaran ARK Coin harus menutup seluruh total order' },
+        { status: 400 }
+      );
+    }
+
     // Deduct ARK coins atomically BEFORE marking the order paid. The RPC locks
     // the customer row and rejects an insufficient balance in-transaction, so a
     // failed/insufficient deduction never leaves a paid order without the
     // matching coin debit (previously the failure was swallowed).
     if (numericArkUsed > 0) {
-      const { data: existing, error: fetchErr } = await db
-        .from('pos_orders')
-        .select('customer_id')
-        .eq('id', orderId)
-        .single();
-
-      if (fetchErr || !existing) {
-        return NextResponse.json({ success: false, error: 'Order tidak ditemukan' }, { status: 404 });
-      }
-
       if (existing.customer_id) {
         const { error: coinError } = await db.rpc('update_ark_coin_balance', {
           p_customer_id: existing.customer_id,
@@ -98,6 +115,13 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
     let crmXp = null;
     if (data.customer_id && (status === 'completed' || payment_status === 'paid')) {
+      // Statistik kunjungan/belanja untuk SEMUA metode; hanya sekali per order
+      // (saat transisi ke paid), agar visit_count tidak dobel.
+      const nowPaid = updateData.payment_status === 'paid' || payment_status === 'paid';
+      if (nowPaid && existing.payment_status !== 'paid') {
+        await syncPosCustomerOrderStats(db, data.customer_id, Number(data.total_amount || 0));
+      }
+
       const { data: orderItems } = await db
         .from('pos_order_items')
         .select('product_id, quantity, unit_price, subtotal, total_amount')
@@ -109,6 +133,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         totalAmount: Number(data.total_amount || 0),
         items: orderItems || [],
         outletId: data.branch_id || null,
+        paymentMethod: effectiveMethod,
       });
     }
 

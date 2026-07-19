@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createPgClient } from "@/lib/pg/create-client";
 import { getPosSession } from '@/lib/api/auth';
-import { awardCrmXpForPosOrder } from '@/lib/crm/loyalty-engine';
+import { awardCrmXpForPosOrder, syncPosCustomerOrderStats } from '@/lib/crm/loyalty-engine';
+import { getCrmDefaultVenue } from '@/lib/crm/server';
 import { buildCostSnapshot, loadPosProductCostMap } from '@/lib/pos/purchasing-sync';
 
 type PosOrderItemRequest = {
@@ -259,13 +260,39 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Payment insufficient' }, { status: 400 });
     }
 
+    // 1 pembayaran = 1 metode (EPIC-011): ARK Coin tidak boleh dicampur metode
+    // lain, dan pembayaran ARK Coin harus menutup seluruh total.
+    if (arkUsed > 0 && payment_method !== 'ark_coin') {
+      return NextResponse.json(
+        { success: false, error: 'ARK Coin tidak bisa dicampur metode lain — 1 transaksi 1 metode pembayaran' },
+        { status: 400 }
+      );
+    }
+    if (payment_method === 'ark_coin') {
+      if (!customer_id) {
+        return NextResponse.json({ success: false, error: 'Pembayaran ARK Coin membutuhkan customer' }, { status: 400 });
+      }
+      if (arkUsed < serverTotal) {
+        return NextResponse.json(
+          { success: false, error: 'Pembayaran ARK Coin harus menutup seluruh total order' },
+          { status: 400 }
+        );
+      }
+    }
+
+    const venue = await getCrmDefaultVenue(db);
+    const payWithArk = arkUsed > 0 && Boolean(customer_id);
+
     const { data: orderData, error: orderErr } = await db
       .from('pos_orders')
       .insert({
         order_number: orderNumber,
         order_type,
-        status: 'completed',
-        payment_status: 'paid',
+        // Order ARK dibuat pending dulu; jadi paid setelah debit wallet sukses
+        status: payWithArk ? 'pending' : 'completed',
+        payment_status: payWithArk ? 'unpaid' : 'paid',
+        company_id: venue.companyId,
+        branch_id: body.branch_id || venue.branchId,
         customer_id: customer_id || null,
         cashier_id: effectiveCashierId,
         server_id: server_id || null,
@@ -284,7 +311,7 @@ export async function POST(request: NextRequest) {
         notes: notes || null,
         special_requests: special_requests || null,
         ordered_at: new Date().toISOString(),
-        completed_at: new Date().toISOString(),
+        ...(payWithArk ? {} : { completed_at: new Date().toISOString() }),
       })
       .select()
       .single();
@@ -292,6 +319,38 @@ export async function POST(request: NextRequest) {
     if (orderErr || !orderData) {
       console.error('Order insert error:', orderErr);
       return NextResponse.json({ success: false, error: orderErr?.message || 'Failed to create order' }, { status: 500 });
+    }
+
+    // Debit saldo ARK atomik (fix bug: checkout langsung sebelumnya tidak
+    // pernah memotong saldo). Gagal debit → order dibatalkan, bukan paid.
+    if (payWithArk) {
+      const { error: coinError } = await db.rpc('update_ark_coin_balance', {
+        p_customer_id: customer_id,
+        p_amount: -arkUsed,
+        p_type: 'payment',
+        p_order_id: orderData.id,
+      });
+
+      if (coinError) {
+        await db.from('pos_orders').delete().eq('id', orderData.id);
+        const insufficient = coinError.message?.includes('Insufficient');
+        return NextResponse.json(
+          { success: false, error: insufficient ? 'Saldo ARK Coin tidak cukup' : 'Gagal memproses ARK Coin' },
+          { status: 400 }
+        );
+      }
+
+      const { error: markPaidErr } = await db
+        .from('pos_orders')
+        .update({
+          status: 'completed',
+          payment_status: 'paid',
+          completed_at: new Date().toISOString(),
+        })
+        .eq('id', orderData.id);
+      if (markPaidErr) throw markPaidErr;
+      orderData.status = 'completed';
+      orderData.payment_status = 'paid';
     }
 
     const productCostMap = await loadPosProductCostMap(
@@ -360,12 +419,18 @@ export async function POST(request: NextRequest) {
       notes: 'Order created and paid from cashier',
     });
 
+    // Statistik kunjungan/belanja untuk semua metode pembayaran
+    if (customer_id) {
+      await syncPosCustomerOrderStats(db, customer_id, serverTotal);
+    }
+
     const crmXp = await awardCrmXpForPosOrder(db, {
       orderId: orderData.id,
       customerId: customer_id || null,
       totalAmount: serverTotal,
       items: orderItems,
-      outletId: body.branch_id || null,
+      outletId: body.branch_id || venue.branchId,
+      paymentMethod: payment_method,
     });
 
     const { data: completeOrder } = await db

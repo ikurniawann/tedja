@@ -3,7 +3,7 @@ import { getPosSession } from "@/lib/api/auth";
 import { createPgClient } from "@/lib/pg/create-client";
 import { apiErrorResponse, isMissingCrmSchema, toNumber } from "@/lib/crm/server";
 
-const POS_CUSTOMER_COLUMNS = "id, name, phone, email, membership_tier, ark_coin_balance, total_xp, current_xp, total_spent, visit_count, is_active";
+const POS_CUSTOMER_COLUMNS = "id, name, phone, email, membership_tier, ark_coin_balance, total_xp, total_spent, visit_count, is_active";
 
 type CustomerRow = {
   id: string;
@@ -13,7 +13,6 @@ type CustomerRow = {
   membership_tier: string | null;
   ark_coin_balance: number | string | null;
   total_xp: number | string | null;
-  current_xp: number | string | null;
   total_spent: number | string | null;
   visit_count: number | string | null;
   is_active: boolean | null;
@@ -30,10 +29,9 @@ function normalizeCustomer(customer: CustomerRow) {
     name: customer.name ?? "Walk-in Customer",
     phone: customer.phone ?? "",
     email: customer.email ?? "",
-    membership_tier: customer.membership_tier ?? "bronze",
+    membership_tier: customer.membership_tier ?? "regular",
     ark_coin_balance: toNumber(customer.ark_coin_balance),
     total_xp: toNumber(customer.total_xp),
-    current_xp: toNumber(customer.current_xp),
     total_spent: toNumber(customer.total_spent),
     visit_count: toNumber(customer.visit_count),
     is_active: customer.is_active !== false,

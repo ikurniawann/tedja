@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createPgClient } from "@/lib/pg/create-client";
-import { awardCrmXpForPosOrder } from "@/lib/crm/loyalty-engine";
+import { awardCrmXpForPosOrder, syncPosCustomerOrderStats } from "@/lib/crm/loyalty-engine";
 
 const orderItemSchema = z.object({
   product_id: z.string().uuid(),
@@ -175,6 +175,10 @@ export async function POST(request: NextRequest) {
       notes: `Created from table self-service (${payload.payment_method})`,
     });
 
+    if (selfPaid && payload.customer_id) {
+      await syncPosCustomerOrderStats(db, payload.customer_id, total);
+    }
+
     const crmXp = selfPaid
       ? await awardCrmXpForPosOrder(db, {
           orderId,
@@ -182,6 +186,7 @@ export async function POST(request: NextRequest) {
           totalAmount: total,
           items: orderItems,
           outletId: null,
+          paymentMethod: payload.payment_method,
         })
       : { status: "skipped", xpAwarded: 0, reason: "payment_unpaid" };
 

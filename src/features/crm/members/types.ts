@@ -6,7 +6,6 @@ export type CrmCustomer = {
   membership_tier: string;
   ark_coin_balance: number;
   total_xp: number;
-  current_xp: number;
   total_spent: number;
   visit_count: number;
   is_active: boolean;
@@ -25,9 +24,7 @@ export type CrmMember = {
     min_lifetime_xp?: number;
     min_total_spend?: number;
   } | null;
-  current_xp: number;
   lifetime_xp: number;
-  spent_xp: number;
   loyalty_score: number;
   active_avatar_id?: string | null;
   joined_at?: string | null;

@@ -4,8 +4,6 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   enrollMember,
   updateMember,
-  createRedemption,
-  redeemAvatar,
   equipAvatar,
   grantAvatar,
 } from "./api";
@@ -34,27 +32,8 @@ export const useUpdateMember = () => {
   });
 };
 
-export const useCreateRedemption = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ memberId, rewardId }: { memberId: string; rewardId: string }) =>
-      createRedemption(memberId, rewardId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: membersQueryKeys.all });
-    },
-  });
-};
-
-export const useRedeemAvatar = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ memberId, avatarId }: { memberId: string; avatarId: string }) =>
-      redeemAvatar(memberId, avatarId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: membersQueryKeys.all });
-    },
-  });
-};
+// useCreateRedemption & useRedeemAvatar dihapus (EPIC-011): alur redeem
+// dengan potong XP pensiun — XP lifetime tidak pernah berkurang.
 
 export const useEquipAvatar = () => {
   const queryClient = useQueryClient();

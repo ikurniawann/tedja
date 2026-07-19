@@ -99,7 +99,6 @@ export interface OffCustomer {
   membership_tier: string;
   ark_coin_balance: number;
   total_xp: number;
-  current_xp: number;
   total_spent: number;
   visit_count: number;
   discount?: number;

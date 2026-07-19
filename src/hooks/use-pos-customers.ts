@@ -34,7 +34,6 @@ export function usePosCustomers() {
         membership_tier: c.membership_tier,
         ark_coin_balance: c.ark_coin_balance,
         total_xp: c.total_xp,
-        current_xp: c.current_xp,
         total_spent: c.total_spent,
         visit_count: c.visit_count,
         discount: c.discount,

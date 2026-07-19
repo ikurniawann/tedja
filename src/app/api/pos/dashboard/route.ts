@@ -240,7 +240,7 @@ export async function GET(request: NextRequest) {
 
     const { data: loyalMembersRaw } = await db
       .from("pos_customers")
-      .select("id, name, membership_tier, total_xp, current_xp, ark_coin_balance")
+      .select("id, name, membership_tier, total_xp, ark_coin_balance")
       .eq("is_active", true)
       .or("total_xp.gt.0,ark_coin_balance.gt.0")
       .order("total_xp", { ascending: false })
@@ -249,9 +249,8 @@ export async function GET(request: NextRequest) {
     const topLoyalMembers = (loyalMembersRaw ?? []).map((member) => ({
       id: member.id,
       name: member.name || "Member",
-      membershipTier: member.membership_tier || "bronze",
+      membershipTier: member.membership_tier || "regular",
       totalXp: toNumber(member.total_xp),
-      currentXp: toNumber(member.current_xp),
       arkBalance: toNumber(member.ark_coin_balance),
     }));
 

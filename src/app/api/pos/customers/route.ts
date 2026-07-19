@@ -16,7 +16,7 @@ function normalizeNfcUid(value: unknown) {
 }
 
 const CUSTOMER_SELECT =
-  'id, name, phone, email, membership_tier, member_type, ark_coin_balance, total_xp, current_xp, visit_count, is_active, nfc_uid';
+  'id, name, phone, email, membership_tier, member_type, ark_coin_balance, total_xp, visit_count, is_active, nfc_uid';
 
 type PgClient = ReturnType<typeof createPgClient>;
 
@@ -229,10 +229,9 @@ export async function POST(request: NextRequest) {
               {
                 customer_id: savedCustomer.id,
                 tier_id: tierId,
-                current_xp: Number(savedCustomer.current_xp || 0),
                 lifetime_xp: Number(savedCustomer.total_xp || 0),
-                spent_xp: 0,
-                loyalty_score: Number(savedCustomer.total_xp || 0) + Number(savedCustomer.total_spent || 0) / 10000,
+                // XP lifetime append-only (EPIC-011): loyalty_score = lifetime XP
+                loyalty_score: Number(savedCustomer.total_xp || 0),
                 status: 'active',
                 metadata: {
                   source: 'pos_customer_modal',

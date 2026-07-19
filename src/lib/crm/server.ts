@@ -30,6 +30,16 @@ export async function requireCrmConfigRole(): Promise<NextResponse | null> {
 
 export const CRM_DEFAULT_TIERS = [
   {
+    code: "regular",
+    name: "Regular",
+    rank: 0,
+    min_lifetime_xp: 0,
+    min_total_spend: 0,
+    xp_multiplier: 1,
+    discount_percent: 0,
+    display_color: "#6B7280",
+  },
+  {
     code: "bronze",
     name: "Bronze",
     rank: 1,

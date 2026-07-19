@@ -158,3 +158,33 @@ Hasil diskusi desain — SEMUA sudah diputuskan owner:
     membacanya; drop di Fase B saat rewrite engine XP.
   - Gate: 489 unit test hijau (68 file), `next build` sukses, tsc error count
     identik baseline (466 noise lama, 0 baru).
+- 2026-07-19 — **Fase B SELESAI.** Engine XP lifetime + konfigurasi Super Admin:
+  - Migrasi `20260719180000_crm_revamp_fase_b.sql` diterapkan ke dev: drop
+    `current_xp`/`spent_xp` di `crm_member_profiles`, drop `current_xp` di
+    `pos_customers`, drop RPC legacy `pos_create_order_transaction` (memberi XP
+    untuk semua metode bayar — jalur XP liar).
+  - Engine XP baru di `src/lib/crm/loyalty-engine.ts`: XP earn HANYA dari
+    pembayaran `ark_coin` (`isXpEligiblePayment`), lifetime XP append-only,
+    auto-naik-tier saat `total_xp` menembus `min_lifetime_xp` (tanpa turun
+    tier), stempel venue di `crm_xp_ledger`.
+  - Enforcement 1 pembayaran = 1 metode di semua jalur bayar (`/api/pos/orders`
+    create langsung-bayar, `[id]` pay, split pay): ARK Coin tidak boleh campur
+    metode lain dan wajib menutup total; debit wallet atomik via
+    `update_ark_coin_balance` SEBELUM order ditandai paid (fix bug: checkout
+    langsung sebelumnya tidak pernah memotong saldo ARK).
+  - Alur potong-XP PENSIUN: `POST /api/crm/redemptions` dan aksi `redeem` di
+    avatar-inventory kini 410 Gone; UI redeem reward + beli avatar di detail
+    member dihapus (riwayat redemption lama tetap tampil sebagai arsip).
+  - Halaman konfigurasi Super Admin baru `/dashboard/crm/settings`
+    (`src/features/crm/settings/`): kelola tier (nama, ambang XP, diskon %,
+    warna, aktif), XP rules, bonus topup %, free XP profil — via API baru
+    `GET/PUT /api/crm/settings` (guard super_admin) + API tiers/xp-rules
+    existing. Quick link "Konfigurasi" ditambah di dashboard CRM.
+  - Bersih-bersih referensi `current_xp`/`spent_xp` di seluruh codebase
+    (routes customers/members/dashboard/lookup, types, hooks, UI kasir/topup/
+    table-order/CRM); default tier "bronze" → "regular"; `CRM_DEFAULT_TIERS`
+    fallback kini menyertakan Regular rank 0.
+  - Gate: 489 unit test hijau (68 file), `next build` sukses, tsc 458 error
+    (baseline lama 466, 0 baru — turun karena kode legacy terhapus).
+  - Sisa ke Fase C: topup member-kartu-only + bonus % dari settings dipakai
+    route topup, produk privilege min XP/tier di kasir.
