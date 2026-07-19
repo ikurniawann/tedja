@@ -49,6 +49,7 @@ Kode berlaku 5 menit, maksimal 3 permintaan OTP per nomor tiap 10 menit.
 |---|---|---|---|---|
 | Budi Uji Reward | `628111222333` | 12.000 | The Warden | Member ber-XP cukup |
 | Ani Uji Pemula | `628111222444` | 500 | The Awakened | Member ber-XP rendah (uji penolakan) |
+| Citra Uji Profil | `628111222555` | 0 | The Stray | Profil kosong (uji Free XP) |
 
 ### Reward uji (sudah tersedia)
 
@@ -190,6 +191,33 @@ dan direksi.
 
 ---
 
+## Skenario H — Free XP saat profil 100% lengkap (fitur Fase D)
+**Akun: portal member sebagai Citra (`628111222555`, 0 XP, profil kosong)**
+
+1. Login portal sebagai Citra. Di beranda akan muncul spanduk kuning
+   *"Lengkapi profil Anda (…%) dan dapatkan 100 Free XP!"*.
+2. Buka tab **Profil**. Isi **semua** kolom: Nama, Email, Tanggal lahir,
+   Jenis kelamin, Kota, **Foto profil (URL)**, dan aktifkan Promo WhatsApp.
+3. Klik simpan.
+4. Kembali ke tab Beranda, perhatikan kartu XP di atas.
+5. Simpan profil **sekali lagi** tanpa mengubah apa pun.
+
+**Diharapkan:**
+- Muncul pesan *"Profil lengkap! Selamat, Anda mendapat 100 Free XP 🎉"*.
+- XP Citra berubah `0 → 100`, dan spanduk kuning hilang.
+- Penyimpanan kedua **tidak** menambah XP lagi (pesan hanya "Profil
+  tersimpan") — Free XP sekali seumur hidup.
+
+> **Kendala yang perlu Anda putuskan:** kolom **Foto profil masih berupa
+> input URL teks**, bukan tombol unggah. Member yang membuka portal dari HP
+> praktis tidak bisa mengisinya, sehingga profil sulit mencapai 100% dan Free
+> XP jadi tidak terjangkau di dunia nyata. Untuk UAT, isi manual dengan URL
+> apa pun (mis. `https://example.com/foto.jpg`). Repo sudah punya helper
+> unggah berkas (`src/lib/storage.ts`, dipakai CV kandidat & portal karier)
+> yang bisa dipasang di sini bila Anda setuju.
+
+---
+
 ## Ringkasan kriteria lulus
 
 - [ ] A — Kuota & periode bisa diatur admin dan tersimpan
@@ -200,6 +228,7 @@ dan direksi.
 - [ ] E — Reward di atas ambang XP terkunci dengan kekurangan XP yang tepat
 - [ ] F — Kuota bulanan menahan; pembatalan mengembalikan jatah
 - [ ] G — Peran non-CRM ditolak melihat data redemption
+- [ ] H — Free XP masuk sekali saat profil 100%, tidak dobel saat disimpan ulang
 
 ## Mengulang UAT dari nol
 
@@ -207,6 +236,15 @@ dan direksi.
 -- Hapus seluruh redemption uji & kembalikan stok
 DELETE FROM crm.crm_redemptions;
 UPDATE crm.crm_rewards SET stock_redeemed = 0;
+
+-- Kembalikan Citra agar Skenario H bisa diulang dari nol
+DELETE FROM crm.crm_xp_ledger l USING crm.crm_member_profiles p, pos.pos_customers c
+ WHERE l.member_id = p.id AND p.customer_id = c.id AND c.phone = '628111222555';
+UPDATE pos.pos_customers
+   SET total_xp = 0, email = NULL, birth_date = NULL, gender = NULL, city = NULL,
+       photo_url = NULL, wa_consent = false,
+       profile_completed_at = NULL, free_xp_granted_at = NULL
+ WHERE phone = '628111222555';
 ```
 
 ## Membersihkan data uji setelah selesai
@@ -217,6 +255,7 @@ DELETE FROM crm.crm_rewards
  WHERE code IN ('snack-harian','voucher-kopi','merch-tumbler','diskon-ultah','tes-uat');
 DELETE FROM crm.member_portal_sessions
  WHERE customer_id IN (SELECT id FROM pos.pos_customers
-                        WHERE phone IN ('628111222333','628111222444'));
-DELETE FROM pos.pos_customers WHERE phone IN ('628111222333','628111222444');
+                        WHERE phone IN ('628111222333','628111222444','628111222555'));
+DELETE FROM pos.pos_customers
+ WHERE phone IN ('628111222333','628111222444','628111222555');
 ```
