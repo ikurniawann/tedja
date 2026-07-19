@@ -31,6 +31,7 @@ import {
   updateCrmSettings,
   updateProductXp,
 } from "../api";
+import { CsSettingsSection } from "./cs-settings-section";
 
 const numberFormat = new Intl.NumberFormat("id-ID");
 const currencyFormat = new Intl.NumberFormat("id-ID", {
@@ -340,6 +341,13 @@ export function CrmSettingsPage() {
             </button>
           </div>
         </section>
+
+        <CsSettingsSection
+          settings={settingsQuery.data}
+          loading={settingsQuery.isLoading}
+          saving={saveSettingsMutation.isPending}
+          onSave={(payload) => saveSettingsMutation.mutate(payload)}
+        />
 
         {/* Tiers */}
         <section className="rounded-lg border border-slate-200 bg-white shadow-sm">

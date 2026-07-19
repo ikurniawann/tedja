@@ -16,9 +16,18 @@ export async function getCrmSettings(): Promise<CrmSettings> {
     response,
     "Gagal memuat konfigurasi CRM"
   );
+  const d = json.data;
   return {
-    topup_bonus_percent: Number(json.data.topup_bonus_percent ?? 0),
-    profile_completion_free_xp: Number(json.data.profile_completion_free_xp ?? 0),
+    topup_bonus_percent: Number(d.topup_bonus_percent ?? 0),
+    profile_completion_free_xp: Number(d.profile_completion_free_xp ?? 0),
+    cs_sla_response_minutes: Number(d.cs_sla_response_minutes ?? 15),
+    cs_sla_resolution_minutes: Number(d.cs_sla_resolution_minutes ?? 1440),
+    cs_business_hours_start: Number(d.cs_business_hours_start ?? 10),
+    cs_business_hours_end: Number(d.cs_business_hours_end ?? 22),
+    cs_auto_reply_enabled: d.cs_auto_reply_enabled !== false,
+    cs_auto_reply_text: String(d.cs_auto_reply_text ?? ""),
+    cs_csat_enabled: d.cs_csat_enabled !== false,
+    cs_csat_text: String(d.cs_csat_text ?? ""),
   };
 }
 

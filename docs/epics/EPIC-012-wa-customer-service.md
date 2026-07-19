@@ -294,3 +294,24 @@ direncanakan setelah EPIC-011, dimulai dari kanal WhatsApp.
   - Sisa opsional (tidak masuk A-E): badge unread di sidebar, eskalasi SLA
     via WA ke supervisor (sengaja tidak dibuat — menaikkan aktivitas nomor),
     unduh laporan CSV, broadcast/campaign, chatbot AI.
+- 2026-07-20 — **Konfigurasi CS bisa diubah Super Admin dari UI** (pertanyaan
+  owner: "jam operasional bisa dikonfigurasi admin?"). Temuan: nilainya sudah
+  ada di `crm_settings` sejak Fase D, TAPI `PUT/GET /api/crm/settings` hanya
+  membuka 2 kunci (`topup_bonus_percent`, `profile_completion_free_xp`) —
+  jadi praktis hanya bisa diubah lewat SQL. Ditutup:
+  - API settings: 8 kunci `cs_*` ditambahkan ke `EDITABLE_KEYS` + skema zod
+    (SLA 1-1440 mnt, jam 0-23, boolean, teks maks 1000).
+  - **Dua bug tercegah saat pengerjaan**: (1) GET lama memaksa semua nilai
+    lewat `toNumber()` — teks auto-reply akan jadi `NaN`; kini nilai jsonb
+    dikembalikan apa adanya. (2) PUT lama mengirim nilai mentah ke kolom
+    **jsonb** — teks akan ditolak Postgres (pengulangan bug benefits tier);
+    kini `JSON.stringify(value)`.
+  - UI `CsSettingsSection` di `/dashboard/crm/settings`: batas balas pertama,
+    target penyelesaian, dropdown jam mulai/selesai (dgn keterangan hidup:
+    "buka 24 jam" bila start==end, "melewati tengah malam" bila start>end),
+    toggle + teks auto-reply, toggle + teks permintaan rating.
+  - **Verifikasi live**: ubah jam ke 05-12 (mencakup waktu uji 06:18 WIB) →
+    pesan masuk TIDAK memicu auto-reply; ubah ke 20-23 (di luar) → auto-reply
+    terkirim memakai teks yang baru disimpan. Konfigurasi dikembalikan ke
+    10-22 / SLA 15 menit setelah uji; data uji dibersihkan.
+  - Gate: 575 test hijau, build sukses, halaman settings 200.
