@@ -206,21 +206,37 @@ export async function connect() {
   socket.ev.on("creds.update", saveCreds);
 
   socket.ev.on("messages.upsert", ({ messages, type }) => {
+    if (process.env.WA_DEBUG_UPSERT === "1") {
+      console.log(
+        `[wa-gateway][debug] upsert type=${type} n=${messages?.length ?? 0} ` +
+          (messages ?? [])
+            .map((m) => `${m?.key?.remoteJid}|alt=${m?.key?.remoteJidAlt ?? m?.key?.senderPn ?? "-"}|fromMe=${m?.key?.fromMe}`)
+            .join(" ; ")
+      );
+    }
     // "notify" = pesan baru real-time; append/history sync dilewati agar
     // riwayat lama HP tidak membanjiri app.
     if (type !== "notify") return;
 
     for (const item of messages ?? []) {
-      const jid = item?.key?.remoteJid ?? "";
-      if (!jid.endsWith("@s.whatsapp.net")) continue; // grup/status/newsletter
+      const key = item?.key ?? {};
+      // WhatsApp kini memakai LID (@lid) untuk sebagian chat; nomor aslinya
+      // dititipkan di remoteJidAlt / senderPn. Pakai itu bila remoteJid
+      // bukan JID nomor biasa.
+      let jid = key.remoteJid ?? "";
+      if (!jid.endsWith("@s.whatsapp.net")) {
+        const alt = key.remoteJidAlt ?? key.senderPn ?? "";
+        if (alt.endsWith("@s.whatsapp.net")) jid = alt;
+        else continue; // grup/status/newsletter/lid tanpa nomor
+      }
 
       const { text, mediaType } = extractMessageContent(item.message);
       if (!text && !mediaType) continue; // reaksi/protokol/receipt
 
       enqueueForward({
         remoteJid: jid,
-        fromMe: Boolean(item.key?.fromMe),
-        messageId: item.key?.id ?? null,
+        fromMe: Boolean(key.fromMe),
+        messageId: key.id ?? null,
         timestamp: Number(item.messageTimestamp) || null,
         text,
         mediaType,
