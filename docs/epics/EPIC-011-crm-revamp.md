@@ -188,3 +188,30 @@ Hasil diskusi desain — SEMUA sudah diputuskan owner:
     (baseline lama 466, 0 baru — turun karena kode legacy terhapus).
   - Sisa ke Fase C: topup member-kartu-only + bonus % dari settings dipakai
     route topup, produk privilege min XP/tier di kasir.
+- 2026-07-19 — **Fase B di-deploy ke dev (sulu.within.ventures) + menu sidebar.**
+  - Deploy: `next build` (BUILD_ID 11:10) + `pm2 restart arkiv-pos-saas`
+    (`next start -p 3459`, Cloudflare Tunnel `sulu.within.ventures` → :3459).
+    Migrasi Fase B sudah masuk DB dev (postgres :5435 `arkiv_local`).
+  - Menu sidebar baru via migrasi `20260719190000_crm_settings_menu.sql`
+    (diterapkan ke dev): grup `crm.settings` "Pengaturan" (level 2, parent
+    `crm`) + item `crm.settings.config` "CRM Settings" →
+    `/dashboard/crm/settings`, grant HANYA `super_admin` (selaras guard
+    `requireCrmConfigRole`). Commit `4ac06f3`; Fase B utama di `e6e731b`.
+  - Status: menunggu hasil UAT owner di dev. Skenario tes yang disepakati:
+    (1) ubah tier/XP rules/bonus topup %/free XP di `/dashboard/crm/settings`
+    lalu verifikasi tersimpan + ditolak untuk non-super-admin;
+    (2) bayar full ARK Coin → `total_xp` naik sesuai rules, saldo terpotong;
+    (3) bayar tunai/QRIS → XP TIDAK naik (stats kunjungan tetap naik);
+    (4) campur ARK + metode lain → ditolak; saldo ARK kurang → ditolak tanpa
+    order/saldo berubah; split per-metode (split ARK dapat XP);
+    (5) auto-naik-tier saat lifetime XP tembus ambang (tidak pernah turun);
+    (6) redeem reward/beli avatar sudah hilang dari detail member.
+  - LANJUTKAN DARI SINI → **Fase C**: (a) topup hanya untuk member kartu
+    (`member_type='card'`) — route `POST /api/pos/topup` saat ini belum
+    menolak member terdaftar; (b) bonus topup dibaca dari
+    `crm_settings.topup_bonus_percent` (RPC `process_ark_topup` masih pakai
+    nilai parameter/default) + baris wallet `topup_bonus` terpisah;
+    (c) penautan kartu NFC = upgrade `member_type` ke `card` (POST customers
+    sudah set — verifikasi jalur update/edit); (d) produk privilege
+    ber-syarat `min_xp`/tier di kasir (pengganti redeem, butuh skema kolom
+    syarat di produk + filter kasir).
