@@ -4,13 +4,6 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { getCustomers, type Customer } from "@/lib/pos-api";
 import { cacheCustomers, getCachedCustomers, setLastSyncTimestamp } from "@/lib/pos-db";
 
-const TIER_DISCOUNTS: Record<string, number> = {
-  platinum: 15,
-  gold: 10,
-  silver: 5,
-  bronze: 0,
-};
-
 export interface CustomerWithDiscount extends Customer {
   discount: number;
 }
@@ -29,7 +22,8 @@ export function usePosCustomers() {
       const res = await getCustomers();
       const data = (res.data || []).map((c: any) => ({
         ...c,
-        discount: TIER_DISCOUNTS[c.membership_tier?.toLowerCase()] || 0,
+        // Diskon dari konfigurasi tier CRM (server), bukan hardcode
+        discount: Number(c.discount_percent) || 0,
       })) as CustomerWithDiscount[];
       setCustomers(data);
       // Cache to IndexedDB

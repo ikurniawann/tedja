@@ -16,7 +16,37 @@ function normalizeNfcUid(value: unknown) {
 }
 
 const CUSTOMER_SELECT =
-  'id, name, phone, email, membership_tier, ark_coin_balance, total_xp, current_xp, visit_count, is_active, nfc_uid';
+  'id, name, phone, email, membership_tier, member_type, ark_coin_balance, total_xp, current_xp, visit_count, is_active, nfc_uid';
+
+type PgClient = ReturnType<typeof createPgClient>;
+
+// Diskon per tier dibaca dari konfigurasi crm_membership_tiers (EPIC-011),
+// bukan hardcode. Gagal baca (schema crm belum ada) → tanpa diskon.
+async function getTierDiscountMap(db: PgClient): Promise<Record<string, number>> {
+  try {
+    const { data, error } = await db
+      .from('crm_membership_tiers')
+      .select('code, discount_percent')
+      .eq('is_active', true);
+    if (error || !data) return {};
+    return Object.fromEntries(
+      (data as Array<{ code: string; discount_percent: unknown }>).map((tier) => [
+        String(tier.code).toLowerCase(),
+        Number(tier.discount_percent) || 0,
+      ])
+    );
+  } catch {
+    return {};
+  }
+}
+
+function withTierDiscount<T extends { membership_tier?: string | null }>(
+  customer: T,
+  discounts: Record<string, number>
+) {
+  const tierCode = String(customer.membership_tier ?? '').toLowerCase();
+  return { ...customer, discount_percent: discounts[tierCode] ?? 0 };
+}
 
 // GET /api/pos/customers - List customers with search
 export async function GET(request: NextRequest) {
@@ -56,15 +86,22 @@ export async function GET(request: NextRequest) {
       query = query.eq('membership_tier', tier);
     }
 
-    const { data, error } = await query;
+    const [{ data, error }, discounts] = await Promise.all([
+      query,
+      getTierDiscountMap(db),
+    ]);
 
     if (error) throw error;
 
-    return NextResponse.json({ success: true, data });
+    const withDiscounts = (data ?? []).map((customer: { membership_tier?: string | null }) =>
+      withTierDiscount(customer, discounts)
+    );
+
+    return NextResponse.json({ success: true, data: withDiscounts });
   } catch (error: unknown) {
-    console.error('Error fetching customers:', error);
+    console.error('Error fetching customers:', error, getErrorMessage(error));
     return NextResponse.json(
-      { success: false, error: getErrorMessage(error) },
+      { success: false, error: 'Gagal memuat data customer' },
       { status: 500 }
     );
   }
@@ -84,7 +121,7 @@ export async function POST(request: NextRequest) {
       phone,
       name,
       email,
-      membership_tier = 'bronze',
+      membership_tier = 'regular',
       notes,
       enroll_member = false,
       nfc_uid,
@@ -93,7 +130,7 @@ export async function POST(request: NextRequest) {
     const normalizedName = String(name || '').trim();
     const normalizedEmail = String(email || '').trim();
     const normalizedNfcUid = normalizeNfcUid(nfc_uid);
-    const tierCode = String(membership_tier || 'bronze').trim().toLowerCase();
+    const tierCode = String(membership_tier || 'regular').trim().toLowerCase();
 
     // Validate required fields
     if (!normalizedPhone) {
@@ -135,6 +172,10 @@ export async function POST(request: NextRequest) {
           membership_tier: tierCode,
           notes: notes || existingCustomer.notes,
           nfc_uid: normalizedNfcUid ?? existingCustomer.nfc_uid ?? null,
+          // Penautan kartu NFC = upgrade jadi member kartu (EPIC-011)
+          ...(normalizedNfcUid && existingCustomer.member_type !== 'card'
+            ? { member_type: 'card', card_issued_at: new Date().toISOString() }
+            : {}),
         })
         .eq('id', existingCustomer.id)
         .select(CUSTOMER_SELECT)
@@ -152,6 +193,9 @@ export async function POST(request: NextRequest) {
           membership_tier: tierCode,
           notes: notes || null,
           nfc_uid: normalizedNfcUid,
+          ...(normalizedNfcUid
+            ? { member_type: 'card', card_issued_at: new Date().toISOString() }
+            : {}),
         })
         .select(CUSTOMER_SELECT)
         .single();
@@ -173,7 +217,7 @@ export async function POST(request: NextRequest) {
           const { data: fallbackTier } = await db
             .from('crm_membership_tiers')
             .select('id')
-            .eq('code', 'bronze')
+            .eq('code', 'regular')
             .maybeSingle();
           tierId = fallbackTier?.id || null;
         }
@@ -204,18 +248,20 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const discounts = await getTierDiscountMap(db);
+
     return NextResponse.json(
       {
         success: true,
-        data: savedCustomer,
+        data: withTierDiscount(savedCustomer, discounts),
         message: existingCustomer ? 'Customer updated' : 'Customer created',
       },
       { status: existingCustomer ? 200 : 201 }
     );
   } catch (error: unknown) {
-    console.error('Error saving customer:', error);
+    console.error('Error saving customer:', error, getErrorMessage(error));
     return NextResponse.json(
-      { success: false, error: getErrorMessage(error) },
+      { success: false, error: 'Gagal menyimpan customer' },
       { status: 500 }
     );
   }

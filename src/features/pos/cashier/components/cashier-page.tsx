@@ -106,17 +106,10 @@ function groupCashierTablesByFloor(tables: PosTable[]) {
     }));
 }
 
-const getCustomerDiscount = (tier?: string) => {
-  const normalizedTier = tier?.toLowerCase();
-  if (normalizedTier === 'platinum') return 15;
-  if (normalizedTier === 'gold') return 10;
-  if (normalizedTier === 'silver') return 5;
-  return 0;
-};
-
+// Diskon dari konfigurasi tier CRM yang disertakan server (EPIC-011)
 const withCustomerDiscount = (customer: Customer): CustomerWithDiscount => ({
   ...customer,
-  discount: getCustomerDiscount(customer.membership_tier),
+  discount: Number(customer.discount_percent) || 0,
 });
 
 /* ─── page ────────────────────────────────────────────────────────── */
@@ -253,7 +246,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       name: payload.name,
       phone: payload.phone,
       email: payload.email,
-      membership_tier: 'bronze',
+      membership_tier: 'regular',
       enroll_member: payload.enroll_member,
       nfc_uid: payload.nfc_uid,
     });
@@ -576,6 +569,8 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
           taxAmount,
         };
         storeResultPayload(receipt);
+        // Saldo ARK/XP customer berubah di server — segarkan cache kasir
+        if (selectedCustomer) void refetchCustomers();
         setShowPayment(false);
         setLastResultType('standard');
         cart.clearCart();
@@ -681,6 +676,8 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         taxAmount,
       };
       storeResultPayload(receipt);
+      // Saldo ARK/XP customer berubah di server — segarkan cache kasir
+      if (selectedCustomer) void refetchCustomers();
       setShowPayment(false);
       setLastResultType('standard');
       cart.clearCart();
@@ -692,7 +689,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       toast.error(res.error || 'Payment failed');
     }
     setProcessingPayment(false);
-  }, [cart, paymentMethod, selectedCustomer, cashReceived, totalAfterArk, checkout, discountAmount, taxAmount, arkToUseCapped, isOnline, enqueue, membershipDiscount, shift, refreshCount, paymentOrderId, payingOrderNumber, router, processingPayment, selectedTableDisplay, effectiveTableId, requireActiveShift, payOpenOrderMutation, deferReturnToRestaurant, storeResultPayload]);
+  }, [cart, paymentMethod, selectedCustomer, cashReceived, totalAfterArk, checkout, discountAmount, taxAmount, arkToUseCapped, isOnline, enqueue, membershipDiscount, shift, refreshCount, paymentOrderId, payingOrderNumber, router, processingPayment, selectedTableDisplay, effectiveTableId, requireActiveShift, payOpenOrderMutation, deferReturnToRestaurant, storeResultPayload, refetchCustomers]);
 
   /* Split Bill */
   const handleConfirmSplit = useCallback(async (config: SplitConfig) => {
@@ -807,7 +804,9 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     setShowSplitPayment(false);
     setSplitOrder(null);
     setResultPayload(null);
-  }, []);
+    // Pembayaran split bisa memakai ARK Coin — segarkan cache customer
+    void refetchCustomers();
+  }, [refetchCustomers]);
 
   /* Open Bill */
   const handleOpenBill = useCallback(async () => {

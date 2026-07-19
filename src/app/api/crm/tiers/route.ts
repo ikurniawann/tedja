@@ -6,13 +6,14 @@ import {
   CRM_DEFAULT_TIERS,
   apiErrorResponse,
   isMissingCrmSchema,
+  requireCrmConfigRole,
   validationErrorResponse,
 } from "@/lib/crm/server";
 
 const tierSchema = z.object({
   code: z.string().trim().min(1).max(40).transform((value) => value.toLowerCase()),
   name: z.string().trim().min(1).max(80),
-  rank: z.number().int().positive(),
+  rank: z.number().int().nonnegative(),
   min_lifetime_xp: z.number().int().nonnegative().default(0),
   min_total_spend: z.number().nonnegative().default(0),
   xp_multiplier: z.number().nonnegative().default(1),
@@ -50,10 +51,8 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
-  const sessionUserId = await getPosSession();
-  if (!sessionUserId) {
-    return NextResponse.json({ success: false, error: "Authentication required" }, { status: 401 });
-  }
+  const forbidden = await requireCrmConfigRole();
+  if (forbidden) return forbidden;
 
   try {
     const payload = tierSchema.parse(await request.json());

@@ -139,16 +139,63 @@ export async function GET(request: NextRequest) {
       tierId = (tierRow as { id?: string } | null)?.id ?? null;
     }
 
-    let profileQuery = db
-      .from("crm_member_profiles")
-      .select("*, tier:crm_membership_tiers(id, code, name, rank, xp_multiplier, discount_percent)")
-      .order("lifetime_xp", { ascending: false })
-      .limit(limit);
+    const PROFILE_SELECT =
+      "*, tier:crm_membership_tiers(id, code, name, rank, xp_multiplier, discount_percent)";
 
-    if (tierId) profileQuery = profileQuery.eq("tier_id", tierId);
-    if (search) profileQuery = profileQuery.ilike("member_code", `%${search}%`);
+    const buildProfileQuery = () => {
+      let query = db
+        .from("crm_member_profiles")
+        .select(PROFILE_SELECT)
+        .order("lifetime_xp", { ascending: false })
+        .limit(limit);
+      if (tierId) query = query.eq("tier_id", tierId);
+      return query;
+    };
 
-    const { data: profiles, error: profileError } = await profileQuery;
+    let profiles: MemberProfileRow[] | null = null;
+    let profileError: unknown = null;
+
+    if (search) {
+      // Search harus mencakup nama/phone/email customer, bukan hanya
+      // member_code (temuan audit EPIC-011 Fase A).
+      const { data: matchedCustomers } = await db
+        .from("pos_customers")
+        .select("id")
+        .or(`name.ilike.%${search}%,phone.ilike.%${search}%,email.ilike.%${search}%`)
+        .limit(200);
+      const matchedIds = ((matchedCustomers ?? []) as Array<{ id: string }>).map(
+        (row) => row.id
+      );
+
+      const byCode = await buildProfileQuery().ilike("member_code", `%${search}%`);
+      if (byCode.error) {
+        profileError = byCode.error;
+      } else {
+        const merged = new Map<string, MemberProfileRow>();
+        for (const row of (byCode.data ?? []) as MemberProfileRow[]) {
+          merged.set(row.id, row);
+        }
+        if (matchedIds.length > 0) {
+          const byCustomer = await buildProfileQuery().in("customer_id", matchedIds);
+          if (byCustomer.error) {
+            profileError = byCustomer.error;
+          } else {
+            for (const row of (byCustomer.data ?? []) as MemberProfileRow[]) {
+              merged.set(row.id, row);
+            }
+          }
+        }
+        if (!profileError) {
+          profiles = [...merged.values()]
+            .sort((a, b) => toNumber(b.lifetime_xp) - toNumber(a.lifetime_xp))
+            .slice(0, limit);
+        }
+      }
+    } else {
+      const result = await buildProfileQuery();
+      profiles = result.data as MemberProfileRow[] | null;
+      profileError = result.error;
+    }
 
     if (profileError) {
       if (!isMissingCrmSchema(profileError)) throw profileError;

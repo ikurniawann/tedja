@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createPgClient } from "@/lib/pg/create-client";
 import { getPosSession } from '@/lib/api/auth';
+import { getCrmDefaultVenue } from '@/lib/crm/server';
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : 'Unknown error';
@@ -39,9 +40,9 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ success: true, data });
   } catch (error: unknown) {
-    console.error('Error fetching topup history:', error);
+    console.error('Error fetching topup history:', error, getErrorMessage(error));
     return NextResponse.json(
-      { success: false, error: getErrorMessage(error) },
+      { success: false, error: 'Gagal memuat riwayat topup' },
       { status: 500 }
     );
   }
@@ -74,57 +75,43 @@ export async function POST(request: NextRequest) {
 
     // Balance is stored as Rupiah-equivalent; UI displays ARK with 1 ARK = Rp 1,000.
     const amountValue = Number(amount) || 0;
-    const arkCoins = amountValue / 1000;
 
-    // Get current customer balance and total_spent
-    const { data: customer, error: customerError } = await db
-      .from('pos_customers')
-      .select('ark_coin_balance, total_spent')
-      .eq('id', customer_id)
-      .single();
+    // Topup atomik via RPC: lock saldo, insert wallet log, TANPA menambah
+    // total_spent (top spender = nilai belanja) — EPIC-011 Fase A.
+    const { companyId, branchId } = await getCrmDefaultVenue(db);
+    const { data: topupResult, error: topupError } = await db.rpc('process_ark_topup', {
+      p_customer_id: customer_id,
+      p_amount: amountValue,
+      p_payment_method: payment_method,
+      p_xendit_transaction_id: xendit_transaction_id || null,
+      p_company_id: companyId,
+      p_branch_id: branchId,
+    });
 
-    if (customerError || !customer) {
+    if (topupError) {
+      const notFound = topupError.message?.includes('not found');
       return NextResponse.json(
-        { success: false, error: 'Customer not found' },
-        { status: 404 }
+        { success: false, error: notFound ? 'Customer not found' : 'Gagal memproses topup' },
+        { status: notFound ? 404 : 500 }
       );
     }
 
-    const balanceBefore = Number(customer.ark_coin_balance) || 0;
-    const balanceAfter = balanceBefore + amountValue;
-    const totalSpentAfter = Number(customer.total_spent || 0) + amountValue;
+    const result = topupResult as {
+      transaction_id: string;
+      balance_before: number;
+      balance_after: number;
+      ark_coins: number;
+    };
 
-    // Start transaction
-    // 1. Update customer balance
-    const { error: updateError } = await db
-      .from('pos_customers')
-      .update({
-        ark_coin_balance: balanceAfter,
-        total_spent: totalSpentAfter,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', customer_id);
-
-    if (updateError) throw updateError;
-
-    // 2. Log wallet transaction
-    const { data: transaction, error: transactionError } = await db
+    const { data: transaction } = await db
       .from('pos_wallet_transactions')
-      .insert({
-        customer_id,
-        type: 'topup',
-        amount: amountValue,
-        ark_coins: arkCoins,
-        balance_before: balanceBefore,
-        balance_after: balanceAfter,
-        payment_method,
-        xendit_transaction_id: xendit_transaction_id || null,
-        notes: `Topup via ${payment_method.toUpperCase()}`
-      })
-      .select()
+      .select('*')
+      .eq('id', result.transaction_id)
       .single();
 
-    if (transactionError) throw transactionError;
+    const balanceBefore = Number(result.balance_before) || 0;
+    const balanceAfter = Number(result.balance_after) || 0;
+    const arkCoins = Number(result.ark_coins) || 0;
 
     // 3. If QRIS, generate QR code URL (integrate with Xendit/Midtrans later)
     let qrCodeUrl = null;
@@ -145,9 +132,9 @@ export async function POST(request: NextRequest) {
       }
     }, { status: 201 });
   } catch (error: unknown) {
-    console.error('Error processing topup:', error);
+    console.error('Error processing topup:', error, getErrorMessage(error));
     return NextResponse.json(
-      { success: false, error: getErrorMessage(error) },
+      { success: false, error: 'Gagal memproses topup' },
       { status: 500 }
     );
   }

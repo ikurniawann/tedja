@@ -14,6 +14,9 @@ deploying-dev · ready-for-qa · blocked · done).
 | [EPIC-006](./EPIC-006-kontrak-karyawan.md) | Kontrak Karyawan (PKWT/PKWTT) | ready-for-qa | 2026-07-17 |
 | [EPIC-007](./EPIC-007-workforce-ess.md) | Kehadiran & Cuti — Perombakan + ESS | ready-for-qa | 2026-07-17 |
 | [EPIC-008](./EPIC-008-payroll-revamp.md) | Payroll & Gaji — Integrasi Flow HRIS Terbaru | ready-for-qa | 2026-07-17 |
+| [EPIC-009](./EPIC-009-logbook-revamp.md) | Logbook Revamp | ready-for-qa | 2026-07-18 |
+| [EPIC-010](./EPIC-010-kpi-scorecard.md) | KPI Scorecard | ready-for-qa | 2026-07-19 |
+| [EPIC-011](./EPIC-011-crm-revamp.md) | CRM Revamp — Member Global, XP Lifetime, ARK Coin & Portal Member | on-progress | 2026-07-19 |
 
 Aturan:
 - Epic + registry ini adalah sumber kebenaran status pekerjaan (canonical).

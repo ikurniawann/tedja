@@ -1,5 +1,32 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { getApiUser } from "@/lib/api/auth";
+import type { UserRole } from "@/types";
+
+// Endpoint konfigurasi CRM (tier, reward, xp-rule, avatar, settings) hanya
+// boleh diubah Super Admin — keputusan owner EPIC-011.
+export const CRM_CONFIG_ROLES: UserRole[] = ["super_admin"];
+
+/**
+ * Guard role untuk endpoint konfigurasi CRM. Mengembalikan NextResponse
+ * (401/403) jika tidak berwenang, atau null jika lolos.
+ */
+export async function requireCrmConfigRole(): Promise<NextResponse | null> {
+  const user = await getApiUser();
+  if (!user) {
+    return NextResponse.json(
+      { success: false, error: "Authentication required" },
+      { status: 401 }
+    );
+  }
+  if (!CRM_CONFIG_ROLES.includes(user.role)) {
+    return NextResponse.json(
+      { success: false, error: "Insufficient permissions" },
+      { status: 403 }
+    );
+  }
+  return null;
+}
 
 export const CRM_DEFAULT_TIERS = [
   {
@@ -64,7 +91,47 @@ export function validationErrorResponse(error: unknown) {
   return null;
 }
 
+interface CrmSettingsClient {
+  from: (table: string) => {
+    select: (cols: string) => {
+      in: (col: string, values: string[]) => PromiseLike<{
+        data: Array<{ key: string; value: unknown }> | null;
+        error: unknown;
+      }>;
+    };
+  };
+}
+
+/**
+ * Venue default (single-venue) dari crm_settings untuk stempel transaksi
+ * wallet/XP — dasar rekonsiliasi antar-venue (EPIC-011). Gagal baca → null.
+ */
+export async function getCrmDefaultVenue(db: CrmSettingsClient): Promise<{
+  companyId: string | null;
+  branchId: string | null;
+}> {
+  try {
+    const { data, error } = await db
+      .from("crm_settings")
+      .select("key, value")
+      .in("key", ["default_company_id", "default_branch_id"]);
+    if (error || !data) return { companyId: null, branchId: null };
+
+    const map = Object.fromEntries(
+      data.map((row) => [row.key, typeof row.value === "string" ? row.value : null])
+    );
+    return {
+      companyId: map.default_company_id ?? null,
+      branchId: map.default_branch_id ?? null,
+    };
+  } catch {
+    return { companyId: null, branchId: null };
+  }
+}
+
 export function apiErrorResponse(error: unknown, fallback = "Internal server error") {
-  const message = error instanceof Error ? error.message : fallback;
-  return NextResponse.json({ success: false, error: message }, { status: 500 });
+  // Detail error (pesan Postgres dsb.) hanya di log server — jangan bocorkan
+  // struktur internal ke client (temuan audit EPIC-011 Fase A).
+  console.error("CRM API error:", error);
+  return NextResponse.json({ success: false, error: fallback }, { status: 500 });
 }
