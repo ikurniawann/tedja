@@ -10,6 +10,7 @@
 
 import { sendWhatsApp as sendViaFonnte } from "@/lib/fonnte";
 import { readGatewayConfig, sendGatewayText } from "./gateway";
+import { logOutboundMessage } from "./store";
 import { readMetaConfig, sendMetaTemplate, sendMetaText } from "./meta";
 import type { TemplateMessage, TextMessage, WhatsAppProvider, WhatsAppResult } from "./types";
 
@@ -48,6 +49,17 @@ export interface OtpMessageOptions {
  * disetujui — nama & bahasanya dari env agar bisa diganti tanpa deploy.
  */
 export async function sendWhatsAppOtp(options: OtpMessageOptions): Promise<WhatsAppResult> {
+  const result = await dispatchOtp(options);
+  await logOutboundMessage({
+    phone: options.target,
+    messageType: "otp",
+    body: null,
+    result,
+  });
+  return result;
+}
+
+async function dispatchOtp(options: OtpMessageOptions): Promise<WhatsAppResult> {
   const provider = resolveProvider();
   if (!provider) return NOT_CONFIGURED;
 
@@ -81,7 +93,29 @@ export async function sendWhatsAppOtp(options: OtpMessageOptions): Promise<Whats
  * PERHATIAN: di Meta ini hanya lolos dalam jendela layanan 24 jam. Untuk pesan
  * yang diinisiasi bisnis, buat template lalu pakai `sendWhatsAppTemplate`.
  */
-export async function sendWhatsAppText(message: TextMessage): Promise<WhatsAppResult> {
+export interface TextMessageMeta {
+  messageType?: "notification" | "chat" | "broadcast" | "system";
+  sentByUserId?: string | null;
+  conversationId?: string | null;
+}
+
+export async function sendWhatsAppText(
+  message: TextMessage,
+  meta: TextMessageMeta = {}
+): Promise<WhatsAppResult> {
+  const result = await dispatchText(message);
+  await logOutboundMessage({
+    phone: message.target,
+    messageType: meta.messageType ?? "notification",
+    body: message.message,
+    result,
+    sentByUserId: meta.sentByUserId ?? null,
+    conversationId: meta.conversationId ?? null,
+  });
+  return result;
+}
+
+async function dispatchText(message: TextMessage): Promise<WhatsAppResult> {
   const provider = resolveProvider();
   if (!provider) return NOT_CONFIGURED;
 

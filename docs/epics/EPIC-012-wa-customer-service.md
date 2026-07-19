@@ -1,6 +1,6 @@
 # EPIC-012: WhatsApp Customer Service — Riwayat Pesan, Inbox 2-Arah & Penanganan Komplain
 
-status: backlog
+status: coding
 environment: dev
 retries: 0
 
@@ -136,3 +136,43 @@ direncanakan setelah EPIC-011, dimulai dari kanal WhatsApp.
   provider = gateway mandiri Baileys (bukan Fonnte), sehingga inbox tidak
   butuh webhook pihak ketiga. Status backlog — menunggu persetujuan owner
   atas fase & usulan role CS untuk mulai Fase A.
+- 2026-07-19 — **Fase A+B SELESAI (coding + verifikasi live).** Migrasi
+  `20260720040000_wa_cs_fase_ab.sql` (applied ke dev): `crm.wa_conversations`
+  (phone unique, auto-link customer, status open/in_progress/waiting_customer/
+  resolved, unread_count, preview) + `crm.wa_messages` (in/out, jenis
+  otp|notification|chat|broadcast|system, constraint `wa_messages_otp_no_body`
+  menjaga body OTP selalu NULL di level DB, index unik parsial
+  `provider_message_id` untuk dedup echo).
+  - **Fase A**: pencatatan dipasang di lapisan provider (`sendWhatsAppOtp`/
+    `sendWhatsAppText` + param meta jenis/pengirim) — semua jalur kirim
+    otomatis tercatat. UI tab **Riwayat Pesan** di Settings → WhatsApp
+    Gateway (super_admin): summary keluar/masuk/gagal, filter arah+jenis+
+    status+cari nomor/nama member, kirim ulang untuk yang gagal (OTP
+    dikecualikan — kode basi; member diminta request ulang).
+  - **Fase B**: gateway memasang handler `messages.upsert` (hanya `notify`,
+    hanya JID personal, ekstrak teks/caption + jenis media, bungkus
+    ephemeral/viewOnce dibuka) → antrean memori + retry 2s/10s/30s → POST
+    `/api/wa/inbound` (public-route di middleware, auth = token bersama
+    `WA_GATEWAY_TOKEN` dua arah). `recordGatewayMessage` transaksional:
+    upsert percakapan per nomor, auto-link `pos_customers` via digit phone,
+    unread++ hanya utk pesan masuk, percakapan `resolved` otomatis re-open,
+    pesan `fromMe` dari HP tercatat berlabel "dari HP".
+  - Normalisasi payload = fungsi murni `src/lib/whatsapp/inbound.ts` dengan
+    11 unit test (grup/status ditolak, suffix device JID, media tanpa teks,
+    reaksi diabaikan, body dipotong 4000).
+  - **Verifikasi live dev**: inbound tanpa token 401; simulasi pesan masuk →
+    stored, percakapan terbentuk & tertaut member Budi, unread 1, preview
+    benar; kirim payload sama 2x → skipped (idempoten); OTP nyata ke nomor
+    sender → `wa_delivered:true`, baris `otp/out` dengan **body NULL**, echo
+    `fromMe` dari gateway ter-dedup (tetap 1 baris); API riwayat sebagai
+    super_admin menampilkan semua + filter cari nama member jalan.
+  - **BUG DITEMUKAN & FIX saat verifikasi**: pola `Number(params.get("limit"))`
+    menghasilkan 0 utk param absen (Number(null)=0) → `Math.max(1,0)` =
+    LIMIT 1 — daftar hanya menampilkan 1 baris. Diperbaiki di
+    `wa-gateway/messages` DAN `crm/redemptions` (bug yang sama tertanam saat
+    hardening Fase F). Pelajaran: `Number(null)` adalah 0, bukan NaN.
+  - Gate: 559 unit test hijau (+11), build sukses, kedua proses PM2
+    di-restart, sesi gateway bertahan tanpa pairing ulang.
+  - Sisa: review gate (security+kualitas) atas diff Fase A+B; UAT owner —
+    kirim WA sungguhan ke +6285880974659 dari HP lain lalu lihat tab
+    Riwayat Pesan; Fase C (UI inbox chat) menyusul setelah A+B disetujui.

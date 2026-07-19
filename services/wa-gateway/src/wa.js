@@ -28,6 +28,90 @@ const MAX_SEND_GAP_MS = Number(process.env.WA_MAX_GAP_MS || 3500);
 
 const logger = pino({ level: process.env.WA_LOG_LEVEL || "warn" });
 
+/**
+ * EPIC-012 Fase B — teruskan pesan (masuk & keluar-manual dari HP) ke app.
+ * App yang menyimpan; gateway hanya kurir. Antrean memori + retry ringan
+ * supaya pesan tidak hilang saat app sedang restart/deploy.
+ */
+const APP_INBOUND_URL =
+  process.env.APP_INBOUND_URL || "http://127.0.0.1:3459/api/wa/inbound";
+const INBOUND_TOKEN = process.env.WA_GATEWAY_TOKEN;
+const FORWARD_RETRY_MS = [2000, 10000, 30000];
+
+const forwardQueue = [];
+let forwardTimer = null;
+
+function extractMessageContent(message) {
+  if (!message) return { text: null, mediaType: null };
+  // Baileys membungkus beberapa jenis pesan (ephemeral, viewOnce) satu level.
+  const inner =
+    message.ephemeralMessage?.message ??
+    message.viewOnceMessage?.message ??
+    message.viewOnceMessageV2?.message ??
+    message;
+
+  const text =
+    inner.conversation ??
+    inner.extendedTextMessage?.text ??
+    inner.imageMessage?.caption ??
+    inner.videoMessage?.caption ??
+    inner.documentMessage?.caption ??
+    null;
+
+  let mediaType = null;
+  if (inner.imageMessage) mediaType = "image";
+  else if (inner.videoMessage) mediaType = "video";
+  else if (inner.audioMessage) mediaType = "audio";
+  else if (inner.documentMessage) mediaType = "document";
+  else if (inner.stickerMessage) mediaType = "sticker";
+
+  return { text, mediaType };
+}
+
+async function flushForwardQueue(attempt = 0) {
+  if (forwardQueue.length === 0) return;
+  const batch = forwardQueue.splice(0, 50);
+
+  try {
+    const response = await fetch(APP_INBOUND_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-gateway-token": INBOUND_TOKEN ?? "",
+      },
+      body: JSON.stringify({ messages: batch }),
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  } catch (error) {
+    if (attempt < FORWARD_RETRY_MS.length) {
+      // Kembalikan ke depan antrean, coba lagi nanti.
+      forwardQueue.unshift(...batch);
+      if (!forwardTimer) {
+        forwardTimer = setTimeout(() => {
+          forwardTimer = null;
+          flushForwardQueue(attempt + 1).catch(() => undefined);
+        }, FORWARD_RETRY_MS[attempt]);
+      }
+    } else {
+      console.error(
+        `[wa-gateway] Gagal meneruskan ${batch.length} pesan ke app (menyerah):`,
+        error?.message ?? error
+      );
+    }
+  }
+}
+
+function enqueueForward(payload) {
+  forwardQueue.push(payload);
+  // Debounce singkat agar burst pesan terkirim satu batch.
+  if (!forwardTimer) {
+    forwardTimer = setTimeout(() => {
+      forwardTimer = null;
+      flushForwardQueue().catch(() => undefined);
+    }, 300);
+  }
+}
+
 const state = {
   socket: null,
   connected: false,
@@ -92,6 +176,30 @@ export async function connect() {
   state.socket = socket;
 
   socket.ev.on("creds.update", saveCreds);
+
+  socket.ev.on("messages.upsert", ({ messages, type }) => {
+    // "notify" = pesan baru real-time; append/history sync dilewati agar
+    // riwayat lama HP tidak membanjiri app.
+    if (type !== "notify") return;
+
+    for (const item of messages ?? []) {
+      const jid = item?.key?.remoteJid ?? "";
+      if (!jid.endsWith("@s.whatsapp.net")) continue; // grup/status/newsletter
+
+      const { text, mediaType } = extractMessageContent(item.message);
+      if (!text && !mediaType) continue; // reaksi/protokol/receipt
+
+      enqueueForward({
+        remoteJid: jid,
+        fromMe: Boolean(item.key?.fromMe),
+        messageId: item.key?.id ?? null,
+        timestamp: Number(item.messageTimestamp) || null,
+        text,
+        mediaType,
+        pushName: item.pushName ?? null,
+      });
+    }
+  });
 
   socket.ev.on("connection.update", (update) => {
     const { connection, lastDisconnect, qr } = update;

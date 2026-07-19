@@ -44,8 +44,12 @@ export async function GET(request: NextRequest) {
     const status = params.get("status");
     const customerId = params.get("customer_id");
     const memberId = params.get("member_id");
-    const rawLimit = Number(params.get("limit"));
-    const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(1, rawLimit), 200) : 100;
+    const rawLimit = params.get("limit");
+    const parsedLimit = Number(rawLimit);
+    const limit =
+      rawLimit !== null && Number.isFinite(parsedLimit) && parsedLimit > 0
+        ? Math.min(parsedLimit, 200)
+        : 100;
 
     const values: unknown[] = [];
     const filters: string[] = [];

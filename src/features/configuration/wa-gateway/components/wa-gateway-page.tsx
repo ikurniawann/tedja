@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import {
   ArrowLeft,
+  History,
   CheckCircle2,
   Loader2,
   MessageCircle,
@@ -13,6 +14,7 @@ import {
   Smartphone,
   WifiOff,
 } from "lucide-react";
+import { WaMessageHistory } from "./wa-message-history";
 
 /**
  * Settings → WhatsApp Gateway — status koneksi + QR pairing.
@@ -44,6 +46,7 @@ const tanggal = (iso: string | null) =>
     : "-";
 
 export function WaGatewayPage() {
+  const [tab, setTab] = useState<"status" | "history">("status");
   const [state, setState] = useState<GatewayState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -107,6 +110,31 @@ export function WaGatewayPage() {
           </p>
         </div>
 
+        <div className="flex gap-1 rounded-md border border-slate-200 bg-white p-1 shadow-sm">
+          {(
+            [
+              ["status", "Status & Pairing", Smartphone],
+              ["history", "Riwayat Pesan", History],
+            ] as const
+          ).map(([value, label, Icon]) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setTab(value)}
+              className={`inline-flex h-9 flex-1 items-center justify-center gap-2 rounded-md px-3 text-sm font-medium transition ${
+                tab === value ? "bg-slate-950 text-white" : "text-slate-600 hover:bg-slate-100"
+              }`}
+            >
+              <Icon className="size-4" />
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {tab === "history" ? (
+          <WaMessageHistory />
+        ) : (
+          <>
         {error && (
           <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             {error}
@@ -202,6 +230,8 @@ export function WaGatewayPage() {
           bisnis ke perangkatnya. Halaman ini hanya bisa dibuka Super Admin; jangan
           membagikan tangkapan layarnya.
         </div>
+          </>
+        )}
       </div>
     </div>
   );

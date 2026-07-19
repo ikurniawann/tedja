@@ -38,6 +38,9 @@ export async function updateSession(request: NextRequest) {
     // sesi OTP WA sendiri (cookie member_session), bukan arkiv_session.
     "/member",
     "/api/member-portal",
+    // Penerima event dari wa-gateway (mesin yang sama) — auth = header
+    // x-gateway-token, bukan sesi user.
+    "/api/wa/inbound",
   ];
   const isPublicRoute =
     pathname === "/" ||
