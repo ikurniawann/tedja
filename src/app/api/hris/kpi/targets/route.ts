@@ -83,7 +83,16 @@ export async function POST(request: NextRequest) {
       })
       .select("*")
       .single();
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) {
+      // FK tidak valid (indikator/dept/karyawan tak ada) → 400 yang jelas
+      if (error.code === "23503") {
+        return NextResponse.json(
+          { error: "Indikator/department/karyawan tidak ditemukan" },
+          { status: 400 }
+        );
+      }
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
     return NextResponse.json(
       { data, message: "Target tersimpan" },
       { status: 201 }

@@ -210,6 +210,32 @@ export async function collectLeaveSla(
   };
 }
 
+/**
+ * Tanggal LUNAS SEJATI per termin: tanggal pembayaran saat kumulatif
+ * pertama kali mencapai amount — koreksi/pembayaran ekstra SETELAH lunas
+ * tidak menggeser tanggal. Hanya pembayaran status 'posted' yang dihitung
+ * (pola resmi di route payments purchasing; draft/void diabaikan).
+ */
+const SETTLED_TERMS_CTE = `
+  cum_pay AS (
+    SELECT t.id AS term_id, t.due_date, t.amount, t.created_at,
+           vp.payment_date,
+           SUM(vp.amount) OVER (
+             PARTITION BY t.id ORDER BY vp.payment_date, vp.id
+           ) AS cum
+    FROM purchasing.purchase_order_payment_terms t
+    JOIN purchasing.vendor_payments vp
+      ON vp.payment_term_id = t.id AND vp.status = 'posted'
+    WHERE t.is_active
+  ),
+  settled AS (
+    SELECT term_id, due_date, amount, created_at,
+           MIN(payment_date) AS settled_date
+    FROM cum_pay
+    WHERE cum >= amount
+    GROUP BY term_id, due_date, amount, created_at
+  )`;
+
 /** vendor_pay_ontime — termin jatuh tempo dlm periode yang lunas tepat waktu */
 export async function collectVendorPayOntime(
   pool: Pool,
@@ -217,20 +243,14 @@ export async function collectVendorPayOntime(
   endIso: string
 ): Promise<CollectorValue | null> {
   const { rows } = await pool.query(
-    `WITH term_pay AS (
-       SELECT t.id, t.due_date, t.amount,
-              COALESCE(SUM(vp.amount), 0) AS paid,
-              MAX(vp.payment_date) AS last_payment
-       FROM purchasing.purchase_order_payment_terms t
-       LEFT JOIN purchasing.vendor_payments vp ON vp.payment_term_id = t.id
-       WHERE t.due_date BETWEEN $1 AND $2 AND t.is_active
-       GROUP BY t.id, t.due_date, t.amount
-     )
+    `WITH ${SETTLED_TERMS_CTE}
      SELECT COUNT(*) FILTER (
-              WHERE paid >= amount AND last_payment <= due_date
+              WHERE s.settled_date IS NOT NULL AND s.settled_date <= t.due_date
             )::int AS ontime,
             COUNT(*)::int AS total
-     FROM term_pay`,
+     FROM purchasing.purchase_order_payment_terms t
+     LEFT JOIN settled s ON s.term_id = t.id
+     WHERE t.due_date BETWEEN $1 AND $2 AND t.is_active`,
     [startIso, endIso]
   );
   const row = rows[0];
@@ -249,18 +269,11 @@ export async function collectVendorPaySla(
   endIso: string
 ): Promise<CollectorValue | null> {
   const { rows } = await pool.query(
-    `WITH settled AS (
-       SELECT t.id, t.created_at, MAX(vp.payment_date) AS settled_date
-       FROM purchasing.purchase_order_payment_terms t
-       JOIN purchasing.vendor_payments vp ON vp.payment_term_id = t.id
-       WHERE t.is_active
-       GROUP BY t.id, t.created_at, t.amount
-       HAVING COALESCE(SUM(vp.amount), 0) >= t.amount
-          AND MAX(vp.payment_date) BETWEEN $1 AND $2
-     )
+    `WITH ${SETTLED_TERMS_CTE}
      SELECT AVG(EXTRACT(EPOCH FROM (settled_date::timestamp - created_at)) / 86400)::float AS avg_days,
             COUNT(*)::int AS settled
-     FROM settled`,
+     FROM settled
+     WHERE settled_date BETWEEN $1 AND $2`,
     [startIso, endIso]
   );
   const row = rows[0];
@@ -294,7 +307,12 @@ export async function collectPayrollTimeliness(
 
   const lastDay = new Date(Date.UTC(periodYear, periodMonth, 0)).getUTCDate();
   const dayClamped = Math.min(payrollDay, lastDay);
-  const payday = new Date(Date.UTC(periodYear, periodMonth - 1, dayClamped, 23, 59, 59));
+  // Batas = akhir hari gajian WIB (UTC+7) → 16:59:59 UTC hari yang sama.
+  // Jangan 23:59:59 UTC — itu 06:59 WIB esoknya (7 jam kelonggaran palsu).
+  const WIB_OFFSET_HOURS = 7;
+  const payday = new Date(
+    Date.UTC(periodYear, periodMonth - 1, dayClamped, 23 - WIB_OFFSET_HOURS, 59, 59)
+  );
   const readyDeadline = new Date(payday);
   readyDeadline.setUTCDate(readyDeadline.getUTCDate() - 2);
 

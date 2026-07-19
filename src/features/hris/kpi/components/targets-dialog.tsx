@@ -86,22 +86,30 @@ export function KpiTargetsDialog({
   const createMutation = useCreateKpiTarget();
   const deleteMutation = useDeleteKpiTarget();
 
+  const selectedIndicator = indicators.find((i) => i.code === indicatorCode);
+  const isPercentUnit =
+    selectedIndicator?.unit === "%" || selectedIndicator?.unit === "rasio";
+  const parsedInput = Number(targetValue.replace(",", "."));
+  // Utk %/rasio input SELALU dalam persen (deterministik — bukan tebakan
+  // magnitudo): 95 → 0.95, 0,5 → 0.005. Preview ditampilkan sebelum simpan.
+  const normalizedPreview =
+    Number.isFinite(parsedInput) && parsedInput >= 0
+      ? isPercentUnit
+        ? parsedInput / 100
+        : parsedInput
+      : null;
+
   async function submit() {
-    const indicator = indicators.find((i) => i.code === indicatorCode);
+    const indicator = selectedIndicator;
     if (!indicator) {
       showToast("Pilih indikator", "error");
       return;
     }
-    const target = Number(targetValue.replace(",", "."));
-    if (!Number.isFinite(target) || target < 0) {
+    if (normalizedPreview === null) {
       showToast("Isi nilai target yang valid", "error");
       return;
     }
-    // Utk rasio (unit % / rasio) izinkan input 95 → 0.95
-    const normalized =
-      (indicator.unit === "%" || indicator.unit === "rasio") && target > 1.2
-        ? target / 100
-        : target;
+    const normalized = normalizedPreview;
 
     try {
       await createMutation.mutateAsync({
@@ -262,12 +270,24 @@ export function KpiTargetsDialog({
             </div>
 
             <div className="space-y-1">
-              <Label>Nilai Target</Label>
+              <Label>
+                Nilai Target{isPercentUnit ? " (%)" : ""}
+              </Label>
               <Input
                 value={targetValue}
                 onChange={(event) => setTargetValue(event.target.value)}
-                placeholder="mis. 0,95 atau 95 (utk %)"
+                placeholder={isPercentUnit ? "mis. 95 atau 0,5" : "mis. 5000000"}
               />
+              {normalizedPreview !== null && targetValue !== "" && (
+                <p className="text-xs text-muted-foreground">
+                  Disimpan sebagai:{" "}
+                  <span className="font-medium">
+                    {isPercentUnit
+                      ? `${parsedInput.toLocaleString("id-ID")}% (rasio ${normalizedPreview.toLocaleString("id-ID", { maximumFractionDigits: 4 })})`
+                      : normalizedPreview.toLocaleString("id-ID")}
+                  </span>
+                </p>
+              )}
             </div>
             <div className="flex items-end">
               <Button onClick={submit} disabled={createMutation.isPending}>
@@ -304,7 +324,9 @@ export function KpiTargetsDialog({
                   <TableCell>{scopeLabel(row)}</TableCell>
                   <TableCell>{periodLabelOf(row)}</TableCell>
                   <TableCell className="text-right">
-                    {Number(row.target).toLocaleString("id-ID")}
+                    {row.indicator?.unit === "%" || row.indicator?.unit === "rasio"
+                      ? `${(Number(row.target) * 100).toLocaleString("id-ID", { maximumFractionDigits: 2 })}%`
+                      : Number(row.target).toLocaleString("id-ID")}
                   </TableCell>
                   <TableCell className="text-right">
                     <Button
