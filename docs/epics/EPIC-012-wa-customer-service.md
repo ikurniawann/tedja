@@ -1,6 +1,6 @@
 # EPIC-012: WhatsApp Customer Service — Riwayat Pesan, Inbox 2-Arah & Penanganan Komplain
 
-status: coding
+status: ready-for-qa
 environment: dev
 retries: 0
 
@@ -176,3 +176,49 @@ direncanakan setelah EPIC-011, dimulai dari kanal WhatsApp.
   - Sisa: review gate (security+kualitas) atas diff Fase A+B; UAT owner —
     kirim WA sungguhan ke +6285880974659 dari HP lain lalu lihat tab
     Riwayat Pesan; Fase C (UI inbox chat) menyusul setelah A+B disetujui.
+- 2026-07-19 — **Review gate Fase A+B selesai — 2 HIGH + 3 MEDIUM ditutup
+  (`48d18b9`).** Temuan kunci reviewer: `/api/wa/inbound` terjangkau internet
+  via cloudflared, bukan lokal-saja. Fix: batas body/batch + backoff token
+  gagal (H1), index ekspresi digit nomor `idx_pos_customers_phone_digits`
+  (H2 — lookup per pesan tadinya seq scan), forwarder gateway kini backoff
+  menetap 60 dtk tanpa menyerah + fetch timeout + single-flight + antrean
+  maks 2000 (M1 — jendela deploy tidak menghilangkan pesan), resend menandai
+  baris asal agar tidak bisa spam berulang + scoped direction out (M2/L3),
+  perbandingan token constant-time dua sisi (M3). Diterima sebagai catatan:
+  OTP yang DIKETIK customer di chat tersimpan sebagai teks chat biasa (akses
+  super_admin; OTP outbound tetap tidak pernah disimpan). Reviewer
+  mengonfirmasi benar: no-body OTP 3 lapis, ON CONFLICT partial index,
+  upsert race-safe, parameterized query, fail-closed token kosong.
+- 2026-07-19 — **Fase C SELESAI: UI Inbox CS.** Migrasi
+  `20260720050000_wa_cs_fase_c.sql` (applied): tabel `crm.wa_reply_templates`
+  (+3 seed) + menu sidebar CRM → Members → **Inbox WhatsApp**
+  (`/dashboard/crm/inbox`, grant super_admin/admin/pos_supervisor — kasir
+  `pos` sengaja tidak, isi chat = PII paling sensitif; guard baru
+  `requireCrmInboxAgent`/`CRM_INBOX_ROLES`).
+  - API: `GET /api/crm/inbox/conversations` (filter status/assigned/cari +
+    total unread), `GET/POST /api/crm/inbox/conversations/[id]` (detail =
+    pesan + konteks member: tier/XP/saldo/5 order/5 redemption; aksi
+    discriminated union: reply/assign_me/unassign/set_status/mark_read),
+    `GET/POST/DELETE /api/crm/inbox/templates` (kelola = super_admin).
+  - Balasan dashboard → `sendWhatsAppText` meta chat+conversationId →
+    tercatat otomatis (Fase A) → percakapan auto `in_progress` + auto-assign
+    ke pembalas bila belum ada yang menangani.
+  - UI 3 kolom: daftar percakapan (badge unread, waktu relatif, filter),
+    thread chat (bubble in/out, penanda "dari HP", template balasan cepat,
+    Enter kirim), panel konteks member. Responsif: mobile 1 kolom
+    bertingkat. Polling 5 dtk + banner peringatan bila gateway putus
+    (prasyarat risiko di epic). Badge unread sidebar DITUNDA (perlu sentuh
+    AppSidebar generik — masuk Fase D bila masih diinginkan).
+  - **Verifikasi live**: simulasi chat masuk → tampil di daftar dgn total
+    unread; balas dari API dashboard → WhatsApp SUNGGUHAN terkirim
+    (messageId `3EB0B87ECD5F816E01B3B6`, diterima di HP owner), status auto
+    in_progress + ditangani "Super Admin", echo ter-dedup (tetap 2 pesan);
+    resolve sukses; template ter-load; tanpa sesi ditolak 401. Percakapan
+    uji-diri dibersihkan; percakapan komplain Budi disisakan sbg demo UAT.
+  - Gate: 559 test hijau, build sukses (4 route baru terdaftar), migrasi
+    applied, kedua proses restart, sesi gateway bertahan.
+  - UAT owner: (1) kirim WA dari HP pribadi ke +6285880974659 → muncul di
+    `/dashboard/crm/inbox` ≤10 dtk; (2) balas dari dashboard → sampai di HP;
+    (3) klik Tangani/Status → Selesai; (4) kirim lagi dari HP → percakapan
+    re-open otomatis; (5) tab Riwayat Pesan mencatat semua. Fase D (komplain
+    berkategori + SLA) menunggu keputusan lanjut.

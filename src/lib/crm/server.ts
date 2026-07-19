@@ -41,6 +41,10 @@ export const CRM_OPERATOR_ROLES: UserRole[] = [
 // kebutuhan bisnis yang boleh membacanya — direksi ikut karena laporan CRM.
 export const CRM_READ_ROLES: UserRole[] = [...CRM_OPERATOR_ROLES, "direksi"];
 
+// Inbox WhatsApp CS (EPIC-012 Fase C) — isi chat customer adalah PII paling
+// sensitif di CRM; kasir biasa (pos) sengaja TIDAK termasuk, hanya supervisor.
+export const CRM_INBOX_ROLES: UserRole[] = ["super_admin", "admin", "pos_supervisor"];
+
 async function requireCrmRoles(allowed: UserRole[]): Promise<
   { error: NextResponse; user: null } | { error: null; user: { id: string; role: UserRole } }
 > {
@@ -77,6 +81,11 @@ export function requireCrmOperator() {
 /** Guard role untuk membaca data redemption yang memuat PII member. */
 export function requireCrmReader() {
   return requireCrmRoles(CRM_READ_ROLES);
+}
+
+/** Guard role untuk inbox chat WhatsApp CS. */
+export function requireCrmInboxAgent() {
+  return requireCrmRoles(CRM_INBOX_ROLES);
 }
 
 export const CRM_DEFAULT_TIERS = [
