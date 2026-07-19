@@ -122,9 +122,9 @@ export function MemberRewardsCard({ onRedeemed }: { onRedeemed?: () => void }) {
 
   if (loading) {
     return (
-      <Card>
+      <Card className="rounded-2xl border-0 bg-white/85 shadow-sm ring-1 ring-black/5 backdrop-blur">
         <CardContent className="py-10">
-          <Loader2 className="mx-auto h-6 w-6 animate-spin text-purple-500" />
+          <Loader2 className="mx-auto h-6 w-6 animate-spin text-[color:var(--brand-primary)]" />
         </CardContent>
       </Card>
     );
@@ -132,13 +132,13 @@ export function MemberRewardsCard({ onRedeemed }: { onRedeemed?: () => void }) {
 
   return (
     <div className="space-y-4">
-      <Card>
+      <Card className="rounded-2xl border-0 bg-white/85 shadow-sm ring-1 ring-black/5 backdrop-blur">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <Gift className="h-4 w-4" /> Tukar Reward
           </CardTitle>
           <p className="text-xs text-gray-500">
-            XP kamu <span className="font-semibold text-purple-600">tidak berkurang</span> saat
+            XP kamu <span className="font-semibold text-[color:var(--brand-primary)]">tidak berkurang</span> saat
             menukar reward — XP hanya menentukan reward apa yang bisa kamu ambil.
           </p>
         </CardHeader>
@@ -160,13 +160,13 @@ export function MemberRewardsCard({ onRedeemed }: { onRedeemed?: () => void }) {
             rewards.map((reward) => (
               <div
                 key={reward.id}
-                className={`rounded-xl border p-3 ${
-                  reward.eligible ? "border-purple-200 bg-purple-50/40" : "border-gray-200 bg-gray-50"
+                className={`rounded-2xl border p-3 ${
+                  reward.eligible ? "border-[color:var(--mp-line)] bg-[color:var(--mp-line)]/40" : "border-gray-200 bg-gray-50"
                 }`}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <p className="font-semibold text-gray-900">{reward.name}</p>
+                    <p className="font-semibold text-[color:var(--mp-ink)]">{reward.name}</p>
                     <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-500">
                       <span className="inline-flex items-center gap-1">
                         <Sparkles className="h-3 w-3" /> min {angka(reward.min_xp)} XP
@@ -179,7 +179,7 @@ export function MemberRewardsCard({ onRedeemed }: { onRedeemed?: () => void }) {
                       )}
                     </p>
                     {reward.remaining_quota != null && reward.eligible && (
-                      <p className="mt-1 text-xs text-purple-600">
+                      <p className="mt-1 text-xs text-[color:var(--brand-primary)]">
                         Sisa jatah kamu: {reward.remaining_quota}x
                       </p>
                     )}
@@ -212,7 +212,7 @@ export function MemberRewardsCard({ onRedeemed }: { onRedeemed?: () => void }) {
       </Card>
 
       {history.length > 0 && (
-        <Card>
+        <Card className="rounded-2xl border-0 bg-white/85 shadow-sm ring-1 ring-black/5 backdrop-blur">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
               <Ticket className="h-4 w-4" /> Reward Saya

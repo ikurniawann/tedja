@@ -63,7 +63,7 @@ export function MemberProfileCard({
   }
 
   return (
-    <Card>
+    <Card className="rounded-2xl border-0 bg-white/85 shadow-sm ring-1 ring-black/5 backdrop-blur">
       <CardHeader>
         <CardTitle className="text-base">
           Profil Saya{" "}
