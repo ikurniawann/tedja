@@ -137,8 +137,12 @@ export function CrmRewardsPage() {
   const redemptions = redemptionsQuery.data ?? [];
   const loading = isLoading || isFetching;
   const queryError = error instanceof Error ? error.message : null;
+  // Peran tanpa izin baca redemption (mis. HRD) tetap boleh melihat katalog —
+  // errornya hanya relevan saat tab Permintaan Redeem dibuka.
   const redemptionsError =
-    redemptionsQuery.error instanceof Error ? redemptionsQuery.error.message : null;
+    tab === "requests" && redemptionsQuery.error instanceof Error
+      ? redemptionsQuery.error.message
+      : null;
 
   const filteredRewards = useMemo(() => {
     const term = search.trim().toLowerCase();
