@@ -1,6 +1,6 @@
 # EPIC-010: KPI Scorecard — Penilaian Kinerja Otomatis dari Data Operasional
 
-status: coding
+status: ready-for-qa
 environment: dev
 retries: 0
 
@@ -256,3 +256,30 @@ Semua AC tercentang + Automation Log terisi + ready-for-qa.
   kosong ramah (bug ditemukan saat uji & difix), halaman HRD/ESS 200.
   Build hijau. Sisa: Fase D (target setting UI + kolektor gelombang 2 +
   hook bonus payroll & rekomendasi PKWT).
+- 2026-07-19 — **Fase D SELESAI — epic ready-for-qa.**
+  (1) Kolektor gelombang 2 (`collectors-wave2.ts`): per-karyawan
+  team_ontime (turunan att_ontime, tanpa query ekstra), pos_sales_shift,
+  leave_request_discipline, att_late_ratio (menit telat / menit terjadwal
+  via durasi shift, helper wave2-math ber-test); level-ORGANISASI leave_sla,
+  vendor_pay_ontime/sla (join payment_terms.due_date × vendor_payments),
+  payroll_paid_ontime & ready_h2 (payroll_settings.payroll_day) — satu
+  nilai dibagikan ke pemegang indikator via role. Bug penting difix: re-run
+  snapshot kini MEMPERTAHANKAN snapshot manual (rubrik) saat compose —
+  diverifikasi Wahyu tetap 78.52 setelah re-run.
+  (2) Target setting: API GET/POST/DELETE /api/hris/kpi/targets
+  (KPI_MANAGE_ROLES; scope eksklusif role/dept/employee; periode
+  bulan/tahun/umum) + dialog "Atur Target" di halaman KPI (input % pintar:
+  95 → 0.95). CRUD diverifikasi via curl.
+  (3) Rekomendasi PKWT: GET /api/hris/kpi/recommendation (rata-rata skor
+  3 periode terakhir) + kolom "KPI 3 Bln" berwarna di halaman Kontrak
+  (badge per baris; keputusan tetap HRD). Halaman 200.
+  47 unit test kpi hijau, build sukses, PM2 restart.
+  **Deferred (gelombang 3 / menunggu prasyarat):** grn_speed (butuh tanggal
+  barang tiba di GRN), opname_accuracy/variance & adjustment_unexplained
+  (perlu atribusi inventory), closing_validated_ontime,
+  contract_decided_ontime, time_to_hire, pipeline_hygiene,
+  kpi_review_ontime, qc_checklist/findings; hook bonus payroll (belum ada
+  jalur input bonus di payroll run — tambah bersama UI bonus);
+  price_efficiency (TODO owner, baseline harga); integration test
+  snapshot/collectors (fixture DB). Sisa QA manusia: siklus penuh di dev —
+  atur target → snapshot → rubrik → finalisasi → cek ESS & kolom kontrak.

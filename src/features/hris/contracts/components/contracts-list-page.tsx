@@ -10,6 +10,7 @@ import { Combobox } from "@/components/ui/combobox";
 import { Input } from "@/components/ui/input";
 import { ContractExpiryBanner } from "@/features/users/components/contract-expiry-banner";
 import { fetchContractList, type ContractListItem } from "../api";
+import { apiGet, buildListUrl } from "@/lib/api-client";
 
 /**
  * HRIS → Kontrak: daftar kontrak karyawan lintas karyawan, default menampilkan
@@ -74,6 +75,43 @@ function formatDate(value: string | null): string {
   return date.toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" });
 }
 
+type KpiRecommendation = Record<
+  string,
+  { avg_score: number; periods: number; has_final: boolean }
+>;
+
+/**
+ * Badge rata-rata skor KPI 3 bulan terakhir (EPIC-010 Fase D) — decision
+ * support perpanjangan PKWT; keputusan tetap di HRD.
+ */
+function KpiScoreBadge({
+  employeeId,
+  recommendation,
+}: {
+  employeeId: string;
+  recommendation: KpiRecommendation | undefined;
+}) {
+  const entry = recommendation?.[employeeId];
+  if (!entry) return <span className="text-gray-400">—</span>;
+  const score = entry.avg_score;
+  const cls =
+    score >= 90
+      ? "bg-emerald-100 text-emerald-700"
+      : score >= 75
+        ? "bg-lime-100 text-lime-700"
+        : score >= 60
+          ? "bg-amber-100 text-amber-700"
+          : "bg-red-100 text-red-700";
+  return (
+    <span
+      className={`inline-block rounded-full px-2 py-0.5 text-xs font-semibold ${cls}`}
+      title={`Rata-rata ${entry.periods} periode terakhir${entry.has_final ? " (ada yang final)" : " (draft)"}`}
+    >
+      {score.toLocaleString("id-ID", { maximumFractionDigits: 1 })}
+    </span>
+  );
+}
+
 function DaysLeftBadge({ item }: { item: ContractListItem }) {
   if (item.days_left === null || item.status !== "active") {
     return <span className="text-gray-400">—</span>;
@@ -126,6 +164,22 @@ export function ContractsListPage() {
   const rows = data?.data ?? [];
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / limit));
+
+  // Skor KPI 3 bulan terakhir utk baris yang tampil (rekomendasi PKWT)
+  const employeeIds = useMemo(
+    () => [...new Set(rows.map((row) => row.employee_id))].sort(),
+    [rows]
+  );
+  const { data: kpiRecommendation } = useQuery({
+    queryKey: ["hris", "kpi", "recommendation", employeeIds],
+    enabled: employeeIds.length > 0,
+    queryFn: () =>
+      apiGet<{ data: KpiRecommendation }>(
+        buildListUrl("/api/hris/kpi/recommendation", {
+          employee_ids: employeeIds.join(","),
+        })
+      ).then((res) => res.data),
+  });
 
   function applySearch() {
     setSearch(searchInput.trim());
@@ -250,6 +304,7 @@ export function ContractsListPage() {
                   </th>
                 ))}
                 <th className="px-4 py-3 font-semibold">Sisa Waktu</th>
+                <th className="px-4 py-3 font-semibold">KPI 3 Bln</th>
                 <th className="px-4 py-3 font-semibold">Tipe</th>
                 <th className="px-4 py-3 font-semibold">Status</th>
                 <th className="px-4 py-3 font-semibold">Jabatan</th>
@@ -269,6 +324,12 @@ export function ContractsListPage() {
                   </td>
                   <td className="px-4 py-3">
                     <DaysLeftBadge item={item} />
+                  </td>
+                  <td className="px-4 py-3">
+                    <KpiScoreBadge
+                      employeeId={item.employee_id}
+                      recommendation={kpiRecommendation}
+                    />
                   </td>
                   <td className="px-4 py-3 uppercase">{item.contract_type}</td>
                   <td className="px-4 py-3">

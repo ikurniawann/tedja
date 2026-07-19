@@ -10,6 +10,7 @@ export interface KpiBreakdownRow {
 }
 
 export interface KpiIndicatorInfo {
+  id: string;
   code: string;
   name: string;
   unit: string | null;
@@ -61,4 +62,27 @@ export interface SaveRubricPayload {
   period_year: number;
   value: number;
   notes?: string;
+}
+
+export interface KpiTargetRowUI {
+  id: string;
+  indicator_id: string;
+  period_year: number | null;
+  period_month: number | null;
+  role_code: string | null;
+  department_id: string | null;
+  employee_id: string | null;
+  target: PgNumeric;
+  indicator?: { code: string; name: string; unit: string | null } | null;
+  department?: { id: string; name: string } | null;
+  employee?: { id: string; full_name: string; nip: string } | null;
+}
+
+export interface CreateKpiTargetPayload {
+  indicator_id: string;
+  target: number;
+  period_year?: number | null;
+  period_month?: number | null;
+  role_code?: string | null;
+  department_id?: string | null;
 }

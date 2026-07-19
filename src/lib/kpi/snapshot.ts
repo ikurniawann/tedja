@@ -8,8 +8,19 @@ import {
   collectPoFulfillment,
   collectPosCashVariance,
   type CollectorMap,
+  type CollectorValue,
   type KpiEmployee,
 } from "./collectors";
+import {
+  collectAttLateRatio,
+  collectLeaveDiscipline,
+  collectLeaveSla,
+  collectPayrollTimeliness,
+  collectPosSalesShift,
+  collectTeamOntime,
+  collectVendorPayOntime,
+  collectVendorPaySla,
+} from "./collectors-wave2";
 
 /**
  * Orkestrator snapshot KPI bulanan (EPIC-010 Fase B) — IDEMPOTEN:
@@ -19,12 +30,25 @@ import {
  * bernilai null → dikeluarkan composeScore (redistribusi bobot).
  */
 
-/** code indikator gelombang 1 → kolektornya */
-const WAVE1_CODES = [
+/** Indikator ber-kolektor per-karyawan (gelombang 1 + 2) */
+const EMPLOYEE_COLLECTOR_CODES = [
   "att_ontime",
   "pos_cash_variance",
   "logbook_compliance",
   "po_fulfillment",
+  "team_ontime",
+  "pos_sales_shift",
+  "leave_request_discipline",
+  "att_late_ratio",
+] as const;
+
+/** Indikator level-organisasi: satu nilai dibagikan ke pemegang indikator */
+const ORG_COLLECTOR_CODES = [
+  "leave_sla",
+  "vendor_pay_ontime",
+  "vendor_pay_sla",
+  "payroll_paid_ontime",
+  "payroll_ready_h2",
 ] as const;
 
 export interface SnapshotSummary {
@@ -112,27 +136,74 @@ export async function runKpiSnapshot(input: {
     roleComponents.set(row.role_code, list);
   }
 
-  // 3. Jalankan kolektor gelombang 1
-  const [attOntime, cashVariance, logbook, poFulfillment] = await Promise.all([
+  // 3. Jalankan kolektor gelombang 1 + 2
+  const [
+    attOntime,
+    cashVariance,
+    logbook,
+    poFulfillment,
+    posSalesShift,
+    leaveDiscipline,
+    attLateRatio,
+    leaveSla,
+    vendorPayOntime,
+    vendorPaySla,
+    payrollTimeliness,
+  ] = await Promise.all([
     collectAttOntime(pool, employees, start, end),
     collectPosCashVariance(pool, start, end),
     collectLogbookCompliance(pool, employees, start, end),
     collectPoFulfillment(pool, start, end),
+    collectPosSalesShift(pool, start, end),
+    collectLeaveDiscipline(pool, start, end),
+    collectAttLateRatio(pool, employees, start, end),
+    collectLeaveSla(pool, start, end),
+    collectVendorPayOntime(pool, start, end),
+    collectVendorPaySla(pool, start, end),
+    collectPayrollTimeliness(pool, periodYear, periodMonth),
   ]);
-  const collected: Record<(typeof WAVE1_CODES)[number], CollectorMap> = {
+  // team_ontime diturunkan dari hasil att_ontime (tanpa query tambahan)
+  const teamOntime = collectTeamOntime(employees, attOntime);
+
+  const collected: Record<(typeof EMPLOYEE_COLLECTOR_CODES)[number], CollectorMap> = {
     att_ontime: attOntime,
     pos_cash_variance: cashVariance,
     logbook_compliance: logbook,
     po_fulfillment: poFulfillment,
+    team_ontime: teamOntime,
+    pos_sales_shift: posSalesShift,
+    leave_request_discipline: leaveDiscipline,
+    att_late_ratio: attLateRatio,
+  };
+  const orgCollected: Record<(typeof ORG_COLLECTOR_CODES)[number], CollectorValue | null> = {
+    leave_sla: leaveSla,
+    vendor_pay_ontime: vendorPayOntime,
+    vendor_pay_sla: vendorPaySla,
+    payroll_paid_ontime: payrollTimeliness.paidOntime,
+    payroll_ready_h2: payrollTimeliness.readyH2,
   };
 
-  // 4. Scorecard final yang tak boleh ditimpa
-  const finalsRes = await pool.query(
-    `SELECT employee_id FROM performance.kpi_scorecards
-     WHERE period_year = $1 AND period_month = $2 AND status = 'final'`,
-    [periodYear, periodMonth]
-  );
+  // 4. Scorecard final yang tak boleh ditimpa + snapshot MANUAL tersimpan
+  //    (mis. supervisor_rubric) agar re-run tidak membuang nilai rubrik.
+  const [finalsRes, manualRes] = await Promise.all([
+    pool.query(
+      `SELECT employee_id FROM performance.kpi_scorecards
+       WHERE period_year = $1 AND period_month = $2 AND status = 'final'`,
+      [periodYear, periodMonth]
+    ),
+    pool.query(
+      `SELECT s.employee_id, s.indicator_id, s.attainment::float AS attainment
+       FROM performance.kpi_snapshots s
+       JOIN performance.kpi_indicators i ON i.id = s.indicator_id
+       WHERE s.period_year = $1 AND s.period_month = $2
+         AND i.source_kind = 'manual'`,
+      [periodYear, periodMonth]
+    ),
+  ]);
   const finalEmployees = new Set(finalsRes.rows.map((r) => r.employee_id));
+  const manualAttainment = new Map<string, number | null>(
+    manualRes.rows.map((r) => [`${r.employee_id}:${r.indicator_id}`, r.attainment])
+  );
 
   // 5. Hitung attainment DI MEMORI dulu, lalu upsert BATCH (bukan N+1) —
   //    karyawan ber-scorecard FINAL dibekukan total: snapshot-nya pun tidak
@@ -168,10 +239,21 @@ export async function runKpiSnapshot(input: {
       const indicator = indicatorsById.get(component.indicatorId);
       if (!indicator) continue;
 
-      const isWave1 = (WAVE1_CODES as readonly string[]).includes(indicator.code);
-      const value = isWave1
-        ? collected[indicator.code as (typeof WAVE1_CODES)[number]].get(employee.id)
-        : undefined;
+      const isEmployeeCollected = (
+        EMPLOYEE_COLLECTOR_CODES as readonly string[]
+      ).includes(indicator.code);
+      const isOrgCollected = (ORG_COLLECTOR_CODES as readonly string[]).includes(
+        indicator.code
+      );
+      const value = isEmployeeCollected
+        ? collected[
+            indicator.code as (typeof EMPLOYEE_COLLECTOR_CODES)[number]
+          ].get(employee.id)
+        : isOrgCollected
+          ? orgCollected[indicator.code as (typeof ORG_COLLECTOR_CODES)[number]] ??
+            undefined
+          : undefined;
+      const hasCollector = isEmployeeCollected || isOrgCollected;
 
       const target = resolveTarget(
         targetsByIndicator.get(indicator.id) ?? [],
@@ -187,15 +269,17 @@ export async function runKpiSnapshot(input: {
 
       const attainment =
         value === undefined
-          ? null // indikator belum punya kolektor (manual/gelombang 2)
+          ? // indikator manual (rubrik) pakai snapshot tersimpan;
+            // gelombang 3 tanpa data → null
+            manualAttainment.get(`${employee.id}:${indicator.id}`) ?? null
           : computeAttainment({
               direction: indicator.direction,
               actual: value.actual,
               target,
             });
 
-      // Snapshot hanya utk indikator gelombang 1 (punya data kolektor)
-      if (isWave1) {
+      // Snapshot utk semua indikator ber-kolektor yang menghasilkan data
+      if (hasCollector && value !== undefined) {
         snapshotRows.push({
           employeeId: employee.id,
           indicatorId: indicator.id,
@@ -310,6 +394,15 @@ export async function runKpiSnapshot(input: {
       pos_cash_variance: cashVariance.size,
       logbook_compliance: logbook.size,
       po_fulfillment: poFulfillment.size,
+      team_ontime: teamOntime.size,
+      pos_sales_shift: posSalesShift.size,
+      leave_request_discipline: leaveDiscipline.size,
+      att_late_ratio: attLateRatio.size,
+      leave_sla: leaveSla ? 1 : 0,
+      vendor_pay_ontime: vendorPayOntime ? 1 : 0,
+      vendor_pay_sla: vendorPaySla ? 1 : 0,
+      payroll_paid_ontime: payrollTimeliness.paidOntime ? 1 : 0,
+      payroll_ready_h2: payrollTimeliness.readyH2 ? 1 : 0,
     },
   };
 }

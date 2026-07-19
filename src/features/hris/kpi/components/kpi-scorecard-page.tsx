@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChartBarIcon, PlayIcon } from "@heroicons/react/24/outline";
+import { AdjustmentsHorizontalIcon, ChartBarIcon, PlayIcon } from "@heroicons/react/24/outline";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -39,6 +39,9 @@ import {
 } from "../mutations";
 import type { KpiScorecardRow } from "../types";
 import { ScorecardBreakdown } from "./scorecard-breakdown";
+import { KpiTargetsDialog } from "./targets-dialog";
+import { KPI_SCORECARD_ROLES } from "@/lib/kpi/roles";
+import { useLogbookDepartments } from "@/features/hris/logbook";
 
 const MONTH_LABELS = [
   "Januari", "Februari", "Maret", "April", "Mei", "Juni",
@@ -59,6 +62,7 @@ export function KpiScorecardPage() {
   const [year, setYear] = useState(now.getFullYear());
   const [detailId, setDetailId] = useState("");
   const [showRunConfirm, setShowRunConfirm] = useState(false);
+  const [showTargets, setShowTargets] = useState(false);
   const [rubricValue, setRubricValue] = useState("");
   const [rubricNotes, setRubricNotes] = useState("");
 
@@ -69,6 +73,9 @@ export function KpiScorecardPage() {
   const rows = scorecardsQuery.data?.data ?? [];
   const indicators = scorecardsQuery.data?.indicators ?? [];
   const detail = rows.find((row) => row.id === detailId) || null;
+
+  const departmentsQuery = useLogbookDepartments();
+  const departments = departmentsQuery.data ?? [];
 
   const runMutation = useRunKpiSnapshot();
   const rubricMutation = useSaveKpiRubric();
@@ -179,6 +186,9 @@ export function KpiScorecardPage() {
               </SelectContent>
             </Select>
           </div>
+          <Button variant="outline" onClick={() => setShowTargets(true)}>
+            <AdjustmentsHorizontalIcon className="mr-1 h-4 w-4" /> Atur Target
+          </Button>
           <Button
             onClick={() => setShowRunConfirm(true)}
             disabled={runMutation.isPending}
@@ -341,6 +351,15 @@ export function KpiScorecardPage() {
         loadingLabel="Menghitung..."
         loading={runMutation.isPending}
         onConfirm={runSnapshot}
+      />
+
+      <KpiTargetsDialog
+        open={showTargets}
+        onOpenChange={setShowTargets}
+        indicators={indicators}
+        roleCodes={[...KPI_SCORECARD_ROLES]}
+        departments={departments}
+        showToast={showToast}
       />
 
       <ToastContainer toasts={toasts} removeToast={removeToast} />

@@ -4,4 +4,5 @@ export const kpiQueryKeys = {
     ["hris", "kpi", "scorecards", params ?? {}] as const,
   history: (employeeId: string, n: number) =>
     ["hris", "kpi", "history", employeeId, n] as const,
+  targets: () => ["hris", "kpi", "targets"] as const,
 };

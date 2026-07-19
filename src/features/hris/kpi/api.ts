@@ -51,3 +51,18 @@ export const updateScorecardStatus = (payload: {
   action: "finalize" | "reopen";
   scorecard_id: string;
 }) => mutateKpi("PATCH", "/scorecards", payload);
+
+export const fetchKpiTargets = () =>
+  apiGet<{ data: import("./types").KpiTargetRowUI[] }>(`${BASE}/targets`).then(
+    (res) => res.data
+  );
+
+export const createKpiTarget = (payload: import("./types").CreateKpiTargetPayload) =>
+  mutateKpi("POST", "/targets", { ...payload });
+
+export const deleteKpiTarget = async (id: string) => {
+  const res = await fetch(`${BASE}/targets?id=${id}`, { method: "DELETE" });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((json as { error?: string }).error || "Request failed");
+  return json;
+};

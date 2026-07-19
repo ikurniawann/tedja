@@ -2,8 +2,14 @@
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { kpiQueryKeys } from "./query-keys";
-import { runKpiSnapshotApi, saveKpiRubric, updateScorecardStatus } from "./api";
-import type { SaveRubricPayload } from "./types";
+import {
+  createKpiTarget,
+  deleteKpiTarget,
+  runKpiSnapshotApi,
+  saveKpiRubric,
+  updateScorecardStatus,
+} from "./api";
+import type { CreateKpiTargetPayload, SaveRubricPayload } from "./types";
 
 function useInvalidateKpi() {
   const qc = useQueryClient();
@@ -32,6 +38,22 @@ export function useUpdateScorecardStatus() {
   return useMutation({
     mutationFn: (payload: { action: "finalize" | "reopen"; scorecard_id: string }) =>
       updateScorecardStatus(payload),
+    onSuccess: invalidate,
+  });
+}
+
+export function useCreateKpiTarget() {
+  const invalidate = useInvalidateKpi();
+  return useMutation({
+    mutationFn: (payload: CreateKpiTargetPayload) => createKpiTarget(payload),
+    onSuccess: invalidate,
+  });
+}
+
+export function useDeleteKpiTarget() {
+  const invalidate = useInvalidateKpi();
+  return useMutation({
+    mutationFn: (id: string) => deleteKpiTarget(id),
     onSuccess: invalidate,
   });
 }

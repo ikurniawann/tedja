@@ -38,7 +38,8 @@ export async function GET(request: NextRequest) {
   // Peta label indikator utk render breakdown di klien
   const { data: indicators } = await db
     .from("kpi_indicators")
-    .select("code, name, unit, direction");
+    .select("id, code, name, unit, direction")
+    .eq("is_active", true);
 
   // Mode riwayat: N scorecard terakhir SATU karyawan (utk ESS/riwayat HRD)
   const historyN = Number(searchParams.get("history")) || 0;
