@@ -348,3 +348,20 @@ Hasil diskusi desain — SEMUA sudah diputuskan owner:
     dengan topup/belanja uji; (3) role lain tidak melihat menu Laporan; (4)
     infra di luar repo: ingress Cloudflare Tunnel
     `member.suluindwounderland.com` → :3459 masih perlu ditambahkan.
+- 2026-07-19 — **Fix minor pasca-analisa: benefits jsonb + fallback tier
+  regular.** (1) `POST /api/crm/tiers` mengirim array JS mentah ke kolom
+  jsonb `benefits` — driver pg menserialisasinya jadi literal array
+  Postgres sehingga `[]` tersimpan `{}` (objek) dan benefits non-kosong
+  akan gagal insert; fix: `JSON.stringify(payload.benefits)` sebelum
+  upsert + delta `20260720010000_crm_fix_tier_benefits_jsonb.sql`
+  menormalkan data existing ke `[]` (sudah diterapkan ke dev DB, 4 baris
+  tier kini bertipe array). (2) Fallback tier UI "bronze"/"Bronze"
+  disamakan ke "regular"/"Regular" (keputusan owner #5, Regular = tier
+  awal): `crm-members-page.tsx`, `crm-member-detail-page.tsx`, dan
+  `topup-page.tsx` (badge class, pembuatan customer baru dari topup, 2
+  label fallback). Verifikasi update tier via API sebagai super_admin:
+  Regular rank 0 sukses (bug "update tier invalid" tuntas — tidak
+  reproduce lagi setelah restrukturisasi c6e9f49).
+  Gate: 513 unit test hijau, `next build` sukses, migrasi applied, PM2
+  restart; smoke: POST tier benefits `["smoke-test"]` tersimpan sebagai
+  JSON array lalu direstorasi `[]`.

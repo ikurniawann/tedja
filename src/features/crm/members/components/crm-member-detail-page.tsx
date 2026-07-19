@@ -83,7 +83,7 @@ function formatDateTime(value?: string | null) {
 }
 
 function tierName(member: CrmMember) {
-  return member.tier?.name || member.customer?.membership_tier || "Bronze";
+  return member.tier?.name || member.customer?.membership_tier || "Regular";
 }
 
 function avatarSourceLabel(source: string) {

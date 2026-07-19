@@ -59,7 +59,9 @@ export async function POST(request: NextRequest) {
     const db = createPgClient();
     const { data, error } = await db
       .from("crm_membership_tiers")
-      .upsert(payload, { onConflict: "code" })
+      // benefits di-stringify manual: driver pg menserialisasi array JS jadi
+      // literal array Postgres ("{}"), bukan JSON — jsonb butuh string JSON.
+      .upsert({ ...payload, benefits: JSON.stringify(payload.benefits) }, { onConflict: "code" })
       .select()
       .single();
 

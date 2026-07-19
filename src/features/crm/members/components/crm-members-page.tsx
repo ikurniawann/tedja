@@ -32,7 +32,7 @@ function formatCurrency(value: number) {
 }
 
 function tierName(member: CrmMember) {
-  return member.tier?.name || member.customer?.membership_tier || "Bronze";
+  return member.tier?.name || member.customer?.membership_tier || "Regular";
 }
 
 export function CrmMembersPage() {
