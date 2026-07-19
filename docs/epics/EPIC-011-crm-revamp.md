@@ -322,6 +322,26 @@ Hasil diskusi desain — SEMUA sudah diputuskan owner:
     baru (459 = noise lama; 1 error `server.ts:153` pre-existing dari Fase
     C). Deploy dev: build + `pm2 restart arkiv-pos-saas`; smoke: API 401
     tanpa sesi, halaman terlayani.
+- 2026-07-19 — **Fix lanjutan pasca-UAT: "update tier invalid" di
+  /dashboard/crm + restrukturisasi dashboard.** Akar masalah: panel
+  konfigurasi tier di dashboard (legacy pra-Fase B) memaksa
+  `rank: Math.max(1, ...)` + input Rank `min=1`/`|| 1` — menyimpan tier
+  Regular (rank 0, Fase A) memaksa rank jadi 1 yang bentrok UNIQUE
+  `crm_membership_tiers_rank_key` (rank 1 = Bronze) → 500. Panel juga
+  tampil untuk admin/direksi padahal API konfigurasi super_admin-only
+  (selalu 403), plus bug audit lama draft-ketimpa-refetch.
+  Keputusan owner: **restrukturisasi** (bukan quick fix) — dashboard CRM
+  jadi monitoring murni (stats, leaderboard, XP activity; panel
+  Konfigurasi Tier & Konfigurasi XP POS DIHAPUS), satu-satunya fitur unik
+  panel lama (editor XP per produk) DIPINDAH ke `/dashboard/crm/settings`
+  (seksi "XP Produk" baru: pencarian nama/SKU/kategori, render max 30,
+  PATCH `xp_points`). Halaman settings = satu-satunya tempat konfigurasi
+  (rank 0 ditangani benar di sana — rename tier owner sebelumnya berhasil
+  lewat halaman ini). Cleanup: `features/crm/dashboard` dirampingkan
+  (mutations.ts dihapus, api/queries/types konfigurasi dibuang), baris
+  "Reward catalog" dihapus dari Foundation Status (alur reward pensiun).
+  Gate: 513 unit test hijau, build sukses, tsc 459 (0 baru), deploy dev
+  PM2 restart, halaman dashboard+settings 200.
   - Status epic → **ready-for-qa**. UAT owner tersisa: (1) skenario Fase B
     (lihat entri deploy Fase B); (2) buka `/dashboard/crm/reports` sebagai
     super_admin/admin/direksi — filter periode, angka rekonsiliasi cocok

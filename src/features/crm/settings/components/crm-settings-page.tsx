@@ -6,13 +6,16 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   ArrowLeft,
+  CheckCircle2,
   Coins,
   Crown,
   Gift,
+  Package,
   Pencil,
   Plus,
   RefreshCw,
   Save,
+  Search,
   Settings2,
   Sparkles,
   X,
@@ -22,15 +25,26 @@ import {
   getCrmSettings,
   listCrmTiers,
   listCrmXpRules,
+  listPosProductXp,
   saveCrmTier,
   saveCrmXpRule,
   updateCrmSettings,
+  updateProductXp,
 } from "../api";
 
 const numberFormat = new Intl.NumberFormat("id-ID");
+const currencyFormat = new Intl.NumberFormat("id-ID", {
+  style: "currency",
+  currency: "IDR",
+  maximumFractionDigits: 0,
+});
 
 function formatNumber(value: number) {
   return numberFormat.format(value || 0);
+}
+
+function formatCurrency(value: number) {
+  return currencyFormat.format(value || 0);
 }
 
 const XP_MODE_LABELS: Record<CrmXpRuleConfig["xp_mode"], string> = {
@@ -85,12 +99,15 @@ export function CrmSettingsPage() {
   const settingsQuery = useQuery({ queryKey: ["crm", "settings"], queryFn: getCrmSettings });
   const tiersQuery = useQuery({ queryKey: ["crm", "settings", "tiers"], queryFn: listCrmTiers });
   const rulesQuery = useQuery({ queryKey: ["crm", "settings", "xp-rules"], queryFn: listCrmXpRules });
+  const productsQuery = useQuery({ queryKey: ["crm", "settings", "product-xp"], queryFn: listPosProductXp });
 
   const [bonusPercent, setBonusPercent] = useState("");
   const [freeXp, setFreeXp] = useState("");
   const [tierForm, setTierForm] = useState<TierForm | null>(null);
   const [ruleForm, setRuleForm] = useState<RuleForm | null>(null);
   const [ruleFormIsNew, setRuleFormIsNew] = useState(false);
+  const [productSearch, setProductSearch] = useState("");
+  const [productXpDraft, setProductXpDraft] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (settingsQuery.data) {
@@ -134,14 +151,43 @@ export function CrmSettingsPage() {
     },
   });
 
+  const saveProductXpMutation = useMutation({
+    mutationFn: ({ productId, xp }: { productId: string; xp: number }) => updateProductXp(productId, xp),
+    onSuccess: (_data, variables) => {
+      toast.success("XP produk berhasil disimpan");
+      setProductXpDraft((current) => {
+        const next = { ...current };
+        delete next[variables.productId];
+        return next;
+      });
+      queryClient.invalidateQueries({ queryKey: ["crm", "settings", "product-xp"] });
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : "Gagal menyimpan XP produk");
+    },
+  });
+
   const tiers = tiersQuery.data ?? [];
   const rules = rulesQuery.data ?? [];
+  const products = productsQuery.data ?? [];
   const loading = settingsQuery.isLoading || tiersQuery.isLoading || rulesQuery.isLoading;
+
+  const filteredProducts = products.filter((product) => {
+    const term = productSearch.trim().toLowerCase();
+    if (!term) return true;
+    return (
+      product.name.toLowerCase().includes(term)
+      || product.sku.toLowerCase().includes(term)
+      || (product.category?.name ?? "").toLowerCase().includes(term)
+    );
+  });
+  const visibleProducts = filteredProducts.slice(0, 30);
 
   function refetchAll() {
     void settingsQuery.refetch();
     void tiersQuery.refetch();
     void rulesQuery.refetch();
+    void productsQuery.refetch();
   }
 
   function editTier(tier: CrmTierConfig) {
@@ -650,6 +696,88 @@ export function CrmSettingsPage() {
                   {saveRuleMutation.isPending ? "Menyimpan..." : "Simpan Rule"}
                 </button>
               </div>
+            </div>
+          )}
+        </section>
+
+        {/* XP Produk — pindahan dari panel dashboard (EPIC-011 restrukturisasi) */}
+        <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
+          <div className="flex flex-col gap-2 border-b border-slate-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <h2 className="flex items-center gap-2 text-base font-semibold text-slate-950">
+              <Package className="size-4" />
+              XP Produk
+            </h2>
+            <div className="flex items-center gap-2 rounded-md border border-slate-300 bg-white px-2">
+              <Search className="size-4 shrink-0 text-slate-400" />
+              <input
+                value={productSearch}
+                onChange={(event) => setProductSearch(event.target.value)}
+                placeholder="Cari nama / SKU / kategori..."
+                className="h-9 w-56 bg-transparent text-sm text-slate-900 outline-none"
+              />
+            </div>
+          </div>
+          <div className="px-4 py-3 text-xs text-slate-500">
+            XP tambahan per produk (di luar rule nominal transaksi). Hanya keluar bila
+            pembayaran penuh ARK Coin.
+          </div>
+
+          {productsQuery.isLoading ? (
+            <div className="px-4 py-10 text-center text-sm text-slate-500">Memuat produk...</div>
+          ) : visibleProducts.length === 0 ? (
+            <div className="px-4 py-10 text-center text-sm text-slate-500">
+              {productSearch.trim() ? "Tidak ada produk yang cocok." : "Belum ada produk POS."}
+            </div>
+          ) : (
+            <div className="divide-y divide-slate-100">
+              {visibleProducts.map((product) => {
+                const draftValue = productXpDraft[product.id] ?? String(product.xp);
+                const isDirty = (Number(draftValue) || 0) !== product.xp;
+                const isSaving =
+                  saveProductXpMutation.isPending
+                  && saveProductXpMutation.variables?.productId === product.id;
+                return (
+                  <div key={product.id} className="grid gap-3 px-4 py-3 sm:grid-cols-[1fr_120px_100px] sm:items-center">
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-medium text-slate-900">{product.name}</div>
+                      <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                        <span>{product.sku}</span>
+                        <span>{product.category?.name || "Uncategorized"}</span>
+                        <span>{formatCurrency(product.base_price)}</span>
+                      </div>
+                    </div>
+                    <input
+                      type="number"
+                      min={0}
+                      value={draftValue}
+                      onChange={(event) =>
+                        setProductXpDraft((current) => ({ ...current, [product.id]: event.target.value }))
+                      }
+                      className="h-9 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-100"
+                      aria-label={`XP ${product.name}`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() =>
+                        saveProductXpMutation.mutate({
+                          productId: product.id,
+                          xp: Math.max(0, Number(draftValue) || 0),
+                        })
+                      }
+                      disabled={!isDirty || isSaving}
+                      className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 transition hover:bg-slate-100 disabled:opacity-50"
+                    >
+                      {isDirty ? <Save className="size-4" /> : <CheckCircle2 className="size-4 text-emerald-600" />}
+                      {isSaving ? "..." : "Save"}
+                    </button>
+                  </div>
+                );
+              })}
+              {filteredProducts.length > visibleProducts.length && (
+                <div className="px-4 py-3 text-center text-xs text-slate-500">
+                  Menampilkan {visibleProducts.length} dari {filteredProducts.length} produk — persempit lewat pencarian.
+                </div>
+              )}
             </div>
           )}
         </section>

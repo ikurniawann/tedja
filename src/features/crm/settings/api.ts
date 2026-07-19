@@ -1,4 +1,4 @@
-import type { CrmSettings, CrmTierConfig, CrmXpRuleConfig } from "./types";
+import type { CrmSettings, CrmTierConfig, CrmXpRuleConfig, PosProductXp } from "./types";
 
 export type * from "./types";
 
@@ -57,6 +57,31 @@ export async function saveCrmTier(payload: CrmTierConfig): Promise<void> {
     }),
   });
   await parseCrmResponse(response, "Gagal menyimpan tier");
+}
+
+export async function listPosProductXp(): Promise<PosProductXp[]> {
+  const response = await fetch("/api/pos/products", { cache: "no-store" });
+  const json = await parseCrmResponse<{ data: Array<PosProductXp & { xp_points?: number }> }>(
+    response,
+    "Gagal memuat produk POS"
+  );
+  return (json.data ?? []).map((product) => ({
+    id: product.id,
+    sku: product.sku,
+    name: product.name,
+    base_price: Number(product.base_price) || 0,
+    xp: Number(product.xp ?? product.xp_points) || 0,
+    category: product.category ?? null,
+  }));
+}
+
+export async function updateProductXp(productId: string, xp: number): Promise<void> {
+  const response = await fetch(`/api/pos/products/${productId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ xp_points: Math.max(0, Math.floor(xp)) }),
+  });
+  await parseCrmResponse(response, "Gagal menyimpan XP produk");
 }
 
 export async function listCrmXpRules(): Promise<CrmXpRuleConfig[]> {

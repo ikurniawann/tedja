@@ -16,6 +16,15 @@ export type CrmTierConfig = {
   is_active: boolean;
 };
 
+export type PosProductXp = {
+  id: string;
+  sku: string;
+  name: string;
+  base_price: number;
+  xp: number;
+  category?: { name: string } | null;
+};
+
 export type CrmXpRuleConfig = {
   id?: string;
   code: string;
