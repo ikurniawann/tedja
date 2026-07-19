@@ -441,7 +441,7 @@ export class QueryBuilder<T = any> implements PromiseLike<PgResult<T>> {
     const plain = splitTopLevel(sel)
       .map((c) => c.trim())
       .filter((c) => !c.includes("("));
-    if (plain.length === 0) return "*";
+    if (plain.length === 0 || plain.includes("*")) return "*";
     return plain.map(qid).join(", ");
   }
 
