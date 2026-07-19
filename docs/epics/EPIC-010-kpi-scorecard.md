@@ -283,3 +283,21 @@ Semua AC tercentang + Automation Log terisi + ready-for-qa.
   price_efficiency (TODO owner, baseline harga); integration test
   snapshot/collectors (fixture DB). Sisa QA manusia: siklus penuh di dev —
   atur target → snapshot → rubrik → finalisasi → cek ESS & kolom kontrak.
+- 2026-07-19 — **Perbaikan review Fase D** (code-reviewer: 0 CRITICAL,
+  3 HIGH, 1 MEDIUM, 2 LOW — semua diperbaiki, commit 11e9c51):
+  [HIGH] kolektor vendor payment kini hanya menghitung pembayaran
+  'posted' + tanggal lunas sejati via window function kumulatif (koreksi
+  pasca-lunas tak menggeser; menutup MEDIUM sekalian); [HIGH] batas
+  payday payroll dihitung akhir hari WIB, bukan UTC (7 jam kelonggaran
+  palsu); [HIGH] input target %/rasio deterministik selalu-persen dgn
+  preview + satuan di tabel (heuristik magnitudo dihapus — '1' berarti
+  1%, bukan 100%); [LOW] pool pg memaksa timezone Asia/Jakarta eksplisit;
+  FK invalid POST targets → 400. Gates: 47 test hijau, build sukses,
+  snapshot re-run stabil. Nonaktifkan juga menu KPI Templates &
+  Performance Review lama (migrasi 20260719150000 — modul 0 baris,
+  digantikan scorecard).
+- 2026-07-19 — Kandidat Fase E diusulkan ke owner (menunggu keputusan):
+  cron snapshot otomatis tgl 1, rubrik oleh atasan langsung
+  (reporting_to/MSS), notifikasi WA saat scorecard final; plus backlog:
+  tren/sparkline, export CSV/PDF, kolektor gelombang 3, mapping
+  bonus→payroll, banding skor ESS, layer OKR direksi.
