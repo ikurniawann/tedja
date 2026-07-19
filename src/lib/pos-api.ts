@@ -526,11 +526,31 @@ export async function getDashboardStats(period?: 'today' | 'week' | 'month') {
 export async function processTopup(data: {
   customer_id: string;
   amount: number;
-  payment_method?: 'qris' | 'credit_card' | 'cash';
+  payment_method?: 'qris' | 'credit' | 'cash';
 }) {
   return fetchAPI<{ success: boolean; data: any }>('/topup', {
     method: 'POST',
     body: JSON.stringify(data),
+  });
+}
+
+export async function getTopupStatus(topupId: string) {
+  return fetchAPI<{ success: boolean; data: any }>(`/topup/${topupId}/status`);
+}
+
+export async function getTopupHistory(params?: { customer_id?: string; limit?: number }) {
+  const search = new URLSearchParams();
+  if (params?.customer_id) search.set('customer_id', params.customer_id);
+  if (params?.limit) search.set('limit', String(params.limit));
+  const queryString = search.toString();
+  return fetchAPI<{ success: boolean; data: any[] }>(
+    `/topup${queryString ? `?${queryString}` : ''}`
+  );
+}
+
+export async function cancelTopup(topupId: string) {
+  return fetchAPI<{ success: boolean; data: any }>(`/topup/${topupId}/cancel`, {
+    method: 'POST',
   });
 }
 

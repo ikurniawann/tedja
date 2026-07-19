@@ -72,13 +72,12 @@ import { PageTransition } from '@/components/motion';
 import { HelpHint } from '@/components/ui/help-hint';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { floorLabel, floorSortKey } from '@/features/pos/tables/floor-options';
+import { useLoyaltySettings } from '@/features/pos/loyalty-settings';
+import { formatArkAmount } from '@/lib/pos/loyalty-settings';
 
 /* ─── helpers ─────────────────────────────────────────────────────── */
 const formatCurrency = (value: number) => formatAmount(value);
 
-const formatArk = (value: number) => `${(value / 1000).toLocaleString('id-ID')} ARK`;
-
-const ARK_RATE = 1000;
 const LAST_RECEIPT_KEY = 'pos:lastReceipt';
 
 const getTableDisplayName = (table?: PosTable | null) =>
@@ -123,6 +122,9 @@ const withCustomerDiscount = (customer: Customer): CustomerWithDiscount => ({
 function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { data: loyaltySettings } = useLoyaltySettings();
+  const formatArk = (value: number) =>
+    formatArkAmount(value, loyaltySettings?.ark_rate || 1000);
   const isFullscreen = variant === 'fullscreen';
   const homeRoute = cashierRoute(variant, searchParams);
   const paymentOrderId = searchParams.get('orderId');

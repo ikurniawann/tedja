@@ -1,7 +1,12 @@
-import type { DbClient } from "@/lib/pg/types";
+import type { DbClient as PgDbClient } from "@/lib/pg/types";
 import { isMissingCrmSchema, toNumber } from "@/lib/crm/server";
+import {
+  calculateSpendXp,
+  calculateTopupXp,
+  loadPosLoyaltySettings,
+} from "@/lib/pos/loyalty-settings";
 
-type DbClient = DbClient;
+type DbClient = PgDbClient;
 
 type PosOrderItemInput = {
   product_id?: string | null;
@@ -171,20 +176,32 @@ export async function awardCrmXpForPosOrder(
         amount: payload.totalAmount,
       });
 
+      let xp = 0;
+      let ruleId: string | null = null;
+      let sourceType = "order_amount";
+
       if (orderRule) {
-        const xp = calculateXp(orderRule, { amount: payload.totalAmount, quantity: 1 });
+        xp = calculateXp(orderRule, { amount: payload.totalAmount, quantity: 1 });
+        ruleId = orderRule.id;
+      } else {
+        const loyaltySettings = await loadPosLoyaltySettings(db);
+        xp = calculateSpendXp(payload.totalAmount, loyaltySettings);
+        sourceType = "order_amount_settings";
+      }
+
+      if (xp > 0) {
         const posted = await postXpEvent(db, {
           customerId: payload.customerId,
-          sourceType: "order_amount",
+          sourceType,
           sourceId: null,
           outletId: payload.outletId,
           xpAmount: xp,
-          ruleId: orderRule.id,
+          ruleId,
           referenceTable: "pos_orders",
           referenceId: payload.orderId,
           idempotencyKey: `pos:order:${payload.orderId}:order_amount`,
           description: `XP transaksi POS untuk order ${payload.orderId}`,
-          metadata: { amount: payload.totalAmount },
+          metadata: { amount: payload.totalAmount, source: ruleId ? "crm_xp_rules" : "pos_loyalty_settings" },
         });
 
         if (posted.status === "duplicate") duplicateCount += 1;
@@ -243,23 +260,37 @@ export async function awardCrmXpForSplitPayment(
       amount: payload.totalAmount,
     });
 
-    if (!orderRule) {
+    let xp = 0;
+    let ruleId: string | null = null;
+    if (orderRule) {
+      xp = calculateXp(orderRule, { amount: payload.totalAmount, quantity: 1 });
+      ruleId = orderRule.id;
+    } else {
+      const loyaltySettings = await loadPosLoyaltySettings(db);
+      xp = calculateSpendXp(payload.totalAmount, loyaltySettings);
+    }
+
+    if (xp <= 0) {
       return { status: "skipped", xpAwarded: 0, reason: "no_matching_xp_rule" };
     }
 
-    const xp = calculateXp(orderRule, { amount: payload.totalAmount, quantity: 1 });
     const posted = await postXpEvent(db, {
       customerId: payload.customerId,
       sourceType: "split_payment",
       sourceId: payload.splitId,
       outletId: payload.outletId,
       xpAmount: xp,
-      ruleId: orderRule.id,
+      ruleId,
       referenceTable: "pos_order_splits",
       referenceId: payload.splitId,
       idempotencyKey: `pos:split:${payload.splitId}:order_amount`,
       description: `XP split payment POS untuk order ${payload.orderId}`,
-      metadata: { amount: payload.totalAmount, order_id: payload.orderId, split_id: payload.splitId },
+      metadata: {
+        amount: payload.totalAmount,
+        order_id: payload.orderId,
+        split_id: payload.splitId,
+        source: ruleId ? "crm_xp_rules" : "pos_loyalty_settings",
+      },
     });
 
     if (posted.xpAwarded > 0) {
@@ -274,6 +305,61 @@ export async function awardCrmXpForSplitPayment(
     }
 
     console.error("CRM XP split award failed:", error);
+    return {
+      status: "error",
+      xpAwarded: 0,
+      reason: error instanceof Error ? error.message : "crm_xp_error",
+    };
+  }
+}
+
+export async function awardCrmXpForTopup(
+  db: DbClient,
+  payload: {
+    customerId: string;
+    topupAmountIdr: number;
+    transactionId: string;
+  }
+): Promise<CrmXpAwardResult> {
+  if (!payload.customerId) {
+    return { status: "skipped", xpAwarded: 0, reason: "no_customer" };
+  }
+
+  try {
+    const settings = await loadPosLoyaltySettings(db);
+    const xp = calculateTopupXp(payload.topupAmountIdr, settings);
+    if (xp <= 0) {
+      return { status: "skipped", xpAwarded: 0, reason: "topup_xp_disabled_or_zero" };
+    }
+
+    const posted = await postXpEvent(db, {
+      customerId: payload.customerId,
+      sourceType: "topup",
+      sourceId: payload.transactionId,
+      xpAmount: xp,
+      referenceTable: "pos_wallet_transactions",
+      referenceId: payload.transactionId,
+      idempotencyKey: `pos:topup:${payload.transactionId}`,
+      description: `XP topup ARK untuk transaksi ${payload.transactionId}`,
+      metadata: {
+        amount: payload.topupAmountIdr,
+        source: "pos_loyalty_settings",
+        topup_xp_mode: settings.topup_xp_mode,
+      },
+    });
+
+    if (posted.xpAwarded > 0) {
+      await syncPosCustomerAfterEarn(db, payload.customerId, posted.xpAwarded, 0, { countVisit: false });
+      await syncTierAfterEarn(db, payload.customerId);
+    }
+
+    return posted;
+  } catch (error) {
+    if (isMissingCrmSchema(error)) {
+      return { status: "skipped", xpAwarded: 0, reason: "crm_schema_not_ready" };
+    }
+
+    console.error("CRM XP topup award failed:", error);
     return {
       status: "error",
       xpAwarded: 0,
@@ -525,7 +611,13 @@ async function getTierMultiplierForRule(db: DbClient, ruleId: string, member: Cr
   return toNumber(member.tier?.xp_multiplier) || 1;
 }
 
-async function syncPosCustomerAfterEarn(db: DbClient, customerId: string, xpAwarded: number, amount: number) {
+async function syncPosCustomerAfterEarn(
+  db: DbClient,
+  customerId: string,
+  xpAwarded: number,
+  amount: number,
+  options?: { countVisit?: boolean }
+) {
   const { data: customer, error } = await db
     .from("pos_customers")
     .select("total_xp, current_xp, total_spent, visit_count")
@@ -534,13 +626,15 @@ async function syncPosCustomerAfterEarn(db: DbClient, customerId: string, xpAwar
 
   if (error || !customer) return;
 
+  const countVisit = options?.countVisit !== false;
+
   await db
     .from("pos_customers")
     .update({
       total_xp: toNumber((customer as PosCustomerLoyaltyRow).total_xp) + xpAwarded,
       current_xp: toNumber((customer as PosCustomerLoyaltyRow).current_xp) + xpAwarded,
       total_spent: toNumber((customer as PosCustomerLoyaltyRow).total_spent) + amount,
-      visit_count: toNumber((customer as PosCustomerLoyaltyRow).visit_count) + 1,
+      visit_count: toNumber((customer as PosCustomerLoyaltyRow).visit_count) + (countVisit ? 1 : 0),
       last_visit: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })

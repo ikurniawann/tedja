@@ -42,6 +42,7 @@ const TABLE_DOMAIN = {
   users: "configuration",
   user_approval_permissions: "configuration",
   user_warehouses: "configuration",
+  payment_gateways: "configuration",
   admin_user_audit_logs: "configuration",
   activity_logs: "configuration",
 

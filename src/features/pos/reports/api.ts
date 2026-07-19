@@ -1,4 +1,13 @@
-import type { ProfitReport, ProfitReportParams, ClosingReport, ClosingReportParams } from "./types";
+import type {
+  ProfitReport,
+  ProfitReportParams,
+  ClosingReport,
+  ClosingReportParams,
+  TransactionReport,
+  TransactionReportParams,
+  ProductSalesReport,
+  ProductSalesReportParams,
+} from "./types";
 
 export type * from "./types";
 
@@ -24,4 +33,40 @@ export async function getClosingReport(params: ClosingReportParams): Promise<Clo
     throw new Error(payload.error || "Failed to load cashier closing report");
   }
   return payload.data as ClosingReport;
+}
+
+export async function getTransactionReport(
+  params: TransactionReportParams
+): Promise<TransactionReport> {
+  const sp = new URLSearchParams({
+    date_from: params.date_from,
+    date_to: params.date_to,
+  });
+  if (params.warehouse_id) sp.set("warehouse_id", params.warehouse_id);
+  const response = await fetch(`/api/pos/reports/transactions?${sp.toString()}`, {
+    cache: "no-store",
+  });
+  const payload = await response.json();
+  if (!response.ok || !payload.success || !payload.data) {
+    throw new Error(payload.error || "Gagal memuat laporan transaksi");
+  }
+  return payload.data as TransactionReport;
+}
+
+export async function getProductSalesReport(
+  params: ProductSalesReportParams
+): Promise<ProductSalesReport> {
+  const sp = new URLSearchParams({
+    date_from: params.date_from,
+    date_to: params.date_to,
+  });
+  if (params.warehouse_id) sp.set("warehouse_id", params.warehouse_id);
+  const response = await fetch(`/api/pos/reports/product-sales?${sp.toString()}`, {
+    cache: "no-store",
+  });
+  const payload = await response.json();
+  if (!response.ok || !payload.success || !payload.data) {
+    throw new Error(payload.error || "Gagal memuat laporan penjualan produk");
+  }
+  return payload.data as ProductSalesReport;
 }
