@@ -215,3 +215,32 @@ Hasil diskusi desain — SEMUA sudah diputuskan owner:
     sudah set — verifikasi jalur update/edit); (d) produk privilege
     ber-syarat `min_xp`/tier di kasir (pengganti redeem, butuh skema kolom
     syarat di produk + filter kasir).
+- 2026-07-19 — **Fase C SELESAI.** Migrasi `20260719210000_crm_revamp_fase_c.sql`
+  (applied+tracked):
+  - **RPC `process_ark_topup` v2**: tolak member non-kartu
+    (`CARD_MEMBER_ONLY` → route 403 "tautkan kartu NFC dulu"), parameter
+    `p_bonus_percent`, bonus dicatat baris wallet `topup_bonus` TERPISAH
+    (non-refundable, tak menambah total_spent). GOTCHA penting: signature
+    lama WAJIB di-DROP — parameter baru = overload, pemanggil 6-arg akan
+    tetap kena fungsi lama tanpa cek kartu (tertangkap saat verifikasi,
+    DROP dimasukkan ke migrasi). Route topup membaca
+    `crm_settings.topup_bonus_percent` via helper `getCrmTopupBonusPercent`.
+    Diverifikasi psql (tx rollback): registered ditolak; card topup 100rb
+    bonus 10% → saldo 110rb, 2 baris wallet, total_spent tetap 0.
+  - **(c) penautan NFC jalur update**: diverifikasi POST /api/pos/customers
+    meng-upgrade `member_type='card'` + `card_issued_at` di JALUR create
+    maupun update-existing; PATCH members CRM tidak menyentuh nfc (tidak
+    ada jalur lain). Tanpa perubahan kode.
+  - **(d) produk privilege `min_xp`** (keputusan desain: min_tier TIDAK
+    dibuat — tier = fungsi lifetime XP, min_xp sudah ekuivalen):
+    kolom `pos_products.min_xp` (NULL = umum); guard server
+    `checkProductPrivileges` (lib baru + 5 unit test) di TIGA titik
+    pembuatan order: POST /api/pos/orders, open-bill, table-order publik
+    (QR tanpa member otomatis tertolak) → 403 dgn pesan produk+syarat+XP
+    member; admin: kolom "Min XP" inline-edit di halaman POS Products
+    (PATCH whitelist + POST create); kasir: badge ★/🔒 "N XP" di kartu
+    produk, terkunci+toast bila member belum dipilih/XP kurang.
+    Diverifikasi curl: order produk privilege tanpa member → 403.
+  - Gate: unit test crm hijau, next build sukses, PM2 restart dev.
+  - Sisa ke Fase D: portal member (OTP WA Fonnte, profil, Free XP) — lihat
+    bagian Fase; Fase E laporan/rekonsiliasi.

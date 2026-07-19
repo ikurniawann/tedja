@@ -46,9 +46,12 @@ export async function PATCH(
     const hasStationUpdate = body.station !== undefined;
     const hasActiveUpdate = body.is_active !== undefined;
     const hasAvailableUpdate = body.is_available !== undefined;
+    // Produk privilege member (EPIC-011 Fase C): null = produk umum
+    const hasMinXpUpdate = (body as { min_xp?: unknown }).min_xp !== undefined;
+    const rawMinXp = (body as { min_xp?: unknown }).min_xp;
     const xpPoints = Math.max(0, Number(body.xp_points ?? body.xp ?? 0) || 0);
     const db = createPgClient();
-    const updatePayload: Record<string, number | string | boolean> = {
+    const updatePayload: Record<string, number | string | boolean | null> = {
       updated_at: new Date().toISOString(),
     };
 
@@ -56,8 +59,14 @@ export async function PATCH(
     if (hasStationUpdate) updatePayload.station = normalizeStation(body.station);
     if (hasActiveUpdate) updatePayload.is_active = Boolean(body.is_active);
     if (hasAvailableUpdate) updatePayload.is_available = Boolean(body.is_available);
+    if (hasMinXpUpdate) {
+      updatePayload.min_xp =
+        rawMinXp === null || rawMinXp === "" || Number(rawMinXp) <= 0
+          ? null
+          : Math.floor(Number(rawMinXp)) || null;
+    }
 
-    if (!hasXpUpdate && !hasStationUpdate && !hasActiveUpdate && !hasAvailableUpdate) {
+    if (!hasXpUpdate && !hasStationUpdate && !hasActiveUpdate && !hasAvailableUpdate && !hasMinXpUpdate) {
       return NextResponse.json({ success: false, error: 'No product fields to update' }, { status: 400 });
     }
 

@@ -147,6 +147,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Insert product
+    const rawMinXp = (body as { min_xp?: unknown }).min_xp;
     const productPayload = {
       sku,
       name,
@@ -156,7 +157,12 @@ export async function POST(request: NextRequest) {
       cost_price: cost_price || 0,
       xp_points: Math.max(0, Number(xp_points ?? xp) || 0),
       station: normalizeStation(station),
-      is_active
+      is_active,
+      // Produk privilege member (EPIC-011 Fase C): null = produk umum
+      min_xp:
+        rawMinXp === undefined || rawMinXp === null || Number(rawMinXp) <= 0
+          ? null
+          : Math.floor(Number(rawMinXp)),
     };
 
     let { data: product, error: productError } = await db
@@ -170,6 +176,7 @@ export async function POST(request: NextRequest) {
       legacyPayload.xp = productPayload.xp_points;
       delete (legacyPayload as { xp_points?: number }).xp_points;
       delete (legacyPayload as { station?: string }).station;
+      delete (legacyPayload as { min_xp?: number | null }).min_xp;
 
       const legacyRetry = await db
         .from('pos_products')
@@ -181,6 +188,7 @@ export async function POST(request: NextRequest) {
         const payloadWithoutXp: Omit<typeof productPayload, 'xp_points' | 'station'> = { ...productPayload };
         delete (payloadWithoutXp as { xp_points?: number }).xp_points;
         delete (payloadWithoutXp as { station?: string }).station;
+        delete (payloadWithoutXp as { min_xp?: number | null }).min_xp;
         const plainRetry = await db
           .from('pos_products')
           .insert(payloadWithoutXp)

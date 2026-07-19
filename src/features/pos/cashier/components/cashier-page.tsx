@@ -1218,13 +1218,41 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
           <div className="grid grid-cols-4 gap-2 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-7 xl:grid-cols-8 2xl:grid-cols-9">
             {filteredProducts.map(product => {
               const xp = product.xp ?? ((Math.abs(product.id.split('').reduce((a, c) => a + c.charCodeAt(0), 0)) % 100) + 1);
+              // Produk privilege member (EPIC-011 Fase C): terkunci bila
+              // member belum dipilih / lifetime XP belum memenuhi min_xp.
+              const minXp = Number((product as { min_xp?: number | string | null }).min_xp) || 0;
+              const customerXp = Number((selectedCustomer as { total_xp?: number | string } | null)?.total_xp) || 0;
+              const isLocked = minXp > 0 && (!selectedCustomer || customerXp < minXp);
               return (
                 <button
                   key={product.id}
                   type="button"
-                  onClick={() => openCustomization(product)}
-                  className="group flex flex-col overflow-hidden rounded-lg border border-gray-200/70 bg-white text-left transition-all hover:border-primary/50 hover:shadow-sm"
+                  onClick={() => {
+                    if (isLocked) {
+                      toast.error(
+                        selectedCustomer
+                          ? `Produk khusus member ≥ ${minXp} XP (XP member: ${customerXp})`
+                          : `Produk khusus member ≥ ${minXp} XP — pilih member dulu`
+                      );
+                      return;
+                    }
+                    openCustomization(product);
+                  }}
+                  className={`group relative flex flex-col overflow-hidden rounded-lg border text-left transition-all ${
+                    isLocked
+                      ? 'border-gray-200/70 bg-white opacity-60'
+                      : 'border-gray-200/70 bg-white hover:border-primary/50 hover:shadow-sm'
+                  }`}
                 >
+                  {minXp > 0 && (
+                    <span
+                      className={`absolute right-1 top-1 z-10 rounded-full px-1.5 py-0.5 text-[9px] font-bold ${
+                        isLocked ? 'bg-gray-800/80 text-white' : 'bg-purple-600 text-white'
+                      }`}
+                    >
+                      {isLocked ? '🔒 ' : '★ '}{minXp} XP
+                    </span>
+                  )}
                   <div className="aspect-[5/4] w-full overflow-hidden bg-gray-100">
                     <PosProductThumbnail src={product.image_url} alt={product.name} />
                   </div>

@@ -139,6 +139,27 @@ export async function getCrmDefaultVenue(db: CrmSettingsClient): Promise<{
   }
 }
 
+/**
+ * Persen bonus topup dari crm_settings (`topup_bonus_percent`) — EPIC-011
+ * Fase C. Gagal baca/absen → 0 (tanpa bonus), tidak pernah melempar.
+ */
+export async function getCrmTopupBonusPercent(
+  db: CrmSettingsClient
+): Promise<number> {
+  try {
+    const { data, error } = await db
+      .from("crm_settings")
+      .select("value")
+      .eq("key", "topup_bonus_percent")
+      .maybeSingle();
+    if (error || !data) return 0;
+    const value = toNumber(data.value);
+    return Number.isFinite(value) && value >= 0 && value <= 100 ? value : 0;
+  } catch {
+    return 0;
+  }
+}
+
 export function apiErrorResponse(error: unknown, fallback = "Internal server error") {
   // Detail error (pesan Postgres dsb.) hanya di log server — jangan bocorkan
   // struktur internal ke client (temuan audit EPIC-011 Fase A).

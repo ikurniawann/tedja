@@ -36,6 +36,8 @@ export type PosCatalogProduct = {
   hasModifiers: boolean;
   variants: PosProductVariant[];
   modifierGroups: PosProductModifierGroup[];
+  /** Syarat privilege member: minimal lifetime XP; null = produk umum */
+  minXp: number | null;
 };
 
 export type ApiPosProduct = {
@@ -49,6 +51,7 @@ export type ApiPosProduct = {
   hpp_estimasi?: number | string | null;
   station?: string | null;
   is_active?: boolean | null;
+  min_xp?: number | string | null;
   variants?: Array<{
     id?: string;
     name?: string | null;
@@ -74,4 +77,6 @@ export type ApiPosProduct = {
 export interface PatchPosProductPayload {
   is_active?: boolean;
   station?: string;
+  /** null = hapus syarat (produk umum) */
+  min_xp?: number | null;
 }

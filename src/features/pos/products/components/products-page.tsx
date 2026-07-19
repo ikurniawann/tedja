@@ -288,6 +288,22 @@ export function ProductsPage() {
     }
   };
 
+  // Produk privilege member (EPIC-011 Fase C): syarat min XP; kosong = umum
+  const updateProductMinXp = async (id: string, raw: string) => {
+    if (savingProductId) return;
+    const minXp = raw.trim() === '' ? null : Math.max(0, Math.floor(Number(raw)) || 0) || null;
+
+    setSavingProductId(id);
+    try {
+      await patchProductMutation.mutateAsync({ id, payload: { min_xp: minXp } });
+      toast.success(minXp ? `Syarat member ≥ ${minXp} XP tersimpan` : 'Produk jadi umum (tanpa syarat XP)');
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'Gagal menyimpan syarat XP'));
+    } finally {
+      setSavingProductId(null);
+    }
+  };
+
   const handleResetFilters = () => {
     setSearchQuery('');
     setSearchTerm('');
@@ -371,6 +387,7 @@ export function ProductsPage() {
                   <th className="px-4 py-3 text-right font-semibold">Est. COGS</th>
                   <th className="px-4 py-3 text-right font-semibold">Margin</th>
                   <th className="px-4 py-3 text-left font-semibold">Station</th>
+                  <th className="px-4 py-3 text-right font-semibold">Min XP</th>
                   <th className="px-4 py-3 text-center font-semibold">Variants</th>
                   <th className="px-4 py-3 text-center font-semibold">Modifiers</th>
                   <th className="px-4 py-3 text-center font-semibold">Active</th>
@@ -415,6 +432,22 @@ export function ProductsPage() {
                           </option>
                         ))}
                       </select>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <input
+                        type="number"
+                        min={0}
+                        defaultValue={product.minXp ?? ''}
+                        placeholder="—"
+                        title="Syarat privilege member: minimal lifetime XP. Kosongkan utk produk umum."
+                        onBlur={(event) => {
+                          const raw = event.target.value;
+                          const current = product.minXp === null ? '' : String(product.minXp);
+                          if (raw.trim() !== current) updateProductMinXp(product.id, raw);
+                        }}
+                        disabled={savingProductId === product.id}
+                        className="h-9 w-20 rounded-lg border border-gray-200/80 bg-white px-2 text-right text-xs font-medium text-gray-700 outline-none transition focus:border-pink-300 focus:ring-1 focus:ring-pink-100 disabled:opacity-50"
+                      />
                     </td>
                     <td className="px-4 py-3 text-center">
                       <Button

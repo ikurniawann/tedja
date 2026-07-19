@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createPgClient } from "@/lib/pg/create-client";
 import { getPosSession } from '@/lib/api/auth';
-import { getCrmDefaultVenue } from '@/lib/crm/server';
+import { getCrmDefaultVenue, getCrmTopupBonusPercent } from '@/lib/crm/server';
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : 'Unknown error';
@@ -76,9 +76,13 @@ export async function POST(request: NextRequest) {
     // Balance is stored as Rupiah-equivalent; UI displays ARK with 1 ARK = Rp 1,000.
     const amountValue = Number(amount) || 0;
 
-    // Topup atomik via RPC: lock saldo, insert wallet log, TANPA menambah
-    // total_spent (top spender = nilai belanja) — EPIC-011 Fase A.
-    const { companyId, branchId } = await getCrmDefaultVenue(db);
+    // Topup atomik via RPC: lock saldo, cek member KARTU, bonus % dari
+    // konfigurasi (baris wallet topup_bonus terpisah), TANPA menambah
+    // total_spent — EPIC-011 Fase A+C.
+    const [{ companyId, branchId }, bonusPercent] = await Promise.all([
+      getCrmDefaultVenue(db),
+      getCrmTopupBonusPercent(db),
+    ]);
     const { data: topupResult, error: topupError } = await db.rpc('process_ark_topup', {
       p_customer_id: customer_id,
       p_amount: amountValue,
@@ -86,10 +90,22 @@ export async function POST(request: NextRequest) {
       p_xendit_transaction_id: xendit_transaction_id || null,
       p_company_id: companyId,
       p_branch_id: branchId,
+      p_bonus_percent: bonusPercent,
     });
 
     if (topupError) {
       const notFound = topupError.message?.includes('not found');
+      const cardOnly = topupError.message?.includes('CARD_MEMBER_ONLY');
+      if (cardOnly) {
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              'Topup ARK Coin hanya untuk member kartu — tautkan kartu NFC terlebih dulu',
+          },
+          { status: 403 }
+        );
+      }
       return NextResponse.json(
         { success: false, error: notFound ? 'Customer not found' : 'Gagal memproses topup' },
         { status: notFound ? 404 : 500 }
@@ -98,8 +114,11 @@ export async function POST(request: NextRequest) {
 
     const result = topupResult as {
       transaction_id: string;
+      bonus_transaction_id: string | null;
       balance_before: number;
       balance_after: number;
+      topup_amount: number;
+      bonus_amount: number;
       ark_coins: number;
     };
 
@@ -128,6 +147,8 @@ export async function POST(request: NextRequest) {
         balance_before: balanceBefore,
         balance_after: balanceAfter,
         ark_coins: arkCoins,
+        bonus_amount: Number(result.bonus_amount) || 0,
+        bonus_percent: bonusPercent,
         qr_code_url: qrCodeUrl
       }
     }, { status: 201 });

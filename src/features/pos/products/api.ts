@@ -67,6 +67,10 @@ export function mapApiPosProduct(product: ApiPosProduct): PosCatalogProduct {
     hasModifiers: modifierGroups.length > 0,
     variants,
     modifierGroups,
+    minXp:
+      product.min_xp === null || product.min_xp === undefined
+        ? null
+        : toNumber(product.min_xp) || null,
   };
 }
 

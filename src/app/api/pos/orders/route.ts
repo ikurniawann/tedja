@@ -3,6 +3,7 @@ import { createPgClient } from "@/lib/pg/create-client";
 import { getPosSession } from '@/lib/api/auth';
 import { awardCrmXpForPosOrder, syncPosCustomerOrderStats } from '@/lib/crm/loyalty-engine';
 import { getCrmDefaultVenue } from '@/lib/crm/server';
+import { checkProductPrivileges } from '@/lib/crm/product-privilege';
 import { buildCostSnapshot, loadPosProductCostMap } from '@/lib/pos/purchasing-sync';
 
 type PosOrderItemRequest = {
@@ -180,6 +181,19 @@ export async function POST(request: NextRequest) {
     const splits = Array.isArray(body.splits) ? body.splits : [];
 
     const db = createPgClient();
+
+    // Produk privilege (min_xp): tolak sebelum order dibuat — EPIC-011 Fase C
+    const privilege = await checkProductPrivileges(
+      db,
+      items.map((item) => String(item.product_id || '')),
+      customer_id
+    );
+    if (!privilege.allowed) {
+      return NextResponse.json(
+        { success: false, error: privilege.message },
+        { status: 403 }
+      );
+    }
 
     // Split bill mode
     if (splits && splits.length > 0) {
