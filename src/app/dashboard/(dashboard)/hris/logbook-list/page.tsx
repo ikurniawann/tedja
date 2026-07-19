@@ -1,5 +1,9 @@
-import { LogbookListPage } from "@/features/hris/logbook-list";
+import { redirect } from "next/navigation";
 
+/**
+ * Halaman Logbook List lama sudah dilebur ke tab Riwayat di
+ * /dashboard/hris/logbook (EPIC-009). Redirect permanen.
+ */
 export default function Page() {
-  return <LogbookListPage />;
+  redirect("/dashboard/hris/logbook");
 }
