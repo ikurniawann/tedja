@@ -1,9 +1,10 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
-import { listRewards } from "./api";
-import { rewardsQueryKeys } from "./query-keys";
-import type { RewardsListParams } from "./types";
+import { listRedemptions, listRewards, searchClaimMembers } from "./api";
+import { redemptionsQueryKeys, rewardsQueryKeys } from "./query-keys";
+import type { RedemptionsListParams, RewardsListParams } from "./types";
 
 export const useRewardsList = (params: RewardsListParams) =>
   useQuery({
@@ -11,3 +12,27 @@ export const useRewardsList = (params: RewardsListParams) =>
     queryFn: () => listRewards(params),
     placeholderData: keepPreviousData,
   });
+
+export const useRedemptionsList = (params: RedemptionsListParams) =>
+  useQuery({
+    queryKey: redemptionsQueryKeys.list(params),
+    queryFn: () => listRedemptions(params),
+    placeholderData: keepPreviousData,
+  });
+
+/** Pencarian member untuk panel klaim kasir. `term` kosong = query nonaktif. */
+export const useClaimMembers = (term: string) => {
+  const [debounced, setDebounced] = useState(term);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(term), 300);
+    return () => clearTimeout(timer);
+  }, [term]);
+
+  return useQuery({
+    queryKey: ["crm", "rewards", "claim-members", debounced] as const,
+    queryFn: () => searchClaimMembers(debounced),
+    enabled: debounced.trim().length >= 2,
+    placeholderData: keepPreviousData,
+  });
+};

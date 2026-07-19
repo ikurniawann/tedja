@@ -28,6 +28,57 @@ export async function requireCrmConfigRole(): Promise<NextResponse | null> {
   return null;
 }
 
+// Klaim/approve redeem reward adalah operasi harian di venue, bukan konfigurasi —
+// kasir & supervisor boleh, selain itu ditolak (EPIC-011 Fase F).
+export const CRM_OPERATOR_ROLES: UserRole[] = [
+  "super_admin",
+  "admin",
+  "pos",
+  "pos_supervisor",
+];
+
+// Data redemption memuat PII member (nama, telepon, XP). Hanya peran dengan
+// kebutuhan bisnis yang boleh membacanya — direksi ikut karena laporan CRM.
+export const CRM_READ_ROLES: UserRole[] = [...CRM_OPERATOR_ROLES, "direksi"];
+
+async function requireCrmRoles(allowed: UserRole[]): Promise<
+  { error: NextResponse; user: null } | { error: null; user: { id: string; role: UserRole } }
+> {
+  const user = await getApiUser();
+  if (!user) {
+    return {
+      error: NextResponse.json(
+        { success: false, error: "Authentication required" },
+        { status: 401 }
+      ),
+      user: null,
+    };
+  }
+  if (!allowed.includes(user.role)) {
+    return {
+      error: NextResponse.json(
+        { success: false, error: "Insufficient permissions" },
+        { status: 403 }
+      ),
+      user: null,
+    };
+  }
+  return { error: null, user: { id: user.id, role: user.role } };
+}
+
+/**
+ * Guard role untuk operasi redeem reward (klaim/approve). Mengembalikan
+ * NextResponse (401/403) bila tidak berwenang, atau user yang lolos.
+ */
+export function requireCrmOperator() {
+  return requireCrmRoles(CRM_OPERATOR_ROLES);
+}
+
+/** Guard role untuk membaca data redemption yang memuat PII member. */
+export function requireCrmReader() {
+  return requireCrmRoles(CRM_READ_ROLES);
+}
+
 export const CRM_DEFAULT_TIERS = [
   {
     code: "regular",

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { MemberLoginCard } from "./member-login-card";
 import { MemberProfileCard } from "./member-profile-card";
+import { MemberRewardsCard } from "./member-rewards-card";
 
 /** Bentuk respons GET /api/member-portal/me */
 export interface MemberMe {
@@ -71,7 +72,7 @@ export function MemberPortalPage() {
     wallet: WalletRow[];
     orders: OrderRow[];
   } | null>(null);
-  const [tab, setTab] = useState<"beranda" | "profil" | "riwayat">("beranda");
+  const [tab, setTab] = useState<"beranda" | "rewards" | "profil" | "riwayat">("beranda");
 
   const loadMe = useCallback(async () => {
     try {
@@ -192,10 +193,11 @@ export function MemberPortalPage() {
       )}
 
       {/* Tab bar */}
-      <nav className="grid grid-cols-3 gap-1 rounded-xl bg-gray-100 p-1 text-sm font-medium">
+      <nav className="grid grid-cols-4 gap-1 rounded-xl bg-gray-100 p-1 text-sm font-medium">
         {(
           [
             ["beranda", "Beranda"],
+            ["rewards", "Reward"],
             ["profil", "Profil"],
             ["riwayat", "Riwayat"],
           ] as const
@@ -237,6 +239,8 @@ export function MemberPortalPage() {
           </CardContent>
         </Card>
       )}
+
+      {tab === "rewards" && <MemberRewardsCard onRedeemed={loadMe} />}
 
       {tab === "profil" && (
         <MemberProfileCard me={me} onSaved={loadMe} />

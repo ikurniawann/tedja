@@ -29,6 +29,13 @@ Hasil diskusi desain — SEMUA sudah diputuskan owner:
 4. **"Redeem" berubah jadi privilege**: produk khusus bersyarat `min_xp`
    (dan/atau min tier). Member yang memenuhi boleh membeli (bayar normal), XP
    tidak dipotong. Alur `crm_rewards` + `crm_redemptions` lama PENSIUN.
+   **REVISI Fase F (19 Jul 2026, keputusan owner):** alur reward DIHIDUPKAN
+   kembali dengan semantik yang benar — `crm_rewards.xp_cost` menjadi
+   `min_xp` (syarat kelayakan, TIDAK dipotong), admin mengelola reward mana
+   yang bisa di-redeem dan berapa kali jatah tiap member
+   (`max_redemptions_per_member` × `quota_period`). Privilege produk ber-`min_xp`
+   di kasir (Fase C) tetap berjalan berdampingan — keduanya memakai prinsip
+   sama: XP/tier = compliance, bukan mata uang.
 5. **4 tier default: Regular, Bronze, Silver, Gold** — nama & ambang XP
    (`min_lifetime_xp`) konfigurable Super Admin (tabel `crm_membership_tiers`
    existing sudah mendukung). Regular mulai dari 0 XP (tier awal semua member).
@@ -101,6 +108,13 @@ Hasil diskusi desain — SEMUA sudah diputuskan owner:
 - Top spender (basis order), frequent visitor, laporan rekonsiliasi
   antar-venue (topup di A dibelanjakan di B), dashboard CRM menyesuaikan
   skema baru.
+
+### Fase F — Reward redeem berbasis syarat XP
+- `min_xp` sebagai ambang kelayakan (XP tidak dipotong), kuota per member
+  (`max_redemptions_per_member` × `quota_period`: total/harian/bulanan/tahunan),
+  stok global, dan toggle aktif — semuanya dikelola admin di `/dashboard/crm/rewards`.
+- Dua kanal redeem: member mengajukan dari portal (status `pending`, perlu
+  approve) dan kasir/admin mengklaim langsung di venue (langsung `fulfilled`).
 
 ## Acceptance Criteria
 
@@ -365,3 +379,120 @@ Hasil diskusi desain — SEMUA sudah diputuskan owner:
   Gate: 513 unit test hijau, `next build` sukses, migrasi applied, PM2
   restart; smoke: POST tier benefits `["smoke-test"]` tersimpan sebagai
   JSON array lalu direstorasi `[]`.
+- 2026-07-19 — **Fase F SELESAI: Reward redeem berbasis syarat XP (revisi
+  keputusan #4).** Owner meminta reward bisa di-redeem member dengan XP
+  sebagai syarat compliance, bukan biaya — konsisten dengan keputusan #2
+  (XP tidak pernah berkurang). Migrasi
+  `20260720020000_crm_revamp_fase_f_rewards.sql` (sudah diterapkan ke dev):
+  `crm_rewards.xp_cost` → `min_xp` (+ constraint baru), kolom `quota_period`
+  (total|daily|monthly|yearly), `crm_redemptions.xp_cost` →
+  `min_xp_at_redeem` (snapshot audit), kolom `channel` (portal|admin),
+  `total_xp_at_redeem`, `requested_by_user_id`, `processed_by_user_id`,
+  `member_id` jadi nullable + `customer_id` NOT NULL (sumber kebenaran
+  member sejak Fase B adalah `pos_customers`), indeks kuota
+  `(customer_id, reward_id, requested_at DESC)`.
+  - Mesin aturan: `src/lib/crm/rewards.ts` (fungsi murni
+    `evaluateRewardEligibility` + `quotaWindowStart`) dengan 14 unit test di
+    `rewards.test.ts` — menutup ambang XP inklusif, kuota per periode, stok,
+    tier, status nonaktif, dan rentang tanggal.
+  - Sisi server: `src/lib/crm/rewards-server.ts` — `createRedemption` memakai
+    transaksi + `SELECT ... FOR UPDATE OF r` pada baris reward lalu
+    mengevaluasi ulang kelayakan di dalam transaksi, sehingga dua permintaan
+    konkuren tidak bisa menembus stok/kuota (acceptance criteria "atomik +
+    lock"). Stok ditahan sejak status `pending` dan dikembalikan saat
+    `cancel`. `evaluateCatalogForMember` menghitung kuota seluruh katalog
+    dalam 1 query (hindari N+1).
+  - API: `POST/PATCH /api/crm/redemptions` dihidupkan kembali (dulu 410 Gone)
+    dengan guard `requireCrmOperator` (super_admin/admin/pos/pos_supervisor —
+    klaim reward operasi harian, bukan konfigurasi); GET menerima filter
+    `status`/`customer_id`/`member_id` dan tetap mengembalikan objek `reward`
+    bersarang agar detail member lama tidak rusak. Baru:
+    `GET/POST /api/member-portal/rewards` (katalog + kelayakan + riwayat, dan
+    pengajuan redeem oleh member).
+  - UI: `/dashboard/crm/rewards` dirombak — 2 tab (Katalog Reward &
+    Permintaan Redeem dengan badge jumlah pending), form dikelompokkan jadi
+    "Syarat kelayakan" (Min XP + tier) dan "Batas pengambilan" (stok, maks per
+    member, periode kuota), banner penjelas "XP tidak dipotong saat redeem",
+    dan aksi Setujui/Serahkan/Batalkan. Portal member dapat tab "Reward"
+    (`member-rewards-card.tsx`): tiap reward menampilkan syarat XP, sisa
+    jatah, alasan bila belum layak (mis. "kurang 800 XP"), plus daftar
+    "Reward Saya" berstatus.
+  - Detail member: kolom redemption yang dulu tampil `-XP` (menyiratkan
+    potongan) diganti "syarat N XP"; tipe `CrmRedemption.xp_cost` →
+    `min_xp_at_redeem`, `CrmReward.xp_cost` → `min_xp`.
+  - Gate: 527 unit test hijau (72 file), `next build` sukses, tsc tanpa error
+    baru (sisa 1 pre-existing di `server.ts` yang hanya bergeser barisnya),
+    migrasi applied, PM2 restart (PID baru melayani :3459).
+  - Verifikasi DB: query `getMemberContext` benar (member uji 12.000 XP →
+    tier rank 2), insert redemption portal sukses
+    (`RDM-20260719-1AAA776F`), hitung kuota bulanan = 1 sehingga jatah
+    berikutnya tertutup, dan **`total_xp` tetap 12.000 setelah redeem** —
+    tidak ada trigger pemotong XP di `crm_redemptions`/`crm_rewards`.
+  - Data dev disiapkan untuk UAT: 3 reward contoh — `voucher-kopi` (min 0 XP,
+    1x/bulan, stok 100), `merch-tumbler` (min 10.000 XP, 1x total, stok 20),
+    `diskon-ultah` (min 30.000 XP + tier Gold, 1x/tahun) — plus member uji
+    "Budi Uji Reward" (628111222333, 12.000 XP) dengan 1 permintaan pending
+    agar tab approval bisa dicoba.
+  - UAT owner: (1) `/dashboard/crm/rewards` → tab Katalog, ubah kuota/periode
+    sebuah reward, pastikan tersimpan; (2) tab Permintaan Redeem → Setujui
+    lalu Serahkan permintaan Budi, cek status berubah; (3) login portal
+    `member.within.ventures` sebagai member ber-XP → tab Reward, pastikan
+    reward di atas ambang XP terkunci dengan alasan jelas dan yang layak bisa
+    ditukar; (4) redeem 2x reward berkuota 1x/bulan → percobaan kedua ditolak;
+    (5) pastikan XP member TIDAK berubah setelah redeem.
+- 2026-07-19 — **Fase F: gate review & security dijalankan, semua temuan
+  HIGH/MEDIUM ditutup.** Dua reviewer paralel (security + typescript) menelaah
+  diff Fase F. Perbaikan yang diterapkan:
+  - **HIGH (security) — `GET /api/crm/redemptions` bocor PII.** Endpoint hanya
+    cek `getPosSession()` sementara respons barunya memuat nama/telepon/XP
+    customer, sehingga peran mana pun yang login (mis. `warehouse_staff`)
+    bisa memanen kontak seluruh member. Ditambah guard `requireCrmReader`
+    (`CRM_READ_ROLES` = operator + `direksi` untuk kebutuhan laporan);
+    `requireCrmOperator`/`requireCrmReader` kini berbagi helper
+    `requireCrmRoles`. Diverifikasi: tanpa auth → 401.
+  - **HIGH (security) — tidak ada rate limit di redeem portal.** Tiap POST
+    memakai 1 koneksi dari pool global (`max: 10`) yang dipakai seluruh
+    aplikasi, jadi flood bisa membuat POS/HRIS ikut kehabisan koneksi.
+    Ditambah `checkRedeemRateLimit` (10 percobaan/menit per member, jendela
+    bergulir in-memory, pola selaras rate limit OTP Fase D) → HTTP 429 +
+    header `Retry-After`. Diverifikasi live: 12 permintaan beruntun →
+    `409 ×10` lalu `429 ×2`.
+  - **HIGH (review) — `quotaWindowStart` bergantung TZ host.** Semula memakai
+    getter `Date` lokal, padahal konvensi repo (`hris/shifts.ts`,
+    `kpi/*`) memakai aritmetika UTC + `WIB_OFFSET_HOURS`. Bila di-deploy ke
+    container ber-TZ UTC, batas kuota harian/bulanan meleset 7 jam. Ditulis
+    ulang memakai `Date.UTC` + offset WIB eksplisit; tes diubah memakai instan
+    absolut `+07:00` dan **lulus di `TZ=UTC` maupun `TZ=Asia/Jakarta`**
+    (sebelumnya hanya lulus di WIB), plus kasus dini hari & pergantian bulan.
+  - **HIGH (review) — riwayat redemption bisa hilang di detail member.**
+    `members/api.ts` memfilter `?member_id=` padahal Fase F membuat kolom itu
+    nullable (member portal tanpa profil CRM → `member_id` NULL), dan
+    redemption hanya diambil bila member punya profil CRM. Diubah ke
+    `?customer_id=` dan selalu diambil; inventory avatar tetap `member_id`
+    (tabel terpisah).
+  - **MEDIUM (security) — reward tipe `avatar` bisa diselundupkan.**
+    `getRewardById` tidak memfilter tipe, sehingga id avatar yang dikirim
+    langsung bisa masuk alur redemption. Ditambah blocker `not_redeemable` di
+    `evaluateRewardEligibility`. Diverifikasi live: avatar tidak muncul di
+    katalog portal dan POST dengan id avatar → "Reward ini tidak bisa
+    ditukar".
+  - **MEDIUM (review) — kanal klaim kasir tidak punya UI.** Keputusan owner
+    "keduanya" baru terpenuhi di backend. Ditambah panel **Klaim Reward di
+    Venue** pada tab Permintaan Redeem (cari member ber-debounce 300ms via
+    `/api/crm/members`, pilih reward aktif, klaim → langsung `fulfilled`),
+    hook `useClaimRedemption`/`useClaimMembers`. Pesan usang "redeem sudah
+    dipensiunkan" di detail member diganti + tautan ke halaman Rewards.
+  - **LOW — hardening.** Kolom timestamp pada `updateRedemptionStatus` tidak
+    lagi dirangkai dari input: dipetakan lewat whitelist `TRANSITIONS`
+    (`as const satisfies`) dengan penolakan aksi tak dikenal di dalam fungsi;
+    param `limit` pada GET redemptions divalidasi `Number.isFinite` + batas
+    bawah 1.
+  - Tidak diubah (diterima sebagai risiko rendah): kemungkinan double-click
+    tombol Tukar — sudah dijaga transaksi ber-lock sehingga hanya memunculkan
+    error 409 duplikat, bukan double-redeem; serta pola `rows as X` pada
+    akses pg yang konsisten dengan seluruh repo.
+  - Gate ulang: **534 unit test hijau** (72 file, +7 test baru untuk avatar,
+    rate limit, dan batas WIB), `next build` sukses, tsc tanpa error baru,
+    PM2 restart, smoke `/member` `/login` 200 & kedua API 401 tanpa auth.
+  - Data uji dibersihkan (member/reward/sesi avatar dihapus); tersisa 3 reward
+    contoh + member "Budi Uji Reward" dengan 2 redemption pending untuk UAT.

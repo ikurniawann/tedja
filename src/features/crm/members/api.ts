@@ -55,20 +55,30 @@ export async function getMemberDetailBundle(memberId: string): Promise<MemberDet
   let redemptions: MemberDetailBundle["redemptions"] = [];
   let avatarInventory: MemberDetailBundle["avatarInventory"] = [];
 
-  if (isCrmProfile) {
-    const [redemptionsResponse, inventoryResponse] = await Promise.all([
-      fetch(`/api/crm/redemptions?member_id=${loadedMember.id}`, { cache: "no-store" }),
-      fetch(`/api/crm/avatar-inventory?member_id=${loadedMember.id}`, { cache: "no-store" }),
-    ]);
+  // Redemption dikunci ke customer_id (Fase F): member_id boleh NULL untuk
+  // member tanpa profil CRM, jadi filter member_id akan menyembunyikan baris.
+  if (loadedMember.customer_id) {
+    const redemptionsResponse = await fetch(
+      `/api/crm/redemptions?customer_id=${loadedMember.customer_id}`,
+      { cache: "no-store" }
+    );
     const redemptionsJson = await parseCrmResponse<{ data: MemberDetailBundle["redemptions"] }>(
       redemptionsResponse,
       "Gagal memuat redemption"
+    );
+    redemptions = redemptionsJson.data ?? [];
+  }
+
+  // Inventory avatar tetap berbasis profil CRM (tabel terpisah).
+  if (isCrmProfile) {
+    const inventoryResponse = await fetch(
+      `/api/crm/avatar-inventory?member_id=${loadedMember.id}`,
+      { cache: "no-store" }
     );
     const inventoryJson = await parseCrmResponse<{ data: MemberDetailBundle["avatarInventory"] }>(
       inventoryResponse,
       "Gagal memuat avatar inventory"
     );
-    redemptions = redemptionsJson.data ?? [];
     avatarInventory = inventoryJson.data ?? [];
   }
 

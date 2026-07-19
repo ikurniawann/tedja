@@ -52,7 +52,8 @@ export type CrmReward = {
   code: string;
   name: string;
   reward_type: string;
-  xp_cost: number;
+  /** Syarat minimum lifetime XP — tidak dipotong saat redeem. */
+  min_xp: number;
   stock_total: number | null;
   stock_redeemed: number;
   max_redemptions_per_member: number | null;
@@ -111,7 +112,8 @@ export type CrmRedemption = {
   id: string;
   redemption_number: string;
   reward_id: string;
-  xp_cost: number;
+  /** Syarat XP saat redeem diajukan — bukan biaya; XP tidak dipotong. */
+  min_xp_at_redeem: number;
   status: string;
   voucher_code: string | null;
   requested_at: string;
@@ -121,7 +123,7 @@ export type CrmRedemption = {
     code: string;
     name: string;
     reward_type: string;
-    xp_cost: number;
+    min_xp: number;
   } | null;
 };
 
