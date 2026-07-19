@@ -496,3 +496,28 @@ Hasil diskusi desain — SEMUA sudah diputuskan owner:
     PM2 restart, smoke `/member` `/login` 200 & kedua API 401 tanpa auth.
   - Data uji dibersihkan (member/reward/sesi avatar dihapus); tersisa 3 reward
     contoh + member "Budi Uji Reward" dengan 2 redemption pending untuk UAT.
+- 2026-07-19 — **OTP WhatsApp LIVE via gateway mandiri.** Rangkaian keputusan
+  provider: Fonnte (runbook dibuat, lalu ditemukan URL API-nya salah/404 dan
+  kode OTP bocor ke log — keduanya di-fix `793506d`) → owner pilih Meta Cloud
+  API resmi (lapisan provider + template AUTHENTICATION dibangun, `8261ee8`)
+  → verifikasi bisnis Meta dinilai terlalu lama → owner putuskan **bangun
+  gateway sendiri** (`dd9ce10`): `services/wa-gateway`, Baileys 6.7.23 pinned,
+  proses PM2 terpisah agar sesi tahan deploy, sesi persisten, kirim serial
+  berjeda acak 1,5–3,5 dtk, HTTP hanya 127.0.0.1 + token (di `.env` service,
+  gitignored). Halaman pairing **Settings → WhatsApp Gateway** (super_admin
+  only, QR dirender lokal qrcode.react, poll 4 dtk) di `acd5605` + migrasi
+  menu `20260720030000`. Nomor sender +6285880974659 (keputusan owner,
+  `f87c115`) di-pairing owner 19 Jul ± 19:11 WIB.
+  - **Verifikasi live:** `/health` connected sebagai 6285880974659; kirim tes
+    via gateway sukses (messageId `3EB0CA7EA2A3C0528B4344`); alur penuh
+    aplikasi → provider → gateway → WhatsApp menghasilkan `wa_delivered: true`
+    pada `POST /api/member-portal/otp`. Member sementara utk uji (nomor
+    sender) sudah dihapus; `pm2 save` dijalankan agar gateway hidup lagi
+    setelah reboot.
+  - Provider aktif: `WHATSAPP_PROVIDER=gateway`. Meta & Fonnte tetap tersedia
+    lewat env yang sama. Catatan risiko & batas Fase 1 (tanpa monitoring
+    otomatis, tanpa inbox masuk, tanpa fallback otomatis) di
+    `docs/crm/RUNBOOK-WA-GATEWAY-MANDIRI.md`.
+  - Portal member kini bisa di-UAT penuh dengan nomor WhatsApp asli — ganti
+    nomor member uji ke nomor asli (SQL di runbook) lalu jalankan skenario
+    UAT Fase F.
