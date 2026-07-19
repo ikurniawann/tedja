@@ -1,6 +1,7 @@
 "use client";
 
 import { Crown, Sparkles, Wifi } from "lucide-react";
+import { useCountUp } from "../use-count-up";
 import type { MemberMe } from "./member-portal-page";
 
 /**
@@ -23,6 +24,11 @@ function maskedPhone(phone: string | null): string {
 }
 
 export function MemberWalletCard({ me }: { me: MemberMe }) {
+  // Saldo & XP menghitung naik saat kartu dibuka — satu momen yang menegaskan
+  // "ini uangmu", bukan animasi hiasan.
+  const saldoBerjalan = useCountUp(me.ark_coin_balance, 1100);
+  const xpBerjalan = useCountUp(me.total_xp, 900);
+
   const xpProgress = me.next_tier
     ? Math.min(100, Math.round((me.total_xp / me.next_tier.min_lifetime_xp) * 100))
     : 100;
@@ -42,7 +48,7 @@ export function MemberWalletCard({ me }: { me: MemberMe }) {
             <div className="mt-1.5 flex items-baseline gap-1.5">
               <span className="text-sm font-medium text-white/70">Rp</span>
               <span className="mp-figure text-[34px] font-bold leading-none">
-                {rupiah(me.ark_coin_balance)}
+                {rupiah(saldoBerjalan)}
               </span>
             </div>
           </div>
@@ -80,7 +86,7 @@ export function MemberWalletCard({ me }: { me: MemberMe }) {
           <div className="flex items-center justify-between text-xs">
             <span className="inline-flex items-center gap-1.5 text-white/85">
               <Sparkles className="size-3.5" style={{ color: "var(--mp-gold)" }} />
-              <span className="mp-figure font-semibold text-white">{angka(me.total_xp)}</span> XP
+              <span className="mp-figure font-semibold text-white">{angka(xpBerjalan)}</span> XP
             </span>
             {me.tier && me.tier.discount_percent > 0 && (
               <span className="text-white/85">Diskon {me.tier.discount_percent}%</span>
@@ -91,9 +97,9 @@ export function MemberWalletCard({ me }: { me: MemberMe }) {
             <>
               <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/20">
                 <div
-                  className="h-full rounded-full transition-[width] duration-700 ease-out"
+                  className="h-full rounded-full transition-[width] duration-1000 ease-out"
                   style={{
-                    width: `${xpProgress}%`,
+                    width: `${me.next_tier ? Math.min(100, Math.round((xpBerjalan / me.next_tier.min_lifetime_xp) * 100)) : xpProgress}%`,
                     background: "linear-gradient(90deg, var(--mp-gold), #fff3d1)",
                   }}
                 />

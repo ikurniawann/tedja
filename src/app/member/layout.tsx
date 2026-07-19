@@ -19,7 +19,12 @@ export default function MemberPortalLayout({
 }) {
   return (
     <div className="member-portal member-portal-bg min-h-screen">
-      <div className="mx-auto flex min-h-screen w-full max-w-md flex-col px-4 pb-8 pt-5">
+      {/*
+        max-w-lg (512px) supaya HP lebar (Pro Max / Ultra ~430-480px) tetap
+        terisi penuh; batas ini hanya bekerja di layar besar agar portal tidak
+        melebar tak wajar di desktop. Padding dikecilkan di layar sempit.
+      */}
+      <div className="mx-auto flex min-h-screen w-full max-w-lg flex-col px-3 pb-8 pt-5 sm:px-4">
         {children}
       </div>
     </div>

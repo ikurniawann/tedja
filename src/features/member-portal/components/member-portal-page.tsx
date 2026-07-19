@@ -5,14 +5,18 @@ import { useCallback, useEffect, useState } from "react";
 import {
   ArrowDownLeft,
   ArrowUpRight,
+  CreditCard,
   Gift,
   History,
   Home,
+  Info,
   LogOut,
   Loader2,
+  Plus,
   ShoppingBag,
   Sparkles,
   UserRound,
+  X,
 } from "lucide-react";
 import { MemberLoginCard } from "./member-login-card";
 import { MemberProfileCard } from "./member-profile-card";
@@ -92,6 +96,7 @@ export function MemberPortalPage() {
     orders: OrderRow[];
   } | null>(null);
   const [tab, setTab] = useState<TabKey>("beranda");
+  const [topupInfoOpen, setTopupInfoOpen] = useState(false);
 
   const loadMe = useCallback(async () => {
     try {
@@ -173,10 +178,17 @@ export function MemberPortalPage() {
 
       <MemberWalletCard me={me} />
 
+      <QuickActions
+        memberType={me.member_type}
+        topupInfoOpen={topupInfoOpen}
+        onToggleTopupInfo={() => setTopupInfoOpen((current) => !current)}
+        onGoRewards={() => setTab("rewards")}
+      />
+
       {!me.free_xp_granted && me.free_xp_amount > 0 && (
         <button
           onClick={() => setTab("profil")}
-          className="mp-rise mp-rise-2 flex w-full items-center gap-3 rounded-2xl border border-amber-200/80 bg-gradient-to-r from-amber-50 to-white px-4 py-3 text-left shadow-sm transition hover:shadow-md"
+          className="mp-rise mp-rise-3 flex w-full items-center gap-3 rounded-2xl border border-amber-200/80 bg-gradient-to-r from-amber-50 to-white px-4 py-3 text-left shadow-sm transition hover:shadow-md"
         >
           <span className="grid size-9 shrink-0 place-items-center rounded-full bg-amber-100">
             <Sparkles className="size-4 text-amber-600" />
@@ -189,7 +201,7 @@ export function MemberPortalPage() {
       )}
 
       {/* Tab bar segmented — pil aktif berwarna brand, bukan abu-abu datar. */}
-      <nav className="mp-rise mp-rise-2 grid grid-cols-4 gap-1 rounded-2xl bg-white/70 p-1 shadow-sm ring-1 ring-black/5 backdrop-blur">
+      <nav className="mp-rise mp-rise-3 grid grid-cols-4 gap-1 rounded-2xl bg-white/70 p-1 shadow-sm ring-1 ring-black/5 backdrop-blur">
         {TABS.map(([value, label, Icon]) => {
           const active = tab === value;
           return (
@@ -219,6 +231,109 @@ export function MemberPortalPage() {
       <p className="pt-2 text-center text-[11px] text-[color:var(--mp-ink-soft)]">
         Sulu in Wounderland · Portal Member
       </p>
+    </div>
+  );
+}
+
+/**
+ * Aksi cepat di bawah kartu. Topup TIDAK dilayani portal (hanya kasir, dan
+ * khusus member kartu) — jadi tombolnya memandu, bukan menjanjikan fitur yang
+ * tidak ada.
+ */
+function QuickActions({
+  memberType,
+  topupInfoOpen,
+  onToggleTopupInfo,
+  onGoRewards,
+}: {
+  memberType: MemberMe["member_type"];
+  topupInfoOpen: boolean;
+  onToggleTopupInfo: () => void;
+  onGoRewards: () => void;
+}) {
+  return (
+    <div className="mp-rise mp-rise-2 space-y-2">
+      <div className="grid grid-cols-2 gap-2.5">
+        <button
+          type="button"
+          onClick={onToggleTopupInfo}
+          aria-expanded={topupInfoOpen}
+          className="flex items-center gap-2.5 rounded-2xl bg-white/85 px-3.5 py-3 text-left shadow-sm ring-1 ring-black/5 backdrop-blur transition active:scale-[0.98] hover:shadow-md"
+        >
+          <span
+            className="grid size-9 shrink-0 place-items-center rounded-xl text-white"
+            style={{ backgroundColor: "var(--brand-primary)" }}
+          >
+            <Plus className="size-4" />
+          </span>
+          <span className="min-w-0">
+            <span className="block text-sm font-semibold" style={{ color: "var(--mp-ink)" }}>
+              Topup
+            </span>
+            <span className="block text-[11px] text-[color:var(--mp-ink-soft)]">Isi ARK Coin</span>
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={onGoRewards}
+          className="flex items-center gap-2.5 rounded-2xl bg-white/85 px-3.5 py-3 text-left shadow-sm ring-1 ring-black/5 backdrop-blur transition active:scale-[0.98] hover:shadow-md"
+        >
+          <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-amber-400 text-amber-950">
+            <Gift className="size-4" />
+          </span>
+          <span className="min-w-0">
+            <span className="block text-sm font-semibold" style={{ color: "var(--mp-ink)" }}>
+              Tukar Reward
+            </span>
+            <span className="block text-[11px] text-[color:var(--mp-ink-soft)]">Pakai XP kamu</span>
+          </span>
+        </button>
+      </div>
+
+      {topupInfoOpen && (
+        <div className="rounded-2xl border border-[color:var(--mp-line)] bg-white/90 p-4 shadow-sm backdrop-blur">
+          <div className="flex items-start gap-2.5">
+            <Info className="mt-0.5 size-4 shrink-0" style={{ color: "var(--brand-primary)" }} />
+            <div className="min-w-0 flex-1 text-sm leading-relaxed text-[color:var(--mp-ink-soft)]">
+              {memberType === "card" ? (
+                <>
+                  <p className="font-semibold" style={{ color: "var(--mp-ink)" }}>
+                    Topup dilakukan di kasir
+                  </p>
+                  <p className="mt-1">
+                    Tunjukkan kartu member Anda ke kasir venue kami untuk mengisi saldo
+                    ARK Coin. Saldo langsung bertambah dan bisa dipakai saat itu juga.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="font-semibold" style={{ color: "var(--mp-ink)" }}>
+                    Tautkan kartu member dulu
+                  </p>
+                  <p className="mt-1">
+                    Topup ARK Coin hanya untuk member kartu. Minta kasir menautkan kartu
+                    member ke akun Anda — setelah itu Anda bisa topup dan mengumpulkan XP
+                    dari setiap transaksi.
+                  </p>
+                </>
+              )}
+              <p className="mt-2 inline-flex items-center gap-1.5 text-xs">
+                <CreditCard className="size-3.5" />
+                Saldo ARK Coin tidak dapat diuangkan kembali.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onToggleTopupInfo}
+              aria-label="Tutup"
+              className="grid size-6 shrink-0 place-items-center rounded-full text-[color:var(--mp-ink-soft)] transition hover:bg-black/5"
+            >
+              <X className="size-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
