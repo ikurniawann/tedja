@@ -1,6 +1,6 @@
 # EPIC-014: CRM Collectibles — Artwork, Wallpaper & Badge
 
-status: backlog
+status: on-progress
 environment: dev
 retries: 0
 
@@ -142,7 +142,8 @@ Buka jalur member sebelum menambah jenis aset baru.
   "kurang N XP lagi", aksi pasang.
 - Tanpa perubahan skema — memakai tabel yang sudah ada.
 
-**Exit:** member dapat melihat dan memasang avatar yang dimilikinya.
+**Exit:** member dapat melihat dan memasang avatar yang dimilikinya. — **SELESAI
+20 Jul 2026**
 
 ### 2. Mesin jatah tukar
 
@@ -220,6 +221,28 @@ otomatis beserta notifikasi.
   transaksi POS, wallpaper terbuka dan dapat diunduh.
 - Dark mode: halaman koleksi diperiksa di tema gelap.
 
+## Temuan Implementasi
+
+### `lifetime_xp` dan `total_xp` sudah menyimpang
+
+Introspeksi DB dev (20 Jul 2026): dari 3 profil member, **1 memiliki
+`crm.crm_member_profiles.lifetime_xp` yang berbeda dari
+`pos.pos_customers.total_xp`**. Keduanya mengaku mewakili XP member.
+
+Modul reward dan angka yang ditampilkan portal memakai `total_xp`, jadi
+EPIC-014 mengikutinya demi konsistensi tampilan. Namun **ketimpangan ini belum
+diperbaiki** dan akan menjadi bom waktu begitu jatah tukar dihitung dari XP:
+dua sumber angka berarti dua jumlah jatah yang berbeda.
+
+**Harus diputuskan sebelum Task 2:** satu kolom ditetapkan kanonik dan yang
+lain disinkronkan atau dihapus.
+
+### Katalog kosong saat fitur dibangun
+
+DB dev berisi 0 artwork dan 0 baris inventory — bukti bahwa modul Avatars
+memang tidak pernah dipakai. Tiga artwork demo berkode `demo-*` disisipkan
+untuk verifikasi dan dapat dihapus kapan saja.
+
 ## Automation Log
 
 - **20 Jul 2026** — Epic dibuat. Audit menemukan fondasi koleksi sudah ada di
@@ -237,5 +260,14 @@ otomatis beserta notifikasi.
   cukup dihitung dari `lifetime_xp`, sehingga tabel milestone, proses backfill,
   dan job rekonsiliasi semuanya tidak lagi diperlukan. Risiko baru yang dicatat:
   katalog artwork harus terus diisi agar jatah tidak menganggur.
+- **20 Jul 2026** — Task 1 selesai. `src/lib/crm/collectibles-server.ts`,
+  `GET /api/member-portal/collectibles`, `POST …/collectibles/equip`, dan tab
+  "Koleksi" di portal member. Diverifikasi ujung-ke-ujung dengan sesi member
+  asli: 401 tanpa sesi, katalog benar (dimiliki / stok habis / kurang 9.500 XP
+  menuju tier The Warden), equip 200, equip artwork bukan milik ditolak 403,
+  `avatar_id` ngawur ditolak 400, dan `is_equipped` konsisten dengan
+  `active_avatar_id` setelah transaksi.
+- **20 Jul 2026** — Temuan: `lifetime_xp` vs `total_xp` sudah menyimpang pada
+  data dev. Harus diputuskan sebelum Task 2 karena jatah tukar dihitung dari XP.
 - **20 Jul 2026** — Keputusan owner: tabel terpisah per jenis aset. Mitigasi
   duplikasi lewat modul bersama `src/lib/crm/collectibles.ts` ditetapkan wajib.

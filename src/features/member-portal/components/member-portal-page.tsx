@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { MemberLoginCard } from "./member-login-card";
 import { MemberProfileCard } from "./member-profile-card";
+import { MemberCollectionCard } from "./member-collection-card";
 import { MemberRewardsCard } from "./member-rewards-card";
 import { MemberWalletCard } from "./member-wallet-card";
 
@@ -82,6 +83,7 @@ const WALLET_LABELS: Record<string, string> = {
 const TABS = [
   ["beranda", "Beranda", Home],
   ["rewards", "Reward", Gift],
+  ["koleksi", "Koleksi", Sparkles],
   ["profil", "Profil", UserRound],
   ["riwayat", "Riwayat", History],
 ] as const;
@@ -201,7 +203,7 @@ export function MemberPortalPage() {
       )}
 
       {/* Tab bar segmented — pil aktif berwarna brand, bukan abu-abu datar. */}
-      <nav className="mp-rise mp-rise-3 grid grid-cols-4 gap-1 rounded-2xl bg-white/70 p-1 shadow-sm ring-1 ring-black/5 backdrop-blur">
+      <nav className="mp-rise mp-rise-3 grid grid-cols-5 gap-1 rounded-2xl bg-white/70 p-1 shadow-sm ring-1 ring-black/5 backdrop-blur">
         {TABS.map(([value, label, Icon]) => {
           const active = tab === value;
           return (
@@ -224,6 +226,7 @@ export function MemberPortalPage() {
       <div className="mp-rise mp-rise-3">
         {tab === "beranda" && <BerandaTab me={me} />}
         {tab === "rewards" && <MemberRewardsCard onRedeemed={loadMe} />}
+        {tab === "koleksi" && <MemberCollectionCard onEquipped={loadMe} />}
         {tab === "profil" && <MemberProfileCard me={me} onSaved={loadMe} />}
         {tab === "riwayat" && <RiwayatTab transactions={transactions} />}
       </div>
