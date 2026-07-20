@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { extractSseData, splitSseEvents } from "@/lib/assistant/sse";
 import type { ComponentType, CSSProperties, FormEvent as ReactFormEvent, MouseEvent as ReactMouseEvent } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -1724,22 +1725,93 @@ function AiAssistantWindow({
       const response = await fetch("/api/ai/assistant", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message, history, session_id: sessionId, model: settings.model, scope: settings.scope }),
+        body: JSON.stringify({ message, history, session_id: sessionId, model: settings.model, scope: settings.scope, stream: true }),
       });
-      const json = await response.json();
 
       if (!response.ok) {
-        throw new Error(json.error || "Do gagal merespons");
+        const failure = (await response.json().catch(() => ({}))) as { error?: string };
+        throw new Error(failure.error || "Do gagal merespons");
       }
 
-      if (json.session_id) {
-        setSessionId(json.session_id);
-        if (typeof window !== "undefined") localStorage.setItem("arkiv-ai-session", json.session_id);
+      const applyResult = (payload: { session_id?: string; answer?: string; meta?: AssistantMessage["meta"] }) => {
+        if (payload.session_id) {
+          setSessionId(payload.session_id);
+          if (typeof window !== "undefined") localStorage.setItem("arkiv-ai-session", payload.session_id);
+        }
+        const live = payload.meta?.status === "live";
+        setAssistantStatus(live ? "live" : "fallback");
+        setStatusNote(live ? `Live: ${activeModel.label}` : payload.meta?.fallbackReason ?? "Fallback aktif");
+      };
+
+      const isStream = response.headers.get("content-type")?.includes("text/event-stream");
+
+      if (!isStream || !response.body) {
+        // Server menjawab sekali-jadi (mis. jalur lama atau proxy menolak SSE).
+        const json = await response.json();
+        applyResult(json);
+        setMessages((prev) => [...prev, { role: "assistant", content: json.answer, meta: json.meta }]);
+        refreshSessions();
+        return;
       }
 
-      setAssistantStatus(json.meta?.status === "live" ? "live" : "fallback");
-      setStatusNote(json.meta?.status === "live" ? `Live: ${activeModel.label}` : json.meta?.fallbackReason ?? "Fallback aktif");
-      setMessages((prev) => [...prev, { role: "assistant", content: json.answer, meta: json.meta }]);
+      // Placeholder kosong yang isinya tumbuh seiring token berdatangan.
+      let streamed = "";
+      let placeholderAdded = false;
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      const pushDelta = (piece: string) => {
+        streamed += piece;
+        setMessages((prev) => {
+          const next = [...prev];
+          if (!placeholderAdded) {
+            placeholderAdded = true;
+            next.push({ role: "assistant", content: streamed });
+            return next;
+          }
+          next[next.length - 1] = { ...next[next.length - 1], content: streamed };
+          return next;
+        });
+        // Token pertama sudah tiba: sembunyikan indikator "Memproses...".
+        setLoading(false);
+      };
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const { events, rest } = splitSseEvents(buffer);
+        buffer = rest;
+
+        for (const event of events) {
+          for (const raw of extractSseData(event)) {
+            let payload: { type?: string; text?: string; answer?: string; error?: string; session_id?: string; meta?: AssistantMessage["meta"] };
+            try {
+              payload = JSON.parse(raw);
+            } catch {
+              continue;
+            }
+            if (payload.type === "delta" && payload.text) {
+              pushDelta(payload.text);
+            } else if (payload.type === "done") {
+              applyResult(payload);
+              // Teks final dari server dipakai apa adanya — hasil rakitan klien
+              // bisa berbeda bila ada event yang terlewat.
+              setMessages((prev) => {
+                const next = [...prev];
+                const finalMessage = { role: "assistant" as const, content: payload.answer ?? streamed, meta: payload.meta };
+                if (placeholderAdded) next[next.length - 1] = finalMessage;
+                else next.push(finalMessage);
+                return next;
+              });
+              placeholderAdded = true;
+            } else if (payload.type === "error") {
+              throw new Error(payload.error || "Do gagal merespons");
+            }
+          }
+        }
+      }
 
       refreshSessions();
     } catch (error) {

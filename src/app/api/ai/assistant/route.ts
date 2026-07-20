@@ -10,6 +10,7 @@ import {
   stripOpenAiPrefix,
 } from "@/lib/ai-assistant-config";
 import { SETTING_KEYS, getSettings } from "@/lib/settings/app-settings";
+import { extractSseData, readOpenAiDelta, splitSseEvents } from "@/lib/assistant/sse";
 import { appendFile, mkdir } from "fs/promises";
 import path from "path";
 
@@ -181,6 +182,7 @@ export async function POST(request: NextRequest) {
       session_id?: string;
       model?: string;
       scope?: string;
+      stream?: boolean;
     };
     prompt = body.message ?? "Summary semua module";
     let sessionId = body.session_id;
@@ -233,58 +235,23 @@ export async function POST(request: NextRequest) {
     const persistedHistory = sessionId ? await loadSessionHistory(admin as unknown as DbAdmin, sessionId) : [];
     const mergedHistory = compactChatHistory([...persistedHistory, ...history]);
 
-    const llmResult = await generateAnswer({
-      message: prompt,
-      history: mergedHistory,
-      summary,
-      fallbackAnswer,
-      userName: profile?.full_name ?? user.email ?? "User",
-      intent,
-      scope,
-      model,
-    });
+    const userName = profile?.full_name ?? user.email ?? "User";
 
-    // Persist messages
-    if (sessionId) {
-      const rows: { session_id: string; role: string; content: string; meta?: unknown }[] = [
-        { session_id: sessionId, role: "user", content: prompt },
-        {
-          session_id: sessionId,
-          role: "assistant",
-          content: llmResult.answer,
-          meta: { mode: llmResult.mode, model: llmResult.model, status: llmResult.status, intent, scope },
-        },
-      ];
-      await admin.from("ai_assistant_messages").insert(rows);
-    }
-
-    await appendAssistantMarkdown({
-      userId: user.id,
-      userEmail: user.email ?? "unknown",
-      userName: profile?.full_name ?? user.email ?? "User",
-      sessionId,
-      prompt,
-      answer: llmResult.answer,
-      model: llmResult.model,
-      scope,
-    });
-
-    await auditAiRequest(admin as unknown as DbAdmin, {
-      user_id: user.id,
-      user_email: user.email,
-      prompt,
-      intent,
-      mode: llmResult.mode,
-      model: llmResult.model,
-      latency_ms: Date.now() - startedAt,
-      error: llmResult.error,
-    });
-
-    return NextResponse.json({
-      answer: llmResult.answer,
-      summary,
-      session_id: sessionId,
-      meta: {
+    /** Simpan pesan, tulis log markdown, audit — sama untuk stream & non-stream. */
+    const finalize = async (llmResult: LlmResult) => {
+      await persistAndAudit({
+        admin: admin as unknown as DbAdmin,
+        sessionId,
+        prompt,
+        llmResult,
+        intent,
+        scope,
+        userId: user.id,
+        userEmail: user.email ?? "unknown",
+        userName,
+        startedAt,
+      });
+      return {
         mode: llmResult.mode,
         model: llmResult.model,
         intent,
@@ -292,12 +259,135 @@ export async function POST(request: NextRequest) {
         status: llmResult.status,
         fallbackReason: llmResult.fallbackReason,
         user: user.email,
-      },
+      };
+    };
+
+    if (body.stream === true) {
+      const encoder = new TextEncoder();
+      const stream = new ReadableStream({
+        async start(controller) {
+          const send = (payload: unknown) =>
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
+          try {
+            const llmResult = await generateAnswer({
+              message: prompt,
+              history: mergedHistory,
+              summary,
+              fallbackAnswer,
+              userName,
+              intent,
+              scope,
+              model,
+              onDelta: (text) => send({ type: "delta", text }),
+            });
+            // Penyimpanan dilakukan SETELAH stream selesai, memakai teks utuh
+            // yang dikumpulkan server — bukan hasil rakitan klien.
+            const meta = await finalize(llmResult);
+            send({ type: "done", answer: llmResult.answer, session_id: sessionId, meta });
+          } catch (error) {
+            console.error("AI assistant stream error:", error);
+            send({ type: "error", error: "Gagal memproses permintaan Do" });
+          } finally {
+            controller.close();
+          }
+        },
+      });
+
+      return new Response(stream, {
+        headers: {
+          "Content-Type": "text/event-stream; charset=utf-8",
+          "Cache-Control": "no-cache, no-transform",
+          Connection: "keep-alive",
+          // Cegah proxy (nginx/cloudflared) menahan buffer sampai stream tuntas —
+          // tanpa ini jawaban tetap muncul sekaligus meski sudah streaming.
+          "X-Accel-Buffering": "no",
+        },
+      });
+    }
+
+    const llmResult = await generateAnswer({
+      message: prompt,
+      history: mergedHistory,
+      summary,
+      fallbackAnswer,
+      userName,
+      intent,
+      scope,
+      model,
+    });
+
+    // Persist messages
+    const meta = await finalize(llmResult);
+
+    return NextResponse.json({
+      answer: llmResult.answer,
+      summary,
+      session_id: sessionId,
+      meta,
     });
   } catch (error) {
     console.error("AI assistant error:", error);
     return NextResponse.json({ error: "Gagal memproses permintaan Do" }, { status: 500 });
   }
+}
+
+/** Penyimpanan pesan + log markdown + audit, dipakai jalur stream & non-stream. */
+async function persistAndAudit({
+  admin,
+  sessionId,
+  prompt,
+  llmResult,
+  intent,
+  scope,
+  userId,
+  userEmail,
+  userName,
+  startedAt,
+}: {
+  admin: DbAdmin;
+  sessionId?: string;
+  prompt: string;
+  llmResult: LlmResult;
+  intent: Intent;
+  scope: AiAssistantScope;
+  userId: string;
+  userEmail: string;
+  userName: string;
+  startedAt: number;
+}) {
+  if (sessionId) {
+    await admin.from("ai_assistant_messages").insert([
+      { session_id: sessionId, role: "user", content: prompt },
+      {
+        session_id: sessionId,
+        role: "assistant",
+        content: llmResult.answer,
+        meta: { mode: llmResult.mode, model: llmResult.model, status: llmResult.status, intent, scope },
+      },
+    ]);
+  }
+
+  await appendAssistantMarkdown({
+    userId,
+    userEmail,
+    userName,
+    sessionId,
+    prompt,
+    answer: llmResult.answer,
+    model: llmResult.model,
+    scope,
+  });
+
+  await auditAiRequest(admin, {
+    user_id: userId,
+    user_email: userEmail,
+    prompt,
+    intent,
+    mode: llmResult.mode,
+    model: llmResult.model,
+    latency_ms: Date.now() - startedAt,
+    error: llmResult.error,
+  });
 }
 
 function detectIntent(message: string): Intent {
@@ -563,10 +653,9 @@ function createEmptySystemSummary(): Summary {
  * sudah tersimpan rapi lewat UI. Key yang diatur dari dashboard harus menang —
  * itu satu-satunya yang bisa dilihat dan diganti oleh admin.
  */
-async function callOpenAiChat(
-  model: string,
-  messages: Array<{ role: string; content: string }>
-): Promise<string> {
+type OpenAiCall = { apiKey: string; baseUrl: string; timeoutMs: number };
+
+async function resolveOpenAiCall(): Promise<OpenAiCall> {
   const s = await getSettings([SETTING_KEYS.OPENAI_API_KEY, SETTING_KEYS.OPENAI_BASE_URL]);
   const apiKey = s[SETTING_KEYS.OPENAI_API_KEY] || process.env.OPENAI_API_KEY?.trim();
   if (!apiKey) {
@@ -574,19 +663,37 @@ async function callOpenAiChat(
       "API key OpenAI belum tersedia (env OPENAI_API_KEY maupun Settings → Integrasi kosong)"
     );
   }
-  const baseUrl = (s[SETTING_KEYS.OPENAI_BASE_URL] || "https://api.openai.com/v1").replace(/\/$/, "");
-  const timeoutMs = Number(process.env.OPENAI_TIMEOUT || "120000");
+  return {
+    apiKey,
+    baseUrl: (s[SETTING_KEYS.OPENAI_BASE_URL] || "https://api.openai.com/v1").replace(/\/$/, ""),
+    timeoutMs: Number(process.env.OPENAI_TIMEOUT || "120000"),
+  };
+}
 
+function buildChatBody(
+  model: string,
+  messages: Array<{ role: string; content: string }>,
+  stream: boolean
+) {
+  return JSON.stringify({
+    model: stripOpenAiPrefix(model),
+    // Sebagian model generasi baru hanya menerima temperature = 1 dan menolak
+    // request dengan HTTP 400 bila field ini dikirim.
+    ...(modelSupportsTemperature(model) ? { temperature: 0.7 } : {}),
+    ...(stream ? { stream: true } : {}),
+    messages,
+  });
+}
+
+async function callOpenAiChat(
+  model: string,
+  messages: Array<{ role: string; content: string }>
+): Promise<string> {
+  const { apiKey, baseUrl, timeoutMs } = await resolveOpenAiCall();
   const response = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify({
-      model: stripOpenAiPrefix(model),
-      // Sebagian model generasi baru hanya menerima temperature = 1 dan menolak
-      // request dengan HTTP 400 bila field ini dikirim.
-      ...(modelSupportsTemperature(model) ? { temperature: 0.7 } : {}),
-      messages,
-    }),
+    body: buildChatBody(model, messages, false),
     signal: AbortSignal.timeout(timeoutMs),
   });
   if (!response.ok) {
@@ -594,6 +701,57 @@ async function callOpenAiChat(
   }
   const json = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> };
   const answer = normalizePlainTextAnswer(json.choices?.[0]?.message?.content);
+  if (!answer) throw new Error("OpenAI mengembalikan jawaban kosong");
+  return answer;
+}
+
+/**
+ * Versi streaming: potongan jawaban dikirim lewat `onDelta` begitu tiba, dan
+ * teks utuhnya dikembalikan setelah stream selesai (dipakai untuk disimpan &
+ * diaudit persis seperti jalur non-stream).
+ */
+async function callOpenAiChatStream(
+  model: string,
+  messages: Array<{ role: string; content: string }>,
+  onDelta: (text: string) => void
+): Promise<string> {
+  const { apiKey, baseUrl, timeoutMs } = await resolveOpenAiCall();
+  const response = await fetch(`${baseUrl}/chat/completions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+    body: buildChatBody(model, messages, true),
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  if (!response.ok) {
+    throw new Error(`OpenAI ${response.status}: ${(await response.text()).slice(0, 300)}`);
+  }
+  if (!response.body) throw new Error("OpenAI stream tanpa body");
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let full = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    const { events, rest } = splitSseEvents(buffer);
+    buffer = rest;
+
+    for (const event of events) {
+      for (const payload of extractSseData(event)) {
+        const piece = readOpenAiDelta(payload);
+        if (piece) {
+          full += piece;
+          onDelta(piece);
+        }
+      }
+    }
+  }
+
+  const answer = normalizePlainTextAnswer(full);
   if (!answer) throw new Error("OpenAI mengembalikan jawaban kosong");
   return answer;
 }
@@ -607,6 +765,7 @@ async function generateAnswer({
   intent,
   scope,
   model,
+  onDelta,
 }: {
   message: string;
   history: ChatMessage[];
@@ -616,6 +775,8 @@ async function generateAnswer({
   intent: Intent;
   scope: AiAssistantScope;
   model: AiAssistantModel;
+  /** Bila diisi, jawaban dialirkan potong demi potong lewat callback ini. */
+  onDelta?: (text: string) => void;
 }): Promise<LlmResult> {
   const includeProjectData = scope !== "general";
   const scopeInstruction = buildScopeInstruction(scope);
@@ -650,6 +811,17 @@ async function generateAnswer({
   ];
 
   // Semua model kini dilayani OpenAI; pilihan Ollama sudah dihapus.
+  if (onDelta) {
+    try {
+      const answer = await callOpenAiChatStream(model, messages, onDelta);
+      return { answer, mode: "openai_stream_live", model, provider: "openai", status: "live" };
+    } catch (error) {
+      // Streaming gagal (mis. proxy memotong koneksi) bukan alasan menyerah:
+      // coba sekali lagi tanpa stream sebelum jatuh ke ringkasan internal.
+      console.warn("AI assistant stream gagal, coba non-stream:", formatProviderError(error, "openai-stream"));
+    }
+  }
+
   try {
     const answer = await callOpenAiChat(model, messages);
     return { answer, mode: "openai_chat_completions_live", model, provider: "openai", status: "live" };

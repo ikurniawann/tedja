@@ -65,8 +65,8 @@ Anchor: `src/app/api/ai/assistant/route.ts` (828 baris, monolitik),
 
 ## Acceptance Criteria
 
-- [ ] Fase A: Shift+Enter baris baru; salin & regenerate berfungsi; sesi bisa diganti nama.
-- [ ] Fase B: jawaban muncul bertahap; kegagalan streaming jatuh ke mode lama tanpa error ke user.
+- [x] Fase A: Shift+Enter baris baru; salin & regenerate berfungsi; sesi bisa diganti nama.
+- [x] Fase B: jawaban muncul bertahap; kegagalan streaming jatuh ke mode lama tanpa error ke user.
 - [ ] Fase C: prompt hanya memuat modul relevan; penghematan token tercatat.
 - [ ] Fase D: pertanyaan spesifik dijawab dari query langsung, bukan tebakan ringkasan.
 - [ ] Fase E: tidak ada aksi menulis yang jalan tanpa konfirmasi user.
@@ -87,6 +87,24 @@ Anchor: `src/app/api/ai/assistant/route.ts` (828 baris, monolitik),
 
 ## Automation Log
 
+- 2026-07-21 — **Fase B selesai** (streaming). `stream: true` + parser SSE di
+  route, diteruskan ke browser sebagai event `delta`/`done`/`error`. Penyimpanan
+  pesan, log markdown, dan audit dipindah ke satu helper `persistAndAudit` yang
+  dipakai jalur stream & non-stream, lalu dijalankan SETELAH stream tuntas
+  memakai teks utuh dari server — bukan rakitan klien.
+  Fallback berlapis: streaming gagal → coba sekali-jadi → ringkasan internal.
+  Klien juga memeriksa `content-type`; bila server menjawab non-SSE ia kembali ke
+  jalur lama tanpa error.
+  Header `X-Accel-Buffering: no` dipasang karena tanpa itu proxy (nginx/
+  cloudflared) menahan buffer sampai stream tuntas, sehingga jawaban tetap
+  muncul sekaligus meski sudah streaming.
+  Parsing SSE diekstrak ke `src/lib/assistant/sse.ts` (dipakai server & klien)
+  dengan 12 unit test — termasuk kasus event terbelah antar chunk, yang bila
+  salah gejalanya cuma "jawaban terpotong sesekali" dan sulit terlihat di UI.
+  Gates: 649 test hijau, build sukses. Sisa: uji interaksi di browser.
+- 2026-07-20 — **Fase A selesai** (commit `1131560`): textarea multi-baris
+  (Enter kirim, Shift+Enter baris baru, aman terhadap IME), tombol salin &
+  ulangi, ganti nama sesi lewat PATCH ber-guard kepemilikan.
 - 2026-07-20 — Epic dibuat. Owner meminta seluruh fitur yang diusulkan dikerjakan;
   upload file & voice input tetap di luar scope sesuai rekomendasi. Bug UX
   auto-scroll (ditemukan owner) sudah diperbaiki lebih dulu di commit `b813f49`.
