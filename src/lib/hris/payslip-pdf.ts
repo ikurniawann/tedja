@@ -1,5 +1,6 @@
 import PDFDocument from "pdfkit";
 import { loanInstallmentLabel, type LoanInstallmentDetail } from "@/lib/payroll/loans";
+import { formatShareOfGross } from "@/lib/payroll/share";
 
 /**
  * Generator PDF slip gaji karyawan (EPIC-008 lanjutan).
@@ -117,7 +118,7 @@ function amountRow(
   doc: Doc,
   label: string,
   amount: number,
-  options: { bold?: boolean; negative?: boolean; indent?: number } = {}
+  options: { bold?: boolean; negative?: boolean; indent?: number; share?: string | null } = {}
 ) {
   const left = doc.page.margins.left + (options.indent ?? 0);
   const right = doc.page.width - doc.page.margins.right;
@@ -128,7 +129,18 @@ function amountRow(
     .fontSize(9.5)
     .fillColor(options.negative ? COLOR_NEGATIVE : COLOR_TEXT);
 
-  doc.text(label, left, y, { width: right - left - 120 });
+  doc.text(label, left, y, { width: right - left - 180 });
+
+  // Kolom porsi terhadap bruto; dibiarkan kosong bila tidak bermakna.
+  if (options.share) {
+    doc.font("Helvetica").fontSize(8.5).fillColor(COLOR_MUTED);
+    doc.text(options.share, right - 180, y + 0.8, { width: 56, align: "right" });
+    doc
+      .font(options.bold ? "Helvetica-Bold" : "Helvetica")
+      .fontSize(9.5)
+      .fillColor(options.negative ? COLOR_NEGATIVE : COLOR_TEXT);
+  }
+
   doc.text((options.negative ? "-" : "") + rupiah(amount), right - 120, y, {
     width: 120,
     align: "right",
@@ -218,30 +230,42 @@ export async function buildPayslipPdf(data: PayslipDocumentData): Promise<Buffer
 
   // ── Potongan ───────────────────────────────────────────────────────────
   sectionTitle(doc, "Potongan");
-  if (amounts.bpjs_tk_jht_deduction) amountRow(doc, "BPJS TK (JHT)", amounts.bpjs_tk_jht_deduction, { negative: true });
-  if (amounts.bpjs_tk_jp_deduction) amountRow(doc, "BPJS TK (JP)", amounts.bpjs_tk_jp_deduction, { negative: true });
-  if (amounts.bpjs_kes_deduction) amountRow(doc, "BPJS Kesehatan", amounts.bpjs_kes_deduction, { negative: true });
-  if (amounts.tapera_deduction) amountRow(doc, "Tapera", amounts.tapera_deduction, { negative: true });
-  if (amounts.pph21_deduction) amountRow(doc, "PPh 21", amounts.pph21_deduction, { negative: true });
+  // Penanda kolom agar angka persen tidak menggantung tanpa keterangan.
+  {
+    const y = doc.y;
+    doc.font("Helvetica").fontSize(7.5).fillColor(COLOR_MUTED);
+    doc.text("% dari bruto", right - 180, y, { width: 56, align: "right" });
+    doc.y = y + 11;
+  }
+  const share = (amount: number) => formatShareOfGross(amount, amounts.gross_salary);
+  if (amounts.bpjs_tk_jht_deduction) amountRow(doc, "BPJS TK (JHT)", amounts.bpjs_tk_jht_deduction, { negative: true, share: share(amounts.bpjs_tk_jht_deduction) });
+  if (amounts.bpjs_tk_jp_deduction) amountRow(doc, "BPJS TK (JP)", amounts.bpjs_tk_jp_deduction, { negative: true, share: share(amounts.bpjs_tk_jp_deduction) });
+  if (amounts.bpjs_kes_deduction) amountRow(doc, "BPJS Kesehatan", amounts.bpjs_kes_deduction, { negative: true, share: share(amounts.bpjs_kes_deduction) });
+  if (amounts.tapera_deduction) amountRow(doc, "Tapera", amounts.tapera_deduction, { negative: true, share: share(amounts.tapera_deduction) });
+  if (amounts.pph21_deduction) amountRow(doc, "PPh 21", amounts.pph21_deduction, { negative: true, share: share(amounts.pph21_deduction) });
   if (amounts.unpaid_leave_deduction)
-    amountRow(doc, "Cuti Tanpa Bayaran", amounts.unpaid_leave_deduction, { negative: true });
+    amountRow(doc, "Cuti Tanpa Bayaran", amounts.unpaid_leave_deduction, { negative: true, share: share(amounts.unpaid_leave_deduction) });
   if (amounts.late_deduction)
-    amountRow(doc, "Potongan Keterlambatan", amounts.late_deduction, { negative: true });
+    amountRow(doc, "Potongan Keterlambatan", amounts.late_deduction, { negative: true, share: share(amounts.late_deduction) });
 
   // Rincian cicilan per pinjaman bila snapshot-nya ada; data lama yang belum
   // punya rincian tetap tampil sebagai satu baris agregat.
   if (amounts.loan_details.length > 0) {
     for (const loan of amounts.loan_details) {
-      amountRow(doc, loanInstallmentLabel(loan), loan.amount, { negative: true });
+      amountRow(doc, loanInstallmentLabel(loan), loan.amount, { negative: true, share: share(loan.amount) });
     }
   } else if (amounts.loan_deduction) {
-    amountRow(doc, "Cicilan Pinjaman", amounts.loan_deduction, { negative: true });
+    amountRow(doc, "Cicilan Pinjaman", amounts.loan_deduction, { negative: true, share: share(amounts.loan_deduction) });
   }
 
-  if (amounts.other_deduction) amountRow(doc, "Potongan Lain", amounts.other_deduction, { negative: true });
+  if (amounts.other_deduction) amountRow(doc, "Potongan Lain", amounts.other_deduction, { negative: true, share: share(amounts.other_deduction) });
   hLine(doc);
   doc.moveDown(0.25);
-  amountRow(doc, "Total Potongan", amounts.total_deductions, { bold: true, negative: true });
+  amountRow(doc, "Total Potongan", amounts.total_deductions, {
+    bold: true,
+    negative: true,
+    share: share(amounts.total_deductions),
+  });
 
   // ── Gaji bersih ────────────────────────────────────────────────────────
   doc.moveDown(0.5);

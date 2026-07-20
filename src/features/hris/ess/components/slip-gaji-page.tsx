@@ -12,6 +12,7 @@ import {
 } from "@heroicons/react/24/outline";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { formatShareOfGross } from "@/lib/payroll/share";
 import {
   Dialog,
   DialogContent,
@@ -96,16 +97,22 @@ interface RowProps {
   amount: number | undefined;
   bold?: boolean;
   negative?: boolean;
+  /** Porsi terhadap bruto, mis. "1,8%". Kosong = tidak ditampilkan. */
+  share?: string | null;
 }
 
-function AmountRow({ label, amount, bold, negative }: RowProps) {
+function AmountRow({ label, amount, bold, negative, share }: RowProps) {
   if (!bold && !(Number(amount) > 0)) return null;
   return (
-    <div className={`flex justify-between py-1 text-sm ${bold ? "font-semibold" : ""}`}>
+    <div className={`flex items-baseline justify-between gap-2 py-1 text-sm ${bold ? "font-semibold" : ""}`}>
       <span className="text-gray-600">{label}</span>
-      <span className={negative ? "text-red-600" : "text-gray-900"}>
-        {negative ? "− " : ""}
-        {formatCurrency(amount)}
+      <span className="flex items-baseline gap-2">
+        {/* Porsi terhadap bruto — makna yang sama untuk semua potongan. */}
+        {share && <span className="text-xs font-normal text-gray-400">{share}</span>}
+        <span className={negative ? "text-red-600" : "text-gray-900"}>
+          {negative ? "− " : ""}
+          {formatCurrency(amount)}
+        </span>
       </span>
     </div>
   );
@@ -136,6 +143,13 @@ export function EssSlipGajiPage() {
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
+
+  /**
+   * Porsi potongan terhadap bruto slip yang sedang dibuka. Makna yang sama
+   * dipakai untuk semua baris, termasuk yang tidak punya tarif resmi.
+   */
+  const bagian = (amount: number | undefined) =>
+    formatShareOfGross(Number(amount) || 0, Number(selected?.gross_salary) || 0);
 
   if (loading) {
     return (
@@ -235,31 +249,41 @@ export function EssSlipGajiPage() {
               </div>
 
               <div>
-                <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-400">
-                  Potongan
-                </p>
-                <AmountRow label="BPJS TK (JHT)" amount={selected.bpjs_tk_jht_deduction} negative />
-                <AmountRow label="BPJS TK (JP)" amount={selected.bpjs_tk_jp_deduction} negative />
-                <AmountRow label="BPJS Kesehatan" amount={selected.bpjs_kes_deduction} negative />
-                <AmountRow label="Tapera" amount={selected.tapera_deduction} negative />
-                <AmountRow label="PPh 21" amount={selected.pph21_deduction} negative />
-                <AmountRow label="Cuti Tanpa Bayaran" amount={selected.unpaid_leave_deduction} negative />
-                <AmountRow label="Potongan Keterlambatan" amount={selected.late_deduction} negative />
+                <div className="mb-1 flex items-baseline justify-between">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+                    Potongan
+                  </p>
+                  <p className="text-[11px] text-gray-400">% dari bruto</p>
+                </div>
+                <AmountRow label="BPJS TK (JHT)" amount={selected.bpjs_tk_jht_deduction} share={bagian(selected.bpjs_tk_jht_deduction)} negative />
+                <AmountRow label="BPJS TK (JP)" amount={selected.bpjs_tk_jp_deduction} share={bagian(selected.bpjs_tk_jp_deduction)} negative />
+                <AmountRow label="BPJS Kesehatan" amount={selected.bpjs_kes_deduction} share={bagian(selected.bpjs_kes_deduction)} negative />
+                <AmountRow label="Tapera" amount={selected.tapera_deduction} share={bagian(selected.tapera_deduction)} negative />
+                <AmountRow label="PPh 21" amount={selected.pph21_deduction} share={bagian(selected.pph21_deduction)} negative />
+                <AmountRow label="Cuti Tanpa Bayaran" amount={selected.unpaid_leave_deduction} share={bagian(selected.unpaid_leave_deduction)} negative />
+                <AmountRow label="Potongan Keterlambatan" amount={selected.late_deduction} share={bagian(selected.late_deduction)} negative />
                 {(selected.loan_details?.length ?? 0) > 0 ? (
                   selected.loan_details!.map((loan) => (
                     <AmountRow
                       key={loan.loan_id}
                       label={loanInstallmentLabel(loan)}
                       amount={loan.amount}
+                      share={bagian(loan.amount)}
                       negative
                     />
                   ))
                 ) : (
-                  <AmountRow label="Cicilan Pinjaman" amount={selected.loan_deduction} negative />
+                  <AmountRow label="Cicilan Pinjaman" amount={selected.loan_deduction} share={bagian(selected.loan_deduction)} negative />
                 )}
-                <AmountRow label="Potongan Lain" amount={selected.other_deduction} negative />
+                <AmountRow label="Potongan Lain" amount={selected.other_deduction} share={bagian(selected.other_deduction)} negative />
                 <div className="border-t pt-1">
-                  <AmountRow label="Total Potongan" amount={selected.total_deductions} bold negative />
+                  <AmountRow
+                    label="Total Potongan"
+                    amount={selected.total_deductions}
+                    share={bagian(selected.total_deductions)}
+                    bold
+                    negative
+                  />
                 </div>
               </div>
 
