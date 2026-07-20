@@ -138,8 +138,8 @@ export default function AppSidebarNav({
       "flex w-full items-center rounded-lg text-sm transition-colors",
       collapsed ? "justify-center px-0 py-2.5" : "gap-3 px-3 py-2.5",
       itemActive
-        ? "bg-pink-600 font-semibold text-white"
-        : "text-gray-900 hover:bg-pink-100",
+        ? "bg-pink-600 font-semibold text-white shadow-sm shadow-pink-600/25 dark:bg-pink-500 dark:shadow-none"
+        : "text-foreground/90 hover:bg-pink-100/70 hover:text-pink-700 dark:hover:bg-white/10 dark:hover:text-white",
       extra,
     ]
       .filter(Boolean)
@@ -150,14 +150,17 @@ export default function AppSidebarNav({
     hasChildren: boolean,
     extra = ""
   ) => {
-    const base = "flex w-full items-center rounded-md py-2 pl-2 pr-2 text-sm transition-colors";
+    const base =
+      "relative flex w-full items-center rounded-md py-2 pl-3 pr-2 text-sm transition-colors";
 
     if (hasChildren) {
       return [
         base,
-        "justify-between font-normal text-gray-800",
-        itemActive ? "text-gray-900" : "",
-        "hover:bg-gray-100/80",
+        "justify-between",
+        itemActive
+          ? "font-medium text-foreground"
+          : "font-normal text-foreground/75",
+        "hover:bg-pink-100/60 hover:text-pink-700 dark:hover:bg-white/10 dark:hover:text-white",
         extra,
       ]
         .filter(Boolean)
@@ -167,8 +170,13 @@ export default function AppSidebarNav({
     return [
       base,
       itemActive
-        ? "bg-pink-50 font-normal text-pink-700"
-        : "font-normal text-gray-600 hover:bg-gray-100/80 hover:text-gray-900",
+        ? [
+            "bg-pink-100/70 font-medium text-pink-700",
+            "before:absolute before:left-0 before:top-1/2 before:h-4 before:w-[3px]",
+            "before:-translate-y-1/2 before:rounded-r-full before:bg-pink-600",
+            "dark:bg-pink-400/12 dark:text-pink-200 dark:before:bg-pink-400",
+          ].join(" ")
+        : "font-normal text-foreground/70 hover:bg-pink-100/50 hover:text-pink-700 dark:hover:bg-white/10 dark:hover:text-white",
       extra,
     ]
       .filter(Boolean)
