@@ -29,7 +29,7 @@ INSERT INTO iam.menus (code, menu_name, route_path, icon, menu_type, order_numbe
   ('hris.recruitment', 'Rekrutmen', NULL, 'user-plus', 'group', 10, '{"actions":["read"]}'::jsonb),
   ('items.raw-material', 'Raw Material', NULL, 'cube', 'group', 10, '{"actions":["read"]}'::jsonb),
   ('pos.operations', 'Operasional', NULL, 'shopping', 'group', 10, '{"actions":["read"]}'::jsonb),
-  ('crm.members', 'Members', NULL, 'users', 'group', 20, '{"actions":["read"]}'::jsonb),
+  ('crm.members', 'Customer Care', NULL, 'users', 'group', 20, '{"actions":["read"]}'::jsonb),
   ('hris.workforce', 'Kehadiran & Cuti', NULL, 'calendar', 'group', 20, '{"actions":["read"]}'::jsonb),
   ('items.product', 'Product', NULL, 'cube', 'group', 20, '{"actions":["read"]}'::jsonb),
   ('pos.catalog', 'Produk & Stok', NULL, 'cube', 'group', 20, '{"actions":["read"]}'::jsonb),
