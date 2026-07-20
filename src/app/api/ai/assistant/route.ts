@@ -176,7 +176,7 @@ export async function POST(request: NextRequest) {
       : createEmptySystemSummary();
     const fallbackAnswer = includeProjectData
       ? generateSummaryAnswer(prompt, summary, profile?.full_name ?? user.email ?? "User", intent)
-      : "AI Assistant belum bisa menghubungi model Ollama saat ini. Coba lagi sebentar atau pilih model lain di Arkiv OS Settings.";
+      : "AI Assistant belum bisa menghubungi model yang dipilih saat ini. Coba lagi sebentar atau pilih model lain di Arkiv OS Settings.";
 
     // Create session if none exists (first user message in a fresh chat)
     if (!sessionId) {
