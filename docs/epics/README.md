@@ -21,6 +21,8 @@ deploying-dev · ready-for-qa · blocked · done).
 | [EPIC-013](./EPIC-013-omnichannel-ig-google-review.md) | Omnichannel — Google Review & Instagram DM | coding | 2026-07-20 |
 | [EPIC-014](./EPIC-014-crm-collectibles.md) | CRM Collectibles — Artwork, Wallpaper & Badge | on-progress | 2026-07-20 |
 | [EPIC-015](./EPIC-015-pensiun-modul-jadwal-lama.md) | Pensiun Modul Jadwal Lama (Schedules & Sections berbasis `staff`) | coding | 2026-07-20 |
+| [EPIC-016](./EPIC-016-suara-ai-tts.md) | Suara AI — Provider TTS Bisa Dipilih + Preview | ready-for-qa | 2026-07-20 |
+| [EPIC-017](./EPIC-017-do-assistant-powerful.md) | Do — Asisten yang Benar-Benar Berguna | on-progress | 2026-07-20 |
 
 Aturan:
 - Epic + registry ini adalah sumber kebenaran status pekerjaan (canonical).

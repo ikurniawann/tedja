@@ -135,6 +135,40 @@ export async function DELETE(request: NextRequest) {
   }
 }
 
+/** PATCH /api/ai/assistant?session_id=… — ganti judul sesi milik sendiri. */
+export async function PATCH(request: NextRequest) {
+  try {
+    const db = await createServerPgClient();
+    const {
+      data: { user },
+    } = await db.auth.getUser();
+    if (!user) return NextResponse.json({ error: "Login required" }, { status: 401 });
+
+    const { searchParams } = new URL(request.url);
+    const sessionId = searchParams.get("session_id");
+    if (!sessionId) return NextResponse.json({ error: "session_id required" }, { status: 400 });
+
+    const body = (await request.json()) as { title?: unknown };
+    const title = typeof body.title === "string" ? body.title.trim() : "";
+    if (!title) return NextResponse.json({ error: "Judul tidak boleh kosong" }, { status: 400 });
+
+    const admin = createPgClient();
+    // eq(user_id) wajib: admin client melewati RLS, jadi kepemilikan diperiksa
+    // di sini — tanpa itu siapa pun bisa mengganti judul sesi orang lain.
+    const { error } = await admin
+      .from("ai_assistant_sessions")
+      .update({ title: title.slice(0, 120), updated_at: new Date().toISOString() })
+      .eq("id", sessionId)
+      .eq("user_id", user.id);
+    if (error) throw error;
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("AI assistant PATCH error:", error);
+    return NextResponse.json({ error: "Gagal mengganti judul" }, { status: 500 });
+  }
+}
+
 export async function POST(request: NextRequest) {
   const startedAt = Date.now();
   let prompt = "";

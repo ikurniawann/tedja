@@ -20,6 +20,7 @@ import {
   ChevronRight,
   Cloud,
   Command,
+  Copy,
   CreditCard,
   ExternalLink,
   Folder,
@@ -33,6 +34,8 @@ import {
   Plug,
   MessageSquareMore,
   MonitorDot,
+  Pencil,
+  RefreshCw,
   Search,
   Send,
   Settings,
@@ -1558,6 +1561,8 @@ function AiAssistantWindow({
   const [showHistory, setShowHistory] = useState(false);
   const [view, setView] = useState<"landing" | "chat">("landing");
   const messageListRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   /** Auto-scroll hanya saat user memang sedang di dasar percakapan; kalau ia
    *  menggulir ke atas untuk membaca jawaban lama, jangan disentak turun. */
   const stickToBottomRef = useRef(true);
@@ -1657,6 +1662,28 @@ function AiAssistantWindow({
     setView("chat");
   };
 
+  const renameSession = async (id: string, currentTitle: string) => {
+    if (typeof window === "undefined") return;
+    const next = window.prompt("Judul baru untuk chat ini:", currentTitle || "");
+    if (next === null) return;
+    const title = next.trim();
+    if (!title || title === currentTitle) return;
+
+    // Optimistic: judul langsung berubah di daftar, dikembalikan bila gagal.
+    const before = sessions;
+    setSessions((prev) => prev.map((item) => (item.id === id ? { ...item, title } : item)));
+    try {
+      const response = await fetch(`/api/ai/assistant?session_id=${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title }),
+      });
+      if (!response.ok) throw new Error("gagal");
+    } catch {
+      setSessions(before);
+    }
+  };
+
   const deleteSession = async (id: string) => {
     const confirmed = typeof window === "undefined" || window.confirm("Hapus session chat ini?");
     if (!confirmed) return;
@@ -1725,6 +1752,25 @@ function AiAssistantWindow({
     }
   }, [input, loading, messages, refreshSessions, sessionId, settings.model, settings.scope]);
 
+  // Tinggi textarea mengikuti jumlah baris; direset dulu agar bisa mengecil lagi
+  // saat teks dihapus.
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+  }, [input]);
+
+  const copyMessage = useCallback(async (text: string, index: number) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedIndex(index);
+      setTimeout(() => setCopiedIndex((current) => (current === index ? null : current)), 1800);
+    } catch {
+      // clipboard diblokir (mis. konteks non-HTTPS) — diamkan, tombol tetap ada
+    }
+  }, []);
+
   const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
     const el = messageListRef.current;
     if (!el) return;
@@ -1754,6 +1800,21 @@ function AiAssistantWindow({
     const id = requestAnimationFrame(() => scrollToBottom("auto"));
     return () => cancelAnimationFrame(id);
   }, [view, sessionId, scrollToBottom]);
+
+  /** Buang jawaban terakhir lalu kirim ulang pertanyaan yang sama. */
+  const regenerateLastAnswer = useCallback(() => {
+    if (loading) return;
+    const lastUser = [...messages].reverse().find((m) => m.role === "user");
+    if (!lastUser) return;
+    // Jawaban lama dibuang dari state supaya tidak ada dua jawaban berdampingan;
+    // riwayat di server tetap utuh sebagai jejak.
+    setMessages((prev) => {
+      const next = [...prev];
+      while (next.length && next[next.length - 1].role === "assistant") next.pop();
+      return next.filter((m) => m !== lastUser);
+    });
+    sendMessage(lastUser.content);
+  }, [loading, messages, sendMessage]);
 
   useEffect(() => {
     const message = initialPrompt?.trim();
@@ -1800,6 +1861,13 @@ function AiAssistantWindow({
                     <div className="mt-0.5 text-[10px] text-white/35">
                       {new Date(s.updated_at).toLocaleDateString("id-ID", { day: "numeric", month: "short" })}
                     </div>
+                  </button>
+                  <button
+                    onClick={() => renameSession(s.id, s.title)}
+                    className="grid size-7 shrink-0 place-items-center rounded-lg text-white/35 transition hover:bg-white/12 hover:text-white/80"
+                    title="Ganti nama session"
+                  >
+                    <Pencil className="size-3.5" />
                   </button>
                   <button
                     onClick={() => deleteSession(s.id)}
@@ -1904,6 +1972,13 @@ function AiAssistantWindow({
                           <ChevronRight className="size-3 text-white/30" />
                         </button>
                         <button
+                          onClick={() => renameSession(s.id, s.title)}
+                          className="grid size-8 shrink-0 place-items-center rounded-lg text-white/35 transition hover:bg-white/12 hover:text-white/80"
+                          title="Ganti nama session"
+                        >
+                          <Pencil className="size-3.5" />
+                        </button>
+                        <button
                           onClick={() => deleteSession(s.id)}
                           className="mr-2 grid size-8 shrink-0 place-items-center rounded-lg text-white/35 transition hover:bg-rose-500/16 hover:text-rose-200"
                           title="Hapus session"
@@ -1927,13 +2002,42 @@ function AiAssistantWindow({
                 onScroll={handleMessageListScroll}
                 className="flex-1 space-y-3 overflow-y-auto p-4"
               >
-                {messages.map((message, index) => (
-                  <div key={index} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>
-                    <div className={`max-w-[85%] whitespace-pre-line rounded-2xl px-4 py-3 text-sm font-normal leading-6 ${message.role === "user" ? "bg-pink-600 text-white" : "bg-white/10 text-white/78"}`}>
-                      {formatPlainChatText(message.content)}
+                {messages.map((message, index) => {
+                  const isAssistant = message.role === "assistant";
+                  // Regenerate hanya untuk jawaban terakhir: mengulang jawaban di
+                  // tengah percakapan akan membuat sisa riwayat tidak nyambung.
+                  const canRegenerate = isAssistant && index === messages.length - 1 && !loading;
+                  return (
+                    <div key={index} className={`group flex flex-col ${message.role === "user" ? "items-end" : "items-start"}`}>
+                      <div className={`max-w-[85%] whitespace-pre-line rounded-2xl px-4 py-3 text-sm font-normal leading-6 ${message.role === "user" ? "bg-pink-600 text-white" : "bg-white/10 text-white/78"}`}>
+                        {formatPlainChatText(message.content)}
+                      </div>
+                      {isAssistant && (
+                        <div className="mt-1 flex items-center gap-1 opacity-0 transition group-hover:opacity-100 focus-within:opacity-100">
+                          <button
+                            type="button"
+                            onClick={() => copyMessage(message.content, index)}
+                            className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] text-white/45 transition hover:bg-white/10 hover:text-white/80"
+                            title="Salin jawaban"
+                          >
+                            {copiedIndex === index ? <Check className="size-3" /> : <Copy className="size-3" />}
+                            {copiedIndex === index ? "Tersalin" : "Salin"}
+                          </button>
+                          {canRegenerate && (
+                            <button
+                              type="button"
+                              onClick={regenerateLastAnswer}
+                              className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] text-white/45 transition hover:bg-white/10 hover:text-white/80"
+                              title="Minta jawaban ulang"
+                            >
+                              <RefreshCw className="size-3" /> Ulangi
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
                 {loading && (
                   <div className="flex justify-start">
                     <div className="flex items-center gap-2 rounded-2xl bg-white/10 px-4 py-3 text-sm text-white/70">
@@ -1961,13 +2065,24 @@ function AiAssistantWindow({
                   }}
                   className="flex gap-2"
                 >
-                  <input
+                  <textarea
+                    ref={inputRef}
                     value={input}
+                    rows={1}
                     onChange={(event) => setInput(event.target.value)}
-                    placeholder={settings.scope === "general" ? "Tanyakan apapun..." : "Tanyakan data Talentpool atau hal umum..."}
-                    className="min-w-0 flex-1 rounded-xl border border-white/20 bg-white px-3 py-2 text-sm text-black outline-none placeholder:text-gray-600 focus:border-pink-300/70"
+                    onKeyDown={(event) => {
+                      // Enter mengirim; Shift+Enter menyisipkan baris baru.
+                      // IME (mis. mengetik aksara) memakai Enter untuk memilih
+                      // kandidat, jadi jangan kirim saat composing.
+                      if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                        event.preventDefault();
+                        sendMessage();
+                      }
+                    }}
+                    placeholder={settings.scope === "general" ? "Tanyakan apapun... (Shift+Enter untuk baris baru)" : "Tanyakan data Talentpool atau hal umum... (Shift+Enter untuk baris baru)"}
+                    className="min-h-[40px] max-h-40 min-w-0 flex-1 resize-none rounded-xl border border-white/20 bg-white px-3 py-2 text-sm leading-6 text-black outline-none placeholder:text-gray-600 focus:border-pink-300/70"
                   />
-                  <button disabled={loading || !input.trim()} className="grid size-10 shrink-0 place-items-center rounded-xl bg-pink-600 transition hover:bg-pink-500 disabled:opacity-50">
+                  <button disabled={loading || !input.trim()} className="grid size-10 shrink-0 place-items-center self-end rounded-xl bg-pink-600 transition hover:bg-pink-500 disabled:opacity-50">
                     <Send className="size-4" />
                   </button>
                 </form>
