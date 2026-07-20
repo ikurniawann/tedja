@@ -71,8 +71,8 @@ const TABLE_DOMAIN = {
   development_plans: "hris",
   project_assignments: "hris",
   staff: "hris",
-  staff_schedules: "hris",
-  staff_sections: "hris",
+  // staff_schedules & staff_sections di-drop di EPIC-015 Fase C
+  // (migrasi 20260720200000). Jadwal hidup di shifts + employee_shifts.
   hris_logbook_entries: "hris",
   hris_logbook_entry_items: "hris",
   hris_logbook_templates: "hris",

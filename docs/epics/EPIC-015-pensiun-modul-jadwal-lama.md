@@ -89,6 +89,14 @@ Anchor kode: `src/app/dashboard/(dashboard)/hris/schedules/page.tsx`,
   `employees.section_id` (ON DELETE SET NULL) dan
   `employment_history.{prev,new}_section_id`, serta terpasang di form karyawan.
   Yang mati hanya tabel penghubung `staff_sections` (staff ↔ section).
+- Migrasi `20260720200000_drop_tabel_jadwal_lama.sql` **sudah disiapkan tetapi
+  belum di-apply**: berisi pengaman `RAISE EXCEPTION` bila salah satu tabel
+  ternyata berisi baris, sehingga di produksi ia gagal keras + rollback alih-alih
+  menghapus data diam-diam. `DROP` sengaja tanpa `CASCADE`.
+- Kandidat terpisah (butuh konfirmasi owner, **belum masuk scope**):
+  `hris.employee_schedules` — 0 baris, tanpa referensi di `src/`, tampak sisa
+  iterasi sebelum `employee_shifts`. Perlu dipastikan bukan cadangan yang
+  disengaja sebelum ikut di-drop.
 
 **Fase D — Dokumentasi**
 - Catat di Automation Log + tambahkan satu paragraf "sumber kebenaran jadwal =
@@ -192,3 +200,18 @@ Semua Acceptance Criteria tercentang + Automation Log terisi + status
   (proxy mengembalikan 401 utk keduanya tanpa sesi) — manifest yang jadi bukti.
   Pre-existing & tidak disentuh: `features/configuration/roles/components/index.ts`
   mengimpor `./components/role-detail-sections` (path ganda, dari commit 8940e99).
+- 2026-07-20 — **Fase C disiapkan, belum di-apply.** Migrasi
+  `20260720200000_drop_tabel_jadwal_lama.sql` drop `hris.staff_schedules` +
+  `hris.staff_sections` saja, tanpa `CASCADE`, dengan pengaman `RAISE EXCEPTION`
+  bila tabelnya ternyata berisi baris. `database/schema-map.js` ikut dibersihkan
+  dari dua entri itu.
+  Verifikasi tanpa merusak dev: SQL dijalankan di dalam transaksi lalu
+  di-ROLLBACK — kedua `DROP TABLE` sukses dan `to_regclass` membuktikan tabelnya
+  kembali utuh setelah rollback. Cabang pengaman diuji terpisah dengan
+  menjalankan blok yang sama terhadap `hris.shifts` (3 baris) → benar-benar
+  `ERROR: hris.shifts berisi 3 baris — migrasi dibatalkan`.
+  **Belum dijalankan di dev maupun produksi.** `npm run db:migrate` (dry-run)
+  diblokir classifier di sesi ini, jadi apply harus dilakukan owner/sesi
+  berikutnya — dan syarat dari Fase C tetap berlaku: cek `count(*)` di produksi
+  lebih dulu. Kalau ternyata ada isinya, pengaman akan menggagalkan migrasi dan
+  keputusan arsip-vs-migrasi-data kembali ke owner.
