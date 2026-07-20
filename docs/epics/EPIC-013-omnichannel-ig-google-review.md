@@ -275,3 +275,26 @@ ulang** tanpa ditulis ulang.
     Halaman Facebook, izin `instagram_manage_messages`, lalu isi kredensial
     di panel dan daftarkan Callback URL. Perlu dipastikan saat itu: apakah
     mode development cukup untuk uji tanpa App Review penuh.
+- 2026-07-20 — **UI kredensial Instagram pindah ke Settings.** Owner meminta
+  satu tempat resmi untuk menempel kode dari Meta.
+  - Menu baru **Settings → Instagram** (`settings.instagram`), diletakkan
+    tepat setelah WhatsApp Gateway agar kedua kanal CS berdampingan; menu di
+    bawahnya digeser satu langkah. Izin **hanya Super Admin**, disalin dari
+    pemilik izin WhatsApp Gateway — halaman ini memuat App Secret dan Access
+    Token.
+  - Panel kredensial dipindah dari halaman Inbox ke
+    `features/configuration/instagram`; Inbox kini hanya menautkan ke Settings
+    supaya kredensial hanya punya SATU rumah.
+  - Halaman memuat panduan 5 langkah dashboard Meta. Nilai-nilai Meta tersebar
+    di beberapa layar dan mudah tertukar (App Secret vs Access Token, Page ID
+    vs Instagram Account ID), jadi panduannya diletakkan berdampingan dengan
+    formnya, plus catatan jendela 24 jam dan mode development.
+  - **Verifikasi live**: halaman 200 untuk Super Admin dengan seluruh bagian
+    ter-render; API GET/PUT ditolak 403 untuk non-super-admin; menyimpan dari
+    UI lalu membaca ulang mengembalikan rahasia **tersamar**, bukan asli;
+    menyimpan ulang tanpa mengisi field rahasia **tidak menghapus** rahasia
+    lama; dan kredensial yang diketik di UI benar-benar dipakai webhook —
+    handshake dengan Verify Token dari UI mengembalikan challenge, dan pesan
+    bertanda tangan App Secret dari UI tersimpan (`stored:1`). Data uji
+    dibersihkan.
+  - Gate: 619 test hijau, build sukses, migrasi applied.
