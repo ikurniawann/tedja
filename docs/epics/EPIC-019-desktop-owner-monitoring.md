@@ -1,6 +1,6 @@
 # EPIC-019: Desktop Arkiv OS — Pusat Monitoring Owner
 
-status: backlog
+status: on-progress
 environment: dev
 retries: 0
 
@@ -129,11 +129,18 @@ dua tampilan; string statis dihapus.
 | Desktop publik membocorkan data bisnis | Endpoint 401 tanpa login; komponen widget tidak dirender sebelum auth |
 | File desktop 2.588 baris makin bengkak | Widget baru dipecah ke `src/components/arkiv/widgets/` |
 
-## Keputusan yang Dibutuhkan dari Owner
+## Keputusan Owner (2026-07-21)
 
-- [ ] Lima widget usulan di atas: mana yang wajib, mana yang dibuang? (CRM opsional)
-- [ ] Role selain `super_admin` yang boleh melihat (mis. role `owner` khusus?)
-- [ ] Interval refresh: 60 atau 120 detik?
+- [x] **Widget: kelima-limanya dibuat**, semuanya bisa di-hide/tampilkan lewat
+      konfigurasi (perluasan mekanisme visibilitas widget yang ada).
+- [x] **Role: `super_admin` + owner.** Catatan implementasi: role `owner` TIDAK
+      ada di `iam.roles`; yang paling dekat adalah **`direksi`**. Fase A memakai
+      `super_admin` + `direksi`, dan konstanta role dibuat mudah diperluas —
+      bila owner ingin role `owner` tersendiri, itu migrasi kecil terpisah.
+- [x] **Interval refresh: 60 detik** (berhenti saat tab tidak terlihat).
+- [x] **Arah visual: gaya widget macOS**, tema mengikuti desktop sekarang
+      (glassmorphism gelap, aksen pink) — mockup di
+      `docs/design/epic-019-desktop-mockup.html`.
 
 ## Done Signal
 
@@ -149,3 +156,10 @@ Semua Acceptance Criteria tercentang + Automation Log terisi + status
   satu endpoint agregasi ber-cache → widget nyata ber-deep-link → kustomisasi →
   jembatan ke Do. Menunggu keputusan owner (pilihan widget, role, interval).
   Status → backlog.
+- 2026-07-21 — Owner memutuskan: kelima widget dibuat (semuanya dapat
+  dikonfigurasi tampil/sembunyi), role super_admin + owner (dipetakan ke
+  `direksi` karena role `owner` belum ada di iam), refresh 60 detik. Mockup
+  desain gaya macOS dengan tema glass Arkiv OS dibuat di
+  `docs/design/epic-019-desktop-mockup.html` — memuat kelima widget, popover
+  "Atur Widget" (toggle + urutan), contoh state memuat/gagal per kartu, chip
+  "Tanya Do" per widget, dan deep-link di tiap kartu. Status → on-progress.

@@ -24,7 +24,7 @@ deploying-dev · ready-for-qa · blocked · done).
 | [EPIC-016](./EPIC-016-suara-ai-tts.md) | Suara AI — Provider TTS Bisa Dipilih + Preview | ready-for-qa | 2026-07-20 |
 | [EPIC-017](./EPIC-017-do-assistant-powerful.md) | Do — Asisten yang Benar-Benar Berguna | on-progress | 2026-07-21 |
 | [EPIC-018](./EPIC-018-lampiran-ocr.md) | Lampiran & OCR — Do Bisa Membaca Dokumen | on-progress | 2026-07-21 |
-| [EPIC-019](./EPIC-019-desktop-owner-monitoring.md) | Desktop Arkiv OS — Pusat Monitoring Owner | backlog | 2026-07-21 |
+| [EPIC-019](./EPIC-019-desktop-owner-monitoring.md) | Desktop Arkiv OS — Pusat Monitoring Owner | on-progress | 2026-07-21 |
 
 Aturan:
 - Epic + registry ini adalah sumber kebenaran status pekerjaan (canonical).
