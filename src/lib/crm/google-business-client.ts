@@ -10,6 +10,7 @@
  * mengembalikan status "belum dikonfigurasi" secara rapi, bukan melempar.
  */
 
+import { SETTING_KEYS, getSettings } from "@/lib/settings/app-settings";
 import type { GoogleReviewResource } from "./google-reviews";
 
 const OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token";
@@ -25,12 +26,28 @@ export interface GoogleBusinessConfig {
   locationId: string;
 }
 
-export function readGoogleBusinessConfig(): GoogleBusinessConfig | null {
-  const clientId = process.env.GOOGLE_BP_CLIENT_ID;
-  const clientSecret = process.env.GOOGLE_BP_CLIENT_SECRET;
-  const refreshToken = process.env.GOOGLE_BP_REFRESH_TOKEN;
-  const accountId = process.env.GOOGLE_BP_ACCOUNT_ID;
-  const locationId = process.env.GOOGLE_BP_LOCATION_ID;
+/**
+ * Kredensial dibaca dari pengaturan aplikasi (diisi Super Admin lewat
+ * halaman Settings). Env dipakai sebagai cadangan supaya deployment yang
+ * terlanjur memakai .env tetap jalan — nilai di UI menang bila keduanya ada.
+ */
+export async function readGoogleBusinessConfig(): Promise<GoogleBusinessConfig | null> {
+  const stored = await getSettings([
+    SETTING_KEYS.GOOGLE_BP_CLIENT_ID,
+    SETTING_KEYS.GOOGLE_BP_CLIENT_SECRET,
+    SETTING_KEYS.GOOGLE_BP_REFRESH_TOKEN,
+    SETTING_KEYS.GOOGLE_BP_ACCOUNT_ID,
+    SETTING_KEYS.GOOGLE_BP_LOCATION_ID,
+  ]).catch(() => ({}) as Record<string, string | null>);
+
+  const pick = (key: string, envValue: string | undefined) =>
+    stored[key]?.trim() || envValue?.trim() || "";
+
+  const clientId = pick(SETTING_KEYS.GOOGLE_BP_CLIENT_ID, process.env.GOOGLE_BP_CLIENT_ID);
+  const clientSecret = pick(SETTING_KEYS.GOOGLE_BP_CLIENT_SECRET, process.env.GOOGLE_BP_CLIENT_SECRET);
+  const refreshToken = pick(SETTING_KEYS.GOOGLE_BP_REFRESH_TOKEN, process.env.GOOGLE_BP_REFRESH_TOKEN);
+  const accountId = pick(SETTING_KEYS.GOOGLE_BP_ACCOUNT_ID, process.env.GOOGLE_BP_ACCOUNT_ID);
+  const locationId = pick(SETTING_KEYS.GOOGLE_BP_LOCATION_ID, process.env.GOOGLE_BP_LOCATION_ID);
 
   if (!clientId || !clientSecret || !refreshToken || !accountId || !locationId) {
     return null;
@@ -97,7 +114,7 @@ export type GoogleResult<T> =
 export async function fetchReviews(
   maxPages = 5
 ): Promise<GoogleResult<GoogleReviewResource[]>> {
-  const config = readGoogleBusinessConfig();
+  const config = await readGoogleBusinessConfig();
   if (!config) {
     return { ok: false, reason: "Kredensial Google Business belum dikonfigurasi", notConfigured: true };
   }
@@ -149,7 +166,7 @@ export async function putReviewReply(
   reviewName: string,
   comment: string
 ): Promise<GoogleResult<{ updateTime: string | null }>> {
-  const config = readGoogleBusinessConfig();
+  const config = await readGoogleBusinessConfig();
   if (!config) {
     return { ok: false, reason: "Kredensial Google Business belum dikonfigurasi", notConfigured: true };
   }
@@ -183,7 +200,15 @@ export async function putReviewReply(
 }
 
 /** Untuk halaman diagnosa: apakah integrasi siap dipakai. */
-export function googleBusinessStatus(): { configured: boolean; locationId: string | null } {
-  const config = readGoogleBusinessConfig();
+export async function googleBusinessStatus(): Promise<{
+  configured: boolean;
+  locationId: string | null;
+}> {
+  const config = await readGoogleBusinessConfig();
   return { configured: Boolean(config), locationId: config?.locationId ?? null };
+}
+
+/** Token di-cache per proses; wajib dibuang saat kredensial diganti dari UI. */
+export function resetGoogleTokenCache(): void {
+  cachedToken = null;
 }

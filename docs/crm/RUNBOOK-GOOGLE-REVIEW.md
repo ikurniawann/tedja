@@ -14,6 +14,7 @@ EPIC-013 Fase A. Menarik ulasan Google Business Profile ke dashboard dan
 | Klien Google (OAuth refresh, tarik ulasan, kirim balasan) | ✅ Siap, menunggu kredensial |
 | Sinkronisasi berkala tiap 15 menit | ✅ Terdaftar di `instrumentation.ts` |
 | Halaman `/dashboard/crm/reviews` + menu | ✅ Live |
+| Form kredensial di UI (Super Admin) | ✅ Live — tanpa terminal |
 | **Kredensial Google** | ❌ **Belum ada — penghalang tersisa** |
 
 Tanpa kredensial semuanya berdegradasi rapi: halaman tetap terbuka dengan
@@ -66,20 +67,28 @@ keduanya dalam bentuk resource:
 > Format harus lengkap dengan awalan `accounts/` dan `locations/` — klien
 > menggabungkannya menjadi path ulasan.
 
-## Langkah 4 — Pasang ke server
+## Langkah 4 — Pasang lewat halaman *(tanpa terminal)*
 
-```bash
-nano /home/ilhamkurniawan/arkiv-pos-saas/.env
-#   GOOGLE_BP_CLIENT_ID=...
-#   GOOGLE_BP_CLIENT_SECRET=...
-#   GOOGLE_BP_REFRESH_TOKEN=...
-#   GOOGLE_BP_ACCOUNT_ID=accounts/...
-#   GOOGLE_BP_LOCATION_ID=locations/...
+1. Login Super Admin → **CRM → Google Review**.
+2. Klik **Hubungkan Sekarang** (atau "Pengaturan koneksi Google").
+3. Isi 5 kolom: Client ID, Client Secret, Refresh Token, Account ID,
+   Location ID → **Simpan Kredensial**.
 
-pm2 restart arkiv-pos-saas
-```
+Account/Location boleh diisi **angkanya saja** — awalan `accounts/` dan
+`locations/` ditambahkan otomatis.
 
-`.env` tidak masuk git. Sebaiknya Anda sendiri yang menempelkan kredensial.
+Catatan keamanan:
+- Client Secret & Refresh Token **tidak pernah dikirim balik ke browser** —
+  yang tampil hanya penanda "tersimpan" dan versi tersamar.
+- Mengosongkan kolom rahasia saat menyimpan berarti **"biarkan yang lama"**,
+  bukan menghapus. Jadi mengubah Location ID saja tidak akan menghilangkan
+  token.
+- Tombol **Putuskan** menghapus seluruh kredensial (dipakai saat pindah akun
+  atau lokasi).
+- Halaman ini hanya bisa dibuka **Super Admin**.
+
+> Alternatif lama lewat `.env` (`GOOGLE_BP_*`) tetap didukung sebagai
+> cadangan. Bila keduanya terisi, **nilai dari halaman yang menang**.
 
 ## Langkah 5 — Verifikasi
 
@@ -133,8 +142,9 @@ akun pribadi tanpa akses tidak akan bisa menarik ulasan sama sekali. Bila
 perlu, tambahkan akun tersebut sebagai Manager pada lokasi lewat Business
 Profile.
 
-Menggantinya nanti cukup: ubah 5 nilai `GOOGLE_BP_*` di `.env`, lalu
-`pm2 restart arkiv-pos-saas`. **Tidak ada perubahan kode atau migrasi.**
+Menggantinya nanti cukup lewat halaman yang sama: isi ulang 5 kolom lalu
+Simpan (atau **Putuskan** dulu bila ingin bersih). Token lama otomatis dibuang
+dari cache — **tanpa restart, tanpa perubahan kode atau migrasi.**
 
 Ulasan tidak akan tergandakan setelah ganti akun: kunci dedup memakai
 `review_id` (segmen terakhir id ulasan Google) yang stabil lintas akun, bukan

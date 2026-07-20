@@ -7,6 +7,7 @@ import {
   ArrowLeft,
   CheckCircle2,
   EyeOff,
+  Link2,
   Loader2,
   MessageSquareReply,
   RefreshCw,
@@ -15,6 +16,7 @@ import {
   Star,
 } from "lucide-react";
 import { RATING_LABELS, formatReviewWait } from "../helpers";
+import { GoogleConnectPanel } from "./google-connect-panel";
 
 /**
  * EPIC-013 Fase A — Google Review: baca & balas dari dashboard.
@@ -59,6 +61,7 @@ export function CrmReviewsPage() {
   const [statusFilter, setStatusFilter] = useState("baru");
   const [ratingFilter, setRatingFilter] = useState("all");
   const [loading, setLoading] = useState(true);
+  const [showConnect, setShowConnect] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [draft, setDraft] = useState<{ id: string; text: string } | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -169,16 +172,36 @@ export function CrmReviewsPage() {
           </button>
         </div>
 
-        {integration && !integration.configured && (
-          <div className="flex items-start gap-2.5 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        {integration && !integration.configured && !showConnect && (
+          <div className="flex flex-wrap items-start gap-2.5 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
             <ShieldAlert className="mt-0.5 size-4 shrink-0" />
-            <span>
+            <span className="min-w-0 flex-1">
               <strong className="font-semibold">Integrasi Google belum terhubung.</strong> Ulasan
-              belum bisa ditarik dan balasan belum bisa dikirim. Isi kredensial Google Business
-              Profile di environment — lihat{" "}
-              <span className="font-mono text-xs">docs/crm/RUNBOOK-GOOGLE-REVIEW.md</span>.
+              belum bisa ditarik dan balasan belum bisa dikirim.
             </span>
+            <button
+              type="button"
+              onClick={() => setShowConnect(true)}
+              className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md bg-amber-600 px-3 text-xs font-semibold text-white transition hover:bg-amber-700"
+            >
+              <Link2 className="size-3.5" /> Hubungkan Sekarang
+            </button>
           </div>
+        )}
+
+        {(showConnect || integration?.configured) && (
+          <>
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowConnect((current) => !current)}
+                className="text-xs font-medium text-slate-500 underline underline-offset-2 hover:text-slate-800"
+              >
+                {showConnect ? "Sembunyikan pengaturan koneksi" : "Pengaturan koneksi Google"}
+              </button>
+            </div>
+            {showConnect && <GoogleConnectPanel onSaved={load} />}
+          </>
         )}
 
         {(feedback.error || feedback.message) && (

@@ -175,3 +175,27 @@ ulang** tanpa ditulis ulang.
   Catatan untuk owner: akun yang dipakai WAJIB punya akses pengelola pada
   Business Profile lokasi Sulu — akun pribadi tanpa akses tidak bisa menarik
   ulasan sama sekali, jadi bukan sekadar "sementara pakai apa saja".
+- 2026-07-20 — **Kredensial Google bisa diisi dari halaman, bukan `.env`**
+  (pertanyaan owner: "masukannya di halaman mana?"). Sebelumnya hanya lewat
+  file di server — butuh akses terminal, tidak sejalan dengan pola halaman
+  pairing WhatsApp Gateway.
+  - Pola diambil dari `Settings → Integrasi` yang sudah ada: rahasia disimpan
+    server-side, browser hanya menerima penanda "tersimpan" + versi tersamar
+    (`maskSecret`). 5 kunci baru di `app-settings`.
+  - `GET/PUT/DELETE /api/settings/google-business` (super_admin only).
+    **Rahasia tidak pernah dikirim balik**; kolom rahasia yang dikosongkan
+    berarti "biarkan nilai lama" — supaya mengubah Location ID tidak
+    menghapus refresh token. Account/Location menerima angka saja (awalan
+    `accounts/`/`locations/` ditambahkan otomatis). Mengganti kredensial
+    otomatis membuang cache access token.
+  - `readGoogleBusinessConfig()` kini async: baca dari pengaturan dulu, env
+    jadi cadangan (nilai UI menang) — deployment lama tetap jalan.
+  - UI `GoogleConnectPanel` di halaman Google Review; banner "belum
+    terhubung" kini punya tombol **Hubungkan Sekarang**.
+  - **Verifikasi live**: simpan kredensial uji → status berubah
+    `configured: true` dan sync **benar-benar memanggil Google** (gagal di
+    autentikasi Google, bukan lagi "belum dikonfigurasi") = bukti kredensial
+    dari UI yang dipakai; rahasia kembali dalam bentuk tersamar saja; simpan
+    ulang tanpa mengisi rahasia **tidak menghapusnya**; Putuskan
+    mengosongkan semua; tanpa login 401. Kredensial uji sudah dihapus.
+  - Gate: 596 test hijau, build sukses.

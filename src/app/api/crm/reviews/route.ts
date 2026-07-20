@@ -92,7 +92,7 @@ export async function GET(request: NextRequest) {
         reviews,
         summary: summaryRows[0],
         settings,
-        integration: googleBusinessStatus(),
+        integration: await googleBusinessStatus(),
       },
     });
   } catch (error) {

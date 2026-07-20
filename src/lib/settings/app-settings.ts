@@ -20,6 +20,13 @@ export const SETTING_KEYS = {
   COMPANY_CITY: "company_city",
   COMPANY_SIGNER_NAME: "company_signer_name",
   COMPANY_SIGNER_TITLE: "company_signer_title",
+  // Google Business Profile (EPIC-013 Fase A) — diisi Super Admin lewat UI.
+  // Rahasia tidak pernah dikirim balik ke browser, hanya versi tersamar.
+  GOOGLE_BP_CLIENT_ID: "google_bp_client_id",
+  GOOGLE_BP_CLIENT_SECRET: "google_bp_client_secret",
+  GOOGLE_BP_REFRESH_TOKEN: "google_bp_refresh_token",
+  GOOGLE_BP_ACCOUNT_ID: "google_bp_account_id",
+  GOOGLE_BP_LOCATION_ID: "google_bp_location_id",
 } as const;
 
 export const DEEPSEEK_DEFAULTS = {
