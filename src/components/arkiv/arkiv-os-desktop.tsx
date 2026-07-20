@@ -659,12 +659,12 @@ export default function ArkivOsDesktop() {
         )}
       </section>
 
-      <nav className="fixed bottom-5 left-1/2 z-30 flex -translate-x-1/2 items-end gap-2 rounded-[28px] border border-white/18 bg-white/14 p-2 shadow-[0_24px_80px_rgba(0,0,0,.38)] backdrop-blur-2xl">
+      <nav className="fixed bottom-3 left-1/2 z-30 flex max-w-[calc(100vw-12px)] -translate-x-1/2 items-end gap-1 overflow-x-auto rounded-3xl border border-white/18 bg-white/14 p-1.5 shadow-[0_24px_80px_rgba(0,0,0,.38)] backdrop-blur-2xl sm:bottom-5 sm:gap-2 sm:rounded-[28px] sm:p-2">
         <DockButton label="Launchpad" icon={MonitorDot} active={showLibrary} onClick={() => setShowLibrary((value) => !value)} />
         {modules.filter((module) => !module.disabled).map((module) => <DockButton key={module.name} label={module.name} icon={module.icon} active={previewModule?.name === module.name} onClick={() => setPreviewModule((current) => current?.name === module.name ? null : module)} />)}
         <DockButton label="Do" icon={Bot} active={showAssistant} onClick={() => setShowAssistant((value) => !value)} />
         <DockButton label="Apps" icon={Grid3X3} active={showLibrary} onClick={() => setShowLibrary((value) => !value)} />
-        <div className="mx-1 h-9 w-px bg-white/18" />
+        <div className="mx-0.5 h-7 w-px shrink-0 bg-white/18 sm:mx-1 sm:h-9" />
         {notifHistory.length > 0 && (
           <DockButton label={`Notifications (${notifHistory.length})`} icon={Bell} active={showNotifications} onClick={() => setShowNotifications((value) => !value)} />
         )}
@@ -853,9 +853,9 @@ function DockButton({ label, icon: Icon, onClick, active = false }: { label: str
       aria-label={label}
       title={label}
       onClick={onClick}
-      className={`group relative grid size-12 place-items-center rounded-2xl border border-white/14 text-white shadow-lg transition duration-200 hover:-translate-y-3 hover:scale-125 hover:bg-white/24 ${active ? "bg-white/24 ring-1 ring-pink-200/50" : "bg-white/14"}`}
+      className={`group relative grid size-10 shrink-0 place-items-center rounded-xl border border-white/14 text-white shadow-lg transition duration-200 hover:-translate-y-3 hover:scale-125 hover:bg-white/24 sm:size-12 sm:rounded-2xl ${active ? "bg-white/24 ring-1 ring-pink-200/50" : "bg-white/14"}`}
     >
-      <Icon className="size-5 transition group-hover:scale-110" />
+      <Icon className="size-4 transition group-hover:scale-110 sm:size-5" />
       {active && <span className="absolute -bottom-1 size-1.5 rounded-full bg-pink-200 shadow-[0_0_12px_rgba(244,114,182,.9)]" />}
     </button>
   );
@@ -945,7 +945,7 @@ function WindowShell({ title, children, onClose, className = "" }: { title: stri
       ref={windowRef}
       style={{ ...floatingStyle, zIndex }}
       onMouseDown={focusWindow}
-      className={`fixed overflow-hidden rounded-3xl border bg-slate-950/55 shadow-2xl backdrop-blur-2xl ${zIndex === topWindowZ ? "border-pink-200/35 ring-1 ring-pink-300/20" : "border-white/18"} ${activeClassName}`}
+      className={`fixed overflow-hidden rounded-3xl border bg-slate-950/55 shadow-2xl backdrop-blur-2xl max-sm:inset-x-2! max-sm:top-11! max-sm:bottom-[72px]! max-sm:h-auto! max-sm:max-h-none! max-sm:w-auto! max-sm:translate-x-0! max-sm:translate-y-0! max-sm:rounded-2xl! ${minimized ? "max-sm:bottom-auto!" : ""} ${zIndex === topWindowZ ? "border-pink-200/35 ring-1 ring-pink-300/20" : "border-white/18"} ${activeClassName}`}
     >
       <div className="flex h-11 cursor-move items-center justify-between border-b border-white/10 px-4" onMouseDown={startDrag}>
         <div className="flex items-center gap-2" onMouseDown={(event) => event.stopPropagation()}>
