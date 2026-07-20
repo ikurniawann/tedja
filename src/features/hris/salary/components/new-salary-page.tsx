@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Combobox } from "@/components/ui/combobox";
 import { ArrowLeftIcon } from "@heroicons/react/24/outline";
 import { CheckIcon } from "@heroicons/react/24/solid";
 import { useToast, ToastContainer } from "@/components/ui/toast";
@@ -18,6 +19,12 @@ export function NewSalaryPage() {
 
   const employeesQuery = useSalaryEmployees();
   const employees = employeesQuery.data ?? [];
+  // NIP ditaruh di `description` agar karyawan bisa dicari lewat nama ATAU NIP.
+  const employeeOptions = employees.map((emp) => ({
+    value: emp.id,
+    label: emp.full_name,
+    description: emp.nip ?? undefined,
+  }));
   const createMutation = useCreateSalary();
   const saving = createMutation.isPending;
 
@@ -116,19 +123,20 @@ export function NewSalaryPage() {
           {/* Employee Selection */}
           <div>
             <Label htmlFor="employee_id">Karyawan *</Label>
-            <select
-              id="employee_id"
-              value={formData.employee_id}
-              onChange={(e) => setFormData({ ...formData, employee_id: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500 mt-1"
-            >
-              <option value="">Pilih karyawan</option>
-              {employees.map((emp) => (
-                <option key={emp.id} value={emp.id}>
-                  {emp.full_name} ({emp.nip})
-                </option>
-              ))}
-            </select>
+            <div className="mt-1">
+              <Combobox
+                options={employeeOptions}
+                value={formData.employee_id}
+                onChange={(value) => setFormData({ ...formData, employee_id: value })}
+                placeholder={
+                  employeesQuery.isLoading ? "Memuat karyawan…" : "Pilih karyawan"
+                }
+                searchPlaceholder="Cari nama atau NIP…"
+                emptyMessage="Karyawan tidak ditemukan"
+                disabled={employeesQuery.isLoading}
+                allowClear
+              />
+            </div>
           </div>
 
           {/* Penghasilan */}

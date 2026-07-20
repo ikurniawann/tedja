@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
       .from('leaves')
       .select(`
         *,
-        employee:employees(
+        employee:employees!employee_id(
           full_name,
           nip,
           department:departments(name),

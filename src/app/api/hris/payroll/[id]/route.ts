@@ -58,7 +58,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           status,
           payslip_sent,
           payslip_sent_at,
-          employee:employees (
+          employee:employees!employee_id (
             id,
             full_name,
             nip,

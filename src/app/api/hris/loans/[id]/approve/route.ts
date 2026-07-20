@@ -116,7 +116,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       .eq('status', 'pending')
       .select(`
         *,
-        employee:employees (
+        employee:employees!employee_id (
           id,
           full_name,
           nip
