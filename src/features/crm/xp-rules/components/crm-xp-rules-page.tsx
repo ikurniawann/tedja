@@ -85,6 +85,16 @@ const KOSONG: XpRuleForm = {
 
 const angka = (value: number) => Math.round(value).toLocaleString("id-ID");
 
+/**
+ * Kolom numeric dikirim pg sebagai string berdesimal ("1.0000", "1000.00").
+ * Untuk input form: bersihkan nol desimal — "1" dan "1000", bukan apa adanya.
+ * parseFloat (bukan Math.round) supaya nilai pecahan sungguhan tidak diubah.
+ */
+const utuh = (value: unknown, fallback = ""): string => {
+  const n = Number(value);
+  return Number.isFinite(n) ? String(parseFloat(n.toFixed(4))) : fallback;
+};
+
 /** Ringkasan aturan dalam bahasa manusia — agar tidak perlu menerka kolom. */
 function ringkasan(rule: XpRule): string {
   const nilai = Number(rule.xp_value) || 0;
@@ -130,10 +140,10 @@ export function CrmXpRulesPage() {
       source_channel: rule.source_channel,
       source_type: rule.source_type,
       xp_mode: rule.xp_mode,
-      xp_value: String(rule.xp_value ?? ""),
-      amount_step: String(rule.amount_step ?? "1"),
-      min_amount: String(rule.min_amount ?? "0"),
-      max_xp_per_event: rule.max_xp_per_event == null ? "" : String(rule.max_xp_per_event),
+      xp_value: utuh(rule.xp_value),
+      amount_step: utuh(rule.amount_step, "1"),
+      min_amount: utuh(rule.min_amount, "0"),
+      max_xp_per_event: rule.max_xp_per_event == null ? "" : utuh(rule.max_xp_per_event),
       tier_multiplier_enabled: rule.tier_multiplier_enabled,
       priority: String(rule.priority ?? 100),
       is_active: rule.is_active,
@@ -372,24 +382,32 @@ export function CrmXpRulesPage() {
 
             <Field
               label="Nilai XP"
+              numeric
+              satuan="XP"
               value={form.xp_value}
               onChange={(v) => setForm((f) => ({ ...f, xp_value: v }))}
             />
             <Field
               label="Kelipatan rupiah"
               hint="Dipakai mode Per nominal."
+              numeric
+              satuan="Rp"
               value={form.amount_step}
               onChange={(v) => setForm((f) => ({ ...f, amount_step: v }))}
             />
             <Field
               label="Minimal belanja"
               hint="0 = tanpa minimum."
+              numeric
+              satuan="Rp"
               value={form.min_amount}
               onChange={(v) => setForm((f) => ({ ...f, min_amount: v }))}
             />
             <Field
               label="Batas XP per transaksi"
               hint="Kosong = tanpa batas."
+              numeric
+              satuan="XP"
               value={form.max_xp_per_event}
               onChange={(v) => setForm((f) => ({ ...f, max_xp_per_event: v }))}
             />
@@ -446,20 +464,43 @@ function Field({
   hint,
   value,
   onChange,
+  numeric = false,
+  satuan,
 }: {
   label: string;
   hint?: string;
   value: string;
   onChange: (value: string) => void;
+  numeric?: boolean;
+  /** "Rp" → pratinjau "Rp 1.000"; "XP" → pratinjau "1 XP". */
+  satuan?: "Rp" | "XP";
 }) {
+  const n = Number(value);
+  const pratinjau =
+    numeric && satuan && value !== "" && Number.isFinite(n)
+      ? satuan === "Rp"
+        ? `Rp ${Math.round(n).toLocaleString("id-ID")}`
+        : `${parseFloat(n.toFixed(4)).toLocaleString("id-ID")} XP`
+      : null;
+
   return (
     <div>
       <label className="mb-1 block text-xs font-medium text-slate-600">{label}</label>
-      <input
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="h-9 w-full rounded-md border border-slate-300 px-2 text-sm outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
-      />
+      <div className="relative">
+        <input
+          value={value}
+          inputMode={numeric ? "numeric" : undefined}
+          onChange={(event) =>
+            onChange(numeric ? event.target.value.replace(/[^\d.,]/g, "") : event.target.value)
+          }
+          className="h-9 w-full rounded-md border border-slate-300 px-2 text-sm outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
+        />
+        {pratinjau && (
+          <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-400">
+            {pratinjau}
+          </span>
+        )}
+      </div>
       {hint && <p className="mt-0.5 text-[11px] text-slate-400">{hint}</p>}
     </div>
   );
