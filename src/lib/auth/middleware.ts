@@ -41,6 +41,10 @@ export async function updateSession(request: NextRequest) {
     // Penerima event dari wa-gateway (mesin yang sama) — auth = header
     // x-gateway-token, bukan sesi user.
     "/api/wa/inbound",
+    // Webhook Instagram dari Meta — dipanggil server Meta tanpa sesi.
+    // Auth = tanda tangan HMAC X-Hub-Signature-256 atas raw body, diperiksa
+    // di dalam route itu sendiri.
+    "/api/crm/instagram/webhook",
   ];
   const isPublicRoute =
     pathname === "/" ||

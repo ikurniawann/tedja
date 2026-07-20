@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getPool } from "@/lib/db";
+import { sendInstagramText } from "@/lib/instagram/client";
+import { isWithinReplyWindow } from "@/lib/instagram/webhook";
+import { recordGatewayMessage } from "@/lib/whatsapp/store";
 import { requireCrmInboxAgent } from "@/lib/crm/server";
 import { sendWhatsAppText } from "@/lib/whatsapp";
 import { messagePreview } from "@/lib/whatsapp/inbound";
@@ -236,23 +239,64 @@ export async function POST(
       return NextResponse.json({ success: true });
     }
 
-    // action === "reply" — kirim lewat kanal percakapan.
-    // Pengirim Instagram menyusul di Fase C; sampai itu ada, balasan ditolak
-    // dengan jelas alih-alih diam-diam terkirim lewat WhatsApp.
-    if (conversation.channel !== "whatsapp") {
-      return NextResponse.json(
-        {
-          success: false,
-          error: `Balasan untuk kanal ${conversation.channel} belum tersedia — menunggu integrasi kanal tersebut.`,
-        },
-        { status: 409 }
+    // action === "reply" — kirim lewat kanal percakapan masing-masing.
+    let result: { success: boolean; reason?: string; messageId?: string | null };
+
+    if (conversation.channel === "instagram") {
+      // Meta menolak balasan lewat 24 jam sejak pesan masuk terakhir. Dicegat
+      // di sini supaya agent mendapat alasan yang jelas, bukan galat mentah
+      // dari Graph API setelah menulis panjang lebar.
+      const { rows: lastInbound } = await pool.query(
+        `SELECT max(created_at) AS at
+           FROM crm.wa_messages
+          WHERE conversation_id = $1 AND direction = 'in'`,
+        [id]
+      );
+      const lastInboundAt = lastInbound[0]?.at ? new Date(lastInbound[0].at) : null;
+
+      if (!isWithinReplyWindow(lastInboundAt, new Date())) {
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              "Jendela balas 24 jam Instagram sudah lewat. Tunggu pesan berikutnya dari pelanggan.",
+          },
+          { status: 409 }
+        );
+      }
+
+      const sent = await sendInstagramText(conversation.external_id, payload.message);
+      result = sent.success
+        ? { success: true, messageId: sent.messageId }
+        : { success: false, reason: sent.reason };
+
+      if (sent.success) {
+        // Balasan tidak lewat gateway WhatsApp, jadi dicatat lewat jalur
+        // sadar-kanal yang sama. Meta juga memantulkan balasan ini sebagai
+        // echo; `provider_message_id` unik membuat yang datang kedua diabaikan,
+        // sehingga riwayat tetap benar baik echo aktif maupun tidak.
+        await recordGatewayMessage({
+          channel: "instagram",
+          externalId: conversation.external_id,
+          phone: null,
+          direction: "out",
+          body: payload.message,
+          mediaType: null,
+          providerMessageId: sent.messageId ?? null,
+          pushName: null,
+          sentAt: new Date(),
+        }).catch((error) => {
+          // Pesan SUDAH terkirim ke pelanggan; gagal mencatat tidak boleh
+          // membuat agent mengira balasannya gagal lalu mengirim ulang.
+          console.error("Balasan Instagram terkirim tetapi gagal dicatat:", error);
+        });
+      }
+    } else {
+      result = await sendWhatsAppText(
+        { target: conversation.phone, message: payload.message },
+        { messageType: "chat", sentByUserId: guard.user.id, conversationId: id }
       );
     }
-
-    const result = await sendWhatsAppText(
-      { target: conversation.phone, message: payload.message },
-      { messageType: "chat", sentByUserId: guard.user.id, conversationId: id }
-    );
 
     if (!result.success) {
       return NextResponse.json(

@@ -236,3 +236,42 @@ ulang** tanpa ditulis ulang.
     bisa berkirim pesan dengan akun yang punya peran di app tersebut tanpa
     App Review penuh — App Review baru wajib untuk penggunaan publik.
     Perlu dipastikan saat implementasi.
+- 2026-07-20 — **Fase C SELESAI (siap-kredensial): Instagram DM.** Owner
+  memilih mengerjakan kode lebih dulu karena aplikasi Meta belum ada.
+  - `lib/instagram/webhook.ts` — logika murni: verifikasi
+    `X-Hub-Signature-256` (HMAC-SHA256 atas **raw body**, dibandingkan
+    timing-safe), handshake `hub.challenge`, normalisasi payload jadi bentuk
+    internal, dan jendela balas 24 jam. Tanpa DB/jaringan → 18 unit test.
+  - `lib/instagram/client.ts` — kredensial dari halaman Settings dengan env
+    sebagai cadangan; tanpa kredensial seluruh fungsi mengembalikan status
+    "belum dikonfigurasi", bukan crash. Config webhook **sengaja dipisah**
+    dari config pengirim: pesan sudah bisa DITERIMA begitu App Secret +
+    Verify Token terisi, walau Access Token belum ada.
+  - `POST/GET /api/crm/instagram/webhook` — endpoint publik (didaftarkan di
+    daftar rute publik middleware); otentikasinya tanda tangan HMAC, bukan
+    sesi. Selalu membalas 200 selama tanda tangan sah, karena status non-2xx
+    membuat Meta mengirim ulang berkali-kali lalu menonaktifkan langganan.
+    Kegagalan satu pesan tidak menggagalkan batch.
+  - Balasan Instagram aktif: penolakan 409 lama diganti pengiriman lewat
+    Graph API. Jendela 24 jam dicegat **sebelum** kirim agar agent dapat
+    alasan jelas, bukan galat mentah. Balasan dicatat lewat
+    `recordGatewayMessage`; echo dari Meta dengan `mid` sama diabaikan oleh
+    unique `provider_message_id`, sehingga riwayat benar baik echo aktif
+    maupun tidak.
+  - UI: `InstagramConnectPanel` di halaman Inbox — menampilkan Callback URL
+    siap salin, status tiga tingkat (belum dikonfigurasi / terima saja /
+    aktif), dan rahasia tidak pernah dikirim balik ke browser.
+  - **Verifikasi live dengan payload Meta tiruan bertanda tangan asli**:
+    sebelum dikonfigurasi 503; handshake token benar mengembalikan challenge,
+    token salah 403; pesan bertanda tangan sah tersimpan (`stored:1`) dan
+    muncul sebagai percakapan IG di inbox; tanpa signature / signature salah /
+    body diubah satu spasi semuanya 401; kirim ulang payload sama `stored:0`
+    (dedup); balasan di luar 24 jam ditolak 409 dengan pesan yang benar;
+    balasan dalam jendela **benar-benar sampai ke Graph API** dan galatnya
+    diteruskan apa adanya ("Invalid OAuth access token") — bukti jalur kirim
+    utuh; aksi non-kirim (mark_read) tetap jalan. Data uji dibersihkan.
+  - Gate: 619 test hijau, build sukses.
+  - **Sisa (di luar kode)**: aplikasi Meta + akun IG Professional tertaut
+    Halaman Facebook, izin `instagram_manage_messages`, lalu isi kredensial
+    di panel dan daftarkan Callback URL. Perlu dipastikan saat itu: apakah
+    mode development cukup untuk uji tanpa App Review penuh.

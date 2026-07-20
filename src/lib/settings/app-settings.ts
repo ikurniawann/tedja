@@ -27,6 +27,12 @@ export const SETTING_KEYS = {
   GOOGLE_BP_REFRESH_TOKEN: "google_bp_refresh_token",
   GOOGLE_BP_ACCOUNT_ID: "google_bp_account_id",
   GOOGLE_BP_LOCATION_ID: "google_bp_location_id",
+  // Instagram Messaging (EPIC-013 Fase C) — diisi Super Admin lewat UI.
+  // Rahasia tidak pernah dikirim balik ke browser, hanya versi tersamar.
+  IG_APP_SECRET: "ig_app_secret",
+  IG_VERIFY_TOKEN: "ig_verify_token",
+  IG_ACCESS_TOKEN: "ig_access_token",
+  IG_ACCOUNT_ID: "ig_account_id",
 } as const;
 
 export const DEEPSEEK_DEFAULTS = {
