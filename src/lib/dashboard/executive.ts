@@ -41,6 +41,18 @@ export interface PayrollLast {
   paidAt: string | null;
 }
 
+export interface OutletSales {
+  outlet: string;
+  omzetHariIni: number;
+  pesananHariIni: number;
+  omzet7Hari: number;
+}
+
+export interface MonthToDate {
+  omzet: number;
+  pesanan: number;
+}
+
 export interface ExecutiveDashboard {
   dibuatPada: string;
   /** Denyut hari ini — struktur identik dengan papan desktop. */
@@ -51,6 +63,8 @@ export interface ExecutiveDashboard {
   purchasingBulanIni: PurchasingMonth | null;
   payrollTerakhir: PayrollLast | null;
   kontrakHabis30Hari: number | null;
+  omzetPerOutlet: OutletSales[] | null;
+  bulanBerjalan: MonthToDate | null;
   gagal: string[];
 }
 
@@ -172,6 +186,56 @@ async function fetchExpiringContracts(): Promise<number> {
   return Number(row?.jumlah ?? 0);
 }
 
+async function fetchOutletBreakdown(): Promise<OutletSales[]> {
+  const today = todayJakarta();
+  // LEFT JOIN: pesanan tanpa branch tetap dihitung sebagai "Tanpa outlet" —
+  // menyembunyikannya membuat total per-outlet tidak pernah cocok dengan KPI.
+  const rows = await query<{
+    outlet: string | null;
+    omzet_hari_ini: number;
+    pesanan_hari_ini: number;
+    omzet_7_hari: number;
+  }>(
+    `SELECT b.name AS outlet,
+            COALESCE(sum(o.total_amount) FILTER (
+              WHERE o.created_at >= $1::date AND o.created_at < ($1::date + interval '1 day')
+            ), 0)::float8 AS omzet_hari_ini,
+            COALESCE(count(*) FILTER (
+              WHERE o.created_at >= $1::date AND o.created_at < ($1::date + interval '1 day')
+            ), 0)::int AS pesanan_hari_ini,
+            COALESCE(sum(o.total_amount), 0)::float8 AS omzet_7_hari
+       FROM pos.pos_orders o
+       LEFT JOIN configuration.branches b ON b.id = o.branch_id
+      WHERE o.created_at >= ($1::date - interval '6 days')
+        AND o.created_at < ($1::date + interval '1 day')
+        AND o.status <> 'cancelled'
+        AND o.voided_at IS NULL
+      GROUP BY b.name
+      ORDER BY omzet_7_hari DESC`,
+    [today]
+  );
+  return rows.map((r) => ({
+    outlet: r.outlet ?? "Tanpa outlet",
+    omzetHariIni: Number(r.omzet_hari_ini),
+    pesananHariIni: Number(r.pesanan_hari_ini),
+    omzet7Hari: Number(r.omzet_7_hari),
+  }));
+}
+
+async function fetchMonthToDate(): Promise<MonthToDate> {
+  const today = todayJakarta();
+  const row = await queryOne<{ omzet: number; pesanan: number }>(
+    `SELECT COALESCE(sum(total_amount), 0)::float8 AS omzet, count(*)::int AS pesanan
+       FROM pos.pos_orders
+      WHERE created_at >= date_trunc('month', $1::date)
+        AND created_at < ($1::date + interval '1 day')
+        AND status <> 'cancelled'
+        AND voided_at IS NULL`,
+    [today]
+  );
+  return { omzet: Number(row?.omzet ?? 0), pesanan: Number(row?.pesanan ?? 0) };
+}
+
 async function safe<T>(name: string, gagal: string[], fn: () => Promise<T>): Promise<T | null> {
   try {
     return await fn();
@@ -184,7 +248,7 @@ async function safe<T>(name: string, gagal: string[], fn: () => Promise<T>): Pro
 
 export async function buildExecutiveDashboard(): Promise<ExecutiveDashboard> {
   const gagal: string[] = [];
-  const [overview, tren14Hari, topProduk7Hari, nilaiPersediaan, purchasingBulanIni, payrollTerakhir, kontrakHabis30Hari] =
+  const [overview, tren14Hari, topProduk7Hari, nilaiPersediaan, purchasingBulanIni, payrollTerakhir, kontrakHabis30Hari, omzetPerOutlet, bulanBerjalan] =
     await Promise.all([
       buildDesktopOverview(), // punya gagal-aman internalnya sendiri
       safe("tren14", gagal, fetchTrend14),
@@ -193,6 +257,8 @@ export async function buildExecutiveDashboard(): Promise<ExecutiveDashboard> {
       safe("purchasing", gagal, fetchPurchasingMonth),
       safe("payroll", gagal, fetchPayrollLast),
       safe("kontrak", gagal, fetchExpiringContracts),
+      safe("outlet", gagal, fetchOutletBreakdown),
+      safe("bulanBerjalan", gagal, fetchMonthToDate),
     ]);
 
   return {
@@ -204,6 +270,8 @@ export async function buildExecutiveDashboard(): Promise<ExecutiveDashboard> {
     purchasingBulanIni,
     payrollTerakhir,
     kontrakHabis30Hari,
+    omzetPerOutlet,
+    bulanBerjalan,
     gagal: [...gagal, ...overview.gagal.map((g) => `overview:${g}`)],
   };
 }

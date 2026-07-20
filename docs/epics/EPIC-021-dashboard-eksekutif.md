@@ -45,11 +45,18 @@ dan ber-deep-link. Analisis dalam tetap di dashboard modul masing-masing.
   Perlu Keputusan, produk terlaris, inventori (nilai + menipis), purchasing,
   payroll & kontrak, CRM 7 hari. Auto-refresh 60 dtk saat tab terlihat.
 
-**Fase B — kandidat lanjutan (belum, butuh keputusan owner)**
-- Breakdown per brand/outlet (company_id/branch_id sudah ada di pos_orders).
-- Target omzet harian/bulanan → % pencapaian.
-- Dashboard role-aware untuk role lain (purchasing, finance, pos_supervisor) —
-  usulan pemetaan sudah dibahas, belum diputuskan.
+**Fase B — outlet, target, role-aware (selesai)**
+- Kartu **Per Outlet · 7 Hari**: omzet per branch (LEFT JOIN — pesanan tanpa
+  branch tampil sebagai "Tanpa outlet" agar totalnya selalu cocok dengan KPI).
+- Kartu **Bulan Berjalan**: omzet & pesanan month-to-date + progress terhadap
+  target bulanan; KPI Omzet Hari Ini mendapat progress target harian.
+- **Target omzet** diedit inline dari kartu Bulan Berjalan ("Atur target ›") —
+  tersimpan di `app_settings.sales_target_config` via
+  `PUT /api/settings/sales-target` (gate super_admin+direksi; sanitasi menolak
+  input sampah — "abc" TIDAK menjadi 0 yang diam-diam menghapus target — dan
+  plafon Rp 100 M menangkal salah ketik nol; 7 unit test).
+- **Landing role-aware**: purchasing_* → dashboard purchasing; pos/pos_supervisor
+  → dashboard POS; finance_staff → payroll; sisanya tetap → rekrutmen.
 
 ## Non-Goals
 
@@ -82,6 +89,14 @@ dan ber-deep-link. Analisis dalam tetap di dashboard modul masing-masing.
 
 ## Automation Log
 
+- 2026-07-21 — **Fase B selesai**: per-outlet + bulan berjalan + target omzet
+  (editor inline) + landing role-aware. Unit test target menangkap bug nyata
+  sebelum sampai ke user: sanitasi lama membuang semua non-digit sehingga
+  "abc" menjadi 0 — yang artinya diam-diam MENGHAPUS target; kini input sampah
+  ditolak 400. Smoke data dev: outlet Dago Rp 457 rb + "Tanpa outlet" Rp 165 rb
+  (7 hari), MTD Rp 622 rb/4 pesanan. 711 test hijau, build sukses, endpoint
+  target 401 tanpa login. Sisa QA: login role purchasing/pos/finance memastikan
+  landing barunya masuk akal bagi mereka.
 - 2026-07-21 — Fase A selesai satu sesi. Insiden kecil selama smoke: seksi
   purchasing gagal karena mengasumsikan kolom `total_amount` (nama di
   pos_orders) padahal purchase_orders memakai `total` — persis jenis bug yang

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import type { ExecutiveDashboard } from "@/lib/dashboard/executive";
+import type { SalesTargetConfig } from "@/lib/dashboard/sales-target";
 
 /**
  * Dashboard eksekutif /dashboard (EPIC-021) — super_admin + direksi.
@@ -76,6 +77,7 @@ const DAY_SHORT = ["Min", "Sen", "Sel", "Rab", "Kam", "Jum", "Sab"];
 
 export function ExecutiveDashboardPage() {
   const [data, setData] = useState<ExecutiveDashboard | null>(null);
+  const [target, setTarget] = useState<SalesTargetConfig>({ harianRp: 0, bulananRp: 0 });
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -84,6 +86,7 @@ export function ExecutiveDashboardPage() {
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Gagal memuat");
       setData(json.data as ExecutiveDashboard);
+      if (json.target) setTarget(json.target as SalesTargetConfig);
       setError(null);
     } catch (e) {
       setError((prev) => (data ? prev : e instanceof Error ? e.message : "Gagal memuat"));
@@ -161,6 +164,22 @@ export function ExecutiveDashboardPage() {
                   <Delta now={pulsa.hariIni.omzet} before={tren[6].omzet} label="vs minggu lalu" />
                 )}
               </div>
+              {target.harianRp > 0 && (
+                <div className="mt-3">
+                  <div className="mb-1 flex justify-between text-[11px] text-gray-500">
+                    <span>Target harian {formatRupiah(target.harianRp)}</span>
+                    <span className="font-semibold text-gray-700">
+                      {Math.round((pulsa.hariIni.omzet / target.harianRp) * 100)}%
+                    </span>
+                  </div>
+                  <div className="h-1.5 overflow-hidden rounded-full bg-gray-100">
+                    <i
+                      style={{ width: `${Math.min(100, (pulsa.hariIni.omzet / target.harianRp) * 100)}%` }}
+                      className="block h-full rounded-full bg-gradient-to-r from-pink-400 to-pink-600"
+                    />
+                  </div>
+                </div>
+              )}
             </>
           )}
         </SectionCard>
@@ -231,6 +250,58 @@ export function ExecutiveDashboardPage() {
           </>
         )}
       </SectionCard>
+
+      {/* Bulan berjalan & outlet */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <SectionCard title="Bulan Berjalan" href="/dashboard/pos" failed={failed.has("bulanBerjalan")}>
+          {data.bulanBerjalan && (
+            <>
+              <div className="flex items-baseline gap-2">
+                <span className="text-2xl font-extrabold text-gray-900">{formatRupiah(data.bulanBerjalan.omzet)}</span>
+                <span className="text-sm text-gray-500">{data.bulanBerjalan.pesanan} pesanan</span>
+              </div>
+              {target.bulananRp > 0 ? (
+                <div className="mt-3">
+                  <div className="mb-1 flex justify-between text-[11px] text-gray-500">
+                    <span>Target bulanan {formatRupiah(target.bulananRp)}</span>
+                    <span className="font-semibold text-gray-700">
+                      {Math.round((data.bulanBerjalan.omzet / target.bulananRp) * 100)}%
+                    </span>
+                  </div>
+                  <div className="h-1.5 overflow-hidden rounded-full bg-gray-100">
+                    <i
+                      style={{ width: `${Math.min(100, (data.bulanBerjalan.omzet / target.bulananRp) * 100)}%` }}
+                      className="block h-full rounded-full bg-gradient-to-r from-pink-400 to-pink-600"
+                    />
+                  </div>
+                </div>
+              ) : (
+                <p className="mt-2 text-xs text-gray-400">Target bulanan belum diatur.</p>
+              )}
+              <TargetEditor target={target} onSaved={(next) => setTarget(next)} />
+            </>
+          )}
+        </SectionCard>
+
+        <SectionCard title="Per Outlet · 7 Hari" href="/dashboard/pos" failed={failed.has("outlet")}>
+          {data.omzetPerOutlet &&
+            (data.omzetPerOutlet.length === 0 ? (
+              <p className="text-sm text-gray-400">Belum ada penjualan 7 hari terakhir.</p>
+            ) : (
+              <ul className="divide-y divide-gray-100">
+                {data.omzetPerOutlet.map((row) => (
+                  <li key={row.outlet} className="flex items-center gap-3 py-2 text-sm">
+                    <span className="min-w-0 flex-1 truncate font-medium text-gray-800">{row.outlet}</span>
+                    <span className="shrink-0 text-xs text-gray-400">
+                      hari ini {formatRupiah(row.omzetHariIni)} · {row.pesananHariIni} psn
+                    </span>
+                    <span className="shrink-0 font-semibold text-gray-900">{formatRupiah(row.omzet7Hari)}</span>
+                  </li>
+                ))}
+              </ul>
+            ))}
+        </SectionCard>
+      </div>
 
       {/* Keputusan · Produk · Stok */}
       <div className="grid gap-4 lg:grid-cols-3">
@@ -368,6 +439,101 @@ export function ExecutiveDashboardPage() {
             </div>
           )}
         </SectionCard>
+      </div>
+    </div>
+  );
+}
+
+function TargetEditor({
+  target,
+  onSaved,
+}: {
+  target: SalesTargetConfig;
+  onSaved: (next: SalesTargetConfig) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [harian, setHarian] = useState("");
+  const [bulanan, setBulanan] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => {
+          setHarian(target.harianRp ? String(target.harianRp) : "");
+          setBulanan(target.bulananRp ? String(target.bulananRp) : "");
+          setOpen(true);
+        }}
+        className="mt-3 text-xs font-semibold text-pink-600 hover:text-pink-700"
+      >
+        Atur target ›
+      </button>
+    );
+  }
+
+  const save = async () => {
+    setSaving(true);
+    setErr(null);
+    try {
+      const res = await fetch("/api/settings/sales-target", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ harianRp: harian || 0, bulananRp: bulanan || 0 }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Gagal menyimpan");
+      onSaved(json.data.config as SalesTargetConfig);
+      setOpen(false);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Gagal menyimpan");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="mt-3 space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-3">
+      <div className="grid grid-cols-2 gap-2">
+        <label className="text-xs text-gray-600">
+          Target harian (Rp)
+          <input
+            value={harian}
+            onChange={(e) => setHarian(e.target.value)}
+            inputMode="numeric"
+            placeholder="mis. 5000000"
+            className="mt-1 w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm outline-none focus:border-pink-400"
+          />
+        </label>
+        <label className="text-xs text-gray-600">
+          Target bulanan (Rp)
+          <input
+            value={bulanan}
+            onChange={(e) => setBulanan(e.target.value)}
+            inputMode="numeric"
+            placeholder="mis. 120000000"
+            className="mt-1 w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm outline-none focus:border-pink-400"
+          />
+        </label>
+      </div>
+      {err && <p className="text-xs text-rose-600">{err}</p>}
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={save}
+          disabled={saving}
+          className="rounded-md bg-pink-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-pink-700 disabled:opacity-50"
+        >
+          {saving ? "Menyimpan…" : "Simpan"}
+        </button>
+        <button
+          type="button"
+          onClick={() => setOpen(false)}
+          className="rounded-md px-3 py-1.5 text-xs font-semibold text-gray-500 hover:bg-gray-100"
+        >
+          Batal
+        </button>
       </div>
     </div>
   );
