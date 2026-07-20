@@ -1,7 +1,13 @@
 /**
- * Model AI Assistant — hanya OpenAI. Pilihan Ollama (Kimi/DeepSeek/Gemma/Qwen/
- * GLM) dihapus atas permintaan owner; id lamanya otomatis jatuh ke default lewat
- * `normalizeModel`, jadi sesi & localStorage lama tidak error.
+ * Tingkatan model asisten "Do".
+ *
+ * Label & deskripsi sengaja netral: nama vendor/model tidak boleh muncul di UI
+ * (permintaan owner — Do adalah merek sendiri). Id internal tetap membawa nama
+ * teknis karena itulah yang dikirim ke API; jangan tampilkan id ini di layar.
+ *
+ * Pilihan Ollama (Kimi/DeepSeek/Gemma/Qwen/GLM) sudah dihapus; id lamanya
+ * otomatis jatuh ke default lewat `normalizeModel`, jadi sesi & localStorage
+ * lama tidak error.
  *
  * `supportsTemperature: false` untuk model yang menolak `temperature` selain 1 —
  * diverifikasi langsung ke API: gpt-5-mini dan gpt-5.5 mengembalikan HTTP 400
@@ -11,45 +17,45 @@
 export const AI_ASSISTANT_MODELS = [
   {
     id: "openai:gpt-4o-mini",
-    label: "GPT-4o mini",
-    description: "Hemat dan cepat. Model yang sudah terbukti dipakai modul lain di sini.",
-    logo: "4o",
+    label: "Do Ringan",
+    description: "Paling cepat dan hemat. Cocok untuk pertanyaan harian.",
+    logo: "D",
     logoSrc: null,
     logoClassName: "from-emerald-200 via-teal-300 to-emerald-500 text-slate-950",
     supportsTemperature: true,
   },
   {
     id: "openai:gpt-4.1-mini",
-    label: "GPT-4.1 mini",
-    description: "Seimbang antara biaya dan kualitas jawaban.",
-    logo: "4.1",
+    label: "Do Standar",
+    description: "Seimbang antara kecepatan dan kedalaman jawaban.",
+    logo: "D",
     logoSrc: null,
     logoClassName: "from-sky-200 via-cyan-300 to-blue-500 text-slate-950",
     supportsTemperature: true,
   },
   {
     id: "openai:gpt-4o",
-    label: "GPT-4o",
-    description: "Lebih kuat dari 4o mini, biayanya juga lebih tinggi.",
-    logo: "4o",
+    label: "Do Lanjut",
+    description: "Jawaban lebih dalam untuk pertanyaan yang rumit.",
+    logo: "D",
     logoSrc: null,
     logoClassName: "from-violet-200 via-fuchsia-300 to-rose-400 text-slate-950",
     supportsTemperature: true,
   },
   {
     id: "openai:gpt-5.4-mini",
-    label: "GPT-5.4 mini",
-    description: "Generasi terbaru kelas mini.",
-    logo: "5.4",
+    label: "Do Neo",
+    description: "Generasi terbaru, ringkas dan gesit.",
+    logo: "D",
     logoSrc: null,
     logoClassName: "from-amber-200 via-orange-300 to-rose-400 text-slate-950",
     supportsTemperature: true,
   },
   {
     id: "openai:gpt-5.5",
-    label: "GPT-5.5",
-    description: "Model terbesar yang tersedia di akun ini. Paling mahal per jawaban.",
-    logo: "5.5",
+    label: "Do Maks",
+    description: "Paling kuat. Pakai saat butuh analisis paling teliti.",
+    logo: "D",
     logoSrc: null,
     logoClassName: "from-zinc-100 via-slate-300 to-zinc-500 text-slate-950",
     supportsTemperature: false,

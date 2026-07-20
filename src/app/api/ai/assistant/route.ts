@@ -176,7 +176,7 @@ export async function POST(request: NextRequest) {
       : createEmptySystemSummary();
     const fallbackAnswer = includeProjectData
       ? generateSummaryAnswer(prompt, summary, profile?.full_name ?? user.email ?? "User", intent)
-      : "AI Assistant belum bisa menghubungi model yang dipilih saat ini. Coba lagi sebentar atau pilih model lain di Arkiv OS Settings.";
+      : "Do belum bisa menghubungi tingkat yang dipilih saat ini. Coba lagi sebentar atau pilih tingkat lain di Arkiv OS Settings.";
 
     // Create session if none exists (first user message in a fresh chat)
     if (!sessionId) {
@@ -262,7 +262,7 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error("AI assistant error:", error);
-    return NextResponse.json({ error: "Gagal memproses AI Assistant" }, { status: 500 });
+    return NextResponse.json({ error: "Gagal memproses permintaan Do" }, { status: 500 });
   }
 }
 
@@ -587,7 +587,8 @@ async function generateAnswer({
   const scopeInstruction = buildScopeInstruction(scope);
 
   const systemPrompt = [
-    "Kamu adalah Arkiv OS AI Assistant untuk semua user Arkiv OS.",
+    "Kamu adalah Do, asisten Arkiv OS untuk semua user Arkiv OS.",
+    "Perkenalkan dirimu sebagai Do. Jangan menyebut vendor atau nama model di balik layar kecuali user bertanya langsung.",
     scopeInstruction,
     "Jawab dalam Bahasa Indonesia yang ramah, jelas, natural, dan actionable.",
     "Gunakan bahasa awam seperti asisten operasional, bukan bahasa developer.",
@@ -601,7 +602,9 @@ async function generateAnswer({
   const userPrompt = [
     `Nama user: ${userName}`,
     `Mode konteks: ${scope}`,
-    `Model: ${model}`,
+    // Nama model sengaja TIDAK dikirim: dulu ikut masuk prompt dan bisa terbawa
+    // ke jawaban ("saya memakai gpt-4o-mini"), padahal Do harus tampil sebagai
+    // satu merek sendiri. Model juga tidak butuh tahu namanya untuk menjawab.
     `Intent terdeteksi: ${intent}`,
     `Pertanyaan user: ${message}`,
     includeProjectData ? `\nKonteks internal Arkiv OS yang tersedia jika relevan:\n${JSON.stringify(summary, null, 2)}` : "\nKonteks operasional Arkiv OS tidak dikirim untuk mode General Chat.",
@@ -625,7 +628,7 @@ async function generateAnswer({
       model,
       provider: "internal",
       status: "fallback",
-      fallbackReason: "OpenAI sedang tidak tersedia. Saya memakai fallback internal sementara.",
+      fallbackReason: "Do sedang tidak bisa menjangkau layanan AI. Saya memakai ringkasan internal sementara.",
       error: detail,
     };
   }

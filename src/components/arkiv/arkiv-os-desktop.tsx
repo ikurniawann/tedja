@@ -220,7 +220,7 @@ export default function ArkivOsDesktop() {
 
   const desktopIcons = useMemo(
     () => [
-      { id: "assistant", name: "AI Assistant", subtitle: "Super User", icon: Bot, action: "assistant" as const },
+      { id: "assistant", name: "Do", subtitle: "Super User", icon: Bot, action: "assistant" as const },
       { id: "drive", name: "Arkiv Drive", subtitle: "Files", icon: Folder, action: "files" as const },
       { id: "Application", name: "Application", subtitle: "All Modules", icon: Grid3X3, action: "folder" as const },
       {
@@ -623,7 +623,7 @@ export default function ArkivOsDesktop() {
       <nav className="fixed bottom-5 left-1/2 z-30 flex -translate-x-1/2 items-end gap-2 rounded-[28px] border border-white/18 bg-white/14 p-2 shadow-[0_24px_80px_rgba(0,0,0,.38)] backdrop-blur-2xl">
         <DockButton label="Launchpad" icon={MonitorDot} active={showLibrary} onClick={() => setShowLibrary((value) => !value)} />
         {modules.filter((module) => !module.disabled).map((module) => <DockButton key={module.name} label={module.name} icon={module.icon} active={previewModule?.name === module.name} onClick={() => setPreviewModule((current) => current?.name === module.name ? null : module)} />)}
-        <DockButton label="AI Assistant" icon={Bot} active={showAssistant} onClick={() => setShowAssistant((value) => !value)} />
+        <DockButton label="Do" icon={Bot} active={showAssistant} onClick={() => setShowAssistant((value) => !value)} />
         <DockButton label="Apps" icon={Grid3X3} active={showLibrary} onClick={() => setShowLibrary((value) => !value)} />
         <div className="mx-1 h-9 w-px bg-white/18" />
         <DockButton label="Notifications" icon={Bell} active={showNotifications} onClick={() => setShowNotifications((value) => !value)} />
@@ -655,7 +655,7 @@ export default function ArkivOsDesktop() {
                 onChange={(event) => setAssistantShortcutInput(event.target.value)}
                 onFocus={() => setAssistantShortcutFocused(true)}
                 onBlur={() => setAssistantShortcutFocused(false)}
-                aria-label="Ask Arkiv AI Assistant"
+                aria-label="Tanya Do"
                 className="arkiv-assistant-shortcut-input absolute inset-0 h-full w-full cursor-text appearance-none border-0 bg-transparent p-0 text-transparent caret-transparent opacity-0 outline-none"
               />
             </label>
@@ -674,7 +674,7 @@ export default function ArkivOsDesktop() {
               type="submit"
               disabled={!assistantShortcutInput.trim()}
               className="grid size-10 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-pink-400 to-rose-600 text-white shadow-lg transition hover:from-pink-300 hover:to-rose-500 disabled:cursor-not-allowed disabled:opacity-45"
-              title="Open AI Assistant"
+              title="Buka Do"
             >
               <Send className="size-4" />
             </button>
@@ -1129,7 +1129,7 @@ function CommandPalette({
   const actions = [
     { label: "System Settings", subtitle: "Theme, widgets, sound, account", icon: Settings, run: onSettings },
     { label: "Arkiv Drive", subtitle: "Open file explorer", icon: Folder, run: onFiles },
-    { label: "Ask Arkiv AI", subtitle: "Open AI Assistant", icon: Bot, run: onAssistant },
+    { label: "Tanya Do", subtitle: "Buka asisten Do", icon: Bot, run: onAssistant },
     { label: "Notification Center", subtitle: "Review alerts and approvals", icon: Bell, run: onNotifications },
     { label: "Widgets", subtitle: "Turn desktop widgets on or off", icon: Activity, run: onWidgets },
     { label: "Change Wallpaper", subtitle: "Open Desktop settings", icon: MonitorDot, run: onWallpaper },
@@ -1552,7 +1552,7 @@ function AiAssistantWindow({
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [assistantStatus, setAssistantStatus] = useState<"ready" | "live" | "fallback">("ready");
-  const [statusNote, setStatusNote] = useState("Ollama siap. Kirim pesan untuk mulai.");
+  const [statusNote, setStatusNote] = useState("Do siap. Kirim pesan untuk mulai.");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [sessions, setSessions] = useState<Array<{ id: string; title: string; updated_at: string }>>([]);
   const [showHistory, setShowHistory] = useState(false);
@@ -1573,12 +1573,12 @@ function AiAssistantWindow({
   const applyAssistantMeta = useCallback((meta?: AssistantMessage["meta"]) => {
     if (meta?.status === "live" && meta.model === activeModel.id) {
       setAssistantStatus("live");
-      setStatusNote(`Live: ${meta.model ?? "Ollama"}`);
+      setStatusNote(`Live: ${activeModel.label}`);
       return;
     }
 
     setAssistantStatus("ready");
-    setStatusNote(`Ollama siap · ${activeModel.id}`);
+    setStatusNote(`Do siap · ${activeModel.label}`);
   }, [activeModel.id]);
 
   // On mount: fetch sessions + restore active session if any
@@ -1611,7 +1611,7 @@ function AiAssistantWindow({
 
   useEffect(() => {
     if (assistantStatus === "ready") {
-      setStatusNote(`Ollama siap · ${activeModel.id}`);
+      setStatusNote(`Do siap · ${activeModel.label}`);
     }
   }, [activeModel.id, assistantStatus]);
 
@@ -1625,11 +1625,11 @@ function AiAssistantWindow({
     setMessages([
       {
         role: "assistant",
-        content: `Halo, saya Arkiv AI Assistant. Mode aktif: ${activeScope.label}. Model: ${activeModel.label}.`,
+        content: `Halo, saya Do. Mode aktif: ${activeScope.label}. Tingkat: ${activeModel.label}.`,
       },
     ]);
     setAssistantStatus("ready");
-    setStatusNote(`Ollama siap · ${activeModel.id}`);
+    setStatusNote(`Do siap · ${activeModel.label}`);
     setView("chat");
     if (typeof window !== "undefined") localStorage.removeItem("arkiv-ai-session");
   };
@@ -1648,7 +1648,7 @@ function AiAssistantWindow({
     } else {
       setMessages([]);
       setAssistantStatus("ready");
-      setStatusNote("Ollama siap. Kirim pesan untuk mulai.");
+      setStatusNote("Do siap. Kirim pesan untuk mulai.");
     }
     setView("chat");
   };
@@ -1667,7 +1667,7 @@ function AiAssistantWindow({
         setSessionId(null);
         setMessages([]);
         setAssistantStatus("ready");
-        setStatusNote(`Ollama siap · ${activeModel.id}`);
+        setStatusNote(`Do siap · ${activeModel.label}`);
         setView("landing");
         if (typeof window !== "undefined") localStorage.removeItem("arkiv-ai-session");
       }
@@ -1696,7 +1696,7 @@ function AiAssistantWindow({
       const json = await response.json();
 
       if (!response.ok) {
-        throw new Error(json.error || "AI Assistant gagal merespons");
+        throw new Error(json.error || "Do gagal merespons");
       }
 
       if (json.session_id) {
@@ -1705,7 +1705,7 @@ function AiAssistantWindow({
       }
 
       setAssistantStatus(json.meta?.status === "live" ? "live" : "fallback");
-      setStatusNote(json.meta?.status === "live" ? `Live: ${json.meta?.model ?? "Ollama"}` : json.meta?.fallbackReason ?? "Fallback aktif");
+      setStatusNote(json.meta?.status === "live" ? `Live: ${activeModel.label}` : json.meta?.fallbackReason ?? "Fallback aktif");
       setMessages((prev) => [...prev, { role: "assistant", content: json.answer, meta: json.meta }]);
 
       refreshSessions();
@@ -1736,7 +1736,7 @@ function AiAssistantWindow({
   }, [initialPrompt, isAllowed, onInitialPromptConsumed, sendMessage]);
 
   return (
-    <WindowShell title="AI Assistant" onClose={onClose} className="right-5 top-14 flex h-[min(760px,calc(100vh-86px))] w-[min(780px,calc(100vw-32px))] flex-col">
+    <WindowShell title="Do" onClose={onClose} className="right-5 top-14 flex h-[min(760px,calc(100vh-86px))] w-[min(780px,calc(100vw-32px))] flex-col">
       <div className="flex h-full overflow-hidden">
         {/* Sidebar: Chat history */}
         {showHistory && (
@@ -1788,9 +1788,9 @@ function AiAssistantWindow({
                 <Bot className="size-6" />
               </div>
               <div className="min-w-0 flex-1">
-                <div className="font-semibold">Arkiv AI Assistant</div>
+                <div className="font-semibold">Do</div>
                 <div className="truncate text-xs text-white/50">
-                  {isAllowed ? `${activeScope.label} · ${activeModel.id}` : account ? "Only super_admin can use this assistant" : "Login as super_admin required"}
+                  {isAllowed ? `${activeScope.label} · ${activeModel.label}` : account ? "Only super_admin can use this assistant" : "Login as super_admin required"}
                 </div>
               </div>
               {view === "chat" && (
@@ -1812,7 +1812,7 @@ function AiAssistantWindow({
                 History
               </button>
               <div className={`rounded-full px-3 py-1 text-xs font-semibold ${assistantStatus === "live" ? "bg-emerald-400/15 text-emerald-200" : assistantStatus === "fallback" ? "bg-amber-400/15 text-amber-200" : "bg-white/10 text-white/55"}`} title={statusNote}>
-                {assistantStatus === "live" ? "Ollama Live" : assistantStatus === "fallback" ? "Fallback" : "Ready"}
+                {assistantStatus === "live" ? "Do Live" : assistantStatus === "fallback" ? "Fallback" : "Ready"}
               </div>
             </div>
           </div>
@@ -1821,7 +1821,7 @@ function AiAssistantWindow({
             <div className="flex flex-1 flex-col items-center justify-center p-6 text-center">
               <Bot className="mb-4 size-12 text-pink-200" />
               <h3 className="text-lg font-semibold">Akses dibatasi</h3>
-              <p className="mt-2 text-sm leading-6 text-white/60">AI Assistant hanya bisa digunakan setelah login sebagai akun super_admin.</p>
+              <p className="mt-2 text-sm leading-6 text-white/60">Do hanya bisa digunakan setelah login sebagai akun super_admin.</p>
               <Link href="/login?redirect=/arkiv-os" className="mt-5 rounded-2xl bg-pink-600 px-5 py-3 text-sm font-semibold hover:bg-pink-500">
                 Login Super User
               </Link>
@@ -1831,9 +1831,9 @@ function AiAssistantWindow({
               <div className="mb-5 grid size-16 place-items-center rounded-3xl bg-gradient-to-br from-pink-300 via-pink-500 to-rose-600 shadow-xl">
                 <Bot className="size-8 text-white" />
               </div>
-              <h3 className="text-xl font-bold text-white/90">Arkiv AI Assistant</h3>
+              <h3 className="text-xl font-bold text-white/90">Do</h3>
               <p className="mt-2 max-w-sm text-sm leading-6 text-white/55">
-                Assistant cerdas untuk super_admin. Mode {activeScope.label} memakai {activeModel.label}.
+                Asisten cerdas untuk super_admin. Mode {activeScope.label} memakai {activeModel.label}.
               </p>
               <button
                 onClick={startNewChat}
@@ -2102,14 +2102,14 @@ function SystemSettings({
         <aside className="rounded-3xl border border-white/10 bg-white/8 p-4">
           <div className={`mb-4 grid size-12 place-items-center rounded-2xl bg-gradient-to-br ${pinkAccent}`}><Settings className="size-6" /></div>
           <div className="font-semibold">Arkiv OS Settings</div>
-          <div className="mt-1 text-xs leading-5 text-white/50">Theme, widgets, sound, AI Assistant, dan desktop preferences.</div>
+          <div className="mt-1 text-xs leading-5 text-white/50">Theme, widgets, sound, Do, dan desktop preferences.</div>
         </aside>
         <section className="space-y-3">
           <div className="rounded-3xl border border-white/10 bg-white/8 p-4">
             <div className="mb-4 flex items-center gap-3">
               <div className={`grid size-11 place-items-center rounded-2xl bg-gradient-to-br ${pinkAccent}`}><Bot className="size-5" /></div>
               <div className="min-w-0 flex-1">
-                <div className="text-sm font-semibold">AI Assistant</div>
+                <div className="text-sm font-semibold">Do</div>
                 <div className="truncate text-xs leading-5 text-white/45">{assistantSettings.model}</div>
               </div>
             </div>
@@ -2142,7 +2142,7 @@ function SystemSettings({
                 <LlmModelLogo model={activeModel} />
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm font-semibold">{activeModel.label}</div>
-                  <div className="truncate text-[11px] text-white/55">{activeModel.id}</div>
+                  <div className="truncate text-[11px] text-white/55">{activeModel.description}</div>
                 </div>
                 <ChevronDown className={`size-4 text-white/55 transition ${showModelMenu ? "rotate-180" : ""}`} />
               </button>
@@ -2242,7 +2242,7 @@ function AboutArkiv({ onClose }: { onClose: () => void }) {
       <div className="p-6 text-center">
         <div className={`mx-auto mb-4 grid size-16 place-items-center rounded-3xl bg-gradient-to-br ${pinkAccent}`}><MonitorDot className="size-8" /></div>
         <h2 className="text-xl font-semibold">Arkiv</h2>
-        <p className="mt-2 text-sm leading-6 text-white/60">Desktop portal untuk HRIS, Procurement, POS, CRM, dan AI Assistant.</p>
+        <p className="mt-2 text-sm leading-6 text-white/60">Desktop portal untuk HRIS, Procurement, POS, CRM, dan Do.</p>
         <div className="mt-5 rounded-2xl bg-white/8 p-3 text-xs text-white/50">Version 1.0 · macOS-inspired shell</div>
       </div>
     </WindowShell>
