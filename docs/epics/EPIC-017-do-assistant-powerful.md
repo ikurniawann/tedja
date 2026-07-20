@@ -68,7 +68,7 @@ Anchor: `src/app/api/ai/assistant/route.ts` (828 baris, monolitik),
 - [x] Fase A: Shift+Enter baris baru; salin & regenerate berfungsi; sesi bisa diganti nama.
 - [x] Fase B: jawaban muncul bertahap; kegagalan streaming jatuh ke mode lama tanpa error ke user.
 - [x] Fase C: prompt hanya memuat modul relevan; penghematan token tercatat.
-- [ ] Fase D: pertanyaan spesifik dijawab dari query langsung, bukan tebakan ringkasan.
+- [x] Fase D: pertanyaan spesifik dijawab dari query langsung, bukan tebakan ringkasan.
 - [ ] Fase E: tidak ada aksi menulis yang jalan tanpa konfirmasi user.
 - [ ] Semua fase: build hijau, test hijau, tidak ada nama vendor bocor ke UI (EPIC-016 lanjutan).
 
@@ -87,6 +87,22 @@ Anchor: `src/app/api/ai/assistant/route.ts` (828 baris, monolitik),
 
 ## Automation Log
 
+- 2026-07-21 — **Fase D selesai** (tool calling read-only). Lima tool di
+  `src/lib/assistant/tools.ts`: `cari_karyawan`, `absensi_hari_ini`,
+  `stok_menipis`, `penjualan_periode`, `status_kandidat`. Model hanya memilih
+  nama tool + argumen; SQL ditulis di server, selalu parameterized, selalu
+  ber-LIMIT (25 baris).
+  Alur: putaran tool dijalankan NON-stream lebih dulu (maks 3 putaran), hasilnya
+  dilampirkan ke percakapan, lalu jawaban final tetap dialirkan streaming —
+  sehingga tool_calls tidak perlu dirakit dari potongan delta yang rapuh.
+  Kegagalan tahap tool tidak menggagalkan jawaban: lanjut memakai konteks
+  ringkasan seperti Fase C. Mode General Chat sengaja TIDAK diberi akses tool.
+  Diuji dengan data dev sungguhan: kelima tool mengembalikan hasil tanpa error
+  (18 karyawan cocok, 19 belum absen, 8 kandidat), dan model memilih
+  `absensi_hari_ini` dengan tepat untuk "Siapa saja yang belum absen hari ini?".
+  Unit test (10) menutup parsing argumen rusak, tool tak dikenal, dan penjagaan
+  bahwa tidak ada tool bernama aksi menulis di fase ini.
+  Gates: 668 test hijau, build sukses.
 - 2026-07-21 — **Fase C selesai** (konteks sesuai intent). `selectContextForIntent`
   di `src/lib/assistant/context.ts` (9 unit test) hanya mengirim modul yang relevan
   dengan intent, plus modul tetangga yang sering dibutuhkan bersama (mis.

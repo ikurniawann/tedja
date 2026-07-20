@@ -12,6 +12,7 @@ import {
 import { SETTING_KEYS, getSettings } from "@/lib/settings/app-settings";
 import { extractSseData, readOpenAiDelta, splitSseEvents } from "@/lib/assistant/sse";
 import { contextSizeChars, selectContextForIntent, type AssistantIntent } from "@/lib/assistant/context";
+import { parseToolArguments, runTool, toolDefinitions } from "@/lib/assistant/tools";
 import { appendFile, mkdir } from "fs/promises";
 import path from "path";
 
@@ -681,11 +682,7 @@ async function resolveOpenAiCall(): Promise<OpenAiCall> {
   };
 }
 
-function buildChatBody(
-  model: string,
-  messages: Array<{ role: string; content: string }>,
-  stream: boolean
-) {
+function buildChatBody(model: string, messages: ChatMsg[], stream: boolean) {
   return JSON.stringify({
     model: stripOpenAiPrefix(model),
     // Sebagian model generasi baru hanya menerima temperature = 1 dan menolak
@@ -696,10 +693,82 @@ function buildChatBody(
   });
 }
 
-async function callOpenAiChat(
+type ChatMsg = { role: string; content: string | null; tool_calls?: unknown; tool_call_id?: string; name?: string };
+
+/**
+ * Putaran tool calling (EPIC-017 Fase D).
+ *
+ * Dijalankan NON-stream lebih dulu: model memutuskan perlu data apa, tool-nya
+ * dieksekusi di server, hasilnya dilampirkan ke percakapan. Jawaban final untuk
+ * user baru dialirkan streaming — jadi user tetap melihat teks mengalir tanpa
+ * kita perlu merakit tool_calls dari potongan delta yang rapuh.
+ *
+ * Mengembalikan daftar pesan yang sudah diperkaya hasil tool (atau apa adanya
+ * bila model tidak meminta tool apa pun).
+ */
+async function runToolRounds(
   model: string,
-  messages: Array<{ role: string; content: string }>
-): Promise<string> {
+  messages: ChatMsg[],
+  maxRounds = 3
+): Promise<{ messages: ChatMsg[]; toolsUsed: string[] }> {
+  const { apiKey, baseUrl, timeoutMs } = await resolveOpenAiCall();
+  const working = [...messages];
+  const toolsUsed: string[] = [];
+
+  for (let round = 0; round < maxRounds; round++) {
+    const response = await fetch(`${baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model: stripOpenAiPrefix(model),
+        ...(modelSupportsTemperature(model) ? { temperature: 0.7 } : {}),
+        tools: toolDefinitions(),
+        messages: working,
+      }),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!response.ok) {
+      throw new Error(`OpenAI ${response.status}: ${(await response.text()).slice(0, 300)}`);
+    }
+
+    const json = (await response.json()) as {
+      choices?: Array<{
+        message?: {
+          content?: string | null;
+          tool_calls?: Array<{ id: string; function?: { name?: string; arguments?: string } }>;
+        };
+      }>;
+    };
+    const choice = json.choices?.[0]?.message;
+    const calls = choice?.tool_calls ?? [];
+    if (!calls.length) return { messages: working, toolsUsed };
+
+    // Pesan asisten yang memuat tool_calls WAJIB ikut disertakan sebelum hasil
+    // tool-nya; OpenAI menolak tool message yang tidak punya panggilan induk.
+    working.push({ role: "assistant", content: choice?.content ?? null, tool_calls: calls });
+
+    for (const call of calls) {
+      const name = call.function?.name ?? "";
+      const args = parseToolArguments(call.function?.arguments);
+      const result = await runTool(name, args);
+      toolsUsed.push(name);
+      console.info(`[do:tool] ${name} ${JSON.stringify(args)}`);
+      working.push({
+        role: "tool",
+        tool_call_id: call.id,
+        name,
+        content: JSON.stringify(result),
+      });
+    }
+  }
+
+  // Batas putaran tercapai: lanjutkan dengan data yang sudah terkumpul daripada
+  // membiarkan model memanggil tool tanpa henti.
+  console.warn("[do:tool] batas putaran tool tercapai");
+  return { messages: working, toolsUsed };
+}
+
+async function callOpenAiChat(model: string, messages: ChatMsg[]): Promise<string> {
   const { apiKey, baseUrl, timeoutMs } = await resolveOpenAiCall();
   const response = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
@@ -723,7 +792,7 @@ async function callOpenAiChat(
  */
 async function callOpenAiChatStream(
   model: string,
-  messages: Array<{ role: string; content: string }>,
+  messages: ChatMsg[],
   onDelta: (text: string) => void
 ): Promise<string> {
   const { apiKey, baseUrl, timeoutMs } = await resolveOpenAiCall();
@@ -800,6 +869,7 @@ async function generateAnswer({
     "Gunakan bahasa awam seperti asisten operasional, bukan bahasa developer.",
     "Jangan menyebut JSON, API, query, schema, database, payload, object, array, model, prompt, system, atau istilah teknis internal kecuali user secara eksplisit meminta penjelasan teknis.",
     "Jika user bertanya data bisnis Arkiv OS, gunakan data internal yang tersedia dan jangan mengarang angka.",
+    "Kamu punya alat untuk mengambil data terkini (karyawan, absensi, stok, penjualan, kandidat). Pakai alat itu bila pertanyaannya spesifik, jangan menebak dari ringkasan.",
     "Jika data yang diperlukan tidak tersedia, cukup katakan data tersebut belum tersedia di sistem dan sarankan module atau filter yang perlu dibuka.",
     "Jika menjawab angka atau ringkasan, jelaskan artinya dalam konteks bisnis secara singkat.",
     "Ingat konteks percakapan dari history yang diberikan.",
@@ -825,11 +895,28 @@ async function generateAnswer({
     { role: "user", content: userPrompt },
   ];
 
+  // Tool calling hanya masuk akal saat konteks project dibawa; mode General Chat
+  // sengaja tidak diberi akses data operasional.
+  let working: ChatMsg[] = messages;
+  let toolsUsed: string[] = [];
+  if (includeProjectData) {
+    try {
+      const rounds = await runToolRounds(model, messages);
+      working = rounds.messages;
+      toolsUsed = rounds.toolsUsed;
+    } catch (error) {
+      // Gagal di tahap tool bukan alasan gagal menjawab: lanjutkan tanpa data
+      // tambahan, memakai konteks ringkasan seperti sebelumnya.
+      console.warn("[do:tool] putaran tool gagal:", formatProviderError(error, "openai-tools"));
+    }
+  }
+  const modeSuffix = toolsUsed.length ? `_tools:${[...new Set(toolsUsed)].join("+")}` : "";
+
   // Semua model kini dilayani OpenAI; pilihan Ollama sudah dihapus.
   if (onDelta) {
     try {
-      const answer = await callOpenAiChatStream(model, messages, onDelta);
-      return { answer, mode: "openai_stream_live", model, provider: "openai", status: "live" };
+      const answer = await callOpenAiChatStream(model, working, onDelta);
+      return { answer, mode: `openai_stream_live${modeSuffix}`, model, provider: "openai", status: "live" };
     } catch (error) {
       // Streaming gagal (mis. proxy memotong koneksi) bukan alasan menyerah:
       // coba sekali lagi tanpa stream sebelum jatuh ke ringkasan internal.
@@ -838,8 +925,8 @@ async function generateAnswer({
   }
 
   try {
-    const answer = await callOpenAiChat(model, messages);
-    return { answer, mode: "openai_chat_completions_live", model, provider: "openai", status: "live" };
+    const answer = await callOpenAiChat(model, working);
+    return { answer, mode: `openai_chat_completions_live${modeSuffix}`, model, provider: "openai", status: "live" };
   } catch (error) {
     const detail = formatProviderError(error, "openai");
     console.warn("AI assistant OpenAI fallback:", detail);
