@@ -333,11 +333,15 @@ async function markRunPaidAndSettleLoans(
 
       for (const alloc of allocations) {
         await client.query(
+          // $2 di-cast eksplisit: dipakai sekaligus sebagai nilai kolom
+          // numeric DAN dibandingkan dengan literal 0, sehingga tanpa cast
+          // Postgres menolak dengan "inconsistent types deduced for
+          // parameter $2".
           `UPDATE hris.loans
-           SET remaining_balance = $2,
-               paid_amount = COALESCE(paid_amount, 0) + $3,
-               is_active = CASE WHEN $2 <= 0 THEN false ELSE is_active END,
-               status = CASE WHEN $2 <= 0 THEN 'paid_off' ELSE status END,
+           SET remaining_balance = $2::numeric,
+               paid_amount = COALESCE(paid_amount, 0) + $3::numeric,
+               is_active = CASE WHEN $2::numeric <= 0 THEN false ELSE is_active END,
+               status = CASE WHEN $2::numeric <= 0 THEN 'paid_off' ELSE status END,
                updated_at = now()
            WHERE id = $1`,
           [alloc.loanId, alloc.newRemaining, alloc.amount]
