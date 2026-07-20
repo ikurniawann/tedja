@@ -1557,6 +1557,10 @@ function AiAssistantWindow({
   const [sessions, setSessions] = useState<Array<{ id: string; title: string; updated_at: string }>>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [view, setView] = useState<"landing" | "chat">("landing");
+  const messageListRef = useRef<HTMLDivElement>(null);
+  /** Auto-scroll hanya saat user memang sedang di dasar percakapan; kalau ia
+   *  menggulir ke atas untuk membaca jawaban lama, jangan disentak turun. */
+  const stickToBottomRef = useRef(true);
   const skipSessionRestoreRef = useRef(Boolean(initialPrompt?.trim()));
   const initialPromptSentRef = useRef(false);
   const isAllowed = account?.role === "super_admin";
@@ -1680,6 +1684,8 @@ function AiAssistantWindow({
     const message = text.trim();
     if (!message || loading) return;
 
+    // User baru saja menekan Enter: apa pun posisi scroll-nya, tarik ke bawah.
+    stickToBottomRef.current = true;
     setMessages((prev) => [...prev, { role: "user", content: message }]);
     setInput("");
     setLoading(true);
@@ -1718,6 +1724,36 @@ function AiAssistantWindow({
       setLoading(false);
     }
   }, [input, loading, messages, refreshSessions, sessionId, settings.model, settings.scope]);
+
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
+    const el = messageListRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior });
+  }, []);
+
+  const handleMessageListScroll = useCallback(() => {
+    const el = messageListRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    stickToBottomRef.current = distanceFromBottom < 80;
+  }, []);
+
+  // Pesan baru & indikator "Memproses..." sama-sama menambah tinggi konten,
+  // jadi keduanya perlu memicu scroll.
+  useEffect(() => {
+    if (view !== "chat") return;
+    if (!stickToBottomRef.current) return;
+    const id = requestAnimationFrame(() => scrollToBottom());
+    return () => cancelAnimationFrame(id);
+  }, [messages, loading, view, scrollToBottom]);
+
+  // Masuk ke sebuah chat: langsung tampilkan bagian terbawah tanpa animasi.
+  useEffect(() => {
+    if (view !== "chat") return;
+    stickToBottomRef.current = true;
+    const id = requestAnimationFrame(() => scrollToBottom("auto"));
+    return () => cancelAnimationFrame(id);
+  }, [view, sessionId, scrollToBottom]);
 
   useEffect(() => {
     const message = initialPrompt?.trim();
@@ -1886,7 +1922,11 @@ function AiAssistantWindow({
             </div>
           ) : (
             <>
-              <div className="flex-1 space-y-3 overflow-y-auto p-4">
+              <div
+                ref={messageListRef}
+                onScroll={handleMessageListScroll}
+                className="flex-1 space-y-3 overflow-y-auto p-4"
+              >
                 {messages.map((message, index) => (
                   <div key={index} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>
                     <div className={`max-w-[85%] whitespace-pre-line rounded-2xl px-4 py-3 text-sm font-normal leading-6 ${message.role === "user" ? "bg-pink-600 text-white" : "bg-white/10 text-white/78"}`}>
