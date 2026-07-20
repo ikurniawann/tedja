@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import {
   BuildingOfficeIcon,
   PlusIcon,
@@ -44,7 +44,6 @@ export function UsersListPage({ variant = "directory" }: UsersListPageProps) {
   const isAccountsView = variant === "accounts";
   const showAppActions = isAccountsView;
   const router = useRouter();
-  const pathname = usePathname();
   const { toasts, showToast, removeToast } = useToast();
   const { user } = useAuth();
   const canResetPassword = user?.role === "super_admin" || user?.role === "admin";
@@ -193,31 +192,6 @@ export function UsersListPage({ variant = "directory" }: UsersListPageProps) {
       </div>
 
       {!isAccountsView && <ContractExpiryBanner />}
-
-      {!isAccountsView && (
-        <div className="border-b border-gray-200/70">
-          <nav className="-mb-px flex space-x-6 overflow-x-auto">
-            {[
-              { href: EMPLOYEES_ROUTES.list, label: "All Employees" },
-              { href: "/dashboard/hris/schedules", label: "Schedules" },
-              { href: "/dashboard/hris/sections", label: "Sections" },
-            ].map((tab) => (
-              <button
-                key={tab.href}
-                type="button"
-                onClick={() => router.push(tab.href)}
-                className={`whitespace-nowrap border-b-2 px-1 py-4 text-sm font-medium transition-colors ${
-                  pathname === tab.href
-                    ? "border-pink-500 text-pink-600"
-                    : "border-transparent text-gray-500 hover:border-gray-200 hover:text-gray-700"
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </nav>
-        </div>
-      )}
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {[

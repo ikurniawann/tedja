@@ -1,0 +1,171 @@
+# EPIC-015: Pensiun Modul Jadwal Lama (Schedules & Sections berbasis `staff`)
+
+status: coding
+environment: dev
+retries: 0
+
+## Goal
+
+Menutup kebingungan dua sistem jadwal yang berjalan paralel: halaman lama
+`/dashboard/hris/schedules` (+ saudaranya `/dashboard/hris/sections`) yang
+bersandar pada tabel `staff` sudah **tidak dipakai dan tidak terhubung ke modul
+apa pun**, sementara penjadwalan yang hidup ada di **Shift Kerja**
+(`/dashboard/hris/shifts` → `hris.shifts` + `hris.employee_shifts`) yang menyuplai
+absensi, cuti, lembur, dan payroll. Hasil akhir: satu sumber kebenaran jadwal
+(Shift Kerja), menu & route lama dipensiunkan dengan redirect, kode dan tabel
+mati dibersihkan tanpa menyentuh data yang masih dipakai.
+
+## Evidence (audit 2026-07-20)
+
+Anchor kode: `src/app/dashboard/(dashboard)/hris/schedules/page.tsx`,
+`src/features/hris/schedules/*` (393 baris komponen), `src/app/api/staff-schedules/route.ts`,
+`src/app/api/staff/*`, pembanding `src/lib/hris/daily-roster.ts` +
+`src/app/api/hris/attendance/schedule/route.ts`.
+
+| | `/hris/schedules` (lama) | `/hris/shifts` (aktif) |
+|---|---|---|
+| Tabel | `hris.staff_schedules` | `hris.shifts` + `hris.employee_shifts` |
+| Acuan orang | `staff` — **0 baris** | `hris.employees` — **19 baris** |
+| Isi data | **0 baris** | 3 shift, 14 penugasan |
+| Konvensi hari | 0–6 (Minggu=0) | 1–7 |
+| Dibaca modul lain | **tidak ada** | daily-roster/absensi, cuti, lembur, payroll |
+
+1. **Halaman lama tampak "belum aktif" karena datanya mustahil ada** — daftar staf
+   ditarik dari `/api/staff` (tabel `staff`, 0 baris); seluruh karyawan hidup di
+   `hris.employees`. Menu `hris.workforce.schedules` sendiri `is_active=true`,
+   jadi masalahnya bukan menu.
+2. **Tidak ada konsumen** — `staff_schedules` tidak dibaca satu pun query
+   absensi/payroll; `deriveRosterStatus` murni memakai `employee_shifts`.
+   Mengisinya pun tidak berefek ke mana-mana (jebakan bagi user).
+3. **Modul `sections` satu paket** — `src/features/hris/sections/*` juga menarik
+   `/api/staff`; `sections` & `staff_sections` sama-sama 0 baris. Dua halaman ini
+   saling menautkan tab satu sama lain, jadi memensiunkan satu tanpa yang lain
+   meninggalkan tautan menggantung.
+4. **`/api/staff` hanya dipakai dua modul ini** — grep: `features/hris/sections/api.ts`
+   dan `features/hris/schedules/api.ts`. Tidak ada konsumen lain.
+5. **Tabel `staff` TIDAK boleh di-drop** — masih jadi target FK
+   `purchase_returns.{created_by,approved_by}`, `vendor_credits.{created_by,approved_by}`,
+   dan `employees.old_staff_id` (jejak migrasi). Yang boleh hilang hanya
+   `staff_schedules` dan `staff_sections`.
+6. **Preseden ada** — pola identik sudah dieksekusi di EPIC-009 untuk
+   `logbook-list` (redirect + menu dinonaktifkan lewat migrasi).
+
+## Keputusan yang Perlu Dikonfirmasi Owner
+
+- [x] **Sections ikut dipensiunkan?** → **Ya, satu paket** (owner, 2026-07-20).
+- [ ] **Drop tabel atau arsipkan?** Rekomendasi: drop `staff_schedules` +
+      `staff_sections` (0 baris, tidak ada FK masuk). `staff` tetap.
+- [ ] **Butuh jadwal jam bebas per orang** (bukan template shift)? Kalau ya, itu
+      fitur baru **di dalam** Shift Kerja, bukan menghidupkan halaman lama →
+      dipecah jadi epic terpisah.
+
+## Scope
+
+**Fase A — Pensiunkan route & menu (PR 1)**
+- `/dashboard/hris/schedules` → `redirect("/dashboard/hris/shifts")` (server component).
+- `/dashboard/hris/sections` → `redirect("/dashboard/hris/shifts")` bila disetujui.
+- Migrasi baru: set `is_active=false, is_visible=false` untuk menu
+  `hris.workforce.schedules` (+ `hris.organization.sections`), pola sama seperti
+  migrasi `20260718180000` di EPIC-009.
+- Bersihkan tautan tab silang di `schedule-staff-page.tsx:179` &
+  `section-staff-page.tsx:175`, dan entri `/dashboard/hris/schedules` di
+  `src/features/users/components/users-list-page.tsx:202`.
+
+**Fase B — Hapus kode mati (PR 2)**
+- Hapus `src/features/hris/schedules/` (+ `sections/`), `src/app/api/staff-schedules/`,
+  `src/app/api/staff-sections/`, `src/app/api/sections/`, `src/app/api/staff/`.
+- Hapus folder route lama setelah redirect terbukti aman; cek `src/proxy.ts:43`
+  (daftar `hrisModules` memuat `"staff"`).
+- Verifikasi tidak ada import yatim (`tsc` + build hijau).
+
+**Fase C — Migrasi DB (PR 3)**
+- `DROP TABLE hris.staff_schedules`, `hris.staff_sections`, `sections`
+  (setelah konfirmasi 0 baris di dev **dan** produksi).
+- Tabel `staff` **dipertahankan** (FK purchasing/vendor + `employees.old_staff_id`).
+
+**Fase D — Dokumentasi**
+- Catat di Automation Log + tambahkan satu paragraf "sumber kebenaran jadwal =
+  Shift Kerja" di dokumen HRIS/runbook agar tidak lahir modul kembar lagi.
+
+## Non-Goals
+
+- Menambah kemampuan baru ke Shift Kerja (jam bebas per orang, rotasi otomatis,
+  jadwal per-tanggal). Epic terpisah bila memang dibutuhkan.
+- Migrasi data dari `staff_schedules` ke `employee_shifts` — tidak ada data untuk
+  dimigrasikan (0 baris).
+- Menghapus tabel `staff` atau membereskan FK purchasing/vendor.
+- Perubahan pada modul Absensi, Cuti, Lembur, Payroll.
+
+## Acceptance Criteria
+
+- [x] Buka `/dashboard/hris/schedules` → ter-redirect ke `/dashboard/hris/shifts`
+      (tanpa 404, tanpa flash halaman kosong). *(kode + build; verifikasi
+      end-to-end butuh sesi login → sisa QA manual)*
+- [x] Menu "Schedules" dan "Sections" hilang dari sidebar untuk semua role;
+      tidak ada tautan menggantung di halaman lain.
+- [ ] `grep -rn "api/staff-schedules\|features/hris/schedules" src` → 0 hasil.
+- [ ] `tsc` bersih (selain error pre-existing modul lain) dan `next build` hijau.
+- [ ] Absensi harian, monitoring roster, cuti, lembur, dan payroll tetap normal
+      (smoke dev) — membuktikan tidak ada ketergantungan tersembunyi.
+- [ ] Migrasi drop table applied + tercatat, dan `\dt` tidak lagi menampilkan
+      `staff_schedules`/`staff_sections`; tabel `staff` masih ada.
+
+## Test Plan
+
+- Manual dev: klik menu HRIS satu per satu → tidak ada 404; buka URL lama langsung
+  → redirect; login role non-full-access → menu lama tidak muncul.
+- Smoke absensi: `/api/hris/attendance/daily-roster` untuk hari ini mengembalikan
+  status roster yang sama sebelum & sesudah perubahan (bandingkan output).
+- Regresi build: `npm run build` + `tsc --noEmit`; unit test existing hijau.
+- Verifikasi DB pra-drop: `SELECT count(*)` = 0 di dev **dan** produksi sebelum
+  Fase C dijalankan.
+
+## Agent Routing
+
+- Audit (Explore) ✔ sudah dilakukan 2026-07-20.
+- Fase A–B: sesi Claude (`/task-work EPIC-015 <n>`) → code-reviewer gate.
+- Fase C: database-reviewer gate wajib (drop table) + konfirmasi owner eksplisit.
+- Tidak perlu security-reviewer (tidak ada permukaan auth baru).
+
+## Risiko & Mitigasi
+
+| Risiko | Mitigasi |
+|---|---|
+| Ada data `staff_schedules` di produksi (dev 0 baris) | Cek count di produksi sebelum Fase C; kalau ada, ubah Fase C jadi arsip (rename `_deprecated`) |
+| Role tertentu masih punya permission menu lama di `iam` | Nonaktifkan di level menu (`is_active=false`), bukan per-role |
+| Drop table `sections` menyentuh modul lain bernama mirip | Cek FK & grep sebelum drop; `pos_categories` tidak terkait |
+
+## Done Signal
+
+Semua Acceptance Criteria tercentang + Automation Log terisi + status
+`ready-for-qa`.
+
+## Automation Log
+
+- 2026-07-20 — Epic dibuat dari audit `/dashboard/hris/schedules` ("belum aktif"):
+  ditemukan dua sistem jadwal paralel; halaman lama bersandar tabel `staff` (0
+  baris) dan `staff_schedules` (0 baris, tanpa konsumen), sedangkan jadwal yang
+  hidup adalah Shift Kerja (`employee_shifts`, 14 baris) yang menyuplai
+  absensi/payroll. Rekomendasi: pensiunkan (redirect + nonaktif menu + hapus kode
+  + drop tabel), bukan diperbaiki. Menunggu keputusan owner pada 3 poin di atas.
+  Status → backlog.
+- 2026-07-20 — **Fase A selesai.** Owner menyetujui Sections ikut pensiun.
+  Perubahan: `hris/schedules/page.tsx` → `redirect("/dashboard/hris/shifts")`;
+  `hris/sections/page.tsx` → `redirect("/dashboard/employees")` (menyimpang dari
+  draft yang menulis `→ shifts`: Sections soal pengelompokan staf, bukan jadwal,
+  jadi data karyawan adalah tujuan yang benar). Nav tab silang di
+  `users-list-page.tsx` dihapus seluruhnya (menyisakan satu tab "All Employees"
+  saja jadi tidak berguna) berikut `usePathname` yang jadi yatim. Migrasi
+  `20260720190000_pensiun_menu_jadwal_lama.sql` menonaktifkan menu
+  `hris.workforce.schedules` + `hris.organization.sections` — applied di dev,
+  diverifikasi `is_active=f, is_visible=f`. Gates: `tsc` bersih pada file
+  terdampak, `next build` sukses (kedua route tetap terdaftar sbg dynamic =
+  redirect handler), PM2 restart.
+  **Catatan jujur:** (a) smoke redirect via curl hanya mengembalikan 307 ke
+  `/login` karena proxy auth menangkap lebih dulu — redirect terbukti di level
+  kode/build, belum end-to-end; (b) `pm2 restart all` yang saya jalankan ikut
+  me-restart app lain di server (padigiling, brag2026, omnipos, wa-gateway,
+  gitlab-runner) — semuanya kembali `online`, tapi seharusnya cukup
+  `pm2 restart arkiv-pos-saas`. (c) Referensi `/dashboard/hris/{schedules,sections}`
+  masih tersisa di `features/hris/{schedules,sections}/components/*` yang sudah
+  tidak dirender — dibersihkan di Fase B. Status → coding (Fase B berikutnya).
