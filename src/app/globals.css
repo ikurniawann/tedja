@@ -130,6 +130,11 @@
   --glass-shadow: 0 2px 24px rgba(0, 0, 0, 0.35), 0 1px 4px rgba(0, 0, 0, 0.3);
   --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.08);
 
+  /* Permukaan "abu-abu" di dark mode: overlay putih transparan, bukan abu
+     terang. Senada dengan hover sidebar. */
+  --surface-subtle: rgba(255, 255, 255, 0.06);
+  --surface-hover: rgba(255, 255, 255, 0.1);
+
   --page-mesh: linear-gradient(135deg, #020617 0%, #111827 42%, #1e1b4b 74%, #3b1235 100%);
 }
 
@@ -152,6 +157,8 @@
     --input: rgba(148, 163, 184, 0.36);
     --glass-bg: rgba(15, 23, 42, 0.72);
     --glass-border: rgba(148, 163, 184, 0.24);
+    --surface-subtle: rgba(255, 255, 255, 0.06);
+    --surface-hover: rgba(255, 255, 255, 0.1);
     --page-mesh: linear-gradient(135deg, #020617 0%, #111827 42%, #1e1b4b 74%, #3b1235 100%);
   }
 }
@@ -511,7 +518,6 @@ hr {
 @media (prefers-color-scheme: dark) {
   [data-theme="auto"] .arkiv-dashboard-theme :is(
     .bg-white, .bg-white\/50, .bg-white\/60, .bg-white\/70, .bg-white\/80, .bg-white\/90,
-    .bg-gray-50, .bg-gray-100, .bg-slate-50, .bg-slate-100,
     [data-slot="card"], [data-slot="dialog-content"]
   ) {
     background-color: var(--card) !important;
@@ -548,8 +554,11 @@ hr {
   }
   [data-theme="auto"] .arkiv-dashboard-theme :is(
     tr:hover, .hover\:bg-gray-50:hover, .hover\:bg-gray-100:hover,
-    .hover\:bg-slate-50:hover, .hover\:bg-pink-50:hover, .hover\:bg-pink-100:hover
-  ) { background-color: rgba(30, 41, 59, 0.92) !important; }
+    .hover\:bg-slate-50:hover, .hover\:bg-pink-50:hover, .hover\:bg-pink-100:hover,
+    [class*="hover:bg-gray-50/"]:hover, [class*="hover:bg-gray-100/"]:hover,
+    [class*="hover:bg-gray-200/"]:hover, [class*="hover:bg-slate-50/"]:hover,
+    [class*="hover:bg-slate-100/"]:hover
+  ) { background-color: var(--surface-hover) !important; }
   [data-theme="auto"] .arkiv-dashboard-theme :is(
     input:not([type="checkbox"]):not([type="radio"]), textarea, select,
     [data-slot="input"], [data-slot="select-trigger"], [data-slot="textarea"]
@@ -559,6 +568,22 @@ hr {
     color: var(--foreground) !important;
   }
   [data-theme="auto"] .arkiv-dashboard-theme :is(input, textarea)::placeholder { color: #94a3b8 !important; }
+
+  /* Permukaan abu-abu -> overlay putih transparan (bukan abu terang).
+     Selector atribut ikut menangkap varian opasitas (`bg-gray-50/80`) yang
+     tidak punya kelas polos. Prefiks varian seperti `hover:` sengaja tidak
+     cocok karena pola menuntut awal-atribut atau spasi di depan. */
+  [data-theme="auto"] .arkiv-dashboard-theme :is(
+    .bg-gray-50, .bg-gray-100, .bg-slate-50, .bg-slate-100,
+    [class^="bg-gray-50/"], [class*=" bg-gray-50/"],
+    [class^="bg-gray-100/"], [class*=" bg-gray-100/"],
+    [class^="bg-gray-200/"], [class*=" bg-gray-200/"],
+    [class^="bg-slate-50/"], [class*=" bg-slate-50/"],
+    [class^="bg-slate-100/"], [class*=" bg-slate-100/"]
+  ) {
+    background-color: var(--surface-subtle) !important;
+    border-color: var(--border) !important;
+  }
   [data-theme="auto"] :is(
     [data-slot="popover"], [data-slot="dropdown-menu"], [data-slot="combobox"],
     .popover, .dropdown-menu, [role="listbox"]:not([data-arkiv-ai-listbox="true"])
@@ -572,7 +597,6 @@ hr {
 
 [data-theme="dark"] .arkiv-dashboard-theme :is(
   .bg-white, .bg-white\/50, .bg-white\/60, .bg-white\/70, .bg-white\/80, .bg-white\/90,
-  .bg-gray-50, .bg-gray-100, .bg-slate-50, .bg-slate-100,
   [data-slot="card"], [data-slot="dialog-content"]
 ) {
   background-color: var(--card) !important;
@@ -609,8 +633,11 @@ hr {
 }
 [data-theme="dark"] .arkiv-dashboard-theme :is(
   tr:hover, .hover\:bg-gray-50:hover, .hover\:bg-gray-100:hover,
-  .hover\:bg-slate-50:hover, .hover\:bg-pink-50:hover, .hover\:bg-pink-100:hover
-) { background-color: rgba(30, 41, 59, 0.92) !important; }
+  .hover\:bg-slate-50:hover, .hover\:bg-pink-50:hover, .hover\:bg-pink-100:hover,
+  [class*="hover:bg-gray-50/"]:hover, [class*="hover:bg-gray-100/"]:hover,
+  [class*="hover:bg-gray-200/"]:hover, [class*="hover:bg-slate-50/"]:hover,
+  [class*="hover:bg-slate-100/"]:hover
+) { background-color: var(--surface-hover) !important; }
 [data-theme="dark"] .arkiv-dashboard-theme :is(
   input:not([type="checkbox"]):not([type="radio"]), textarea, select,
   [data-slot="input"], [data-slot="select-trigger"], [data-slot="textarea"]
@@ -620,6 +647,22 @@ hr {
   color: var(--foreground) !important;
 }
 [data-theme="dark"] .arkiv-dashboard-theme :is(input, textarea)::placeholder { color: #94a3b8 !important; }
+
+/* Permukaan abu-abu -> overlay putih transparan (bukan abu terang).
+   Selector atribut ikut menangkap varian opasitas (`bg-gray-50/80`) yang
+   tidak punya kelas polos. Prefiks varian seperti `hover:` sengaja tidak
+   cocok karena pola menuntut awal-atribut atau spasi di depan. */
+[data-theme="dark"] .arkiv-dashboard-theme :is(
+  .bg-gray-50, .bg-gray-100, .bg-slate-50, .bg-slate-100,
+  [class^="bg-gray-50/"], [class*=" bg-gray-50/"],
+  [class^="bg-gray-100/"], [class*=" bg-gray-100/"],
+  [class^="bg-gray-200/"], [class*=" bg-gray-200/"],
+  [class^="bg-slate-50/"], [class*=" bg-slate-50/"],
+  [class^="bg-slate-100/"], [class*=" bg-slate-100/"]
+) {
+  background-color: var(--surface-subtle) !important;
+  border-color: var(--border) !important;
+}
 [data-theme="dark"] :is(
   [data-slot="popover"], [data-slot="dropdown-menu"], [data-slot="combobox"],
   .popover, .dropdown-menu, [role="listbox"]:not([data-arkiv-ai-listbox="true"])
