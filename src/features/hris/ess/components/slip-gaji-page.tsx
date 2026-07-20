@@ -5,7 +5,11 @@ import {
   type LoanInstallmentDetail,
 } from "@/lib/payroll/loans";
 import { useEffect, useState } from "react";
-import { BanknotesIcon, DocumentTextIcon } from "@heroicons/react/24/outline";
+import {
+  ArrowDownTrayIcon,
+  BanknotesIcon,
+  DocumentTextIcon,
+} from "@heroicons/react/24/outline";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -281,6 +285,20 @@ export function EssSlipGajiPage() {
             </div>
           )}
           <DialogFooter>
+            {selected && (
+              /* Tautan unduh, bukan <Button asChild> — Button di repo ini
+                 tidak mendukung asChild, sehingga <a> akan bersarang di dalam
+                 <button> dan tampilannya rusak. Gaya ditulis eksplisit agar
+                 tidak bergantung pada buttonVariants, yang tipenya bermasalah
+                 di seluruh repo. */
+              <a
+                href={`/api/hris/payslips/${selected.id}/pdf`}
+                download
+                className="inline-flex h-9 shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-primary px-3 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 active:translate-y-px"
+              >
+                <ArrowDownTrayIcon className="h-4 w-4" /> Unduh PDF
+              </a>
+            )}
             <Button variant="outline" onClick={() => setSelected(null)}>
               Tutup
             </Button>

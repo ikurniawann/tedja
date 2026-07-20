@@ -8,7 +8,8 @@ import { useParams, useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { PrinterIcon, ArrowDownOnSquareIcon, ArrowLeftIcon } from "@heroicons/react/24/outline";
+import { ArrowDownTrayIcon,
+  PrinterIcon, ArrowDownOnSquareIcon, ArrowLeftIcon } from "@heroicons/react/24/outline";
 import { usePayslip } from "../queries";
 import { prorateNote } from "@/lib/payroll/prorate-note";
 
@@ -146,9 +147,20 @@ export function PayslipPage() {
           Kembali
         </Button>
         <div className="flex gap-2">
-          <Button onClick={handlePrint}>
+          {/* PDF dibuat server (pdfkit) — hasilnya seragam di semua perangkat,
+              tidak seperti cetak browser. Memakai <a> + buttonVariants karena
+              Button di repo ini tidak mendukung asChild. */}
+          <a
+            href={`/api/hris/payslips/${detail.id}/pdf`}
+            download
+            className="inline-flex h-9 shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-primary px-3 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 active:translate-y-px"
+          >
+            <ArrowDownTrayIcon className="w-4 h-4 mr-2" />
+            Unduh PDF
+          </a>
+          <Button variant="outline" onClick={handlePrint}>
             <PrinterIcon className="w-4 h-4 mr-2" />
-            Cetak / Simpan PDF
+            Cetak
           </Button>
         </div>
       </div>
