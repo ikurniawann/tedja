@@ -35,6 +35,7 @@ import {
   Plug,
   MessageSquareMore,
   MonitorDot,
+  Paperclip,
   Pencil,
   RefreshCw,
   Search,
@@ -1564,6 +1565,11 @@ function AiAssistantWindow({
   const messageListRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+  type Attachment = { name: string; text: string; method: string; truncated: boolean; chars: number };
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   /** Auto-scroll hanya saat user memang sedang di dasar percakapan; kalau ia
    *  menggulir ke atas untuk membaca jawaban lama, jangan disentak turun. */
   const stickToBottomRef = useRef(true);
@@ -1714,8 +1720,16 @@ function AiAssistantWindow({
 
     // User baru saja menekan Enter: apa pun posisi scroll-nya, tarik ke bawah.
     stickToBottomRef.current = true;
-    setMessages((prev) => [...prev, { role: "user", content: message }]);
+    // Lampiran ikut pesan ini saja, lalu dikosongkan — pertanyaan berikutnya
+    // tidak diam-diam membawa dokumen lama.
+    const attachmentsToSend = attachments;
+    const label = attachmentsToSend.length
+      ? `${message}\n\n[Lampiran: ${attachmentsToSend.map((a) => a.name).join(", ")}]`
+      : message;
+    setMessages((prev) => [...prev, { role: "user", content: label }]);
     setInput("");
+    setAttachments([]);
+    setUploadError(null);
     setLoading(true);
 
     try {
@@ -1725,7 +1739,15 @@ function AiAssistantWindow({
       const response = await fetch("/api/ai/assistant", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message, history, session_id: sessionId, model: settings.model, scope: settings.scope, stream: true }),
+        body: JSON.stringify({
+          message,
+          history,
+          session_id: sessionId,
+          model: settings.model,
+          scope: settings.scope,
+          stream: true,
+          attachments: attachmentsToSend.map((item) => ({ name: item.name, text: item.text })),
+        }),
       });
 
       if (!response.ok) {
@@ -1822,7 +1844,7 @@ function AiAssistantWindow({
     } finally {
       setLoading(false);
     }
-  }, [input, loading, messages, refreshSessions, sessionId, settings.model, settings.scope]);
+  }, [attachments, input, loading, messages, refreshSessions, sessionId, settings.model, settings.scope]);
 
   // Tinggi textarea mengikuti jumlah baris; direset dulu agar bisa mengecil lagi
   // saat teks dihapus.
@@ -1832,6 +1854,28 @@ function AiAssistantWindow({
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
   }, [input]);
+
+  const handleAttach = useCallback(async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    setUploading(true);
+    setUploadError(null);
+    try {
+      for (const file of Array.from(files).slice(0, 5)) {
+        const form = new FormData();
+        form.append("file", file);
+        const res = await fetch("/api/ai/assistant/attachment", { method: "POST", body: form });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error || `Gagal membaca ${file.name}`);
+        setAttachments((prev) => [...prev.slice(-4), json.data as Attachment]);
+      }
+    } catch (error) {
+      setUploadError(error instanceof Error ? error.message : "Gagal membaca lampiran");
+    } finally {
+      setUploading(false);
+      // Reset input supaya file yang sama bisa dipilih lagi setelah dihapus.
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }, []);
 
   const copyMessage = useCallback(async (text: string, index: number) => {
     try {
@@ -2130,6 +2174,33 @@ function AiAssistantWindow({
                     </button>
                   )}
                 </div>
+                {(attachments.length > 0 || uploadError) && (
+                  <div className="mb-2 space-y-1">
+                    {attachments.map((item, index) => (
+                      <div
+                        key={`${item.name}-${index}`}
+                        className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/8 px-2.5 py-1.5 text-[11px] text-white/70"
+                      >
+                        <Paperclip className="size-3 shrink-0 text-white/40" />
+                        <span className="min-w-0 flex-1 truncate">{item.name}</span>
+                        <span className="shrink-0 text-white/35">
+                          {item.method === "ocr" ? "OCR" : item.method === "spreadsheet" ? "tabel" : item.method}
+                          {item.truncated ? " · dipotong" : ""}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setAttachments((prev) => prev.filter((_, i) => i !== index))}
+                          className="shrink-0 rounded-md p-0.5 text-white/35 transition hover:bg-white/10 hover:text-white/80"
+                          aria-label={`Hapus lampiran ${item.name}`}
+                        >
+                          <X className="size-3" />
+                        </button>
+                      </div>
+                    ))}
+                    {uploadError && <p className="px-1 text-[11px] text-rose-300">{uploadError}</p>}
+                  </div>
+                )}
+
                 <form
                   onSubmit={(event) => {
                     event.preventDefault();
@@ -2137,6 +2208,23 @@ function AiAssistantWindow({
                   }}
                   className="flex gap-2"
                 >
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    multiple
+                    accept=".pdf,.docx,.doc,.jpg,.jpeg,.png,.webp,.bmp,.tiff,.xlsx,.xls,.xlsm,.csv,.txt,.md,.tsv"
+                    className="hidden"
+                    onChange={(event) => handleAttach(event.target.files)}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploading}
+                    title="Lampirkan file (PDF, gambar, Excel, CSV)"
+                    className="grid size-10 shrink-0 place-items-center self-end rounded-xl border border-white/20 bg-white/8 text-white/60 transition hover:bg-white/14 hover:text-white disabled:opacity-50"
+                  >
+                    {uploading ? <Loader2 className="size-4 animate-spin" /> : <Paperclip className="size-4" />}
+                  </button>
                   <textarea
                     ref={inputRef}
                     value={input}

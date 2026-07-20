@@ -185,6 +185,7 @@ export async function POST(request: NextRequest) {
       model?: string;
       scope?: string;
       stream?: boolean;
+      attachments?: Array<{ name?: unknown; text?: unknown }>;
     };
     prompt = body.message ?? "Summary semua module";
     let sessionId = body.session_id;
@@ -192,6 +193,7 @@ export async function POST(request: NextRequest) {
     const model = resolveAiAssistantModel(body.model);
     const scope = resolveAiAssistantScope(body.scope);
     const includeProjectData = scope !== "general";
+    const attachments = sanitizeAttachments(body.attachments);
 
     const db = await createServerPgClient();
     const {
@@ -282,6 +284,7 @@ export async function POST(request: NextRequest) {
               intent,
               scope,
               model,
+              attachments,
               onDelta: (text) => send({ type: "delta", text }),
             });
             // Penyimpanan dilakukan SETELAH stream selesai, memakai teks utuh
@@ -318,6 +321,7 @@ export async function POST(request: NextRequest) {
       intent,
       scope,
       model,
+      attachments,
     });
 
     // Persist messages
@@ -333,6 +337,42 @@ export async function POST(request: NextRequest) {
     console.error("AI assistant error:", error);
     return NextResponse.json({ error: "Gagal memproses permintaan Do" }, { status: 500 });
   }
+}
+
+/** Lampiran yang sudah divalidasi & dibatasi, siap masuk prompt. */
+type SafeAttachment = { name: string; text: string; truncated: boolean };
+
+/**
+ * Isi lampiran datang dari klien (hasil endpoint ekstraksi), jadi tetap
+ * dibatasi di sini: jumlah file, panjang per file, dan total gabungan. Tanpa
+ * batas ini satu permintaan bisa membengkak tak terkendali.
+ */
+const MAX_ATTACHMENTS = 5;
+const MAX_ATTACHMENT_TEXT = 20_000;
+const MAX_ATTACHMENT_TOTAL = 40_000;
+
+function sanitizeAttachments(input: unknown): SafeAttachment[] {
+  if (!Array.isArray(input)) return [];
+  const out: SafeAttachment[] = [];
+  let total = 0;
+
+  for (const item of input.slice(0, MAX_ATTACHMENTS)) {
+    if (!item || typeof item !== "object") continue;
+    const raw = item as { name?: unknown; text?: unknown };
+    const text = typeof raw.text === "string" ? raw.text.trim() : "";
+    if (!text) continue;
+
+    const name = typeof raw.name === "string" && raw.name.trim() ? raw.name.trim().slice(0, 120) : "lampiran";
+    const sisa = MAX_ATTACHMENT_TOTAL - total;
+    if (sisa <= 0) break;
+
+    const batas = Math.min(MAX_ATTACHMENT_TEXT, sisa);
+    const dipotong = text.length > batas;
+    out.push({ name, text: dipotong ? text.slice(0, batas) : text, truncated: dipotong });
+    total += Math.min(text.length, batas);
+  }
+
+  return out;
 }
 
 /** Penyimpanan pesan + log markdown + audit, dipakai jalur stream & non-stream. */
@@ -845,6 +885,7 @@ async function generateAnswer({
   intent,
   scope,
   model,
+  attachments,
   onDelta,
 }: {
   message: string;
@@ -855,6 +896,7 @@ async function generateAnswer({
   intent: Intent;
   scope: AiAssistantScope;
   model: AiAssistantModel;
+  attachments?: SafeAttachment[];
   /** Bila diisi, jawaban dialirkan potong demi potong lewat callback ini. */
   onDelta?: (text: string) => void;
 }): Promise<LlmResult> {
@@ -883,6 +925,14 @@ async function generateAnswer({
     // satu merek sendiri. Model juga tidak butuh tahu namanya untuk menjawab.
     `Intent terdeteksi: ${intent}`,
     `Pertanyaan user: ${message}`,
+    attachments?.length
+      ? `\nIsi lampiran yang dikirim user (sudah diekstrak; gambar & PDF hasil scan lewat OCR sehingga bisa ada salah baca):\n${attachments
+          .map(
+            (item) =>
+              `--- ${item.name}${item.truncated ? " (dipotong karena panjang)" : ""} ---\n${item.text}`
+          )
+          .join("\n\n")}`
+      : "",
     // Hanya modul yang relevan dengan intent yang dikirim — bukan seluruh
     // summary. Lihat lib/assistant/context.ts untuk alasan & pengujiannya.
     includeProjectData
