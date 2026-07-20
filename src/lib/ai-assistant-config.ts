@@ -1,47 +1,58 @@
+/**
+ * Model AI Assistant — hanya OpenAI. Pilihan Ollama (Kimi/DeepSeek/Gemma/Qwen/
+ * GLM) dihapus atas permintaan owner; id lamanya otomatis jatuh ke default lewat
+ * `normalizeModel`, jadi sesi & localStorage lama tidak error.
+ *
+ * `supportsTemperature: false` untuk model yang menolak `temperature` selain 1 —
+ * diverifikasi langsung ke API: gpt-5-mini dan gpt-5.5 mengembalikan HTTP 400
+ * "Unsupported value: 'temperature' does not support 0.7 with this model",
+ * sementara gpt-4o-mini, gpt-4.1-mini, gpt-4o, dan gpt-5.4-mini menerimanya.
+ */
 export const AI_ASSISTANT_MODELS = [
   {
-    // Prefix `openai:` menandai model yang dilayani langsung oleh OpenAI,
-    // bukan lewat Ollama. Sisanya tetap melalui Ollama seperti sebelumnya.
     id: "openai:gpt-4o-mini",
-    label: "OpenAI GPT-4o mini",
-    logo: "AI",
+    label: "GPT-4o mini",
+    description: "Hemat dan cepat. Model yang sudah terbukti dipakai modul lain di sini.",
+    logo: "4o",
     logoSrc: null,
     logoClassName: "from-emerald-200 via-teal-300 to-emerald-500 text-slate-950",
+    supportsTemperature: true,
   },
   {
-    id: "kimi-k2.5:cloud",
-    label: "Kimi K2.5 Cloud",
-    logo: "K",
-    logoSrc: "/logollm/kimi.png",
-    logoClassName: "from-violet-300 via-fuchsia-400 to-rose-400 text-slate-950",
+    id: "openai:gpt-4.1-mini",
+    label: "GPT-4.1 mini",
+    description: "Seimbang antara biaya dan kualitas jawaban.",
+    logo: "4.1",
+    logoSrc: null,
+    logoClassName: "from-sky-200 via-cyan-300 to-blue-500 text-slate-950",
+    supportsTemperature: true,
   },
   {
-    id: "deepseek-v4-flash:cloud",
-    label: "DeepSeek V4 Flash",
-    logo: "DS",
-    logoSrc: "/logollm/deepseek.png",
-    logoClassName: "from-sky-300 via-cyan-300 to-blue-500 text-slate-950",
+    id: "openai:gpt-4o",
+    label: "GPT-4o",
+    description: "Lebih kuat dari 4o mini, biayanya juga lebih tinggi.",
+    logo: "4o",
+    logoSrc: null,
+    logoClassName: "from-violet-200 via-fuchsia-300 to-rose-400 text-slate-950",
+    supportsTemperature: true,
   },
   {
-    id: "gemma4:e2b",
-    label: "Gemma 4 E2B",
-    logo: "G",
-    logoSrc: "/logollm/gemma4.png",
-    logoClassName: "from-blue-300 via-emerald-300 to-yellow-300 text-slate-950",
+    id: "openai:gpt-5.4-mini",
+    label: "GPT-5.4 mini",
+    description: "Generasi terbaru kelas mini.",
+    logo: "5.4",
+    logoSrc: null,
+    logoClassName: "from-amber-200 via-orange-300 to-rose-400 text-slate-950",
+    supportsTemperature: true,
   },
   {
-    id: "qwen3.5:cloud",
-    label: "Qwen 3.5 Cloud",
-    logo: "Q",
-    logoSrc: "/logollm/qwen.png",
-    logoClassName: "from-cyan-200 via-blue-400 to-indigo-500 text-white",
-  },
-  {
-    id: "glm-5:cloud",
-    label: "GLM 5 Cloud",
-    logo: "GLM",
-    logoSrc: "/logollm/glm.png",
+    id: "openai:gpt-5.5",
+    label: "GPT-5.5",
+    description: "Model terbesar yang tersedia di akun ini. Paling mahal per jawaban.",
+    logo: "5.5",
+    logoSrc: null,
     logoClassName: "from-zinc-100 via-slate-300 to-zinc-500 text-slate-950",
+    supportsTemperature: false,
   },
 ] as const;
 
@@ -122,11 +133,16 @@ export function resolveAiAssistantScope(value: unknown, fallback?: unknown): AiA
   return DEFAULT_AI_ASSISTANT_SCOPE;
 }
 
+/** Id lama (model Ollama, atau varian yang sudah dihapus) → null → default. */
 function normalizeModel(value: unknown): AiAssistantModel | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
-  if (trimmed === "gemma4:31b-cloud") return "gemma4:e2b";
   return AI_ASSISTANT_MODELS.some((model) => model.id === trimmed) ? (trimmed as AiAssistantModel) : null;
+}
+
+/** Model yang menolak temperature kustom harus dikirim tanpa field itu. */
+export function modelSupportsTemperature(model: string): boolean {
+  return AI_ASSISTANT_MODELS.find((m) => m.id === model)?.supportsTemperature ?? true;
 }
 
 function normalizeScope(value: unknown): AiAssistantScope | null {

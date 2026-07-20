@@ -2166,7 +2166,7 @@ function SystemSettings({
                         <LlmModelLogo model={model} />
                         <span className="min-w-0 flex-1">
                           <span className="block truncate text-sm font-semibold">{model.label}</span>
-                          <span className="block truncate text-[11px] text-white/52">{model.id}</span>
+                          <span className="block truncate text-[11px] text-white/52">{model.description}</span>
                         </span>
                         {selected && <Check className="size-4 shrink-0 text-white/75" />}
                       </button>

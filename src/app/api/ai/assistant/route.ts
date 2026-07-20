@@ -4,7 +4,7 @@ import { createServerPgClient } from "@/lib/pg/create-client";
 import {
   type AiAssistantModel,
   type AiAssistantScope,
-  isOpenAiAssistantModel,
+  modelSupportsTemperature,
   resolveAiAssistantModel,
   resolveAiAssistantScope,
   stripOpenAiPrefix,
@@ -40,7 +40,7 @@ type LlmResult = {
   mode: string;
   model: string;
   status: "live" | "fallback";
-  provider?: "ollama" | "openai" | "internal";
+  provider?: "openai" | "internal";
   fallbackReason?: string;
   error?: string;
 };
@@ -151,7 +151,7 @@ export async function POST(request: NextRequest) {
     prompt = body.message ?? "Summary semua module";
     let sessionId = body.session_id;
     const history = (body.history ?? []).slice(-8);
-    const model = resolveAiAssistantModel(body.model, process.env.OLLAMA_MODEL);
+    const model = resolveAiAssistantModel(body.model);
     const scope = resolveAiAssistantScope(body.scope);
     const includeProjectData = scope !== "general";
 
@@ -199,7 +199,7 @@ export async function POST(request: NextRequest) {
     const persistedHistory = sessionId ? await loadSessionHistory(admin as unknown as DbAdmin, sessionId) : [];
     const mergedHistory = compactChatHistory([...persistedHistory, ...history]);
 
-    const llmResult = await generateWithOllama({
+    const llmResult = await generateAnswer({
       message: prompt,
       history: mergedHistory,
       summary,
@@ -540,7 +540,13 @@ async function callOpenAiChat(
   const response = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify({ model: stripOpenAiPrefix(model), temperature: 0.7, messages }),
+    body: JSON.stringify({
+      model: stripOpenAiPrefix(model),
+      // Sebagian model generasi baru hanya menerima temperature = 1 dan menolak
+      // request dengan HTTP 400 bila field ini dikirim.
+      ...(modelSupportsTemperature(model) ? { temperature: 0.7 } : {}),
+      messages,
+    }),
     signal: AbortSignal.timeout(timeoutMs),
   });
   if (!response.ok) {
@@ -552,7 +558,7 @@ async function callOpenAiChat(
   return answer;
 }
 
-async function generateWithOllama({
+async function generateAnswer({
   message,
   history,
   summary,
@@ -571,13 +577,6 @@ async function generateWithOllama({
   scope: AiAssistantScope;
   model: AiAssistantModel;
 }): Promise<LlmResult> {
-  const useOpenAi = isOpenAiAssistantModel(model);
-  const baseUrl = (process.env.AI_ASSISTANT_OLLAMA_API_BASE || "http://127.0.0.1:11434")
-    .trim()
-    .replace(/^http:\/\/localhost(?=:|\/|$)/, "http://127.0.0.1")
-    .replace(/\/$/, "");
-  const apiKey = process.env.OLLAMA_API_KEY?.trim();
-  const timeoutMs = Number(process.env.OLLAMA_TIMEOUT || "120000");
   const includeProjectData = scope !== "general";
   const scopeInstruction = buildScopeInstruction(scope);
 
@@ -607,86 +606,23 @@ async function generateWithOllama({
     { role: "user", content: userPrompt },
   ];
 
-  const errors: string[] = [];
-
-  // Model berprefix `openai:` dilayani langsung oleh OpenAI. Ollama tidak
-  // disentuh sama sekali di jalur ini — termasuk fallback-nya, karena kegagalan
-  // OpenAI lebih berguna dilaporkan apa adanya daripada disamarkan jadi
-  // "Ollama tidak tersedia".
-  if (useOpenAi) {
-    try {
-      const answer = await callOpenAiChat(model, messages);
-      return { answer, mode: "openai_chat_completions_live", model, provider: "openai", status: "live" };
-    } catch (error) {
-      const detail = formatProviderError(error, "openai");
-      console.warn("AI assistant OpenAI fallback:", detail);
-      return {
-        answer: fallbackAnswer,
-        mode: "openai_unavailable_fallback",
-        model,
-        provider: "internal",
-        status: "fallback",
-        fallbackReason: "OpenAI sedang tidak tersedia. Saya memakai fallback internal sementara.",
-        error: detail,
-      };
-    }
-  }
-
-  if (!baseUrl) {
+  // Semua model kini dilayani OpenAI; pilihan Ollama sudah dihapus.
+  try {
+    const answer = await callOpenAiChat(model, messages);
+    return { answer, mode: "openai_chat_completions_live", model, provider: "openai", status: "live" };
+  } catch (error) {
+    const detail = formatProviderError(error, "openai");
+    console.warn("AI assistant OpenAI fallback:", detail);
     return {
       answer: fallbackAnswer,
-      mode: "rule_based_summary_v1",
-      model: "none",
+      mode: "openai_unavailable_fallback",
+      model,
       provider: "internal",
       status: "fallback",
-      fallbackReason: "OLLAMA_API_BASE belum dikonfigurasi",
+      fallbackReason: "OpenAI sedang tidak tersedia. Saya memakai fallback internal sementara.",
+      error: detail,
     };
   }
-
-  const headers = buildOllamaHeaders(baseUrl, apiKey);
-  try {
-    const response = await fetch(`${baseUrl}/api/chat`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ model, stream: false, options: { temperature: 0.7, num_ctx: 4096, num_gpu: 1 }, messages }),
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-    if (!response.ok) throw new Error(`/api/chat ${response.status}: ${await response.text()}`);
-    const json = await response.json() as { message?: { content?: string }; response?: string };
-    const answer = normalizePlainTextAnswer(json.message?.content || json.response);
-    if (!answer) throw new Error("/api/chat response kosong");
-    return { answer, mode: "ollama_api_chat_live", model, provider: "ollama", status: "live" };
-  } catch (error) {
-    errors.push(formatProviderError(error, "/api/chat"));
-  }
-
-  try {
-    const response = await fetch(`${baseUrl}/v1/chat/completions`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ model, temperature: 0.7, messages }),
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-    if (!response.ok) throw new Error(`/v1/chat/completions ${response.status}: ${await response.text()}`);
-    const json = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
-    const answer = normalizePlainTextAnswer(json.choices?.[0]?.message?.content);
-    if (!answer) throw new Error("/v1/chat/completions response kosong");
-    return { answer, mode: "ollama_chat_completions_live", model, provider: "ollama", status: "live" };
-  } catch (error) {
-    errors.push(formatProviderError(error, "/v1"));
-  }
-
-  console.warn("AI assistant Ollama fallback:", errors.join(" | "));
-
-  return {
-    answer: fallbackAnswer,
-    mode: "ollama_unavailable_fallback",
-    model,
-    provider: "internal",
-    status: "fallback",
-    fallbackReason: "Ollama sedang tidak tersedia. Saya memakai fallback internal sementara.",
-    error: errors.join(" | "),
-  };
 }
 
 function buildScopeInstruction(scope: AiAssistantScope): string {
@@ -723,13 +659,6 @@ function normalizePlainTextAnswer(value: unknown): string {
     .replace(/^\s*>\s?/gm, "")
     .replace(/`([^`\n]+)`/g, "$1")
     .trim();
-}
-
-function buildOllamaHeaders(baseUrl: string, apiKey?: string): Record<string, string> {
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(?::|\/|$)/i.test(baseUrl);
-  if (apiKey && !isLocal) headers.Authorization = `Bearer ${apiKey}`;
-  return headers;
 }
 
 function formatProviderError(error: unknown, endpoint: string): string {
