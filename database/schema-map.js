@@ -33,6 +33,7 @@ const DOMAINS = {
   manufacturing: { order: 55, schema: "public", realSchema: "manufacturing" },
   pos: { order: 60, schema: "public", realSchema: "pos" },
   crm: { order: 70, schema: "public", realSchema: "crm" },
+  accounting: { order: 75, schema: "public", realSchema: "accounting" },
   core: { order: 90, schema: "public", realSchema: "public" },
 };
 
@@ -161,6 +162,7 @@ function domainForTable(table, schema) {
   if (schema === "auth") return "iam"; // auth ikut grup identitas (file manual)
   if (table.startsWith("pos_")) return "pos";
   if (table.startsWith("crm_")) return "crm";
+  if (table.startsWith("account_") || table === "chart_of_accounts") return "accounting";
   return TABLE_DOMAIN[table] || "core";
 }
 
