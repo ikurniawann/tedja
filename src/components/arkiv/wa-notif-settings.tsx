@@ -150,7 +150,7 @@ export function WaNotifSettingsPanel() {
   return (
     <div className="space-y-4 p-5 text-white">
       {/* saklar utama */}
-      <div className="flex items-center gap-3 rounded-3xl border border-white/10 bg-white/8 p-4">
+      <div className="flex items-center gap-3 rounded-3xl border border-white/14 bg-slate-950/55 p-4">
         <div className="min-w-0 flex-1">
           <div className="text-sm font-semibold">Notifikasi WhatsApp</div>
           <div className="text-xs leading-5 text-white/45">
@@ -161,13 +161,13 @@ export function WaNotifSettingsPanel() {
       </div>
 
       {/* nomor penerima */}
-      <div className="rounded-3xl border border-white/10 bg-white/8 p-4">
+      <div className="rounded-3xl border border-white/14 bg-slate-950/55 p-4">
         <div className="text-sm font-semibold">Nomor Penerima</div>
         <div className="mt-1 text-xs text-white/45">Maksimal 5 nomor. Format 08… atau 62…</div>
         {config.recipients.length > 0 && (
           <div className="mt-3 flex flex-wrap gap-2">
             {config.recipients.map((r) => (
-              <span key={r} className="inline-flex items-center gap-1.5 rounded-full border border-white/14 bg-white/10 px-3 py-1 text-xs">
+              <span key={r} className="inline-flex items-center gap-1.5 rounded-full border border-white/14 bg-slate-950/55 px-3 py-1 text-xs">
                 {r}
                 <button
                   type="button"
@@ -211,7 +211,7 @@ export function WaNotifSettingsPanel() {
 
       {/* jenis notifikasi per tingkat */}
       {(["kritis", "harian", "ambang"] as const).map((tier) => (
-        <div key={tier} className="rounded-3xl border border-white/10 bg-white/8 p-4">
+        <div key={tier} className="rounded-3xl border border-white/14 bg-slate-950/55 p-4">
           <div className="text-sm font-semibold">{TIER_LABELS[tier].title}</div>
           <div className="text-xs text-white/40">{TIER_LABELS[tier].note}</div>
           <div className="mt-3 space-y-3">
