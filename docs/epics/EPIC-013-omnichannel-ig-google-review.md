@@ -158,3 +158,20 @@ ulang** tanpa ditulis ulang.
     multi-kanal; Fase C Instagram DM. Batas Fase A: belum ada persetujuan
     supervisor untuk balasan bintang rendah, metrik ulasan belum masuk
     laporan CS, dan baru mendukung satu lokasi.
+- 2026-07-20 — **Kunci ulasan dibuat tahan ganti akun Google** (pertanyaan
+  owner: boleh pakai akun yang ada dulu lalu diganti?). Jawaban: boleh —
+  penggantian hanya mengubah 5 env, tanpa kode/migrasi. TAPI pemeriksaan
+  menemukan cacat desain Fase A: ulasan dikunci pada `review_name`
+  (`accounts/{A}/locations/{L}/reviews/{R}`) yang **memuat id akun**, sehingga
+  ganti akun akan memasukkan ulasan yang sama sebagai baris baru — daftar
+  tampak dobel dan riwayat balasan terputus.
+  Fix (migrasi `20260720110000_google_reviews_stable_key.sql`, applied):
+  kolom `review_id` (segmen terakhir, stabil lintas akun) jadi kunci unik &
+  target ON CONFLICT; `review_name` tetap disimpan untuk memanggil API balasan
+  dan **disegarkan tiap sinkronisasi** agar balasan tetap terkirim ke path
+  yang benar setelah akun berganti. Backfill + dedup baris lama sudah jalan.
+  4 unit test baru (id sama walau akun/lokasi berbeda). Gate: 596 test hijau,
+  build sukses, halaman tetap normal.
+  Catatan untuk owner: akun yang dipakai WAJIB punya akses pengelola pada
+  Business Profile lokasi Sulu — akun pribadi tanpa akses tidak bisa menarik
+  ulasan sama sekali, jadi bukan sekadar "sementara pakai apa saja".

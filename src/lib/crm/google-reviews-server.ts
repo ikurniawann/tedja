@@ -1,9 +1,11 @@
 /**
  * EPIC-013 Fase A — sinkronisasi & penyimpanan Google Review.
  *
- * Idempoten berdasarkan `review_name`: sinkronisasi berulang memperbarui
- * ulasan yang berubah (Google mengizinkan pengulas mengedit) tanpa
- * menggandakan baris, dan tidak menimpa status kerja kita.
+ * Idempoten berdasarkan `review_id` (segmen terakhir resource name), BUKAN
+ * nama resource penuh — nama penuh memuat id akun, sehingga ganti akun Google
+ * akan menggandakan ulasan yang sama. Sinkronisasi berulang memperbarui
+ * ulasan yang berubah tanpa menggandakan baris, dan tidak menimpa status
+ * kerja kita.
  */
 
 import type { Pool } from "pg";
@@ -61,12 +63,15 @@ async function upsertReview(
 
   const { rows } = await db.query(
     `INSERT INTO crm.google_reviews
-       (review_name, reviewer_name, reviewer_photo_url, star_rating, comment,
+       (review_id, review_name, reviewer_name, reviewer_photo_url, star_rating, comment,
         review_created_at, review_updated_at, reply_comment, reply_updated_at,
         status, is_complaint, synced_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9,
+     VALUES ($11, $1, $2, $3, $4, $5, $6, $7, $8, $9,
              CASE WHEN $8::text IS NOT NULL THEN 'dibalas' ELSE 'baru' END, $10, now())
-     ON CONFLICT (review_name) DO UPDATE SET
+     ON CONFLICT (review_id) DO UPDATE SET
+       -- Resource path memuat id akun; segarkan agar balasan tetap terkirim
+       -- ke path yang benar setelah kredensial diganti ke akun lain.
+       review_name = EXCLUDED.review_name,
        -- Isi ulasan bisa diedit pengulas — ikut diperbarui.
        reviewer_name = EXCLUDED.reviewer_name,
        reviewer_photo_url = EXCLUDED.reviewer_photo_url,
@@ -97,6 +102,7 @@ async function upsertReview(
       review.replyComment,
       review.replyUpdatedAt,
       isComplaint,
+      review.reviewId,
     ]
   );
 

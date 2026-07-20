@@ -125,6 +125,26 @@ luar dashboard) ikut terbaca.
 
 ---
 
+## Ganti akun Google di kemudian hari
+
+**Boleh memakai akun Google yang ada dulu, lalu diganti nanti.** Yang penting
+akun itu punya akses **pengelola/pemilik** pada Business Profile lokasi Sulu —
+akun pribadi tanpa akses tidak akan bisa menarik ulasan sama sekali. Bila
+perlu, tambahkan akun tersebut sebagai Manager pada lokasi lewat Business
+Profile.
+
+Menggantinya nanti cukup: ubah 5 nilai `GOOGLE_BP_*` di `.env`, lalu
+`pm2 restart arkiv-pos-saas`. **Tidak ada perubahan kode atau migrasi.**
+
+Ulasan tidak akan tergandakan setelah ganti akun: kunci dedup memakai
+`review_id` (segmen terakhir id ulasan Google) yang stabil lintas akun, bukan
+resource path yang memuat id akun. Path lengkapnya sendiri disegarkan tiap
+sinkronisasi supaya balasan tetap terkirim ke alamat yang benar.
+
+> Yang perlu diperhatikan: riwayat balasan yang dibuat akun lama tetap
+> tersimpan di dashboard. Bila lokasi yang dipantau benar-benar berbeda
+> (bukan sekadar ganti akun pengelola), kosongkan tabel agar tidak bercampur.
+
 ## Membersihkan data contoh
 
 Dev diisi 4 ulasan contoh agar UI bisa dilihat sebelum integrasi aktif.

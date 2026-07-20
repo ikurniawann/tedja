@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   evaluateReviewSla,
+  extractReviewId,
   isComplaintRating,
   normalizeReview,
   parseStarRating,
@@ -141,5 +142,30 @@ describe("validateReply", () => {
     const result = validateReply("a".repeat(4001));
     expect(result.valid).toBe(false);
     expect(result.error).toContain("4000");
+  });
+});
+
+describe("extractReviewId — kunci tahan ganti akun Google", () => {
+  it("mengambil segmen terakhir dari resource path", () => {
+    expect(extractReviewId("accounts/111/locations/222/reviews/ABC-xyz")).toBe("ABC-xyz");
+  });
+
+  it("id sama walau akun & lokasi berbeda — dedup tetap bekerja", () => {
+    const lama = extractReviewId("accounts/111/locations/222/reviews/SAMA");
+    const baru = extractReviewId("accounts/999/locations/888/reviews/SAMA");
+    expect(lama).toBe(baru);
+  });
+
+  it("nama tanpa pola resource dipakai apa adanya", () => {
+    expect(extractReviewId("hanya-id")).toBe("hanya-id");
+  });
+
+  it("normalizeReview mengisi reviewId", () => {
+    const result = normalizeReview({
+      name: "accounts/1/locations/2/reviews/rev-9",
+      starRating: "FIVE",
+      createTime: "2026-07-19T10:00:00Z",
+    });
+    expect(result?.reviewId).toBe("rev-9");
   });
 });

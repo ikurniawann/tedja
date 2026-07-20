@@ -25,6 +25,8 @@ export interface GoogleReviewResource {
 }
 
 export interface NormalizedReview {
+  /** Id ulasan (segmen terakhir) — stabil walau akun Google diganti. */
+  reviewId: string;
   reviewName: string;
   reviewerName: string;
   reviewerPhotoUrl: string | null;
@@ -34,6 +36,16 @@ export interface NormalizedReview {
   updatedAt: Date | null;
   replyComment: string | null;
   replyUpdatedAt: Date | null;
+}
+
+/**
+ * Ambil id ulasan dari resource name. Nama penuh memuat id akun, jadi hanya
+ * segmen terakhir yang layak dijadikan kunci dedup lintas akun.
+ */
+export function extractReviewId(reviewName: string): string {
+  const afterReviews = reviewName.split("/reviews/").pop() ?? "";
+  const id = afterReviews.trim() || reviewName.trim();
+  return id;
 }
 
 export function parseStarRating(value: string | number | undefined): number | null {
@@ -74,6 +86,7 @@ export function normalizeReview(resource: GoogleReviewResource): NormalizedRevie
   const replyComment = resource.reviewReply?.comment?.trim();
 
   return {
+    reviewId: extractReviewId(reviewName),
     reviewName,
     // Ulasan anonim tetap disimpan — hanya namanya yang disamarkan.
     reviewerName: resource.reviewer?.isAnonymous
