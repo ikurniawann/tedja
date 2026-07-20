@@ -4,6 +4,13 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { extractSseData, splitSseEvents } from "@/lib/assistant/sse";
+import {
+  DesktopMonitorBoard,
+  MONITOR_WIDGETS,
+  useDesktopOverview,
+  type MonitorWidgetKey,
+} from "./desktop-monitor";
+import type { DesktopOverview as DesktopOverviewData } from "@/lib/desktop/overview";
 import type { ComponentType, CSSProperties, FormEvent as ReactFormEvent, MouseEvent as ReactMouseEvent } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -82,7 +89,7 @@ type DesktopModule = {
 };
 
 type DesktopIconPosition = { left: number; top: number };
-type WidgetVisibility = { calendar: boolean; system: boolean };
+type WidgetVisibility = { calendar: boolean } & Record<MonitorWidgetKey, boolean>;
 
 const pinkAccent = "from-pink-300 via-pink-500 to-rose-600";
 
@@ -129,13 +136,6 @@ const modules: DesktopModule[] = [
   },
 ];
 
-const notifications = [
-  "5 kandidat baru menunggu review HRIS",
-  "3 PO perlu approval Procurement",
-  "POS outlet siap digunakan",
-  "CRM membership foundation aktif",
-];
-
 const wallpapers = [
   { id: "arkiv", name: "Arkiv Aurora", src: "/bg.avif" },
   { id: "pink", name: "Pink Dusk", src: "linear-gradient(135deg,#16091d,#5b1239 45%,#111827)" },
@@ -154,7 +154,11 @@ const defaultIconPositions: Record<string, DesktopIconPosition> = {
 
 const defaultWidgetVisibility: WidgetVisibility = {
   calendar: true,
-  system: false,
+  pulsa: true,
+  tim: true,
+  keputusan: true,
+  stok: true,
+  member: true,
 };
 
 function formatTime(date: Date) {
@@ -216,6 +220,11 @@ export default function ArkivOsDesktop() {
   } as CSSProperties;
 
   const isLoggedIn = Boolean(userAccount);
+  const overview = useDesktopOverview(isLoggedIn);
+  const askDoFromWidget = useCallback((prompt: string) => {
+    setQueuedAssistantPrompt(prompt);
+    setShowAssistant(true);
+  }, []);
 
   const filteredModules = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -428,7 +437,7 @@ export default function ArkivOsDesktop() {
       } else {
         window.localStorage.setItem(AI_ASSISTANT_SETTINGS_STORAGE_KEY, JSON.stringify(DEFAULT_AI_ASSISTANT_SETTINGS));
       }
-      setToast("Arkiv OS ready · 3 pending approval notifications");
+      setToast("Arkiv OS siap");
       window.setTimeout(() => setToast(null), 4200);
     }, 0);
     const interval = window.setInterval(() => setNow(new Date()), 30_000);
@@ -622,7 +631,9 @@ export default function ArkivOsDesktop() {
         </div>
 
         {now && widgetVisibility.calendar && <CalendarWidget date={now} onClose={() => updateWidgetVisibility("calendar", false)} />}
-        {now && widgetVisibility.system && <DesktopWidgets date={now} onClose={() => updateWidgetVisibility("system", false)} />}
+        {isLoggedIn && (
+          <DesktopMonitorBoard state={overview} visibility={widgetVisibility} onAskDo={askDoFromWidget} />
+        )}
       </section>
 
       <nav className="fixed bottom-5 left-1/2 z-30 flex -translate-x-1/2 items-end gap-2 rounded-[28px] border border-white/18 bg-white/14 p-2 shadow-[0_24px_80px_rgba(0,0,0,.38)] backdrop-blur-2xl">
@@ -706,7 +717,7 @@ export default function ArkivOsDesktop() {
           onSettings={() => setShowSettings(true)}
         />
       )}
-      {showNotifications && <NotificationCenter onClose={() => setShowNotifications(false)} />}
+      {showNotifications && <NotificationCenter overview={overview.data} onClose={() => setShowNotifications(false)} />}
       {showFiles && <FileExplorer onClose={() => setShowFiles(false)} isLoggedIn={isLoggedIn} />}
       {showWallpaperPicker && <WallpaperPicker selected={wallpaper.id} onSelect={(item) => { setWallpaper(item); window.localStorage.setItem("arkiv-wallpaper", item.id); }} onClose={() => setShowWallpaperPicker(false)} />}
       {showWidgetSettings && <WidgetSettings visibility={widgetVisibility} onChange={updateWidgetVisibility} onClose={() => setShowWidgetSettings(false)} />}
@@ -803,36 +814,6 @@ function CalendarWidget({ date, onClose }: { date: Date; onClose: () => void }) 
             );
           })}
         </div>
-      </div>
-    </WindowShell>
-  );
-}
-
-function DesktopWidgets({ date, onClose }: { date: Date; onClose: () => void }) {
-  const widgetItems = [
-    { icon: Activity, label: "System Health", value: "98%", note: "All modules online" },
-    { icon: Bell, label: "Pending", value: "8", note: "Approvals & reviews" },
-    { icon: CalendarDays, label: "Today", value: formatTime(date), note: formatDate(date) },
-  ];
-
-  return (
-    <WindowShell title="System Widgets" onClose={onClose} className="bottom-28 right-5 hidden w-80 lg:block">
-      <div className="grid grid-cols-1 gap-3 p-4">
-        {widgetItems.map((item) => {
-          const Icon = item.icon;
-          return (
-            <div key={item.label} className="rounded-3xl border border-white/14 bg-white/10 p-4 shadow-2xl backdrop-blur-2xl">
-              <div className="flex items-center gap-3">
-                <div className={`grid size-10 place-items-center rounded-2xl bg-gradient-to-br ${pinkAccent}`}><Icon className="size-5" /></div>
-                <div className="min-w-0 flex-1">
-                  <div className="text-xs text-white/50">{item.label}</div>
-                  <div className="text-lg font-semibold">{item.value}</div>
-                </div>
-              </div>
-              <div className="mt-3 rounded-2xl bg-black/12 px-3 py-2 text-xs text-white/55">{item.note}</div>
-            </div>
-          );
-        })}
       </div>
     </WindowShell>
   );
@@ -1509,30 +1490,74 @@ function FileExplorer({ onClose, isLoggedIn }: { onClose: () => void; isLoggedIn
   );
 }
 
-function NotificationCenter({ onClose }: { onClose: () => void }) {
+function NotificationCenter({ overview, onClose }: { overview: DesktopOverviewData | null; onClose: () => void }) {
+  const router = useRouter();
+  const p = overview?.perluKeputusan;
+  const items = p
+    ? (
+        [
+          { text: `${p.cuti} pengajuan cuti menunggu keputusan`, n: p.cuti, href: "/dashboard/hris/leaves" },
+          { text: `${p.lembur} pengajuan lembur menunggu keputusan`, n: p.lembur, href: "/dashboard/hris/overtime" },
+          { text: `${p.pinjaman} pengajuan pinjaman menunggu keputusan`, n: p.pinjaman, href: "/dashboard/hris/loans" },
+          { text: `${p.poDraft} PO draft menunggu approval`, n: p.poDraft, href: "/dashboard/purchasing/approval" },
+          { text: `${p.kandidatBaru} kandidat baru menunggu review`, n: p.kandidatBaru, href: "/dashboard/hris/candidates" },
+        ] as const
+      ).filter((item) => item.n > 0)
+    : [];
+  const stok = overview?.stokMenipis;
+
   return (
     <WindowShell title="Notification Center" onClose={onClose} className="right-5 top-14 w-[min(390px,calc(100vw-32px))]">
       <div className="space-y-3 p-4">
         <div className="rounded-3xl border border-white/10 bg-white/8 p-4">
           <div className="flex items-center justify-between">
             <div>
-              <div className="text-sm font-semibold">Today</div>
-              <div className="text-xs text-white/45">Operational summary</div>
+              <div className="text-sm font-semibold">Hari Ini</div>
+              <div className="text-xs text-white/45">Menunggu keputusan Anda</div>
             </div>
-            <span className="rounded-full bg-pink-500/20 px-3 py-1 text-xs font-semibold text-pink-100">{notifications.length} alerts</span>
+            <span className="rounded-full bg-pink-500/20 px-3 py-1 text-xs font-semibold text-pink-100">
+              {p ? p.total : "–"} item
+            </span>
           </div>
         </div>
-        {notifications.map((notification, index) => (
-          <button key={notification} className="block w-full rounded-3xl border border-white/10 bg-white/8 p-3 text-left text-sm text-white/72 transition hover:bg-white/12">
-            <div className="flex gap-3">
-              <div className={`mt-0.5 size-2.5 rounded-full ${index < 2 ? "bg-pink-300" : "bg-emerald-300"}`} />
-              <div>
-                <div>{notification}</div>
-                <div className="mt-1 text-xs text-white/40">Arkiv OS · just now</div>
-              </div>
+
+        {items.map((item) => (
+          <button
+            key={item.href}
+            onClick={() => router.push(item.href)}
+            className="block w-full rounded-3xl border border-white/10 bg-white/8 p-3 text-left text-sm text-white/72 transition hover:bg-white/12"
+          >
+            <div className="flex items-center gap-3">
+              <div className="mt-0.5 size-2.5 shrink-0 rounded-full bg-pink-300" />
+              <div className="min-w-0 flex-1">{item.text}</div>
+              <ChevronRight className="size-4 shrink-0 text-white/35" />
             </div>
           </button>
         ))}
+
+        {stok && stok.jumlah > 0 && (
+          <button
+            onClick={() => router.push("/dashboard/inventory/low-stock")}
+            className="block w-full rounded-3xl border border-white/10 bg-white/8 p-3 text-left text-sm text-white/72 transition hover:bg-white/12"
+          >
+            <div className="flex items-center gap-3">
+              <div className="mt-0.5 size-2.5 shrink-0 rounded-full bg-amber-300" />
+              <div className="min-w-0 flex-1">{stok.jumlah} bahan baku di bawah stok minimum</div>
+              <ChevronRight className="size-4 shrink-0 text-white/35" />
+            </div>
+          </button>
+        )}
+
+        {p && items.length === 0 && (!stok || stok.jumlah === 0) && (
+          <div className="rounded-3xl border border-white/10 bg-white/8 p-4 text-sm text-white/55">
+            Tidak ada yang menunggu keputusan.
+          </div>
+        )}
+        {!p && (
+          <div className="rounded-3xl border border-white/10 bg-white/8 p-4 text-sm text-white/55">
+            {overview ? "Data keputusan tak terjangkau." : "Memuat…"}
+          </div>
+        )}
       </div>
     </WindowShell>
   );
@@ -2522,7 +2547,12 @@ function SystemSettings({
 function WidgetSettings({ visibility, onChange, onClose }: { visibility: WidgetVisibility; onChange: (key: keyof WidgetVisibility, value: boolean) => void; onClose: () => void }) {
   const items: Array<{ key: keyof WidgetVisibility; title: string; description: string; icon: ComponentType<{ className?: string }> }> = [
     { key: "calendar", title: "Calendar Widget", description: "Kalender bulanan yang bisa dipindahkan dan di-resize.", icon: CalendarDays },
-    { key: "system", title: "System Widgets", description: "Health, pending approval, dan clock cards.", icon: Activity },
+    ...MONITOR_WIDGETS.map((w) => ({
+      key: w.key as keyof WidgetVisibility,
+      title: w.title,
+      description: w.description,
+      icon: Activity,
+    })),
   ];
 
   return (

@@ -1,0 +1,468 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import {
+  ArrowUpRight,
+  Banknote,
+  Bell,
+  FileText,
+  Gem,
+  Package,
+  Sparkles,
+  TrendingUp,
+  TriangleAlert,
+  UserPlus,
+  Users,
+  Clock3,
+} from "lucide-react";
+import type { DesktopOverview } from "@/lib/desktop/overview";
+
+/**
+ * Papan widget monitoring owner di desktop Arkiv OS (EPIC-019 Fase B).
+ * Desain mengikuti mockup docs/design/epic-019-desktop-mockup.html —
+ * glass gelap + aksen pink, gaya widget macOS.
+ */
+
+const pinkAccent = "from-pink-300 via-pink-500 to-rose-600";
+const REFRESH_MS = 60_000; // keputusan owner: 60 detik
+
+export type MonitorWidgetKey = "pulsa" | "tim" | "keputusan" | "stok" | "member";
+
+export const MONITOR_WIDGETS: Array<{ key: MonitorWidgetKey; title: string; description: string }> = [
+  { key: "pulsa", title: "Pulsa Bisnis", description: "Omzet & pesanan hari ini vs kemarin." },
+  { key: "tim", title: "Tim Hari Ini", description: "Hadir, terlambat, belum absen, dan cuti." },
+  { key: "keputusan", title: "Perlu Keputusan", description: "Pengajuan & dokumen yang menunggu approval." },
+  { key: "stok", title: "Stok Menipis", description: "Bahan baku di bawah batas minimum." },
+  { key: "member", title: "Member & Loyalty", description: "Member baru, XP, dan penukaran reward 7 hari." },
+];
+
+/** Status papan: menunggu auth → boleh/tidak → data. */
+export interface OverviewState {
+  status: "loading" | "ready" | "forbidden" | "error";
+  data: DesktopOverview | null;
+}
+
+/**
+ * Fetch + auto-refresh 60 dtk (berhenti saat tab tersembunyi). 401/403 →
+ * `forbidden`, papan tidak dirender sama sekali — gate sesungguhnya di server.
+ */
+export function useDesktopOverview(enabled: boolean): OverviewState {
+  const [state, setState] = useState<OverviewState>({ status: "loading", data: null });
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const res = await fetch("/api/desktop/overview");
+      if (res.status === 401 || res.status === 403) {
+        setState({ status: "forbidden", data: null });
+        return false;
+      }
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "gagal");
+      setState({ status: "ready", data: json.data as DesktopOverview });
+      return true;
+    } catch {
+      setState((prev) =>
+        prev.data ? prev : { status: "error", data: null }
+      );
+      return true; // error jaringan sementara: tetap coba lagi nanti
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!enabled) return;
+    let stopped = false;
+
+    const tick = async () => {
+      if (document.visibilityState === "hidden") return;
+      const keepPolling = await load();
+      if (!keepPolling && timerRef.current) {
+        clearInterval(timerRef.current); // forbidden: berhenti total, jangan spam 401
+        timerRef.current = null;
+      }
+    };
+
+    tick();
+    timerRef.current = setInterval(tick, REFRESH_MS);
+    const onVisible = () => {
+      if (document.visibilityState === "visible" && !stopped) tick();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+
+    return () => {
+      stopped = true;
+      if (timerRef.current) clearInterval(timerRef.current);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [enabled, load]);
+
+  return state;
+}
+
+/* ── format ───────────────────────────────────────────── */
+
+function formatRupiah(value: number): string {
+  if (value >= 1_000_000_000) return `Rp ${(value / 1_000_000_000).toLocaleString("id-ID", { maximumFractionDigits: 2 })} M`;
+  if (value >= 1_000_000) return `Rp ${(value / 1_000_000).toLocaleString("id-ID", { maximumFractionDigits: 2 })} jt`;
+  if (value >= 1_000) return `Rp ${(value / 1_000).toLocaleString("id-ID", { maximumFractionDigits: 0 })} rb`;
+  return `Rp ${value.toLocaleString("id-ID", { maximumFractionDigits: 0 })}`;
+}
+
+function deltaPct(today: number, yesterday: number): number | null {
+  if (yesterday <= 0) return null; // pembagi nol: tampilkan tanpa delta
+  return Math.round(((today - yesterday) / yesterday) * 100);
+}
+
+const DAY_SHORT = ["Min", "Sen", "Sel", "Rab", "Kam", "Jum", "Sab"];
+
+/* ── kerangka kartu ───────────────────────────────────── */
+
+function Card({
+  title,
+  subtitle,
+  icon: Icon,
+  href,
+  onGo,
+  onAskDo,
+  askDoPrompt,
+  children,
+  failed,
+  wide = false,
+}: {
+  title: string;
+  subtitle: string;
+  icon: typeof TrendingUp;
+  href: string;
+  onGo: (href: string) => void;
+  onAskDo?: (prompt: string) => void;
+  askDoPrompt?: string;
+  children: React.ReactNode;
+  failed?: boolean;
+  wide?: boolean;
+}) {
+  return (
+    <article className={`rounded-3xl border border-white/14 bg-white/10 p-4 shadow-2xl backdrop-blur-2xl ${wide ? "col-span-2" : ""}`}>
+      <div className="mb-3 flex items-center gap-2.5">
+        <div className={`grid size-8 shrink-0 place-items-center rounded-xl bg-gradient-to-br ${pinkAccent}`}>
+          <Icon className="size-4 text-[#180312]" />
+        </div>
+        <div className="min-w-0">
+          <div className="text-[13px] font-bold leading-tight">{title}</div>
+          <div className="truncate text-[11px] text-white/40">{subtitle}</div>
+        </div>
+        <div className="ml-auto flex shrink-0 items-center gap-1.5">
+          {onAskDo && askDoPrompt && (
+            <button
+              type="button"
+              onClick={() => onAskDo(askDoPrompt)}
+              className="flex items-center gap-1 rounded-full border border-pink-400/35 bg-pink-500/15 px-2.5 py-1 text-[11px] font-semibold text-pink-100 transition hover:bg-pink-500/28"
+              title="Tanyakan ke Do"
+            >
+              <Sparkles className="size-3" /> Do
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => onGo(href)}
+            className="grid size-7 place-items-center rounded-lg border border-white/14 bg-white/8 text-white/55 transition hover:bg-white/16 hover:text-white"
+            title="Buka modul"
+          >
+            <ArrowUpRight className="size-3.5" />
+          </button>
+        </div>
+      </div>
+      {failed ? (
+        <div className="flex items-center gap-2 rounded-2xl bg-rose-500/10 px-3 py-2.5 text-xs text-rose-200">
+          <TriangleAlert className="size-3.5 shrink-0" />
+          Data tak terjangkau — dicoba lagi otomatis.
+        </div>
+      ) : (
+        children
+      )}
+    </article>
+  );
+}
+
+function Skeleton({ wide = false }: { wide?: boolean }) {
+  return (
+    <div className={`rounded-3xl border border-white/14 bg-white/10 p-4 backdrop-blur-2xl ${wide ? "col-span-2" : ""}`}>
+      <div className="h-3.5 w-1/2 animate-pulse rounded-md bg-white/15" />
+      <div className="mt-3 h-8 w-2/3 animate-pulse rounded-md bg-white/12" />
+      <div className="mt-2 h-3 w-3/4 animate-pulse rounded-md bg-white/10" />
+    </div>
+  );
+}
+
+/* ── papan utama ──────────────────────────────────────── */
+
+export function DesktopMonitorBoard({
+  state,
+  visibility,
+  onAskDo,
+}: {
+  state: OverviewState;
+  visibility: Record<MonitorWidgetKey, boolean>;
+  onAskDo: (prompt: string) => void;
+}) {
+  const router = useRouter();
+  const go = useCallback((href: string) => router.push(href), [router]);
+
+  if (state.status === "forbidden") return null;
+
+  const anyVisible = MONITOR_WIDGETS.some((w) => visibility[w.key]);
+  if (!anyVisible) return null;
+
+  const d = state.data;
+  const failedSet = new Set(d?.gagal ?? []);
+
+  return (
+    <section
+      aria-label="Papan monitoring bisnis"
+      className="pointer-events-auto fixed right-5 top-12 z-20 hidden max-h-[calc(100vh-140px)] w-[560px] grid-cols-2 content-start gap-3 overflow-y-auto pr-1 lg:grid"
+    >
+      {state.status === "loading" && (
+        <>
+          <Skeleton wide />
+          <Skeleton />
+          <Skeleton />
+        </>
+      )}
+
+      {state.status === "error" && (
+        <div className="col-span-2 rounded-3xl border border-white/14 bg-white/10 p-4 text-xs text-white/60 backdrop-blur-2xl">
+          Ringkasan monitoring belum bisa dimuat — dicoba lagi otomatis.
+        </div>
+      )}
+
+      {d && visibility.pulsa && (
+        <Card
+          wide
+          title="Pulsa Bisnis"
+          subtitle="POS · hari ini vs kemarin"
+          icon={TrendingUp}
+          href="/dashboard/pos"
+          onGo={go}
+          onAskDo={onAskDo}
+          askDoPrompt="Bagaimana penjualan hari ini dibanding kemarin? Apa yang menonjol?"
+          failed={failedSet.has("pulsaBisnis")}
+        >
+          {d.pulsaBisnis && (
+            <div className="grid grid-cols-[1.2fr_1fr] items-end gap-4">
+              <div>
+                <div className="text-[11px] text-white/40">Omzet hari ini</div>
+                <div className="text-[28px] font-extrabold leading-tight tracking-tight">
+                  {formatRupiah(d.pulsaBisnis.hariIni.omzet)}
+                  {(() => {
+                    const pct = deltaPct(d.pulsaBisnis.hariIni.omzet, d.pulsaBisnis.kemarin.omzet);
+                    if (pct === null) return null;
+                    const up = pct >= 0;
+                    return (
+                      <span
+                        className={`ml-2 inline-flex -translate-y-1 items-center rounded-full border px-2 py-0.5 align-middle text-[11px] font-bold ${up ? "border-emerald-400/30 bg-emerald-400/12 text-emerald-200" : "border-rose-400/30 bg-rose-400/12 text-rose-200"}`}
+                      >
+                        {up ? "▲" : "▼"} {Math.abs(pct)}%
+                      </span>
+                    );
+                  })()}
+                </div>
+                <div className="mt-2.5 flex gap-5 text-[11px]">
+                  <div>
+                    <div className="text-white/40">Pesanan</div>
+                    <div className="mt-0.5 text-sm font-bold">{d.pulsaBisnis.hariIni.pesanan}</div>
+                  </div>
+                  <div>
+                    <div className="text-white/40">Rata-rata</div>
+                    <div className="mt-0.5 text-sm font-bold">{formatRupiah(d.pulsaBisnis.hariIni.rataRata)}</div>
+                  </div>
+                  <div>
+                    <div className="text-white/40">Kemarin</div>
+                    <div className="mt-0.5 text-sm font-bold text-white/60">{formatRupiah(d.pulsaBisnis.kemarin.omzet)}</div>
+                  </div>
+                </div>
+              </div>
+              <div>
+                <div className="flex h-14 items-end gap-1">
+                  {(() => {
+                    const max = Math.max(...d.pulsaBisnis.tujuhHari.map((h) => h.omzet), 1);
+                    return d.pulsaBisnis.tujuhHari.map((h, i) => (
+                      <span
+                        key={h.tanggal}
+                        title={`${h.tanggal}: ${formatRupiah(h.omzet)}`}
+                        style={{ height: `${Math.max(8, (h.omzet / max) * 100)}%` }}
+                        className={`min-w-[10px] flex-1 rounded-t-md ${i === 6 ? "bg-gradient-to-t from-pink-500 to-white shadow-[0_0_14px_rgba(236,72,153,.5)]" : "bg-gradient-to-t from-pink-500/40 to-pink-300/80"}`}
+                      />
+                    ));
+                  })()}
+                </div>
+                <div className="mt-1 flex gap-1">
+                  {d.pulsaBisnis.tujuhHari.map((h) => (
+                    <span key={h.tanggal} className="min-w-[10px] flex-1 text-center text-[9px] text-white/35">
+                      {DAY_SHORT[new Date(`${h.tanggal}T00:00:00`).getDay()]}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {d && visibility.tim && (
+        <Card
+          title="Tim Hari Ini"
+          subtitle={`${d.timHariIni?.aktif ?? "–"} karyawan aktif`}
+          icon={Users}
+          href="/dashboard/hris/attendance"
+          onGo={go}
+          onAskDo={onAskDo}
+          askDoPrompt="Siapa saja yang belum absen hari ini?"
+          failed={failedSet.has("timHariIni")}
+        >
+          {d.timHariIni && (
+            <>
+              <div className="flex gap-1.5">
+                {(
+                  [
+                    { n: d.timHariIni.hadir, t: "Hadir", c: "text-emerald-300" },
+                    { n: d.timHariIni.terlambat, t: "Telat", c: "text-amber-300" },
+                    { n: d.timHariIni.belum, t: "Belum", c: "text-rose-300" },
+                    { n: d.timHariIni.cuti, t: "Cuti", c: "text-sky-300" },
+                  ] as const
+                ).map((p) => (
+                  <div key={p.t} className="flex-1 rounded-xl border border-white/8 bg-white/6 px-1 py-2 text-center">
+                    <div className={`text-lg font-extrabold ${p.c}`}>{p.n}</div>
+                    <div className="text-[9.5px] text-white/40">{p.t}</div>
+                  </div>
+                ))}
+              </div>
+              {d.timHariIni.aktif > 0 && (
+                <div className="mt-2.5 flex h-1.5 overflow-hidden rounded-full bg-white/8">
+                  <i style={{ width: `${(d.timHariIni.hadir / d.timHariIni.aktif) * 100}%` }} className="bg-emerald-400" />
+                  <i style={{ width: `${(d.timHariIni.terlambat / d.timHariIni.aktif) * 100}%` }} className="bg-amber-400" />
+                  <i style={{ width: `${(d.timHariIni.belum / d.timHariIni.aktif) * 100}%` }} className="bg-rose-400" />
+                  <i style={{ width: `${(d.timHariIni.cuti / d.timHariIni.aktif) * 100}%` }} className="bg-sky-400" />
+                </div>
+              )}
+            </>
+          )}
+        </Card>
+      )}
+
+      {d && visibility.keputusan && (
+        <Card
+          title="Perlu Keputusan"
+          subtitle={`${d.perluKeputusan?.total ?? "–"} item menunggu`}
+          icon={Bell}
+          href="/dashboard/hris/leaves"
+          onGo={go}
+          failed={failedSet.has("perluKeputusan")}
+        >
+          {d.perluKeputusan && (
+            <div className="-mx-1 flex flex-col">
+              {(
+                [
+                  { icon: Clock3, t: "Pengajuan cuti", n: d.perluKeputusan.cuti, href: "/dashboard/hris/leaves" },
+                  { icon: Banknote, t: "Lembur & pinjaman", n: d.perluKeputusan.lembur + d.perluKeputusan.pinjaman, href: "/dashboard/hris/overtime" },
+                  { icon: FileText, t: "PO draft menunggu", n: d.perluKeputusan.poDraft, href: "/dashboard/purchasing/approval" },
+                  { icon: UserPlus, t: "Kandidat baru", n: d.perluKeputusan.kandidatBaru, href: "/dashboard/hris/candidates" },
+                ] as const
+              ).map((r) => (
+                <button
+                  key={r.t}
+                  type="button"
+                  onClick={() => go(r.href)}
+                  className="flex items-center gap-2.5 rounded-xl px-2 py-1.5 text-left transition hover:bg-white/8"
+                >
+                  <span className="grid size-6 shrink-0 place-items-center rounded-lg bg-white/8">
+                    <r.icon className="size-3 text-pink-200" />
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-xs">{r.t}</span>
+                  <span
+                    className={`grid h-5 min-w-5 shrink-0 place-items-center rounded-full px-1.5 text-[11px] font-extrabold ${r.n > 0 ? "bg-gradient-to-br from-pink-500 to-rose-600 text-white" : "bg-white/8 text-white/35"}`}
+                  >
+                    {r.n}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </Card>
+      )}
+
+      {d && visibility.stok && (
+        <Card
+          title="Stok Menipis"
+          subtitle={
+            d.stokMenipis
+              ? d.stokMenipis.jumlah > 0
+                ? `${d.stokMenipis.jumlah} bahan di bawah minimum`
+                : "Semua stok aman"
+              : "–"
+          }
+          icon={Package}
+          href="/dashboard/inventory/low-stock"
+          onGo={go}
+          onAskDo={onAskDo}
+          askDoPrompt="Bahan apa saja yang stoknya menipis dan mana yang paling mendesak dipesan?"
+          failed={failedSet.has("stokMenipis")}
+        >
+          {d.stokMenipis && (
+            d.stokMenipis.jumlah === 0 ? (
+              <div className="rounded-2xl bg-emerald-400/8 px-3 py-2.5 text-xs text-emerald-200">
+                Tidak ada bahan di bawah batas minimum.
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2.5">
+                {d.stokMenipis.teratas.map((item) => (
+                  <div key={item.bahan}>
+                    <div className="mb-1 flex justify-between text-[11.5px]">
+                      <span className="truncate font-semibold">{item.bahan}</span>
+                      <span className="shrink-0 text-white/40">
+                        {item.tersedia} / min {item.minimum}
+                      </span>
+                    </div>
+                    <div className="h-1.5 overflow-hidden rounded-full bg-white/8">
+                      <i
+                        style={{ width: `${item.minimum > 0 ? Math.min(100, (item.tersedia / item.minimum) * 100) : 0}%` }}
+                        className="block h-full rounded-full bg-gradient-to-r from-rose-400 to-amber-400"
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )
+          )}
+        </Card>
+      )}
+
+      {d && visibility.member && (
+        <Card
+          title="Member & Loyalty"
+          subtitle="7 hari terakhir"
+          icon={Gem}
+          href="/dashboard/crm/members"
+          onGo={go}
+          failed={failedSet.has("member")}
+        >
+          {d.member && (
+            <div className="grid grid-cols-3 gap-2">
+              {(
+                [
+                  { n: d.member.memberBaru7Hari, t: "Member baru" },
+                  { n: d.member.xpTerdistribusi7Hari.toLocaleString("id-ID"), t: "XP keluar" },
+                  { n: d.member.rewardDitukar7Hari, t: "Reward ditukar" },
+                ] as const
+              ).map((c) => (
+                <div key={c.t} className="rounded-xl border border-white/8 bg-white/6 px-2 py-2.5 text-center">
+                  <div className="text-base font-extrabold">{c.n}</div>
+                  <div className="mt-0.5 text-[9.5px] leading-tight text-white/40">{c.t}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+      )}
+    </section>
+  );
+}

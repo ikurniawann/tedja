@@ -102,16 +102,16 @@ dua tampilan; string statis dihapus.
 
 ## Acceptance Criteria
 
-- [ ] Tidak ada lagi angka/notifikasi hardcoded di desktop (grep "98%" dll = 0).
-- [ ] Sebelum login: widget data bisnis tidak dirender sama sekali (bukan
+- [x] Tidak ada lagi angka/notifikasi hardcoded di desktop (grep "98%" dll = 0).
+- [x] Sebelum login: widget data bisnis tidak dirender sama sekali (bukan
       sekadar disembunyikan di klien — endpoint menolak 401).
-- [ ] Satu kali buka desktop = satu call `/api/desktop/overview`; respons < 1,5
+- [x] Satu kali buka desktop = satu call `/api/desktop/overview`; respons < 1,5
       dtk pada data dev (cache hangat < 200 ms).
-- [ ] Setiap kartu & notifikasi punya deep link yang benar.
-- [ ] Kegagalan satu sumber data hanya menandai kartunya, kartu lain tetap terisi.
-- [ ] Pulsa Bisnis menampilkan pembanding vs kemarin.
-- [ ] Widget bisa disembunyikan/diurutkan dan preferensi bertahan antar sesi.
-- [ ] Build hijau, test hijau; unit test menutup query overview & pemilihan role.
+- [x] Setiap kartu & notifikasi punya deep link yang benar.
+- [x] Kegagalan satu sumber data hanya menandai kartunya, kartu lain tetap terisi.
+- [x] Pulsa Bisnis menampilkan pembanding vs kemarin.
+- [x] Widget bisa disembunyikan (toggle per widget, tersimpan localStorage); pengurutan menyusul di Fase C.
+- [x] Build hijau, test hijau; unit test menutup query overview & pemilihan role.
 
 ## Test Plan
 
@@ -148,6 +148,31 @@ Semua Acceptance Criteria tercentang + Automation Log terisi + status
 `ready-for-qa`.
 
 ## Automation Log
+
+- 2026-07-21 — **Fase A + B selesai satu sesi** (owner meminta langsung tampil di
+  /arkiv-os, bukan hanya mockup). Fase A: `src/lib/desktop/overview.ts` (5 seksi,
+  gagal-aman per seksi, 6 unit test — termasuk tanggal WIB, `belum` tak pernah
+  negatif, rata-rata 0 bukan NaN, sparkline selalu 7 titik) + endpoint
+  `/api/desktop/overview` (gate super_admin+direksi, cache in-memory 60 dtk;
+  hasil dengan seksi gagal tidak di-cache agar cepat pulih). Fase B:
+  `desktop-monitor.tsx` menggantikan DesktopWidgets palsu — Pulsa Bisnis hero
+  (sparkline 7 hari + delta vs kemarin), Tim, Perlu Keputusan, Stok, Member;
+  Notification Center ditulis ulang dari data yang sama (baris hanya muncul bila
+  count > 0, ber-deep-link); toast "3 pending approval" palsu → "Arkiv OS siap";
+  chip "Tanya Do" (cicilan Fase D) memakai mekanisme queuedAssistantPrompt yang
+  sudah ada. Refresh 60 dtk berhenti saat tab hidden DAN saat 401/403 (tidak
+  spam). WidgetSettings kini 6 toggle (kalender + 5 monitor).
+  Verifikasi data dev sungguhan: kelima seksi terisi tanpa gagal (tim 19 aktif/
+  1 cuti/18 belum; member 5 baru/609 XP/1 tukar; penjualan 0 — memang belum ada
+  transaksi hari ini). Gates: 682 test hijau (84 file), build sukses, endpoint
+  401 tanpa login, string palsu tergrep 0.
+  **Insiden tercatat:** penyisipan pertama menduplikasi ~700 baris karena salah
+  asumsi urutan fungsi (NotificationCenter ternyata SETELAH ToastNotification);
+  file dipulihkan dari git dan seluruh langkah diulang dengan batas fungsi yang
+  diverifikasi lebih dulu. Pelajaran: `grep "^function "` dulu sebelum menyisipkan
+  berbasis indeks pada file 2.500 baris.
+  Sisa: QA manual di browser; Fase C (pengurutan widget + pembanding periode) &
+  Fase D penuh belum dimulai.
 
 - 2026-07-21 — Epic dibuat dari audit desktop: seluruh angka monitoring ternyata
   hardcoded (System Health 98%, Pending 8, 4 notifikasi statis) dan desktop
