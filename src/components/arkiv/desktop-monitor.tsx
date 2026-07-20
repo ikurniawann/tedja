@@ -2,30 +2,21 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  ArrowUpRight,
-  Banknote,
-  Bell,
-  FileText,
-  Gem,
-  Package,
-  Sparkles,
-  TrendingUp,
-  TriangleAlert,
-  UserPlus,
-  Users,
-  Clock3,
-} from "lucide-react";
 import type { DesktopOverview } from "@/lib/desktop/overview";
+import type { ActivityNotification } from "@/lib/desktop/notifications";
 
 /**
  * Papan widget monitoring owner di desktop Arkiv OS (EPIC-019 Fase B).
- * Desain mengikuti mockup docs/design/epic-019-desktop-mockup.html —
- * glass gelap + aksen pink, gaya widget macOS.
+ *
+ * Revisi owner 2026-07-21: tanpa ikon sama sekali, dan permukaan kartu
+ * disamakan dengan Calendar Widget (bg-slate-950/55 — lebih gelap daripada
+ * glass putih sebelumnya).
  */
 
-const pinkAccent = "from-pink-300 via-pink-500 to-rose-600";
 const REFRESH_MS = 60_000; // keputusan owner: 60 detik
+
+/** Permukaan kartu — identik dengan WindowShell/Calendar Widget. */
+const CARD = "rounded-3xl border border-white/18 bg-slate-950/55 shadow-2xl backdrop-blur-2xl";
 
 export type MonitorWidgetKey = "pulsa" | "tim" | "keputusan" | "stok" | "member";
 
@@ -37,7 +28,6 @@ export const MONITOR_WIDGETS: Array<{ key: MonitorWidgetKey; title: string; desc
   { key: "member", title: "Member & Loyalty", description: "Member baru, XP, dan penukaran reward 7 hari." },
 ];
 
-/** Status papan: menunggu auth → boleh/tidak → data. */
 export interface OverviewState {
   status: "loading" | "ready" | "forbidden" | "error";
   data: DesktopOverview | null;
@@ -45,7 +35,7 @@ export interface OverviewState {
 
 /**
  * Fetch + auto-refresh 60 dtk (berhenti saat tab tersembunyi). 401/403 →
- * `forbidden`, papan tidak dirender sama sekali — gate sesungguhnya di server.
+ * `forbidden`, papan tidak dirender dan polling berhenti total.
  */
 export function useDesktopOverview(enabled: boolean): OverviewState {
   const [state, setState] = useState<OverviewState>({ status: "loading", data: null });
@@ -63,10 +53,8 @@ export function useDesktopOverview(enabled: boolean): OverviewState {
       setState({ status: "ready", data: json.data as DesktopOverview });
       return true;
     } catch {
-      setState((prev) =>
-        prev.data ? prev : { status: "error", data: null }
-      );
-      return true; // error jaringan sementara: tetap coba lagi nanti
+      setState((prev) => (prev.data ? prev : { status: "error", data: null }));
+      return true; // error jaringan sementara: coba lagi di poll berikutnya
     }
   }, []);
 
@@ -78,7 +66,7 @@ export function useDesktopOverview(enabled: boolean): OverviewState {
       if (document.visibilityState === "hidden") return;
       const keepPolling = await load();
       if (!keepPolling && timerRef.current) {
-        clearInterval(timerRef.current); // forbidden: berhenti total, jangan spam 401
+        clearInterval(timerRef.current);
         timerRef.current = null;
       }
     };
@@ -110,18 +98,17 @@ function formatRupiah(value: number): string {
 }
 
 function deltaPct(today: number, yesterday: number): number | null {
-  if (yesterday <= 0) return null; // pembagi nol: tampilkan tanpa delta
+  if (yesterday <= 0) return null;
   return Math.round(((today - yesterday) / yesterday) * 100);
 }
 
 const DAY_SHORT = ["Min", "Sen", "Sel", "Rab", "Kam", "Jum", "Sab"];
 
-/* ── kerangka kartu ───────────────────────────────────── */
+/* ── kerangka kartu (tanpa ikon) ──────────────────────── */
 
 function Card({
   title,
   subtitle,
-  icon: Icon,
   href,
   onGo,
   onAskDo,
@@ -132,7 +119,6 @@ function Card({
 }: {
   title: string;
   subtitle: string;
-  icon: typeof TrendingUp;
   href: string;
   onGo: (href: string) => void;
   onAskDo?: (prompt: string) => void;
@@ -142,11 +128,8 @@ function Card({
   wide?: boolean;
 }) {
   return (
-    <article className={`rounded-3xl border border-white/14 bg-white/10 p-4 shadow-2xl backdrop-blur-2xl ${wide ? "col-span-2" : ""}`}>
-      <div className="mb-3 flex items-center gap-2.5">
-        <div className={`grid size-8 shrink-0 place-items-center rounded-xl bg-gradient-to-br ${pinkAccent}`}>
-          <Icon className="size-4 text-[#180312]" />
-        </div>
+    <article className={`${CARD} p-4 ${wide ? "col-span-2" : ""}`}>
+      <div className="mb-3 flex items-start gap-2">
         <div className="min-w-0">
           <div className="text-[13px] font-bold leading-tight">{title}</div>
           <div className="truncate text-[11px] text-white/40">{subtitle}</div>
@@ -156,25 +139,22 @@ function Card({
             <button
               type="button"
               onClick={() => onAskDo(askDoPrompt)}
-              className="flex items-center gap-1 rounded-full border border-pink-400/35 bg-pink-500/15 px-2.5 py-1 text-[11px] font-semibold text-pink-100 transition hover:bg-pink-500/28"
-              title="Tanyakan ke Do"
+              className="rounded-full border border-pink-400/35 bg-pink-500/15 px-2.5 py-1 text-[11px] font-semibold text-pink-100 transition hover:bg-pink-500/28"
             >
-              <Sparkles className="size-3" /> Do
+              Tanya Do
             </button>
           )}
           <button
             type="button"
             onClick={() => onGo(href)}
-            className="grid size-7 place-items-center rounded-lg border border-white/14 bg-white/8 text-white/55 transition hover:bg-white/16 hover:text-white"
-            title="Buka modul"
+            className="rounded-full border border-white/14 bg-white/8 px-2.5 py-1 text-[11px] font-semibold text-white/55 transition hover:bg-white/16 hover:text-white"
           >
-            <ArrowUpRight className="size-3.5" />
+            Buka ›
           </button>
         </div>
       </div>
       {failed ? (
-        <div className="flex items-center gap-2 rounded-2xl bg-rose-500/10 px-3 py-2.5 text-xs text-rose-200">
-          <TriangleAlert className="size-3.5 shrink-0" />
+        <div className="rounded-2xl bg-rose-500/10 px-3 py-2.5 text-xs text-rose-200">
           Data tak terjangkau — dicoba lagi otomatis.
         </div>
       ) : (
@@ -186,10 +166,60 @@ function Card({
 
 function Skeleton({ wide = false }: { wide?: boolean }) {
   return (
-    <div className={`rounded-3xl border border-white/14 bg-white/10 p-4 backdrop-blur-2xl ${wide ? "col-span-2" : ""}`}>
+    <div className={`${CARD} p-4 ${wide ? "col-span-2" : ""}`}>
       <div className="h-3.5 w-1/2 animate-pulse rounded-md bg-white/15" />
       <div className="mt-3 h-8 w-2/3 animate-pulse rounded-md bg-white/12" />
       <div className="mt-2 h-3 w-3/4 animate-pulse rounded-md bg-white/10" />
+    </div>
+  );
+}
+
+/* ── popup notifikasi aktivitas ───────────────────────── */
+
+const POPUP_DISMISS_MS = 7_000;
+
+/**
+ * Tumpukan popup di kanan atas: setiap aktivitas baru muncul sebagai kartu,
+ * hilang sendiri setelah 7 detik, klik = menuju modulnya.
+ */
+export function NotificationPopups({
+  popups,
+  onDismiss,
+  onOpen,
+}: {
+  popups: ActivityNotification[];
+  onDismiss: (id: string) => void;
+  onOpen: (notification: ActivityNotification) => void;
+}) {
+  useEffect(() => {
+    if (popups.length === 0) return;
+    const timers = popups.map((n) => setTimeout(() => onDismiss(n.id), POPUP_DISMISS_MS));
+    return () => timers.forEach(clearTimeout);
+    // Tiap popup dijadwalkan sekali saat muncul; onDismiss stabil dari parent.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [popups.map((n) => n.id).join("|")]);
+
+  if (popups.length === 0) return null;
+
+  return (
+    <div className="fixed right-5 top-12 z-[80] flex w-[min(340px,calc(100vw-32px))] flex-col gap-2">
+      {popups.slice(-4).map((n) => (
+        <div key={n.id} className={`${CARD} flex items-start gap-3 p-3.5`}>
+          <button onClick={() => onOpen(n)} className="min-w-0 flex-1 text-left">
+            <div className="text-sm leading-5 text-white/85">{n.text}</div>
+            <div className="mt-1 text-[11px] text-white/35">
+              {new Date(n.at).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })} · klik untuk membuka
+            </div>
+          </button>
+          <button
+            onClick={() => onDismiss(n.id)}
+            aria-label="Tutup notifikasi"
+            className="shrink-0 rounded-full px-1.5 text-white/40 transition hover:bg-white/10 hover:text-white"
+          >
+            ×
+          </button>
+        </div>
+      ))}
     </div>
   );
 }
@@ -230,7 +260,7 @@ export function DesktopMonitorBoard({
       )}
 
       {state.status === "error" && (
-        <div className="col-span-2 rounded-3xl border border-white/14 bg-white/10 p-4 text-xs text-white/60 backdrop-blur-2xl">
+        <div className={`${CARD} col-span-2 p-4 text-xs text-white/60`}>
           Ringkasan monitoring belum bisa dimuat — dicoba lagi otomatis.
         </div>
       )}
@@ -240,7 +270,6 @@ export function DesktopMonitorBoard({
           wide
           title="Pulsa Bisnis"
           subtitle="POS · hari ini vs kemarin"
-          icon={TrendingUp}
           href="/dashboard/pos"
           onGo={go}
           onAskDo={onAskDo}
@@ -312,7 +341,6 @@ export function DesktopMonitorBoard({
         <Card
           title="Tim Hari Ini"
           subtitle={`${d.timHariIni?.aktif ?? "–"} karyawan aktif`}
-          icon={Users}
           href="/dashboard/hris/attendance"
           onGo={go}
           onAskDo={onAskDo}
@@ -330,7 +358,7 @@ export function DesktopMonitorBoard({
                     { n: d.timHariIni.cuti, t: "Cuti", c: "text-sky-300" },
                   ] as const
                 ).map((p) => (
-                  <div key={p.t} className="flex-1 rounded-xl border border-white/8 bg-white/6 px-1 py-2 text-center">
+                  <div key={p.t} className="flex-1 rounded-xl border border-white/8 bg-white/5 px-1 py-2 text-center">
                     <div className={`text-lg font-extrabold ${p.c}`}>{p.n}</div>
                     <div className="text-[9.5px] text-white/40">{p.t}</div>
                   </div>
@@ -353,7 +381,6 @@ export function DesktopMonitorBoard({
         <Card
           title="Perlu Keputusan"
           subtitle={`${d.perluKeputusan?.total ?? "–"} item menunggu`}
-          icon={Bell}
           href="/dashboard/hris/leaves"
           onGo={go}
           failed={failedSet.has("perluKeputusan")}
@@ -362,10 +389,10 @@ export function DesktopMonitorBoard({
             <div className="-mx-1 flex flex-col">
               {(
                 [
-                  { icon: Clock3, t: "Pengajuan cuti", n: d.perluKeputusan.cuti, href: "/dashboard/hris/leaves" },
-                  { icon: Banknote, t: "Lembur & pinjaman", n: d.perluKeputusan.lembur + d.perluKeputusan.pinjaman, href: "/dashboard/hris/overtime" },
-                  { icon: FileText, t: "PO draft menunggu", n: d.perluKeputusan.poDraft, href: "/dashboard/purchasing/approval" },
-                  { icon: UserPlus, t: "Kandidat baru", n: d.perluKeputusan.kandidatBaru, href: "/dashboard/hris/candidates" },
+                  { t: "Pengajuan cuti", n: d.perluKeputusan.cuti, href: "/dashboard/hris/leaves" },
+                  { t: "Lembur & pinjaman", n: d.perluKeputusan.lembur + d.perluKeputusan.pinjaman, href: "/dashboard/hris/overtime" },
+                  { t: "PO draft menunggu", n: d.perluKeputusan.poDraft, href: "/dashboard/purchasing/approval" },
+                  { t: "Kandidat baru", n: d.perluKeputusan.kandidatBaru, href: "/dashboard/hris/candidates" },
                 ] as const
               ).map((r) => (
                 <button
@@ -374,15 +401,13 @@ export function DesktopMonitorBoard({
                   onClick={() => go(r.href)}
                   className="flex items-center gap-2.5 rounded-xl px-2 py-1.5 text-left transition hover:bg-white/8"
                 >
-                  <span className="grid size-6 shrink-0 place-items-center rounded-lg bg-white/8">
-                    <r.icon className="size-3 text-pink-200" />
-                  </span>
                   <span className="min-w-0 flex-1 truncate text-xs">{r.t}</span>
                   <span
                     className={`grid h-5 min-w-5 shrink-0 place-items-center rounded-full px-1.5 text-[11px] font-extrabold ${r.n > 0 ? "bg-gradient-to-br from-pink-500 to-rose-600 text-white" : "bg-white/8 text-white/35"}`}
                   >
                     {r.n}
                   </span>
+                  <span className="shrink-0 text-white/30">›</span>
                 </button>
               ))}
             </div>
@@ -400,15 +425,14 @@ export function DesktopMonitorBoard({
                 : "Semua stok aman"
               : "–"
           }
-          icon={Package}
           href="/dashboard/inventory/low-stock"
           onGo={go}
           onAskDo={onAskDo}
           askDoPrompt="Bahan apa saja yang stoknya menipis dan mana yang paling mendesak dipesan?"
           failed={failedSet.has("stokMenipis")}
         >
-          {d.stokMenipis && (
-            d.stokMenipis.jumlah === 0 ? (
+          {d.stokMenipis &&
+            (d.stokMenipis.jumlah === 0 ? (
               <div className="rounded-2xl bg-emerald-400/8 px-3 py-2.5 text-xs text-emerald-200">
                 Tidak ada bahan di bawah batas minimum.
               </div>
@@ -431,8 +455,7 @@ export function DesktopMonitorBoard({
                   </div>
                 ))}
               </div>
-            )
-          )}
+            ))}
         </Card>
       )}
 
@@ -440,7 +463,6 @@ export function DesktopMonitorBoard({
         <Card
           title="Member & Loyalty"
           subtitle="7 hari terakhir"
-          icon={Gem}
           href="/dashboard/crm/members"
           onGo={go}
           failed={failedSet.has("member")}
@@ -454,7 +476,7 @@ export function DesktopMonitorBoard({
                   { n: d.member.rewardDitukar7Hari, t: "Reward ditukar" },
                 ] as const
               ).map((c) => (
-                <div key={c.t} className="rounded-xl border border-white/8 bg-white/6 px-2 py-2.5 text-center">
+                <div key={c.t} className="rounded-xl border border-white/8 bg-white/5 px-2 py-2.5 text-center">
                   <div className="text-base font-extrabold">{c.n}</div>
                   <div className="mt-0.5 text-[9.5px] leading-tight text-white/40">{c.t}</div>
                 </div>

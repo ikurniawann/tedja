@@ -149,6 +149,25 @@ Semua Acceptance Criteria tercentang + Automation Log terisi + status
 
 ## Automation Log
 
+- 2026-07-21 — **Revisi owner atas Fase B** (empat permintaan):
+  (1) semua ikon di widget baru dihapus — header kartu jadi teks saja, tombol
+  aksi jadi teks "Tanya Do" / "Buka ›", baris keputusan tanpa ikon;
+  (2) permukaan kartu disamakan dengan Calendar Widget (`bg-slate-950/55
+  border-white/18`) — lebih gelap dari glass putih sebelumnya;
+  (3) Calendar Widget default nonaktif, dan paksaan `calendar: true` saat memuat
+  preferensi lama ikut dihapus;
+  (4) **fungsi notifikasi aktivitas dibuat**: `lib/desktop/notifications.ts`
+  membandingkan dua snapshot overview per poll 60 dtk — setiap KENAIKAN
+  (pesanan baru, pengajuan cuti/lembur/pinjaman baru, PO draft baru, kandidat
+  baru, bahan jatuh di bawah minimum, member baru) melahirkan popup di kanan
+  atas (auto-hilang 7 dtk, klik = buka modulnya) sekaligus masuk riwayat
+  Notification Center. Snapshot pertama melaporkan antrean yang sudah menunggu;
+  penurunan sengaja diam (antrean berkurang = hasil kerja, bukan berita);
+  seksi yang gagal dimuat tidak mengarang delta. Toast boot "Arkiv OS siap"
+  dihapus; tombol/ikon Notification Center (menubar & dock) hanya muncul bila
+  riwayat tidak kosong, dengan penghitung. 9 unit test untuk diff.
+  Gates: 691 test hijau (85 file), build sukses.
+
 - 2026-07-21 — **Fase A + B selesai satu sesi** (owner meminta langsung tampil di
   /arkiv-os, bukan hanya mockup). Fase A: `src/lib/desktop/overview.ts` (5 seksi,
   gagal-aman per seksi, 6 unit test — termasuk tanggal WIB, `belum` tak pernah
