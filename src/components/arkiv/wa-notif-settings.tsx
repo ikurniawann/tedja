@@ -196,7 +196,7 @@ export function WaNotifSettingsPanel() {
             }}
             placeholder="08xxxxxxxxxx"
             inputMode="tel"
-            className="min-w-0 flex-1 rounded-xl border border-white/16 bg-transparent px-3 py-2 text-sm outline-none placeholder:text-white/30 focus:border-pink-300/60"
+            className="arkiv-glass-input min-w-0 flex-1 rounded-xl border px-3 py-2 text-sm"
           />
           <button
             type="button"
@@ -232,7 +232,7 @@ export function WaNotifSettingsPanel() {
                             setConfig({ ...config, voidThresholdRp: Number.isFinite(n) ? n : 0 });
                           }}
                           inputMode="numeric"
-                          className="w-28 rounded-lg border border-white/16 bg-transparent px-2 py-1 text-xs outline-none focus:border-pink-300/60"
+                          className="arkiv-glass-input w-28 rounded-lg border px-2 py-1 text-xs"
                         />
                       </div>
                     )}

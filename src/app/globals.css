@@ -414,6 +414,35 @@ select:focus-visible,
   outline: none !important;
 }
 
+/* Input di jendela kaca Arkiv OS (mis. Settings → Notifikasi WA): global rule
+   di bawah memaksa semua input berlatar putih 70% + border terang dengan
+   !important, sehingga utility Tailwind tidak bisa menang. Kelas ini adalah
+   penawarnya — specificity input.class.class menyamai input:not():not() dan
+   menang karena ditulis BELAKANGAN. Pola sama dgn .arkiv-assistant-shortcut-input. */
+input.arkiv-glass-input.arkiv-glass-input,
+input.arkiv-glass-input.arkiv-glass-input:hover,
+input.arkiv-glass-input.arkiv-glass-input:focus,
+input.arkiv-glass-input.arkiv-glass-input:focus-visible {
+  background: transparent !important;
+  background-color: transparent !important;
+  border-color: rgba(255, 255, 255, 0.16) !important;
+  color: #fff !important;
+  -webkit-text-fill-color: #fff !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+input.arkiv-glass-input.arkiv-glass-input:focus,
+input.arkiv-glass-input.arkiv-glass-input:focus-visible {
+  border-color: rgba(249, 168, 212, 0.6) !important;
+}
+
+input.arkiv-glass-input.arkiv-glass-input::placeholder {
+  color: rgba(255, 255, 255, 0.3) !important;
+  -webkit-text-fill-color: rgba(255, 255, 255, 0.3) !important;
+}
+
+
 input[data-combobox-search="true"],
 input[data-combobox-search="true"]:focus,
 input[data-combobox-search="true"]:focus-visible {
