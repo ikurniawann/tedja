@@ -1,6 +1,6 @@
 # EPIC-015: Pensiun Modul Jadwal Lama (Schedules & Sections berbasis `staff`)
 
-status: coding
+status: ready-for-qa
 environment: dev
 retries: 0
 
@@ -122,8 +122,9 @@ Anchor kode: `src/app/dashboard/(dashboard)/hris/schedules/page.tsx`,
 - [x] `tsc` bersih (selain error pre-existing modul lain) dan `next build` hijau.
 - [ ] Absensi harian, monitoring roster, cuti, lembur, dan payroll tetap normal
       (smoke dev) — membuktikan tidak ada ketergantungan tersembunyi.
-- [ ] Migrasi drop table applied + tercatat, dan `\dt` tidak lagi menampilkan
-      `staff_schedules`/`staff_sections`; tabel `staff` masih ada.
+- [x] Migrasi drop table applied + tercatat, dan `to_regclass` memastikan
+      `staff_schedules`/`staff_sections` hilang; tabel `staff` dan `sections`
+      tetap ada.
 
 ## Test Plan
 
@@ -156,6 +157,15 @@ Semua Acceptance Criteria tercentang + Automation Log terisi + status
 `ready-for-qa`.
 
 ## Automation Log
+
+- 2026-07-21 — **Fase C dieksekusi** oleh owner (`npm run db:migrate:apply` —
+  perintah destruktif sengaja dijalankan user, bukan agen). Pengaman tidak
+  berbunyi: kedua tabel kosong saat di-drop. Verifikasi `to_regclass`:
+  `staff_schedules` & `staff_sections` hilang; `staff` & `sections` utuh sesuai
+  rencana. Dua migrasi menu yang dulu di-apply manual (Suara AI, Dashboard
+  Rekrutmen) kini ikut tercatat di tracker. Status → ready-for-qa; sisa QA
+  manusia: redirect kedua halaman lama dengan sesi login + dropdown Section di
+  form karyawan.
 
 - 2026-07-20 — Epic dibuat dari audit `/dashboard/hris/schedules` ("belum aktif"):
   ditemukan dua sistem jadwal paralel; halaman lama bersandar tabel `staff` (0
