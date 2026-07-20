@@ -128,7 +128,7 @@ function Card({
   wide?: boolean;
 }) {
   return (
-    <article className={`${CARD} p-4 ${wide ? "col-span-2" : ""}`}>
+    <article className={`${CARD} p-4 ${wide ? "col-span-full" : ""}`}>
       <div className="mb-3 flex items-start gap-2">
         <div className="min-w-0">
           <div className="text-[13px] font-bold leading-tight">{title}</div>
@@ -166,7 +166,7 @@ function Card({
 
 function Skeleton({ wide = false }: { wide?: boolean }) {
   return (
-    <div className={`${CARD} p-4 ${wide ? "col-span-2" : ""}`}>
+    <div className={`${CARD} p-4 ${wide ? "col-span-full" : ""}`}>
       <div className="h-3.5 w-1/2 animate-pulse rounded-md bg-white/15" />
       <div className="mt-3 h-8 w-2/3 animate-pulse rounded-md bg-white/12" />
       <div className="mt-2 h-3 w-3/4 animate-pulse rounded-md bg-white/10" />
@@ -246,11 +246,8 @@ export function DesktopMonitorBoard({
   const d = state.data;
   const failedSet = new Set(d?.gagal ?? []);
 
-  return (
-    <section
-      aria-label="Papan monitoring bisnis"
-      className="pointer-events-auto fixed right-5 top-12 z-20 hidden max-h-[calc(100vh-140px)] w-[560px] grid-cols-2 content-start gap-3 overflow-y-auto pr-1 lg:grid"
-    >
+  const cards = (
+    <>
       {state.status === "loading" && (
         <>
           <Skeleton wide />
@@ -277,7 +274,7 @@ export function DesktopMonitorBoard({
           failed={failedSet.has("pulsaBisnis")}
         >
           {d.pulsaBisnis && (
-            <div className="grid grid-cols-[1.2fr_1fr] items-end gap-4">
+            <div className="grid grid-cols-1 items-end gap-4 min-[430px]:grid-cols-[1.2fr_1fr]">
               <div>
                 <div className="text-[11px] text-white/40">Omzet hari ini</div>
                 <div className="text-[28px] font-extrabold leading-tight tracking-tight">
@@ -485,6 +482,62 @@ export function DesktopMonitorBoard({
           )}
         </Card>
       )}
-    </section>
+    </>
+  );
+
+  return (
+    <>
+      {/* Laptop: papan tetap menempel di kanan seperti widget macOS. */}
+      <section
+        aria-label="Papan monitoring bisnis"
+        className="pointer-events-auto fixed right-5 top-12 z-20 hidden max-h-[calc(100vh-140px)] w-[560px] grid-cols-2 content-start gap-3 overflow-y-auto pr-1 lg:grid"
+      >
+        {cards}
+      </section>
+
+      {/* Ponsel/tablet: panel satu kolom — monitoring adalah alasan utama
+          owner membuka /arkiv-os dari HP, jadi terbuka secara default. */}
+      <MobileMonitorSheet>{cards}</MobileMonitorSheet>
+    </>
+  );
+}
+
+/**
+ * Panel monitoring versi layar kecil. Menubar tetap terlihat (mulai di bawah
+ * top-9) dan dock tetap bisa ditekan (z panel di bawah dock); "Tutup"
+ * menampilkan desktop, pil "Monitoring" membukanya kembali.
+ */
+function MobileMonitorSheet({ children }: { children: React.ReactNode }) {
+  const [open, setOpen] = useState(true);
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="fixed bottom-24 right-4 z-[25] rounded-full border border-white/18 bg-slate-950/75 px-4 py-2.5 text-xs font-bold text-white shadow-2xl backdrop-blur-2xl lg:hidden"
+      >
+        Monitoring
+      </button>
+    );
+  }
+
+  return (
+    <div className="fixed inset-x-0 bottom-0 top-9 z-[25] overflow-y-auto overscroll-contain bg-[#0b1020]/85 backdrop-blur-xl lg:hidden">
+      <div className="sticky top-0 z-10 flex items-center justify-between border-b border-white/10 bg-black/35 px-4 py-3 backdrop-blur-2xl">
+        <div>
+          <div className="text-sm font-bold">Monitoring</div>
+          <div className="text-[11px] text-white/40">Diperbarui tiap 60 detik</div>
+        </div>
+        <button
+          type="button"
+          onClick={() => setOpen(false)}
+          className="rounded-full border border-white/14 bg-white/8 px-3 py-1.5 text-xs font-semibold text-white/70 transition hover:bg-white/16 hover:text-white"
+        >
+          Tutup
+        </button>
+      </div>
+      <div className="grid grid-cols-1 content-start gap-3 px-4 pb-32 pt-4">{children}</div>
+    </div>
   );
 }

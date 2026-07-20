@@ -149,6 +149,20 @@ Semua Acceptance Criteria tercentang + Automation Log terisi + status
 
 ## Automation Log
 
+- 2026-07-21 — **Akses ponsel** (butir #1 rencana optimalisasi lanjutan, diminta
+  owner). Sebelumnya papan `hidden lg:grid` — di bawah 1024px owner tidak dapat
+  apa-apa, padahal monitoring paling sering dilakukan dari HP. Kini kartu-kartu
+  yang sama dirender dua wadah: laptop tetap papan kanan 2 kolom (tidak
+  berubah), layar kecil mendapat panel satu kolom yang menutup area desktop dan
+  TERBUKA DEFAULT (monitoring adalah alasan utama membuka /arkiv-os dari HP).
+  Menubar tetap terlihat, dock tetap bisa ditekan (z panel di bawah dock),
+  "Tutup" menampilkan desktop, pil "Monitoring" membukanya lagi. Kartu hero
+  memecah dua kolomnya menjadi satu di layar < 430px; `col-span-2` diganti
+  `col-span-full` supaya aman di grid satu kolom. Satu sumber JSX untuk kedua
+  wadah — tidak ada duplikasi kartu.
+  Gates: 691 test hijau, build sukses. Belum diverifikasi di perangkat nyata —
+  QA di HP sungguhan tetap diperlukan (safe-area, gulir momentum iOS).
+
 - 2026-07-21 — **Revisi owner atas Fase B** (empat permintaan):
   (1) semua ikon di widget baru dihapus — header kartu jadi teks saja, tombol
   aksi jadi teks "Tanya Do" / "Buka ›", baris keputusan tanpa ikon;
