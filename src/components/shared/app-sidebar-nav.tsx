@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ChevronDownIcon } from "@heroicons/react/24/outline";
 import { isNavLinkActive } from "@/lib/iam/nav-active";
 import { useNavFrom } from "@/lib/iam/use-nav-from";
@@ -16,8 +16,16 @@ interface AppSidebarNavProps {
   className?: string;
 }
 
-/** Href item pengumuman ESS — dihiasi badge jumlah belum dibaca. */
-const ANNOUNCEMENTS_HREF = "/dashboard/me/pengumuman";
+/**
+ * Href ESS yang otomatis ditandai "sudah dilihat" begitu dibuka, sehingga
+ * badge pembaruannya langsung hilang tanpa aksi tambahan dari karyawan.
+ * Kunci map = href, nilai = nama modul di API.
+ */
+const ESS_SEEN_ON_VISIT: Record<string, string> = {
+  "/dashboard/me/cuti": "leaves",
+  "/dashboard/me/lembur": "overtime",
+  "/dashboard/me/pinjaman": "loans",
+};
 
 function navItemKey(item: NavItem): string {
   return `${item.href}::${item.label}`;
@@ -106,26 +114,46 @@ export default function AppSidebarNav({
     setExpandedMenus((prev) => [...new Set([...prev, ...autoExpanded])]);
   }, [autoExpanded]);
 
-  // Badge jumlah pengumuman belum dibaca (hanya bila item pengumuman tampil).
-  const hasAnnouncementsItem = useMemo(
-    () => allLeafHrefs.includes(ANNOUNCEMENTS_HREF),
-    [allLeafHrefs]
-  );
-  const [unreadAnnouncements, setUnreadAnnouncements] = useState(0);
+  /**
+   * Badge notifikasi: antrean persetujuan (HR) dan pembaruan pengajuan (ESS).
+   * Satu permintaan untuk semua menu; server yang memutuskan angka mana yang
+   * boleh dilihat aktor ini.
+   */
+  const [badges, setBadges] = useState<Record<string, number>>({});
+  const loadBadges = useCallback(async () => {
+    try {
+      const res = await fetch("/api/hris/nav-badges");
+      if (!res.ok) return;
+      const json = await res.json();
+      setBadges(json?.badges ?? {});
+    } catch {
+      // Badge hiasan — diamkan agar navigasi tetap utuh saat jaringan gagal.
+    }
+  }, []);
+
   useEffect(() => {
-    if (!hasAnnouncementsItem) return;
+    // Dimuat ulang tiap pindah halaman agar angkanya menyusul aksi pengguna.
+    void loadBadges();
+  }, [loadBadges, pathname]);
+
+  // Membuka halaman ESS berarti karyawan sudah melihat pembaruannya.
+  useEffect(() => {
+    const module = ESS_SEEN_ON_VISIT[pathname];
+    if (!module) return;
     let active = true;
-    fetch("/api/hris/announcements/unread-count")
-      .then((res) => (res.ok ? res.json() : null))
-      .then((json) => {
-        if (active) setUnreadAnnouncements(Number(json?.unread ?? 0));
+    fetch("/api/hris/nav-badges", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ module }),
+    })
+      .then(() => {
+        if (active) void loadBadges();
       })
       .catch(() => {});
     return () => {
       active = false;
     };
-    // Refresh saat pindah halaman (mis. setelah membaca pengumuman)
-  }, [hasAnnouncementsItem, pathname]);
+  }, [pathname, loadBadges]);
 
   const toggleMenu = (key: string) => {
     setExpandedMenus((prev) =>
@@ -183,6 +211,17 @@ export default function AppSidebarNav({
       .join(" ");
   };
 
+  /**
+   * Total badge sebuah cabang. Tanpa ini, notifikasi pada anak menu tidak
+   * terlihat sama sekali selama grupnya masih tertutup.
+   */
+  const branchBadgeTotal = (item: NavItem): number => {
+    if (item.children?.length) {
+      return item.children.reduce((sum, child) => sum + branchBadgeTotal(child), 0);
+    }
+    return item.href ? (badges[item.href] ?? 0) : 0;
+  };
+
   const renderItem = (item: NavItem, depth = 0) => {
     const hasChildren = Boolean(item.children?.length);
     const itemActive = hasChildren
@@ -204,9 +243,12 @@ export default function AppSidebarNav({
             type="button"
             onClick={() => toggleMenu(itemKey)}
             aria-expanded={isExpanded}
-            className={groupShellClass}
+            className={`relative ${groupShellClass}`}
             title={collapsed ? item.label : undefined}
           >
+            {collapsed && branchBadgeTotal(item) > 0 && (
+              <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-pink-600" />
+            )}
             {collapsed ? (
               showIcon ? (
                 <AppSidebarNavIcon name={item.icon} isActive={itemActive} />
@@ -221,6 +263,11 @@ export default function AppSidebarNav({
                   {showIcon && <AppSidebarNavIcon name={item.icon} isActive={itemActive} />}
                   <span>{item.label}</span>
                 </span>
+                {!isExpanded && branchBadgeTotal(item) > 0 && (
+                  <span className="ml-auto mr-1 min-w-5 rounded-full bg-pink-600 px-1.5 text-center text-[11px] font-bold leading-5 text-white">
+                    {branchBadgeTotal(item) > 99 ? "99+" : branchBadgeTotal(item)}
+                  </span>
+                )}
                 <ChevronDownIcon
                   className={`h-4 w-4 shrink-0 text-gray-400 transition-transform ${isExpanded ? "rotate-180" : ""}`}
                 />
@@ -241,8 +288,8 @@ export default function AppSidebarNav({
       : topLevelItemClass(itemActive);
 
     const badgeCount =
-      item.href === ANNOUNCEMENTS_HREF && unreadAnnouncements > 0
-        ? unreadAnnouncements
+      item.href && badges[item.href] > 0
+        ? badges[item.href]
         : 0;
 
     return (
