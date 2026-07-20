@@ -64,43 +64,55 @@ Sistem punya dua mata uang: `ark_coin_balance` (dibelanjakan, dipakai
 tidak dipakai sama sekali di epic ini. Seluruh collectible diperoleh lewat
 pencapaian XP, dan **member yang memilih** mana yang ditukar.
 
-Model yang dipilih: **jatah tukar per milestone**.
+Model final: **jatah tukar berulang tiap kelipatan XP, berlaku ke bawah.**
 
-| Langkah | Perilaku |
-|---------|----------|
-| Member menembus ambang XP sebuah milestone | menerima 1 hak tukar untuk tingkat itu |
-| Member memilih satu artwork dari tingkat tersebut | hak tukar terpakai, artwork masuk inventory |
+| Aturan | Perilaku |
+|--------|----------|
+| Jatah diperoleh | satu jatah tiap kelipatan `interval_xp`, tanpa batas atas |
+| Jumlah jatah | `floor(lifetime_xp / interval_xp)` |
+| Arah pemakaian | jatah boleh dipakai untuk artwork mana pun yang ambangnya sudah dilewati |
 | `lifetime_xp` | **tidak pernah berkurang** — tier selalu aman |
-| Artwork lain di tingkat sama | menunggu milestone berikutnya |
 
-Alasan model ini dipilih dibanding sekadar ambang: bila ambang saja yang
-dipakai, member yang mencapai 20.000 XP otomatis berhak atas seluruh artwork
-berambang lebih rendah, sehingga "memilih" kehilangan arti dan koleksi menjadi
-daftar centang. Dengan jatah, pilihan terasa berat dan artwork tetap langka.
+Contoh dengan `interval_xp = 5.000`: member ber-XP 50.000 memperoleh 10 jatah,
+dan bebas memakainya untuk artwork apa pun yang ambang XP-nya ≤ 50.000 —
+termasuk artwork lama yang dirilis sebelum ia bergabung.
+
+Dua keputusan ini dipilih karena: jatah berulang membuat member veteran tetap
+punya alasan mengumpulkan XP, dan pemakaian ke bawah membuat member yang telat
+bergabung tidak merasa dihukum atas artwork yang terlewat.
+
+**Konsekuensi yang harus diantisipasi:** jatah tidak pernah berhenti bertambah,
+jadi katalog artwork harus terus diisi. Bila produksi artwork berhenti, member
+veteran akan menumpuk jatah tanpa bisa memakainya. Perlu laporan sederhana
+"jatah menganggur" agar kebutuhan artwork baru terlihat sebelum jadi keluhan.
 
 **Badge dikecualikan.** Badge diberikan otomatis saat ambang tercapai dan tidak
 memakai jatah — badge adalah bukti pencapaian, bukan hadiah yang dipilih.
 
-Tabel baru yang dibutuhkan:
+### Penyederhanaan yang muncul dari kedua keputusan
 
-- `crm_collectible_milestones` — `code`, `name` (mis. Perunggu/Perak/Emas),
-  `threshold_xp`, `entitlement_count` (default 1), `is_active`.
-- `crm_member_entitlements` — `member_id`, `milestone_id`, `granted_at`,
-  `consumed_at`, `consumed_asset_type`, `consumed_asset_id`.
-  Unique `(member_id, milestone_id)` supaya pemberian idempoten.
+Karena jatah kini **dihitung**, bukan diberikan satu per satu, rancangan
+sebelumnya menyusut:
 
-Artwork ditautkan ke milestone lewat `milestone_id`. Kolom `rarity` yang sudah
-ada tetap kosmetik dan **tidak** dipakai sebagai tingkat jatah, agar tampilan
-dan aturan tidak saling mengunci.
+- Tabel `crm_collectible_milestones` **tidak diperlukan**. Cukup satu nilai
+  konfigurasi `interval_xp`, plus kolom ambang `min_lifetime_xp` pada tiap
+  artwork sebagai syarat kelayakan.
+- `crm_member_entitlements` menjadi **ledger penukaran** semata:
+  `member_id`, `asset_type`, `asset_id`, `redeemed_at`.
+  Sisa jatah = `floor(lifetime_xp / interval_xp) − COUNT(ledger)`.
+- **Backfill hilang.** Member lama otomatis memiliki jatah sesuai XP-nya tanpa
+  proses migrasi apa pun.
+- **Rekonsiliasi hilang.** Menurunkan `interval_xp` langsung menambah jatah
+  semua member karena angkanya dihitung ulang saat dibaca.
 
-Kasus batas yang harus ditangani:
+Yang tersisa untuk ditangani dengan hati-hati:
 
-- **Backfill** — member yang XP-nya sudah melewati beberapa milestone saat
-  fitur rilis harus menerima jatah untuk semua milestone yang sudah terlewati.
-- **Milestone baru / ambang diturunkan** — perlu proses rekonsiliasi yang
-  memberikan jatah secara surut, bukan hanya memeriksa saat XP bertambah.
-- **Koreksi XP turun oleh admin** — jatah yang sudah terpakai **tidak** ditarik
-  kembali; artwork yang sudah dimiliki tetap milik member.
+- **Balapan penukaran** — dua permintaan bersamaan bisa memakai jatah yang sama.
+  Wajib dikunci di level baris member (`SELECT … FOR UPDATE`) di dalam satu
+  transaksi bersama penulisan ledger dan pengurangan stok.
+- **Koreksi XP turun oleh admin** — `floor(lifetime_xp / interval_xp)` bisa
+  jatuh di bawah jumlah yang sudah terpakai. Sisa jatah wajib dijepit ke
+  `max(0, …)`, dan artwork yang sudah dimiliki **tidak** ditarik kembali.
 - **`xp_cost`** — kolom lama menjadi tidak terpakai; jangan dipakai ulang untuk
   arti baru agar tidak menyesatkan.
 
@@ -132,23 +144,23 @@ Buka jalur member sebelum menambah jenis aset baru.
 
 **Exit:** member dapat melihat dan memasang avatar yang dimilikinya.
 
-### 2. Mesin milestone & jatah tukar
+### 2. Mesin jatah tukar
 
-- Tabel `crm_collectible_milestones` dan `crm_member_entitlements`.
-- Pemberian jatah saat XP menembus ambang, idempoten lewat unique
-  `(member_id, milestone_id)`.
-- Proses rekonsiliasi untuk backfill dan milestone yang baru ditambahkan.
-- Halaman admin milestone: ambang XP, nama tingkat, jumlah jatah.
+- Konfigurasi `interval_xp` + kolom `min_lifetime_xp` pada artwork.
+- Tabel ledger `crm_member_entitlements` (`member_id`, `asset_type`,
+  `asset_id`, `redeemed_at`).
+- Perhitungan sisa jatah `max(0, floor(lifetime_xp / interval_xp) − terpakai)`.
 - Tegakkan `required_tier_id` pada semua jalur perolehan.
+- Laporan "jatah menganggur" agar kebutuhan artwork baru terlihat lebih dini.
 
-**Exit:** member yang menembus ambang menerima tepat satu jatah, dan jatah itu
-hanya bisa dipakai sekali.
+**Exit:** sisa jatah member benar tanpa proses migrasi, dan tetap benar setelah
+`interval_xp` diubah.
 
 ### 3. Redeem oleh member + upload artwork
 
-- `POST /api/member/collectibles/redeem` — pakai satu jatah untuk memilih satu
-  artwork dari tingkat yang sesuai; transaksional, tolak jatah habis dan stok
-  habis.
+- `POST /api/member/collectibles/redeem` — pakai satu jatah untuk artwork mana
+  pun yang ambangnya sudah dilewati. Satu transaksi dengan kunci baris member,
+  penulisan ledger, dan pengurangan stok; tolak jatah habis dan stok habis.
 - Portal member: tampilkan sisa jatah dan artwork yang bisa dipilih.
 - Ganti field "Image URL" jadi upload berkas + generate thumbnail.
 
@@ -186,7 +198,8 @@ otomatis beserta notifikasi.
 - Member melihat koleksinya di portal tanpa bantuan admin.
 - `lifetime_xp` tidak pernah berkurang oleh sebab apa pun.
 - Tidak ada collectible yang dapat dibeli; ARK Coin tidak tersentuh epic ini.
-- Satu milestone menghasilkan tepat satu jatah, sekalipun XP dihitung ulang.
+- Sisa jatah selalu `max(0, floor(lifetime_xp / interval_xp) − terpakai)`.
+- Jatah dapat dipakai untuk artwork lama yang ambangnya sudah dilewati.
 - Jatah dan stok ditegakkan di server secara transaksional, bukan hanya di UI.
 - Aturan unlock ketiga jenis aset berasal dari satu modul.
 - Admin mengunggah artwork tanpa layanan hosting pihak ketiga.
@@ -194,13 +207,14 @@ otomatis beserta notifikasi.
 ## Test Plan
 
 - Unit: evaluasi syarat unlock (ambang XP, tier, stok habis, jendela waktu).
-- Integrasi: menembus milestone memberi tepat satu jatah; XP dihitung ulang
-  atau naik lagi tidak menambah jatah kedua.
-- Integrasi: redeem memotong jatah dan menolak percobaan kedua saat jatah habis;
-  dua permintaan bersamaan tidak menghasilkan dua artwork.
-- Integrasi: backfill memberi jatah yang benar untuk member lama; menurunkan
-  ambang milestone memberi jatah surut.
-- Integrasi: koreksi XP turun tidak menarik artwork yang sudah dimiliki.
+- Unit: perhitungan sisa jatah pada XP tepat di kelipatan, di bawah kelipatan
+  pertama, dan setelah banyak penukaran.
+- Integrasi: dua permintaan redeem bersamaan hanya menghasilkan satu artwork
+  (kunci baris member diuji, bukan diasumsikan).
+- Integrasi: menurunkan `interval_xp` langsung menambah sisa jatah tanpa migrasi.
+- Integrasi: koreksi XP turun menjepit sisa jatah ke nol tanpa menarik artwork
+  yang sudah dimiliki.
+- Integrasi: jatah dapat menukar artwork lama berambang rendah.
 - Integrasi: melewati ambang XP memberi badge tepat satu kali tanpa jatah.
 - E2E: member membuka portal, melihat wallpaper terkunci, XP bertambah dari
   transaksi POS, wallpaper terbuka dan dapat diunduh.
@@ -218,5 +232,10 @@ otomatis beserta notifikasi.
   ARK Coin tidak dipakai di epic ini. Seluruh artwork diperoleh lewat **jatah
   tukar per milestone XP** dan member memilih sendiri. `lifetime_xp` tidak
   pernah berkurang. Badge dikecualikan — otomatis, tanpa jatah.
+- **20 Jul 2026** — Keputusan owner: jatah **berulang tiap kelipatan XP** tanpa
+  batas atas, dan **boleh dipakai ke bawah** untuk artwork lama. Akibatnya jatah
+  cukup dihitung dari `lifetime_xp`, sehingga tabel milestone, proses backfill,
+  dan job rekonsiliasi semuanya tidak lagi diperlukan. Risiko baru yang dicatat:
+  katalog artwork harus terus diisi agar jatah tidak menganggur.
 - **20 Jul 2026** — Keputusan owner: tabel terpisah per jenis aset. Mitigasi
   duplikasi lewat modul bersama `src/lib/crm/collectibles.ts` ditetapkan wajib.
