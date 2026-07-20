@@ -13,6 +13,15 @@ export const SETTING_KEYS = {
   OPENAI_API_KEY: "openai_api_key",
   OPENAI_MODEL: "openai_model",
   OPENAI_BASE_URL: "openai_base_url",
+  // Suara AI / text-to-speech (EPIC-016) — dipakai Interview AI.
+  // Provider dipisah dari kredensial OpenAI di atas karena suara bisa dipindah
+  // ke Azure/ElevenLabs tanpa mengubah konfigurasi teks/vision.
+  TTS_PROVIDER: "tts_provider",
+  TTS_VOICE: "tts_voice",
+  TTS_MODEL: "tts_model",
+  AZURE_SPEECH_KEY: "azure_speech_key",
+  AZURE_SPEECH_REGION: "azure_speech_region",
+  ELEVENLABS_API_KEY: "elevenlabs_api_key",
   // Profil legal perusahaan — dipakai dokumen kontrak kerja (PIHAK PERTAMA).
   // Kosong = dirender sebagai garis isian di PDF.
   COMPANY_LEGAL_NAME: "company_legal_name",
