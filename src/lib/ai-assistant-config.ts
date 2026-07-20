@@ -1,5 +1,14 @@
 export const AI_ASSISTANT_MODELS = [
   {
+    // Prefix `openai:` menandai model yang dilayani langsung oleh OpenAI,
+    // bukan lewat Ollama. Sisanya tetap melalui Ollama seperti sebelumnya.
+    id: "openai:gpt-4o-mini",
+    label: "OpenAI GPT-4o mini",
+    logo: "AI",
+    logoSrc: null,
+    logoClassName: "from-emerald-200 via-teal-300 to-emerald-500 text-slate-950",
+  },
+  {
     id: "kimi-k2.5:cloud",
     label: "Kimi K2.5 Cloud",
     logo: "K",
@@ -38,7 +47,21 @@ export const AI_ASSISTANT_MODELS = [
 
 export type AiAssistantModel = (typeof AI_ASSISTANT_MODELS)[number]["id"];
 
-export const DEFAULT_AI_ASSISTANT_MODEL: AiAssistantModel = "kimi-k2.5:cloud";
+export const DEFAULT_AI_ASSISTANT_MODEL: AiAssistantModel = "openai:gpt-4o-mini";
+
+/** Model berprefix ini dipanggil ke OpenAI, bukan Ollama. */
+export const OPENAI_MODEL_PREFIX = "openai:";
+
+export function isOpenAiAssistantModel(model: string): boolean {
+  return model.startsWith(OPENAI_MODEL_PREFIX);
+}
+
+/** "openai:gpt-4o-mini" → "gpt-4o-mini" (id yang dikenal API OpenAI). */
+export function stripOpenAiPrefix(model: string): string {
+  return model.startsWith(OPENAI_MODEL_PREFIX)
+    ? model.slice(OPENAI_MODEL_PREFIX.length)
+    : model;
+}
 
 export const AI_ASSISTANT_SCOPES = [
   {

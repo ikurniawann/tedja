@@ -4,9 +4,12 @@ import { createServerPgClient } from "@/lib/pg/create-client";
 import {
   type AiAssistantModel,
   type AiAssistantScope,
+  isOpenAiAssistantModel,
   resolveAiAssistantModel,
   resolveAiAssistantScope,
+  stripOpenAiPrefix,
 } from "@/lib/ai-assistant-config";
+import { SETTING_KEYS, getSettings } from "@/lib/settings/app-settings";
 import { appendFile, mkdir } from "fs/promises";
 import path from "path";
 
@@ -37,7 +40,7 @@ type LlmResult = {
   mode: string;
   model: string;
   status: "live" | "fallback";
-  provider?: "ollama" | "internal";
+  provider?: "ollama" | "openai" | "internal";
   fallbackReason?: string;
   error?: string;
 };
@@ -513,6 +516,42 @@ function createEmptySystemSummary(): Summary {
   };
 }
 
+/**
+ * Panggil OpenAI Chat Completions untuk model berprefix `openai:`.
+ *
+ * Sumber kredensial berurutan: env `OPENAI_API_KEY` lebih dulu (praktis untuk
+ * override per-deployment), lalu setting `openai_api_key` di database — tempat
+ * key OpenAI proyek ini sebenarnya tinggal, diatur lewat Settings → Integrasi.
+ */
+async function callOpenAiChat(
+  model: string,
+  messages: Array<{ role: string; content: string }>
+): Promise<string> {
+  const s = await getSettings([SETTING_KEYS.OPENAI_API_KEY, SETTING_KEYS.OPENAI_BASE_URL]);
+  const apiKey = process.env.OPENAI_API_KEY?.trim() || s[SETTING_KEYS.OPENAI_API_KEY];
+  if (!apiKey) {
+    throw new Error(
+      "API key OpenAI belum tersedia (env OPENAI_API_KEY maupun Settings → Integrasi kosong)"
+    );
+  }
+  const baseUrl = (s[SETTING_KEYS.OPENAI_BASE_URL] || "https://api.openai.com/v1").replace(/\/$/, "");
+  const timeoutMs = Number(process.env.OPENAI_TIMEOUT || "120000");
+
+  const response = await fetch(`${baseUrl}/chat/completions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify({ model: stripOpenAiPrefix(model), temperature: 0.7, messages }),
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  if (!response.ok) {
+    throw new Error(`OpenAI ${response.status}: ${(await response.text()).slice(0, 300)}`);
+  }
+  const json = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> };
+  const answer = normalizePlainTextAnswer(json.choices?.[0]?.message?.content);
+  if (!answer) throw new Error("OpenAI mengembalikan jawaban kosong");
+  return answer;
+}
+
 async function generateWithOllama({
   message,
   history,
@@ -532,6 +571,7 @@ async function generateWithOllama({
   scope: AiAssistantScope;
   model: AiAssistantModel;
 }): Promise<LlmResult> {
+  const useOpenAi = isOpenAiAssistantModel(model);
   const baseUrl = (process.env.AI_ASSISTANT_OLLAMA_API_BASE || "http://127.0.0.1:11434")
     .trim()
     .replace(/^http:\/\/localhost(?=:|\/|$)/, "http://127.0.0.1")
@@ -568,6 +608,29 @@ async function generateWithOllama({
   ];
 
   const errors: string[] = [];
+
+  // Model berprefix `openai:` dilayani langsung oleh OpenAI. Ollama tidak
+  // disentuh sama sekali di jalur ini — termasuk fallback-nya, karena kegagalan
+  // OpenAI lebih berguna dilaporkan apa adanya daripada disamarkan jadi
+  // "Ollama tidak tersedia".
+  if (useOpenAi) {
+    try {
+      const answer = await callOpenAiChat(model, messages);
+      return { answer, mode: "openai_chat_completions_live", model, provider: "openai", status: "live" };
+    } catch (error) {
+      const detail = formatProviderError(error, "openai");
+      console.warn("AI assistant OpenAI fallback:", detail);
+      return {
+        answer: fallbackAnswer,
+        mode: "openai_unavailable_fallback",
+        model,
+        provider: "internal",
+        status: "fallback",
+        fallbackReason: "OpenAI sedang tidak tersedia. Saya memakai fallback internal sementara.",
+        error: detail,
+      };
+    }
+  }
 
   if (!baseUrl) {
     return {
