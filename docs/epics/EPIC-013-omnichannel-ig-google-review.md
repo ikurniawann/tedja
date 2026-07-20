@@ -199,3 +199,40 @@ ulang** tanpa ditulis ulang.
     ulang tanpa mengisi rahasia **tidak menghapusnya**; Putuskan
     mengosongkan semua; tanpa login 401. Kredensial uji sudah dihapus.
   - Gate: 596 test hijau, build sukses.
+- 2026-07-20 — **Fase B SELESAI: fondasi multi-kanal.** Owner akan menguji
+  Instagram dengan akun testing, jadi fondasinya dikerjakan lebih dulu.
+  Migrasi `20260720130000_wa_cs_fase_b_multichannel.sql` (applied):
+  - Identitas percakapan pindah dari `phone` ke pasangan
+    **(channel, external_id)** — WhatsApp memakai digit nomor, Instagram akan
+    memakai IGSID. `phone` jadi nullable (IG tidak punya nomor), plus kolom
+    `display_name` untuk nama dari kanal saat percakapan tidak tertaut member.
+  - `wa_messages` ikut membawa `channel` + `external_id`.
+  - Backfill: seluruh baris lama otomatis jadi `whatsapp` dengan
+    `external_id = phone` — tidak ada data yang perlu disentuh manual.
+  - **Utang penamaan diterima sadar**: tabel tetap bernama `wa_*` walau kini
+    multi-kanal; mengganti nama menyentuh belasan berkas teruji tanpa manfaat
+    fungsional. Dicatat di komentar migrasi.
+  - `store.ts` sadar-kanal; auto-link member hanya untuk kanal bernomor —
+    Instagram sengaja tidak ditautkan (keputusan owner) dan panel konteks
+    member tampil kosong.
+  - **Balasan dijaga per kanal**: membalas percakapan non-WhatsApp ditolak
+    409 dengan pesan jelas, bukan diam-diam terkirim lewat WhatsApp. Aksi
+    non-kirim (komplain, catatan, status) tetap berjalan untuk semua kanal.
+  - UI inbox: filter kanal, ikon pembeda (WA hijau / IG pink — `Instagram`
+    sudah dicabut dari lucide-react, dipakai `Camera` + warna brand), badge
+    jumlah IG di header, judul percakapan memakai nama tampilan kanal bila
+    bukan member, dan pencarian kini mencakup `display_name`/`external_id`.
+  - Laporan CS dapat panel **Per Kanal** (percakapan, komplain, selesai,
+    respons pertama, CSAT); judulnya tidak lagi khusus WhatsApp.
+  - **Verifikasi live**: percakapan WA baru tetap masuk normal setelah
+    perubahan skema; percakapan Instagram simulasi hidup berdampingan —
+    tampil di inbox gabungan, terfilter benar (`channel=instagram`),
+    ditemukan lewat pencarian username, panel member kosong, balasan ditolak
+    dengan pesan yang benar, penandaan komplain tetap bisa, dan laporan
+    memecah angka jadi whatsapp 3 / instagram 1. Data uji dibersihkan.
+  - Gate: 596 test hijau, build sukses, migrasi applied.
+  - Sisa Fase C: webhook penerima Meta + pengirim Graph API. Catatan: untuk
+    UJI dengan akun testing, aplikasi Meta dalam mode development umumnya
+    bisa berkirim pesan dengan akun yang punya peran di app tersebut tanpa
+    App Review penuh — App Review baru wajib untuk penggunaan publik.
+    Perlu dipastikan saat implementasi.

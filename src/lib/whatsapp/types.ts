@@ -41,3 +41,12 @@ export interface TemplateMessage {
    */
   copyCodeButton?: string;
 }
+
+/** Kanal percakapan CS (EPIC-013 Fase B). */
+export const CS_CHANNELS = ["whatsapp", "instagram"] as const;
+export type CsChannel = (typeof CS_CHANNELS)[number];
+
+export const CHANNEL_LABELS: Record<CsChannel, string> = {
+  whatsapp: "WhatsApp",
+  instagram: "Instagram",
+};

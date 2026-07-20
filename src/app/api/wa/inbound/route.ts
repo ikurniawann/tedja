@@ -90,7 +90,9 @@ export async function POST(request: NextRequest) {
           normalized.body,
           normalized.sentAt ?? new Date()
         );
-        if (cs.autoReplyText) {
+        // Auto-reply saat ini baru untuk WhatsApp; kanal lain menyusul di
+        // Fase C bersama pengirimnya masing-masing.
+        if (cs.autoReplyText && normalized.channel === "whatsapp" && normalized.phone) {
           await sendWhatsAppText(
             { target: normalized.phone, message: cs.autoReplyText },
             { messageType: "system", conversationId: result.conversationId }

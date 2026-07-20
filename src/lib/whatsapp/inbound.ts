@@ -18,7 +18,12 @@ export interface GatewayInboundPayload {
 }
 
 export interface NormalizedInbound {
-  phone: string;
+  /** Kanal asal; default whatsapp agar pemanggil lama tidak berubah. */
+  channel: "whatsapp" | "instagram";
+  /** Identitas pengirim di kanalnya (digit nomor / IGSID). */
+  externalId: string;
+  /** Nomor telepon — hanya terisi untuk WhatsApp. */
+  phone: string | null;
   direction: "in" | "out";
   body: string | null;
   mediaType: string | null;
@@ -70,6 +75,8 @@ export function normalizeInbound(payload: GatewayInboundPayload): NormalizedInbo
     Number.isFinite(timestamp) && timestamp > 0 ? new Date(timestamp * 1000) : null;
 
   return {
+    channel: "whatsapp",
+    externalId: phone,
     phone,
     direction: payload.fromMe ? "out" : "in",
     // Body dibatasi agar satu pesan raksasa tidak membengkakkan tabel.

@@ -26,7 +26,8 @@ export async function GET(request: NextRequest) {
   try {
     const periodParams = [period.fromIso, period.toIso];
 
-    const [summaryRow, dailyRows, categoryRows, csatRows, agentRows] = await Promise.all([
+    const [summaryRow, dailyRows, categoryRows, csatRows, agentRows, channelRows] =
+      await Promise.all([
       queryOne(
         `SELECT
            COUNT(*)::int AS total_conversations,
@@ -90,6 +91,22 @@ export async function GET(request: NextRequest) {
           LIMIT 20`,
         periodParams
       ),
+      // Pecahan per kanal (EPIC-013 Fase B) — agar volume & mutu layanan
+      // WhatsApp vs Instagram bisa dibandingkan.
+      query(
+        `SELECT channel,
+                COUNT(*)::int AS conversations,
+                COUNT(*) FILTER (WHERE is_complaint)::int AS complaints,
+                COUNT(*) FILTER (WHERE status = 'resolved')::int AS resolved,
+                AVG(first_response_seconds) FILTER (WHERE first_response_seconds IS NOT NULL)
+                  AS avg_first_response_seconds,
+                AVG(csat_score) FILTER (WHERE csat_score IS NOT NULL) AS avg_csat
+           FROM crm.wa_conversations
+          WHERE created_at >= $1 AND created_at < $2
+          GROUP BY channel
+          ORDER BY conversations DESC`,
+        periodParams
+      ),
     ]);
 
     const toNum = (value: unknown) =>
@@ -125,6 +142,14 @@ export async function GET(request: NextRequest) {
         csat_distribution: csatRows.map((row) => ({
           score: Number(row.score),
           total: row.total,
+        })),
+        channels: channelRows.map((row) => ({
+          channel: row.channel,
+          conversations: row.conversations,
+          complaints: row.complaints,
+          resolved: row.resolved,
+          avg_first_response_seconds: toNum(row.avg_first_response_seconds),
+          avg_csat: toNum(row.avg_csat),
         })),
         agents: agentRows.map((row) => ({
           agent_name: row.agent_name,

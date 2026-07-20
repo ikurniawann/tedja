@@ -41,7 +41,8 @@ export async function GET(
     const pool = getPool();
 
     const { rows: convRows } = await pool.query(
-      `SELECT v.id, v.phone, v.status, v.assigned_user_id, v.unread_count,
+      `SELECT v.id, v.phone, v.channel, v.external_id, v.display_name,
+              v.status, v.assigned_user_id, v.unread_count,
               v.last_message_at, v.customer_id,
               v.is_complaint, v.category, v.priority,
               v.awaiting_since, v.first_response_seconds, v.resolution_seconds,
@@ -156,7 +157,8 @@ export async function POST(
     const pool = getPool();
 
     const { rows: convRows } = await pool.query(
-      `SELECT id, phone, status, assigned_user_id FROM crm.wa_conversations WHERE id = $1`,
+      `SELECT id, phone, channel, external_id, status, assigned_user_id
+         FROM crm.wa_conversations WHERE id = $1`,
       [id]
     );
     const conversation = convRows[0];
@@ -234,7 +236,19 @@ export async function POST(
       return NextResponse.json({ success: true });
     }
 
-    // action === "reply" — kirim lewat gateway, catat, perbarui percakapan.
+    // action === "reply" — kirim lewat kanal percakapan.
+    // Pengirim Instagram menyusul di Fase C; sampai itu ada, balasan ditolak
+    // dengan jelas alih-alih diam-diam terkirim lewat WhatsApp.
+    if (conversation.channel !== "whatsapp") {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Balasan untuk kanal ${conversation.channel} belum tersedia — menunggu integrasi kanal tersebut.`,
+        },
+        { status: 409 }
+      );
+    }
+
     const result = await sendWhatsAppText(
       { target: conversation.phone, message: payload.message },
       { messageType: "chat", sentByUserId: guard.user.id, conversationId: id }

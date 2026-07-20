@@ -2,7 +2,15 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Inbox, Loader2, MessageCircle, Search, WifiOff } from "lucide-react";
+import {
+  ArrowLeft,
+  Inbox,
+  Camera,
+  Loader2,
+  MessageCircle,
+  Search,
+  WifiOff,
+} from "lucide-react";
 import type {
   ConversationStatus,
   InboxConversation,
@@ -35,6 +43,23 @@ const waktuRelatif = (iso: string | null) => {
   return new Date(iso).toLocaleDateString("id-ID", { day: "numeric", month: "short" });
 };
 
+/** Penanda kanal — dibedakan warna agar terbaca sekilas di daftar. */
+function ChannelIcon({ channel }: { channel: "whatsapp" | "instagram" }) {
+  if (channel === "instagram") {
+    // lucide-react sudah mencabut ikon brand; Camera dipakai sebagai penanda
+    // Instagram, dibedakan lewat warna pink brand-nya.
+    return (
+      <Camera aria-label="Instagram" className="size-3.5 shrink-0 text-pink-600" />
+    );
+  }
+  return (
+    <MessageCircle
+      aria-label="WhatsApp"
+      className="size-3.5 shrink-0 text-emerald-600"
+    />
+  );
+}
+
 export function CrmInboxPage() {
   const [conversations, setConversations] = useState<InboxConversation[]>([]);
   const [totals, setTotals] = useState<{
@@ -42,9 +67,12 @@ export function CrmInboxPage() {
     total_active: number;
     total_breached?: number;
     total_complaints?: number;
+    total_whatsapp?: number;
+    total_instagram?: number;
   } | null>(null);
   const [statusFilter, setStatusFilter] = useState("all");
   const [assignedFilter, setAssignedFilter] = useState("all");
+  const [channelFilter, setChannelFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<{
@@ -65,6 +93,7 @@ export function CrmInboxPage() {
     const sp = new URLSearchParams();
     if (statusFilter !== "all") sp.set("status", statusFilter);
     if (assignedFilter !== "all") sp.set("assigned", assignedFilter);
+    if (channelFilter !== "all") sp.set("channel", channelFilter);
     if (search.trim()) sp.set("search", search.trim());
 
     try {
@@ -81,7 +110,7 @@ export function CrmInboxPage() {
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, assignedFilter, search]);
+  }, [statusFilter, assignedFilter, channelFilter, search]);
 
   const loadDetail = useCallback(async (conversationId: string, markRead: boolean) => {
     try {
@@ -240,6 +269,12 @@ export function CrmInboxPage() {
                 {totals.total_complaints} komplain
               </span>
             )}
+            {totals && (totals.total_instagram ?? 0) > 0 && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-pink-200 bg-pink-50 px-2 py-0.5 text-xs font-medium text-pink-700">
+                <Camera className="size-3" />
+                {totals.total_instagram}
+              </span>
+            )}
             {totals && (totals.total_breached ?? 0) > 0 && (
               <span className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-700">
                 {totals.total_breached} lewat SLA
@@ -273,6 +308,15 @@ export function CrmInboxPage() {
                 className="h-9 w-full rounded-md border border-slate-300 bg-white pl-8 pr-3 text-sm outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
               />
             </label>
+            <select
+              value={channelFilter}
+              onChange={(event) => setChannelFilter(event.target.value)}
+              className="h-8 w-full rounded-md border border-slate-300 bg-white px-2 text-xs outline-none"
+            >
+              <option value="all">Semua kanal</option>
+              <option value="whatsapp">WhatsApp</option>
+              <option value="instagram">Instagram</option>
+            </select>
             <div className="grid grid-cols-2 gap-2">
               <select
                 value={statusFilter}
@@ -318,8 +362,15 @@ export function CrmInboxPage() {
                   }`}
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <span className="truncate text-sm font-medium text-slate-900">
-                      {conversation.customer_name || `+${conversation.phone}`}
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      <ChannelIcon channel={conversation.channel} />
+                      <span className="truncate text-sm font-medium text-slate-900">
+                        {conversation.customer_name ||
+                          conversation.display_name ||
+                          (conversation.channel === "whatsapp"
+                            ? `+${conversation.external_id}`
+                            : conversation.external_id)}
+                      </span>
                     </span>
                     <span className="shrink-0 text-[10px] text-slate-400">
                       {waktuRelatif(conversation.last_message_at)}

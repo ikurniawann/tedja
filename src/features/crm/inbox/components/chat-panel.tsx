@@ -73,7 +73,11 @@ export function ChatPanel({
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-white px-4 py-3">
         <div className="min-w-0">
           <div className="truncate text-sm font-semibold text-slate-900">
-            {conversation.customer_name || `+${conversation.phone}`}
+            {conversation.customer_name ||
+              conversation.display_name ||
+              (conversation.channel === "whatsapp"
+                ? `+${conversation.external_id}`
+                : conversation.external_id)}
           </div>
           <div className="mt-0.5 flex items-center gap-2 text-xs text-slate-500">
             <span className={`rounded-full border px-2 py-0.5 font-medium ${STATUS_STYLES[conversation.status]}`}>

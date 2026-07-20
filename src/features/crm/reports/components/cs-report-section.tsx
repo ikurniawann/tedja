@@ -14,7 +14,8 @@ import { useCsReport } from "../queries";
 import type { CrmReportPeriodInput } from "../types";
 
 /**
- * EPIC-012 Fase E — bagian laporan customer service pada halaman Laporan CRM.
+ * EPIC-012 Fase E — bagian laporan customer service pada halaman Laporan CRM,
+ * dipecah per kanal sejak EPIC-013 Fase B.
  * Hanya angka agregat; isi chat & nomor customer sengaja tidak ditampilkan.
  */
 
@@ -42,7 +43,7 @@ export function CsReportSection({ period }: { period: CrmReportPeriodInput }) {
     <section className="space-y-4">
       <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
         <Headset className="size-5 text-violet-600" />
-        <h2 className="text-lg font-semibold text-slate-950">Customer Service (WhatsApp)</h2>
+        <h2 className="text-lg font-semibold text-slate-950">Customer Service</h2>
         {loading && <Loader2 className="size-4 animate-spin text-slate-400" />}
       </div>
 
@@ -173,6 +174,49 @@ export function CsReportSection({ period }: { period: CrmReportPeriodInput }) {
                 </div>
               ))}
             </div>
+          </div>
+        )}
+      </Panel>
+
+      <Panel title="Per Kanal">
+        {(data?.channels ?? []).length === 0 ? (
+          <Empty>Belum ada percakapan pada periode ini.</Empty>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[520px] text-sm">
+              <thead className="text-left text-xs uppercase tracking-wide text-slate-500">
+                <tr className="border-b border-slate-200">
+                  <th className="px-3 py-2">Kanal</th>
+                  <th className="px-3 py-2 text-right">Percakapan</th>
+                  <th className="px-3 py-2 text-right">Komplain</th>
+                  <th className="px-3 py-2 text-right">Selesai</th>
+                  <th className="px-3 py-2 text-right">Respons pertama</th>
+                  <th className="px-3 py-2 text-right">CSAT</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {data?.channels.map((row) => (
+                  <tr key={row.channel}>
+                    <td className="px-3 py-2 font-medium capitalize text-slate-800">
+                      {row.channel === "whatsapp" ? "WhatsApp" : "Instagram"}
+                    </td>
+                    <td className="px-3 py-2 text-right">{angka.format(row.conversations)}</td>
+                    <td className="px-3 py-2 text-right text-orange-700">
+                      {angka.format(row.complaints)}
+                    </td>
+                    <td className="px-3 py-2 text-right text-emerald-700">
+                      {angka.format(row.resolved)}
+                    </td>
+                    <td className="px-3 py-2 text-right text-slate-500">
+                      {formatDuration(row.avg_first_response_seconds)}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      {row.avg_csat != null ? `${row.avg_csat.toFixed(1)}/5` : "-"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </Panel>

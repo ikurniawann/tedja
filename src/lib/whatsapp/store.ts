@@ -88,23 +88,33 @@ export async function recordGatewayMessage(
   try {
     await client.query("BEGIN");
 
-    const customerId = await findCustomerIdByPhone(client, message.phone);
+    // Auto-link member hanya mungkin untuk kanal yang punya nomor telepon.
+    // Instagram sengaja tidak ditautkan (keputusan owner) — panel konteks
+    // member cukup kosong.
+    const customerId = message.phone
+      ? await findCustomerIdByPhone(client, message.phone)
+      : null;
 
     const { rows: convRows } = await client.query(
-      `INSERT INTO crm.wa_conversations (phone, customer_id)
-       VALUES ($1, $2)
-       ON CONFLICT (phone) DO UPDATE
-         SET customer_id = COALESCE(crm.wa_conversations.customer_id, EXCLUDED.customer_id)
+      `INSERT INTO crm.wa_conversations
+         (channel, external_id, phone, customer_id, display_name)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (channel, external_id) DO UPDATE
+         SET customer_id = COALESCE(crm.wa_conversations.customer_id, EXCLUDED.customer_id),
+             -- Nama tampilan bisa berubah di kanal; ikuti yang terbaru.
+             display_name = COALESCE(EXCLUDED.display_name, crm.wa_conversations.display_name)
        RETURNING id`,
-      [message.phone, customerId]
+      [message.channel, message.externalId, message.phone, customerId, message.pushName]
     );
     const conversationId: string = convRows[0].id;
 
     const { rows: inserted } = await client.query(
       `INSERT INTO crm.wa_messages
-         (conversation_id, direction, message_type, phone, customer_id, body,
-          media_type, status, provider, provider_message_id, wa_from_me, created_at)
-       VALUES ($1, $2, 'chat', $3, $4, $5, $6, $7, 'gateway', $8, $9, COALESCE($10, now()))
+         (conversation_id, direction, message_type, channel, external_id, phone,
+          customer_id, body, media_type, status, provider, provider_message_id,
+          wa_from_me, created_at)
+       VALUES ($1, $2, 'chat', $11, $12, $3, $4, $5, $6, $7, 'gateway', $8, $9,
+               COALESCE($10, now()))
        ON CONFLICT (provider_message_id) WHERE provider_message_id IS NOT NULL
        DO NOTHING
        RETURNING id`,
@@ -119,6 +129,8 @@ export async function recordGatewayMessage(
         message.providerMessageId,
         message.direction === "out",
         message.sentAt,
+        message.channel,
+        message.externalId,
       ]
     );
 

@@ -15,6 +15,7 @@ export async function GET(request: NextRequest) {
     const status = params.get("status");
     const assigned = params.get("assigned");
     const search = params.get("search")?.trim();
+    const channel = params.get("channel");
 
     const values: unknown[] = [];
     const filters: string[] = [];
@@ -29,14 +30,22 @@ export async function GET(request: NextRequest) {
     } else if (assigned === "unassigned") {
       filters.push(`v.assigned_user_id IS NULL`);
     }
+    if (channel === "whatsapp" || channel === "instagram") {
+      values.push(channel);
+      filters.push(`v.channel = $${values.length}`);
+    }
     if (search) {
       values.push(`%${search.replace(/[%_]/g, "")}%`);
-      filters.push(`(v.phone LIKE $${values.length} OR c.name ILIKE $${values.length})`);
+      filters.push(
+        `(v.external_id LIKE $${values.length} OR v.display_name ILIKE $${values.length}` +
+          ` OR c.name ILIKE $${values.length})`
+      );
     }
 
     const pool = getPool();
     const { rows } = await pool.query(
-      `SELECT v.id, v.phone, v.status, v.assigned_user_id, v.unread_count,
+      `SELECT v.id, v.phone, v.channel, v.external_id, v.display_name,
+              v.status, v.assigned_user_id, v.unread_count,
               v.last_message_at, v.last_message_preview,
               v.is_complaint, v.category, v.priority, v.sla_response_breached,
               v.awaiting_since,
@@ -56,7 +65,9 @@ export async function GET(request: NextRequest) {
       `SELECT COALESCE(SUM(unread_count), 0)::int AS total_unread,
               COUNT(*) FILTER (WHERE status IN ('open','in_progress'))::int AS total_active,
               COUNT(*) FILTER (WHERE sla_response_breached AND status <> 'resolved')::int AS total_breached,
-              COUNT(*) FILTER (WHERE is_complaint AND status <> 'resolved')::int AS total_complaints
+              COUNT(*) FILTER (WHERE is_complaint AND status <> 'resolved')::int AS total_complaints,
+              COUNT(*) FILTER (WHERE channel = 'whatsapp')::int AS total_whatsapp,
+              COUNT(*) FILTER (WHERE channel = 'instagram')::int AS total_instagram
          FROM crm.wa_conversations`
     );
 

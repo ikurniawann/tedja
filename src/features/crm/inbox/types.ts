@@ -1,8 +1,18 @@
 export type ConversationStatus = "open" | "in_progress" | "waiting_customer" | "resolved";
 
+export type CsChannel = "whatsapp" | "instagram";
+
+export const CHANNEL_LABELS: Record<CsChannel, string> = {
+  whatsapp: "WhatsApp",
+  instagram: "Instagram",
+};
+
 export type InboxConversation = {
   id: string;
-  phone: string;
+  phone: string | null;
+  channel: CsChannel;
+  external_id: string;
+  display_name: string | null;
   status: ConversationStatus;
   is_complaint?: boolean;
   category?: "produk" | "layanan" | "pembayaran" | "lainnya" | null;

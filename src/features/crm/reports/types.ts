@@ -90,6 +90,14 @@ export interface CsReportData {
     avg_resolution_seconds: number | null;
   }[];
   csat_distribution: { score: number; total: number }[];
+  channels: {
+    channel: string;
+    conversations: number;
+    complaints: number;
+    resolved: number;
+    avg_first_response_seconds: number | null;
+    avg_csat: number | null;
+  }[];
   agents: {
     agent_name: string;
     handled: number;
