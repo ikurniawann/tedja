@@ -11,11 +11,12 @@ import {
 } from "@/lib/ai-assistant-config";
 import { SETTING_KEYS, getSettings } from "@/lib/settings/app-settings";
 import { extractSseData, readOpenAiDelta, splitSseEvents } from "@/lib/assistant/sse";
+import { contextSizeChars, selectContextForIntent, type AssistantIntent } from "@/lib/assistant/context";
 import { appendFile, mkdir } from "fs/promises";
 import path from "path";
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
-type Intent = "all" | "hris" | "procurement" | "pos" | "inventory" | "performance" | "payroll" | "integration" | "master";
+type Intent = AssistantIntent;
 type DetailRow = Record<string, unknown>;
 type DbQueryResult = { data?: unknown[] | null; error?: unknown; count?: number | null };
 type DbQuery = PromiseLike<DbQueryResult> & {
@@ -210,6 +211,8 @@ export async function POST(request: NextRequest) {
     const summary = includeProjectData
       ? await buildSystemSummary(admin as unknown as DbAdmin, intent)
       : createEmptySystemSummary();
+    if (includeProjectData) logContextSaving(summary, intent);
+
     const fallbackAnswer = includeProjectData
       ? generateSummaryAnswer(prompt, summary, profile?.full_name ?? user.email ?? "User", intent)
       : "Do belum bisa menghubungi tingkat yang dipilih saat ini. Coba lagi sebentar atau pilih tingkat lain di Arkiv OS Settings.";
@@ -388,6 +391,14 @@ async function persistAndAudit({
     latency_ms: Date.now() - startedAt,
     error: llmResult.error,
   });
+}
+
+/** Log ukuran konteks: bukti penghematan Fase C, bukan klaim. */
+function logContextSaving(summary: Summary, intent: Intent) {
+  const before = contextSizeChars(summary);
+  const after = contextSizeChars(selectContextForIntent(summary, intent));
+  const saved = before === 0 ? 0 : Math.round(((before - after) / before) * 100);
+  console.info(`[do:context] intent=${intent} ${before} -> ${after} char (hemat ${saved}%)`);
 }
 
 function detectIntent(message: string): Intent {
@@ -802,7 +813,11 @@ async function generateAnswer({
     // satu merek sendiri. Model juga tidak butuh tahu namanya untuk menjawab.
     `Intent terdeteksi: ${intent}`,
     `Pertanyaan user: ${message}`,
-    includeProjectData ? `\nKonteks internal Arkiv OS yang tersedia jika relevan:\n${JSON.stringify(summary, null, 2)}` : "\nKonteks operasional Arkiv OS tidak dikirim untuk mode General Chat.",
+    // Hanya modul yang relevan dengan intent yang dikirim — bukan seluruh
+    // summary. Lihat lib/assistant/context.ts untuk alasan & pengujiannya.
+    includeProjectData
+      ? `\nKonteks internal Arkiv OS yang tersedia jika relevan:\n${JSON.stringify(selectContextForIntent(summary, intent), null, 2)}`
+      : "\nKonteks operasional Arkiv OS tidak dikirim untuk mode General Chat.",
   ].join("\n");
   const messages = [
     { role: "system", content: systemPrompt },

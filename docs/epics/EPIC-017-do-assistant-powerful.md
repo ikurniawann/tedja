@@ -67,7 +67,7 @@ Anchor: `src/app/api/ai/assistant/route.ts` (828 baris, monolitik),
 
 - [x] Fase A: Shift+Enter baris baru; salin & regenerate berfungsi; sesi bisa diganti nama.
 - [x] Fase B: jawaban muncul bertahap; kegagalan streaming jatuh ke mode lama tanpa error ke user.
-- [ ] Fase C: prompt hanya memuat modul relevan; penghematan token tercatat.
+- [x] Fase C: prompt hanya memuat modul relevan; penghematan token tercatat.
 - [ ] Fase D: pertanyaan spesifik dijawab dari query langsung, bukan tebakan ringkasan.
 - [ ] Fase E: tidak ada aksi menulis yang jalan tanpa konfirmasi user.
 - [ ] Semua fase: build hijau, test hijau, tidak ada nama vendor bocor ke UI (EPIC-016 lanjutan).
@@ -87,6 +87,21 @@ Anchor: `src/app/api/ai/assistant/route.ts` (828 baris, monolitik),
 
 ## Automation Log
 
+- 2026-07-21 — **Fase C selesai** (konteks sesuai intent). `selectContextForIntent`
+  di `src/lib/assistant/context.ts` (9 unit test) hanya mengirim modul yang relevan
+  dengan intent, plus modul tetangga yang sering dibutuhkan bersama (mis.
+  inventory ⇄ procurement, karena "stok menipis" biasanya berlanjut ke "sudah
+  dipesan belum").
+  **Temuan tak terduga:** `summary` mengirim setiap metrik DUA KALI — di
+  top-level (`summary.hris`) dan di `summary.modules.hris.metrics`, objek yang
+  persis sama. Duplikasi itu ikut hilang.
+  Penghematan terukur pada payload berbentuk sama dengan produksi (8 modul, 5
+  baris rincian per modul): intent spesifik **77–88%** lebih kecil (5.720 → 1.325
+  char untuk `pos`, → 709 char untuk `integration`), dan bahkan intent `all`
+  tetap turun 10% berkat hilangnya duplikasi.
+  Ukuran nyata per permintaan dicatat runtime lewat log `[do:context]` sehingga
+  bisa diverifikasi dengan data sungguhan, bukan sekadar klaim.
+  Gates: 658 test hijau, build sukses.
 - 2026-07-21 — **Fase B selesai** (streaming). `stream: true` + parser SSE di
   route, diteruskan ke browser sebagai event `delta`/`done`/`error`. Penyimpanan
   pesan, log markdown, dan audit dipindah ke satu helper `persistAndAudit` yang
