@@ -26,6 +26,7 @@ deploying-dev · ready-for-qa · blocked · done).
 | [EPIC-018](./EPIC-018-lampiran-ocr.md) | Lampiran & OCR — Do Bisa Membaca Dokumen | on-progress | 2026-07-21 |
 | [EPIC-019](./EPIC-019-desktop-owner-monitoring.md) | Desktop Arkiv OS — Pusat Monitoring Owner | coding | 2026-07-21 |
 | [EPIC-020](./EPIC-020-notifikasi-wa-owner.md) | Notifikasi WhatsApp untuk Owner | coding | 2026-07-21 |
+| [EPIC-021](./EPIC-021-dashboard-eksekutif.md) | /dashboard — Ringkasan Eksekutif Lintas Modul | coding | 2026-07-21 |
 
 Aturan:
 - Epic + registry ini adalah sumber kebenaran status pekerjaan (canonical).
