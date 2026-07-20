@@ -53,7 +53,10 @@ export async function GET(request: NextRequest) {
           id,
           full_name,
           nip,
-          photo_url
+          photo_url,
+          department:departments (
+            name
+          )
         ),
         approved_by:employees!approved_by (
           id,

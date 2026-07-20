@@ -1,5 +1,9 @@
 "use client";
 
+import {
+  loanInstallmentLabel,
+  type LoanInstallmentDetail,
+} from "@/lib/payroll/loans";
 import { useEffect, useState } from "react";
 import { BanknotesIcon, DocumentTextIcon } from "@heroicons/react/24/outline";
 import { Loader2 } from "lucide-react";
@@ -43,6 +47,7 @@ interface PayslipRow {
   unpaid_leave_deduction: number;
   late_deduction?: number;
   loan_deduction?: number;
+  loan_details?: LoanInstallmentDetail[];
   other_deduction: number;
   total_deductions: number;
   net_salary: number;
@@ -236,7 +241,18 @@ export function EssSlipGajiPage() {
                 <AmountRow label="PPh 21" amount={selected.pph21_deduction} negative />
                 <AmountRow label="Cuti Tanpa Bayaran" amount={selected.unpaid_leave_deduction} negative />
                 <AmountRow label="Potongan Keterlambatan" amount={selected.late_deduction} negative />
-                <AmountRow label="Cicilan Pinjaman" amount={selected.loan_deduction} negative />
+                {(selected.loan_details?.length ?? 0) > 0 ? (
+                  selected.loan_details!.map((loan) => (
+                    <AmountRow
+                      key={loan.loan_id}
+                      label={loanInstallmentLabel(loan)}
+                      amount={loan.amount}
+                      negative
+                    />
+                  ))
+                ) : (
+                  <AmountRow label="Cicilan Pinjaman" amount={selected.loan_deduction} negative />
+                )}
                 <AmountRow label="Potongan Lain" amount={selected.other_deduction} negative />
                 <div className="border-t pt-1">
                   <AmountRow label="Total Potongan" amount={selected.total_deductions} bold negative />

@@ -1,6 +1,10 @@
 "use client";
 
 import React from "react";
+import {
+  loanInstallmentLabel,
+  type LoanInstallmentDetail,
+} from "@/lib/payroll/loans";
 
 interface PayslipData {
   employee: {
@@ -33,6 +37,7 @@ interface PayslipData {
   unpaid_leave_deduction: number;
   late_deduction?: number;
   loan_deduction?: number;
+  loan_details?: LoanInstallmentDetail[];
   total_deductions: number;
   net_salary: number;
 }
@@ -227,14 +232,23 @@ export function PayslipPDF({ data }: PayslipPDFProps) {
                 </td>
               </tr>
             )}
-            {(data.loan_deduction ?? 0) > 0 && (
-              <tr>
-                <td className="py-2">Cicilan Pinjaman</td>
-                <td className="text-right font-medium text-red-600">
-                  {formatCurrency(data.loan_deduction ?? 0)}
-                </td>
-              </tr>
-            )}
+            {(data.loan_details?.length ?? 0) > 0
+              ? data.loan_details!.map((loan) => (
+                  <tr key={loan.loan_id}>
+                    <td className="py-2">{loanInstallmentLabel(loan)}</td>
+                    <td className="text-right font-medium text-red-600">
+                      {formatCurrency(loan.amount)}
+                    </td>
+                  </tr>
+                ))
+              : (data.loan_deduction ?? 0) > 0 && (
+                  <tr>
+                    <td className="py-2">Cicilan Pinjaman</td>
+                    <td className="text-right font-medium text-red-600">
+                      {formatCurrency(data.loan_deduction ?? 0)}
+                    </td>
+                  </tr>
+                )}
           </tbody>
           <tfoot>
             <tr className="border-t-2 border-red-600">

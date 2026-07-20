@@ -16,6 +16,8 @@ import {
 // TYPES
 // ============================================================
 
+import type { LoanInstallmentDetail } from "./loans";
+
 export interface PayrollInput {
   employeeId: string;
   periodMonth: number;
@@ -41,6 +43,11 @@ export interface PayrollInput {
 
   /** Total cicilan pinjaman jatuh tempo periode ini (lib/payroll/loans) */
   loanDeduction?: number;
+  /**
+   * Rincian per pinjaman untuk slip gaji. Tidak ikut perhitungan — hanya
+   * dibawa agar route penghitung dapat membekukannya ke payroll_details.
+   */
+  loanBreakdown?: LoanInstallmentDetail[];
 
   // Employee status
   joinDate: string;

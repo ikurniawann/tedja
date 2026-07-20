@@ -1,5 +1,9 @@
 "use client";
 
+import {
+  loanInstallmentLabel,
+  type LoanInstallmentDetail,
+} from "@/lib/payroll/loans";
 import { useParams, useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -31,6 +35,7 @@ interface PayrollDetail {
   unpaid_leave_deduction: number;
   late_deduction?: number;
   loan_deduction?: number;
+  loan_details?: LoanInstallmentDetail[];
   other_deduction: number;
   total_deductions: number;
   net_salary: number;
@@ -238,9 +243,17 @@ export function PayslipPage() {
               {(detail.late_deduction ?? 0) > 0 && (
                 <DeductionRow label="Potongan Keterlambatan" amount={detail.late_deduction ?? 0} />
               )}
-              {(detail.loan_deduction ?? 0) > 0 && (
-                <DeductionRow label="Cicilan Pinjaman" amount={detail.loan_deduction ?? 0} />
-              )}
+              {(detail.loan_details?.length ?? 0) > 0
+                ? detail.loan_details!.map((loan) => (
+                    <DeductionRow
+                      key={loan.loan_id}
+                      label={loanInstallmentLabel(loan)}
+                      amount={loan.amount}
+                    />
+                  ))
+                : (detail.loan_deduction ?? 0) > 0 && (
+                    <DeductionRow label="Cicilan Pinjaman" amount={detail.loan_deduction ?? 0} />
+                  )}
               {detail.other_deduction > 0 && (
                 <DeductionRow label="Potongan Lain" amount={detail.other_deduction} />
               )}
