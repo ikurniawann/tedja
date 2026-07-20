@@ -58,6 +58,14 @@ export const fetchUserDirectoryStats = async (): Promise<UserDirectoryStats> => 
 export const fetchHRISEmployeeDetail = (id: string) =>
   apiGet<{ data: Employee }>(`/api/hris/employees/${id}`);
 
+/** Login As (super_admin only) — session berpindah ke user target. */
+export const impersonateUser = (userId: string) =>
+  apiPost<{
+    success: boolean;
+    data: { id: string; email: string; role: string; full_name: string };
+    message: string;
+  }>("/api/auth/impersonate", { user_id: userId });
+
 export const fetchEmployeeDocuments = (employeeId: string) =>
   apiGet<{ data: EmployeeDocumentRow[] }>(`/api/hris/employees/documents?employee_id=${employeeId}`);
 

@@ -1,0 +1,77 @@
+import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
+import { ApiError, requireApiRole, validateBody } from "@/lib/api/auth";
+import { getApiUserScope } from "@/lib/api/scope";
+import {
+  ACTIVE_STALL_ALL,
+  ACTIVE_STALL_COOKIE,
+  findActiveStall,
+} from "@/lib/auth/active-stall";
+import { getStallAccess } from "@/lib/auth/stall-access";
+import { queryOne } from "@/lib/db";
+
+const bodySchema = z.object({
+  /** null = kembali ke "Semua Stall" */
+  warehouse_id: z.string().uuid().nullable(),
+});
+
+/** Set stall aktif (switcher sidebar) — khusus super_admin & admin. */
+export async function POST(request: NextRequest) {
+  try {
+    const user = await requireApiRole(["super_admin", "admin"]);
+    const { warehouse_id } = await validateBody(request, bodySchema);
+
+    const scope = await getApiUserScope();
+    const access = await getStallAccess(user.id, user.role, scope?.branchId ?? null);
+
+    if (warehouse_id === null) {
+      // "Semua Stall" hanya untuk user tanpa pembatasan penempatan.
+      if (!access.allAccess) {
+        throw ApiError.forbidden("Anda hanya dapat memilih stall penempatan Anda");
+      }
+      // Simpan "all" agar berbeda dari cookie kosong (fallback ke penempatan).
+      const response = NextResponse.json({ success: true, data: { stall: null } });
+      response.cookies.set(ACTIVE_STALL_COOKIE, ACTIVE_STALL_ALL, {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production",
+        path: "/",
+        maxAge: 60 * 60 * 24 * 30,
+      });
+      return response;
+    }
+
+    if (!access.allAccess && !access.stalls.some((stall) => stall.id === warehouse_id)) {
+      throw ApiError.forbidden("Stall di luar penempatan Anda");
+    }
+
+    const stall = await findActiveStall(warehouse_id);
+    if (!stall) throw ApiError.notFound("Stall not found or inactive");
+
+    // Stall harus berada di branch user login (jika user punya branch).
+    if (scope?.branchId) {
+      const warehouse = await queryOne<{ branch_id: string }>(
+        `SELECT branch_id FROM configuration.warehouses WHERE id = $1`,
+        [stall.id]
+      );
+      if (warehouse && warehouse.branch_id !== scope.branchId) {
+        throw ApiError.forbidden("Stall berada di luar branch Anda");
+      }
+    }
+
+    const response = NextResponse.json({ success: true, data: { stall } });
+    response.cookies.set(ACTIVE_STALL_COOKIE, stall.id, {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 30,
+    });
+    return response;
+  } catch (error) {
+    if (error instanceof ApiError) return error.toResponse();
+    const message = error instanceof Error ? error.message : "Failed to set active stall";
+    console.error("[api/auth/active-stall] failed:", error);
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}

@@ -205,7 +205,12 @@ function buildAuthAdmin() {
           params.push(JSON.stringify(updates.app_metadata));
         }
         if (updates.ban_duration) {
-          sets.push(`banned_until = NOW() + INTERVAL '876000 hours'`);
+          // "none" = unban (selaras semantik Supabase admin API)
+          if (updates.ban_duration === "none") {
+            sets.push(`banned_until = NULL`);
+          } else {
+            sets.push(`banned_until = NOW() + INTERVAL '876000 hours'`);
+          }
         }
         if (sets.length) {
           params.push(id);

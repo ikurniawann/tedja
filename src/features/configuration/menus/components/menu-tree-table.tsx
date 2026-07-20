@@ -1,209 +1,253 @@
 "use client";
 
+import { useState } from "react";
+import {
+  ChevronDown,
+  ChevronRight,
+  ChevronUp,
+  GripVertical,
+  Link2,
+  MoreVertical,
+} from "lucide-react";
 import { EyeIcon, PencilIcon, TrashIcon } from "@heroicons/react/24/outline";
-import type { NavIconName } from "@/lib/iam/types";
-import { AppSidebarNavIcon } from "@/components/shared/app-sidebar-nav-icons";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { TableRow } from "@/components/ui/table";
+import { Input } from "@/components/ui/input";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import type { MenuItem } from "../types";
 import type { FlatMenuTreeRow } from "../utils/menu-tree";
-
-const VALID_ICONS = new Set<string>([
-  "home", "users", "clipboard", "star", "chart", "settings", "logout", "briefcase",
-  "shopping", "cube", "pr", "po", "reports", "sitemap", "database", "building",
-  "identification", "calendar", "dollar-sign", "money", "user-plus", "file-text",
-  "chart-bar", "plus", "paper-airplane", "check-circle", "chart-pie",
-  "arrow-down-on-square", "truck", "document-magnifying-glass", "circle-stack",
-  "document-text", "clipboard-document-check",
-]);
-
-function toNavIcon(icon: string | null): NavIconName {
-  if (icon && VALID_ICONS.has(icon)) return icon as NavIconName;
-  return "clipboard";
-}
-
-function MenuTreeGuides({
-  depth,
-  isLast,
-  parentContinuations,
-}: {
-  depth: number;
-  isLast: boolean;
-  parentContinuations: boolean[];
-}) {
-  if (depth === 0) return null;
-
-  return (
-    <span className="flex shrink-0 items-stretch" aria-hidden>
-      {parentContinuations.map((continues, index) => (
-        <span key={index} className="relative flex w-5 justify-center">
-          {continues ? (
-            <span className="absolute bottom-0 top-0 w-px bg-gray-300/90" />
-          ) : null}
-        </span>
-      ))}
-      <span className="relative flex w-5 items-center justify-center">
-        <span className="absolute bottom-1/2 left-1/2 top-0 w-px bg-gray-300/90" />
-        <span className="absolute left-1/2 top-1/2 h-px w-2.5 bg-gray-300/90" />
-        <span className="relative z-1 font-mono text-[13px] leading-none text-gray-400">
-          {isLast ? "└" : "├"}
-        </span>
-      </span>
-    </span>
-  );
-}
 
 interface MenuTreeTableProps {
   rows: FlatMenuTreeRow[];
   expandedIds: Set<string>;
   selectedId: string | null;
+  reorderingId: string | null;
   onToggleExpand: (id: string) => void;
   onView: (id: string) => void;
   onEdit: (item: MenuItem) => void;
   onDelete: (item: MenuItem) => void;
+  onReorder: (item: MenuItem, direction: "up" | "down") => void;
+  onChangeOrder: (item: MenuItem, orderNumber: number) => void;
+}
+
+function OrderInput({
+  item,
+  disabled,
+  saving,
+  onChangeOrder,
+}: {
+  item: MenuItem;
+  disabled: boolean;
+  saving: boolean;
+  onChangeOrder: (item: MenuItem, orderNumber: number) => void;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const value = draft ?? String(item.orderNumber);
+
+  function commit() {
+    const next = Number.parseInt(value, 10);
+    setDraft(null);
+    if (Number.isNaN(next) || next < 0 || next === item.orderNumber) return;
+    onChangeOrder(item, next);
+  }
+
+  if (saving) {
+    return (
+      <span className="flex w-12 items-center justify-center">
+        <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-gray-200 border-t-primary" />
+      </span>
+    );
+  }
+
+  return (
+    <Input
+      type="number"
+      min={0}
+      value={value}
+      disabled={disabled}
+      onFocus={() => setDraft(String(item.orderNumber))}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.currentTarget.blur();
+        }
+        if (e.key === "Escape") {
+          setDraft(null);
+          e.currentTarget.blur();
+        }
+      }}
+      onClick={(e) => e.stopPropagation()}
+      aria-label={`Order for ${item.menuName}`}
+      className="h-8 w-12 rounded-none border-0 bg-transparent px-1 text-center text-sm shadow-none focus-visible:ring-1 focus-visible:ring-primary/30"
+    />
+  );
 }
 
 export function MenuTreeTable({
   rows,
   expandedIds,
   selectedId,
+  reorderingId,
   onToggleExpand,
   onView,
   onEdit,
   onDelete,
+  onReorder,
+  onChangeOrder,
 }: MenuTreeTableProps) {
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead>
-          <TableRow className="border-b border-gray-200/70 bg-gray-50/80 text-xs uppercase tracking-wide text-gray-500 hover:bg-gray-50/80">
-            <th className="px-4 py-3 text-left font-semibold">Menu</th>
-            <th className="px-4 py-3 text-left font-semibold">Icon</th>
-            <th className="px-4 py-3 text-left font-semibold">URL Path</th>
-            <th className="px-4 py-3 text-left font-semibold">Module</th>
-            <th className="px-4 py-3 text-left font-semibold">Type</th>
-            <th className="px-4 py-3 text-left font-semibold">Order</th>
-            <th className="px-4 py-3 text-left font-semibold">Status</th>
-            <th className="px-4 py-3 text-right font-semibold">Actions</th>
-          </TableRow>
-        </thead>
-        <tbody className="divide-y divide-gray-200/50">
-          {rows.map(({ item, depth, hasChildren, isLast, parentContinuations }) => {
-            const isExpanded = expandedIds.has(item.id);
-            const isGroup = item.menuType === "group" || hasChildren;
+  const isReordering = reorderingId !== null;
 
-            return (
-              <TableRow
-                key={item.id}
-                className={`transition-colors hover:bg-gray-50/80 ${
-                  selectedId === item.id ? "bg-pink-50/60" : ""
-                }`}
-              >
-                <td className="px-4 py-3">
-                  <div className="flex min-w-[220px] items-center gap-1.5">
-                    <MenuTreeGuides
-                      depth={depth}
-                      isLast={isLast}
-                      parentContinuations={parentContinuations}
-                    />
-                    {hasChildren ? (
-                      <button
-                        type="button"
-                        onClick={() => onToggleExpand(item.id)}
-                        className="shrink-0 rounded p-0.5 text-[10px] font-bold leading-none text-gray-400 hover:bg-gray-200/70 hover:text-gray-600"
-                        aria-expanded={isExpanded}
-                        aria-label={isExpanded ? "Collapse" : "Expand"}
-                      >
-                        {isExpanded ? "−" : "+"}
-                      </button>
-                    ) : (
-                      <span className="inline-block w-4 shrink-0" aria-hidden />
-                    )}
-                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-gray-100 text-gray-600">
-                      <AppSidebarNavIcon
-                        name={toNavIcon(item.icon)}
-                        className="h-4 w-4"
-                        isActive={false}
-                      />
-                    </span>
-                    <span
-                      className={`truncate text-gray-900 ${
-                        isGroup ? "font-semibold" : "font-medium"
-                      }`}
-                    >
-                      {item.menuName}
-                    </span>
-                  </div>
-                </td>
-                <td className="px-4 py-3">
-                  <span className="font-mono text-xs text-pink-600">
-                    {item.icon ?? "—"}
-                  </span>
-                </td>
-                <td
-                  className="max-w-[240px] truncate px-4 py-3 text-gray-600"
-                  title={item.routePath ?? undefined}
+  return (
+    <div>
+      <div className="flex items-center justify-between border-b border-gray-200/70 bg-gray-50/80 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
+        <span>Menu Structure</span>
+        <span className="pr-12">Order</span>
+      </div>
+
+      <ul className="divide-y divide-gray-200/50">
+        {rows.map(({ item, depth, hasChildren, childrenCount, isFirst, isLast }) => {
+          const isExpanded = expandedIds.has(item.id);
+          const isGroup = item.menuType === "group" || hasChildren;
+          const isRowReordering = reorderingId === item.id;
+
+          return (
+            <li
+              key={item.id}
+              className={`group flex items-center gap-3 px-4 py-3 transition-colors hover:bg-gray-50/80 ${
+                selectedId === item.id ? "bg-primary/5" : ""
+              }`}
+              style={{ paddingLeft: `${16 + depth * 28}px` }}
+            >
+              {hasChildren ? (
+                <button
+                  type="button"
+                  onClick={() => onToggleExpand(item.id)}
+                  className="shrink-0 rounded-md p-1 text-gray-400 transition hover:bg-gray-200/70 hover:text-gray-600"
+                  aria-expanded={isExpanded}
+                  aria-label={isExpanded ? `Collapse ${item.menuName}` : `Expand ${item.menuName}`}
                 >
-                  {item.routePath ?? "—"}
-                </td>
-                <td className="px-4 py-3 text-gray-600">{item.module ?? "—"}</td>
-                <td className="px-4 py-3">
-                  <span className="rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-600">
-                    {item.menuType}
+                  {isExpanded ? (
+                    <ChevronDown className="h-4 w-4" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4" />
+                  )}
+                </button>
+              ) : (
+                <span className="shrink-0 p-1 text-gray-300" aria-hidden>
+                  <GripVertical className="h-4 w-4" />
+                </span>
+              )}
+
+              <button
+                type="button"
+                onClick={() => onView(item.id)}
+                className="min-w-0 flex-1 text-left"
+                aria-label={`View details for ${item.menuName}`}
+              >
+                <span className="flex flex-wrap items-center gap-2">
+                  <span
+                    className={`truncate text-sm text-gray-900 ${
+                      isGroup ? "font-semibold" : "font-medium"
+                    }`}
+                  >
+                    {item.menuName}
                   </span>
-                </td>
-                <td className="px-4 py-3 text-gray-600">{item.orderNumber}</td>
-                <td className="px-4 py-3">
+                  <span className="rounded border border-gray-200/80 bg-gray-50 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide text-gray-500">
+                    {item.code}
+                  </span>
                   <Badge
-                    className={
+                    className={`border-0 font-normal ${
                       item.isActive
                         ? "bg-emerald-100 text-emerald-700"
                         : "bg-gray-100 text-gray-500"
-                    }
+                    }`}
                   >
                     {item.isActive ? "Active" : "Inactive"}
                   </Badge>
-                </td>
-                <td className="px-4 py-3 text-right">
-                  <div className="flex items-center justify-end gap-1">
-                    <Button
+                </span>
+                <span className="mt-1 flex items-center gap-2 text-xs text-gray-400">
+                  {item.routePath ? (
+                    <span className="flex min-w-0 items-center gap-1">
+                      <Link2 className="h-3 w-3 shrink-0" />
+                      <span className="truncate" title={item.routePath}>
+                        {item.routePath}
+                      </span>
+                    </span>
+                  ) : (
+                    <span className="italic">No route (group)</span>
+                  )}
+                  {hasChildren ? (
+                    <span className="shrink-0">
+                      {childrenCount} sub-menu{childrenCount > 1 ? "s" : ""}
+                    </span>
+                  ) : null}
+                </span>
+              </button>
+
+              <div className="flex shrink-0 items-center gap-1.5">
+                <div className="flex items-stretch overflow-hidden rounded-lg border border-gray-200/80 bg-white shadow-sm">
+                  <OrderInput
+                    item={item}
+                    disabled={isReordering}
+                    saving={isRowReordering}
+                    onChangeOrder={onChangeOrder}
+                  />
+                  <div className="flex flex-col border-l border-gray-200/80">
+                    <button
                       type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="cursor-pointer p-1.5 text-gray-600"
-                      aria-label={`View details for ${item.menuName}`}
-                      onClick={() => onView(item.id)}
+                      onClick={() => onReorder(item, "up")}
+                      disabled={isFirst || isReordering}
+                      className="flex h-1/2 items-center px-1 text-gray-400 transition hover:bg-gray-50 hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-40"
+                      aria-label={`Move ${item.menuName} up`}
                     >
-                      <EyeIcon className="h-4 w-4" />
-                    </Button>
-                    <Button
+                      <ChevronUp className="h-3 w-3" />
+                    </button>
+                    <button
                       type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="cursor-pointer p-1.5 text-blue-600"
-                      aria-label={`Edit ${item.menuName}`}
-                      onClick={() => onEdit(item)}
+                      onClick={() => onReorder(item, "down")}
+                      disabled={isLast || isReordering}
+                      className="flex h-1/2 items-center border-t border-gray-200/80 px-1 text-gray-400 transition hover:bg-gray-50 hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-40"
+                      aria-label={`Move ${item.menuName} down`}
                     >
-                      <PencilIcon className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="cursor-pointer p-1.5 text-red-500 hover:text-red-600"
-                      aria-label={`Delete ${item.menuName}`}
-                      onClick={() => onDelete(item)}
-                    >
-                      <TrashIcon className="h-4 w-4" />
-                    </Button>
+                      <ChevronDown className="h-3 w-3" />
+                    </button>
                   </div>
-                </td>
-              </TableRow>
-            );
-          })}
-        </tbody>
-      </table>
+                </div>
+
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    className="rounded-md p-1.5 text-gray-400 transition hover:bg-gray-100 hover:text-gray-600"
+                    aria-label={`Actions for ${item.menuName}`}
+                  >
+                    <MoreVertical className="h-4 w-4" />
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-40">
+                    <DropdownMenuItem onClick={() => onView(item.id)}>
+                      <EyeIcon className="h-4 w-4" />
+                      View details
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => onEdit(item)}>
+                      <PencilIcon className="h-4 w-4" />
+                      Edit
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem variant="destructive" onClick={() => onDelete(item)}>
+                      <TrashIcon className="h-4 w-4" />
+                      Delete
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }

@@ -8,13 +8,16 @@ export interface FlatMenuTreeRow {
   item: MenuItem;
   depth: number;
   hasChildren: boolean;
-  /** Last sibling at this depth — controls └ vs ├ */
+  childrenCount: number;
+  /** First sibling at this depth — disables move up */
+  isFirst: boolean;
+  /** Last sibling at this depth — controls └ vs ├ and disables move down */
   isLast: boolean;
   /** Vertical guides for ancestor levels */
   parentContinuations: boolean[];
 }
 
-function sortSiblings(items: MenuItem[]): MenuItem[] {
+export function sortSiblings(items: MenuItem[]): MenuItem[] {
   return [...items].sort(
     (a, b) => a.orderNumber - b.orderNumber || a.menuName.localeCompare(b.menuName)
   );
@@ -54,6 +57,8 @@ export function flattenMenuTree(
       item: node,
       depth,
       hasChildren,
+      childrenCount: node.children.length,
+      isFirst: index === 0,
       isLast,
       parentContinuations: [...parentContinuations],
     });

@@ -7,6 +7,7 @@ export type UserWarehouseRow = {
   name: string;
   code: string;
   branch_id: string;
+  is_default: boolean;
 };
 
 export async function loadUserWarehouses(userId: string): Promise<UserWarehouseRow[]> {
@@ -16,13 +17,14 @@ export async function loadUserWarehouses(userId: string): Promise<UserWarehouseR
               uw.warehouse_id,
               w.name,
               w.code,
-              w.branch_id
+              w.branch_id,
+              w.is_default
        FROM configuration.user_warehouses uw
        INNER JOIN configuration.warehouses w ON w.id = uw.warehouse_id
        WHERE uw.user_id = $1
          AND uw.is_active = true
          AND w.is_active = true
-       ORDER BY w.name ASC`,
+       ORDER BY w.is_default DESC, w.name ASC`,
       [userId]
     );
   } catch (error) {
@@ -50,13 +52,14 @@ export async function loadUserWarehousesBatch(
               uw.warehouse_id,
               w.name,
               w.code,
-              w.branch_id
+              w.branch_id,
+              w.is_default
        FROM configuration.user_warehouses uw
        INNER JOIN configuration.warehouses w ON w.id = uw.warehouse_id
        WHERE uw.user_id = ANY($1::uuid[])
          AND uw.is_active = true
          AND w.is_active = true
-       ORDER BY w.name ASC`,
+       ORDER BY w.is_default DESC, w.name ASC`,
       [userIds]
     );
 
@@ -68,6 +71,7 @@ export async function loadUserWarehousesBatch(
         name: row.name,
         code: row.code,
         branch_id: row.branch_id,
+        is_default: row.is_default,
       });
       map.set(row.user_id, list);
     }

@@ -2,8 +2,8 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { Toaster } from "sonner";
 import { requireUser } from "@/lib/auth/require-user";
-import { getUserMenus, filterEssNav } from "@/lib/iam/get-user-menus";
-import { isEssOnlyRole, isEssPath } from "@/lib/iam/access";
+import { getUserMenus, filterEssNav, isEssOnlyUser } from "@/lib/iam/get-user-menus";
+import { isEssPath } from "@/lib/iam/access";
 import { AppSidebar } from "@/components/shared";
 
 export default async function DashboardGroupLayout({
@@ -12,7 +12,8 @@ export default async function DashboardGroupLayout({
   children: React.ReactNode;
 }) {
   const user = await requireUser();
-  const essOnly = isEssOnlyRole(user.role);
+  // Kebijakan ESS-only ditentukan IAM (permission menu non-ESS), bukan daftar role di kode.
+  const essOnly = await isEssOnlyUser(user.id, user.role);
 
   // Role ESS-only dikunci ke Area Karyawan: URL modul lain → balik ke beranda.
   if (essOnly) {
@@ -36,9 +37,13 @@ export default async function DashboardGroupLayout({
         role: user.role,
         email: user.email,
         company_name: user.company_name,
+        branch_id: user.branch_id,
         branch_name: user.branch_name,
+        warehouse_name: user.warehouse_name,
+        active_stall_id: user.active_stall_id,
       }}
       navItems={navItems}
+      essOnly={essOnly}
     >
       {children}
       <Toaster position="bottom-right" />

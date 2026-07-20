@@ -13,11 +13,6 @@ const DEMO_ACCOUNTS = [
     email: "super@arkivworld.com",
     password: "Arkiv2026*#",
   },
-  {
-    label: "Demo Sulu Bandung",
-    email: "demo@sulu.id",
-    password: "demo",
-  },
 ] as const;
 
 const DEFAULT_ACCOUNT = DEMO_ACCOUNTS[0];
@@ -26,8 +21,8 @@ export default function LoginPage() {
   const router = useRouter();
   const db = createBrowserClient();
 
-  const [email, setEmail] = useState(DEFAULT_ACCOUNT.email);
-  const [password, setPassword] = useState(DEFAULT_ACCOUNT.password);
+  const [email, setEmail] = useState<string>(DEFAULT_ACCOUNT.email);
+  const [password, setPassword] = useState<string>(DEFAULT_ACCOUNT.password);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [showPassword, setShowPassword] = useState(false);

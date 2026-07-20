@@ -18,6 +18,7 @@ import { useDepartmentList } from "@/features/master-data/departments";
 import { PurchasingListSection } from "@/modules/purchasing/components/list/PurchasingListSection";
 import { PurchasingTablePagination } from "@/modules/purchasing/components/pagination/PurchasingTablePagination";
 import { useAuth } from "@/hooks/use-auth";
+import { impersonateUser } from "../api";
 import { useUserDirectoryStats, useUserList } from "../queries";
 import {
   ADMIN_USER_ROLES,
@@ -51,6 +52,8 @@ export function UsersListPage({ variant = "directory" }: UsersListPageProps) {
   // pembuatan akun login oleh Super Admin / Admin / HRD (selaras PUT /api/users)
   const canCreateAccount =
     user?.role === "super_admin" || user?.role === "admin" || user?.role === "hrd";
+  // Login As hanya untuk super_admin di halaman /dashboard/employees
+  const canLoginAs = !isAccountsView && user?.role === "super_admin";
 
   const [searchQuery, setSearchQuery] = useState("");
   const [search, setSearch] = useState("");
@@ -64,6 +67,7 @@ export function UsersListPage({ variant = "directory" }: UsersListPageProps) {
   const [resetTarget, setResetTarget] = useState<ResetPasswordTarget | null>(null);
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
   const [createAccountTarget, setCreateAccountTarget] = useState<UserEmployeeItem | null>(null);
+  const [loginAsEmployeeId, setLoginAsEmployeeId] = useState<string | null>(null);
 
   const perPage = 15;
 
@@ -164,6 +168,21 @@ export function UsersListPage({ variant = "directory" }: UsersListPageProps) {
   function handleResetPassword(row: UserEmployeeItem) {
     setResetTarget({ id: row.id, fullName: row.fullName });
     setResetDialogOpen(true);
+  }
+
+  async function handleLoginAs(row: UserEmployeeItem) {
+    if (!row.userId || loginAsEmployeeId) return;
+    setLoginAsEmployeeId(row.id);
+    try {
+      const result = await impersonateUser(row.userId);
+      showToast(result.message || `Logged in as ${row.fullName}`);
+      // Full reload agar seluruh state (session, layout, menu) mengikuti user baru.
+      window.location.href =
+        result.data.role === "super_admin" ? "/arkiv-os" : "/dashboard/me";
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Failed to login as user", "error");
+      setLoginAsEmployeeId(null);
+    }
   }
 
   return (
@@ -405,6 +424,8 @@ export function UsersListPage({ variant = "directory" }: UsersListPageProps) {
                 onEdit={(id) => router.push(EMPLOYEES_ROUTES.edit(id))}
                 onResetPassword={showAppActions && canResetPassword ? handleResetPassword : undefined}
                 onCreateAccount={showAppActions && canCreateAccount ? setCreateAccountTarget : undefined}
+                onLoginAs={canLoginAs ? handleLoginAs : undefined}
+                loginAsEmployeeId={loginAsEmployeeId}
                 showAppActions={showAppActions}
               />
             </div>
