@@ -519,16 +519,22 @@ function createEmptySystemSummary(): Summary {
 /**
  * Panggil OpenAI Chat Completions untuk model berprefix `openai:`.
  *
- * Sumber kredensial berurutan: env `OPENAI_API_KEY` lebih dulu (praktis untuk
- * override per-deployment), lalu setting `openai_api_key` di database — tempat
- * key OpenAI proyek ini sebenarnya tinggal, diatur lewat Settings → Integrasi.
+ * Sumber kredensial: setting `openai_api_key` di database (Settings → Integrasi)
+ * SELALU didahulukan, sama seperti seluruh integrasi lain di aplikasi ini.
+ * Env `OPENAI_API_KEY` hanya dipakai bila setting itu kosong.
+ *
+ * Urutannya dulu terbalik dan itu menimbulkan bug yang sulit dilihat: shell
+ * server mengekspor `OPENAI_API_KEY` lama di ~/.bashrc, PM2 mewarisinya, dan
+ * aplikasi memakai key mati itu (429 insufficient_quota) meskipun key yang benar
+ * sudah tersimpan rapi lewat UI. Key yang diatur dari dashboard harus menang —
+ * itu satu-satunya yang bisa dilihat dan diganti oleh admin.
  */
 async function callOpenAiChat(
   model: string,
   messages: Array<{ role: string; content: string }>
 ): Promise<string> {
   const s = await getSettings([SETTING_KEYS.OPENAI_API_KEY, SETTING_KEYS.OPENAI_BASE_URL]);
-  const apiKey = process.env.OPENAI_API_KEY?.trim() || s[SETTING_KEYS.OPENAI_API_KEY];
+  const apiKey = s[SETTING_KEYS.OPENAI_API_KEY] || process.env.OPENAI_API_KEY?.trim();
   if (!apiKey) {
     throw new Error(
       "API key OpenAI belum tersedia (env OPENAI_API_KEY maupun Settings → Integrasi kosong)"
