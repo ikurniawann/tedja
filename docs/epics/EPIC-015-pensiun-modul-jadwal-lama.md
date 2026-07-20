@@ -72,16 +72,23 @@ Anchor kode: `src/app/dashboard/(dashboard)/hris/schedules/page.tsx`,
   `src/features/users/components/users-list-page.tsx:202`.
 
 **Fase B — Hapus kode mati (PR 2)**
-- Hapus `src/features/hris/schedules/` (+ `sections/`), `src/app/api/staff-schedules/`,
-  `src/app/api/staff-sections/`, `src/app/api/sections/`, `src/app/api/staff/`.
-- Hapus folder route lama setelah redirect terbukti aman; cek `src/proxy.ts:43`
-  (daftar `hrisModules` memuat `"staff"`).
+- Hapus `src/features/hris/schedules/` + `sections/`, `src/app/api/staff-schedules/`,
+  `src/app/api/staff-sections/`, `src/app/api/staff/`.
+- **`src/app/api/sections/` DIPERTAHANKAN** — koreksi atas draft awal: endpoint ini
+  masih dipakai `features/users/api.ts:285` (`fetchUserFormLookups`) untuk mengisi
+  dropdown Section di form karyawan (`user-form-page.tsx:465`).
+- Buang `"staff"` dari `hrisModules` di `src/proxy.ts` — `/dashboard/hris/staff`
+  tidak pernah dibuat, jadi redirect-nya hanya mengantar ke 404.
 - Verifikasi tidak ada import yatim (`tsc` + build hijau).
 
 **Fase C — Migrasi DB (PR 3)**
-- `DROP TABLE hris.staff_schedules`, `hris.staff_sections`, `sections`
-  (setelah konfirmasi 0 baris di dev **dan** produksi).
+- `DROP TABLE hris.staff_schedules` + `hris.staff_sections` saja (setelah
+  konfirmasi 0 baris di dev **dan** produksi).
 - Tabel `staff` **dipertahankan** (FK purchasing/vendor + `employees.old_staff_id`).
+- Tabel `sections` **dipertahankan** — koreksi atas draft awal: masih jadi target FK
+  `employees.section_id` (ON DELETE SET NULL) dan
+  `employment_history.{prev,new}_section_id`, serta terpasang di form karyawan.
+  Yang mati hanya tabel penghubung `staff_sections` (staff ↔ section).
 
 **Fase D — Dokumentasi**
 - Catat di Automation Log + tambahkan satu paragraf "sumber kebenaran jadwal =
@@ -103,8 +110,8 @@ Anchor kode: `src/app/dashboard/(dashboard)/hris/schedules/page.tsx`,
       end-to-end butuh sesi login → sisa QA manual)*
 - [x] Menu "Schedules" dan "Sections" hilang dari sidebar untuk semua role;
       tidak ada tautan menggantung di halaman lain.
-- [ ] `grep -rn "api/staff-schedules\|features/hris/schedules" src` → 0 hasil.
-- [ ] `tsc` bersih (selain error pre-existing modul lain) dan `next build` hijau.
+- [x] `grep -rn "api/staff-schedules\|features/hris/schedules" src` → 0 hasil.
+- [x] `tsc` bersih (selain error pre-existing modul lain) dan `next build` hijau.
 - [ ] Absensi harian, monitoring roster, cuti, lembur, dan payroll tetap normal
       (smoke dev) — membuktikan tidak ada ketergantungan tersembunyi.
 - [ ] Migrasi drop table applied + tercatat, dan `\dt` tidak lagi menampilkan
@@ -133,7 +140,7 @@ Anchor kode: `src/app/dashboard/(dashboard)/hris/schedules/page.tsx`,
 |---|---|
 | Ada data `staff_schedules` di produksi (dev 0 baris) | Cek count di produksi sebelum Fase C; kalau ada, ubah Fase C jadi arsip (rename `_deprecated`) |
 | Role tertentu masih punya permission menu lama di `iam` | Nonaktifkan di level menu (`is_active=false`), bukan per-role |
-| Drop table `sections` menyentuh modul lain bernama mirip | Cek FK & grep sebelum drop; `pos_categories` tidak terkait |
+| ~~Drop table `sections` menyentuh modul lain~~ | **Terbukti terjadi** — `sections` masih dipakai form karyawan + FK `employment_history`; dikeluarkan dari scope drop (lihat Fase C) |
 
 ## Done Signal
 
@@ -169,3 +176,19 @@ Semua Acceptance Criteria tercentang + Automation Log terisi + status
   `pm2 restart arkiv-pos-saas`. (c) Referensi `/dashboard/hris/{schedules,sections}`
   masih tersisa di `features/hris/{schedules,sections}/components/*` yang sudah
   tidak dirender — dibersihkan di Fase B. Status → coding (Fase B berikutnya).
+- 2026-07-20 — **Fase B selesai.** Dihapus: `features/hris/schedules/` +
+  `sections/` (14 file), `api/staff-schedules/`, `api/staff-sections/`,
+  `api/staff/` (list + [id]). `"staff"` dibuang dari `hrisModules` di `proxy.ts`
+  karena `/dashboard/hris/staff` tidak pernah ada — redirect-nya hanya mengantar
+  ke 404.
+  **Koreksi rencana (penting):** draft epic keliru memasukkan `api/sections` ke
+  daftar hapus dan tabel `sections` ke daftar drop. Keduanya MASIH HIDUP —
+  `fetchUserFormLookups` (`features/users/api.ts:285`) memakai `/api/sections`
+  untuk dropdown Section di form karyawan, dan tabel `sections` jadi target FK
+  `employees.section_id` + `employment_history.{prev,new}_section_id`. Yang mati
+  hanya tabel penghubung `staff_sections`. Scope Fase C dipersempit.
+  Gates: `next build` sukses; manifest membuktikan `/api/staff*` hilang dan
+  `/api/sections` tetap ada. Curl tidak bisa membedakan route terhapus vs ada
+  (proxy mengembalikan 401 utk keduanya tanpa sesi) — manifest yang jadi bukti.
+  Pre-existing & tidak disentuh: `features/configuration/roles/components/index.ts`
+  mengimpor `./components/role-detail-sections` (path ganda, dari commit 8940e99).
