@@ -12,6 +12,7 @@ import {
   type MonitorWidgetKey,
 } from "./desktop-monitor";
 import type { DesktopOverview as DesktopOverviewData } from "@/lib/desktop/overview";
+import { WaNotifSettingsPanel } from "./wa-notif-settings";
 import {
   MAX_NOTIFICATION_HISTORY,
   diffOverviewNotifications,
@@ -184,6 +185,7 @@ export default function ArkivOsDesktop() {
   const [showCommand, setShowCommand] = useState(false);
   const [showLibrary, setShowLibrary] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showWaNotif, setShowWaNotif] = useState(false);
   const [showAssistant, setShowAssistant] = useState(false);
   const [showFiles, setShowFiles] = useState(false);
   const [showApplicationFolder, setShowApplicationFolder] = useState(false);
@@ -742,6 +744,11 @@ export default function ArkivOsDesktop() {
           onSettings={() => setShowSettings(true)}
         />
       )}
+      {showWaNotif && (
+        <WindowShell title="Notifikasi WA" onClose={() => setShowWaNotif(false)} className="left-1/2 top-14 max-h-[calc(100vh-140px)] w-[min(560px,calc(100vw-32px))] -translate-x-1/2 overflow-y-auto">
+          <WaNotifSettingsPanel />
+        </WindowShell>
+      )}
       {showNotifications && notifHistory.length > 0 && (
         <NotificationCenter items={notifHistory} onOpen={openNotification} onClear={() => { setNotifHistory([]); setShowNotifications(false); }} onClose={() => setShowNotifications(false)} />
       )}
@@ -751,6 +758,7 @@ export default function ArkivOsDesktop() {
       {showWidgetSettings && <WidgetSettings visibility={widgetVisibility} onChange={updateWidgetVisibility} onClose={() => setShowWidgetSettings(false)} />}
       {showSettings && (
         <SystemSettings
+          onOpenWaNotif={() => { setShowSettings(false); setShowWaNotif(true); }}
           soundEnabled={soundEnabled}
           assistantSettings={assistantSettings}
           onSoundChange={updateSoundEnabled}
@@ -2405,6 +2413,7 @@ function SystemSettings({
   onAssistantSettingsChange,
   onOpenWallpaper,
   onOpenWidgets,
+  onOpenWaNotif,
   onClose,
 }: {
   soundEnabled: boolean;
@@ -2413,11 +2422,13 @@ function SystemSettings({
   onAssistantSettingsChange: (next: Partial<AiAssistantSettings>) => void;
   onOpenWallpaper: () => void;
   onOpenWidgets: () => void;
+  onOpenWaNotif: () => void;
   onClose: () => void;
 }) {
   const settings = [
     { title: "Desktop & Wallpaper", description: "Pilih wallpaper Arkiv OS.", icon: MonitorDot, action: onOpenWallpaper },
     { title: "Widgets", description: "Atur Calendar dan System Widgets.", icon: Activity, action: onOpenWidgets },
+    { title: "Notifikasi WA", description: "Kabar penting bisnis dikirim otomatis ke WhatsApp.", icon: Bell, action: onOpenWaNotif },
   ];
   const SoundIcon = soundEnabled ? Volume2 : VolumeX;
   const [showModelMenu, setShowModelMenu] = useState(false);
