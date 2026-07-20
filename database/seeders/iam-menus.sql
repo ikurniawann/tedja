@@ -175,4 +175,5 @@ WHERE deleted_at IS NULL
     'hris.performance.kpi-scorecard', 'hris.recruitment.live-monitoring',
     'crm.settings', 'crm.settings.config', 'crm.reports', 'crm.reports.overview',
     'crm.members.inbox',
-    'settings.wa_gateway', 'settings.payment-gateways');
+    'settings.wa_gateway', 'settings.payment-gateways',
+    'crm.members.reviews');

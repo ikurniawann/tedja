@@ -1,6 +1,6 @@
 # EPIC-013: Omnichannel — Google Review & Instagram DM
 
-status: backlog
+status: coding
 environment: dev
 retries: 0
 
@@ -117,3 +117,44 @@ ulang** tanpa ditulis ulang.
   membalas. Instagram hanya punya jalur resmi; pustaka tidak resmi ditolak
   karena mempertaruhkan akun marketing ber-follower. Status backlog —
   menunggu keputusan owner soal urutan & pengajuan akses.
+- 2026-07-20 — **Fase A SELESAI (siap-kredensial).** Owner memilih mulai dari
+  Google Review. Seluruh bagian yang tidak bergantung persetujuan Google sudah
+  dibangun & diverifikasi; begitu akses turun tinggal mengisi env.
+  - Migrasi `20260720090000_google_reviews_fase_a.sql` + menu
+    `20260720100000_google_reviews_menu.sql` (applied). Tabel
+    `crm.google_reviews` berdiri sendiri — ulasan BUKAN percakapan (satu
+    ulasan hanya boleh punya satu balasan), jadi tidak dipaksa masuk
+    `wa_conversations`. Menu CRM → Google Review (super_admin/admin/
+    pos_supervisor) **sekaligus didaftarkan ke daftar putih seeder** agar
+    tidak tersapu seperti insiden 16 menu.
+  - Aturan murni `google-reviews.ts` + 17 unit test: pemetaan enum rating
+    Google (ONE..FIVE), normalisasi resource (ulasan anonim, rating tanpa
+    teks, balasan existing), penandaan komplain, SLA balas, validasi balasan.
+  - Klien `google-business-client.ts`: tukar refresh token → access token
+    (di-cache sampai mendekati kedaluwarsa), tarik ulasan berhalaman (batas
+    aman 5 halaman), kirim balasan via `PUT .../reply`. Tanpa kredensial
+    seluruh fungsi mengembalikan status "belum dikonfigurasi" secara rapi.
+  - `google-reviews-server.ts`: upsert idempoten berdasarkan `review_name`
+    (ulasan yang diedit pengulas ikut diperbarui, status `diabaikan` tidak
+    tertimpa, balasan dari aplikasi Google ikut terbaca). **Urutan balas
+    disengaja: kirim ke Google DULU, catat di DB setelah diterima** — supaya
+    dashboard tidak pernah menampilkan balasan yang gagal terkirim.
+  - Sinkronisasi tiap 15 menit via `instrumentation.ts` (interval lebih
+    longgar dari SLA chat karena ulasan tidak deras & kuota API terbatas);
+    peringatan "belum dikonfigurasi" hanya sekali per proses, bukan tiap tik.
+  - UI `/dashboard/crm/reviews`: ringkasan (total, belum dibalas, komplain
+    terbuka, rata-rata rating), filter status & rating, kartu ulasan dengan
+    bintang, badge komplain/lewat SLA, tombol Balas/Ubah balasan/Abaikan, dan
+    **penegasan bahwa satu ulasan hanya punya satu balasan**.
+  - **Verifikasi live**: halaman 200; tanpa kredensial → banner peringatan,
+    sync menjawab 409 "belum dikonfigurasi" (bukan crash); dengan 4 ulasan
+    contoh → komplain otomatis untuk 1-2★, SLA tepat (ulasan 3 hari melanggar,
+    yang pas 24 jam belum), filter rating jalan, aksi Abaikan jalan; **balas
+    tanpa kredensial ditolak dan TIDAK meninggalkan catatan balasan di DB**.
+  - Gate: 592 unit test hijau (+17), build sukses, migrasi applied, restart.
+  - Runbook `docs/crm/RUNBOOK-GOOGLE-REVIEW.md` — termasuk alasan menolak
+    scraping, langkah pengajuan akses Google, dan SQL pembersih data contoh.
+  - Sisa: kredensial Google (jalur kritis, ajukan lebih awal); Fase B fondasi
+    multi-kanal; Fase C Instagram DM. Batas Fase A: belum ada persetujuan
+    supervisor untuk balasan bintang rendah, metrik ulasan belum masuk
+    laporan CS, dan baru mendukung satu lokasi.

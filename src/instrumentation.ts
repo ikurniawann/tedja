@@ -9,5 +9,8 @@ export async function register() {
 
     const { startCsSlaWatcher } = await import("@/lib/crm/cs-sla-watcher");
     startCsSlaWatcher();
+
+    const { startGoogleReviewSync } = await import("@/lib/crm/google-reviews-sync-job");
+    startGoogleReviewSync();
   }
 }
