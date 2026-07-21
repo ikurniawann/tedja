@@ -8,6 +8,7 @@ import {
   fetchLeadDetail,
   fetchLeads,
   linkLeadCustomer,
+  lookupPicByPhone,
   searchCustomers,
   unlinkLeadCustomer,
   updateLead,
@@ -74,6 +75,14 @@ export const useLeadDetail = (id: string) =>
     queryKey: leadQueryKeys.detail(id),
     queryFn: () => fetchLeadDetail(id),
     enabled: id !== "",
+  });
+
+export const usePicLookup = (phone: string, enabled = true) =>
+  useQuery({
+    queryKey: ["sales-funnel", "pic-lookup", phone] as const,
+    queryFn: () => lookupPicByPhone(phone),
+    enabled: enabled && phone.replace(/[^0-9]/g, "").length >= 9,
+    staleTime: 30 * 1000,
   });
 
 export const useCustomerSearch = (q: string) =>

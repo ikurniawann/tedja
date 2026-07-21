@@ -492,6 +492,22 @@ Keputusan owner FINAL (2026-07-21) — Fase F resmi on-progress:
   purchasing) — isi resep via Pengaturan Funnel lalu Realisasi langsung
   berfungsi. QA manusia: uji alur lengkap quotation → kirim → diterima
   → menang → realisasi (potong & tanpa-potong) dgn akun sales.
+- 2026-07-22 — **Satu PIC boleh membawa banyak leads** (masukan owner:
+  PIC travel agent/EO kerap membawa beberapa instansi). Delta
+  `20260722030000_sales_funnel_pic_multi_leads.sql`: indeks unik
+  (company, pic_phone) diganti (company, pic_phone, lower(org_name)) —
+  duplikat sungguhan saja yang ditolak; data lama dijamin valid (aturan
+  lama lebih ketat). Dedup konsisten di POST/PATCH/import (pesan baru
+  "Lead instansi ini dengan PIC yang sama sudah ada"; race 23505 →
+  409, bukan 500). Endpoint baru GET `/leads/by-phone` (scope ala list
+  + sales own-or-unassigned, rate limit 30/mnt/user): form menampilkan
+  panel "PIC sudah terdaftar — membawa N lead" + tombol "Gunakan Data
+  PIC Ini" (prefill nama/jabatan/email; banding nomor bentuk kanonik
+  62… via normalizePhoneClient), profil 360° menampilkan "PIC ini juga
+  membawa: [link instansi lain]". Tabel kontak ternormalisasi penuh =
+  evolusi nanti bila perlu (sesuai catatan MVP epic). Gate: APPROVE
+  (0 CRITICAL/HIGH; MEDIUM rate-limit + LOW 23505 diperbaiki).
+  Typecheck 0 error baru, build bersih, migrasi applied, PM2 restart.
 - 2026-07-21 — **Fase F (Quotation) diusulkan** atas permintaan owner:
   builder quotation di deal (item bebas + Add Produk per pax + opsi PPN)
   dan realisasi pengurangan bahan baku dari resep produk. Eksplorasi

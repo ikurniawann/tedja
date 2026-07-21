@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { UserCheck } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -19,13 +20,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useCreateLead, useUpdateLead } from "../queries";
+import { useCreateLead, usePicLookup, useUpdateLead } from "../queries";
 import {
   EMPTY_LEAD_FORM,
   ORG_TYPE_LABELS,
   SOURCE_LABELS,
   STATUS_LABELS,
   TEMPERATURE_LABELS,
+  normalizePhoneClient,
   type LeadFormValues,
   type SalesLead,
 } from "../types";
@@ -55,11 +57,31 @@ function leadToForm(lead: SalesLead): LeadFormValues {
 
 export function LeadFormDialog({ open, onOpenChange, lead }: LeadFormDialogProps) {
   const [form, setForm] = useState<LeadFormValues>(EMPTY_LEAD_FORM);
+  const [phoneQuery, setPhoneQuery] = useState("");
   const isEdit = lead !== null;
 
   useEffect(() => {
-    if (open) setForm(lead ? leadToForm(lead) : EMPTY_LEAD_FORM);
+    if (open) {
+      setForm(lead ? leadToForm(lead) : EMPTY_LEAD_FORM);
+      setPhoneQuery("");
+    }
   }, [open, lead]);
+
+  // Debounce lookup PIC by nomor — satu PIC bisa membawa banyak leads
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setPhoneQuery(form.pic_phone.trim()), 400);
+    return () => window.clearTimeout(timeout);
+  }, [form.pic_phone]);
+
+  // Banding pada bentuk kanonik 62… — nomor tersimpan sudah dinormalisasi,
+  // input user bisa 0812/812/+62 untuk nomor yang sama
+  const lookupEnabled =
+    open &&
+    (!isEdit ||
+      (lead !== null &&
+        normalizePhoneClient(phoneQuery) !== normalizePhoneClient(lead.pic_phone)));
+  const picLookup = usePicLookup(phoneQuery, lookupEnabled);
+  const existingPic = picLookup.data ?? null;
 
   const close = () => onOpenChange(false);
   const createMutation = useCreateLead(close);
@@ -156,6 +178,34 @@ export function LeadFormDialog({ open, onOpenChange, lead }: LeadFormDialogProps
               placeholder="0812xxxxxxx"
             />
           </div>
+
+          {existingPic ? (
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-3 text-sm sm:col-span-2">
+              <p className="font-medium text-emerald-900">
+                <UserCheck className="mr-1 inline h-4 w-4 align-text-bottom" />
+                PIC sudah terdaftar: {existingPic.pic.name}
+                {existingPic.pic.title ? ` (${existingPic.pic.title})` : ""}
+              </p>
+              <p className="mt-0.5 text-xs text-emerald-700">
+                Membawa {existingPic.leads.length} lead:{" "}
+                {existingPic.leads.map((l) => l.org_name).join(", ")}
+              </p>
+              <button
+                type="button"
+                onClick={() =>
+                  setForm((prev) => ({
+                    ...prev,
+                    pic_name: existingPic.pic.name,
+                    pic_title: existingPic.pic.title ?? "",
+                    pic_email: existingPic.pic.email ?? "",
+                  }))
+                }
+                className="mt-1.5 text-xs font-semibold text-emerald-700 underline hover:text-emerald-900"
+              >
+                Gunakan Data PIC Ini
+              </button>
+            </div>
+          ) : null}
 
           <div className="space-y-1.5">
             <Label htmlFor="pic_email">Email PIC</Label>

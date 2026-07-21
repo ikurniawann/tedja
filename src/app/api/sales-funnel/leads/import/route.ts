@@ -67,13 +67,17 @@ export async function POST(request: NextRequest) {
     }
 
     const headers = rows[0].map(normalizeLeadSpreadsheetHeader);
-    // Nomor yang sudah terpakai (aktif) di company — cek duplikat sekali jalan
-    const existingRows = await query<{ pic_phone: string }>(
-      `SELECT pic_phone FROM crm.crm_sales_leads
+    // Duplikat = kombinasi instansi + no. WA (satu PIC boleh banyak leads)
+    const existingRows = await query<{ pic_phone: string; org_name: string }>(
+      `SELECT pic_phone, org_name FROM crm.crm_sales_leads
        WHERE company_id = $1 AND deleted_at IS NULL`,
       [companyId]
     );
-    const usedPhones = new Set(existingRows.map((r) => r.pic_phone));
+    const dedupKey = (phone: string, org: string) =>
+      `${phone}|${org.trim().toLowerCase()}`;
+    const usedKeys = new Set(
+      existingRows.map((r) => dedupKey(r.pic_phone, r.org_name))
+    );
 
     let imported = 0;
     const skipped: Array<{ row: number }> = [];
@@ -107,8 +111,11 @@ export async function POST(request: NextRequest) {
         skipped.push({ row: rowNumber });
         continue;
       }
-      if (usedPhones.has(phone)) {
-        errors.push({ row: rowNumber, message: `Duplikat no. WA: ${picPhoneRaw}` });
+      if (usedKeys.has(dedupKey(phone, orgName))) {
+        errors.push({
+          row: rowNumber,
+          message: `Duplikat instansi + no. WA: ${orgName} / ${picPhoneRaw}`,
+        });
         skipped.push({ row: rowNumber });
         continue;
       }
@@ -145,7 +152,7 @@ export async function POST(request: NextRequest) {
             user.id,
           ]
         );
-        usedPhones.add(phone);
+        usedKeys.add(dedupKey(phone, orgName));
         imported += 1;
       } catch (insertErr) {
         console.error("[sales-funnel] import row error:", insertErr);

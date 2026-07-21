@@ -16,7 +16,7 @@ import { Button } from "@/components/ui/button";
 import { DealFormDialog } from "../../pipeline";
 import { formatRupiah } from "../../pipeline/types";
 import { ACTIVITY_TYPE_LABELS } from "../../activities/types";
-import { useLeadDetail } from "../queries";
+import { useLeadDetail, usePicLookup } from "../queries";
 import {
   ORG_TYPE_LABELS,
   SOURCE_LABELS,
@@ -70,6 +70,11 @@ export function LeadDetailPage({ leadId }: { leadId: string }) {
 
   const detailQuery = useLeadDetail(leadId);
   const detail = detailQuery.data;
+  // Instansi lain yang dibawa PIC yang sama (satu PIC bisa banyak leads)
+  const picLookup = usePicLookup(detail?.lead.pic_phone ?? "");
+  const otherLeads = (picLookup.data?.leads ?? []).filter(
+    (other) => other.id !== leadId
+  );
 
   if (detailQuery.isLoading) {
     return (
@@ -166,6 +171,22 @@ export function LeadDetailPage({ leadId }: { leadId: string }) {
                 <span className="text-gray-500"> · PJ: {lead.owner_name}</span>
               ) : null}
             </p>
+            {otherLeads.length > 0 ? (
+              <p className="mt-1 text-xs text-gray-500">
+                PIC ini juga membawa:{" "}
+                {otherLeads.map((other, index) => (
+                  <span key={other.id}>
+                    {index > 0 ? ", " : ""}
+                    <Link
+                      href={`/dashboard/sales-funnel/leads/${other.id}`}
+                      className="font-medium text-pink-600 hover:underline"
+                    >
+                      {other.org_name}
+                    </Link>
+                  </span>
+                ))}
+              </p>
+            ) : null}
           </div>
           <div className="flex shrink-0 gap-2">
             <Button

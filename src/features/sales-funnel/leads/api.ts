@@ -4,6 +4,7 @@ import type {
   LeadFilters,
   LeadFormValues,
   LeadListResponse,
+  PicLookupResult,
 } from "./types";
 
 async function parseError(res: Response, fallback: string): Promise<never> {
@@ -62,6 +63,17 @@ export async function fetchLeadDetail(id: string): Promise<LeadDetail> {
   const res = await fetch(`/api/sales-funnel/leads/${id}`);
   if (!res.ok) await parseError(res, "Gagal memuat detail instansi");
   const body = (await res.json()) as { data: LeadDetail };
+  return body.data;
+}
+
+export async function lookupPicByPhone(
+  phone: string
+): Promise<PicLookupResult | null> {
+  const res = await fetch(
+    `/api/sales-funnel/leads/by-phone?phone=${encodeURIComponent(phone)}`
+  );
+  if (!res.ok) await parseError(res, "Gagal mencari PIC");
+  const body = (await res.json()) as { data: PicLookupResult | null };
   return body.data;
 }
 

@@ -182,14 +182,25 @@ export async function PATCH(
           { status: 400 }
         );
       }
+    }
+    // Duplikat = kombinasi instansi + no. WA sama (satu PIC boleh banyak
+    // leads) — cek saat salah satunya berubah, pakai nilai efektif
+    if (body.pic_phone !== undefined || body.org_name !== undefined) {
+      const current = await queryOne<{ org_name: string; pic_phone: string }>(
+        `SELECT org_name, pic_phone FROM crm.crm_sales_leads WHERE id = $1`,
+        [id]
+      );
+      const effectivePhone = body.pic_phone ?? current?.pic_phone ?? "";
+      const effectiveOrg = body.org_name ?? current?.org_name ?? "";
       const duplicate = await queryOne<{ id: string }>(
         `SELECT id FROM crm.crm_sales_leads
-         WHERE company_id = $1 AND pic_phone = $2 AND id <> $3 AND deleted_at IS NULL`,
-        [lead.company_id, body.pic_phone, id]
+         WHERE company_id = $1 AND pic_phone = $2
+           AND lower(org_name) = lower($3) AND id <> $4 AND deleted_at IS NULL`,
+        [lead.company_id, effectivePhone, effectiveOrg, id]
       );
       if (duplicate) {
         return NextResponse.json(
-          { success: false, error: "Lead lain dengan no. WA PIC ini sudah ada" },
+          { success: false, error: "Lead instansi ini dengan PIC yang sama sudah ada" },
           { status: 409 }
         );
       }
@@ -242,6 +253,12 @@ export async function PATCH(
     );
     return successResponse(row, "Lead diperbarui");
   } catch (err) {
+    if ((err as { code?: string }).code === "23505") {
+      return NextResponse.json(
+        { success: false, error: "Lead instansi ini dengan PIC yang sama sudah ada" },
+        { status: 409 }
+      );
+    }
     console.error("[sales-funnel] update lead error:", err);
     return NextResponse.json(
       { success: false, error: "Gagal memperbarui lead" },

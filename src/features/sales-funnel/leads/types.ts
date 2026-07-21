@@ -156,6 +156,19 @@ export interface CustomerOrderSummary {
   created_at: string;
 }
 
+/** Normalisasi nomor WA sisi klien — cermin normalizePhone server (62…). */
+export function normalizePhoneClient(raw: string): string {
+  const digits = raw.replace(/[^0-9]/g, "");
+  if (digits.startsWith("0")) return `62${digits.slice(1)}`;
+  if (digits.startsWith("8")) return `62${digits}`;
+  return digits;
+}
+
+export interface PicLookupResult {
+  pic: { name: string; title: string | null; email: string | null };
+  leads: Array<{ id: string; org_name: string; status: string }>;
+}
+
 export interface CustomerSearchResult {
   id: string;
   name: string | null;

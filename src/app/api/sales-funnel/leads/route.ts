@@ -181,14 +181,20 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Satu PIC boleh membawa banyak leads — duplikat hanya bila kombinasi
+    // instansi + no. WA sama persis (masukan owner 2026-07-22)
     const existing = await queryOne<{ id: string }>(
       `SELECT id FROM crm.crm_sales_leads
-       WHERE company_id = $1 AND pic_phone = $2 AND deleted_at IS NULL`,
-      [companyId, phone]
+       WHERE company_id = $1 AND pic_phone = $2
+         AND lower(org_name) = lower($3) AND deleted_at IS NULL`,
+      [companyId, phone, body.org_name]
     );
     if (existing) {
       return NextResponse.json(
-        { success: false, error: "Lead dengan no. WA PIC ini sudah ada" },
+        {
+          success: false,
+          error: "Lead instansi ini dengan PIC yang sama sudah ada",
+        },
         { status: 409 }
       );
     }
@@ -221,6 +227,14 @@ export async function POST(request: NextRequest) {
 
     return createdResponse(row, "Lead berhasil dibuat");
   } catch (err) {
+    // Race dua request lolos cek duplikat bersamaan → unique index menolak;
+    // petakan ke 409 yang sama, bukan 500 misterius
+    if ((err as { code?: string }).code === "23505") {
+      return NextResponse.json(
+        { success: false, error: "Lead instansi ini dengan PIC yang sama sudah ada" },
+        { status: 409 }
+      );
+    }
     console.error("[sales-funnel] create lead error:", err);
     return NextResponse.json(
       { success: false, error: "Gagal membuat lead" },
