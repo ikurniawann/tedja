@@ -13,6 +13,7 @@ import {
   requireCompanyScope,
   requireSalesFunnelRole,
   resolveSalesVenue,
+  validateAssignableOwner,
 } from "@/lib/sales-funnel/server";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -159,6 +160,27 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+    // Role sales tidak boleh mengalihkan kepemilikan ke user lain
+    if (
+      user.role === "sales" &&
+      body.owner_user_id &&
+      body.owner_user_id !== user.id
+    ) {
+      return NextResponse.json(
+        { success: false, error: "Role sales hanya boleh menjadi penanggung jawab sendiri" },
+        { status: 403 }
+      );
+    }
+    if (body.owner_user_id) {
+      const ownerError = await validateAssignableOwner(body.owner_user_id, companyId);
+      if (ownerError) {
+        return NextResponse.json(
+          { success: false, error: ownerError },
+          { status: 400 }
+        );
+      }
+    }
+
     const existing = await queryOne<{ id: string }>(
       `SELECT id FROM crm.crm_sales_leads
        WHERE company_id = $1 AND pic_phone = $2 AND deleted_at IS NULL`,

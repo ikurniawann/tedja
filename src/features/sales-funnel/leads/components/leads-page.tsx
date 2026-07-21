@@ -6,7 +6,7 @@ import {
   PlusIcon,
   UserPlusIcon,
 } from "@heroicons/react/24/outline";
-import { Loader2, MessageCircle, Search, X } from "lucide-react";
+import { Loader2, MessageCircle, Search, TrendingUp, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,6 +21,7 @@ import {
 import { TableRow } from "@/components/ui/table";
 import { PurchasingListSection } from "@/modules/purchasing/components/list/PurchasingListSection";
 import { MasterTableActions } from "@/features/master-data/components/master-table-actions";
+import { DealFormDialog } from "@/features/sales-funnel/pipeline";
 import { useDeleteLead, useLeads } from "../queries";
 import { LeadFormDialog } from "./lead-form-dialog";
 import { LeadImportDialog } from "./lead-import-dialog";
@@ -60,6 +61,7 @@ export function SalesFunnelLeadsPage() {
   const [importOpen, setImportOpen] = useState(false);
   const [editingLead, setEditingLead] = useState<SalesLead | null>(null);
   const [deletingLead, setDeletingLead] = useState<SalesLead | null>(null);
+  const [convertingLead, setConvertingLead] = useState<SalesLead | null>(null);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => setSearch(searchQuery.trim()), 300);
@@ -270,10 +272,25 @@ export function SalesFunnelLeadsPage() {
                         {lead.owner_name || "—"}
                       </td>
                       <td className="px-4 py-3">
-                        <MasterTableActions
-                          onEdit={() => openEdit(lead)}
-                          onDelete={() => setDeletingLead(lead)}
-                        />
+                        <div className="flex items-center justify-end gap-1">
+                          {lead.status !== "tidak-cocok" ? (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => setConvertingLead(lead)}
+                              className="h-8 w-8 p-0 text-gray-600 hover:bg-pink-50 hover:text-pink-600"
+                              aria-label="Konversi ke Deal"
+                              title="Konversi ke Deal"
+                            >
+                              <TrendingUp className="h-4 w-4" />
+                            </Button>
+                          ) : null}
+                          <MasterTableActions
+                            onEdit={() => openEdit(lead)}
+                            onDelete={() => setDeletingLead(lead)}
+                          />
+                        </div>
                       </td>
                     </TableRow>
                   ))}
@@ -315,6 +332,12 @@ export function SalesFunnelLeadsPage() {
 
       <LeadFormDialog open={formOpen} onOpenChange={setFormOpen} lead={editingLead} />
       <LeadImportDialog open={importOpen} onOpenChange={setImportOpen} />
+      <DealFormDialog
+        open={convertingLead !== null}
+        onOpenChange={(open) => !open && setConvertingLead(null)}
+        deal={null}
+        initialLead={convertingLead}
+      />
       <ConfirmDialog
         open={deletingLead !== null}
         onOpenChange={(open) => !open && setDeletingLead(null)}

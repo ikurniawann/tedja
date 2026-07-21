@@ -12,6 +12,7 @@ import {
   normalizePhone,
   requireCompanyScope,
   requireSalesFunnelRole,
+  validateAssignableOwner,
   type SalesFunnelUser,
 } from "@/lib/sales-funnel/server";
 
@@ -129,6 +130,29 @@ export async function PATCH(
       }
     }
     if (body.pic_email === "") body.pic_email = null;
+    // Role sales tidak boleh mengalihkan kepemilikan ke user lain
+    if (
+      user.role === "sales" &&
+      body.owner_user_id &&
+      body.owner_user_id !== user.id
+    ) {
+      return NextResponse.json(
+        { success: false, error: "Role sales hanya boleh menjadi penanggung jawab sendiri" },
+        { status: 403 }
+      );
+    }
+    if (body.owner_user_id) {
+      const ownerError = await validateAssignableOwner(
+        body.owner_user_id,
+        lead.company_id
+      );
+      if (ownerError) {
+        return NextResponse.json(
+          { success: false, error: ownerError },
+          { status: 400 }
+        );
+      }
+    }
 
     const sets: string[] = ["updated_at = now()"];
     const values: unknown[] = [];

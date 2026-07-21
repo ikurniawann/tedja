@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getApiUser } from "@/lib/api/auth";
 import { importBusinessIds, type UserScope } from "@/lib/api/scope";
-import { query } from "@/lib/db";
+import { query, queryOne } from "@/lib/db";
 import type { UserRole } from "@/types";
 
 // Modul Sales Funneling (EPIC-022) — keputusan owner 2026-07-21:
@@ -62,12 +62,58 @@ export const LEAD_SOURCES = [
 
 export const LEAD_TEMPERATURES = ["panas", "hangat", "dingin"] as const;
 
+export const DEAL_EVENT_TYPES = [
+  "gathering",
+  "field-trip",
+  "ulang-tahun",
+  "buyout-venue",
+  "lainnya",
+] as const;
+
 export const LEAD_STATUSES = [
   "baru",
   "dihubungi",
   "qualified",
   "tidak-cocok",
 ] as const;
+
+/**
+ * Validasi penanggung jawab (owner_user_id) — temuan security gate Fase B:
+ * harus user ber-role sales/super_admin dan satu company dengan lead/deal-nya
+ * (super_admin/holding tanpa company tetap boleh). Mengembalikan pesan error
+ * atau null bila valid.
+ */
+export async function validateAssignableOwner(
+  ownerUserId: string,
+  companyId: string | null
+): Promise<string | null> {
+  const owner = await queryOne<{
+    role: UserRole;
+    company_id: string | null;
+  }>(
+    `SELECT role, company_id FROM configuration.users WHERE id = $1`,
+    [ownerUserId]
+  );
+  if (!owner) return "Penanggung jawab tidak ditemukan";
+  if (!SALES_FUNNEL_ROLES.includes(owner.role)) {
+    return "Penanggung jawab harus user ber-role sales atau super admin";
+  }
+  if (companyId && owner.company_id && owner.company_id !== companyId) {
+    return "Penanggung jawab berada di luar venue lead/deal ini";
+  }
+  return null;
+}
+
+/** Valid bila string YYYY-MM-DD adalah tanggal kalender sungguhan. */
+export function isValidCalendarDate(value: string): boolean {
+  const [y, m, d] = value.split("-").map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d));
+  return (
+    date.getUTCFullYear() === y &&
+    date.getUTCMonth() === m - 1 &&
+    date.getUTCDate() === d
+  );
+}
 
 /** Normalisasi nomor WA ke digit kanonik 62… (0812/812/+62 → 62812…). */
 export function normalizePhone(raw: string): string {

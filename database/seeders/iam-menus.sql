@@ -178,4 +178,5 @@ WHERE deleted_at IS NULL
     'settings.wa_gateway', 'settings.payment-gateways',
     'crm.members.reviews',
     -- EPIC-022 Sales Funneling (21 Jul 2026):
-    'sales-funnel', 'sales-funnel.leads');
+    'sales-funnel', 'sales-funnel.leads',
+    'sales-funnel.pipeline', 'sales-funnel.settings');

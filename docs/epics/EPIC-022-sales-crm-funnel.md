@@ -234,3 +234,34 @@ Menu didaftarkan via delta INSERT `iam.menus` + `iam.role_menu_permissions`
   filter, email import. Build + typecheck bersih (0 error baru), migrasi
   terverifikasi di DB dev, PM2 restart, smoke test 200/401 OK.
   Belum: E2E login role sales (butuh akun uji — human QA).
+- 2026-07-21 — **Fase B SELESAI & live di dev.** Pipeline Kanban Deals:
+  delta `20260721160000_sales_funnel_fase_b.sql` applied — menu
+  `sales-funnel.pipeline` (grant super_admin+sales) + `sales-funnel.settings`
+  (super_admin saja), keduanya masuk whitelist retire `iam-menus.sql`.
+  API: `GET/POST /api/sales-funnel/deals` (kanban + konversi lead→deal;
+  lead baru/dihubungi otomatis qualified; deal mewarisi venue dari lead;
+  masuk tahap pertama aktif), `PATCH/DELETE /deals/[id]` dengan aturan
+  tahap — Menang wajib value_final + event_date (otomatis fix, closed_at
+  diisi), Kalah wajib lost_reason_id, kembali ke tahap berjalan mereset
+  closed_at/lost_reason, setiap pindah mencatat `entered_stage_at`;
+  `GET /stages` (+`?all=1` super_admin), `PATCH /stages/[id]` (super_admin;
+  tolak nonaktifkan tahap Menang/Kalah atau tahap ber-deal berjalan);
+  `GET /lost-reasons`. UI: `src/features/sales-funnel/pipeline/` (kanban
+  @hello-pangea/dnd pola HRIS, optimistic update + rollback, badge macet
+  per `stuck_threshold_days`, dialog wajib Menang/Kalah), tombol "Konversi
+  ke Deal" di tabel Leads, `src/features/sales-funnel/settings/` halaman
+  Pengaturan Funnel (guard server-side super_admin di route — role sales
+  bisa capai prefix via ROLE_MODULE_PATHS).
+  Gate review PASS (0 CRITICAL): HIGH unbounded deals query → LIMIT 500 +
+  window closed 90 hari; MEDIUM owner_user_id client-trusted (security +
+  code review, juga berlaku di leads Fase A) → `validateAssignableOwner`
+  (role sales/super_admin + satu company) DAN role sales hanya boleh
+  assign dirinya sendiri, diterapkan di deals & leads POST/PATCH; MEDIUM
+  optimistic update tak sinkron closed_at/is_won → patch cache lengkap
+  dari cache stages; MEDIUM lead picker tanpa debounce → debounce 300ms;
+  + validasi tanggal kalender (tolak 9999-13-40). LOW ditunda: oracle
+  403/404 (pola Fase A, keputusan produk), picker lead cap 20 baris.
+  Typecheck 0 error baru, build bersih, migrasi + menu/grant terverifikasi
+  di DB dev, PM2 restart, smoke test 401 fail-closed OK.
+  Belum: E2E kanban role sales (butuh akun uji — human QA). Sisa: Fase C
+  (aktivitas + follow-up + pengingat WA), D (360°), E (laporan).
