@@ -40,10 +40,20 @@ export function DealCard({ deal, onClick }: DealCardProps) {
   const value = deal.value_final ?? deal.value_estimate;
 
   return (
-    <button
-      type="button"
+    // Sengaja div, BUKAN <button>: @hello-pangea/dnd memblokir drag yang
+    // dimulai dari elemen interaktif, jadi kartu <button> tak bisa digeser
+    // (pola sama dengan kartu kanban pipeline HRIS).
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onClick}
-      className="w-full rounded-xl border border-gray-200/80 bg-white p-3 text-left shadow-sm transition hover:border-pink-300 hover:shadow"
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onClick();
+        }
+      }}
+      className="w-full cursor-pointer rounded-xl border border-gray-200/80 bg-white p-3 text-left shadow-sm transition hover:border-pink-300 hover:shadow"
     >
       <div className="flex items-start justify-between gap-2">
         <p className="text-sm font-semibold text-gray-900">{deal.title}</p>
@@ -90,6 +100,6 @@ export function DealCard({ deal, onClick }: DealCardProps) {
           )}
         </div>
       ) : null}
-    </button>
+    </div>
   );
 }

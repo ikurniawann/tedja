@@ -211,11 +211,16 @@ export function SalesFunnelPipelinePage() {
                       >
                         {stageDeals.map((deal, index) => (
                           <Draggable key={deal.id} draggableId={deal.id} index={index}>
-                            {(dragProvided) => (
+                            {(dragProvided, dragSnapshot) => (
                               <div
                                 ref={dragProvided.innerRef}
                                 {...dragProvided.draggableProps}
                                 {...dragProvided.dragHandleProps}
+                                className={
+                                  dragSnapshot.isDragging
+                                    ? "rotate-1 opacity-90 shadow-lg"
+                                    : ""
+                                }
                               >
                                 <DealCard
                                   deal={deal}
