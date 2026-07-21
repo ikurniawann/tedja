@@ -136,6 +136,17 @@ export async function PATCH(
            SET status = $1, updated_at = now() WHERE id = $2`,
           [status, id]
         );
+        // Quotation diterima = angka kesepakatan — estimasi deal ikut
+        // (prefill nilai final saat Menang membaca value_estimate)
+        if (status === "diterima") {
+          await client.query(
+            `UPDATE crm.crm_sales_deals d
+             SET value_estimate = q.total, updated_at = now()
+             FROM crm.crm_sales_quotations q
+             WHERE q.id = $1 AND d.id = q.deal_id AND d.closed_at IS NULL`,
+            [id]
+          );
+        }
       }
       const result = await client.query(
         `SELECT id, quote_number, status, total FROM crm.crm_sales_quotations

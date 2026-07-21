@@ -440,6 +440,25 @@ Keputusan owner FINAL (2026-07-21) — Fase F resmi on-progress:
   401 fail-closed. Sisa Fase F: F2 (PDF + summary WA + transisi
   status), F3 (tombol Realisasi → potong stok gudang venue dari resep;
   prasyarat pos_recipes terisi).
+- 2026-07-21 — **Fase F2 SELESAI & live di dev.** PDF + summary WA +
+  transisi status quotation. `src/lib/sales-funnel/quotation-pdf.ts`
+  (pdfkit A4 pola payslip-pdf: kop company/venue, info instansi/PIC/
+  acara, tabel item ber-"pax", subtotal/PPN/total, catatan, ttd;
+  pindah halaman MANUAL per baris via heightOfString — page-break
+  implisit pdfkit di tengah baris membuat kolom tercecer, temuan HIGH
+  gate). Route GET `/quotations/[id]/pdf` (attachment, filename
+  tersanitasi) + POST `/quotations/[id]/send-wa` (summary teks item+
+  total+masa berlaku ke PIC via gateway, rate limit 1/deal/60dtk,
+  sukses → status draft→terkirim ber-guard WHERE status='draft' +
+  aktivitas wa di timeline, satu transaksi). Keduanya cek akses dgn
+  fetch minimal SEBELUM materialisasi PII (temuan MEDIUM). PATCH
+  status 'diterima' menyinkronkan value_estimate deal (prefill nilai
+  final saat Menang = angka kesepakatan). UI: ikon unduh PDF, kirim
+  WA, tombol ✓ Diterima / ✗ Ditolak saat status terkirim. Gate: 0
+  CRITICAL; 1 HIGH (layout PDF) + 1 MEDIUM (urutan fetch) diperbaiki;
+  LOW isPending bersama antar baris = diterima (UX minor). Typecheck
+  0 error baru, build bersih, PM2 restart, smoke 401 fail-closed.
+  Sisa: F3 Realisasi bahan baku (prasyarat pos_recipes terisi).
 - 2026-07-21 — **Fase F (Quotation) diusulkan** atas permintaan owner:
   builder quotation di deal (item bebas + Add Produk per pax + opsi PPN)
   dan realisasi pengurangan bahan baku dari resep produk. Eksplorasi

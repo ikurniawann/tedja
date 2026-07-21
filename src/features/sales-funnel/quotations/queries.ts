@@ -7,6 +7,7 @@ import {
   deleteQuotation,
   fetchCatalogProducts,
   fetchQuotations,
+  sendQuotationWa,
   updateQuotation,
 } from "./api";
 import type { QuotationFormValues, QuotationStatus } from "./types";
@@ -80,6 +81,20 @@ export function useDeleteQuotation() {
     onSuccess: () => {
       toast.success("Quotation dihapus");
       invalidateQuotationCaches(queryClient);
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+}
+
+export function useSendQuotationWa() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => sendQuotationWa(id),
+    onSuccess: (body: { message?: string }) => {
+      toast.success(body.message ?? "Quotation terkirim");
+      invalidateQuotationCaches(queryClient);
+      // kirim WA tercatat sebagai aktivitas di timeline deal
+      queryClient.invalidateQueries({ queryKey: ["sales-funnel", "activities"] });
     },
     onError: (error: Error) => toast.error(error.message),
   });

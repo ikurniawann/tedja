@@ -65,3 +65,11 @@ export async function deleteQuotation(id: string) {
     await parseError(res, "Gagal menghapus quotation");
   }
 }
+
+export async function sendQuotationWa(id: string): Promise<{ message?: string }> {
+  const res = await fetch(`/api/sales-funnel/quotations/${id}/send-wa`, {
+    method: "POST",
+  });
+  if (!res.ok) await parseError(res, "Gagal mengirim quotation");
+  return res.json();
+}

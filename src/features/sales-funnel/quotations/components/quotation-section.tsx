@@ -1,12 +1,26 @@
 "use client";
 
 import { useState } from "react";
-import { FileText, Loader2, Plus, Trash2 } from "lucide-react";
+import {
+  Check,
+  FileDown,
+  FileText,
+  Loader2,
+  Plus,
+  Send,
+  Trash2,
+  X,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { formatRupiah } from "../../pipeline/types";
-import { useDeleteQuotation, useQuotations } from "../queries";
+import {
+  useDeleteQuotation,
+  useQuotations,
+  useSendQuotationWa,
+  useUpdateQuotation,
+} from "../queries";
 import {
   QUOTATION_STATUS_BADGES,
   QUOTATION_STATUS_LABELS,
@@ -26,6 +40,8 @@ export function QuotationSection({ dealId, enabled }: QuotationSectionProps) {
 
   const quotationsQuery = useQuotations(dealId, enabled);
   const deleteMutation = useDeleteQuotation();
+  const sendWaMutation = useSendQuotationWa();
+  const statusMutation = useUpdateQuotation();
   const quotations = quotationsQuery.data ?? [];
 
   return (
@@ -91,16 +107,70 @@ export function QuotationSection({ dealId, enabled }: QuotationSectionProps) {
                   {formatRupiah(quotation.total)}
                 </p>
               </div>
-              {!quotation.stock_deducted_at ? (
-                <button
-                  type="button"
-                  onClick={() => setDeleting(quotation)}
-                  title="Hapus quotation"
-                  className="shrink-0 text-gray-300 hover:text-red-500"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              ) : null}
+              <div className="flex shrink-0 flex-col items-center gap-1.5">
+                <div className="flex items-center gap-1.5">
+                  <a
+                    href={`/api/sales-funnel/quotations/${quotation.id}/pdf`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title="Unduh PDF"
+                    className="text-gray-400 hover:text-pink-600"
+                  >
+                    <FileDown className="h-4 w-4" />
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => sendWaMutation.mutate(quotation.id)}
+                    disabled={sendWaMutation.isPending}
+                    title="Kirim summary ke WA PIC"
+                    className="text-gray-400 hover:text-emerald-600 disabled:opacity-40"
+                  >
+                    <Send className="h-4 w-4" />
+                  </button>
+                  {!quotation.stock_deducted_at ? (
+                    <button
+                      type="button"
+                      onClick={() => setDeleting(quotation)}
+                      title="Hapus quotation"
+                      className="text-gray-300 hover:text-red-500"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  ) : null}
+                </div>
+                {quotation.status === "terkirim" ? (
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        statusMutation.mutate({
+                          id: quotation.id,
+                          values: { status: "diterima" },
+                        })
+                      }
+                      disabled={statusMutation.isPending}
+                      title="Tandai diterima"
+                      className="rounded bg-emerald-50 p-1 text-emerald-600 hover:bg-emerald-100"
+                    >
+                      <Check className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        statusMutation.mutate({
+                          id: quotation.id,
+                          values: { status: "ditolak" },
+                        })
+                      }
+                      disabled={statusMutation.isPending}
+                      title="Tandai ditolak"
+                      className="rounded bg-red-50 p-1 text-red-500 hover:bg-red-100"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ) : null}
+              </div>
             </li>
           ))}
         </ul>
