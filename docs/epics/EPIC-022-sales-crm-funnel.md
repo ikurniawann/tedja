@@ -227,18 +227,18 @@ Sub-fase (PR-sized):
   idempotent via `stock_deducted_at`, reference ke quotation/deal;
   bonus: daftar kebutuhan bahan per acara utk ops.
 
-PENDING keputusan owner (blocker eksekusi):
-1. **Momen pengurangan stok**: (a) otomatis saat deal Menang, (b) otomatis
-   saat tanggal acara, (c) tombol manual "Realisasi" oleh ops menjelang
-   acara. Rekomendasi: (c) — stok berkurang saat bahan benar-benar
-   disiapkan, bukan saat kontrak diteken.
-2. PPN default 11% mengikuti preseden purchasing?
-3. Katalog produk = `pos.pos_products` + resep via `pos_recipes` — atau
-   pakai jalur manufacturing (`item.products` + `bom_items`)?
-   Rekomendasi: pos_products (satu-satunya yang berisi data & berharga).
-4. Output quotation: teks WA rapi via gateway saja, atau perlu PDF?
-5. Stok gudang mana yang dikurangi (inventory punya branch_id +
-   warehouse_id) — gudang venue deal?
+Limitasi diketahui (temuan security F1, diterima): `pos.pos_products`
+tidak punya kolom company/branch — katalog produk global untuk semua
+venue (konsisten dgn seluruh endpoint POS existing, "operasi masih
+single-venue"). Saat bisnis benar-benar multi-venue, picker produk
+quotation & realisasi stok F3 perlu ditinjau ulang.
+
+Keputusan owner FINAL (2026-07-21) — Fase F resmi on-progress:
+1. Pengurangan stok via **tombol manual "Realisasi"** menjelang acara.
+2. **PPN default 11%** (preseden purchasing), bisa dimatikan per quotation.
+3. Katalog = **`pos.pos_products` + resep `pos_recipes`**.
+4. Output: **PDF** + **summary order teks WA** via gateway.
+5. Stok yang dikurangi = **gudang venue (branch) deal** tersebut.
 
 ## Acceptance Criteria (ringkas)
 
@@ -414,6 +414,32 @@ PENDING keputusan owner (blocker eksekusi):
   sales butuh baris hris.employees ber-phone agar pengingat WA sampai;
   (3) rekap harian owner menunggu mesin pengirim EPIC-020 Fase B;
   (4) funnel akurat penuh untuk deal yang dibuat SETELAH Fase E live.
+- 2026-07-21 — **Fase F1 SELESAI & live di dev.** Quotation Builder +
+  PPN. Delta `20260721230000_sales_funnel_fase_f1.sql`:
+  `crm_sales_quotations` (quote_number unik dari sequence QT-YYMM-XXXX,
+  status draft/terkirim/diterima/ditolak, use_ppn + ppn_persen default
+  11 ber-CHECK 0-100, stock_deducted_at utk idempotensi realisasi F3) +
+  `crm_sales_quotation_items` (item_type produk/bebas, CHECK produk
+  wajib product_id, CASCADE). API: GET/POST
+  `/deals/[id]/quotations` (total SELALU dihitung server, item batch
+  1 INSERT, semua dalam withTransaction, total → value_estimate deal
+  berjalan), PATCH/DELETE `/quotations/[id]` (replace items + status;
+  guard beku `stock_deducted_at IS NULL` DI DALAM SQL — anti-TOCTOU
+  dgn tombol Realisasi F3; DELETE menghitung ulang value_estimate dari
+  quotation tersisa terbaru), GET `/products` (katalog pos_products).
+  UI `src/features/sales-funnel/quotations/`: section Quotation di
+  Sheet deal + builder dialog (Add Produk isi nama+harga dari
+  base_price bisa dioverride, Item Bebas, toggle PPN + persen, total
+  live; SEMUA baris wajib lengkap — baris setengah jadi tidak dibuang
+  diam-diam, temuan HIGH gate). Gate: security 0 CRITICAL/HIGH
+  (TOCTOU + batas numeric(14,2) + kalender valid_until diperbaiki);
+  review 2 HIGH (value_estimate basi pasca-hapus; baris hilang senyap)
+  diperbaiki, LOW sequence nomor global lintas tenant = diterima
+  (operasi single-venue, dicatat). Typecheck 0 error baru, build
+  bersih, migrasi + CHECK ppn applied di DB dev, PM2 restart, smoke
+  401 fail-closed. Sisa Fase F: F2 (PDF + summary WA + transisi
+  status), F3 (tombol Realisasi → potong stok gudang venue dari resep;
+  prasyarat pos_recipes terisi).
 - 2026-07-21 — **Fase F (Quotation) diusulkan** atas permintaan owner:
   builder quotation di deal (item bebas + Add Produk per pax + opsi PPN)
   dan realisasi pengurangan bahan baku dari resep produk. Eksplorasi

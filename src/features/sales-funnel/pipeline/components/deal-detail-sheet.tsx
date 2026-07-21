@@ -34,6 +34,7 @@ import {
 } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
 import { ORG_TYPE_LABELS } from "../../leads/types";
+import { QuotationSection } from "../../quotations";
 import {
   useActivities,
   useCreateActivity,
@@ -206,6 +207,9 @@ export function DealDetailSheet({ deal, onClose, onEdit }: DealDetailSheetProps)
                 <p className="text-gray-900">{deal.owner_name ?? "—"}</p>
               </div>
             </div>
+
+            {/* ── Quotation (Fase F1) ── */}
+            <QuotationSection dealId={deal.id} enabled={open} />
 
             {/* ── Kirim WA cepat ── */}
             <div className="space-y-2.5 border-b border-gray-100 px-6 py-4">

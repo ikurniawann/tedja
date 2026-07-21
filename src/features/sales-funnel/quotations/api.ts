@@ -1,0 +1,67 @@
+import type {
+  CatalogProduct,
+  Quotation,
+  QuotationFormValues,
+  QuotationStatus,
+} from "./types";
+import { formToPayload } from "./types";
+
+async function parseError(res: Response, fallback: string): Promise<never> {
+  let message = fallback;
+  try {
+    const body = (await res.json()) as { error?: string; message?: string };
+    message = body.error ?? body.message ?? fallback;
+  } catch {
+    // body bukan JSON — pakai fallback
+  }
+  throw new Error(message);
+}
+
+export async function fetchQuotations(dealId: string): Promise<Quotation[]> {
+  const res = await fetch(`/api/sales-funnel/deals/${dealId}/quotations`);
+  if (!res.ok) await parseError(res, "Gagal memuat quotation");
+  const body = (await res.json()) as { data: Quotation[] };
+  return body.data;
+}
+
+export async function fetchCatalogProducts(): Promise<CatalogProduct[]> {
+  const res = await fetch("/api/sales-funnel/products");
+  if (!res.ok) await parseError(res, "Gagal memuat katalog produk");
+  const body = (await res.json()) as { data: CatalogProduct[] };
+  return body.data;
+}
+
+export async function createQuotation(dealId: string, form: QuotationFormValues) {
+  const res = await fetch(`/api/sales-funnel/deals/${dealId}/quotations`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(formToPayload(form)),
+  });
+  if (!res.ok) await parseError(res, "Gagal membuat quotation");
+  return res.json();
+}
+
+export async function updateQuotation(
+  id: string,
+  values: { form?: QuotationFormValues; status?: QuotationStatus }
+) {
+  const res = await fetch(`/api/sales-funnel/quotations/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      ...(values.status ? { status: values.status } : {}),
+      ...(values.form ? { payload: formToPayload(values.form) } : {}),
+    }),
+  });
+  if (!res.ok) await parseError(res, "Gagal memperbarui quotation");
+  return res.json();
+}
+
+export async function deleteQuotation(id: string) {
+  const res = await fetch(`/api/sales-funnel/quotations/${id}`, {
+    method: "DELETE",
+  });
+  if (!res.ok && res.status !== 204) {
+    await parseError(res, "Gagal menghapus quotation");
+  }
+}
