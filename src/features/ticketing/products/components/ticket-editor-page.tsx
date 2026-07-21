@@ -65,19 +65,21 @@ export function TicketEditorPage({ productId }: { productId: string }) {
         </p>
       </div>
 
-      <Tabs defaultValue="info">
-        <TabsList>
+      {/* flex-col eksplisit — pola repo (lihat logbook-page): tanpa ini
+          TabsList jatuh ke samping konten, bukan di atas */}
+      <Tabs defaultValue="info" className="w-full flex-col">
+        <TabsList className="grid h-9 w-full max-w-md grid-cols-3">
           <TabsTrigger value="info">Info & Varian</TabsTrigger>
           <TabsTrigger value="calendar">Kalender</TabsTrigger>
-          <TabsTrigger value="policy">Kebijakan Operasional</TabsTrigger>
+          <TabsTrigger value="policy">Kebijakan</TabsTrigger>
         </TabsList>
-        <TabsContent value="info" className="pt-4">
+        <TabsContent value="info" className="mt-4">
           <InfoVariantsTab detail={detail} />
         </TabsContent>
-        <TabsContent value="calendar" className="pt-4">
+        <TabsContent value="calendar" className="mt-4">
           <CalendarTab detail={detail} />
         </TabsContent>
-        <TabsContent value="policy" className="pt-4">
+        <TabsContent value="policy" className="mt-4">
           <PolicyTab detail={detail} />
         </TabsContent>
       </Tabs>
