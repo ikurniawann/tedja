@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { successResponse, noContentResponse } from "@/lib/api/auth";
-import { getApiUserScope } from "@/lib/api/scope";
 import { queryOne } from "@/lib/db";
+import { findAccessibleLead } from "@/lib/sales-funnel/access";
 import {
   LEAD_ORG_TYPES,
   LEAD_SOURCES,
@@ -10,10 +10,8 @@ import {
   LEAD_TEMPERATURES,
   isValidNormalizedPhone,
   normalizePhone,
-  requireCompanyScope,
   requireSalesFunnelRole,
   validateAssignableOwner,
-  type SalesFunnelUser,
 } from "@/lib/sales-funnel/server";
 
 const updateLeadSchema = z.object({
@@ -30,52 +28,6 @@ const updateLeadSchema = z.object({
   notes: z.string().trim().max(2000).nullable().optional(),
   owner_user_id: z.string().uuid().nullable().optional(),
 });
-
-type LeadRow = {
-  id: string;
-  company_id: string;
-  branch_id: string;
-  owner_user_id: string | null;
-};
-
-/** Ambil lead + tolak yang di luar scope bisnis / bukan milik sales ybs. */
-async function findAccessibleLead(
-  id: string,
-  user: SalesFunnelUser
-): Promise<{ lead: LeadRow | null; forbidden: boolean }> {
-  const scope = await getApiUserScope();
-  // Fail-closed: selain super_admin, tanpa company scope = tolak (bukan
-  // lewati filter) — acceptance criteria tenant isolation EPIC-022.
-  if (requireCompanyScope(user, scope)) {
-    return { lead: null, forbidden: true };
-  }
-
-  const lead = await queryOne<LeadRow>(
-    `SELECT id, company_id, branch_id, owner_user_id
-     FROM crm.crm_sales_leads WHERE id = $1 AND deleted_at IS NULL`,
-    [id]
-  );
-  if (!lead) return { lead: null, forbidden: false };
-
-  if (scope?.companyId && lead.company_id !== scope.companyId) {
-    return { lead: null, forbidden: true };
-  }
-  if (
-    scope?.businessScope === "branch" &&
-    scope.branchId &&
-    lead.branch_id !== scope.branchId
-  ) {
-    return { lead: null, forbidden: true };
-  }
-  if (
-    user.role === "sales" &&
-    lead.owner_user_id !== null &&
-    lead.owner_user_id !== user.id
-  ) {
-    return { lead: null, forbidden: true };
-  }
-  return { lead, forbidden: false };
-}
 
 export async function PATCH(
   request: NextRequest,

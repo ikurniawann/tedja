@@ -19,6 +19,7 @@ import { TableRow } from "@/components/ui/table";
 import { PurchasingListSection } from "@/modules/purchasing/components/list/PurchasingListSection";
 import { useStages, useUpdateStage } from "../../pipeline/queries";
 import type { SalesStage, StageUpdatePayload } from "../../pipeline/types";
+import { WaTemplatesSection } from "./wa-templates-section";
 
 interface StageForm {
   name: string;
@@ -155,6 +156,8 @@ export function FunnelSettingsPage() {
           </div>
         )}
       </PurchasingListSection>
+
+      <WaTemplatesSection />
 
       <Dialog
         open={editingStage !== null}

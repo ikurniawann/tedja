@@ -19,6 +19,12 @@ export interface WhatsAppResult {
   success: boolean;
   /** Alasan kegagalan yang aman ditampilkan di log (tanpa isi pesan). */
   reason?: string;
+  /**
+   * Status kirim tidak pasti (request timeout — pesan mungkin saja sudah
+   * terkirim). Pemanggil yang butuh at-most-once WAJIB cek flag ini,
+   * jangan mencocokkan string `reason`.
+   */
+  timedOut?: boolean;
   provider?: WhatsAppProvider;
   messageId?: string;
 }

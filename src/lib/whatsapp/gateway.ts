@@ -75,13 +75,13 @@ export async function sendGatewayText(
       messageId: (data as { messageId?: string })?.messageId ?? undefined,
     };
   } catch (error) {
-    const reason =
-      error instanceof Error && error.name === "AbortError"
-        ? "Gateway tidak merespons (timeout)"
-        : error instanceof Error
-          ? error.message
-          : "Unknown error";
-    return { success: false, provider: "gateway", reason };
+    const isTimeout = error instanceof Error && error.name === "AbortError";
+    const reason = isTimeout
+      ? "Gateway tidak merespons (timeout)"
+      : error instanceof Error
+        ? error.message
+        : "Unknown error";
+    return { success: false, provider: "gateway", reason, timedOut: isTimeout };
   }
 }
 

@@ -12,5 +12,10 @@ export async function register() {
 
     const { startGoogleReviewSync } = await import("@/lib/crm/google-reviews-sync-job");
     startGoogleReviewSync();
+
+    const { startSalesFollowupWatcher } = await import(
+      "@/lib/sales-funnel/followup-reminder-watcher"
+    );
+    startSalesFollowupWatcher();
   }
 }

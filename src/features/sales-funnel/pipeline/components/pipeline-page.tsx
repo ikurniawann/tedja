@@ -29,6 +29,7 @@ import {
 } from "../types";
 import { CloseDealDialog, type CloseDealTarget } from "./close-deal-dialog";
 import { DealCard } from "./deal-card";
+import { DealDetailSheet } from "./deal-detail-sheet";
 import { DealFormDialog } from "./deal-form-dialog";
 
 const ALL = "all";
@@ -43,6 +44,8 @@ export function SalesFunnelPipelinePage() {
   const [search, setSearch] = useState("");
   const [eventType, setEventType] = useState(ALL);
   const [formOpen, setFormOpen] = useState(false);
+  const [detailId, setDetailId] = useState<string | null>(null);
+  const [detailSnapshot, setDetailSnapshot] = useState<SalesDeal | null>(null);
   const [editingDeal, setEditingDeal] = useState<SalesDeal | null>(null);
   const [deletingDeal, setDeletingDeal] = useState<SalesDeal | null>(null);
   const [closeTarget, setCloseTarget] = useState<CloseDealTarget | null>(null);
@@ -72,6 +75,13 @@ export function SalesFunnelPipelinePage() {
     for (const deal of deals) map.get(deal.stage_id)?.push(deal);
     return map;
   }, [stages, deals]);
+
+  // Detail diambil dari cache agar tetap segar setelah mutasi (pola HRIS);
+  // snapshot saat buka jadi cadangan supaya Sheet tidak tertutup sendiri
+  // ketika deal-nya keluar dari hasil filter/pencarian yang sedang aktif.
+  const detailDeal = detailId
+    ? (deals.find((d) => d.id === detailId) ?? detailSnapshot)
+    : null;
 
   const openDeals = deals.filter((d) => !d.closed_at);
   const pipelineValue = openDeals.reduce(
@@ -207,7 +217,10 @@ export function SalesFunnelPipelinePage() {
                               >
                                 <DealCard
                                   deal={deal}
-                                  onClick={() => setEditingDeal(deal)}
+                                  onClick={() => {
+                                    setDetailId(deal.id);
+                                    setDetailSnapshot(deal);
+                                  }}
                                 />
                               </div>
                             )}
@@ -224,6 +237,14 @@ export function SalesFunnelPipelinePage() {
         </DragDropContext>
       )}
 
+      <DealDetailSheet
+        deal={detailDeal}
+        onClose={() => {
+          setDetailId(null);
+          setDetailSnapshot(null);
+        }}
+        onEdit={(deal) => setEditingDeal(deal)}
+      />
       <DealFormDialog
         open={formOpen || editingDeal !== null}
         onOpenChange={(open) => {

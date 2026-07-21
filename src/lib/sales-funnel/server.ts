@@ -70,6 +70,26 @@ export const DEAL_EVENT_TYPES = [
   "lainnya",
 ] as const;
 
+export const ACTIVITY_TYPES = ["telepon", "wa", "meeting", "catatan"] as const;
+
+/**
+ * Render template pesan WA — substitusi placeholder {pic} {instansi} {acara}
+ * {tanggal_acara} {venue}. Nilai kosong diganti string kosong agar pesan
+ * tetap terkirim rapi.
+ */
+export function renderWaTemplate(
+  body: string,
+  values: Partial<Record<"pic" | "instansi" | "acara" | "tanggal_acara" | "venue", string | null>>
+): string {
+  return body
+    .replace(/\{(pic|instansi|acara|tanggal_acara|venue)\}/g, (_match, key) => {
+      const value = values[key as keyof typeof values];
+      return value ?? "";
+    })
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+}
+
 export const LEAD_STATUSES = [
   "baru",
   "dihubungi",

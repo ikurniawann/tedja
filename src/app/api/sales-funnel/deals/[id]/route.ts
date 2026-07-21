@@ -1,15 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { successResponse, noContentResponse } from "@/lib/api/auth";
-import { getApiUserScope } from "@/lib/api/scope";
 import { queryOne } from "@/lib/db";
+import { findAccessibleDeal } from "@/lib/sales-funnel/access";
 import {
   DEAL_EVENT_TYPES,
   isValidCalendarDate,
-  requireCompanyScope,
   requireSalesFunnelRole,
   validateAssignableOwner,
-  type SalesFunnelUser,
 } from "@/lib/sales-funnel/server";
 
 const updateDealSchema = z.object({
@@ -30,16 +28,6 @@ const updateDealSchema = z.object({
   lost_reason_id: z.string().uuid().nullable().optional(),
 });
 
-type DealRow = {
-  id: string;
-  company_id: string;
-  branch_id: string;
-  owner_user_id: string | null;
-  stage_id: string;
-  event_date: string | null;
-  value_final: string | null;
-};
-
 type StageRow = {
   id: string;
   name: string;
@@ -47,45 +35,6 @@ type StageRow = {
   is_lost: boolean;
   is_active: boolean;
 };
-
-/** Ambil deal + tolak yang di luar scope bisnis / bukan milik sales ybs. */
-async function findAccessibleDeal(
-  id: string,
-  user: SalesFunnelUser
-): Promise<{ deal: DealRow | null; forbidden: boolean }> {
-  const scope = await getApiUserScope();
-  // Fail-closed: selain super_admin, tanpa company scope = tolak
-  if (requireCompanyScope(user, scope)) {
-    return { deal: null, forbidden: true };
-  }
-
-  const deal = await queryOne<DealRow>(
-    `SELECT id, company_id, branch_id, owner_user_id, stage_id, event_date,
-            value_final
-     FROM crm.crm_sales_deals WHERE id = $1 AND deleted_at IS NULL`,
-    [id]
-  );
-  if (!deal) return { deal: null, forbidden: false };
-
-  if (scope?.companyId && deal.company_id !== scope.companyId) {
-    return { deal: null, forbidden: true };
-  }
-  if (
-    scope?.businessScope === "branch" &&
-    scope.branchId &&
-    deal.branch_id !== scope.branchId
-  ) {
-    return { deal: null, forbidden: true };
-  }
-  if (
-    user.role === "sales" &&
-    deal.owner_user_id !== null &&
-    deal.owner_user_id !== user.id
-  ) {
-    return { deal: null, forbidden: true };
-  }
-  return { deal, forbidden: false };
-}
 
 export async function PATCH(
   request: NextRequest,

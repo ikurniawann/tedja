@@ -265,3 +265,34 @@ Menu didaftarkan via delta INSERT `iam.menus` + `iam.role_menu_permissions`
   di DB dev, PM2 restart, smoke test 401 fail-closed OK.
   Belum: E2E kanban role sales (butuh akun uji — human QA). Sisa: Fase C
   (aktivitas + follow-up + pengingat WA), D (360°), E (laporan).
+- 2026-07-21 — **Fase C SELESAI & live di dev.** Aktivitas, Follow-up &
+  Pengingat WA. Delta `20260721180000_sales_funnel_fase_c.sql`: menu
+  `sales-funnel.followups` (grant super_admin+sales, masuk whitelist
+  retire) + seed 3 template WA global. API: CRUD
+  `/api/sales-funnel/activities` (timeline per deal/lead — akses via
+  induk; agenda `view=today` = jatuh tempo hari ini + terlambat, scope
+  company/branch + sales own-or-unassigned), `wa-templates` (baca semua
+  role sales, tulis super_admin, hapus = nonaktifkan is_active),
+  `/deals/[id]/send-wa` (render placeholder {pic}{instansi}{acara}
+  {tanggal_acara}{venue} → gateway → tercatat sebagai aktivitas `wa`
+  selesai; rate limit 1 kirim/deal/60 dtk; normalisasi nomor di titik
+  kirim). Watcher `followup-reminder-watcher.ts` di instrumentation.ts
+  (tiap 5 mnt, maks 10/tick): klaim `reminder_sent_at` atomik SEBELUM
+  kirim (FOR UPDATE SKIP LOCKED) — AC "maksimal 1x" terpenuhi; nomor PJ
+  dari hris.employees.phone via user_id (subquery skalar, BUKAN join —
+  user_id tidak unique, join bisa fan-out dobel kirim); exception tak
+  terduga melepas klaim baris yang belum diproses (finally); timeout
+  gateway = klaim dipertahankan via flag terstruktur `timedOut` di
+  WhatsAppResult (bukan cocok string). Refactor: findAccessibleLead/
+  Deal/Activity dipusatkan di src/lib/sales-funnel/access.ts. UI: klik
+  kartu deal → Sheet detail (ringkasan, kirim WA template/bebas, catat
+  aktivitas, timeline sorot terlambat; snapshot fallback agar Sheet tak
+  tertutup saat deal keluar hasil filter), halaman Follow-up Hari Ini
+  (terlambat merah di atas, toggle selesai, chat WA PIC), kelola template
+  di Pengaturan Funnel. Gate review+security PASS (0 CRITICAL; 2 HIGH
+  watcher & semua MEDIUM diperbaiki). Typecheck 0 error baru, build
+  bersih, migrasi+menu+seed terverifikasi DB dev, SQL watcher dry-run OK,
+  PM2 restart, smoke 401 fail-closed. Ditunda sadar: rekap harian owner
+  menunggu mesin pengirim EPIC-020 Fase B; regression test invariant
+  venue aktivitas = venue induk (belum ada test module ini — human QA).
+  Sisa: Fase D (360° + tautan pos_customers), E (laporan funnel).
