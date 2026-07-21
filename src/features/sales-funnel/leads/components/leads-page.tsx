@@ -2,24 +2,15 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  MessageCircle,
-  MoreHorizontal,
-  Pencil,
-  Plus,
-  Search,
-  Trash2,
-  Upload,
-} from "lucide-react";
+  ArrowUpTrayIcon,
+  PlusIcon,
+  UserPlusIcon,
+} from "@heroicons/react/24/outline";
+import { Loader2, MessageCircle, Search, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import {
   Select,
   SelectContent,
@@ -27,14 +18,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { TableRow } from "@/components/ui/table";
+import { PurchasingListSection } from "@/modules/purchasing/components/list/PurchasingListSection";
+import { MasterTableActions } from "@/features/master-data/components/master-table-actions";
 import { useDeleteLead, useLeads } from "../queries";
 import { LeadFormDialog } from "./lead-form-dialog";
 import { LeadImportDialog } from "./lead-import-dialog";
@@ -51,19 +37,20 @@ import {
 const ALL = "all";
 
 const STATUS_BADGE: Record<LeadStatus, string> = {
-  baru: "bg-blue-100 text-blue-700",
-  dihubungi: "bg-amber-100 text-amber-700",
-  qualified: "bg-emerald-100 text-emerald-700",
-  "tidak-cocok": "bg-zinc-200 text-zinc-600",
+  baru: "border-0 bg-blue-100 font-normal text-blue-700",
+  dihubungi: "border-0 bg-amber-100 font-normal text-amber-700",
+  qualified: "border-0 bg-emerald-100 font-normal text-emerald-700",
+  "tidak-cocok": "border-0 bg-gray-100 font-normal text-gray-500",
 };
 
 const TEMPERATURE_BADGE: Record<LeadTemperature, string> = {
-  panas: "bg-red-100 text-red-700",
-  hangat: "bg-orange-100 text-orange-700",
-  dingin: "bg-sky-100 text-sky-700",
+  panas: "border-0 bg-red-100 font-normal text-red-700",
+  hangat: "border-0 bg-orange-100 font-normal text-orange-700",
+  dingin: "border-0 bg-sky-100 font-normal text-sky-700",
 };
 
 export function SalesFunnelLeadsPage() {
+  const [searchQuery, setSearchQuery] = useState("");
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState(ALL);
   const [orgType, setOrgType] = useState(ALL);
@@ -74,21 +61,20 @@ export function SalesFunnelLeadsPage() {
   const [editingLead, setEditingLead] = useState<SalesLead | null>(null);
   const [deletingLead, setDeletingLead] = useState<SalesLead | null>(null);
 
-  const [debouncedSearch, setDebouncedSearch] = useState("");
   useEffect(() => {
-    const timer = setTimeout(() => setDebouncedSearch(search), 400);
-    return () => clearTimeout(timer);
-  }, [search]);
+    const timeout = window.setTimeout(() => setSearch(searchQuery.trim()), 300);
+    return () => window.clearTimeout(timeout);
+  }, [searchQuery]);
 
   const filters = useMemo(
     () => ({
-      q: debouncedSearch,
+      q: search,
       status: status === ALL ? "" : status,
       org_type: orgType === ALL ? "" : orgType,
       source: source === ALL ? "" : source,
       page,
     }),
-    [debouncedSearch, status, orgType, source, page]
+    [search, status, orgType, source, page]
   );
 
   const { data, isLoading } = useLeads(filters);
@@ -96,7 +82,10 @@ export function SalesFunnelLeadsPage() {
 
   const leads = data?.data ?? [];
   const pagination = data?.pagination;
+  const total = pagination?.total ?? 0;
   const totalPages = pagination?.totalPages ?? 1;
+  const hasFilter =
+    Boolean(search) || status !== ALL || orgType !== ALL || source !== ALL;
 
   const openCreate = () => {
     setEditingLead(null);
@@ -108,187 +97,221 @@ export function SalesFunnelLeadsPage() {
   };
 
   return (
-    <div className="space-y-4 p-4 sm:p-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <div className="space-y-6">
+      <div className="flex flex-col items-start justify-between gap-4 border-b border-gray-200/70 pb-4 sm:flex-row sm:items-center">
         <div>
-          <h1 className="text-xl font-semibold">Leads</h1>
-          <p className="text-sm text-muted-foreground">
-            Prospek B2B — corporate, sekolah, komunitas & booking acara privat
+          <h1 className="text-2xl font-bold text-gray-900">Leads</h1>
+          <p className="mt-1 text-sm text-gray-500">
+            Prospek B2B corporate, sekolah, komunitas & acara privat — {total} lead terdaftar
           </p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setImportOpen(true)}>
-            <Upload className="mr-2 h-4 w-4" /> Import CSV
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setImportOpen(true)}
+            className="h-10 w-full gap-2 rounded-lg border-pink-200 px-3 text-sm font-semibold text-pink-700 hover:bg-pink-50 sm:w-auto"
+          >
+            <ArrowUpTrayIcon className="h-4 w-4" />
+            Import CSV
           </Button>
-          <Button onClick={openCreate}>
-            <Plus className="mr-2 h-4 w-4" /> Tambah Lead
+          <Button
+            type="button"
+            onClick={openCreate}
+            className="h-10 w-full gap-2 rounded-lg bg-pink-600 px-3 text-sm font-semibold text-white shadow-sm hover:bg-pink-700 sm:w-auto"
+          >
+            <PlusIcon className="h-4 w-4" />
+            Tambah Lead
           </Button>
         </div>
       </div>
 
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-        <div className="relative sm:w-72">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input
-            className="pl-8"
-            placeholder="Cari instansi / PIC / no. WA…"
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setPage(1);
-            }}
-          />
-        </div>
-        <Select value={status} onValueChange={(v) => { setStatus(v); setPage(1); }}>
-          <SelectTrigger className="sm:w-40">
-            <SelectValue placeholder="Status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL}>Semua Status</SelectItem>
-            {Object.entries(STATUS_LABELS).map(([value, label]) => (
-              <SelectItem key={value} value={value}>{label}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select value={orgType} onValueChange={(v) => { setOrgType(v); setPage(1); }}>
-          <SelectTrigger className="sm:w-44">
-            <SelectValue placeholder="Jenis Instansi" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL}>Semua Jenis</SelectItem>
-            {Object.entries(ORG_TYPE_LABELS).map(([value, label]) => (
-              <SelectItem key={value} value={value}>{label}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select value={source} onValueChange={(v) => { setSource(v); setPage(1); }}>
-          <SelectTrigger className="sm:w-40">
-            <SelectValue placeholder="Sumber" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL}>Semua Sumber</SelectItem>
-            {Object.entries(SOURCE_LABELS).map(([value, label]) => (
-              <SelectItem key={value} value={value}>{label}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      <div className="rounded-md border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Instansi</TableHead>
-              <TableHead>PIC</TableHead>
-              <TableHead>Kota</TableHead>
-              <TableHead>Sumber</TableHead>
-              <TableHead>Suhu</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Penanggung Jawab</TableHead>
-              <TableHead className="w-16 text-right">Aksi</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              <TableRow>
-                <TableCell colSpan={8} className="py-10 text-center text-muted-foreground">
-                  Memuat…
-                </TableCell>
-              </TableRow>
-            ) : leads.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={8} className="py-10 text-center text-muted-foreground">
-                  Belum ada lead. Tambah manual atau import CSV.
-                </TableCell>
-              </TableRow>
-            ) : (
-              leads.map((lead) => (
-                <TableRow key={lead.id}>
-                  <TableCell>
-                    <div className="font-medium">{lead.org_name}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {ORG_TYPE_LABELS[lead.org_type]}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div>{lead.pic_name}</div>
-                    <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                      {lead.pic_phone}
-                      <a
-                        href={`https://wa.me/${lead.pic_phone}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        title="Chat WA"
-                        className="text-emerald-600 hover:text-emerald-700"
-                      >
-                        <MessageCircle className="h-3.5 w-3.5" />
-                      </a>
-                    </div>
-                  </TableCell>
-                  <TableCell>{lead.city ?? "—"}</TableCell>
-                  <TableCell>{SOURCE_LABELS[lead.source]}</TableCell>
-                  <TableCell>
-                    <Badge variant="secondary" className={TEMPERATURE_BADGE[lead.temperature]}>
-                      {TEMPERATURE_LABELS[lead.temperature]}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="secondary" className={STATUS_BADGE[lead.status]}>
-                      {STATUS_LABELS[lead.status]}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>{lead.owner_name ?? "—"}</TableCell>
-                  <TableCell className="text-right">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger className="inline-flex h-8 w-8 items-center justify-center rounded-md p-0 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50">
-                        <MoreHorizontal className="h-4 w-4" />
-                        <span className="sr-only">Buka menu aksi</span>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => openEdit(lead)}>
-                          <Pencil className="mr-2 h-4 w-4" /> Edit
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          className="text-red-600 focus:text-red-600"
-                          onClick={() => setDeletingLead(lead)}
-                        >
-                          <Trash2 className="mr-2 h-4 w-4" /> Hapus
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </div>
-
-      {pagination && pagination.total > pagination.limit && (
-        <div className="flex items-center justify-between text-sm text-muted-foreground">
-          <span>
-            {pagination.total} lead — halaman {pagination.page} dari {totalPages}
-          </span>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page <= 1}
-              onClick={() => setPage((p) => p - 1)}
-            >
-              Sebelumnya
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page >= totalPages}
-              onClick={() => setPage((p) => p + 1)}
-            >
-              Berikutnya
-            </Button>
+      <PurchasingListSection
+        icon={UserPlusIcon}
+        title="Daftar Leads"
+        description="Kelola prospek beserta PIC-nya sebelum masuk pipeline deal."
+        toolbar={
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+            <label className="relative w-full sm:w-64">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+              <Input
+                placeholder="Cari instansi, PIC, no. WA..."
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setPage(1);
+                }}
+                className="h-10 bg-white pl-9 pr-9 text-sm focus:border-pink-400 focus:ring-2 focus:ring-pink-100"
+              />
+              {searchQuery ? (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700"
+                  aria-label="Hapus pencarian"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              ) : null}
+            </label>
+            <Select value={status} onValueChange={(v) => { setStatus(v); setPage(1); }}>
+              <SelectTrigger className="h-10 bg-white sm:w-36">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL}>Semua Status</SelectItem>
+                {Object.entries(STATUS_LABELS).map(([value, label]) => (
+                  <SelectItem key={value} value={value}>{label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={orgType} onValueChange={(v) => { setOrgType(v); setPage(1); }}>
+              <SelectTrigger className="h-10 bg-white sm:w-40">
+                <SelectValue placeholder="Jenis Instansi" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL}>Semua Jenis</SelectItem>
+                {Object.entries(ORG_TYPE_LABELS).map(([value, label]) => (
+                  <SelectItem key={value} value={value}>{label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={source} onValueChange={(v) => { setSource(v); setPage(1); }}>
+              <SelectTrigger className="h-10 bg-white sm:w-36">
+                <SelectValue placeholder="Sumber" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL}>Semua Sumber</SelectItem>
+                {Object.entries(SOURCE_LABELS).map(([value, label]) => (
+                  <SelectItem key={value} value={value}>{label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
-        </div>
-      )}
+        }
+      >
+        {isLoading ? (
+          <div className="py-14 text-center">
+            <Loader2 className="mx-auto h-8 w-8 animate-spin text-pink-600" />
+            <p className="mt-2 text-sm text-gray-500">Memuat data leads...</p>
+          </div>
+        ) : leads.length === 0 ? (
+          <div className="py-14 text-center">
+            <UserPlusIcon className="mx-auto mb-4 h-12 w-12 text-gray-300" />
+            <p className="text-gray-500">
+              {hasFilter ? "Tidak ada lead yang cocok" : "Belum ada lead"}
+            </p>
+            {!hasFilter ? (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={openCreate}
+                className="mt-4 h-10 rounded-lg border-pink-200 text-pink-700 hover:bg-pink-50"
+              >
+                Tambah Lead Pertama
+              </Button>
+            ) : null}
+          </div>
+        ) : (
+          <>
+            <div className="overflow-x-auto px-4 pb-4">
+              <table className="w-full text-sm">
+                <thead>
+                  <TableRow className="border-b border-gray-200/70 bg-gray-50/80 text-xs uppercase tracking-wide text-gray-500 hover:bg-gray-50/80">
+                    <th className="px-4 py-3 text-left font-semibold">Instansi</th>
+                    <th className="px-4 py-3 text-left font-semibold">PIC</th>
+                    <th className="px-4 py-3 text-left font-semibold">Kota</th>
+                    <th className="px-4 py-3 text-left font-semibold">Sumber</th>
+                    <th className="px-4 py-3 text-left font-semibold">Suhu</th>
+                    <th className="px-4 py-3 text-left font-semibold">Status</th>
+                    <th className="px-4 py-3 text-left font-semibold">Penanggung Jawab</th>
+                    <th className="px-4 py-3 text-right font-semibold">Aksi</th>
+                  </TableRow>
+                </thead>
+                <tbody className="divide-y divide-gray-200/50">
+                  {leads.map((lead) => (
+                    <TableRow key={lead.id} className="hover:bg-gray-50/80">
+                      <td className="px-4 py-3">
+                        <div className="font-medium text-gray-900">{lead.org_name}</div>
+                        <div className="text-xs text-gray-500">
+                          {ORG_TYPE_LABELS[lead.org_type]}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="text-gray-900">{lead.pic_name}</div>
+                        <div className="flex items-center gap-1.5 text-xs text-gray-500">
+                          <span className="font-mono">{lead.pic_phone}</span>
+                          <a
+                            href={`https://wa.me/${lead.pic_phone}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title="Chat WA"
+                            className="text-emerald-600 hover:text-emerald-700"
+                          >
+                            <MessageCircle className="h-3.5 w-3.5" />
+                          </a>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-gray-500">{lead.city || "—"}</td>
+                      <td className="px-4 py-3 text-gray-500">
+                        {SOURCE_LABELS[lead.source]}
+                      </td>
+                      <td className="px-4 py-3">
+                        <Badge className={TEMPERATURE_BADGE[lead.temperature]}>
+                          {TEMPERATURE_LABELS[lead.temperature]}
+                        </Badge>
+                      </td>
+                      <td className="px-4 py-3">
+                        <Badge className={STATUS_BADGE[lead.status]}>
+                          {STATUS_LABELS[lead.status]}
+                        </Badge>
+                      </td>
+                      <td className="px-4 py-3 text-gray-500">
+                        {lead.owner_name || "—"}
+                      </td>
+                      <td className="px-4 py-3">
+                        <MasterTableActions
+                          onEdit={() => openEdit(lead)}
+                          onDelete={() => setDeletingLead(lead)}
+                        />
+                      </td>
+                    </TableRow>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {pagination && total > pagination.limit ? (
+              <div className="flex flex-col items-center justify-between gap-2 border-t border-gray-100 px-5 py-3 text-sm text-gray-500 sm:flex-row">
+                <span>
+                  {total} lead — halaman {pagination.page} dari {totalPages}
+                </span>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={page <= 1}
+                    onClick={() => setPage((p) => p - 1)}
+                    className="h-9 rounded-lg border-gray-200/80"
+                  >
+                    Sebelumnya
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={page >= totalPages}
+                    onClick={() => setPage((p) => p + 1)}
+                    className="h-9 rounded-lg border-gray-200/80"
+                  >
+                    Berikutnya
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+          </>
+        )}
+      </PurchasingListSection>
 
       <LeadFormDialog open={formOpen} onOpenChange={setFormOpen} lead={editingLead} />
       <LeadImportDialog open={importOpen} onOpenChange={setImportOpen} />
@@ -296,7 +319,7 @@ export function SalesFunnelLeadsPage() {
         open={deletingLead !== null}
         onOpenChange={(open) => !open && setDeletingLead(null)}
         title="Hapus lead?"
-        description={`Lead "${deletingLead?.org_name ?? ""}" akan dihapus. Tindakan ini tidak menghapus deal yang sudah dibuat.`}
+        description={`Lead "${deletingLead?.org_name ?? ""}" akan dihapus. Deal yang sudah dibuat dari lead ini tidak ikut terhapus.`}
         confirmLabel="Hapus"
         variant="danger"
         onConfirm={() => {
