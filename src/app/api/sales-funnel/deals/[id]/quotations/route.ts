@@ -31,7 +31,7 @@ export async function GET(
     const rows = await query(
       `SELECT q.id, q.quote_number, q.status, q.use_ppn, q.ppn_persen,
               q.subtotal, q.ppn_nominal, q.total, q.notes, q.valid_until,
-              q.stock_deducted_at, q.created_at,
+              q.stock_deducted_at, q.bom_status, q.created_at,
               COALESCE(
                 (SELECT json_agg(json_build_object(
                    'id', i.id, 'item_type', i.item_type,

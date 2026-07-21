@@ -459,6 +459,39 @@ Keputusan owner FINAL (2026-07-21) — Fase F resmi on-progress:
   LOW isPending bersama antar baris = diterima (UX minor). Typecheck
   0 error baru, build bersih, PM2 restart, smoke 401 fail-closed.
   Sisa: F3 Realisasi bahan baku (prasyarat pos_recipes terisi).
+- 2026-07-22 — **Fase F3 SELESAI & live di dev — FASE F (QUOTATION)
+  LENGKAP F1+F2+F3.** Realisasi bahan baku + modifikasi owner: stok
+  kurang → boleh lanjut TANPA potong BOM, ditandai bom_status
+  'tidak-terpotong'. Delta `20260722010000_sales_funnel_fase_f3.sql`:
+  kolom bom_status + realized_by di crm_sales_quotations. POST
+  `/quotations/[id]/realize` (rate limit 10/mnt/user): kunci quotation
+  FOR UPDATE (idempoten, wajib status diterima), kebutuhan = qty pax ×
+  pos_recipes.quantity_per_unit × (1+waste%), kunci stok gudang venue
+  branch deal ORDER BY id (DETERMINISTIK — order by qty punya seri =
+  deadlock, temuan HIGH; greedy gudang-terbesar di aplikasi setelah
+  terkunci), banding presisi 3dp numeric(15,3) (anti drift float),
+  kurang → 409 rincian {bahan, butuh, tersedia}; cukup → potong
+  all-or-nothing via inventory_movements tipe 'out' reference
+  'sales_realization' qty_before/after; force → tanpa movement,
+  bom_status 'tidak-terpotong'. Resep: GET/PUT `/recipes`
+  super_admin-only (temuan CRITICAL: GET semula terbuka utk role sales
+  padahal join raw_materials ber-tenant), satuan resep DITURUNKAN
+  server dari satuan kecil bahan (kolom NOT NULL varchar(20) + resep
+  beda satuan dari stok = hitungan meleset senyap — temuan HIGH+MEDIUM);
+  `/raw-materials?q=` difilter company/branch scope (temuan HIGH
+  security: semula bocor katalog bahan lintas tenant ke role sales).
+  UI: tombol Realisasi (status diterima & belum realisasi), dialog
+  kekurangan stok dgn "Lanjut Tanpa Potong BOM", badge hijau "BOM
+  terpotong" / kuning "BOM tidak terpotong", editor Resep Produk di
+  Pengaturan Funnel (cari bahan ber-scope, qty+waste, satuan
+  read-only). Gate: CRITICAL+2 HIGH+2 MEDIUM+LOW semua diperbaiki;
+  stok negatif mustahil (take=min), ledger lengkap, all-or-nothing
+  terverifikasi. Typecheck 0 error baru, build bersih, migrasi applied,
+  PM2 restart, smoke 401 fail-closed.
+  Catatan ops: stok nyata sudah ada (113 baris inventory dari GRN
+  purchasing) — isi resep via Pengaturan Funnel lalu Realisasi langsung
+  berfungsi. QA manusia: uji alur lengkap quotation → kirim → diterima
+  → menang → realisasi (potong & tanpa-potong) dgn akun sales.
 - 2026-07-21 — **Fase F (Quotation) diusulkan** atas permintaan owner:
   builder quotation di deal (item bebas + Add Produk per pax + opsi PPN)
   dan realisasi pengurangan bahan baku dari resep produk. Eksplorasi

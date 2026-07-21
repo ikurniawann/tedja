@@ -3,8 +3,9 @@ import type {
   Quotation,
   QuotationFormValues,
   QuotationStatus,
+  StockShortage,
 } from "./types";
-import { formToPayload } from "./types";
+import { RealizeConflictError, formToPayload } from "./types";
 
 async function parseError(res: Response, fallback: string): Promise<never> {
   let message = fallback;
@@ -64,6 +65,31 @@ export async function deleteQuotation(id: string) {
   if (!res.ok && res.status !== 204) {
     await parseError(res, "Gagal menghapus quotation");
   }
+}
+
+export async function realizeQuotation(
+  id: string,
+  forceSkipBom: boolean
+): Promise<{ message?: string; data?: { bomStatus: string; warnings: string[] } }> {
+  const res = await fetch(`/api/sales-funnel/quotations/${id}/realize`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ force_skip_bom: forceSkipBom }),
+  });
+  if (res.status === 409) {
+    const body = (await res.json()) as {
+      error?: string;
+      shortages?: StockShortage[];
+      warnings?: string[];
+    };
+    throw new RealizeConflictError(
+      body.error ?? "Stok tidak mencukupi",
+      body.shortages ?? [],
+      body.warnings ?? []
+    );
+  }
+  if (!res.ok) await parseError(res, "Gagal merealisasi quotation");
+  return res.json();
 }
 
 export async function sendQuotationWa(id: string): Promise<{ message?: string }> {

@@ -11,6 +11,8 @@ export interface QuotationItem {
   line_total: string | number;
 }
 
+export type BomStatus = "terpotong" | "tidak-terpotong";
+
 export interface Quotation {
   id: string;
   quote_number: string;
@@ -23,8 +25,30 @@ export interface Quotation {
   notes: string | null;
   valid_until: string | null;
   stock_deducted_at: string | null;
+  bom_status: BomStatus | null;
   created_at: string;
   items: QuotationItem[];
+}
+
+export interface StockShortage {
+  raw_material_id: string;
+  kode: string | null;
+  nama: string;
+  satuan: string | null;
+  needed: number;
+  available: number;
+}
+
+/** 409 realisasi: bawa detail kekurangan utk dialog "lanjut tanpa BOM". */
+export class RealizeConflictError extends Error {
+  constructor(
+    message: string,
+    public shortages: StockShortage[],
+    public warnings: string[]
+  ) {
+    super(message);
+    this.name = "RealizeConflictError";
+  }
 }
 
 export interface CatalogProduct {

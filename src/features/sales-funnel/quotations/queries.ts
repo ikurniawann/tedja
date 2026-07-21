@@ -7,10 +7,12 @@ import {
   deleteQuotation,
   fetchCatalogProducts,
   fetchQuotations,
+  realizeQuotation,
   sendQuotationWa,
   updateQuotation,
 } from "./api";
 import type { QuotationFormValues, QuotationStatus } from "./types";
+import { RealizeConflictError } from "./types";
 
 export const quotationQueryKeys = {
   all: ["sales-funnel", "quotations"] as const,
@@ -83,6 +85,32 @@ export function useDeleteQuotation() {
       invalidateQuotationCaches(queryClient);
     },
     onError: (error: Error) => toast.error(error.message),
+  });
+}
+
+export function useRealizeQuotation(
+  onConflict: (error: RealizeConflictError, quotationId: string) => void
+) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, force }: { id: string; force: boolean }) =>
+      realizeQuotation(id, force),
+    onSuccess: (body: { message?: string; data?: { warnings?: string[] } }) => {
+      toast.success(body.message ?? "Realisasi selesai");
+      for (const warning of body.data?.warnings ?? []) {
+        toast.warning(warning);
+      }
+      invalidateQuotationCaches(queryClient);
+    },
+    // id diambil dari variables mutation — bukan state komponen terpisah
+    // yang rawan closure basi (temuan LOW gate F3)
+    onError: (error: Error, variables) => {
+      if (error instanceof RealizeConflictError) {
+        onConflict(error, variables.id);
+        return;
+      }
+      toast.error(error.message);
+    },
   });
 }
 

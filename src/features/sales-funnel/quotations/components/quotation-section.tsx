@@ -6,6 +6,7 @@ import {
   FileDown,
   FileText,
   Loader2,
+  PackageMinus,
   Plus,
   Send,
   Trash2,
@@ -18,6 +19,7 @@ import { formatRupiah } from "../../pipeline/types";
 import {
   useDeleteQuotation,
   useQuotations,
+  useRealizeQuotation,
   useSendQuotationWa,
   useUpdateQuotation,
 } from "../queries";
@@ -25,8 +27,10 @@ import {
   QUOTATION_STATUS_BADGES,
   QUOTATION_STATUS_LABELS,
   type Quotation,
+  type RealizeConflictError,
 } from "../types";
 import { QuotationBuilderDialog } from "./quotation-builder-dialog";
+import { RealizeDialog } from "./realize-dialog";
 
 interface QuotationSectionProps {
   dealId: string;
@@ -37,12 +41,25 @@ export function QuotationSection({ dealId, enabled }: QuotationSectionProps) {
   const [builderOpen, setBuilderOpen] = useState(false);
   const [editing, setEditing] = useState<Quotation | null>(null);
   const [deleting, setDeleting] = useState<Quotation | null>(null);
+  const [conflict, setConflict] = useState<
+    (RealizeConflictError & { quotationId: string }) | null
+  >(null);
 
   const quotationsQuery = useQuotations(dealId, enabled);
   const deleteMutation = useDeleteQuotation();
   const sendWaMutation = useSendQuotationWa();
   const statusMutation = useUpdateQuotation();
+  const realizeMutation = useRealizeQuotation((error, quotationId) => {
+    setConflict(Object.assign(error, { quotationId }));
+  });
   const quotations = quotationsQuery.data ?? [];
+
+  const startRealize = (quotation: Quotation) => {
+    realizeMutation.mutate(
+      { id: quotation.id, force: false },
+      { onSuccess: () => setConflict(null) }
+    );
+  };
 
   return (
     <div className="space-y-2.5 border-b border-gray-100 px-6 py-4">
@@ -100,9 +117,24 @@ export function QuotationSection({ dealId, enabled }: QuotationSectionProps) {
                 </p>
               </button>
               <div className="shrink-0 text-right">
-                <Badge className={QUOTATION_STATUS_BADGES[quotation.status]}>
-                  {QUOTATION_STATUS_LABELS[quotation.status]}
-                </Badge>
+                <div className="flex items-center justify-end gap-1">
+                  {quotation.bom_status ? (
+                    <Badge
+                      className={
+                        quotation.bom_status === "terpotong"
+                          ? "border-0 bg-emerald-100 font-normal text-emerald-700"
+                          : "border-0 bg-amber-100 font-semibold text-amber-700"
+                      }
+                    >
+                      {quotation.bom_status === "terpotong"
+                        ? "BOM terpotong"
+                        : "BOM tidak terpotong"}
+                    </Badge>
+                  ) : null}
+                  <Badge className={QUOTATION_STATUS_BADGES[quotation.status]}>
+                    {QUOTATION_STATUS_LABELS[quotation.status]}
+                  </Badge>
+                </div>
                 <p className="mt-0.5 text-sm font-semibold text-gray-900">
                   {formatRupiah(quotation.total)}
                 </p>
@@ -138,6 +170,18 @@ export function QuotationSection({ dealId, enabled }: QuotationSectionProps) {
                     </button>
                   ) : null}
                 </div>
+                {quotation.status === "diterima" && !quotation.stock_deducted_at ? (
+                  <button
+                    type="button"
+                    onClick={() => startRealize(quotation)}
+                    disabled={realizeMutation.isPending}
+                    title="Realisasi — potong stok bahan baku gudang venue"
+                    className="inline-flex items-center gap-1 rounded-lg bg-pink-600 px-2 py-1 text-xs font-semibold text-white hover:bg-pink-700 disabled:opacity-50"
+                  >
+                    <PackageMinus className="h-3.5 w-3.5" />
+                    Realisasi
+                  </button>
+                ) : null}
                 {quotation.status === "terkirim" ? (
                   <div className="flex items-center gap-1">
                     <button
@@ -184,6 +228,17 @@ export function QuotationSection({ dealId, enabled }: QuotationSectionProps) {
         }}
         dealId={dealId}
         quotation={editing}
+      />
+      <RealizeDialog
+        conflict={conflict}
+        onClose={() => setConflict(null)}
+        onForce={(quotationId) =>
+          realizeMutation.mutate(
+            { id: quotationId, force: true },
+            { onSuccess: () => setConflict(null) }
+          )
+        }
+        isPending={realizeMutation.isPending}
       />
       <ConfirmDialog
         open={deleting !== null}
