@@ -10,6 +10,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -27,10 +28,20 @@ export interface CloseDealTarget {
   stage: SalesStage;
 }
 
+export interface CloseDealExtras {
+  /** Alur Fase D "Menang → jadikan PIC member loyalty" */
+  makeMember: boolean;
+  leadId: string;
+}
+
 interface CloseDealDialogProps {
   target: CloseDealTarget | null;
   onClose: () => void;
-  onSubmit: (dealId: string, values: DealUpdatePayload) => void;
+  onSubmit: (
+    dealId: string,
+    values: DealUpdatePayload,
+    extras: CloseDealExtras
+  ) => void;
   isPending: boolean;
 }
 
@@ -47,6 +58,7 @@ export function CloseDealDialog({
   const [valueFinal, setValueFinal] = useState("");
   const [eventDate, setEventDate] = useState("");
   const [lostReasonId, setLostReasonId] = useState("");
+  const [makeMember, setMakeMember] = useState(false);
 
   const lostReasonsQuery = useLostReasons();
   const lostReasons = lostReasonsQuery.data ?? [];
@@ -60,6 +72,7 @@ export function CloseDealDialog({
     );
     setEventDate(target.deal.event_date?.slice(0, 10) ?? "");
     setLostReasonId("");
+    setMakeMember(false);
   }, [target]);
 
   const canSubmit = isWon
@@ -68,18 +81,30 @@ export function CloseDealDialog({
 
   const handleSubmit = () => {
     if (!target || !canSubmit || isPending) return;
+    const extras: CloseDealExtras = {
+      makeMember: isWon && makeMember,
+      leadId: target.deal.lead_id,
+    };
     if (isWon) {
-      onSubmit(target.deal.id, {
-        stage_id: target.stage.id,
-        value_final: Number(valueFinal),
-        event_date: eventDate,
-        is_event_date_fixed: true,
-      });
+      onSubmit(
+        target.deal.id,
+        {
+          stage_id: target.stage.id,
+          value_final: Number(valueFinal),
+          event_date: eventDate,
+          is_event_date_fixed: true,
+        },
+        extras
+      );
     } else {
-      onSubmit(target.deal.id, {
-        stage_id: target.stage.id,
-        lost_reason_id: lostReasonId,
-      });
+      onSubmit(
+        target.deal.id,
+        {
+          stage_id: target.stage.id,
+          lost_reason_id: lostReasonId,
+        },
+        extras
+      );
     }
   };
 
@@ -124,6 +149,15 @@ export function CloseDealDialog({
                 Menang = booking terkonfirmasi, tanggal otomatis ditandai fix.
               </p>
             </div>
+            {!target?.deal.customer_id ? (
+              <label className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50/60 px-3 py-2.5 text-sm text-emerald-900">
+                <Checkbox
+                  checked={makeMember}
+                  onCheckedChange={(checked) => setMakeMember(checked === true)}
+                />
+                Jadikan {target?.deal.pic_name} member loyalty
+              </label>
+            ) : null}
           </div>
         ) : (
           <div className="space-y-1.5">

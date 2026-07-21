@@ -25,7 +25,7 @@ const DEAL_COLUMNS = `
   d.event_date, d.is_event_date_fixed, d.pax_estimate, d.stage_id,
   d.value_estimate, d.value_final, d.owner_user_id, d.lost_reason_id,
   d.entered_stage_at, d.closed_at, d.created_at, d.updated_at,
-  l.org_name, l.org_type, l.pic_name, l.pic_phone,
+  l.org_name, l.org_type, l.pic_name, l.pic_phone, l.customer_id,
   s.code AS stage_code, s.is_won, s.is_lost, s.stuck_threshold_days,
   u.full_name AS owner_name, lr.name AS lost_reason_name`;
 

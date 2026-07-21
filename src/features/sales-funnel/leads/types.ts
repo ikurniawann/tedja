@@ -103,6 +103,74 @@ export const STATUS_LABELS: Record<LeadStatus, string> = {
   "tidak-cocok": "Tidak Cocok",
 };
 
+// ── Detail 360° (Fase D) ──
+
+export interface LeadDealSummary {
+  id: string;
+  title: string;
+  event_type: string;
+  event_date: string | null;
+  is_event_date_fixed: boolean;
+  pax_estimate: number | null;
+  value_estimate: string | null;
+  value_final: string | null;
+  closed_at: string | null;
+  created_at: string;
+  stage_name: string;
+  stage_code: string;
+  is_won: boolean;
+  is_lost: boolean;
+  lost_reason_name: string | null;
+}
+
+export interface LeadActivitySummary {
+  id: string;
+  deal_id: string | null;
+  activity_type: string;
+  notes: string | null;
+  due_at: string | null;
+  done_at: string | null;
+  created_at: string;
+  owner_name: string | null;
+  deal_title: string | null;
+}
+
+export interface LinkedCustomer {
+  id: string;
+  name: string | null;
+  phone: string | null;
+  membership_tier: string | null;
+  total_xp: string | number | null;
+  ark_coin_balance: string | number | null;
+  total_spent: string | number | null;
+  visit_count: string | number | null;
+  last_visit: string | null;
+  is_active: boolean;
+}
+
+export interface CustomerOrderSummary {
+  id: string;
+  total_amount: string | number | null;
+  status: string | null;
+  payment_status: string | null;
+  created_at: string;
+}
+
+export interface CustomerSearchResult {
+  id: string;
+  name: string | null;
+  phone: string | null;
+  membership_tier: string | null;
+}
+
+export interface LeadDetail {
+  lead: SalesLead & { branch_name: string | null };
+  deals: LeadDealSummary[];
+  activities: LeadActivitySummary[];
+  customer: LinkedCustomer | null;
+  recent_orders: CustomerOrderSummary[];
+}
+
 export const EMPTY_LEAD_FORM: LeadFormValues = {
   org_name: "",
   org_type: "corporate",

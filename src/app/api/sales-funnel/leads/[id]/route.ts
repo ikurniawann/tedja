@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { successResponse, noContentResponse } from "@/lib/api/auth";
-import { queryOne } from "@/lib/db";
+import { query, queryOne } from "@/lib/db";
 import { findAccessibleLead } from "@/lib/sales-funnel/access";
 import {
   LEAD_ORG_TYPES,
@@ -28,6 +28,119 @@ const updateLeadSchema = z.object({
   notes: z.string().trim().max(2000).nullable().optional(),
   owner_user_id: z.string().uuid().nullable().optional(),
 });
+
+/**
+ * Detail 360° instansi (EPIC-022 Fase D): lead + semua deal/acara +
+ * aktivitas gabungan (lead & deal-dealnya) + ringkasan member loyalty PIC
+ * bila tertaut pos_customers (member global by design per EPIC-011).
+ */
+export async function GET(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { error, user } = await requireSalesFunnelRole();
+  if (error) return error;
+
+  try {
+    const { id } = await params;
+    const { lead: access, forbidden } = await findAccessibleLead(id, user);
+    if (forbidden) {
+      return NextResponse.json(
+        { success: false, error: "Insufficient permissions" },
+        { status: 403 }
+      );
+    }
+    if (!access) {
+      return NextResponse.json(
+        { success: false, error: "Lead tidak ditemukan" },
+        { status: 404 }
+      );
+    }
+
+    const lead = await queryOne(
+      `SELECT l.id, l.company_id, l.branch_id, l.org_name, l.org_type,
+              l.pic_name, l.pic_title, l.pic_phone, l.pic_email, l.city,
+              l.source, l.temperature, l.status, l.notes, l.owner_user_id,
+              l.customer_id, l.created_at, l.updated_at,
+              u.full_name AS owner_name, b.name AS branch_name
+       FROM crm.crm_sales_leads l
+       LEFT JOIN configuration.users u ON u.id = l.owner_user_id
+       LEFT JOIN configuration.branches b ON b.id = l.branch_id
+       WHERE l.id = $1`,
+      [id]
+    );
+
+    const deals = await query(
+      `SELECT d.id, d.title, d.event_type, d.event_date, d.is_event_date_fixed,
+              d.pax_estimate, d.value_estimate, d.value_final, d.closed_at,
+              d.entered_stage_at, d.created_at,
+              s.name AS stage_name, s.code AS stage_code, s.is_won, s.is_lost,
+              lr.name AS lost_reason_name
+       FROM crm.crm_sales_deals d
+       JOIN crm.crm_sales_stages s ON s.id = d.stage_id
+       LEFT JOIN crm.crm_sales_lost_reasons lr ON lr.id = d.lost_reason_id
+       WHERE d.lead_id = $1 AND d.deleted_at IS NULL
+       ORDER BY d.created_at DESC
+       -- pagar wajar; statistik 360° ikut terpotong bila riwayat > 100 deal
+       LIMIT 100`,
+      [id]
+    );
+
+    // Timeline gabungan: aktivitas lead + aktivitas semua deal-nya
+    const activities = await query(
+      `SELECT a.id, a.deal_id, a.activity_type, a.notes, a.due_at, a.done_at,
+              a.created_at, u.full_name AS owner_name, d.title AS deal_title
+       FROM crm.crm_sales_activities a
+       LEFT JOIN configuration.users u ON u.id = a.owner_user_id
+       LEFT JOIN crm.crm_sales_deals d ON d.id = a.deal_id
+       WHERE a.deleted_at IS NULL
+         AND (a.lead_id = $1
+              OR a.deal_id IN (SELECT id FROM crm.crm_sales_deals
+                               WHERE lead_id = $1 AND deleted_at IS NULL))
+       ORDER BY COALESCE(a.due_at, a.created_at) DESC
+       LIMIT 30`,
+      [id]
+    );
+
+    // Ringkasan member loyalty (pos_customers global by design EPIC-011)
+    let customer: Record<string, unknown> | null = null;
+    let recentOrders: Record<string, unknown>[] = [];
+    const customerId = (lead as { customer_id: string | null } | null)
+      ?.customer_id;
+    if (customerId) {
+      customer = await queryOne(
+        `SELECT id, name, phone, membership_tier, total_xp, ark_coin_balance,
+                total_spent, visit_count, last_visit, is_active
+         FROM pos.pos_customers WHERE id = $1`,
+        [customerId]
+      );
+      if (customer) {
+        recentOrders = await query(
+          `SELECT id, total_amount, status, payment_status, created_at
+           FROM pos.pos_orders
+           WHERE customer_id = $1
+           ORDER BY created_at DESC
+           LIMIT 5`,
+          [customerId]
+        );
+      }
+    }
+
+    return successResponse({
+      lead,
+      deals,
+      activities,
+      customer,
+      recent_orders: recentOrders,
+    });
+  } catch (err) {
+    console.error("[sales-funnel] lead detail error:", err);
+    return NextResponse.json(
+      { success: false, error: "Gagal memuat detail instansi" },
+      { status: 500 }
+    );
+  }
+}
 
 export async function PATCH(
   request: NextRequest,

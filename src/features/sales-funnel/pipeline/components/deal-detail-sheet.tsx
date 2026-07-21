@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import {
   CalendarDays,
   CheckCircle2,
@@ -134,7 +135,13 @@ export function DealDetailSheet({ deal, onClose, onEdit }: DealDetailSheetProps)
                 <div>
                   <SheetTitle className="text-lg">{deal.title}</SheetTitle>
                   <p className="mt-0.5 text-sm text-gray-500">
-                    {deal.org_name} · {ORG_TYPE_LABELS[deal.org_type]}
+                    <Link
+                      href={`/dashboard/sales-funnel/leads/${deal.lead_id}`}
+                      className="hover:text-pink-600 hover:underline"
+                    >
+                      {deal.org_name}
+                    </Link>{" "}
+                    · {ORG_TYPE_LABELS[deal.org_type]}
                   </p>
                 </div>
                 <Button

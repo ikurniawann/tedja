@@ -42,6 +42,7 @@ export interface SalesDeal {
   org_type: LeadOrgType;
   pic_name: string;
   pic_phone: string;
+  customer_id: string | null;
   stage_code: string;
   is_won: boolean;
   is_lost: boolean;

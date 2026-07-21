@@ -2,12 +2,24 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { createLead, deleteLead, fetchLeads, updateLead } from "./api";
+import {
+  createLead,
+  deleteLead,
+  fetchLeadDetail,
+  fetchLeads,
+  linkLeadCustomer,
+  searchCustomers,
+  unlinkLeadCustomer,
+  updateLead,
+} from "./api";
 import type { LeadFilters, LeadFormValues } from "./types";
 
 export const leadQueryKeys = {
   all: ["sales-funnel", "leads"] as const,
   list: (filters: LeadFilters) => ["sales-funnel", "leads", filters] as const,
+  detail: (id: string) => ["sales-funnel", "leads", "detail", id] as const,
+  customerSearch: (q: string) =>
+    ["sales-funnel", "customer-search", q] as const,
 };
 
 export const useLeads = (filters: LeadFilters) =>
@@ -50,6 +62,57 @@ export function useDeleteLead() {
     onSuccess: () => {
       toast.success("Lead dihapus");
       queryClient.invalidateQueries({ queryKey: leadQueryKeys.all });
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+}
+
+// ── Detail 360° & tautan member (Fase D) ──
+
+export const useLeadDetail = (id: string) =>
+  useQuery({
+    queryKey: leadQueryKeys.detail(id),
+    queryFn: () => fetchLeadDetail(id),
+    enabled: id !== "",
+  });
+
+export const useCustomerSearch = (q: string) =>
+  useQuery({
+    queryKey: leadQueryKeys.customerSearch(q),
+    queryFn: () => searchCustomers(q),
+    enabled: q.trim().length >= 3,
+  });
+
+export function useLinkLeadCustomer(onSuccess?: () => void) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      leadId,
+      payload,
+    }: {
+      leadId: string;
+      payload: { customer_id?: string; create_from_pic?: boolean };
+    }) => linkLeadCustomer(leadId, payload),
+    onSuccess: () => {
+      toast.success("PIC tertaut ke member loyalty");
+      queryClient.invalidateQueries({ queryKey: leadQueryKeys.all });
+      // customer_id ikut di-join ke kartu kanban (checkbox "jadikan member"
+      // di dialog Menang membacanya) — cache pipeline wajib ikut segar
+      queryClient.invalidateQueries({ queryKey: ["sales-funnel", "pipeline"] });
+      onSuccess?.();
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+}
+
+export function useUnlinkLeadCustomer() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (leadId: string) => unlinkLeadCustomer(leadId),
+    onSuccess: () => {
+      toast.success("Tautan member dilepas");
+      queryClient.invalidateQueries({ queryKey: leadQueryKeys.all });
+      queryClient.invalidateQueries({ queryKey: ["sales-funnel", "pipeline"] });
     },
     onError: (error: Error) => toast.error(error.message),
   });

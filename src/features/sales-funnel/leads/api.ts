@@ -1,4 +1,10 @@
-import type { LeadFilters, LeadFormValues, LeadListResponse } from "./types";
+import type {
+  CustomerSearchResult,
+  LeadDetail,
+  LeadFilters,
+  LeadFormValues,
+  LeadListResponse,
+} from "./types";
 
 async function parseError(res: Response, fallback: string): Promise<never> {
   let message = fallback;
@@ -48,4 +54,43 @@ export async function updateLead(id: string, values: Partial<LeadFormValues>) {
 export async function deleteLead(id: string) {
   const res = await fetch(`/api/sales-funnel/leads/${id}`, { method: "DELETE" });
   if (!res.ok && res.status !== 204) await parseError(res, "Gagal menghapus lead");
+}
+
+// ── Detail 360° & tautan member (Fase D) ──
+
+export async function fetchLeadDetail(id: string): Promise<LeadDetail> {
+  const res = await fetch(`/api/sales-funnel/leads/${id}`);
+  if (!res.ok) await parseError(res, "Gagal memuat detail instansi");
+  const body = (await res.json()) as { data: LeadDetail };
+  return body.data;
+}
+
+export async function searchCustomers(q: string): Promise<CustomerSearchResult[]> {
+  const res = await fetch(
+    `/api/sales-funnel/customers?q=${encodeURIComponent(q)}`
+  );
+  if (!res.ok) await parseError(res, "Gagal mencari member");
+  const body = (await res.json()) as { data: CustomerSearchResult[] };
+  return body.data;
+}
+
+export async function linkLeadCustomer(
+  leadId: string,
+  payload: { customer_id?: string; create_from_pic?: boolean }
+) {
+  const res = await fetch(`/api/sales-funnel/leads/${leadId}/link-customer`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) await parseError(res, "Gagal menautkan member");
+  return res.json();
+}
+
+export async function unlinkLeadCustomer(leadId: string) {
+  const res = await fetch(`/api/sales-funnel/leads/${leadId}/link-customer`, {
+    method: "DELETE",
+  });
+  if (!res.ok) await parseError(res, "Gagal melepas tautan member");
+  return res.json();
 }

@@ -19,6 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useLinkLeadCustomer } from "../../leads/queries";
 import { useDeals, useDeleteDeal, useStages, useUpdateDeal } from "../queries";
 import {
   EVENT_TYPE_LABELS,
@@ -64,6 +65,7 @@ export function SalesFunnelPipelinePage() {
   const dealsQuery = useDeals(filters);
   const updateMutation = useUpdateDeal(filters, () => setCloseTarget(null));
   const deleteMutation = useDeleteDeal();
+  const linkMemberMutation = useLinkLeadCustomer();
 
   const stages = useMemo(() => stagesQuery.data ?? [], [stagesQuery.data]);
   const deals = useMemo(() => dealsQuery.data ?? [], [dealsQuery.data]);
@@ -260,8 +262,21 @@ export function SalesFunnelPipelinePage() {
       <CloseDealDialog
         target={closeTarget}
         onClose={() => setCloseTarget(null)}
-        onSubmit={(dealId, values) =>
-          updateMutation.mutate({ id: dealId, values })
+        onSubmit={(dealId, values, extras) =>
+          updateMutation.mutate(
+            { id: dealId, values },
+            {
+              onSuccess: () => {
+                // Alur Fase D: Menang → PIC langsung jadi member loyalty
+                if (extras.makeMember) {
+                  linkMemberMutation.mutate({
+                    leadId: extras.leadId,
+                    payload: { create_from_pic: true },
+                  });
+                }
+              },
+            }
+          )
         }
         isPending={updateMutation.isPending}
       />

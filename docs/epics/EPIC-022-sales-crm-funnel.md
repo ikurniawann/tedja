@@ -296,3 +296,31 @@ Menu didaftarkan via delta INSERT `iam.menus` + `iam.role_menu_permissions`
   menunggu mesin pengirim EPIC-020 Fase B; regression test invariant
   venue aktivitas = venue induk (belum ada test module ini — human QA).
   Sisa: Fase D (360° + tautan pos_customers), E (laporan funnel).
+- 2026-07-21 — **Fase D SELESAI & live di dev.** Profil Instansi 360° &
+  Integrasi Loyalty — TANPA migrasi DB (customer_id ada sejak Fase A).
+  Halaman `/dashboard/sales-funnel/leads/[id]`: identitas+PIC (chat WA),
+  statistik riwayat (total/berjalan/menang + indikator repeat order,
+  nilai menang total), daftar semua deal ber-badge tahap & alasan kalah,
+  timeline aktivitas gabungan (lead + seluruh deal-nya), kartu Member
+  Loyalty (tier, total belanja POS, kunjungan, Ark Coin, XP, 5 transaksi
+  terakhir). API: GET 360° di `leads/[id]`, `POST/DELETE
+  leads/[id]/link-customer` (link member existing ATAU create_from_pic =
+  upsert pos_customers by phone race-safe + reaktivasi + enrol
+  crm_member_profiles tier regular ala CRM, skip hanya bila 42P01),
+  `GET /customers?q=` (pencarian member global per desain EPIC-011, min
+  3 char, LIMIT 10). Alur "Menang → jadikan member": checkbox di dialog
+  Menang (tersembunyi bila sudah tertaut). Navigasi: nama instansi di
+  tabel Leads & Sheet deal → profil 360°.
+  Gate review+security PASS (0 CRITICAL/HIGH tersisa): anti-IDOR
+  penautan — customer_id eksplisit WAJIB nomor WA sama dengan PIC (tanpa
+  ini role sales bisa naut-lepas member sembarang untuk baca riwayat
+  belanja); rate limit pencarian member 30/menit/user (lib rate-limit
+  existing); cache pipeline di-invalidate setelah link/unlink (checkbox
+  "jadikan member" membaca customer_id dari join kanban); halaman detail
+  membedakan error server (retry) dari 404/403.
+  Known quirk (diterima): pos_customers.membership_tier default 'bronze'
+  vs tier profil CRM 'regular' — quirk dual-tier existing yang sama
+  dengan /api/crm/members, bukan wilayah epic ini. Statistik 360°
+  terpotong bila riwayat > 100 deal (pagar disengaja, berkomentar).
+  Typecheck 0 error baru, build bersih, PM2 restart, smoke 401/429
+  fail-closed. Sisa: Fase E (laporan funnel) — terakhir.

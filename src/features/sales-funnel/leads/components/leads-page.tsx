@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import {
   ArrowUpTrayIcon,
   PlusIcon,
@@ -234,7 +235,12 @@ export function SalesFunnelLeadsPage() {
                   {leads.map((lead) => (
                     <TableRow key={lead.id} className="hover:bg-gray-50/80">
                       <td className="px-4 py-3">
-                        <div className="font-medium text-gray-900">{lead.org_name}</div>
+                        <Link
+                          href={`/dashboard/sales-funnel/leads/${lead.id}`}
+                          className="font-medium text-gray-900 hover:text-pink-600 hover:underline"
+                        >
+                          {lead.org_name}
+                        </Link>
                         <div className="text-xs text-gray-500">
                           {ORG_TYPE_LABELS[lead.org_type]}
                         </div>
