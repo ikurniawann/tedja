@@ -35,6 +35,7 @@ export const ROLE_LABELS: Record<UserRole, string> = {
   pos_supervisor: "POS Supervisor",
   qc_staff: "QC Staff",
   employee: "Karyawan (ESS)",
+  sales: "Sales",
 };
 
 export const STATUS_LABELS: Record<string, string> = {

@@ -28,3 +28,31 @@ export const ESS_HOME_PATH = "/dashboard/me";
 export function isEssPath(pathname: string): boolean {
   return pathname === ESS_HOME_PATH || pathname.startsWith(`${ESS_HOME_PATH}/`);
 }
+
+/**
+ * Modul tambahan untuk role non-full-access (EPIC-022): role di daftar ini
+ * tetap ESS-only untuk modul lain, tapi boleh masuk prefix modulnya sendiri.
+ * Sengaja BUKAN lewat FULL_ACCESS_ROLES agar tidak membuka seluruh dashboard.
+ */
+export const ROLE_MODULE_PATHS: Record<string, readonly string[]> = {
+  sales: ["/dashboard/sales-funnel"],
+};
+
+/** Prefix modul tambahan yang boleh diakses sebuah role (di luar ESS). */
+export function allowedModulePaths(
+  role: string | null | undefined
+): readonly string[] {
+  return role ? ROLE_MODULE_PATHS[role] ?? [] : [];
+}
+
+/** True bila role boleh membuka pathname (full access, ESS, atau modulnya). */
+export function canAccessPath(
+  role: string | null | undefined,
+  pathname: string
+): boolean {
+  if (isFullAccessRole(role)) return true;
+  if (isEssPath(pathname)) return true;
+  return allowedModulePaths(role).some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)
+  );
+}
