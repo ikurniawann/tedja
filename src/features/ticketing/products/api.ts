@@ -84,6 +84,17 @@ export const createProductDate = (id: string, values: CreateDateValues) =>
     "Gagal menambah rentang tanggal"
   );
 
+export const bulkUpdateProductDates = (
+  id: string,
+  values: { date_kind: string; add: string[]; remove: string[] }
+) =>
+  sendJson<{ added: number; removed: number }>(
+    `/api/ticketing/products/${id}/dates/bulk`,
+    "POST",
+    values,
+    "Gagal menyimpan kalender"
+  );
+
 export const deleteProductDate = (id: string, dateId: string) =>
   sendJson<{ id: string }>(
     `/api/ticketing/products/${id}/dates/${dateId}`,

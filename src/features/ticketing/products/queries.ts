@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
+  bulkUpdateProductDates,
   createProduct,
   createProductDate,
   deleteProductDate,
@@ -91,6 +92,19 @@ export const useCreateProductDate = (onSuccess?: () => void) =>
     ({ id, values }: { id: string; values: CreateDateValues }) =>
       createProductDate(id, values),
     "Rentang tanggal ditambahkan",
+    onSuccess
+  );
+
+export const useBulkUpdateDates = (onSuccess?: () => void) =>
+  useProductMutation(
+    ({
+      id,
+      values,
+    }: {
+      id: string;
+      values: { date_kind: string; add: string[]; remove: string[] };
+    }) => bulkUpdateProductDates(id, values),
+    "Kalender tersimpan",
     onSuccess
   );
 
