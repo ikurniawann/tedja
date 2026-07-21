@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/select";
 import { TableRow } from "@/components/ui/table";
 import { PurchasingListSection } from "@/modules/purchasing/components/list/PurchasingListSection";
-import { useVisits } from "../queries";
+import { useTabStats, useVisits } from "../queries";
 import type { VisitStatus } from "../types";
 import { RegistrationDialog } from "./registration-dialog";
 import { VisitDetailDialog } from "./visit-detail-dialog";
@@ -29,7 +29,7 @@ const formatTime = (iso: string) =>
     minute: "2-digit",
   });
 
-export function LoketPage() {
+export function LoketPage({ canVoidCharges = false }: { canVoidCharges?: boolean }) {
   const [status, setStatus] = useState<VisitStatus>("open");
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
@@ -39,6 +39,7 @@ export function LoketPage() {
   const visitsQuery = useVisits({ status, q, page });
   const visits = visitsQuery.data?.data ?? [];
   const meta = visitsQuery.data?.meta;
+  const stats = useTabStats().data;
 
   return (
     <div className="space-y-6">
@@ -48,6 +49,34 @@ export function LoketPage() {
           Registrasi kunjungan, pantau tab berjalan, top-up saldo prepaid, dan
           settlement kasir keluar.
         </p>
+      </div>
+
+      {/* Tab monitor live — di-refresh tiap 30 detik */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <div className="rounded-xl border border-gray-200/70 bg-white px-4 py-3">
+          <p className="text-xs text-gray-500">Kunjungan Berjalan</p>
+          <p className="text-2xl font-bold text-gray-900">
+            {stats?.open_visits ?? "—"}
+          </p>
+        </div>
+        <div className="rounded-xl border border-gray-200/70 bg-white px-4 py-3">
+          <p className="text-xs text-gray-500">Gelang Aktif</p>
+          <p className="text-2xl font-bold text-gray-900">
+            {stats?.open_bands ?? "—"}
+          </p>
+        </div>
+        <div className="rounded-xl border border-amber-200/70 bg-amber-50/50 px-4 py-3">
+          <p className="text-xs text-amber-700">Tagihan Berjalan (Postpaid)</p>
+          <p className="text-2xl font-bold text-amber-800">
+            {stats ? formatRp(stats.outstanding_total) : "—"}
+          </p>
+        </div>
+        <div className="rounded-xl border border-emerald-200/70 bg-emerald-50/50 px-4 py-3">
+          <p className="text-xs text-emerald-700">Saldo Titipan (Prepaid)</p>
+          <p className="text-2xl font-bold text-emerald-800">
+            {stats ? formatRp(stats.saldo_total) : "—"}
+          </p>
+        </div>
       </div>
 
       <PurchasingListSection
@@ -200,6 +229,7 @@ export function LoketPage() {
       <VisitDetailDialog
         visitId={detailVisitId}
         onOpenChange={(open) => !open && setDetailVisitId(null)}
+        canVoidCharges={canVoidCharges}
       />
     </div>
   );

@@ -3,11 +3,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
+  fetchTabStats,
   fetchVisitDetail,
   fetchVisits,
   registerVisit,
   settleVisit,
   topupVisit,
+  voidCharge,
 } from "./api";
 import type { RegisterVisitValues, SettleValues, VisitFilters } from "./types";
 
@@ -43,6 +45,7 @@ function useVisitMutation<TVariables>(
       toast.success(successMessage);
       queryClient.invalidateQueries({ queryKey: visitQueryKeys.all });
       queryClient.invalidateQueries({ queryKey: ["ticketing", "bands"] });
+      queryClient.invalidateQueries({ queryKey: ["ticketing", "tab-stats"] });
       onSuccess?.();
     },
     onError: (error: Error) => toast.error(error.message),
@@ -76,5 +79,27 @@ export const useSettleVisit = (onSuccess?: () => void) =>
     ({ id, values }: { id: string; values: SettleValues }) =>
       settleVisit(id, values),
     "Settlement berhasil",
+    onSuccess
+  );
+
+export const useTabStats = () =>
+  useQuery({
+    queryKey: ["ticketing", "tab-stats"] as const,
+    queryFn: fetchTabStats,
+    refetchInterval: 30_000, // tab monitor live
+  });
+
+export const useVoidCharge = (onSuccess?: () => void) =>
+  useVisitMutation(
+    ({
+      visitId,
+      chargeId,
+      reason,
+    }: {
+      visitId: string;
+      chargeId: string;
+      reason: string;
+    }) => voidCharge(visitId, chargeId, reason),
+    "Tagihan di-void",
     onSuccess
   );

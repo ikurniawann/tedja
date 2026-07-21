@@ -7,6 +7,7 @@ import {
   Coins,
   Loader2,
   QrCode,
+  Ticket,
   Wifi,
 } from "lucide-react";
 
@@ -25,7 +26,16 @@ import { cn } from "@/lib/utils";
 
 import { formatIdrInput, parseIdrDigits } from "./idr-input";
 
-export type PaymentMethod = "cash" | "qris" | "credit_card" | "ark_coin";
+export type PaymentMethod = "cash" | "qris" | "credit_card" | "ark_coin" | "nfc_tab";
+
+/** Hasil pratinjau tab ticketing (EPIC-023 Fase C) utk metode NFC Tab. */
+export interface NfcTabCheckResult {
+  ok: boolean;
+  reason?: string;
+  contactName?: string;
+  paymentMode?: "postpaid" | "prepaid";
+  available?: number | null;
+}
 
 const PAYMENT_OPTIONS: Array<{
   key: PaymentMethod;
@@ -37,6 +47,7 @@ const PAYMENT_OPTIONS: Array<{
   { key: "qris", title: "QRIS", desc: "Scan QR code", icon: QrCode },
   { key: "credit_card", title: "Credit Card", desc: "Visa / Mastercard", icon: CreditCard },
   { key: "ark_coin", title: "ARK Coin", desc: "Member balance", icon: Coins },
+  { key: "nfc_tab", title: "NFC Tab", desc: "Gelang ticketing", icon: Ticket },
 ];
 
 interface Props {
@@ -53,11 +64,18 @@ interface Props {
     method: PaymentMethod;
     cashReceived: string;
     arkToUse: number;
+    /** UID gelang ticketing — terisi saat method 'nfc_tab' */
+    nfcTabUid?: string;
   }) => void | Promise<void>;
   submitting?: boolean;
   formatCurrency: (v: number) => string;
   formatArk: (v: number) => string;
   onTapNFC: () => void;
+  /**
+   * Pratinjau tab ticketing utk metode NFC Tab (opsional — tanpa prop ini
+   * opsi NFC Tab disembunyikan, mis. dipakai di luar kasir venue ticketing).
+   */
+  onCheckNfcTab?: (uid: string) => Promise<NfcTabCheckResult>;
 }
 
 export function PaymentModal({
@@ -71,10 +89,35 @@ export function PaymentModal({
   formatCurrency,
   formatArk,
   onTapNFC,
+  onCheckNfcTab,
 }: Props) {
   const [method, setMethod] = useState<PaymentMethod>("cash");
   const [cashReceived, setCashReceived] = useState("");
   const [arkToUse, setArkToUse] = useState(0);
+  const [tabUidInput, setTabUidInput] = useState("");
+  const [tabChecking, setTabChecking] = useState(false);
+  const [tabResult, setTabResult] = useState<
+    (NfcTabCheckResult & { uid: string }) | null
+  >(null);
+
+  const checkTabUid = async (rawUid: string) => {
+    const uid = rawUid.trim();
+    if (!uid || !onCheckNfcTab || tabChecking) return;
+    setTabChecking(true);
+    setTabUidInput("");
+    try {
+      const result = await onCheckNfcTab(uid);
+      setTabResult({ ...result, uid });
+    } catch (err) {
+      setTabResult({
+        ok: false,
+        reason: err instanceof Error ? err.message : "Gagal memeriksa gelang",
+        uid,
+      });
+    } finally {
+      setTabChecking(false);
+    }
+  };
 
   useEffect(() => {
     if (method === "ark_coin") {
@@ -92,6 +135,8 @@ export function PaymentModal({
       setMethod("cash");
       setCashReceived("");
       setArkToUse(0);
+      setTabUidInput("");
+      setTabResult(null);
     }
   }, [open]);
 
@@ -105,8 +150,15 @@ export function PaymentModal({
     if (method === "ark_coin") {
       return !!selectedCustomer && selectedCustomer.ark_coin_balance >= total;
     }
+    if (method === "nfc_tab") {
+      return tabResult?.ok === true;
+    }
     return true;
   })();
+
+  const paymentOptions = PAYMENT_OPTIONS.filter(
+    (option) => option.key !== "nfc_tab" || Boolean(onCheckNfcTab)
+  );
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && !submitting && onClose()}>
@@ -120,7 +172,7 @@ export function PaymentModal({
 
         <DialogPanelBody className="space-y-5">
           <div className="grid grid-cols-2 gap-3">
-            {PAYMENT_OPTIONS.map((option) => {
+            {paymentOptions.map((option) => {
               const Icon = option.icon;
               const selected = method === option.key;
               const desc =
@@ -195,6 +247,60 @@ export function PaymentModal({
                   {formatCurrency(Math.abs(change))}
                 </span>
               </div>
+            </div>
+          )}
+
+          {method === "nfc_tab" && (
+            <div className="space-y-3 rounded-xl border border-sky-200/80 bg-sky-50 p-4">
+              <div className="flex items-center gap-2 text-sm font-semibold text-sky-800">
+                <Wifi className="h-4 w-4" />
+                Tap gelang pengunjung
+              </div>
+              <Input
+                autoFocus
+                placeholder="Fokuskan kursor lalu tap gelang di reader"
+                value={tabUidInput}
+                onChange={(e) => setTabUidInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    void checkTabUid(tabUidInput);
+                  }
+                }}
+                disabled={submitting || tabChecking}
+                className="h-11 border-sky-200/80 bg-white font-mono text-sm"
+              />
+              {tabChecking && (
+                <p className="text-xs text-sky-700/80">Memeriksa gelang…</p>
+              )}
+              {tabResult && !tabChecking && (
+                tabResult.ok ? (
+                  <div className="space-y-1 text-sm">
+                    <p className="font-semibold text-emerald-700">
+                      {tabResult.contactName}
+                      <span className="ml-2 text-xs font-normal text-emerald-600">
+                        {tabResult.paymentMode === "prepaid" ? "Prepaid" : "Postpaid"}
+                      </span>
+                    </p>
+                    {tabResult.available !== null &&
+                      tabResult.available !== undefined && (
+                        <p className="text-xs text-muted-foreground">
+                          {tabResult.paymentMode === "prepaid"
+                            ? "Saldo tersisa setelah order"
+                            : "Sisa plafon setelah order"}
+                          : {formatCurrency(Math.max(0, tabResult.available - total))}
+                        </p>
+                      )}
+                    <p className="text-xs text-emerald-600">
+                      Tagihan pindah ke tab — dibayar saat keluar / dipotong saldo
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-sm font-medium text-red-600">
+                    {tabResult.reason || "Gelang tidak bisa dipakai"}
+                  </p>
+                )
+              )}
             </div>
           )}
 
@@ -274,6 +380,10 @@ export function PaymentModal({
                 method,
                 cashReceived: String(cashAmount || ""),
                 arkToUse,
+                nfcTabUid:
+                  method === "nfc_tab" && tabResult?.ok
+                    ? tabResult.uid
+                    : undefined,
               })
             }
           >

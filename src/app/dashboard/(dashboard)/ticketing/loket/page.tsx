@@ -4,10 +4,12 @@ import { LoketPage } from "@/features/ticketing/visits";
 
 const OPERATOR_ROLES = ["super_admin", "pos_supervisor", "pos"];
 
+const VOID_ROLES = ["super_admin", "pos_supervisor"];
+
 export default async function TicketingLoketRoute() {
   const user = await requireUser();
   if (!OPERATOR_ROLES.includes(user.role)) {
     redirect("/dashboard");
   }
-  return <LoketPage />;
+  return <LoketPage canVoidCharges={VOID_ROLES.includes(user.role)} />;
 }

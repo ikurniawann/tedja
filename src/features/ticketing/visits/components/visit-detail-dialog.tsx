@@ -19,12 +19,24 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useSettleVisit, useTopupVisit, useVisitDetail } from "../queries";
-import { CASH_METHOD_LABELS, type CashMethod, type VisitBand } from "../types";
+import {
+  useSettleVisit,
+  useTopupVisit,
+  useVisitDetail,
+  useVoidCharge,
+} from "../queries";
+import {
+  CASH_METHOD_LABELS,
+  type CashMethod,
+  type VisitBand,
+  type VisitCharge,
+} from "../types";
 
 interface VisitDetailDialogProps {
   visitId: string | null;
   onOpenChange: (open: boolean) => void;
+  /** true bila user boleh void (supervisor) — server tetap menolak kasir. */
+  canVoidCharges?: boolean;
 }
 
 const formatRp = (n: number) => `Rp${n.toLocaleString("id-ID")}`;
@@ -59,7 +71,11 @@ function MethodSelect({
   );
 }
 
-export function VisitDetailDialog({ visitId, onOpenChange }: VisitDetailDialogProps) {
+export function VisitDetailDialog({
+  visitId,
+  onOpenChange,
+  canVoidCharges = false,
+}: VisitDetailDialogProps) {
   const detailQuery = useVisitDetail(visitId);
   const detail = detailQuery.data;
 
@@ -68,9 +84,15 @@ export function VisitDetailDialog({ visitId, onOpenChange }: VisitDetailDialogPr
   const [topupAmount, setTopupAmount] = useState("");
   const [topupMethod, setTopupMethod] = useState<CashMethod>("cash");
   const [settlingBand, setSettlingBand] = useState<VisitBand | null>(null);
+  const [voidingCharge, setVoidingCharge] = useState<VisitCharge | null>(null);
+  const [voidReason, setVoidReason] = useState("");
 
   const settleMutation = useSettleVisit(() => setSettlingBand(null));
   const topupMutation = useTopupVisit(() => setTopupAmount(""));
+  const voidMutation = useVoidCharge(() => {
+    setVoidingCharge(null);
+    setVoidReason("");
+  });
 
   // Tagihan bersih per gelang (settle per gelang, postpaid)
   const bandDue = useMemo(() => {
@@ -89,6 +111,12 @@ export function VisitDetailDialog({ visitId, onOpenChange }: VisitDetailDialogPr
   const isOpen = detail?.visit.status === "open";
   const isPrepaid = detail?.visit.payment_mode === "prepaid";
   const activeBands = detail?.bands.filter((b) => b.status === "aktif") ?? [];
+  // Baris yang sudah dibalik: id-nya muncul di voided_by_charge_id baris lain
+  const reversedChargeIds = new Set(
+    (detail?.charges ?? [])
+      .map((c) => c.voided_by_charge_id)
+      .filter((id): id is string => id !== null)
+  );
 
   const handleSettleAll = () => {
     if (!detail || settleMutation.isPending) return;
@@ -246,29 +274,55 @@ export function VisitDetailDialog({ visitId, onOpenChange }: VisitDetailDialogPr
               <div className="max-h-48 overflow-y-auto rounded-lg border border-gray-200/70">
                 <table className="w-full text-sm">
                   <tbody className="divide-y divide-gray-200/50">
-                    {detail.charges.map((charge) => (
-                      <tr key={charge.id}>
-                        <td className="px-3 py-2 text-gray-700">
-                          {charge.description}
-                          <span className="ml-1 text-xs text-gray-400">
-                            {formatTime(charge.created_at)}
-                          </span>
-                        </td>
-                        <td
-                          className={`px-3 py-2 text-right font-medium ${
-                            charge.direction === "kredit"
-                              ? "text-emerald-600"
-                              : "text-gray-900"
-                          }`}
-                        >
-                          {charge.direction === "kredit" ? "−" : ""}
-                          {formatRp(charge.amount)}
-                        </td>
-                      </tr>
-                    ))}
+                    {detail.charges.map((charge) => {
+                      const isReversed = reversedChargeIds.has(charge.id);
+                      const canVoid =
+                        canVoidCharges &&
+                        isOpen &&
+                        charge.direction === "debit" &&
+                        charge.charge_type !== "refund-deposit" &&
+                        !isReversed;
+                      return (
+                        <tr key={charge.id}>
+                          <td className="px-3 py-2 text-gray-700">
+                            <span className={isReversed ? "line-through opacity-60" : ""}>
+                              {charge.description}
+                            </span>
+                            <span className="ml-1 text-xs text-gray-400">
+                              {formatTime(charge.created_at)}
+                            </span>
+                          </td>
+                          <td
+                            className={`px-3 py-2 text-right font-medium ${
+                              charge.direction === "kredit"
+                                ? "text-emerald-600"
+                                : "text-gray-900"
+                            } ${isReversed ? "line-through opacity-60" : ""}`}
+                          >
+                            {charge.direction === "kredit" ? "−" : ""}
+                            {formatRp(charge.amount)}
+                          </td>
+                          <td className="w-14 px-2 py-2 text-right">
+                            {canVoid ? (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-6 px-2 text-xs text-gray-400 hover:bg-red-50 hover:text-red-600"
+                                onClick={() => {
+                                  setVoidingCharge(charge);
+                                  setVoidReason("");
+                                }}
+                              >
+                                Void
+                              </Button>
+                            ) : null}
+                          </td>
+                        </tr>
+                      );
+                    })}
                     {detail.charges.length === 0 ? (
                       <tr>
-                        <td className="px-3 py-6 text-center text-xs text-gray-400">
+                        <td colSpan={3} className="px-3 py-6 text-center text-xs text-gray-400">
                           Belum ada transaksi
                         </td>
                       </tr>
@@ -277,6 +331,46 @@ export function VisitDetailDialog({ visitId, onOpenChange }: VisitDetailDialogPr
                 </table>
               </div>
             </div>
+
+            {/* Konfirmasi void tagihan (wewenang supervisor — server menolak kasir) */}
+            {voidingCharge ? (
+              <div className="rounded-lg border-2 border-red-200 bg-red-50/50 p-4">
+                <p className="text-sm text-gray-700">
+                  Void <strong>{voidingCharge.description}</strong> (
+                  {formatRp(voidingCharge.amount)})? Baris pembalik akan ditulis —
+                  ledger tidak pernah dihapus.
+                </p>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <Input
+                    placeholder="Alasan void (wajib)"
+                    value={voidReason}
+                    onChange={(e) => setVoidReason(e.target.value)}
+                    className="h-9 w-64"
+                  />
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    disabled={voidReason.trim().length < 3 || voidMutation.isPending}
+                    onClick={() =>
+                      voidMutation.mutate({
+                        visitId: detail.visit.id,
+                        chargeId: voidingCharge.id,
+                        reason: voidReason.trim(),
+                      })
+                    }
+                  >
+                    {voidMutation.isPending ? "Memproses…" : "Void Tagihan"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setVoidingCharge(null)}
+                  >
+                    Batal
+                  </Button>
+                </div>
+              </div>
+            ) : null}
 
             {/* Top-up (prepaid, open) */}
             {isOpen && isPrepaid ? (

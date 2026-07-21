@@ -383,11 +383,13 @@ export interface CreateOrderRequest {
   tax_amount?: number;
   service_charge_amount?: number;
   total_amount: number;
-  payment_method?: 'cash' | 'qris' | 'debit' | 'credit' | 'ark_coin';
+  payment_method?: 'cash' | 'qris' | 'debit' | 'credit' | 'ark_coin' | 'nfc_tab';
   amount_paid?: number;
   notes?: string;
   special_requests?: string;
   ark_coins_used?: number;
+  /** UID gelang ticketing — wajib saat payment_method 'nfc_tab' (EPIC-023) */
+  nfc_tab_uid?: string;
   /** Server-side recalculation flag (client sends for audit only) */
   include_tax?: boolean;
   /** Membership discount percentage sent for server validation */
@@ -476,7 +478,7 @@ export async function getCustomerFavoriteProducts(customerId: string, products: 
 export async function updateOrderStatus(
   orderId: string,
   status: string,
-  additionalData?: { payment_status?: string; payment_method?: string; amount_paid?: number; ark_coins_used?: number; cancelled_reason?: string }
+  additionalData?: { payment_status?: string; payment_method?: string; amount_paid?: number; ark_coins_used?: number; cancelled_reason?: string; nfc_tab_uid?: string }
 ) {
   const response = await fetch(`/api/pos/orders/${orderId}`, {
     method: 'PATCH',

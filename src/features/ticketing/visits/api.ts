@@ -85,3 +85,20 @@ export const settleVisit = (id: string, values: SettleValues) =>
 
 export const gateTap = (values: { nfc_uid: string; gate_label?: string }) =>
   postJson<GateTapResponse>("/api/ticketing/gate/tap", values, "Gagal memproses tap");
+
+export interface TabStats {
+  open_visits: number;
+  open_bands: number;
+  outstanding_total: number;
+  saldo_total: number;
+}
+
+export const fetchTabStats = () =>
+  getJson<TabStats>("/api/ticketing/tab/stats", "Gagal memuat statistik tab");
+
+export const voidCharge = (visitId: string, chargeId: string, reason: string) =>
+  postJson<{ id: string }>(
+    `/api/ticketing/visits/${visitId}/charges/${chargeId}/void`,
+    { reason },
+    "Gagal mem-void tagihan"
+  );

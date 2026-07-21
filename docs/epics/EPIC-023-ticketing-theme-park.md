@@ -378,3 +378,38 @@ dst. Menu + role (`ticketing` / reuse kasir) via delta `iam.*`.
   → gelang release) lulus dgn rollback. **Hutang teknis dicatat**:
   belum ada integration test route ber-uang (butuh infra mock auth —
   konsisten dgn preseden sales-funnel, unit + smoke SQL dulu).
+- 2026-07-21 — **Fase C SELESAI** (status `coding`). Delta
+  `20260722080000_ticketing_fase_c.sql` applied: enum `nfc_tab` di
+  `pos_payment_method`, CHECK arah dilonggarkan (`koreksi` boleh dua
+  arah utk baris pembalik void), + index unik parsial
+  `uq_ticket_visit_charges_fnb_order` (1 order = 1 charge fnb aktif,
+  lapis DB). **Keputusan implementasi** (opsi di sketsa epic): order
+  single-payment menyimpan metode di `pos_orders.payment_method`
+  langsung — TIDAK menulis `pos_split_payments`; tautan ke tab =
+  `ticket_visit_charges.pos_order_id`. Jembatan
+  `src/lib/ticketing/tab-server.ts`: `chargeFnbOrderToTab`
+  (transaksional, lock visit, guard saldo/plafon dicek ulang di dalam
+  lock, idempotent per order, `markOrderPaid` menandai order
+  completed/paid DI transaksi yang sama — charge & status tak mungkin
+  terpisah) + `checkTabForCharge` (pratinjau PaymentModal). Kasir:
+  metode "NFC Tab" di PaymentModal (panel tap + pratinjau nama/mode/
+  sisa; opsi tersembunyi tanpa prop `onCheckNfcTab`), dukung checkout
+  langsung & bayar open bill; nilai dioper eksplisit ke
+  `handleCreateOrder` (setState + panggilan setick = stale closure).
+  Void supervisor: endpoint `charges/[chargeId]/void` (super_admin/
+  pos_supervisor, baris pembalik `koreksi` kredit, sekali per baris)
+  + tombol Void di dialog (disembunyikan utk kasir). Tab monitor:
+  `tab/stats` + 4 kartu di Loket (refresh 30 dtk); closing shift
+  menampilkan bucket `nfc_tab` di method_breakdown (bukan uang masuk
+  shift — ditagih saat settlement). Gate hasil: security review
+  1 CRITICAL ditutup (**PATCH /api/pos/orders/[id] tanpa gerbang
+  auth — celah lama, kini 401 + rate limit**), audit log percobaan
+  gagal, index unik DB; code review 2 HIGH ditutup (nominal charge
+  nfc_tab = turunan server bukan total_amount klien; atomisitas
+  charge+paid satu transaksi), order partial ditolak, kompensasi
+  delete dicek error + fallback cancelled. Catatan disengaja: void
+  charge fnb TIDAK mengubah `pos_orders.payment_status` (order tetap
+  paid; pembalikan hidup di ledger tab — rekonsiliasi lewat ledger).
+  Verifikasi: 33 unit test, build lulus, smoke SQL Fase C (enum,
+  charge ber-referensi order, dup-check, baris pembalik, ledger
+  netral pasca void, fnb-kredit ditolak) lulus dgn rollback.

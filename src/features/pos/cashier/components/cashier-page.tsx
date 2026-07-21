@@ -530,10 +530,102 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
   }, [processNFCCard]);
 
   /* Checkout */
-  const handleCreateOrder = useCallback(async () => {
+  const handleCreateOrder = useCallback(async (overrides?: {
+    method?: PaymentMethod;
+    nfcTabUid?: string;
+  }) => {
     if (processingPayment) return;
     if (cart.items.length === 0) return;
     if (!requireActiveShift()) return;
+
+    // NFC Tab (EPIC-023 Fase C): nilai dioper eksplisit dari PaymentModal —
+    // state paymentMethod belum ter-flush di tick yang sama (stale closure).
+    if (overrides?.method === 'nfc_tab') {
+      const nfcTabUid = overrides.nfcTabUid?.trim() || '';
+      if (!nfcTabUid) { toast.error('Tap gelang pengunjung dulu'); return; }
+      if (!isOnline) {
+        toast.error('Pembayaran NFC Tab membutuhkan koneksi — gunakan metode lain saat offline');
+        return;
+      }
+
+      setProcessingPayment(true);
+      try {
+        let orderId: string;
+        let orderNumber: string;
+        const cTotal = cart.total;
+
+        if (paymentOrderId) {
+          const data = await payOpenOrderMutation.mutateAsync({
+            orderId: paymentOrderId,
+            payload: {
+              status: 'completed',
+              payment_status: 'paid',
+              payment_method: 'nfc_tab',
+              amount_paid: 0,
+              ark_coins_used: 0,
+              nfc_tab_uid: nfcTabUid,
+            },
+          });
+          orderId = paymentOrderId;
+          orderNumber = payingOrderNumber || data.data?.order_number || paymentOrderId;
+        } else {
+          const res = await checkout({
+            cart: cart.items,
+            orderType: cart.orderType,
+            selectedTable: effectiveTableId,
+            selectedCustomer,
+            paymentMethod: 'nfc_tab',
+            cashReceived: '',
+            includeTax: cart.includeTax,
+            notes: cart.notes,
+            arkToUse: 0,
+            shiftId: shift?.id || null,
+            nfcTabUid,
+          });
+          if (!res.success) {
+            toast.error(res.error || 'Charge ke tab gagal');
+            setProcessingPayment(false);
+            return;
+          }
+          orderId = res.orderId || '';
+          orderNumber = res.orderNumber || '';
+        }
+
+        const receipt: ReceiptPayload = {
+          orderId,
+          orderNumber,
+          orderType: cart.orderType,
+          table: selectedTableDisplay,
+          items: [...cart.items],
+          notes: cart.notes,
+          total: cTotal,
+          change: 0,
+          paymentMethod: 'nfc_tab',
+          customerName: selectedCustomer?.name,
+          discountAmount,
+          taxAmount,
+        };
+        storeResultPayload(receipt);
+        setShowPayment(false);
+        setLastResultType('standard');
+        cart.clearCart();
+        setCashReceived('');
+        setPaymentMethod('cash');
+        setCurrentArkToUse(0);
+        loadedPaymentOrderRef.current = null;
+        if (paymentOrderId && !deferReturnToRestaurant()) {
+          router.replace(homeRoute);
+        } else if (!paymentOrderId) {
+          deferReturnToRestaurant();
+        }
+      } catch (e: unknown) {
+        toast.error(e instanceof Error ? e.message : 'Charge ke tab gagal');
+      } finally {
+        setProcessingPayment(false);
+      }
+      return;
+    }
+
     if (paymentMethod === 'ark_coin' && !selectedCustomer) { setShowNFC(true); return; }
     if (paymentMethod === 'cash' && (parseFloat(cashReceived) || 0) < totalAfterArk) return;
 
@@ -1481,15 +1573,36 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         selectedCustomer={selectedCustomer}
         onClose={() => setShowPayment(false)}
         submitting={processingPayment || submitting}
-        onConfirm={async ({ method, cashReceived, arkToUse }) => {
+        onConfirm={async ({ method, cashReceived, arkToUse, nfcTabUid }) => {
           setPaymentMethod(method);
           setCashReceived(cashReceived);
           setCurrentArkToUse(arkToUse);
-          await handleCreateOrder();
+          await handleCreateOrder(
+            method === 'nfc_tab' ? { method, nfcTabUid } : undefined
+          );
         }}
         formatCurrency={formatCurrency}
         formatArk={formatArk}
         onTapNFC={() => setShowNFC(true)}
+        onCheckNfcTab={async (uid) => {
+          const res = await fetch('/api/ticketing/tab/check', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ nfc_uid: uid, amount: total }),
+          });
+          const body = await res.json();
+          if (!res.ok) {
+            return { ok: false, reason: body.error || 'Gagal memeriksa gelang' };
+          }
+          const data = body.data || {};
+          return {
+            ok: Boolean(data.ok),
+            reason: data.reason,
+            contactName: data.contactName,
+            paymentMode: data.paymentMode,
+            available: data.available,
+          };
+        }}
       />
 
       {/* ── NFC Modal ── */}

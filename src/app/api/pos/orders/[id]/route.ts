@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createPgClient } from "@/lib/pg/create-client";
+import { getPosSession } from '@/lib/api/auth';
 import { awardCrmXpForPosOrder, syncPosCustomerOrderStats } from '@/lib/crm/loyalty-engine';
+import { checkRateLimit } from '@/lib/rate-limit';
+import { isValidNfcUid, normalizeNfcUid } from '@/lib/ticketing/server';
+import { chargeFnbOrderToTab } from '@/lib/ticketing/tab-server';
 
 type OrderPatchBody = {
   status?: string;
@@ -11,6 +15,8 @@ type OrderPatchBody = {
   notes?: string;
   changed_by?: string;
   status_notes?: string;
+  /** UID gelang ticketing — wajib saat bayar open bill via 'nfc_tab' */
+  nfc_tab_uid?: string;
 };
 
 function getErrorMessage(error: unknown) {
@@ -19,6 +25,13 @@ function getErrorMessage(error: unknown) {
 
 // PATCH /api/pos/orders/:id - Update order status and payment
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  // Endpoint pemindah uang — sesi WAJIB tervalidasi penuh (middleware hanya
+  // cek keberadaan cookie, bukan keabsahan token).
+  const sessionUserId = await getPosSession();
+  if (!sessionUserId) {
+    return NextResponse.json({ success: false, error: 'Authentication required' }, { status: 401 });
+  }
+
   try {
     const db = createPgClient();
     const { id: orderId } = await params;
@@ -45,7 +58,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
     const { data: existing, error: fetchErr } = await db
       .from('pos_orders')
-      .select('customer_id, payment_status, payment_method, total_amount')
+      .select('customer_id, payment_status, payment_method, total_amount, order_number, company_id, branch_id')
       .eq('id', orderId)
       .single();
 
@@ -68,6 +81,78 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         { success: false, error: 'Pembayaran ARK Coin harus menutup seluruh total order' },
         { status: 400 }
       );
+    }
+
+    // NFC Tab (EPIC-023 Fase C): bayar open bill dengan memindahkan tagihan
+    // ke tab visit — charge dulu (transaksional + idempotent per order),
+    // baru order ditandai paid. Order yang sudah paid tidak di-charge ulang.
+    const paysWithNfcTab =
+      effectiveMethod === 'nfc_tab' &&
+      (updateData.payment_status === 'paid' || payment_status === 'paid') &&
+      existing.payment_status !== 'paid';
+    if (paysWithNfcTab) {
+      const rate = checkRateLimit(`pos-nfc-tab:${sessionUserId}`, 30);
+      if (!rate.allowed) {
+        return NextResponse.json(
+          { success: false, error: 'Terlalu banyak percobaan NFC Tab — tunggu sebentar' },
+          { status: 429 }
+        );
+      }
+      // Order partial sudah menerima uang sebagian — full total ke tab bakal
+      // menagih dobel. Tolak; NFC Tab hanya untuk order yang belum terbayar.
+      if (existing.payment_status === 'partial') {
+        return NextResponse.json(
+          { success: false, error: 'Order sudah terbayar sebagian — NFC Tab hanya untuk order yang belum terbayar' },
+          { status: 400 }
+        );
+      }
+      const nfcTabUid = String(body.nfc_tab_uid || '').trim();
+      if (!nfcTabUid) {
+        return NextResponse.json(
+          { success: false, error: 'Pembayaran NFC Tab membutuhkan tap gelang' },
+          { status: 400 }
+        );
+      }
+      if (!isValidNfcUid(normalizeNfcUid(nfcTabUid))) {
+        return NextResponse.json(
+          { success: false, error: 'UID gelang tidak valid — tap ulang gelang' },
+          { status: 400 }
+        );
+      }
+      if (numericArkUsed > 0) {
+        return NextResponse.json(
+          { success: false, error: 'NFC Tab tidak bisa dicampur ARK Coin — 1 transaksi 1 metode' },
+          { status: 400 }
+        );
+      }
+      if (!existing.company_id || !existing.branch_id) {
+        return NextResponse.json(
+          { success: false, error: 'Order tanpa venue — tidak bisa charge ke tab' },
+          { status: 400 }
+        );
+      }
+      const tabResult = await chargeFnbOrderToTab({
+        orderId,
+        orderNumber: String(existing.order_number || orderId),
+        amount: orderTotal,
+        bandUid: nfcTabUid,
+        companyId: existing.company_id,
+        branchId: existing.branch_id,
+        createdBy: sessionUserId,
+        // paid ditandai atomik bersama charge — update generik di bawah
+        // hanya mengulang nilai yang sama (aman bila gagal)
+        markOrderPaid: true,
+      });
+      if (!tabResult.ok) {
+        console.error(
+          `[pos] nfc_tab charge rejected: order=${orderId} user=${sessionUserId} reason=${tabResult.reason}`
+        );
+        return NextResponse.json(
+          { success: false, error: tabResult.reason },
+          { status: tabResult.status === 402 ? 400 : tabResult.status }
+        );
+      }
+      updateData.amount_paid = 0;
     }
 
     // Deduct ARK coins atomically BEFORE marking the order paid. The RPC locks
