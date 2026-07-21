@@ -29,6 +29,7 @@ import {
   PlusIcon,
   ShoppingCartIcon,
   StarIcon,
+  TicketIcon,
   TruckIcon,
   UsersIcon,
 } from "@heroicons/react/24/outline";
@@ -58,6 +59,7 @@ import {
   PlusIcon as PlusIconSolid,
   ShoppingCartIcon as ShoppingCartIconSolid,
   StarIcon as StarIconSolid,
+  TicketIcon as TicketIconSolid,
   TruckIcon as TruckIconSolid,
   UsersIcon as UsersIconSolid,
 } from "@heroicons/react/24/solid";
@@ -109,6 +111,7 @@ const iconMap: Record<NavIconName, IconSet> = {
   },
   megaphone: { outline: MegaphoneIcon, solid: MegaphoneIconSolid },
   banknotes: { outline: BanknotesIcon, solid: BanknotesIconSolid },
+  ticket: { outline: TicketIcon, solid: TicketIconSolid },
 };
 
 export function AppSidebarNavIcon({

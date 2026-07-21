@@ -35,7 +35,8 @@ export type NavIconName =
   | "document-text"
   | "clipboard-document-check"
   | "megaphone"
-  | "banknotes";
+  | "banknotes"
+  | "ticket";
 
 export interface NavItem {
   href: string;

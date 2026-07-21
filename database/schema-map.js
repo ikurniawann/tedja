@@ -32,6 +32,7 @@ const DOMAINS = {
   inventory: { order: 50, schema: "public", realSchema: "inventory" },
   manufacturing: { order: 55, schema: "public", realSchema: "manufacturing" },
   pos: { order: 60, schema: "public", realSchema: "pos" },
+  ticketing: { order: 65, schema: "public", realSchema: "ticketing" },
   crm: { order: 70, schema: "public", realSchema: "crm" },
   core: { order: 90, schema: "public", realSchema: "public" },
 };
