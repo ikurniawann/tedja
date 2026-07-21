@@ -1,15 +1,9 @@
 import type {
   BandFilters,
   BandListResponse,
-  PriceEntry,
-  PriceMatrixResponse,
-  SeasonFormValues,
   SettingsFormValues,
   TicketBand,
   TicketChannel,
-  TicketSeason,
-  TicketType,
-  TicketTypeFormValues,
   TicketingSettings,
 } from "./types";
 
@@ -47,7 +41,7 @@ async function sendJson<T>(
   return body.data;
 }
 
-// ── Settings (GET men-bootstrap default venue: adult/child + kanal) ──
+// ── Settings (GET men-bootstrap kanal default venue) ──
 export const fetchSettings = () =>
   getJson<TicketingSettings>("/api/ticketing/settings", "Gagal memuat pengaturan");
 
@@ -58,52 +52,6 @@ export const updateSettings = (values: SettingsFormValues) =>
     values,
     "Gagal menyimpan pengaturan"
   );
-
-// ── Jenis tiket ──
-export const fetchTicketTypes = () =>
-  getJson<TicketType[]>("/api/ticketing/ticket-types", "Gagal memuat jenis tiket");
-
-export const createTicketType = (values: TicketTypeFormValues) =>
-  sendJson<TicketType>(
-    "/api/ticketing/ticket-types",
-    "POST",
-    values,
-    "Gagal membuat jenis tiket"
-  );
-
-export const updateTicketType = (
-  id: string,
-  values: Partial<TicketTypeFormValues> & { is_active?: boolean }
-) =>
-  sendJson<TicketType>(
-    `/api/ticketing/ticket-types/${id}`,
-    "PATCH",
-    values,
-    "Gagal memperbarui jenis tiket"
-  );
-
-// ── Kalender musim ──
-export const fetchSeasons = () =>
-  getJson<TicketSeason[]>("/api/ticketing/seasons", "Gagal memuat kalender musim");
-
-export const createSeason = (values: SeasonFormValues) =>
-  sendJson<TicketSeason>("/api/ticketing/seasons", "POST", values, "Gagal menambah musim");
-
-export const updateSeason = (
-  id: string,
-  values: Partial<SeasonFormValues> & { is_active?: boolean }
-) =>
-  sendJson<TicketSeason>(
-    `/api/ticketing/seasons/${id}`,
-    "PATCH",
-    values,
-    "Gagal memperbarui musim"
-  );
-
-export async function deleteSeason(id: string): Promise<void> {
-  const res = await fetch(`/api/ticketing/seasons/${id}`, { method: "DELETE" });
-  if (!res.ok && res.status !== 204) await parseError(res, "Gagal menghapus musim");
-}
 
 // ── Kanal ──
 export const fetchChannels = () =>
@@ -118,18 +66,6 @@ export const updateChannel = (
     "PATCH",
     values,
     "Gagal memperbarui kanal"
-  );
-
-// ── Matriks harga ──
-export const fetchPriceMatrix = () =>
-  getJson<PriceMatrixResponse>("/api/ticketing/prices", "Gagal memuat matriks harga");
-
-export const savePriceMatrix = (entries: PriceEntry[]) =>
-  sendJson<{ saved: number }>(
-    "/api/ticketing/prices",
-    "PUT",
-    { entries },
-    "Gagal menyimpan matriks harga"
   );
 
 // ── Registry gelang ──

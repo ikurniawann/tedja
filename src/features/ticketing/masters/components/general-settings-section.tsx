@@ -77,7 +77,7 @@ export function GeneralSettingsSection() {
         <div className="grid gap-6 px-5 py-4 lg:grid-cols-2">
           <div className="space-y-4">
             <div className="space-y-1.5">
-              <Label>Kebijakan Re-entry (tap gate ulang)</Label>
+              <Label>Default Re-entry Ticket Baru</Label>
               <Select
                 value={form.re_entry_policy}
                 onValueChange={(value) =>
@@ -97,7 +97,8 @@ export function GeneralSettingsSection() {
                 </SelectContent>
               </Select>
               <p className="text-xs text-gray-500">
-                Berlaku selama kunjungan masih terbuka (belum settlement)
+                Dipakai sebagai default saat membuat ticket baru — tiap ticket
+                bisa mengubahnya di tab Kebijakan Operasional
               </p>
             </div>
             <div className="space-y-1.5">

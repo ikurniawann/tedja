@@ -290,6 +290,17 @@ menang overlap, default regular) → harga = override kanal[musim] ??
 harga varian[musim]; tanggal `blok-online` + kanal website → ditolak;
 harga kosong → null (WAJIB tolak transaksi, jangan menebak).
 
+### Penegasan owner: rombongan & master pembayar (2026-07-21)
+
+Rombongan (mis. ber-3): **1 orang jadi master** yang bisa membayarkan
+billing seluruh rombongan, TAPI tiap member juga bisa bayar
+masing-masing. Ini sudah persis dipetakan oleh desain Fase B yang
+berjalan: 1 visit = 1 rombongan dengan penanggung jawab (master);
+kasir keluar mendukung **settle satu rombongan sekaligus** (master
+membayar semua gelang) DAN **settle per gelang** (member bayar
+tagihannya sendiri, gelangnya dilepas, visit tetap open untuk sisanya).
+Tidak ada perubahan skema yang dibutuhkan.
+
 ### Dampak ke Fase B/C yang sudah jadi
 
 - Registrasi loket: pilih **Ticket** (aktif + distribusi walk-in) →
@@ -496,3 +507,41 @@ distribusi website, harga kanal website, dan tanggal blok-online.
   resolver v2) lalu R2 (Channel Manager + adaptasi Loket/Gate).
   Detail di bagian "Revisi Manage Ticket". Menunggu go owner sebelum
   dev.
+- 2026-07-21 — **Fase R1 SELESAI** (status `coding`). Delta
+  `20260722100000_ticketing_fase_r1.sql` applied: wipe data dev
+  (keputusan owner; registry gelang + pengaturan venue dipertahankan),
+  drop master flat Fase A, tabel baru `ticket_categories` (unik
+  case-insensitive lower(name)), `ticket_products` (kode auto TKT-####,
+  draft/active, base price, thumbnail, re-entry per ticket),
+  `ticket_product_variants` (Adult/Child × harga Regular & High),
+  `ticket_product_dates` (high-season + blok-online),
+  `ticket_product_channels` (distribusi, default walk-in ON),
+  `ticket_variant_channel_prices` (override per kanal);
+  `ticket_visit_bands.variant_id` NOT NULL. Master Ticket di
+  `/ticketing/tickets` (list + editor Tabs: Info & Varian / Kalender /
+  Kebijakan; kategori autocomplete auto-add; upload thumbnail reuse
+  `lib/storage`). Resolver v2 murni (19 unit test) + server
+  `resolveVariantPriceOnDate`. Loket & Gate langsung diadaptasi
+  (registrasi pilih Ticket—Varian dari produk Active ber-distribusi
+  POS; gate baca re-entry per ticket, price_context baru
+  {ticket_product_id, variant_id, season_kind, channel_id,
+  visit_date}); settlement/F&B/ledger tak tersentuh. Pengaturan Tiket
+  menyusut (kebijakan venue + registry gelang; re-entry venue = default
+  ticket baru). Gate hasil — code review APPROVE (2 MEDIUM ditutup:
+  retry tabrakan kode 23505 → 409, kategori unik lower(name));
+  security review menemukan **CRITICAL PRE-EXISTING di
+  `/api/files/[bucket]/[...path]`: path traversal + tanpa nosniff —
+  ditutup (containment path.resolve + startsWith, dotfile ditolak,
+  nosniff, tipe tak dikenal dipaksa attachment; akses anonim ke URL
+  persis dipertahankan krn nama file ber-komponen acak = capability
+  URL, dipakai lintas konteks sesi)**; H1 ekstensi file kini dari MIME
+  tervalidasi bukan filename klien (anti stored-XSS svg/html); H2
+  category_id divalidasi milik venue (anti-IDOR); M1 lookup kanal
+  resolver di-scope tenant. Verifikasi: 35 unit test, build lulus,
+  smoke SQL R1 end-to-end (kategori → TKT-0001 → varian+kalender+
+  distribusi → opsi loket → registrasi varian → join gate re-entry per
+  ticket → harga high benar → override kanal → varian draft tertolak)
+  lulus dgn rollback. Penegasan owner tercatat: rombongan master-bayar
+  = settle rombongan Fase B; member bayar sendiri = settle per gelang.
+  Sisa R2: Channel Manager UI (toggle distribusi + override harga per
+  kanal + guard harga lengkap).

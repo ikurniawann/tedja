@@ -1,0 +1,86 @@
+"use client";
+
+import Link from "next/link";
+import { ArrowLeftIcon } from "@heroicons/react/24/outline";
+import { Loader2 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { CalendarTab } from "./calendar-tab";
+import { InfoVariantsTab } from "./info-variants-tab";
+import { PolicyTab } from "./policy-tab";
+import { useProductDetail } from "../queries";
+
+export function TicketEditorPage({ productId }: { productId: string }) {
+  const detailQuery = useProductDetail(productId);
+  const detail = detailQuery.data;
+
+  if (detailQuery.isLoading || !detail) {
+    return (
+      <div className="py-20 text-center">
+        <Loader2 className="mx-auto h-8 w-8 animate-spin text-pink-600" />
+        <p className="mt-2 text-sm text-gray-500">Memuat ticket...</p>
+      </div>
+    );
+  }
+
+  const { product, channels } = detail;
+
+  return (
+    <div className="space-y-6">
+      <div className="border-b border-gray-200/70 pb-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <Button size="sm" variant="ghost" className="h-8 px-2" asChild>
+            <Link href="/dashboard/ticketing/tickets">
+              <ArrowLeftIcon className="h-4 w-4" />
+            </Link>
+          </Button>
+          <h1 className="text-2xl font-bold text-gray-900">{product.name}</h1>
+          <span className="font-mono text-sm text-gray-500">{product.code}</span>
+          <Badge
+            className={`border-0 font-normal ${
+              product.status === "active"
+                ? "bg-emerald-100 text-emerald-700"
+                : "bg-gray-100 text-gray-500"
+            }`}
+          >
+            {product.status === "active" ? "Active" : "Draft"}
+          </Badge>
+          <span className="ml-auto flex gap-1">
+            {channels
+              .filter((channel) => channel.is_distributed)
+              .map((channel) => (
+                <Badge
+                  key={channel.id}
+                  className="border-0 bg-blue-100 font-normal text-blue-700"
+                >
+                  {channel.channel_code === "walk-in" ? "POS" : "Website"}
+                </Badge>
+              ))}
+          </span>
+        </div>
+        <p className="mt-1 text-sm text-gray-500">
+          Konfigurasi produk ticket — distribusi kanal diatur di Channel
+          Manager (Fase R2).
+        </p>
+      </div>
+
+      <Tabs defaultValue="info">
+        <TabsList>
+          <TabsTrigger value="info">Info & Varian</TabsTrigger>
+          <TabsTrigger value="calendar">Kalender</TabsTrigger>
+          <TabsTrigger value="policy">Kebijakan Operasional</TabsTrigger>
+        </TabsList>
+        <TabsContent value="info" className="pt-4">
+          <InfoVariantsTab detail={detail} />
+        </TabsContent>
+        <TabsContent value="calendar" className="pt-4">
+          <CalendarTab detail={detail} />
+        </TabsContent>
+        <TabsContent value="policy" className="pt-4">
+          <PolicyTab detail={detail} />
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}

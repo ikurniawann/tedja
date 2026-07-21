@@ -44,7 +44,8 @@ export interface VisitBand {
   band_id: string;
   nfc_uid: string;
   label: string | null;
-  ticket_type_id: string;
+  variant_id: string;
+  /** "Nama Ticket — Varian" (label gabungan dari server). */
   ticket_type_name: string;
   entered_at: string | null;
   status: "aktif" | "selesai" | "hilang";
@@ -83,7 +84,7 @@ export interface VisitDetail {
 
 export interface RegisterVisitBand {
   nfc_uid: string;
-  ticket_type_id: string;
+  variant_id: string;
 }
 
 export interface RegisterVisitValues {

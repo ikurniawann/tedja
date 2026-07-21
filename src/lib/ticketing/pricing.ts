@@ -1,21 +1,23 @@
-// Resolver harga tiket (EPIC-023): jenis tiket × musim × kanal → satu harga
-// pasti. Fungsi murni tanpa akses DB agar mudah diuji — API/gate memanggil
-// dengan data master yang sudah ter-scope venue.
+// Resolver harga tiket v2 (EPIC-023 Revisi Manage Ticket): harga hidup di
+// VARIAN produk ticket (Regular & High Season per varian), musim & blok
+// online dari kalender per ticket, dan kanal bisa punya harga override.
+// Fungsi murni tanpa DB agar mudah diuji — pemanggil menyuplai data yang
+// sudah ter-scope venue.
 
 export type SeasonKind = "regular" | "high";
+export type ProductDateKind = "high-season" | "blok-online";
 
-export interface SeasonRange {
-  season_kind: SeasonKind;
+export interface ProductDateRange {
+  date_kind: ProductDateKind;
   start_date: string; // YYYY-MM-DD inklusif
   end_date: string; // YYYY-MM-DD inklusif
   is_active: boolean;
 }
 
-export interface PriceEntry {
-  ticket_type_id: string;
-  season_kind: SeasonKind;
-  channel_id: string;
-  price: number;
+/** Pasangan harga Regular/High — null = belum diisi (WAJIB tolak). */
+export interface PricePair {
+  price_regular: number | null;
+  price_high: number | null;
 }
 
 /** Valid bila string YYYY-MM-DD adalah tanggal kalender sungguhan. */
@@ -30,76 +32,104 @@ export function isValidCalendarDate(value: string): boolean {
   );
 }
 
+const isDateInRange = (date: string, range: ProductDateRange) =>
+  range.is_active && range.start_date <= date && date <= range.end_date;
+
 /**
- * Musim untuk sebuah tanggal kunjungan. Aturan (keputusan owner 2026-07-21,
- * kalender manual): rentang `high` yang aktif dan memuat tanggal → `high`;
- * di luar semua rentang → `regular`. Bila rentang high dan regular
- * bertumpuk, `high` menang.
+ * Musim untuk satu tanggal menurut kalender TICKET ybs: masuk rentang
+ * `high-season` aktif → high; di luar semua rentang → regular.
  */
 export function resolveSeasonKind(
   visitDate: string,
-  seasons: readonly SeasonRange[]
+  dates: readonly ProductDateRange[]
 ): SeasonKind {
   if (!isValidCalendarDate(visitDate)) {
     throw new Error(`Tanggal kunjungan tidak valid: ${visitDate}`);
   }
-  const matches = seasons.filter(
-    (s) =>
-      s.is_active && s.start_date <= visitDate && visitDate <= s.end_date
-  );
-  return matches.some((s) => s.season_kind === "high") ? "high" : "regular";
+  return dates.some((r) => r.date_kind === "high-season" && isDateInRange(visitDate, r))
+    ? "high"
+    : "regular";
 }
 
 /**
- * Harga pasti untuk kombinasi jenis tiket + musim + kanal, atau null bila
- * matriks berlubang (harga belum diisi) — pemanggil WAJIB menolak transaksi,
- * jangan menebak harga.
+ * Tanggal diblok dari penjualan online? (kanal website menolak; walk-in
+ * tetap jalan.)
  */
-export function resolvePrice(
-  prices: readonly PriceEntry[],
-  key: { ticketTypeId: string; seasonKind: SeasonKind; channelId: string }
-): number | null {
-  const found = prices.find(
-    (p) =>
-      p.ticket_type_id === key.ticketTypeId &&
-      p.season_kind === key.seasonKind &&
-      p.channel_id === key.channelId
-  );
-  return found ? found.price : null;
-}
-
-export interface PriceGap {
-  ticket_type_id: string;
-  season_kind: SeasonKind;
-  channel_id: string;
-}
-
-/**
- * Lubang matriks harga: kombinasi (tipe aktif × regular/high × kanal aktif)
- * yang belum punya baris harga. Dipakai validasi UI — kanal aktif tidak
- * boleh punya lubang harga.
- */
-export function findPriceGaps(
-  activeTicketTypeIds: readonly string[],
-  activeChannelIds: readonly string[],
-  prices: readonly PriceEntry[]
-): PriceGap[] {
-  const filled = new Set(
-    prices.map((p) => `${p.ticket_type_id}|${p.season_kind}|${p.channel_id}`)
-  );
-  const gaps: PriceGap[] = [];
-  for (const typeId of activeTicketTypeIds) {
-    for (const seasonKind of ["regular", "high"] as const) {
-      for (const channelId of activeChannelIds) {
-        if (!filled.has(`${typeId}|${seasonKind}|${channelId}`)) {
-          gaps.push({
-            ticket_type_id: typeId,
-            season_kind: seasonKind,
-            channel_id: channelId,
-          });
-        }
-      }
-    }
+export function isDateBlockedOnline(
+  visitDate: string,
+  dates: readonly ProductDateRange[]
+): boolean {
+  if (!isValidCalendarDate(visitDate)) {
+    throw new Error(`Tanggal kunjungan tidak valid: ${visitDate}`);
   }
-  return gaps;
+  return dates.some(
+    (r) => r.date_kind === "blok-online" && isDateInRange(visitDate, r)
+  );
+}
+
+const priceForSeason = (pair: PricePair | null | undefined, season: SeasonKind) => {
+  if (!pair) return null;
+  return season === "high" ? pair.price_high : pair.price_regular;
+};
+
+/**
+ * Harga pasti untuk (varian, musim, kanal): override kanal menang bila
+ * terisi, selain itu harga varian. Null = harga belum diisi — pemanggil
+ * WAJIB menolak transaksi, jangan menebak harga.
+ */
+export function resolveVariantPrice(input: {
+  variant: PricePair;
+  channelOverride?: PricePair | null;
+  seasonKind: SeasonKind;
+}): number | null {
+  const override = priceForSeason(input.channelOverride, input.seasonKind);
+  if (override !== null && override !== undefined) return override;
+  return priceForSeason(input.variant, input.seasonKind);
+}
+
+export interface ResolveTicketPriceInput {
+  visitDate: string;
+  /** true bila kanal penjualan online (website) — kena blok-online. */
+  isOnlineChannel: boolean;
+  dates: readonly ProductDateRange[];
+  variant: PricePair;
+  channelOverride?: PricePair | null;
+}
+
+export type ResolveTicketPriceResult =
+  | { ok: true; price: number; seasonKind: SeasonKind }
+  | { ok: false; reason: "tanggal-diblok" | "harga-belum-diisi" };
+
+/** Resolusi lengkap satu tanggal: blok online → musim → harga. */
+export function resolveTicketPrice(
+  input: ResolveTicketPriceInput
+): ResolveTicketPriceResult {
+  if (input.isOnlineChannel && isDateBlockedOnline(input.visitDate, input.dates)) {
+    return { ok: false, reason: "tanggal-diblok" };
+  }
+  const seasonKind = resolveSeasonKind(input.visitDate, input.dates);
+  const price = resolveVariantPrice({
+    variant: input.variant,
+    channelOverride: input.channelOverride,
+    seasonKind,
+  });
+  if (price === null || price === undefined) {
+    return { ok: false, reason: "harga-belum-diisi" };
+  }
+  return { ok: true, price, seasonKind };
+}
+
+/**
+ * Varian dianggap "lengkap harga" bila Regular & High terisi (langsung
+ * di varian ATAU tertutup override kanal ybs) — dipakai guard distribusi
+ * Channel Manager (Fase R2).
+ */
+export function isVariantPriceComplete(
+  variant: PricePair,
+  channelOverride?: PricePair | null
+): boolean {
+  return (["regular", "high"] as const).every(
+    (season) =>
+      resolveVariantPrice({ variant, channelOverride, seasonKind: season }) !== null
+  );
 }

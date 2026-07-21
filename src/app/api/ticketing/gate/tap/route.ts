@@ -12,7 +12,7 @@ import {
   type TicketingContext,
 } from "@/lib/ticketing/server";
 import {
-  resolveTicketPriceOnDate,
+  resolveVariantPriceOnDate,
   todayJakartaDate,
 } from "@/lib/ticketing/pricing-server";
 import { canCharge, computeTabSummary } from "@/lib/ticketing/tab";
@@ -134,8 +134,10 @@ export async function POST(request: NextRequest) {
       const vbResult = await client.query<{
         visit_band_id: string;
         visit_id: string;
-        ticket_type_id: string;
+        variant_id: string;
+        ticket_product_id: string;
         ticket_type_name: string;
+        re_entry_policy: string;
         entered_at: string | null;
         contact_name: string;
         payment_mode: "postpaid" | "prepaid";
@@ -143,13 +145,16 @@ export async function POST(request: NextRequest) {
         channel_id: string | null;
         visit_status: string;
       }>(
-        `SELECT vb.id AS visit_band_id, vb.visit_id, vb.ticket_type_id,
-                t.name AS ticket_type_name, vb.entered_at,
+        `SELECT vb.id AS visit_band_id, vb.visit_id, vb.variant_id,
+                tp.id AS ticket_product_id,
+                tp.name || ' — ' || pv.name AS ticket_type_name,
+                tp.re_entry_policy, vb.entered_at,
                 v.contact_name, v.payment_mode, v.credit_limit, v.channel_id,
                 v.status AS visit_status
          FROM ticketing.ticket_visit_bands vb
          JOIN ticketing.ticket_visits v ON v.id = vb.visit_id
-         JOIN ticketing.ticket_types t ON t.id = vb.ticket_type_id
+         JOIN ticketing.ticket_product_variants pv ON pv.id = vb.variant_id
+         JOIN ticketing.ticket_products tp ON tp.id = pv.ticket_product_id
          WHERE vb.band_id = $1 AND vb.status = 'aktif'
          ORDER BY vb.created_at DESC
          LIMIT 1
@@ -173,15 +178,9 @@ export async function POST(request: NextRequest) {
         };
       }
 
-      // Tap ulang → kebijakan re-entry venue
+      // Tap ulang → kebijakan re-entry TICKET ybs (revisi owner: per produk)
       if (vb.entered_at !== null) {
-        const settingsResult = await client.query<{ re_entry_policy: string }>(
-          `SELECT re_entry_policy FROM ticketing.ticket_settings
-           WHERE branch_id = $1 AND company_id = $2`,
-          [ctx.branchId, ctx.companyId]
-        );
-        const policy =
-          settingsResult.rows[0]?.re_entry_policy ?? "sekali-masuk";
+        const policy = vb.re_entry_policy || "sekali-masuk";
         if (policy === "bebas-keluar-masuk") {
           await logGateEvent(client, ctx, {
             bandUid: uid,
@@ -233,14 +232,14 @@ export async function POST(request: NextRequest) {
         };
       }
       const visitDate = todayJakartaDate();
-      const resolved = await resolveTicketPriceOnDate(client, {
+      const resolved = await resolveVariantPriceOnDate(client, {
         companyId: ctx.companyId,
         branchId: ctx.branchId,
-        ticketTypeId: vb.ticket_type_id,
+        variantId: vb.variant_id,
         channelId: vb.channel_id,
         visitDate,
       });
-      if (!resolved) {
+      if (!resolved.ok) {
         await logGateEvent(client, ctx, {
           bandUid: uid,
           bandId: band.id,
@@ -251,7 +250,10 @@ export async function POST(request: NextRequest) {
         return {
           result: "ditolak-harga-belum-diisi",
           ok: false,
-          reason: `Harga ${vb.ticket_type_name} belum diisi di matriks — hubungi supervisor`,
+          reason:
+            resolved.reason === "tanggal-diblok"
+              ? "Tanggal ini diblok untuk kanal kunjungan — hubungi supervisor"
+              : `Harga ${vb.ticket_type_name} belum diisi — lengkapi di Master Ticket`,
           contact_name: vb.contact_name,
           ticket_type_name: vb.ticket_type_name,
         };
@@ -335,7 +337,8 @@ export async function POST(request: NextRequest) {
           `Tiket ${vb.ticket_type_name} (${resolved.seasonKind}, ${visitDate})`,
           resolved.price,
           JSON.stringify({
-            ticket_type_id: vb.ticket_type_id,
+            ticket_product_id: vb.ticket_product_id,
+            variant_id: vb.variant_id,
             season_kind: resolved.seasonKind,
             channel_id: vb.channel_id,
             visit_date: visitDate,

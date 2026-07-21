@@ -130,7 +130,7 @@ const registerVisitSchema = z.object({
     .array(
       z.object({
         nfc_uid: z.string().trim().min(1).max(80),
-        ticket_type_id: z.string().uuid(),
+        variant_id: z.string().uuid(),
       })
     )
     .min(1)
@@ -235,16 +235,25 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      const typeIds = [...new Set(body.bands.map((b) => b.ticket_type_id))];
-      const typesResult = await client.query<{ id: string }>(
-        `SELECT id FROM ticketing.ticket_types
-         WHERE branch_id = $1 AND company_id = $2 AND id = ANY($3)
-           AND is_active = true`,
-        [ctx.branchId, ctx.companyId, typeIds]
+      // Varian valid = milik venue, aktif, produknya Active DAN
+      // terdistribusi ke kanal walk-in (Channel Manager)
+      const variantIds = [...new Set(body.bands.map((b) => b.variant_id))];
+      const variantsResult = await client.query<{ id: string }>(
+        `SELECT pv.id
+         FROM ticketing.ticket_product_variants pv
+         JOIN ticketing.ticket_products tp ON tp.id = pv.ticket_product_id
+         JOIN ticketing.ticket_product_channels pc
+           ON pc.ticket_product_id = tp.id AND pc.channel_id = $4
+              AND pc.is_distributed = true
+         WHERE pv.branch_id = $1 AND pv.company_id = $2 AND pv.id = ANY($3)
+           AND pv.is_active = true AND tp.status = 'active'`,
+        [ctx.branchId, ctx.companyId, variantIds, channelId]
       );
-      if (typesResult.rows.length !== typeIds.length) {
+      if (variantsResult.rows.length !== variantIds.length) {
         throw Object.assign(
-          new Error("Ada jenis tiket yang tidak dikenal / nonaktif"),
+          new Error(
+            "Ada varian ticket yang tidak dikenal / nonaktif / belum didistribusi ke POS"
+          ),
           { statusCode: 400 }
         );
       }
@@ -278,9 +287,9 @@ export async function POST(request: NextRequest) {
         const band = bandByUid.get(uid)!;
         await client.query(
           `INSERT INTO ticketing.ticket_visit_bands
-             (company_id, branch_id, visit_id, band_id, ticket_type_id)
+             (company_id, branch_id, visit_id, band_id, variant_id)
            VALUES ($1, $2, $3, $4, $5)`,
-          [ctx.companyId, ctx.branchId, visitId, band.id, item.ticket_type_id]
+          [ctx.companyId, ctx.branchId, visitId, band.id, item.variant_id]
         );
         await client.query(
           `UPDATE ticketing.ticket_bands

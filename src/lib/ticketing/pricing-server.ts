@@ -1,13 +1,13 @@
-// Jembatan resolver harga murni (pricing.ts) ke data master ber-tenant.
-// Dipakai gate tap-charge (Fase B) dan booking website (Fase D).
+// Jembatan resolver harga murni (pricing.ts v2) ke data ber-tenant:
+// varian produk ticket + kalender per ticket + override harga kanal.
+// Dipakai gate tap-charge dan (Fase D) website booking.
 
 import type { PoolClient } from "pg";
 import {
-  resolvePrice,
-  resolveSeasonKind,
-  type PriceEntry,
+  resolveTicketPrice,
+  type ProductDateRange,
+  type ResolveTicketPriceResult,
   type SeasonKind,
-  type SeasonRange,
 } from "./pricing";
 
 /** Tanggal hari ini menurut operasional venue (WIB). */
@@ -17,58 +17,83 @@ export function todayJakartaDate(): string {
   }).format(new Date());
 }
 
-export interface ResolvedTicketPrice {
-  price: number;
-  seasonKind: SeasonKind;
-}
+export type { ResolveTicketPriceResult, SeasonKind };
 
 /**
- * Resolve harga tiket untuk satu tanggal kunjungan di dalam transaksi:
- * kalender musim venue → season kind → baris matriks harga. Null bila
- * matriks berlubang — pemanggil WAJIB menolak, jangan menebak harga.
+ * Resolve harga satu varian untuk satu tanggal & kanal di dalam transaksi:
+ * kalender ticket → musim/blok → harga varian dgn override kanal.
+ * `ok: false` → pemanggil WAJIB menolak, jangan menebak harga.
  */
-export async function resolveTicketPriceOnDate(
+export async function resolveVariantPriceOnDate(
   client: PoolClient,
   input: {
     companyId: string;
     branchId: string;
-    ticketTypeId: string;
+    variantId: string;
     channelId: string;
     visitDate: string;
   }
-): Promise<ResolvedTicketPrice | null> {
-  const seasonsResult = await client.query<SeasonRange>(
-    `SELECT season_kind, start_date::text AS start_date,
-            end_date::text AS end_date, is_active
-     FROM ticketing.ticket_seasons
-     WHERE branch_id = $1 AND company_id = $2`,
-    [input.branchId, input.companyId]
-  );
-  const seasonKind = resolveSeasonKind(input.visitDate, seasonsResult.rows);
-
-  const priceResult = await client.query<{
-    ticket_type_id: string;
-    season_kind: SeasonKind;
-    channel_id: string;
-    price: string;
+): Promise<
+  | (ResolveTicketPriceResult & { ok: true; ticketProductId: string })
+  | (ResolveTicketPriceResult & { ok: false })
+> {
+  const variantResult = await client.query<{
+    ticket_product_id: string;
+    price_regular: string | null;
+    price_high: string | null;
   }>(
-    `SELECT ticket_type_id, season_kind, channel_id, price
-     FROM ticketing.ticket_prices
-     WHERE branch_id = $1 AND company_id = $2
-       AND ticket_type_id = $3 AND channel_id = $4`,
-    [input.branchId, input.companyId, input.ticketTypeId, input.channelId]
+    `SELECT v.ticket_product_id, v.price_regular, v.price_high
+     FROM ticketing.ticket_product_variants v
+     WHERE v.id = $1 AND v.branch_id = $2 AND v.company_id = $3
+       AND v.is_active = true`,
+    [input.variantId, input.branchId, input.companyId]
   );
-  const entries: PriceEntry[] = priceResult.rows.map((row) => ({
-    ticket_type_id: row.ticket_type_id,
-    season_kind: row.season_kind,
-    channel_id: row.channel_id,
-    price: Number(row.price),
-  }));
+  const variant = variantResult.rows[0];
+  if (!variant) {
+    return { ok: false, reason: "harga-belum-diisi" };
+  }
 
-  const price = resolvePrice(entries, {
-    ticketTypeId: input.ticketTypeId,
-    seasonKind,
-    channelId: input.channelId,
+  const [datesResult, channelResult, overrideResult] = await Promise.all([
+    client.query<ProductDateRange>(
+      `SELECT date_kind, start_date::text AS start_date,
+              end_date::text AS end_date, is_active
+       FROM ticketing.ticket_product_dates
+       WHERE ticket_product_id = $1`,
+      [variant.ticket_product_id]
+    ),
+    client.query<{ is_online: boolean }>(
+      `SELECT is_online FROM ticketing.ticket_channels
+       WHERE id = $1 AND branch_id = $2 AND company_id = $3`,
+      [input.channelId, input.branchId, input.companyId]
+    ),
+    client.query<{ price_regular: string | null; price_high: string | null }>(
+      `SELECT price_regular, price_high
+       FROM ticketing.ticket_variant_channel_prices
+       WHERE variant_id = $1 AND channel_id = $2`,
+      [input.variantId, input.channelId]
+    ),
+  ]);
+
+  const toPair = (row?: {
+    price_regular: string | null;
+    price_high: string | null;
+  }) =>
+    row
+      ? {
+          price_regular:
+            row.price_regular === null ? null : Number(row.price_regular),
+          price_high: row.price_high === null ? null : Number(row.price_high),
+        }
+      : null;
+
+  const result = resolveTicketPrice({
+    visitDate: input.visitDate,
+    isOnlineChannel: channelResult.rows[0]?.is_online ?? false,
+    dates: datesResult.rows,
+    variant: toPair(variant)!,
+    channelOverride: toPair(overrideResult.rows[0]),
   });
-  return price === null ? null : { price, seasonKind };
+
+  if (!result.ok) return result;
+  return { ...result, ticketProductId: variant.ticket_product_id };
 }

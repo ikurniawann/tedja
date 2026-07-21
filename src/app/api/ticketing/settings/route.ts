@@ -21,9 +21,9 @@ const SETTINGS_COLUMNS = `id, re_entry_policy, default_credit_limit,
 
 /**
  * Bootstrap sekali jalan saat venue pertama kali membuka Ticketing:
- * baris settings + jenis tiket default (adult/child) + kanal default
- * (walk-in/website). Master ber-tenant sehingga seed tidak bisa di
- * migrasi SQL — idempotent via ON CONFLICT.
+ * baris settings + kanal default (walk-in/website). Ticket dibuat owner
+ * lewat Master Ticket (revisi 2026-07-21) — tidak ada seed jenis tiket.
+ * Idempotent via ON CONFLICT.
  */
 async function ensureDefaults(companyId: string, branchId: string, userId: string) {
   await withTransaction(async (client) => {
@@ -31,16 +31,6 @@ async function ensureDefaults(companyId: string, branchId: string, userId: strin
       `INSERT INTO ticketing.ticket_settings (company_id, branch_id, updated_by)
        VALUES ($1, $2, $3)
        ON CONFLICT (branch_id) DO NOTHING`,
-      [companyId, branchId, userId]
-    );
-    await client.query(
-      `INSERT INTO ticketing.ticket_types
-         (company_id, branch_id, code, name, rule_note, sort_order, created_by)
-       VALUES
-         ($1, $2, 'adult', 'Dewasa', NULL, 10, $3),
-         ($1, $2, 'child', 'Anak',
-          'Isi batas kategori (usia/tinggi) di Pengaturan Tiket', 20, $3)
-       ON CONFLICT (branch_id, code) DO NOTHING`,
       [companyId, branchId, userId]
     );
     await client.query(

@@ -24,7 +24,7 @@ interface VisitBandRow {
   band_id: string;
   nfc_uid: string;
   label: string | null;
-  ticket_type_id: string;
+  variant_id: string;
   ticket_type_name: string;
   entered_at: string | null;
   status: string;
@@ -68,11 +68,13 @@ export async function GET(
 
     const [bands, charges] = await Promise.all([
       query<VisitBandRow>(
-        `SELECT vb.id, vb.band_id, b.nfc_uid, b.label, vb.ticket_type_id,
-                t.name AS ticket_type_name, vb.entered_at, vb.status
+        `SELECT vb.id, vb.band_id, b.nfc_uid, b.label, vb.variant_id,
+                tp.name || ' — ' || pv.name AS ticket_type_name,
+                vb.entered_at, vb.status
          FROM ticketing.ticket_visit_bands vb
          JOIN ticketing.ticket_bands b ON b.id = vb.band_id
-         JOIN ticketing.ticket_types t ON t.id = vb.ticket_type_id
+         JOIN ticketing.ticket_product_variants pv ON pv.id = vb.variant_id
+         JOIN ticketing.ticket_products tp ON tp.id = pv.ticket_product_id
          WHERE vb.visit_id = $1
          ORDER BY vb.created_at`,
         [id]

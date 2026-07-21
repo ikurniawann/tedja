@@ -20,7 +20,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useTicketTypes, useTicketingSettings } from "../../masters/queries";
+import { useTicketingSettings } from "../../masters/queries";
+import { useLoketOptions } from "../../products/queries";
 import { useRegisterVisit } from "../queries";
 import type { PaymentMode } from "../../masters/types";
 import { CASH_METHOD_LABELS, type CashMethod, type RegisterVisitBand } from "../types";
@@ -33,12 +34,10 @@ interface RegistrationDialogProps {
 const formatRp = (n: number) => `Rp${n.toLocaleString("id-ID")}`;
 
 export function RegistrationDialog({ open, onOpenChange }: RegistrationDialogProps) {
-  const typesQuery = useTicketTypes();
+  const optionsQuery = useLoketOptions();
   const settingsQuery = useTicketingSettings();
-  const types = useMemo(
-    () => (typesQuery.data ?? []).filter((t) => t.is_active),
-    [typesQuery.data]
-  );
+  // Opsi = varian dari ticket Active yang didistribusi ke POS
+  const options = useMemo(() => optionsQuery.data ?? [], [optionsQuery.data]);
 
   const [contactName, setContactName] = useState("");
   const [contactPhone, setContactPhone] = useState("");
@@ -51,7 +50,7 @@ export function RegistrationDialog({ open, onOpenChange }: RegistrationDialogPro
   const effectiveMode: PaymentMode =
     paymentMode ?? settingsQuery.data?.default_payment_mode ?? "postpaid";
   const defaultLimit = Number(settingsQuery.data?.default_credit_limit ?? 0);
-  const defaultTypeId = types[0]?.id ?? "";
+  const defaultVariantId = options[0]?.variant_id ?? "";
 
   const reset = () => {
     setContactName("");
@@ -70,18 +69,18 @@ export function RegistrationDialog({ open, onOpenChange }: RegistrationDialogPro
 
   const addBand = () => {
     const uid = tapUid.trim();
-    if (!uid || !defaultTypeId) return;
+    if (!uid || !defaultVariantId) return;
     if (bands.some((b) => b.nfc_uid.toUpperCase() === uid.toUpperCase())) {
       setTapUid("");
       return;
     }
-    setBands((prev) => [...prev, { nfc_uid: uid, ticket_type_id: defaultTypeId }]);
+    setBands((prev) => [...prev, { nfc_uid: uid, variant_id: defaultVariantId }]);
     setTapUid("");
   };
 
-  const setBandType = (index: number, ticketTypeId: string) => {
+  const setBandVariant = (index: number, variantId: string) => {
     setBands((prev) =>
-      prev.map((b, i) => (i === index ? { ...b, ticket_type_id: ticketTypeId } : b))
+      prev.map((b, i) => (i === index ? { ...b, variant_id: variantId } : b))
     );
   };
 
@@ -113,13 +112,13 @@ export function RegistrationDialog({ open, onOpenChange }: RegistrationDialogPro
   const typeCounts = useMemo(() => {
     const counts = new Map<string, number>();
     for (const b of bands) {
-      counts.set(b.ticket_type_id, (counts.get(b.ticket_type_id) ?? 0) + 1);
+      counts.set(b.variant_id, (counts.get(b.variant_id) ?? 0) + 1);
     }
-    return types
-      .filter((t) => counts.has(t.id))
-      .map((t) => `${counts.get(t.id)} ${t.name}`)
+    return options
+      .filter((o) => counts.has(o.variant_id))
+      .map((o) => `${counts.get(o.variant_id)} ${o.ticket_name} ${o.variant_name}`)
       .join(" + ");
-  }, [bands, types]);
+  }, [bands, options]);
 
   return (
     <Dialog
@@ -231,8 +230,14 @@ export function RegistrationDialog({ open, onOpenChange }: RegistrationDialogPro
                 className="font-mono"
               />
               <p className="text-xs text-gray-500">
-                Tiap gelang terikat satu tiket — ganti kategorinya di daftar
+                Tiap gelang terikat satu tiket — ganti ticket/varian di daftar
               </p>
+              {!optionsQuery.isLoading && options.length === 0 ? (
+                <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                  Belum ada ticket Active yang didistribusi ke POS — buat di
+                  Master Ticket dulu.
+                </p>
+              ) : null}
             </div>
 
             <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
@@ -245,16 +250,16 @@ export function RegistrationDialog({ open, onOpenChange }: RegistrationDialogPro
                     {band.nfc_uid}
                   </span>
                   <Select
-                    value={band.ticket_type_id}
-                    onValueChange={(v) => setBandType(index, v)}
+                    value={band.variant_id}
+                    onValueChange={(v) => setBandVariant(index, v)}
                   >
-                    <SelectTrigger className="h-8 w-32">
+                    <SelectTrigger className="h-8 w-48">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {types.map((t) => (
-                        <SelectItem key={t.id} value={t.id}>
-                          {t.name}
+                      {options.map((option) => (
+                        <SelectItem key={option.variant_id} value={option.variant_id}>
+                          {option.ticket_name} — {option.variant_name}
                         </SelectItem>
                       ))}
                     </SelectContent>
