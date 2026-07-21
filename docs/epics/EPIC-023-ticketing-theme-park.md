@@ -252,6 +252,75 @@ Integrasi POS: nilai baru `nfc_tab` di `pos_split_payments.payment_method`
 Migrasi via `database/migrations/deltas/<timestamp>_ticketing_fase_a.sql`
 dst. Menu + role (`ticketing` / reuse kasir) via delta `iam.*`.
 
+## Revisi Manage Ticket — Ticket sebagai Produk (owner, 2026-07-21)
+
+Owner meluruskan model manage ticket setelah Fase A–C jadi: master
+berbasis **produk Ticket**, bukan master flat per venue. Fase A lama
+(jenis tiket flat + kalender venue + matriks harga venue) DIGANTI.
+
+### Model baru
+
+1. **Ticket = produk, bisa dibuat banyak** (`ticket_products`):
+   Ticket ID (kode auto per venue, mis. `TKT-0001`), Nama, **Kategori**
+   (master `ticket_categories` — submit via autocomplete, belum ada →
+   auto-add), Status (`draft`/`active`), Base Price (Rp, tampilan/acuan),
+   Thumbnail (reuse infra upload existing), Description.
+2. **Varian per ticket** (`ticket_product_variants`): Adult & Child
+   (extensible), tiap varian punya **dua kolom harga: Regular & High
+   Season** (keputusan owner — eksplisit, tanpa hitungan tersembunyi).
+3. **Konfigurasi per ticket = Tabs** di halaman ticket:
+   - **Info & Varian** — field utama + harga per varian.
+   - **Kalender** (`ticket_product_dates`) — rentang tanggal
+     `high-season` (harga high berlaku) dan `blok-online` (tanggal
+     tidak dijual di website booking; walk-in tetap jalan).
+   - **Kebijakan Operasional** — re-entry per ticket (keputusan owner;
+     credit limit & default mode bayar TETAP per venue di
+     `ticket_settings` karena melekat ke tab kunjungan, bukan produk).
+4. **Channel Manager = sub-menu sendiri** (`/ticketing/channel-manager`):
+   distribusi tiap ticket ke **POS (walk-in)** dan/atau **Website
+   Booking** (`ticket_product_channels`), plus **harga override per
+   kanal per varian** (keputusan owner — `ticket_variant_channel_prices`,
+   kosong = ikut harga varian). Hanya ticket `active` ber-harga lengkap
+   yang bisa didistribusi.
+
+### Resolver harga v2 (`pricing.ts` ditulis ulang)
+
+`(ticket, varian, tanggal, kanal)` → musim dari kalender ticket (high
+menang overlap, default regular) → harga = override kanal[musim] ??
+harga varian[musim]; tanggal `blok-online` + kanal website → ditolak;
+harga kosong → null (WAJIB tolak transaksi, jangan menebak).
+
+### Dampak ke Fase B/C yang sudah jadi
+
+- Registrasi loket: pilih **Ticket** (aktif + distribusi walk-in) →
+  per gelang pilih **varian**; `ticket_visit_bands.ticket_type_id`
+  diganti `variant_id` (FK `ticket_product_variants`).
+- Gate tap-charge: resolve via resolver v2; `price_context` jadi
+  `{ticket_product_id, variant_id, season_kind, channel}`; kebijakan
+  re-entry dibaca dari ticket (bukan settings venue).
+- Settlement, F&B on tab, ledger: TIDAK berubah (ledger agnostik).
+- Data dev lama: **wipe & mulai bersih** (keputusan owner) — master
+  lama + visit uji dihapus; registry gelang & pengaturan venue
+  dipertahankan.
+- `ticket_settings`: `re_entry_policy` menjadi *default venue* untuk
+  ticket baru; halaman Pengaturan Tiket menyusut (kalender & matriks
+  pindah ke masing-masing ticket).
+
+### Fase revisi (PR-sized)
+
+- **Fase R1 — Skema & Master Ticket**: delta migrasi (tabel baru +
+  wipe + restructure `ticket_visit_bands` + menu "Master Ticket");
+  halaman `/ticketing/tickets` (list + create/edit ber-Tabs), kategori
+  autocomplete auto-add, upload thumbnail, resolver harga v2 + unit
+  test lengkap.
+- **Fase R2 — Channel Manager & adaptasi operasional**: sub-menu
+  Channel Manager (toggle distribusi + override harga per kanal),
+  adaptasi Loket (pilih ticket + varian) dan Gate (resolver v2 +
+  re-entry per ticket); Pengaturan Tiket dirampingkan.
+
+Fase D (website booking) menyusul di atas model ini — memakai
+distribusi website, harga kanal website, dan tanggal blok-online.
+
 ## Task Groups (PR-sized, 1 group = 1 branch = 1 PR)
 
 ### Fase A — Fondasi: skema, menu, master tiket & harga
@@ -413,3 +482,17 @@ dst. Menu + role (`ticketing` / reuse kasir) via delta `iam.*`.
   Verifikasi: 33 unit test, build lulus, smoke SQL Fase C (enum,
   charge ber-referensi order, dup-check, baris pembalik, ledger
   netral pasca void, fnb-kredit ditolak) lulus dgn rollback.
+- 2026-07-21 — **Revisi Manage Ticket direncanakan** (owner meluruskan
+  model): Ticket = produk (master + kategori auto-add + status
+  draft/active + base price + thumbnail + description), varian
+  Adult/Child ber-harga Regular & High Season per varian, konfigurasi
+  per ticket via Tabs (kalender high season + blok-online, kebijakan
+  re-entry per ticket), Channel Manager = sub-menu distribusi POS/
+  Website + harga override per kanal. 4 keputusan owner: (1) dua kolom
+  harga per varian; (2) harga BISA beda per kanal (override);
+  (3) data dev lama wipe & mulai bersih (registry gelang + pengaturan
+  venue dipertahankan); (4) re-entry per ticket, credit limit & mode
+  bayar tetap per venue. Rencana: Fase R1 (skema + Master Ticket +
+  resolver v2) lalu R2 (Channel Manager + adaptasi Loket/Gate).
+  Detail di bagian "Revisi Manage Ticket". Menunggu go owner sebelum
+  dev.
