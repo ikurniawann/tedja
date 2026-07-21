@@ -180,4 +180,4 @@ WHERE deleted_at IS NULL
     -- EPIC-022 Sales Funneling (21 Jul 2026):
     'sales-funnel', 'sales-funnel.leads',
     'sales-funnel.pipeline', 'sales-funnel.settings',
-    'sales-funnel.followups');
+    'sales-funnel.followups', 'sales-funnel.reports');

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { successResponse, noContentResponse } from "@/lib/api/auth";
-import { queryOne } from "@/lib/db";
+import { queryOne, withTransaction } from "@/lib/db";
 import { findAccessibleDeal } from "@/lib/sales-funnel/access";
 import {
   DEAL_EVENT_TYPES,
@@ -169,12 +169,26 @@ export async function PATCH(
     }
 
     values.push(id);
-    const row = await queryOne(
-      `UPDATE crm.crm_sales_deals SET ${sets.join(", ")}
-       WHERE id = $${values.length}
-       RETURNING id, title, stage_id, closed_at`,
-      values
-    );
+    // Satu transaksi: update deal + riwayat tahap — pindah tahap tanpa
+    // baris riwayat membuat funnel undercount permanen (temuan gate Fase E)
+    const row = await withTransaction(async (client) => {
+      const updated = await client.query(
+        `UPDATE crm.crm_sales_deals SET ${sets.join(", ")}
+         WHERE id = $${values.length}
+         RETURNING id, title, stage_id, closed_at`,
+        values
+      );
+      if (isStageMove) {
+        await client.query(
+          `INSERT INTO crm.crm_sales_deal_stage_history
+             (deal_id, stage_id, created_by)
+           VALUES ($1, $2, $3)`,
+          [id, body.stage_id, user.id]
+        );
+      }
+      return updated.rows[0] ?? null;
+    });
+
     return successResponse(row, "Deal diperbarui");
   } catch (err) {
     console.error("[sales-funnel] update deal error:", err);

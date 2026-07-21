@@ -1,6 +1,6 @@
 # EPIC-022: Sales Funneling — Leads B2B (Corporate, Sekolah & Booking Acara Privat)
 
-status: on-progress
+status: ready-for-qa
 environment: dev
 retries: 0
 
@@ -324,3 +324,33 @@ Menu didaftarkan via delta INSERT `iam.menus` + `iam.role_menu_permissions`
   terpotong bila riwayat > 100 deal (pagar disengaja, berkomentar).
   Typecheck 0 error baru, build bersih, PM2 restart, smoke 401/429
   fail-closed. Sisa: Fase E (laporan funnel) — terakhir.
+- 2026-07-21 — **Fase E SELESAI & live di dev — EPIC A–E LENGKAP, status
+  naik `ready-for-qa`.** Laporan Funnel. Delta
+  `20260721210000_sales_funnel_fase_e.sql`: tabel
+  `crm_sales_deal_stage_history` (satu baris tiap deal MASUK tahap —
+  fondasi funnel conversion jujur; posisi deal existing di-backfill,
+  keterbatasan sadar: riwayat historis pra-Fase E hanya tahap terakhir)
+  + menu `sales-funnel.reports` (grant super_admin+sales, whitelist
+  retire OK). API `/api/sales-funnel/reports?from&to` (default 90 hari,
+  rentang terbalik ditukar otomatis): funnel reached per tahap (dari
+  history, deal dibuat dalam periode), win rate + nilai booking (deal
+  ditutup dalam periode), pipeline berjalan (snapshot), breakdown per
+  jenis instansi/acara/sumber + leaderboard PJ, kalender acara
+  ter-booking ke depan, rekap alasan kalah — SEMUA query ber-scope
+  company/branch + sales own-or-unassigned via buildScope (offset
+  placeholder terverifikasi security gate). Deal POST & PATCH kini
+  mencatat riwayat tahap DALAM TRANSAKSI (withTransaction) bersama
+  tulis deal + status lead — temuan HIGH gate: tanpa transaksi, deal
+  bisa tersimpan tapi klien dapat 500 (retry = dobel) atau funnel
+  undercount permanen. UI `src/features/sales-funnel/reports/`:
+  filter periode + preset 30/90 hari, 4 kartu KPI, bar funnel dengan %
+  konversi antar tahap, 4 tabel breakdown, kalender booked, bar alasan
+  kalah (CSS murni ala laporan CRM). Gate: security CLEAN PASS (10
+  query agregat terverifikasi scope, 0 temuan); review 1 HIGH + 1
+  MEDIUM + 1 LOW semuanya diperbaiki. Typecheck 0 error baru, build
+  bersih, migrasi+menu+backfill terverifikasi DB dev, PM2 restart,
+  smoke 401 fail-closed.
+  Catatan QA (human): (1) akun uji role sales — E2E belum ada; (2) user
+  sales butuh baris hris.employees ber-phone agar pengingat WA sampai;
+  (3) rekap harian owner menunggu mesin pengirim EPIC-020 Fase B;
+  (4) funnel akurat penuh untuk deal yang dibuat SETELAH Fase E live.

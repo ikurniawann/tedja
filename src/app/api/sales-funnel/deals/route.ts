@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createdResponse, successResponse } from "@/lib/api/auth";
 import { getApiUserScope } from "@/lib/api/scope";
-import { query, queryOne } from "@/lib/db";
+import { query, queryOne, withTransaction } from "@/lib/db";
 import {
   DEAL_EVENT_TYPES,
   isValidCalendarDate,
@@ -213,38 +213,53 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const row = await queryOne(
-      `INSERT INTO crm.crm_sales_deals
-         (company_id, branch_id, lead_id, title, event_type, event_date,
-          is_event_date_fixed, pax_estimate, value_estimate, stage_id,
-          owner_user_id, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-       RETURNING id, title, stage_id`,
-      [
-        lead.company_id,
-        lead.branch_id,
-        lead.id,
-        body.title,
-        body.event_type,
-        body.event_date || null,
-        body.is_event_date_fixed,
-        body.pax_estimate ?? null,
-        body.value_estimate ?? null,
-        firstStage.id,
-        body.owner_user_id || (user.role === "sales" ? user.id : lead.owner_user_id),
-        user.id,
-      ]
-    );
-
-    // Konversi lead→deal: lead yang masih baru/dihubungi otomatis qualified
-    if (lead.status === "baru" || lead.status === "dihubungi") {
-      await queryOne(
-        `UPDATE crm.crm_sales_leads
-         SET status = 'qualified', updated_at = now()
-         WHERE id = $1 RETURNING id`,
-        [lead.id]
+    // Satu transaksi: deal + riwayat tahap + status lead — jangan sampai
+    // deal tersimpan tapi klien menerima 500 (retry = deal dobel) atau
+    // funnel kehilangan baris riwayat (temuan gate Fase E).
+    const row = await withTransaction(async (client) => {
+      const inserted = await client.query<{ id: string; title: string; stage_id: string }>(
+        `INSERT INTO crm.crm_sales_deals
+           (company_id, branch_id, lead_id, title, event_type, event_date,
+            is_event_date_fixed, pax_estimate, value_estimate, stage_id,
+            owner_user_id, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+         RETURNING id, title, stage_id`,
+        [
+          lead.company_id,
+          lead.branch_id,
+          lead.id,
+          body.title,
+          body.event_type,
+          body.event_date || null,
+          body.is_event_date_fixed,
+          body.pax_estimate ?? null,
+          body.value_estimate ?? null,
+          firstStage.id,
+          body.owner_user_id || (user.role === "sales" ? user.id : lead.owner_user_id),
+          user.id,
+        ]
       );
-    }
+      const deal = inserted.rows[0];
+
+      // Riwayat tahap (Fase E): deal baru tercatat masuk tahap pertama
+      await client.query(
+        `INSERT INTO crm.crm_sales_deal_stage_history
+           (deal_id, stage_id, created_by)
+         VALUES ($1, $2, $3)`,
+        [deal.id, firstStage.id, user.id]
+      );
+
+      // Konversi lead→deal: lead baru/dihubungi otomatis qualified
+      if (lead.status === "baru" || lead.status === "dihubungi") {
+        await client.query(
+          `UPDATE crm.crm_sales_leads
+           SET status = 'qualified', updated_at = now()
+           WHERE id = $1`,
+          [lead.id]
+        );
+      }
+      return deal;
+    });
 
     return createdResponse(row, `Deal untuk ${lead.org_name} berhasil dibuat`);
   } catch (err) {
