@@ -180,6 +180,66 @@ Menu didaftarkan via delta INSERT `iam.menus` + `iam.role_menu_permissions`
   instansi/acara, per sumber, per owner, kalender acara ter-booking,
   rekap alasan kalah.
 
+### Fase F — Quotation Builder & Realisasi Bahan Baku (PROPOSAL — menunggu keputusan owner)
+
+Permintaan owner 2026-07-21: satu tombol pembuatan **Quotation** pada deal —
+baris item bebas (free text: deskripsi, qty, harga, jumlah) + **Add Produk**
+dari katalog (harga per pax × jumlah pax), opsi **pakai PPN atau tidak**;
+produk yang dipakai nantinya **mengurangi stok bahan baku** sesuai resep.
+
+Temuan repo (2026-07-21):
+- Rantai resep KOSONG: `pos.pos_recipes` 0 baris & tak direferensikan kode;
+  `manufacturing.bom_items` 0 baris; `item.products` 0 baris. Hanya
+  `pos.pos_products` terisi (5 aktif, punya `base_price`). Pengurangan
+  bahan baku MUSTAHIL jalan sebelum resep produk diisi → prasyarat F3.
+- Preseden PPN: purchasing PO `ppn_persen` default 11, taxable = subtotal −
+  diskon (`src/lib/purchasing/po-totals.ts`).
+- Preseden konsumsi stok: production orders menulis
+  `inventory.inventory_movements` (`/api/purchasing/production/orders`) —
+  pola ledger qty_before/after + reference_type dicontoh dari sini.
+
+Letak UI: tombol **"Buat Quotation"** di Sheet detail deal (pipeline) +
+halaman profil 360° instansi; total quotation auto-isi `value_estimate`
+deal; nilai final saat Menang prefill dari quotation yang diterima.
+
+Desain data (skema `crm`):
+- `crm_sales_quotations` — id, deal_id, company_id, branch_id,
+  quote_number, status (`draft`/`terkirim`/`diterima`/`ditolak`),
+  use_ppn, ppn_persen (default 11), subtotal, ppn_nominal, total, notes,
+  valid_until, stock_deducted_at (idempotensi realisasi), created_by,
+  timestamps, deleted_at. Satu deal boleh punya banyak versi quotation.
+- `crm_sales_quotation_items` — id, quotation_id, item_type
+  (`produk`/`bebas`), product_id (nullable FK `pos.pos_products`),
+  description, qty numeric, unit_price, line_total, sort_order.
+
+Sub-fase (PR-sized):
+- **F1 — Builder + PPN**: migrasi 2 tabel, API CRUD quotation ber-scope
+  (pola access.ts), dialog builder di Sheet deal (baris bebas + Add Produk
+  dari pos_products dgn harga default base_price yang bisa dioverride,
+  toggle PPN, total live), total → value_estimate.
+- **F2 — Output & status**: nomor quotation, kirim ke PIC via WA gateway
+  (teks terformat / PDF — keputusan owner), status terkirim/diterima/
+  ditolak, prefill nilai final saat Menang.
+- **F3 — Realisasi bahan baku**: prasyarat resep produk terisi
+  (`pos_recipes`; bila belum ada UI kelola resep → sub-task); engine
+  konsumsi: item produk × resep (quantity_per_unit + waste) → INSERT
+  `inventory_movements` tipe keluar + update stok, transaksional &
+  idempotent via `stock_deducted_at`, reference ke quotation/deal;
+  bonus: daftar kebutuhan bahan per acara utk ops.
+
+PENDING keputusan owner (blocker eksekusi):
+1. **Momen pengurangan stok**: (a) otomatis saat deal Menang, (b) otomatis
+   saat tanggal acara, (c) tombol manual "Realisasi" oleh ops menjelang
+   acara. Rekomendasi: (c) — stok berkurang saat bahan benar-benar
+   disiapkan, bukan saat kontrak diteken.
+2. PPN default 11% mengikuti preseden purchasing?
+3. Katalog produk = `pos.pos_products` + resep via `pos_recipes` — atau
+   pakai jalur manufacturing (`item.products` + `bom_items`)?
+   Rekomendasi: pos_products (satu-satunya yang berisi data & berharga).
+4. Output quotation: teks WA rapi via gateway saja, atau perlu PDF?
+5. Stok gudang mana yang dikurangi (inventory punya branch_id +
+   warehouse_id) — gudang venue deal?
+
 ## Acceptance Criteria (ringkas)
 
 - Semua query leads/deals terfilter `company_id` (+ `outlet_id` bila relevan);
@@ -354,3 +414,11 @@ Menu didaftarkan via delta INSERT `iam.menus` + `iam.role_menu_permissions`
   sales butuh baris hris.employees ber-phone agar pengingat WA sampai;
   (3) rekap harian owner menunggu mesin pengirim EPIC-020 Fase B;
   (4) funnel akurat penuh untuk deal yang dibuat SETELAH Fase E live.
+- 2026-07-21 — **Fase F (Quotation) diusulkan** atas permintaan owner:
+  builder quotation di deal (item bebas + Add Produk per pax + opsi PPN)
+  dan realisasi pengurangan bahan baku dari resep produk. Eksplorasi
+  repo: rantai resep kosong total (pos_recipes/bom_items/item.products
+  0 baris — prasyarat F3), preseden PPN 11% purchasing & ledger
+  inventory_movements production orders siap dicontoh. Rencana rinci +
+  5 pertanyaan keputusan owner ditulis di Task Groups Fase F — status
+  epic tetap ready-for-qa utk A–E; F menunggu jawaban owner.
