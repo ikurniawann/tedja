@@ -351,3 +351,30 @@ dst. Menu + role (`ticketing` / reuse kasir) via delta `iam.*`.
   `requireTicketingContext` (super_admin, venue fallback
   `crm_settings`); UID NFC dinormalisasi hex uppercase
   (`normalizeNfcUid`, min 8 hex).
+- 2026-07-21 — **Fase B SELESAI** (status `coding`). Delta
+  `20260722070000_ticketing_fase_b.sql` applied: `ticket_visits`,
+  `ticket_visit_bands` (unique index parsial — satu gelang tak bisa
+  aktif di 2 visit), `ticket_visit_charges` (ledger append-only + CHECK
+  `chk_charge_direction`), `ticket_gate_events`; menu Loket & Kasir +
+  Mode Gate granted super_admin/pos_supervisor/pos. **Keputusan arah
+  ledger**: `refund-deposit` = DEBIT (sketsa epic menulis kredit, tapi
+  refund mengurangi titipan — visit settled selalu berakhir debit =
+  kredit). Lib murni `tab.ts` (16 unit test): computeTabSummary,
+  canCharge (guard saldo prepaid / plafon postpaid), settlementPlan.
+  API: register visit (kunci gelang FOR UPDATE ORDER BY id), top-up
+  prepaid, settle rombongan + settle per gelang (postpaid saja;
+  prepaid wajib settle rombongan utk refund), gate tap idempotent
+  (entered_at + kebijakan re-entry; harga 0 = tiket comp sah, masuk
+  tanpa baris ledger); semua ber-rate-limit (`checkRateLimit`) dan
+  serialisasi via `ticket_visits FOR UPDATE`. UI: Loket (registrasi
+  tap-beruntun, tabel visit + settle/top-up dialog) & Mode Gate
+  fullscreen (PC/SC bridge + keyboard wedge, layar hijau/merah).
+  Gate hasil: security review 0 CRITICAL/HIGH (2 MEDIUM ditutup:
+  company_id di cek duplikat gelang, rate limit; pembulatan 2dp per
+  baris ledger), code review 0 CRITICAL/HIGH (log gate branch tanpa
+  kanal, guard due=0 settle per-gelang, active_band_count di list —
+  semua ditutup). Verifikasi: build lulus, lint bersih, 29 unit test,
+  smoke test SQL end-to-end (register → tap → settle → ledger seimbang
+  → gelang release) lulus dgn rollback. **Hutang teknis dicatat**:
+  belum ada integration test route ber-uang (butuh infra mock auth —
+  konsisten dgn preseden sales-funnel, unit + smoke SQL dulu).

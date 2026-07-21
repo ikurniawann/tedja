@@ -93,8 +93,8 @@ export async function POST(request: NextRequest) {
 
     const duplicate = await queryOne<{ id: string; status: string }>(
       `SELECT id, status FROM ticketing.ticket_bands
-       WHERE branch_id = $1 AND nfc_uid = $2`,
-      [ctx.branchId, uid]
+       WHERE branch_id = $1 AND company_id = $2 AND nfc_uid = $3`,
+      [ctx.branchId, ctx.companyId, uid]
     );
     if (duplicate) {
       return NextResponse.json(

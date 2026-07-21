@@ -8,9 +8,14 @@ import {
 import { query } from "@/lib/db";
 import type { UserRole } from "@/types";
 
-// Modul Ticketing (EPIC-023) — Fase A: pengaturan master hanya super_admin.
-// Role operasional (loket, gate, kasir keluar) menyusul Fase B.
+// Modul Ticketing (EPIC-023) — pengaturan master hanya super_admin;
+// operasional loket/gate/kasir keluar (Fase B) ikut role POS.
 export const TICKETING_ADMIN_ROLES: UserRole[] = ["super_admin"];
+export const TICKETING_OPERATOR_ROLES: UserRole[] = [
+  "super_admin",
+  "pos_supervisor",
+  "pos",
+];
 
 export type TicketingUser = { id: string; role: UserRole };
 
@@ -18,7 +23,7 @@ export type TicketingUser = { id: string; role: UserRole };
  * Guard role modul Ticketing. Mengembalikan NextResponse (401/403) bila
  * tidak berwenang, atau user yang lolos — pola requireSalesFunnelRole.
  */
-export async function requireTicketingAdmin(): Promise<
+export async function requireTicketingRole(roles: UserRole[]): Promise<
   { error: NextResponse; user: null } | { error: null; user: TicketingUser }
 > {
   const user = await getApiUser();
@@ -31,7 +36,7 @@ export async function requireTicketingAdmin(): Promise<
       user: null,
     };
   }
-  if (!TICKETING_ADMIN_ROLES.includes(user.role)) {
+  if (!roles.includes(user.role)) {
     return {
       error: NextResponse.json(
         { success: false, error: "Insufficient permissions" },
@@ -42,6 +47,9 @@ export async function requireTicketingAdmin(): Promise<
   }
   return { error: null, user: { id: user.id, role: user.role } };
 }
+
+export const requireTicketingAdmin = () =>
+  requireTicketingRole(TICKETING_ADMIN_ROLES);
 
 export const SEASON_KINDS = ["regular", "high"] as const;
 export type SeasonKind = (typeof SEASON_KINDS)[number];
@@ -103,13 +111,16 @@ export type TicketingContext = {
 
 /**
  * Guard + resolusi venue sekali jalan untuk route ticketing:
- * role admin → scope bisnis → venue (fail-closed bila venue tak
- * ter-resolve). Semua route Fase A memakai ini.
+ * role → scope bisnis → venue (fail-closed bila venue tak ter-resolve).
+ * Default role admin (Fase A); route operasional Fase B mengoper
+ * TICKETING_OPERATOR_ROLES.
  */
-export async function requireTicketingContext(): Promise<
+export async function requireTicketingContext(
+  roles: UserRole[] = TICKETING_ADMIN_ROLES
+): Promise<
   { error: NextResponse; ctx: null } | { error: null; ctx: TicketingContext }
 > {
-  const { error, user } = await requireTicketingAdmin();
+  const { error, user } = await requireTicketingRole(roles);
   if (error) return { error, ctx: null };
 
   const scope = await getApiUserScope();
