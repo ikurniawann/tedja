@@ -236,6 +236,24 @@ export function WaNotifSettingsPanel() {
                         />
                       </div>
                     )}
+                    {t.key === "digest" && config.types.digest && (
+                      <div className="mt-2 flex items-center gap-2 text-xs text-white/55">
+                        Jam kirim (WIB):
+                        <input
+                          value={String(config.digestHour)}
+                          onChange={(e) => {
+                            const n = Number(e.target.value.replace(/\D/g, ""));
+                            setConfig({
+                              ...config,
+                              digestHour: Number.isInteger(n) && n >= 0 && n <= 23 ? n : 0,
+                            });
+                          }}
+                          inputMode="numeric"
+                          className="arkiv-glass-input w-14 rounded-lg border px-2 py-1 text-xs"
+                        />
+                        :00 — terkirim sekali per hari setelah jam ini
+                      </div>
+                    )}
                   </div>
                   <Toggle on={config.types[t.key]} onChange={(v) => setType(t.key, v)} label={t.label} />
                 </div>

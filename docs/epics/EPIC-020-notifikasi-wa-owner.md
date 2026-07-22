@@ -38,7 +38,7 @@ berita di desktop, sampah di WA.
 - Master switch default **mati** — notifikasi hidup hanya setelah owner sadar
   menyalakannya.
 
-**Fase B — Mesin pengirim (belum)**
+**Fase B — Mesin pengirim (selesai)**
 - Ringkasan harian: penjadwal (cron PM2 / node-cron) jam tutup, format dari
   `buildDesktopOverview`.
 - Void besar: kait di jalur void POS (event, bukan polling).
@@ -64,7 +64,7 @@ berita di desktop, sampah di WA.
 
 - [x] Fase A: konfigurasi tersimpan; nomor dinormalkan & divalidasi; endpoint
       menolak tanpa login; Kirim Tes membuktikan sambungan gateway.
-- [ ] Fase B: ringkasan harian terkirim terjadwal; void besar & stok habis
+- [x] Fase B: ringkasan harian terkirim terjadwal; void besar & stok habis
       terkirim seketika dengan dedup.
 - [ ] Fase C: komplain & review rendah terkirim.
 - [ ] Fase D: tiga notifikasi ambang berjalan.
@@ -83,6 +83,35 @@ berita di desktop, sampah di WA.
   terpisah — bentuknya masih akan berkembang di Fase B–D.
 
 ## Automation Log
+
+- 2026-07-22 — **Fase B selesai** (mesin pengirim). Delta `20260722230000`:
+  tabel `configuration.wa_notif_log` = jejak + kunci dedup (UNIQUE
+  notif_type+dedup_key); pengirim MENGKLAIM baris dulu (INSERT ON CONFLICT
+  DO NOTHING) sebelum kirim — pola at-most-once followup-watcher
+  sales-funnel: gagal jelas → klaim dilepas (retry), timeout → klaim
+  dipertahankan. `notifications-sender.ts` (guard master/jenis/penerima/
+  gateway + primitives claim/deliver/release + `fireOwnerNotification`
+  tembak-dan-lupakan), `notifications-messages.ts` murni (formatter digest/
+  void/stok + kunci dedup + waktu WIB; 12 unit test), `notifications-
+  watcher.ts` (tick 5 mnt via instrumentation, pola watcher lain):
+  (1) **digest harian** — terkirim sekali/hari WIB begitu jam ≥
+  `digestHour` (field config baru, default 22, input di panel Settings,
+  dedup key = tanggal → restart server tidak kirim ulang; cek murah ke log
+  sebelum membangun overview), isi dari `buildDesktopOverview` EPIC-019
+  (seksi gagal dilewati, bukan angka nol palsu; kemarin=0 → tanpa persen
+  pembanding); (2) **stok habis** — qty_available ≤ 0 (definisi fetchLowStock
+  dipersempit ke nol), klaim per bahan (1×/bahan/hari) tapi SATU pesan WA
+  gabungan berisi bahan yang terklaim; bahan baru habis siang hari =
+  pesan susulan. (3) **void besar** = event di route void POS (bukan
+  polling): total ≥ `voidThresholdRp` → fire-and-forget (notifikasi tak
+  boleh menggagalkan void), dedup by order id; ikutan: `catch(any)` lama
+  di route void dirapikan ke unknown. Verifikasi: 796 unit test lulus
+  (21 di lib wa), eslint bersih, build lulus (BUILD_ID dicek), migrasi
+  applied (tabel diverifikasi), PM2 restart, app online. Catatan QA:
+  master switch masih default MATI — nyalakan di Settings desktop +
+  simpan nomor, lalu uji: void ≥ ambang → WA masuk; set digestHour ke
+  jam sekarang → tunggu tick ≤5 mnt. Sisa: Fase C (komplain + review
+  rendah) & Fase D (3 ambang).
 
 - 2026-07-21 — **Fase A selesai.** Lib config + 9 unit test, API GET/PUT/test
   ber-gate super_admin+direksi (401 tanpa login terverifikasi), panel Settings →

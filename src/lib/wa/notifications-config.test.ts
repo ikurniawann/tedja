@@ -63,3 +63,17 @@ describe("parseWaNotifConfig", () => {
     expect(parseWaNotifConfig(JSON.stringify({ voidThresholdRp: 250_000.7 })).voidThresholdRp).toBe(250_001);
   });
 });
+
+describe("digestHour (Fase B)", () => {
+  it("default 22 dan ikut tersimpan", () => {
+    expect(defaultWaNotifConfig().digestHour).toBe(22);
+    expect(parseWaNotifConfig(JSON.stringify({ digestHour: 21 })).digestHour).toBe(21);
+  });
+
+  it("nilai di luar 0-23 / non-integer jatuh ke default", () => {
+    expect(parseWaNotifConfig(JSON.stringify({ digestHour: 24 })).digestHour).toBe(22);
+    expect(parseWaNotifConfig(JSON.stringify({ digestHour: -1 })).digestHour).toBe(22);
+    expect(parseWaNotifConfig(JSON.stringify({ digestHour: 21.5 })).digestHour).toBe(22);
+    expect(parseWaNotifConfig(JSON.stringify({ digestHour: "22" })).digestHour).toBe(22);
+  });
+});

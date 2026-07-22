@@ -1,6 +1,8 @@
 import { NextRequest } from 'next/server';
 import { createPgClient } from "@/lib/pg/create-client";
 import { getPosSession } from '@/lib/api/auth';
+import { buildVoidBesarMessage, voidDedupKey } from '@/lib/wa/notifications-messages';
+import { fireOwnerNotification, getWaNotifConfig } from '@/lib/wa/notifications-sender';
 
 export async function POST(
   request: NextRequest,
@@ -37,7 +39,7 @@ export async function POST(
     // 2. Fetch order
     const { data: order, error: orderErr } = await db
       .from('pos_orders')
-      .select('id, status')
+      .select('id, status, order_number, total_amount')
       .eq('id', orderId)
       .single();
 
@@ -76,12 +78,36 @@ export async function POST(
       .eq('order_id', orderId)
       .eq('status', 'pending');
 
+    // 5. EPIC-020: void bernilai besar → WA owner (event, bukan polling).
+    // Tembak-dan-lupakan: notifikasi tidak boleh menggagalkan void-nya;
+    // dedup by order id — retry request tidak mengirim WA dua kali.
+    try {
+      const total = Number(order.total_amount) || 0;
+      const config = await getWaNotifConfig();
+      if (total >= config.voidThresholdRp) {
+        fireOwnerNotification({
+          type: 'voidBesar',
+          dedupKey: voidDedupKey(orderId),
+          message: buildVoidBesarMessage({
+            orderNumber: String(order.order_number ?? orderId.slice(0, 8)),
+            total,
+            reason: String(reason).trim(),
+            supervisorName: supervisor.full_name ?? 'supervisor',
+          }),
+          config,
+        });
+      }
+    } catch (notifError) {
+      console.error('[wa-notif] gagal menyiapkan notif void:', notifError);
+    }
+
     return Response.json({
       success: true,
       data: { order_id: orderId, message: 'Order voided successfully' },
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Void error:', error);
-    return Response.json({ success: false, error: error.message }, { status: 500 });
+    const message = error instanceof Error ? error.message : 'Void gagal diproses';
+    return Response.json({ success: false, error: message }, { status: 500 });
   }
 }

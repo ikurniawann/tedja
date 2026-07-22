@@ -90,6 +90,17 @@ export async function PUT(request: NextRequest) {
       current.voidThresholdRp = Math.round(n);
     }
 
+    if (body.digestHour !== undefined) {
+      const n = Number(body.digestHour);
+      if (!Number.isInteger(n) || n < 0 || n > 23) {
+        return NextResponse.json(
+          { error: "Jam ringkasan harus 0-23 (WIB)" },
+          { status: 400 }
+        );
+      }
+      current.digestHour = n;
+    }
+
     await setSetting(WA_NOTIF_SETTING_KEY, JSON.stringify(current));
     return NextResponse.json({ data: { config: current } });
   } catch (error) {

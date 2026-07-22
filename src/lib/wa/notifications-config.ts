@@ -92,10 +92,13 @@ export interface WaNotifConfig {
   types: Record<WaNotifType, boolean>;
   /** Ambang nominal void yang dianggap "besar" (Rp). */
   voidThresholdRp: number;
+  /** Jam WIB (0-23) pengiriman ringkasan harian — default jam tutup 22:00. */
+  digestHour: number;
 }
 
 export const WA_NOTIF_SETTING_KEY = "wa_notif_config";
 export const DEFAULT_VOID_THRESHOLD_RP = 500_000;
+export const DEFAULT_DIGEST_HOUR = 22;
 export const MAX_RECIPIENTS = 5;
 
 export function defaultWaNotifConfig(): WaNotifConfig {
@@ -107,6 +110,7 @@ export function defaultWaNotifConfig(): WaNotifConfig {
       boolean
     >,
     voidThresholdRp: DEFAULT_VOID_THRESHOLD_RP,
+    digestHour: DEFAULT_DIGEST_HOUR,
   };
 }
 
@@ -162,10 +166,19 @@ export function parseWaNotifConfig(raw: string | null): WaNotifConfig {
       ? Math.round(o.voidThresholdRp)
       : base.voidThresholdRp;
 
+  const digestHour =
+    typeof o.digestHour === "number" &&
+    Number.isInteger(o.digestHour) &&
+    o.digestHour >= 0 &&
+    o.digestHour <= 23
+      ? o.digestHour
+      : base.digestHour;
+
   return {
     enabled: typeof o.enabled === "boolean" ? o.enabled : base.enabled,
     recipients: [...new Set(recipients)],
     types,
     voidThresholdRp: threshold,
+    digestHour,
   };
 }

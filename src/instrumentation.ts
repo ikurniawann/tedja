@@ -17,5 +17,8 @@ export async function register() {
       "@/lib/sales-funnel/followup-reminder-watcher"
     );
     startSalesFollowupWatcher();
+
+    const { startWaNotifWatcher } = await import("@/lib/wa/notifications-watcher");
+    startWaNotifWatcher();
   }
 }
