@@ -151,6 +151,11 @@ export function BookingStatusPage({ token }: BookingStatusPageProps) {
       badge: "bg-red-100 text-red-700",
       icon: <CircleSlash className="h-4 w-4" />,
     },
+    hangus: {
+      label: "Hangus",
+      badge: "bg-orange-100 text-orange-700",
+      icon: <TimerOff className="h-4 w-4" />,
+    },
   };
   const view = statusView[booking.status] ?? statusView["menunggu-bayar"];
 
@@ -220,6 +225,12 @@ export function BookingStatusPage({ token }: BookingStatusPageProps) {
         </section>
       )}
 
+      {booking.status === "hangus" && (
+        <p className="mt-4 rounded-xl bg-orange-50 px-4 py-3 text-sm text-orange-700">
+          Masa berlaku tiket sudah lewat sehingga booking hangus. Hubungi
+          petugas venue bila ada kendala pada hari kunjungan Anda.
+        </p>
+      )}
       {booking.status === "dibatalkan" && (
         <section className="mt-5 rounded-2xl bg-white p-5 text-center text-sm text-gray-600 shadow-sm">
           Booking dibatalkan. Bila sudah terlanjur membayar, hubungi petugas

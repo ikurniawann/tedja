@@ -8,6 +8,7 @@ export const BOOKING_STATUS_LABELS: Record<BookingStatus, string> = {
   digunakan: "Digunakan",
   kedaluwarsa: "Kedaluwarsa",
   dibatalkan: "Dibatalkan",
+  hangus: "Hangus",
 };
 
 export const BOOKING_STATUS_BADGES: Record<BookingStatus, string> = {
@@ -16,6 +17,7 @@ export const BOOKING_STATUS_BADGES: Record<BookingStatus, string> = {
   digunakan: "bg-blue-100 text-blue-700",
   kedaluwarsa: "bg-gray-100 text-gray-500",
   dibatalkan: "bg-red-100 text-red-700",
+  hangus: "bg-orange-100 text-orange-700",
 };
 
 export interface BookingItem {

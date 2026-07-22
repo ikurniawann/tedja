@@ -3,7 +3,11 @@ import { z } from "zod";
 import { successResponse } from "@/lib/api/auth";
 import { withTransaction } from "@/lib/db";
 import { checkRateLimit } from "@/lib/rate-limit";
-import { BOOKING_MAX_QTY, matchRedeemGuests } from "@/lib/ticketing/booking";
+import {
+  BOOKING_MAX_QTY,
+  matchRedeemGuests,
+  redeemWindowStatus,
+} from "@/lib/ticketing/booking";
 import { todayJakartaDate } from "@/lib/ticketing/pricing-server";
 import {
   TICKETING_OPERATOR_ROLES,
@@ -119,11 +123,43 @@ export async function POST(
           { statusCode: 409 }
         );
       }
+      // Jendela redeem (keputusan owner 2026-07-23): hari-H s/d
+      // H + booking_forfeit_days venue; kebijakan belum diisi (NULL) =
+      // hanya hari-H seperti semula.
+      const settingsResult = await client.query<{
+        booking_forfeit_days: number | null;
+      }>(
+        `SELECT booking_forfeit_days FROM ticketing.ticket_settings
+         WHERE branch_id = $1 AND company_id = $2`,
+        [ctx.branchId, ctx.companyId]
+      );
+      const forfeitDays = settingsResult.rows[0]?.booking_forfeit_days ?? null;
       const today = todayJakartaDate();
-      if (booking.visit_date !== today) {
+      const window = redeemWindowStatus(booking.visit_date, today, forfeitDays);
+      if (window === "belum-mulai") {
         throw Object.assign(
           new Error(
-            `Booking untuk tanggal ${booking.visit_date} — hanya bisa dipakai pada hari-H (hari ini ${today})`
+            `Booking untuk tanggal ${booking.visit_date} — belum bisa dipakai (hari ini ${today})`
+          ),
+          { statusCode: 409 }
+        );
+      }
+      if (window === "lewat") {
+        // Masa berlaku habis — hanguskan sekalian (booking sudah terkunci
+        // FOR UPDATE; watcher/lazy-lookup tinggal menemukan hasilnya)
+        if (forfeitDays !== null) {
+          await client.query(
+            `UPDATE ticketing.ticket_bookings
+             SET status = 'hangus', forfeited_at = now(), updated_at = now()
+             WHERE id = $1 AND status = 'terbayar' AND visit_id IS NULL`,
+            [booking.id]
+          );
+        }
+        throw Object.assign(
+          new Error(
+            forfeitDays === null
+              ? `Booking untuk tanggal ${booking.visit_date} — hanya bisa dipakai pada hari-H (hari ini ${today})`
+              : `Masa berlaku booking habis (tanggal ${booking.visit_date} + ${forfeitDays} hari) — tiket hangus`
           ),
           { statusCode: 409 }
         );

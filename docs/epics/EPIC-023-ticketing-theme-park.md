@@ -922,3 +922,32 @@ multi-hari/paket, pembatalan mandiri oleh pemesan.
   login, API booking 401 tanpa auth. Daftar tindak lanjut medium kini
   TUTUP SEMUA kecuali yang berkondisi: Redis limiter (tunggu
   multi-instance) & integration test ber-uang (task infra terpisah).
+- 2026-07-23 — **Pengakuan revenue booking + kebijakan hangus SELESAI**
+  (keputusan owner hari ini: uang booking terbayar = titipan, revenue
+  diakui saat redeem — SUDAH sesuai desain net-0 D4; kebijakan hangus
+  CONFIGURABLE, diisi nanti sesuai SOP). Delta `20260723090000` applied:
+  `ticket_settings.booking_forfeit_days` (0-365; NULL = kebijakan belum
+  diisi → perilaku lama: redeem hanya hari-H, tidak ada yang hangus) +
+  status booking baru `hangus` (CHECK diperluas) + `forfeited_at`
+  (tanggal pengakuan pendapatan hangus). Semantik masa berlaku: redeem
+  boleh hari-H s/d H+N (`redeemWindowStatus`/`isForfeitDue` murni di
+  booking.ts, unit test lintas bulan); lewat itu → hangus. Mesin status:
+  `terbayar → hangus`; hangus TERMINAL, tidak dibangkitkan (uang sudah
+  lama masuk — koreksi manual). Penghanguskan 3 lapis idempotent
+  (UPDATE-WHERE-status='terbayar' AND visit_id IS NULL): watcher per jam
+  (`booking-forfeit-watcher.ts` via instrumentation, forfeited_at
+  deterministik) + lazy di lookup loket (kebenaran terkini) + saat
+  redeem ditolak karena lewat jendela (booking terkunci FOR UPDATE).
+  Laporan Ticketing: kartu **Titipan Booking** (terbayar belum redeem —
+  keadaan kini, pendapatan diterima di muka) + **Pendapatan Hangus**
+  (by forfeited_at dalam rentang). UI ikutan: input masa berlaku di
+  Pengaturan Tiket (kosong = belum aktif + penjelasan), label/badge
+  Hangus di dashboard Booking & status page publik. Catatan akuntansi
+  utk finance: baris `pembayaran xendit` di ledger tercatat tanggal
+  REDEEM (revenue), tanggal uang fisik masuk = `paid_at` booking
+  (rekonsiliasi kas Xendit pakai itu). Verifikasi: 808 unit test lulus
+  (71 ticketing, +4 jendela redeem), eslint bersih, build lulus, migrasi
+  applied (kolom + CHECK diverifikasi query DB), PM2 restart, app
+  online. QA owner: isi "Masa Berlaku Redeem Booking" di Pengaturan
+  Tiket (mis. 0) → booking terbayar kemarin otomatis hangus ≤1 jam
+  (atau seketika saat di-lookup loket) → cek kartu laporan.

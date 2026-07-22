@@ -197,6 +197,16 @@ export function TicketingReportsPage() {
                   : "deposit + pembayaran (semua metode)"
               }
             />
+            <StatCard
+              label="Titipan Booking"
+              value={formatRp(report.booking.titipan_total)}
+              hint={`${report.booking.titipan_count} booking terbayar belum di-redeem — pendapatan diterima di muka, belum jadi revenue (keadaan saat ini)`}
+            />
+            <StatCard
+              label="Pendapatan Hangus"
+              value={formatRp(report.booking.hangus_total)}
+              hint={`${report.booking.hangus_count} booking hangus dalam rentang — terbayar tapi lewat masa berlaku redeem`}
+            />
           </div>
 
           <div className="overflow-x-auto rounded-xl border border-gray-200/70 bg-white">

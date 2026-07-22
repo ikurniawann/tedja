@@ -24,6 +24,8 @@ interface SettingsForm {
   default_credit_limit: string;
   default_payment_mode: PaymentMode;
   booking_slug: string;
+  /** "" = kebijakan hangus belum diisi (tidak menghanguskan). */
+  booking_forfeit_days: string;
 }
 
 const SLUG_PATTERN = /^[a-z0-9-]{2,50}$/;
@@ -49,6 +51,12 @@ export function GeneralSettingsSection() {
         default_payment_mode:
           edits.default_payment_mode ?? settings.default_payment_mode,
         booking_slug: edits.booking_slug ?? settings.booking_slug ?? "",
+        booking_forfeit_days:
+          edits.booking_forfeit_days ??
+          (settings.booking_forfeit_days === null ||
+          settings.booking_forfeit_days === undefined
+            ? ""
+            : String(settings.booking_forfeit_days)),
       }
     : null;
   const setForm = (patch: Partial<SettingsForm>) =>
@@ -61,12 +69,16 @@ export function GeneralSettingsSection() {
 
   const handleSave = () => {
     if (!form || updateMutation.isPending || slugInvalid) return;
+    const forfeitTrimmed = form.booking_forfeit_days.trim();
     updateMutation.mutate({
       re_entry_policy: form.re_entry_policy,
       default_credit_limit: Number(form.default_credit_limit) || 0,
       default_payment_mode: form.default_payment_mode,
       // Kosong = booking online mati (slug dilepas)
       booking_slug: slugTrimmed === "" ? null : slugTrimmed,
+      // Kosong = kebijakan hangus belum diisi (SOP) — tidak menghanguskan
+      booking_forfeit_days:
+        forfeitTrimmed === "" ? null : Math.min(365, Number(forfeitTrimmed) || 0),
     });
   };
 
@@ -182,6 +194,40 @@ export function GeneralSettingsSection() {
                   </>
                 ) : (
                   "Kosongkan untuk mematikan booking online venue ini"
+                )}
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="booking_forfeit_days">
+                Masa Berlaku Redeem Booking (hari setelah tanggal kunjungan)
+              </Label>
+              <Input
+                id="booking_forfeit_days"
+                type="number"
+                min={0}
+                max={365}
+                placeholder="belum diisi — tidak ada yang hangus"
+                value={form.booking_forfeit_days}
+                onChange={(e) =>
+                  setForm({
+                    booking_forfeit_days: e.target.value.replace(/\D/g, ""),
+                  })
+                }
+              />
+              <p className="text-xs text-gray-500">
+                {form.booking_forfeit_days.trim() === "" ? (
+                  <>
+                    Kebijakan hangus BELUM aktif (diisi sesuai SOP): redeem
+                    hanya hari-H dan booking terbayar tidak pernah hangus.
+                  </>
+                ) : (
+                  <>
+                    Booking terbayar bisa di-redeem hari-H s/d H+
+                    {Number(form.booking_forfeit_days) || 0} — lewat itu status
+                    jadi <strong>hangus</strong> dan nilainya diakui sebagai
+                    pendapatan hangus di Laporan. 0 = hanya hari-H.
+                  </>
                 )}
               </p>
             </div>

@@ -103,6 +103,8 @@ export async function GET(request: NextRequest) {
       variantNames,
       channelNames,
       bundleNames,
+      bookingDeposit,
+      bookingForfeited,
     ] = await Promise.all([
       // Net per hari × jenis efektif (void menunjuk jenis baris asal)
       query<LedgerRow>(
@@ -208,6 +210,24 @@ export async function GET(request: NextRequest) {
         `SELECT id, name FROM ticketing.ticket_products
          WHERE branch_id = $1 AND company_id = $2 AND product_kind = 'bundle'`,
         [ctx.branchId, ctx.companyId]
+      ),
+      // Titipan booking = pendapatan diterima di muka (keadaan KINI):
+      // terbayar & belum di-redeem → uang sudah di tangan, belum revenue
+      query<{ n: string; total: string }>(
+        `SELECT COUNT(*) AS n, COALESCE(SUM(total), 0) AS total
+         FROM ticketing.ticket_bookings
+         WHERE branch_id = $1 AND company_id = $2
+           AND status = 'terbayar' AND visit_id IS NULL`,
+        [ctx.branchId, ctx.companyId]
+      ),
+      // Pendapatan hangus dalam rentang — diakui di tanggal forfeited_at
+      query<{ n: string; total: string }>(
+        `SELECT COUNT(*) AS n, COALESCE(SUM(total), 0) AS total
+         FROM ticketing.ticket_bookings
+         WHERE branch_id = $1 AND company_id = $2
+           AND status = 'hangus'
+           AND ${dayExpr("forfeited_at")} BETWEEN $3 AND $4`,
+        [...scope]
       ),
     ]);
 
@@ -344,6 +364,15 @@ export async function GET(request: NextRequest) {
         channels: finishAgg(byChannel),
         seasons: finishAgg(bySeason),
         bundles: finishAgg(byBundle),
+      },
+      // Pengakuan revenue booking (keputusan owner 2026-07-23): terbayar
+      // belum redeem = titipan (bukan revenue); hangus = revenue hangus di
+      // tanggal forfeited_at
+      booking: {
+        titipan_count: Number(bookingDeposit[0]?.n ?? 0),
+        titipan_total: round2(Number(bookingDeposit[0]?.total ?? 0)),
+        hangus_count: Number(bookingForfeited[0]?.n ?? 0),
+        hangus_total: round2(Number(bookingForfeited[0]?.total ?? 0)),
       },
       bands: bandsRecap.map((b) => ({ status: b.key, n: Number(b.n) })),
       hanging: {

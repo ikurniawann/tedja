@@ -2,7 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { successResponse } from "@/lib/api/auth";
 import { query, queryOne } from "@/lib/db";
 import { checkRateLimit } from "@/lib/rate-limit";
-import { normalizeBookingCode } from "@/lib/ticketing/booking";
+import {
+  isForfeitDue,
+  normalizeBookingCode,
+  redeemWindowStatus,
+} from "@/lib/ticketing/booking";
 import { expireBookingIfDue } from "@/lib/ticketing/booking-server";
 import { todayJakartaDate } from "@/lib/ticketing/pricing-server";
 import {
@@ -68,6 +72,29 @@ export async function GET(request: NextRequest) {
       status = "kedaluwarsa";
     }
 
+    // Kebijakan hangus venue (keputusan owner 2026-07-23): masa berlaku
+    // redeem = hari-H + N hari; NULL = hanya hari-H, tanpa hangus.
+    const settingsRow = await queryOne<{ booking_forfeit_days: number | null }>(
+      `SELECT booking_forfeit_days FROM ticketing.ticket_settings
+       WHERE branch_id = $1 AND company_id = $2`,
+      [ctx.branchId, ctx.companyId]
+    );
+    const forfeitDays = settingsRow?.booking_forfeit_days ?? null;
+    const today = todayJakartaDate();
+
+    // Lazy forfeit — loket melihat kebenaran terkini walau watcher belum
+    // sempat lewat; UPDATE-WHERE-status idempotent (pola lazy expiry).
+    if (status === "terbayar" && isForfeitDue(booking.visit_date, today, forfeitDays)) {
+      const forfeited = await queryOne<{ id: string }>(
+        `UPDATE ticketing.ticket_bookings
+         SET status = 'hangus', forfeited_at = now(), updated_at = now()
+         WHERE id = $1 AND status = 'terbayar' AND visit_id IS NULL
+         RETURNING id`,
+        [booking.id]
+      );
+      if (forfeited) status = "hangus";
+    }
+
     const [items, guests] = await Promise.all([
       query<{
         variant_id: string;
@@ -117,8 +144,10 @@ export async function GET(request: NextRequest) {
       used_at: booking.used_at,
       visit_id: booking.visit_id,
       // UI menampilkan alasan tanpa menebak ulang aturan server
-      redeemable: status === "terbayar" && booking.visit_date === todayJakartaDate(),
-      today: todayJakartaDate(),
+      redeemable:
+        status === "terbayar" &&
+        redeemWindowStatus(booking.visit_date, today, forfeitDays) === "boleh",
+      today,
       items: items.map((i) => ({
         variant_id: i.variant_id,
         ticket_product_id: i.ticket_product_id,

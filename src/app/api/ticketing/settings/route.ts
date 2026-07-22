@@ -14,11 +14,12 @@ interface SettingsRow {
   default_credit_limit: string;
   default_payment_mode: string;
   booking_slug: string | null;
+  booking_forfeit_days: number | null;
   updated_at: string;
 }
 
 const SETTINGS_COLUMNS = `id, re_entry_policy, default_credit_limit,
-  default_payment_mode, booking_slug, updated_at`;
+  default_payment_mode, booking_slug, booking_forfeit_days, updated_at`;
 
 /**
  * Bootstrap sekali jalan saat venue pertama kali membuka Ticketing:
@@ -85,6 +86,10 @@ const updateSettingsSchema = z.object({
     })
     .nullable()
     .optional(),
+  // Masa berlaku redeem booking terbayar: hari-H + N hari; lewat itu →
+  // hangus (pendapatan hangus). null = kebijakan belum diisi (SOP) —
+  // tidak menghanguskan, redeem hanya hari-H.
+  booking_forfeit_days: z.number().int().min(0).max(365).nullable().optional(),
 });
 
 export async function PUT(request: NextRequest) {
@@ -115,6 +120,9 @@ export async function PUT(request: NextRequest) {
       add("default_payment_mode", body.default_payment_mode);
     }
     if (body.booking_slug !== undefined) add("booking_slug", body.booking_slug);
+    if (body.booking_forfeit_days !== undefined) {
+      add("booking_forfeit_days", body.booking_forfeit_days);
+    }
 
     params.push(ctx.branchId, ctx.companyId);
     const rows = await query<SettingsRow>(

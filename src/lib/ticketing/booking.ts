@@ -11,18 +11,23 @@ export const BOOKING_STATUSES = [
   "digunakan",
   "kedaluwarsa",
   "dibatalkan",
+  "hangus",
 ] as const;
 export type BookingStatus = (typeof BOOKING_STATUSES)[number];
 
 // menunggu-bayar → terbayar (webhook PAID) | kedaluwarsa (invoice expired)
 //                → dibatalkan (admin); terbayar → digunakan (redeem loket)
-//                → dibatalkan (refund manual). Terminal: tiga sisanya.
+//                → dibatalkan (refund manual) → hangus (lewat masa berlaku
+//                redeem — pengakuan pendapatan hangus, keputusan owner
+//                2026-07-23). Terminal: empat sisanya — hangus TIDAK
+//                dibangkitkan (uangnya sudah lama masuk; koreksi = manual).
 const BOOKING_TRANSITIONS: Record<BookingStatus, readonly BookingStatus[]> = {
   "menunggu-bayar": ["terbayar", "kedaluwarsa", "dibatalkan"],
-  terbayar: ["digunakan", "dibatalkan"],
+  terbayar: ["digunakan", "dibatalkan", "hangus"],
   digunakan: [],
   kedaluwarsa: [],
   dibatalkan: [],
+  hangus: [],
 };
 
 export function canTransitionBooking(
@@ -92,6 +97,35 @@ export function validateVisitDateWindow(
   if (visitDate < today) return "masa-lalu";
   if (visitDate > addDays(today, BOOKING_MAX_DAYS_AHEAD)) return "terlalu-jauh";
   return "ok";
+}
+
+/**
+ * Jendela redeem booking terbayar (keputusan owner 2026-07-23): hari-H s/d
+ * H + forfeitDays. forfeitDays NULL (kebijakan belum diisi di Pengaturan
+ * Tiket) = perilaku lama: hanya hari-H, tidak pernah hangus.
+ */
+export function redeemWindowStatus(
+  visitDate: string,
+  today: string,
+  forfeitDays: number | null
+): "belum-mulai" | "boleh" | "lewat" {
+  if (today < visitDate) return "belum-mulai";
+  const lastDay =
+    forfeitDays === null ? visitDate : addDays(visitDate, forfeitDays);
+  return today <= lastDay ? "boleh" : "lewat";
+}
+
+/**
+ * Layak dihanguskan? Hanya bila kebijakan sudah diisi DAN masa berlaku
+ * redeem sudah lewat. NULL = jangan pernah menghanguskan.
+ */
+export function isForfeitDue(
+  visitDate: string,
+  today: string,
+  forfeitDays: number | null
+): boolean {
+  if (forfeitDays === null) return false;
+  return redeemWindowStatus(visitDate, today, forfeitDays) === "lewat";
 }
 
 /** Tanggal hari ini menurut zona venue (WIB) — bukan UTC server. */

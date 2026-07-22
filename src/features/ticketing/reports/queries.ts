@@ -41,6 +41,13 @@ export interface TicketingReport {
     seasons: ReportAggRow[];
     bundles: ReportAggRow[];
   };
+  /** Pengakuan revenue booking: titipan (kini) & hangus (dalam rentang). */
+  booking: {
+    titipan_count: number;
+    titipan_total: number;
+    hangus_count: number;
+    hangus_total: number;
+  };
   bands: { status: string; n: number }[];
   hanging: {
     count: number;

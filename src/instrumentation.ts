@@ -20,5 +20,10 @@ export async function register() {
 
     const { startWaNotifWatcher } = await import("@/lib/wa/notifications-watcher");
     startWaNotifWatcher();
+
+    const { startBookingForfeitWatcher } = await import(
+      "@/lib/ticketing/booking-forfeit-watcher"
+    );
+    startBookingForfeitWatcher();
   }
 }

@@ -64,6 +64,8 @@ export interface TicketingSettings {
   default_credit_limit: string;
   default_payment_mode: PaymentMode;
   booking_slug: string | null;
+  /** Masa berlaku redeem booking (H+N hari); null = kebijakan belum diisi. */
+  booking_forfeit_days: number | null;
   updated_at: string;
 }
 
@@ -72,4 +74,5 @@ export interface SettingsFormValues {
   default_credit_limit?: number;
   default_payment_mode?: PaymentMode;
   booking_slug?: string | null;
+  booking_forfeit_days?: number | null;
 }
