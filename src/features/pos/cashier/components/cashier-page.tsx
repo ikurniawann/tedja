@@ -1086,7 +1086,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
             className="border-gray-200/80 text-gray-700 hover:border-primary/30 hover:bg-primary/10 hover:text-primary"
             onClick={() =>
               window.open(
-                '/dashboard/pos/customer-display',
+                '/pos/customer-display',
                 'pos-customer-display',
                 'popup=yes,width=1024,height=640'
               )

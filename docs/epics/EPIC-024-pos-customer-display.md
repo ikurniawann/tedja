@@ -104,3 +104,11 @@ dengan yang diketik kasir.
   butuh sesama browser; window baru dari kasir = jalur paling pasti).
   Verifikasi: migrasi applied + grant dicek query DB, lint bersih (4
   error any pre-existing tak berubah), build lulus, PM2 restart.
+- 2026-07-23 — **Fullscreen murni** (revisi owner: "tanpa navbar"):
+  route pindah ke `/pos/customer-display` — DI LUAR layout
+  /dashboard/pos (App Router tidak bisa opt-out layout induk, jadi
+  halaman lama selalu kebungkus AppSidebar). Guard role server-side
+  sendiri (pemegang menu Kasir); menu sidebar & tombol kasir menunjuk
+  URL baru (delta `20260723160000` update route_path). Verifikasi:
+  migrasi applied, build lulus, PM2 restart, smoke 307 login tanpa
+  sesi.
