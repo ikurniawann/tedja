@@ -13,11 +13,12 @@ interface SettingsRow {
   re_entry_policy: string;
   default_credit_limit: string;
   default_payment_mode: string;
+  booking_slug: string | null;
   updated_at: string;
 }
 
 const SETTINGS_COLUMNS = `id, re_entry_policy, default_credit_limit,
-  default_payment_mode, updated_at`;
+  default_payment_mode, booking_slug, updated_at`;
 
 /**
  * Bootstrap sekali jalan saat venue pertama kali membuka Ticketing:
@@ -66,10 +67,24 @@ export async function GET() {
   }
 }
 
+// Segmen statis yang hidup berdampingan dgn [slug] di /booking/* dan
+// /api/public/booking/* — dipakai venue = rute ambigu.
+const RESERVED_BOOKING_SLUGS = new Set(["status", "webhook", "catalog", "api"]);
+
 const updateSettingsSchema = z.object({
   re_entry_policy: z.enum(RE_ENTRY_POLICIES).optional(),
   default_credit_limit: z.number().min(0).max(1_000_000_000).optional(),
   default_payment_mode: z.enum(PAYMENT_MODES).optional(),
+  // Slug URL booking publik /booking/[slug] — null = booking online mati.
+  // Kata yang menabrak segmen statis route /booking/* dilarang.
+  booking_slug: z
+    .string()
+    .regex(/^[a-z0-9-]{2,50}$/, "Slug: huruf kecil, angka, tanda hubung (2-50)")
+    .refine((s) => !RESERVED_BOOKING_SLUGS.has(s), {
+      message: "Slug ini kata terpakai sistem — pilih slug lain",
+    })
+    .nullable()
+    .optional(),
 });
 
 export async function PUT(request: NextRequest) {
@@ -99,6 +114,7 @@ export async function PUT(request: NextRequest) {
     if (body.default_payment_mode !== undefined) {
       add("default_payment_mode", body.default_payment_mode);
     }
+    if (body.booking_slug !== undefined) add("booking_slug", body.booking_slug);
 
     params.push(ctx.branchId, ctx.companyId);
     const rows = await query<SettingsRow>(
@@ -115,6 +131,12 @@ export async function PUT(request: NextRequest) {
     }
     return successResponse(rows[0], "Pengaturan tersimpan");
   } catch (err) {
+    if ((err as { code?: string }).code === "23505") {
+      return NextResponse.json(
+        { success: false, error: "Slug booking sudah dipakai venue lain" },
+        { status: 409 }
+      );
+    }
     console.error("[ticketing] update settings error:", err);
     return NextResponse.json(
       { success: false, error: "Gagal menyimpan pengaturan ticketing" },

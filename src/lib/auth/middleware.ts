@@ -45,6 +45,11 @@ export async function updateSession(request: NextRequest) {
     // Auth = tanda tangan HMAC X-Hub-Signature-256 atas raw body, diperiksa
     // di dalam route itu sendiri.
     "/api/crm/instagram/webhook",
+    // Website booking tiket (EPIC-023 Fase D) — halaman & API publik.
+    // Status booking = capability token 64-hex; webhook Xendit diverifikasi
+    // x-callback-token di dalam route; semua endpoint ber-rate-limit.
+    "/booking",
+    "/api/public/booking",
   ];
   const isPublicRoute =
     pathname === "/" ||

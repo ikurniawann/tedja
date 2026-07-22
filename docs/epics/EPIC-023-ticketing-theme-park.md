@@ -652,3 +652,51 @@ multi-hari/paket, pembatalan mandiri oleh pemesan.
   TODO + kolom) — butuh akun & key dari owner sebelum D2 bisa diuji
   end-to-end; WA gateway & qrcode.react siap reuse. Status: menunggu
   review plan user sebelum koding D1.
+- 2026-07-22 — **Fase D1+D2+D3 SELESAI** (status `coding`). Delta
+  `20260722130000_ticketing_fase_d1_booking.sql` applied:
+  `ticket_bookings` (booking_code BK-XXXXXX charset anti-ambigu unik
+  per venue, access_token 64-hex capability, status CHECK 5 nilai,
+  total snapshot, xendit_invoice_id unik, expires_at) +
+  `ticket_booking_items` (snapshot product/variant_name + unit_price +
+  season_kind) + `ticket_settings.booking_slug` (index unik parsial;
+  input di Pengaturan Tiket, super_admin). Lib: `booking.ts` murni
+  (mesin status — `terbayar` tak bisa mundur, terminal buntu; kode/token
+  generator; jendela tanggal hari-ini..+90 WIB) + `booking-server.ts`
+  (resolusi slug anti-enumerasi, katalog publik hitung-ulang resolver
+  v2 — varian bolong harga disembunyikan, tanggal blok-online →
+  produk hilang; lazy expiry tanpa cron) + `xendit/client.ts` (invoice
+  API, mock `XENDIT_MOCK=1`, webhook token fail-closed) +
+  `public/rate-limit.ts` (sliding window in-memory, kunci
+  `cf-connecting-ip` dulu — XFF bisa dipalsukan). API publik:
+  catalog / POST create (harga DIHITUNG ULANG server, zod, retry 23505
+  kode, invoice gagal → booking `dibatalkan` rapi 502) / webhook
+  Xendit (401 token salah, idempotent via UPDATE-WHERE-status, WA
+  best-effort) / status by-token (404 generik). D3: wizard publik
+  mobile-first `/booking/[slug]` (tanggal → tiket ber-qty → pemesan →
+  ringkasan → redirect invoice) + `/booking/status/[token]` (poll 10
+  dtk saat menunggu; QR `booking_code` saat terbayar) — wrapper tipis
+  pola offer-portal, robots noindex. Middleware: prefix publik
+  `/booking` + `/api/public/booking`. Gate hasil — security review
+  0 CRITICAL, 1 HIGH ditutup (rate limit kini kunci `cf-connecting-ip`
+  pola offer-respond; XFF-only bypass tertutup), 2 MEDIUM ditutup
+  (webhook cek silang `amount` vs total — toleransi 1 rupiah utk
+  pembulatan; `XENDIT_MOCK` di production teriak di log), webhook kini
+  ber-rate-limit 120/mnt. Code review 0 CRITICAL, 1 HIGH ditutup
+  (**race lazy-expiry vs webhook telat: PAID kini juga membangkitkan
+  `kedaluwarsa` — uang menang atas tebakan expiry; `dibatalkan` TIDAK
+  dibangkitkan, di-log "perlu refund manual"**), MEDIUM ditutup:
+  pembulatan 2dp per baris + total (konvensi ledger B), invoice Xendit
+  rupiah bulat, denylist slug reserved (status/webhook/catalog/api) di
+  server+UI. Verifikasi: 763 unit test lulus (11 booking + 6 xendit
+  baru; token webhook salah ditolak fail-closed), lint bersih, tsc
+  bersih (error pre-existing purchasing/xp tak tersentuh), build lulus,
+  smoke SQL D1 8/8 (idempotensi PAID, unique code/invoice, CHECK, expiry
+  tak sentuh terbayar) rollback, smoke API LIVE end-to-end di dev
+  (katalog → booking mock 135rb → 401 token salah → PAID nominal
+  kurang di-ignore → PAID sah → terbayar → dobel no-op → 404 token
+  ngawur; halaman wizard & status 200) — booking smoke dihapus.
+  Catatan dev: `XENDIT_MOCK=1` + `XENDIT_WEBHOOK_TOKEN` dev sudah di
+  `.env`; slug venue `sulu`; distribusi website TKT-0001 dinyalakan
+  utk QA. PRASYARAT PRODUKSI tetap: key Xendit asli + set webhook URL
+  di dashboard Xendit. Sisa: D4 redeem loket → visit prepaid net-0,
+  D5 dashboard kelola booking.

@@ -39,6 +39,7 @@ export interface TicketingSettings {
   re_entry_policy: ReEntryPolicy;
   default_credit_limit: string;
   default_payment_mode: PaymentMode;
+  booking_slug: string | null;
   updated_at: string;
 }
 
@@ -46,4 +47,5 @@ export interface SettingsFormValues {
   re_entry_policy?: ReEntryPolicy;
   default_credit_limit?: number;
   default_payment_mode?: PaymentMode;
+  booking_slug?: string | null;
 }

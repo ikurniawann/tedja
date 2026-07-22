@@ -23,7 +23,12 @@ interface SettingsForm {
   re_entry_policy: ReEntryPolicy;
   default_credit_limit: string;
   default_payment_mode: PaymentMode;
+  booking_slug: string;
 }
+
+const SLUG_PATTERN = /^[a-z0-9-]{2,50}$/;
+// Selaras dgn RESERVED_BOOKING_SLUGS di api/ticketing/settings
+const RESERVED_SLUGS = new Set(["status", "webhook", "catalog", "api"]);
 
 export function GeneralSettingsSection() {
   const settingsQuery = useTicketingSettings();
@@ -43,17 +48,25 @@ export function GeneralSettingsSection() {
           String(Number(settings.default_credit_limit)),
         default_payment_mode:
           edits.default_payment_mode ?? settings.default_payment_mode,
+        booking_slug: edits.booking_slug ?? settings.booking_slug ?? "",
       }
     : null;
   const setForm = (patch: Partial<SettingsForm>) =>
     setEdits((p) => ({ ...p, ...patch }));
 
+  const slugTrimmed = form?.booking_slug.trim() ?? "";
+  const slugInvalid =
+    slugTrimmed !== "" &&
+    (!SLUG_PATTERN.test(slugTrimmed) || RESERVED_SLUGS.has(slugTrimmed));
+
   const handleSave = () => {
-    if (!form || updateMutation.isPending) return;
+    if (!form || updateMutation.isPending || slugInvalid) return;
     updateMutation.mutate({
       re_entry_policy: form.re_entry_policy,
       default_credit_limit: Number(form.default_credit_limit) || 0,
       default_payment_mode: form.default_payment_mode,
+      // Kosong = booking online mati (slug dilepas)
+      booking_slug: slugTrimmed === "" ? null : slugTrimmed,
     });
   };
 
@@ -145,6 +158,34 @@ export function GeneralSettingsSection() {
           </div>
 
           <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="booking_slug">Slug Booking Online</Label>
+              <Input
+                id="booking_slug"
+                placeholder="mis. sulu-wonderland"
+                value={form.booking_slug}
+                onChange={(e) =>
+                  setForm({ booking_slug: e.target.value.toLowerCase() })
+                }
+                aria-invalid={slugInvalid}
+              />
+              <p className="text-xs text-gray-500">
+                {slugInvalid ? (
+                  <span className="text-red-600">
+                    {RESERVED_SLUGS.has(slugTrimmed)
+                      ? "Slug ini kata terpakai sistem — pilih slug lain"
+                      : "Huruf kecil, angka, tanda hubung — 2 s/d 50 karakter"}
+                  </span>
+                ) : slugTrimmed ? (
+                  <>
+                    Halaman publik: <code>/booking/{slugTrimmed}</code>
+                  </>
+                ) : (
+                  "Kosongkan untuk mematikan booking online venue ini"
+                )}
+              </p>
+            </div>
+
             <Label>Kanal Penjualan</Label>
             {(channelsQuery.data ?? []).map((channel) => (
               <div
