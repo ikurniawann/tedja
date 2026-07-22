@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/select";
 import { TableRow } from "@/components/ui/table";
 import { PurchasingListSection } from "@/modules/purchasing/components/list/PurchasingListSection";
+import { RedeemDialog } from "../../bookings";
 import { useTabStats, useVisits } from "../queries";
 import type { VisitStatus } from "../types";
 import { RegistrationDialog } from "./registration-dialog";
@@ -34,6 +35,7 @@ export function LoketPage({ canVoidCharges = false }: { canVoidCharges?: boolean
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
   const [registerOpen, setRegisterOpen] = useState(false);
+  const [redeemOpen, setRedeemOpen] = useState(false);
   const [detailVisitId, setDetailVisitId] = useState<string | null>(null);
 
   const visitsQuery = useVisits({ status, q, page });
@@ -109,6 +111,13 @@ export function LoketPage({ canVoidCharges = false }: { canVoidCharges?: boolean
                 <SelectItem value="settled">Selesai</SelectItem>
               </SelectContent>
             </Select>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setRedeemOpen(true)}
+            >
+              Redeem Booking
+            </Button>
             <Button size="sm" onClick={() => setRegisterOpen(true)}>
               Registrasi Kunjungan
             </Button>
@@ -226,6 +235,7 @@ export function LoketPage({ canVoidCharges = false }: { canVoidCharges?: boolean
       </PurchasingListSection>
 
       <RegistrationDialog open={registerOpen} onOpenChange={setRegisterOpen} />
+      <RedeemDialog open={redeemOpen} onOpenChange={setRedeemOpen} />
       <VisitDetailDialog
         visitId={detailVisitId}
         onOpenChange={(open) => !open && setDetailVisitId(null)}

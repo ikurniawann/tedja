@@ -1,0 +1,121 @@
+import { NextRequest, NextResponse } from "next/server";
+import { successResponse } from "@/lib/api/auth";
+import { query, queryOne } from "@/lib/db";
+import { checkRateLimit } from "@/lib/rate-limit";
+import { normalizeBookingCode } from "@/lib/ticketing/booking";
+import { expireBookingIfDue } from "@/lib/ticketing/booking-server";
+import { todayJakartaDate } from "@/lib/ticketing/pricing-server";
+import {
+  TICKETING_OPERATOR_ROLES,
+  requireTicketingContext,
+} from "@/lib/ticketing/server";
+
+// Fase D4 — loket mencari booking dari kode (scan QR status page / ketik
+// manual). Hanya venue sendiri (booking_code unik per branch); lookup
+// tidak mengubah status kecuali lazy expiry menunggu-bayar yang basi.
+
+interface BookingLookupRow {
+  id: string;
+  booking_code: string;
+  visit_date: string;
+  customer_name: string;
+  customer_phone: string;
+  status: string;
+  total: string;
+  paid_at: string | null;
+  used_at: string | null;
+  visit_id: string | null;
+}
+
+export async function GET(request: NextRequest) {
+  const { error, ctx } = await requireTicketingContext(TICKETING_OPERATOR_ROLES);
+  if (error) return error;
+
+  const rate = checkRateLimit(`ticketing-booking-lookup:${ctx.user.id}`, 60);
+  if (!rate.allowed) {
+    return NextResponse.json(
+      { success: false, error: "Terlalu banyak pencarian — tunggu sebentar" },
+      { status: 429 }
+    );
+  }
+
+  try {
+    const code = normalizeBookingCode(request.nextUrl.searchParams.get("code") ?? "");
+    if (!code) {
+      return NextResponse.json(
+        { success: false, error: "Kode booking tidak valid (format BK-XXXXXX)" },
+        { status: 400 }
+      );
+    }
+
+    const booking = await queryOne<BookingLookupRow>(
+      `SELECT id, booking_code, visit_date::text AS visit_date, customer_name,
+              customer_phone, status, total, paid_at::text AS paid_at,
+              used_at::text AS used_at, visit_id
+       FROM ticketing.ticket_bookings
+       WHERE branch_id = $1 AND company_id = $2 AND booking_code = $3`,
+      [ctx.branchId, ctx.companyId, code]
+    );
+    if (!booking) {
+      return NextResponse.json(
+        { success: false, error: `Booking ${code} tidak ditemukan di venue ini` },
+        { status: 404 }
+      );
+    }
+
+    let status = booking.status;
+    if (status === "menunggu-bayar" && (await expireBookingIfDue(booking.id))) {
+      status = "kedaluwarsa";
+    }
+
+    const items = await query<{
+      variant_id: string;
+      ticket_product_id: string;
+      product_name: string;
+      variant_name: string;
+      qty: number;
+      unit_price: string;
+      season_kind: string;
+      subtotal: string;
+    }>(
+      `SELECT variant_id, ticket_product_id, product_name, variant_name,
+              qty, unit_price, season_kind, subtotal
+       FROM ticketing.ticket_booking_items
+       WHERE booking_id = $1
+       ORDER BY product_name, variant_name`,
+      [booking.id]
+    );
+
+    return successResponse({
+      id: booking.id,
+      booking_code: booking.booking_code,
+      visit_date: booking.visit_date,
+      customer_name: booking.customer_name,
+      customer_phone: booking.customer_phone,
+      status,
+      total: Number(booking.total),
+      paid_at: booking.paid_at,
+      used_at: booking.used_at,
+      visit_id: booking.visit_id,
+      // UI menampilkan alasan tanpa menebak ulang aturan server
+      redeemable: status === "terbayar" && booking.visit_date === todayJakartaDate(),
+      today: todayJakartaDate(),
+      items: items.map((i) => ({
+        variant_id: i.variant_id,
+        ticket_product_id: i.ticket_product_id,
+        product_name: i.product_name,
+        variant_name: i.variant_name,
+        qty: i.qty,
+        unit_price: Number(i.unit_price),
+        season_kind: i.season_kind,
+        subtotal: Number(i.subtotal),
+      })),
+    });
+  } catch (err) {
+    console.error("[ticketing] booking lookup error:", err);
+    return NextResponse.json(
+      { success: false, error: "Gagal mencari booking" },
+      { status: 500 }
+    );
+  }
+}

@@ -700,3 +700,49 @@ multi-hari/paket, pembatalan mandiri oleh pemesan.
   utk QA. PRASYARAT PRODUKSI tetap: key Xendit asli + set webhook URL
   di dashboard Xendit. Sisa: D4 redeem loket → visit prepaid net-0,
   D5 dashboard kelola booking.
+- 2026-07-22 — **Fase D4+D5 SELESAI — Fase D TUNTAS** (status `coding`;
+  sisa epic = Fase E Laporan & Ops). D4 redeem loket: tombol "Redeem
+  Booking" di loket → dialog scan/ketik kode (`normalizeBookingCode`
+  memaafkan huruf kecil/prefix hilang, charset anti-ambigu tetap
+  ditegakkan) → lookup ber-tenant + lazy expiry → tap gelang per varian
+  (auto-assign ke jatah yang belum penuh, progress N/M per item;
+  `matchRedeemBands` murni menolak kurang/lebih/varian asing — 10 unit
+  test baru) → `POST bookings/[id]/redeem`: booking dikunci FOR UPDATE,
+  hanya `terbayar` + `visit_date` = hari-H WIB, gelang dikunci ORDER BY
+  id, visit PREPAID kanal website tanpa plafon, ledger = debit `tiket`
+  per gelang (snapshot `unit_price` booking, price_context ber-
+  `booking_id`) + kredit `pembayaran` metode `xendit` senilai total →
+  net 0; asersi Σdebit = total (selisih >1 sen → 409, tolak ledger
+  pincang); transisi `terbayar→digunakan` + `used_at` + `visit_id`
+  atomik. Gate tap dipatch: visit ber-asal booking (cek `ticket_bookings
+  .visit_id` ber-tenant) TIDAK di-charge — tap pertama hanya menandai
+  masuk (master berubah ≠ tagihan berubah); re-entry per ticket tetap.
+  Index unik parsial `uq_ticket_bookings_visit` menegakkan 1 booking =
+  1 visit sekaligus meng-indeks lookup gate. D5: menu "Booking"
+  (`ticketing.booking`, super_admin, delta
+  `20260722150000_ticketing_fase_d5_booking_menu.sql` applied) →
+  halaman `/dashboard/ticketing/booking`: filter tanggal/status/cari,
+  dialog rincian (items snapshot, timeline dibuat/dibayar/dipakai, link
+  invoice saat menunggu), aksi: batalkan (atomik UPDATE-WHERE-status,
+  `terbayar` WAJIB catatan refund), tandai refund manual (PATCH
+  `refund_note`, uang di luar sistem), kirim ulang WA (hanya
+  `terbayar`, helper `booking-wa.ts` diekstrak dari webhook — satu
+  sumber pesan). Gate hasil — security review 0 CRITICAL/HIGH; MEDIUM
+  ditutup (rate limit cancel/refund-note 20/mnt; GET list/detail sengaja
+  tanpa limit, konsisten route ticketing lain), LOW ditutup (query
+  booking di gate tap kini ber-filter tenant). Code review APPROVE 0
+  CRITICAL/HIGH; MEDIUM ditutup (index unik visit_id), LOW ditutup
+  (asersi ledger). Catatan tindak lanjut (LOW, disengaja): (1) event
+  "PAID utk booking dibatalkan / nominal kurang" masih hanya
+  console.error — kandidat surfacing di dashboard Booking nanti;
+  (2) rate limiter in-memory per proses (util lama) — kandidat Redis
+  bila multi-instance; (3) role: pos/pos_supervisor bisa redeem tapi
+  kelola booking (batal/refund/resend) khusus super_admin — by design
+  MVP, konfirmasi owner bila loket perlu resend WA. Verifikasi: 773
+  unit test lulus, lint bersih, tsc bersih (error pre-existing tak
+  tersentuh), build lulus, migrasi applied (menu + index terverifikasi
+  di DB), PM2 restart, smoke live: app 200, API booking 401 tanpa auth
+  (fail-closed), halaman dashboard redirect login, menu ter-grant
+  super_admin. QA manual owner: buat booking mock → bayar (XENDIT_MOCK)
+  → redeem di loket hari-H → tap gate (tanpa charge ganda) → cek
+  dashboard Booking.

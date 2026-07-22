@@ -214,6 +214,38 @@ export async function POST(request: NextRequest) {
         };
       }
 
+      // Visit hasil redeem booking website (D4): tiket sudah di-charge
+      // snapshot harga booking saat redeem — tap pertama HANYA menandai
+      // masuk, tanpa resolve harga (master berubah ≠ tagihan berubah).
+      const bookingVisit = await client.query<{ id: string }>(
+        `SELECT id FROM ticketing.ticket_bookings
+         WHERE visit_id = $1 AND branch_id = $2 AND company_id = $3
+         LIMIT 1`,
+        [vb.visit_id, ctx.branchId, ctx.companyId]
+      );
+      if (bookingVisit.rows.length > 0) {
+        await client.query(
+          `UPDATE ticketing.ticket_visit_bands
+           SET entered_at = now(), updated_at = now() WHERE id = $1`,
+          [vb.visit_band_id]
+        );
+        await logGateEvent(client, ctx, {
+          bandUid: uid,
+          bandId: band.id,
+          visitId: vb.visit_id,
+          gateLabel,
+          result: "masuk",
+        });
+        return {
+          result: "masuk",
+          ok: true,
+          contact_name: vb.contact_name,
+          ticket_type_name: vb.ticket_type_name,
+          band_label: band.label,
+          charged_amount: 0,
+        };
+      }
+
       // Tap pertama → charge tiket dengan harga hasil resolve matriks
       if (!vb.channel_id) {
         await logGateEvent(client, ctx, {

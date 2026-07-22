@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { query, queryOne } from "@/lib/db";
 import { checkRateLimit, clientIpFrom } from "@/lib/public/rate-limit";
-import { readGatewayConfig, sendGatewayText } from "@/lib/whatsapp/gateway";
+import { sendBookingPaidWa } from "@/lib/ticketing/booking-wa";
 import { isValidWebhookToken } from "@/lib/xendit/client";
 
 // Webhook invoice Xendit (PAID/EXPIRED). Keamanan: verifikasi
@@ -32,31 +32,6 @@ interface PaidBookingRow {
   customer_name: string;
   customer_phone: string;
   total: string;
-}
-
-async function sendPaidWa(booking: PaidBookingRow) {
-  const config = readGatewayConfig();
-  if (!config) {
-    console.error("[booking] WA gateway belum dikonfigurasi — kode booking tidak terkirim");
-    return;
-  }
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
-  const statusUrl = `${baseUrl}/booking/status/${booking.access_token}`;
-  const message =
-    `*Pembayaran diterima* ✅\n\n` +
-    `Kode booking: *${booking.booking_code}*\n` +
-    `Tanggal kunjungan: ${booking.visit_date}\n` +
-    `Atas nama: ${booking.customer_name}\n` +
-    `Total: Rp${Number(booking.total).toLocaleString("id-ID")}\n\n` +
-    `Tunjukkan QR di halaman ini ke petugas loket:\n${statusUrl}`;
-
-  const result = await sendGatewayText(config, {
-    target: booking.customer_phone,
-    message,
-  });
-  if (!result.success) {
-    console.error("[booking] kirim WA gagal:", result.reason);
-  }
 }
 
 export async function POST(request: NextRequest) {
@@ -129,7 +104,7 @@ export async function POST(request: NextRequest) {
         [bookingId, callback.paid_at ?? null, callback.id]
       );
       if (paid) {
-        await sendPaidWa(paid);
+        await sendBookingPaidWa(paid);
       } else {
         // 0 baris = callback ulang yang sah (terbayar/digunakan) ATAU
         // pembayaran masuk utk booking dibatalkan — bedakan di log supaya

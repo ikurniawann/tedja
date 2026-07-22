@@ -4,6 +4,8 @@ import {
   canTransitionBooking,
   generateAccessToken,
   generateBookingCode,
+  matchRedeemBands,
+  normalizeBookingCode,
   validateVisitDateWindow,
 } from "./booking";
 
@@ -84,5 +86,106 @@ describe("validateVisitDateWindow", () => {
   test("tanggal bukan kalender sungguhan ditolak", () => {
     expect(validateVisitDateWindow("2026-02-30", today)).toBe("tidak-valid");
     expect(validateVisitDateWindow("22-07-2026", today)).toBe("tidak-valid");
+  });
+});
+
+describe("matchRedeemBands (validasi gelang saat redeem loket)", () => {
+  const items = [
+    { variant_id: "dewasa", qty: 2 },
+    { variant_id: "anak", qty: 1 },
+  ];
+
+  test("jumlah gelang per varian persis sama → ok", () => {
+    // Arrange + Act
+    const result = matchRedeemBands(items, [
+      { variant_id: "dewasa" },
+      { variant_id: "anak" },
+      { variant_id: "dewasa" },
+    ]);
+    // Assert
+    expect(result).toEqual({ ok: true });
+  });
+
+  test("gelang kurang ditolak dengan rincian varian yang kurang", () => {
+    const result = matchRedeemBands(items, [
+      { variant_id: "dewasa" },
+      { variant_id: "anak" },
+    ]);
+    expect(result).toEqual({
+      ok: false,
+      reason: "jumlah-tak-cocok",
+      variant_id: "dewasa",
+      expected: 2,
+      actual: 1,
+    });
+  });
+
+  test("gelang lebih dari qty booking ditolak", () => {
+    const result = matchRedeemBands(items, [
+      { variant_id: "dewasa" },
+      { variant_id: "dewasa" },
+      { variant_id: "dewasa" },
+      { variant_id: "anak" },
+    ]);
+    expect(result).toEqual({
+      ok: false,
+      reason: "jumlah-tak-cocok",
+      variant_id: "dewasa",
+      expected: 2,
+      actual: 3,
+    });
+  });
+
+  test("varian di luar booking ditolak sebagai varian-asing", () => {
+    const result = matchRedeemBands(items, [
+      { variant_id: "dewasa" },
+      { variant_id: "vip" },
+    ]);
+    expect(result).toEqual({
+      ok: false,
+      reason: "varian-asing",
+      variant_id: "vip",
+      expected: 0,
+      actual: 1,
+    });
+  });
+
+  test("item duplikat varian yang sama dijumlahkan kebutuhannya", () => {
+    const doubled = [
+      { variant_id: "dewasa", qty: 1 },
+      { variant_id: "dewasa", qty: 1 },
+    ];
+    expect(
+      matchRedeemBands(doubled, [
+        { variant_id: "dewasa" },
+        { variant_id: "dewasa" },
+      ])
+    ).toEqual({ ok: true });
+  });
+
+  test("booking tanpa item vs tanpa gelang → ok (degenerate)", () => {
+    expect(matchRedeemBands([], [])).toEqual({ ok: true });
+  });
+});
+
+describe("normalizeBookingCode", () => {
+  test("hasil generate selalu lolos normalisasi apa adanya", () => {
+    const code = generateBookingCode();
+    expect(normalizeBookingCode(code)).toBe(code);
+  });
+
+  test("huruf kecil dan spasi dinormalkan", () => {
+    expect(normalizeBookingCode("  bk-abcdef ")).toBe("BK-ABCDEF");
+  });
+
+  test("prefix BK- yang tertinggal ditambahkan", () => {
+    expect(normalizeBookingCode("ABCDEF")).toBe("BK-ABCDEF");
+    expect(normalizeBookingCode("bkabcdef")).toBe("BK-ABCDEF");
+  });
+
+  test("charset ambigu / panjang salah ditolak", () => {
+    expect(normalizeBookingCode("BK-ABC10I")).toBeNull(); // 0/1/I terlarang
+    expect(normalizeBookingCode("BK-ABCDE")).toBeNull();
+    expect(normalizeBookingCode("")).toBeNull();
   });
 });
