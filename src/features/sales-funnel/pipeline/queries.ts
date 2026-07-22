@@ -4,16 +4,17 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   createDeal,
-  createDealPayment,
+  createDealInvoice,
   deleteDeal,
-  deleteDealPayment,
+  deleteDealInvoice,
+  fetchDealInvoices,
   fetchDealPayments,
   fetchDeals,
   fetchLostReasons,
   fetchStages,
   updateDeal,
   updateStage,
-  type CreatePaymentValues,
+  type CreateInvoiceValues,
 } from "./api";
 import type {
   DealFilters,
@@ -32,23 +33,27 @@ export const pipelineQueryKeys = {
     ["sales-funnel", "pipeline", "deals", filters] as const,
   payments: (dealId: string) =>
     ["sales-funnel", "pipeline", "payments", dealId] as const,
+  invoices: (dealId: string) =>
+    ["sales-funnel", "pipeline", "invoices", dealId] as const,
 };
 
-export const useDealPayments = (dealId: string, enabled: boolean) =>
+// ── Invoice deal ─────────────────────────────────────────────────────
+
+export const useDealInvoices = (dealId: string, enabled: boolean) =>
   useQuery({
-    queryKey: pipelineQueryKeys.payments(dealId),
-    queryFn: () => fetchDealPayments(dealId),
+    queryKey: pipelineQueryKeys.invoices(dealId),
+    queryFn: () => fetchDealInvoices(dealId),
     enabled: enabled && dealId !== "",
   });
 
-export const useCreateDealPayment = (dealId: string, onSuccess?: () => void) => {
+export const useCreateDealInvoice = (dealId: string, onSuccess?: () => void) => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (values: CreatePaymentValues) => createDealPayment(dealId, values),
+    mutationFn: (values: CreateInvoiceValues) => createDealInvoice(dealId, values),
     onSuccess: () => {
-      toast.success("Pembayaran tercatat");
+      toast.success("Invoice dibuat");
       queryClient.invalidateQueries({
-        queryKey: pipelineQueryKeys.payments(dealId),
+        queryKey: pipelineQueryKeys.invoices(dealId),
       });
       onSuccess?.();
     },
@@ -56,19 +61,28 @@ export const useCreateDealPayment = (dealId: string, onSuccess?: () => void) => 
   });
 };
 
-export const useDeleteDealPayment = (dealId: string) => {
+export const useDeleteDealInvoice = (dealId: string) => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (paymentId: string) => deleteDealPayment(dealId, paymentId),
+    mutationFn: (invoiceId: string) => deleteDealInvoice(invoiceId),
     onSuccess: () => {
-      toast.success("Catatan pembayaran dihapus");
+      toast.success("Invoice dihapus");
       queryClient.invalidateQueries({
-        queryKey: pipelineQueryKeys.payments(dealId),
+        queryKey: pipelineQueryKeys.invoices(dealId),
       });
     },
     onError: (error: Error) => toast.error(error.message),
   });
 };
+
+// Pencatatan/koreksi pembayaran pindah ke modul Finance (EPIC-025 Opsi B) —
+// pipeline hanya MEMBACA progress pelunasan.
+export const useDealPayments = (dealId: string, enabled: boolean) =>
+  useQuery({
+    queryKey: pipelineQueryKeys.payments(dealId),
+    queryFn: () => fetchDealPayments(dealId),
+    enabled: enabled && dealId !== "",
+  });
 
 export const useStages = (all = false) =>
   useQuery({

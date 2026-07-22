@@ -3,12 +3,13 @@ import { z } from "zod";
 import { createdResponse, successResponse } from "@/lib/api/auth";
 import { query, queryOne } from "@/lib/db";
 import { checkRateLimit } from "@/lib/rate-limit";
+import {
+  INVOICE_VIEWER_ROLES,
+  requireFinanceRole,
+} from "@/lib/finance/server";
 import { findAccessibleDeal } from "@/lib/sales-funnel/access";
 import { termProgress } from "@/lib/sales-funnel/quotations";
-import {
-  isValidCalendarDate,
-  requireSalesFunnelRole,
-} from "@/lib/sales-funnel/server";
+import { isValidCalendarDate } from "@/lib/sales-funnel/server";
 
 // EPIC-022 Fase G — pencatatan pembayaran per deal + progress pelunasan.
 // Acuan tagihan (prioritas): quotation DITERIMA terbaru → nilai final deal
@@ -25,6 +26,8 @@ const createPaymentSchema = z.object({
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .refine(isValidCalendarDate, { message: "Tanggal tidak valid" }),
   note: z.string().trim().max(300).optional().nullable(),
+  // Pembayaran mengacu ke invoice (nullable — catatan lama tetap sah)
+  invoice_id: z.string().uuid().optional().nullable(),
 });
 
 interface ReferenceQuotationRow {
@@ -42,12 +45,16 @@ async function loadPaymentSummary(dealId: string) {
       method: string;
       paid_on: string;
       note: string | null;
+      invoice_id: string | null;
+      invoice_number: string | null;
       created_by_name: string | null;
       created_at: string;
     }>(
       `SELECT p.id, p.amount, p.method, p.paid_on::text AS paid_on, p.note,
+              p.invoice_id, inv.invoice_number,
               u.full_name AS created_by_name, p.created_at
        FROM crm.crm_sales_deal_payments p
+       LEFT JOIN crm.crm_sales_invoices inv ON inv.id = p.invoice_id
        LEFT JOIN configuration.users u ON u.id = p.created_by
        WHERE p.deal_id = $1 AND p.deleted_at IS NULL
        ORDER BY p.paid_on DESC, p.created_at DESC`,
@@ -98,6 +105,8 @@ async function loadPaymentSummary(dealId: string) {
       method: p.method,
       paid_on: p.paid_on,
       note: p.note,
+      invoice_id: p.invoice_id,
+      invoice_number: p.invoice_number,
       created_by_name: p.created_by_name,
       created_at: p.created_at,
     })),
@@ -127,7 +136,8 @@ export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { error, user } = await requireSalesFunnelRole();
+  // Sales boleh MELIHAT progress; pencatatan hanya finance (Opsi B)
+  const { error, user } = await requireFinanceRole(INVOICE_VIEWER_ROLES);
   if (error) return error;
 
   try {
@@ -153,7 +163,8 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { error, user } = await requireSalesFunnelRole();
+  // Pencatatan pembayaran = wewenang finance (EPIC-025 Opsi B)
+  const { error, user } = await requireFinanceRole();
   if (error) return error;
 
   const rate = checkRateLimit(`sales-payment:${user.id}`, 20);
@@ -183,11 +194,27 @@ export async function POST(
     }
     const body = parsed.data;
 
+    // Invoice acuan harus milik deal ini & belum dibatalkan/dihapus
+    if (body.invoice_id) {
+      const invoice = await queryOne<{ id: string }>(
+        `SELECT id FROM crm.crm_sales_invoices
+         WHERE id = $1 AND deal_id = $2 AND deleted_at IS NULL
+           AND status <> 'batal'`,
+        [body.invoice_id, deal.id]
+      );
+      if (!invoice) {
+        return NextResponse.json(
+          { success: false, error: "Invoice tidak ditemukan pada deal ini" },
+          { status: 400 }
+        );
+      }
+    }
+
     const row = await queryOne<{ id: string }>(
       `INSERT INTO crm.crm_sales_deal_payments
          (company_id, branch_id, deal_id, amount, method, paid_on, note,
-          created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+          invoice_id, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING id`,
       [
         deal.company_id,
@@ -197,6 +224,7 @@ export async function POST(
         body.method,
         body.paid_on,
         body.note || null,
+        body.invoice_id || null,
         user.id,
       ]
     );

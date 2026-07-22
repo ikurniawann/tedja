@@ -30,7 +30,7 @@ import {
 } from "../types";
 import { CloseDealDialog, type CloseDealTarget } from "./close-deal-dialog";
 import { DealCard } from "./deal-card";
-import { DealDetailSheet } from "./deal-detail-sheet";
+import { DealDetailDialog } from "./deal-detail-dialog";
 import { DealFormDialog } from "./deal-form-dialog";
 
 const ALL = "all";
@@ -244,7 +244,7 @@ export function SalesFunnelPipelinePage() {
         </DragDropContext>
       )}
 
-      <DealDetailSheet
+      <DealDetailDialog
         deal={detailDeal}
         onClose={() => {
           setDetailId(null);

@@ -36,6 +36,8 @@ export function isEssPath(pathname: string): boolean {
  */
 export const ROLE_MODULE_PATHS: Record<string, readonly string[]> = {
   sales: ["/dashboard/sales-funnel"],
+  // EPIC-025: finance memproses invoice & pembayaran AR
+  finance_staff: ["/dashboard/finance"],
 };
 
 /** Prefix modul tambahan yang boleh diakses sebuah role (di luar ESS). */

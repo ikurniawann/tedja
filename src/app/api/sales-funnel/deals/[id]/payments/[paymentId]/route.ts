@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { noContentResponse } from "@/lib/api/auth";
 import { queryOne } from "@/lib/db";
+import { requireFinanceRole } from "@/lib/finance/server";
 import { findAccessibleDeal } from "@/lib/sales-funnel/access";
-import { requireSalesFunnelRole } from "@/lib/sales-funnel/server";
 
 /**
  * Hapus (soft) satu catatan pembayaran — koreksi salah catat. Jejaknya
@@ -13,7 +13,8 @@ export async function DELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string; paymentId: string }> }
 ) {
-  const { error, user } = await requireSalesFunnelRole();
+  // Koreksi catatan pembayaran = wewenang finance (EPIC-025 Opsi B)
+  const { error, user } = await requireFinanceRole();
   if (error) return error;
 
   try {

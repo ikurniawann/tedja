@@ -87,6 +87,84 @@ export async function deleteDeal(id: string) {
   if (!res.ok && res.status !== 204) await parseError(res, "Gagal menghapus deal");
 }
 
+// ── Invoice deal ─────────────────────────────────────────────────────
+
+export type InvoiceStatus = "diajukan" | "draft" | "terkirim" | "batal";
+export type InvoicePaymentStatus = "belum" | "sebagian" | "lunas";
+
+export interface DealInvoice {
+  id: string;
+  invoice_number: string;
+  label: string;
+  amount: number;
+  due_date: string | null;
+  status: InvoiceStatus;
+  sent_at: string | null;
+  note: string | null;
+  quotation_id: string | null;
+  term_id: string | null;
+  quote_number: string | null;
+  paid: number;
+  payment_status: InvoicePaymentStatus;
+  created_at: string;
+}
+
+export interface InvoiceTermOption {
+  term_id: string;
+  label: string;
+  percent: number;
+  amount: number;
+  due_date: string | null;
+  invoiced: boolean;
+}
+
+export interface DealInvoiceData {
+  invoices: DealInvoice[];
+  reference: {
+    quotation_id: string;
+    quote_number: string;
+    is_accepted: boolean;
+    total: number;
+    use_ppn: boolean;
+    ppn_persen: number;
+  } | null;
+  available_terms: InvoiceTermOption[];
+}
+
+export interface CreateInvoiceValues {
+  term_id?: string | null;
+  label: string;
+  amount: number;
+  due_date?: string | null;
+  note?: string | null;
+}
+
+export async function fetchDealInvoices(dealId: string): Promise<DealInvoiceData> {
+  const res = await fetch(`/api/sales-funnel/deals/${dealId}/invoices`);
+  if (!res.ok) await parseError(res, "Gagal memuat invoice");
+  const body = (await res.json()) as { data: DealInvoiceData };
+  return body.data;
+}
+
+export async function createDealInvoice(dealId: string, values: CreateInvoiceValues) {
+  const res = await fetch(`/api/sales-funnel/deals/${dealId}/invoices`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(values),
+  });
+  if (!res.ok) await parseError(res, "Gagal membuat invoice");
+  return res.json();
+}
+
+export async function deleteDealInvoice(invoiceId: string) {
+  const res = await fetch(`/api/sales-funnel/invoices/${invoiceId}`, {
+    method: "DELETE",
+  });
+  if (!res.ok && res.status !== 204) {
+    await parseError(res, "Gagal menghapus invoice");
+  }
+}
+
 // ── Pembayaran deal (Fase G) ─────────────────────────────────────────
 
 export interface DealPayment {
@@ -95,6 +173,8 @@ export interface DealPayment {
   method: string;
   paid_on: string;
   note: string | null;
+  invoice_id: string | null;
+  invoice_number: string | null;
   created_by_name: string | null;
   created_at: string;
 }
@@ -120,36 +200,11 @@ export interface DealPaymentData {
   terms: DealPaymentTermProgress[];
 }
 
-export interface CreatePaymentValues {
-  amount: number;
-  method: string;
-  paid_on: string;
-  note?: string | null;
-}
-
+// Pencatatan/koreksi pembayaran pindah ke modul Finance (EPIC-025 Opsi B) —
+// pipeline hanya MEMBACA progress pelunasan.
 export async function fetchDealPayments(dealId: string): Promise<DealPaymentData> {
   const res = await fetch(`/api/sales-funnel/deals/${dealId}/payments`);
   if (!res.ok) await parseError(res, "Gagal memuat pembayaran");
   const body = (await res.json()) as { data: DealPaymentData };
   return body.data;
-}
-
-export async function createDealPayment(dealId: string, values: CreatePaymentValues) {
-  const res = await fetch(`/api/sales-funnel/deals/${dealId}/payments`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(values),
-  });
-  if (!res.ok) await parseError(res, "Gagal mencatat pembayaran");
-  return res.json();
-}
-
-export async function deleteDealPayment(dealId: string, paymentId: string) {
-  const res = await fetch(
-    `/api/sales-funnel/deals/${dealId}/payments/${paymentId}`,
-    { method: "DELETE" }
-  );
-  if (!res.ok && res.status !== 204) {
-    await parseError(res, "Gagal menghapus catatan pembayaran");
-  }
 }
