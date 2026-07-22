@@ -35,8 +35,12 @@ const formatTime = (iso: string) =>
 
 const ALL_STATUS = "semua" as const;
 
-/** Dashboard kelola booking website (D5) — list per tanggal + aksi. */
-export function BookingsPage() {
+/**
+ * Dashboard kelola booking website (D5) — list per tanggal + aksi.
+ * canManage=false (loket): lihat + kirim ulang WA saja — aksi ber-uang
+ * disembunyikan (server tetap menolak terlepas dari UI).
+ */
+export function BookingsPage({ canManage = false }: { canManage?: boolean }) {
   const [date, setDate] = useState(() => todayInJakarta());
   const [status, setStatus] = useState<BookingStatus | typeof ALL_STATUS>(ALL_STATUS);
   const [q, setQ] = useState("");
@@ -220,6 +224,7 @@ export function BookingsPage() {
 
       <BookingDetailDialog
         bookingId={detailId}
+        canManage={canManage}
         onOpenChange={(open) => !open && setDetailId(null)}
       />
     </div>

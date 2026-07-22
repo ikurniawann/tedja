@@ -3,10 +3,15 @@ import { paginatedResponse } from "@/lib/api/auth";
 import { query } from "@/lib/db";
 import { BOOKING_STATUSES } from "@/lib/ticketing/booking";
 import { isValidCalendarDate } from "@/lib/ticketing/pricing";
-import { requireTicketingContext } from "@/lib/ticketing/server";
+import {
+  TICKETING_OPERATOR_ROLES,
+  requireTicketingContext,
+} from "@/lib/ticketing/server";
 
-// Fase D5 — daftar booking website utk dashboard (super_admin, konsisten
-// menu "Booking"). Filter: tanggal kunjungan, status, cari kode/nama/WA.
+// Fase D5 — daftar booking website utk dashboard. Keputusan owner
+// 2026-07-22: loket (pos/pos_supervisor) boleh LIHAT & resend WA —
+// aksi ber-uang (cancel/refund/alert) tetap super_admin di route-nya.
+// Filter: tanggal kunjungan, status, cari kode/nama/WA.
 
 interface BookingListRow {
   id: string;
@@ -26,7 +31,7 @@ interface BookingListRow {
 }
 
 export async function GET(request: NextRequest) {
-  const { error, ctx } = await requireTicketingContext();
+  const { error, ctx } = await requireTicketingContext(TICKETING_OPERATOR_ROLES);
   if (error) return error;
 
   try {

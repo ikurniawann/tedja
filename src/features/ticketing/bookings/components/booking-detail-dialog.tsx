@@ -26,6 +26,8 @@ import {
 
 interface BookingDetailDialogProps {
   bookingId: string | null;
+  /** false (loket): sembunyikan aksi ber-uang — server tetap menolak. */
+  canManage?: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
@@ -48,6 +50,7 @@ const formatDateTime = (iso: string | null) =>
  */
 export function BookingDetailDialog({
   bookingId,
+  canManage = false,
   onOpenChange,
 }: BookingDetailDialogProps) {
   const detailQuery = useBookingDetail(bookingId);
@@ -75,14 +78,24 @@ export function BookingDetailDialog({
           </p>
         ) : (
           // key = remount per booking → state panel aksi mulai bersih
-          <BookingDetailBody key={booking.id} booking={booking} />
+          <BookingDetailBody
+            key={booking.id}
+            booking={booking}
+            canManage={canManage}
+          />
         )}
       </DialogContent>
     </Dialog>
   );
 }
 
-function BookingDetailBody({ booking }: { booking: BookingDetail }) {
+function BookingDetailBody({
+  booking,
+  canManage,
+}: {
+  booking: BookingDetail;
+  canManage: boolean;
+}) {
   const [cancelMode, setCancelMode] = useState(false);
   const [refundNote, setRefundNote] = useState(booking.refund_note ?? "");
 
@@ -92,7 +105,8 @@ function BookingDetailBody({ booking }: { booking: BookingDetail }) {
   const clearAlertMutation = useClearWebhookAlert();
 
   const canCancel =
-    booking.status === "menunggu-bayar" || booking.status === "terbayar";
+    canManage &&
+    (booking.status === "menunggu-bayar" || booking.status === "terbayar");
   const cancelNeedsNote = booking.status === "terbayar";
 
   return (
@@ -104,19 +118,25 @@ function BookingDetailBody({ booking }: { booking: BookingDetail }) {
             ⚠ Anomali pembayaran Xendit
           </p>
           <p className="text-sm text-red-700">{booking.webhook_alert}</p>
-          <div className="flex justify-end">
-            <Button
-              size="sm"
-              variant="outline"
-              className="border-red-200 text-red-600 hover:bg-red-100"
-              disabled={clearAlertMutation.isPending}
-              onClick={() => clearAlertMutation.mutate({ id: booking.id })}
-            >
-              {clearAlertMutation.isPending
-                ? "Menyimpan…"
-                : "Sudah Ditindaklanjuti"}
-            </Button>
-          </div>
+          {canManage ? (
+            <div className="flex justify-end">
+              <Button
+                size="sm"
+                variant="outline"
+                className="border-red-200 text-red-600 hover:bg-red-100"
+                disabled={clearAlertMutation.isPending}
+                onClick={() => clearAlertMutation.mutate({ id: booking.id })}
+              >
+                {clearAlertMutation.isPending
+                  ? "Menyimpan…"
+                  : "Sudah Ditindaklanjuti"}
+              </Button>
+            </div>
+          ) : (
+            <p className="text-xs text-red-500">
+              Laporkan ke admin — penanganan alert wewenang Super Admin.
+            </p>
+          )}
         </div>
       ) : null}
       <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
@@ -219,41 +239,52 @@ function BookingDetailBody({ booking }: { booking: BookingDetail }) {
         </div>
       ) : null}
 
-      {/* Catatan refund manual */}
-      <div className="space-y-1.5">
-        <Label htmlFor="refund_note">
-          Catatan Refund Manual{" "}
-          <span className="font-normal text-gray-400">
-            (uang dikembalikan di luar sistem)
-          </span>
-        </Label>
-        <Textarea
-          id="refund_note"
-          rows={2}
-          placeholder="mis. Refund transfer BCA 22 Jul, potong biaya admin 5rb"
-          value={refundNote}
-          onChange={(e) => setRefundNote(e.target.value)}
-        />
-        <div className="flex justify-end">
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={
-              refundNote.trim() === "" ||
-              refundNote.trim() === (booking.refund_note ?? "") ||
-              refundNoteMutation.isPending
-            }
-            onClick={() =>
-              refundNoteMutation.mutate({
-                id: booking.id,
-                refundNote: refundNote.trim(),
-              })
-            }
-          >
-            {refundNoteMutation.isPending ? "Menyimpan…" : "Simpan Catatan"}
-          </Button>
+      {/* Catatan refund manual — mutasi khusus admin; loket lihat saja */}
+      {canManage ? (
+        <div className="space-y-1.5">
+          <Label htmlFor="refund_note">
+            Catatan Refund Manual{" "}
+            <span className="font-normal text-gray-400">
+              (uang dikembalikan di luar sistem)
+            </span>
+          </Label>
+          <Textarea
+            id="refund_note"
+            rows={2}
+            placeholder="mis. Refund transfer BCA 22 Jul, potong biaya admin 5rb"
+            value={refundNote}
+            onChange={(e) => setRefundNote(e.target.value)}
+          />
+          <div className="flex justify-end">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={
+                refundNote.trim() === "" ||
+                refundNote.trim() === (booking.refund_note ?? "") ||
+                refundNoteMutation.isPending
+              }
+              onClick={() =>
+                refundNoteMutation.mutate({
+                  id: booking.id,
+                  refundNote: refundNote.trim(),
+                })
+              }
+            >
+              {refundNoteMutation.isPending ? "Menyimpan…" : "Simpan Catatan"}
+            </Button>
+          </div>
         </div>
-      </div>
+      ) : booking.refund_note ? (
+        <div className="space-y-1">
+          <p className="text-xs font-medium text-gray-500">
+            Catatan Refund Manual
+          </p>
+          <p className="rounded-lg border border-gray-200/70 bg-gray-50/60 px-3 py-2 text-sm text-gray-700">
+            {booking.refund_note}
+          </p>
+        </div>
+      ) : null}
 
       {/* Aksi */}
       <div className="flex flex-wrap items-center justify-end gap-2 border-t border-gray-200/70 pt-4">

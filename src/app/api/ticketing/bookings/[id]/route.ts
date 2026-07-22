@@ -3,7 +3,10 @@ import { z } from "zod";
 import { successResponse } from "@/lib/api/auth";
 import { query, queryOne } from "@/lib/db";
 import { checkRateLimit } from "@/lib/rate-limit";
-import { requireTicketingContext } from "@/lib/ticketing/server";
+import {
+  TICKETING_OPERATOR_ROLES,
+  requireTicketingContext,
+} from "@/lib/ticketing/server";
 
 // Fase D5 — rincian booking utk dashboard + catatan refund manual.
 // MVP: uang refund bergerak DI LUAR sistem (transfer manual); di sini
@@ -34,7 +37,8 @@ export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { error, ctx } = await requireTicketingContext();
+  // Loket boleh melihat rincian (bantu pengunjung); mutasi tetap admin
+  const { error, ctx } = await requireTicketingContext(TICKETING_OPERATOR_ROLES);
   if (error) return error;
 
   try {

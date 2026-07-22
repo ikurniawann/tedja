@@ -906,3 +906,19 @@ multi-hari/paket, pembatalan mandiri oleh pemesan.
   migrasi applied, PM2 restart. **SISA EPIC: Xendit produksi saja** —
   key asli + webhook URL di dashboard Xendit + matikan `XENDIT_MOCK`
   (owner: "menyusul").
+- 2026-07-22 — **Akses loket ke menu Booking** (keputusan owner: poin 3
+  daftar tindak lanjut — loket boleh bantu pengunjung). Delta
+  `20260722220000` applied: menu `ticketing.booking` granted `pos` +
+  `pos_supervisor` (read; super_admin tetap read+update). Server: GET
+  list/detail booking + POST resend-wa kini `TICKETING_OPERATOR_ROLES`;
+  **cancel + PATCH (refund_note / clear_webhook_alert) TETAP
+  super_admin** (ditegakkan server, bukan cuma UI). UI: page guard
+  operator + prop `canManage` — loket melihat daftar/rincian & tombol
+  "Kirim Ulang WA"; tombol Batalkan, editor catatan refund, dan tombol
+  tutup alert webhook disembunyikan (alert tetap tampil + instruksi
+  "laporkan ke admin"; catatan refund tampil read-only bila ada).
+  Verifikasi: eslint bersih, build lulus (BUILD_ID dicek), migrasi
+  applied (grant terverifikasi query DB), PM2 restart, smoke: app 307
+  login, API booking 401 tanpa auth. Daftar tindak lanjut medium kini
+  TUTUP SEMUA kecuali yang berkondisi: Redis limiter (tunggu
+  multi-instance) & integration test ber-uang (task infra terpisah).

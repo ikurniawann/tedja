@@ -4,18 +4,23 @@ import { successResponse } from "@/lib/api/auth";
 import { queryOne } from "@/lib/db";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { sendBookingPaidWa } from "@/lib/ticketing/booking-wa";
-import { requireTicketingContext } from "@/lib/ticketing/server";
+import {
+  TICKETING_OPERATOR_ROLES,
+  requireTicketingContext,
+} from "@/lib/ticketing/server";
 
 // Fase D5 — kirim ulang WA kode booking (pesan sama dgn webhook PAID).
 // Hanya booking terbayar: menunggu-bayar belum punya hak masuk, status
 // terminal tidak butuh QR lagi. Rate limit ketat — ini memicu pesan WA
-// keluar ke pelanggan.
+// keluar ke pelanggan. Keputusan owner 2026-07-22: loket
+// (pos/pos_supervisor) BOLEH kirim ulang — tidak berisiko uang, cuma
+// mengirim ulang pesan yang sama ke nomor pemesan.
 
 export async function POST(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { error, ctx } = await requireTicketingContext();
+  const { error, ctx } = await requireTicketingContext(TICKETING_OPERATOR_ROLES);
   if (error) return error;
 
   const rate = checkRateLimit(`ticketing-booking-resend:${ctx.user.id}`, 10);
