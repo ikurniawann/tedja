@@ -54,7 +54,14 @@ export const requireTicketingAdmin = () =>
 export const SEASON_KINDS = ["regular", "high"] as const;
 export type SeasonKind = (typeof SEASON_KINDS)[number];
 
-export const BAND_STATUSES = ["tersedia", "dipakai", "hilang", "rusak"] as const;
+export const BAND_STATUSES = [
+  "tersedia",
+  "dipakai",
+  "hilang",
+  "rusak",
+  // dipegang karyawan (staff pass Fase E) — bukan stok kunjungan
+  "karyawan",
+] as const;
 
 export const RE_ENTRY_POLICIES = ["sekali-masuk", "bebas-keluar-masuk"] as const;
 

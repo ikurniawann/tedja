@@ -2,6 +2,7 @@
 
 import { BandsSection } from "./bands-section";
 import { GeneralSettingsSection } from "./general-settings-section";
+import { StaffPassesSection } from "./staff-passes-section";
 
 // Revisi Manage Ticket (2026-07-21): kalender musim & harga pindah ke
 // masing-masing ticket di Master Ticket — halaman ini menyusut jadi
@@ -20,6 +21,7 @@ export function TicketingSettingsPage() {
 
       <GeneralSettingsSection />
       <BandsSection />
+      <StaffPassesSection />
     </div>
   );
 }

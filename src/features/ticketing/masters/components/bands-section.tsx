@@ -31,6 +31,7 @@ const STATUS_BADGES: Record<BandStatus, { label: string; className: string }> = 
   dipakai: { label: "Dipakai", className: "bg-blue-100 text-blue-700" },
   hilang: { label: "Hilang", className: "bg-red-100 text-red-700" },
   rusak: { label: "Rusak", className: "bg-gray-200 text-gray-600" },
+  karyawan: { label: "Karyawan", className: "bg-purple-100 text-purple-700" },
 };
 
 export function BandsSection() {
@@ -155,6 +156,10 @@ export function BandsSection() {
                               Rusak
                             </Button>
                           </>
+                        ) : band.status === "karyawan" ? (
+                          <span className="text-xs text-gray-400">
+                            dipegang karyawan — cabut di Gelang Karyawan
+                          </span>
                         ) : band.status !== "dipakai" ? (
                           <Button
                             type="button"

@@ -6,7 +6,11 @@ import {
   fetchBands,
   fetchChannels,
   fetchSettings,
+  fetchStaffPasses,
+  pairStaffPass,
   registerBand,
+  revokeStaffPass,
+  searchEmployees,
   updateBand,
   updateChannel,
   updateSettings,
@@ -19,6 +23,9 @@ export const ticketingQueryKeys = {
   channels: ["ticketing", "channels"] as const,
   bands: (filters: BandFilters) => ["ticketing", "bands", filters] as const,
   bandsAll: ["ticketing", "bands"] as const,
+  staffPasses: (q: string) => ["ticketing", "staff-passes", q] as const,
+  staffPassesAll: ["ticketing", "staff-passes"] as const,
+  employeeOptions: (q: string) => ["ticketing", "employee-options", q] as const,
 };
 
 // Settings dipanggil pertama — GET-nya sekaligus bootstrap kanal default
@@ -91,4 +98,32 @@ export const useUpdateBand = (onSuccess?: () => void) =>
     "Gelang diperbarui",
     [ticketingQueryKeys.bandsAll],
     onSuccess
+  );
+
+// ── Gelang karyawan (Fase E) ──
+export const useStaffPasses = (q: string) =>
+  useQuery({
+    queryKey: ticketingQueryKeys.staffPasses(q),
+    queryFn: () => fetchStaffPasses(q),
+  });
+
+export const useEmployeeOptions = (q: string) =>
+  useQuery({
+    queryKey: ticketingQueryKeys.employeeOptions(q),
+    queryFn: () => searchEmployees(q),
+  });
+
+export const usePairStaffPass = (onSuccess?: () => void) =>
+  useInvalidatingMutation(
+    (values: { nfc_uid: string; employee_id: string }) => pairStaffPass(values),
+    "Gelang dipasangkan ke karyawan",
+    [ticketingQueryKeys.staffPassesAll, ticketingQueryKeys.bandsAll],
+    onSuccess
+  );
+
+export const useRevokeStaffPass = () =>
+  useInvalidatingMutation(
+    (id: string) => revokeStaffPass(id),
+    "Pairing dicabut — gelang kembali tersedia",
+    [ticketingQueryKeys.staffPassesAll, ticketingQueryKeys.bandsAll]
   );

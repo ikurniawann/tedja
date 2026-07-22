@@ -1,7 +1,9 @@
 import type {
   BandFilters,
   BandListResponse,
+  EmployeeOption,
   SettingsFormValues,
+  StaffPass,
   TicketBand,
   TicketChannel,
   TicketingSettings,
@@ -94,3 +96,37 @@ export const updateBand = (
     values,
     "Gagal memperbarui gelang"
   );
+
+// ── Gelang karyawan (staff pass, Fase E) ──
+export const fetchStaffPasses = (q: string) =>
+  getJson<StaffPass[]>(
+    `/api/ticketing/staff-passes${q ? `?q=${encodeURIComponent(q)}` : ""}`,
+    "Gagal memuat gelang karyawan"
+  );
+
+export const pairStaffPass = (values: { nfc_uid: string; employee_id: string }) =>
+  sendJson<{ id: string }>(
+    "/api/ticketing/staff-passes",
+    "POST",
+    values,
+    "Gagal memasangkan gelang karyawan"
+  );
+
+export async function revokeStaffPass(id: string): Promise<{ id: string }> {
+  const res = await fetch(`/api/ticketing/staff-passes/${id}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) await parseError(res, "Gagal mencabut pairing");
+  const body = (await res.json()) as { data: { id: string } };
+  return body.data;
+}
+
+/** Picker karyawan aktif — numpang API HRIS existing. */
+export async function searchEmployees(search: string): Promise<EmployeeOption[]> {
+  const params = new URLSearchParams({ is_active: "true", limit: "20" });
+  if (search) params.set("search", search);
+  const res = await fetch(`/api/hris/employees?${params.toString()}`);
+  if (!res.ok) await parseError(res, "Gagal memuat daftar karyawan");
+  const body = (await res.json()) as { data: EmployeeOption[] };
+  return body.data ?? [];
+}

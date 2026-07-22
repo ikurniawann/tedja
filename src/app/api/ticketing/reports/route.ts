@@ -241,6 +241,7 @@ export async function GET(request: NextRequest) {
     const gateByDay = new Map<string, Record<string, number>>();
     let masuk = 0;
     let masukLagi = 0;
+    let masukKaryawan = 0;
     let ditolak = 0;
     for (const row of gateDaily) {
       const perDay = gateByDay.get(row.day) ?? {};
@@ -248,6 +249,7 @@ export async function GET(request: NextRequest) {
       gateByDay.set(row.day, perDay);
       if (row.key === "masuk") masuk += Number(row.n);
       else if (row.key === "masuk-lagi") masukLagi += Number(row.n);
+      else if (row.key === "masuk-karyawan") masukKaryawan += Number(row.n);
       else ditolak += Number(row.n);
     }
     const visitsByDay = new Map(visitDaily.map((r) => [r.key, Number(r.n)]));
@@ -323,6 +325,7 @@ export async function GET(request: NextRequest) {
         visits_opened: visitDaily.reduce((s, r) => s + Number(r.n), 0),
         orang_masuk: masuk,
         masuk_lagi: masukLagi,
+        masuk_karyawan: masukKaryawan,
         tap_ditolak: ditolak,
         tiket_net: round2(netByType.get("tiket") ?? 0),
         fnb_net: round2(netByType.get("fnb") ?? 0),

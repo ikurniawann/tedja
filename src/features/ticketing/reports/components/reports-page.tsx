@@ -172,7 +172,7 @@ export function TicketingReportsPage() {
             <StatCard
               label="Kunjungan Terdaftar"
               value={String(report.summary.visits_opened)}
-              hint={`${report.summary.orang_masuk} orang masuk gate · ${report.summary.masuk_lagi} re-entry · ${report.summary.tap_ditolak} tap ditolak`}
+              hint={`${report.summary.orang_masuk} orang masuk gate · ${report.summary.masuk_lagi} re-entry · ${report.summary.masuk_karyawan} karyawan · ${report.summary.tap_ditolak} tap ditolak`}
             />
             <StatCard
               label="Revenue Tiket (net)"

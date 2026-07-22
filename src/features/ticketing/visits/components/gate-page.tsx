@@ -127,7 +127,9 @@ export function GatePage() {
             {current.ok
               ? current.result === "masuk-lagi"
                 ? "SILAKAN MASUK KEMBALI"
-                : "SELAMAT DATANG"
+                : current.result === "masuk-karyawan"
+                  ? "SELAMAT BEKERJA"
+                  : "SELAMAT DATANG"
               : "DITOLAK"}
           </h1>
           {current.contact_name ? (

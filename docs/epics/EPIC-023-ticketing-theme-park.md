@@ -846,3 +846,29 @@ multi-hari/paket, pembatalan mandiri oleh pemesan.
   ticketing lulus, tsc/eslint bersih, build lulus, migrasi applied, PM2
   restart, SQL laporan tervalidasi langsung ke DB dev (ledger masih
   kosong pasca-wipe R1 — angka baru muncul setelah ada transaksi).
+- 2026-07-22 — **Gelang Karyawan (free access) SELESAI** (Fase E ops,
+  status `coding`). Keputusan desain (pertanyaan owner "pengaturan di
+  karyawan atau di mana?"): pairing hidup di modul TICKETING (Pengaturan
+  Tiket → seksi "Gelang Karyawan"), BUKAN di profil karyawan HRIS —
+  gelang = aset venue (scoping branch), wewenang pairing di ops venue
+  bukan HRD, siklus hidup gelang lepas dari kepegawaian; tabel
+  `ticket_staff_passes` hanya MENUNJUK `hris.employees`. Delta
+  `20260722200000` applied: status gelang baru `karyawan` (CHECK
+  diperluas), tabel pass ber-riwayat (revoke = is_active false; unique
+  parsial: 1 gelang aktif per karyawan per venue & sebaliknya). API:
+  GET/POST `/api/ticketing/staff-passes` (pair: gelang wajib `tersedia`,
+  karyawan wajib aktif → status gelang `karyawan`), DELETE
+  `/[id]` (cabut → gelang balik `tersedia`); picker karyawan numpang
+  `/api/hris/employees?is_active=true`. Gate tap: cek staff pass SEBELUM
+  lookup kunjungan → `masuk-karyawan` (ok, tanpa charge, bebas
+  keluar-masuk, layar gate "SELAMAT BEKERJA") atau
+  `ditolak-karyawan-nonaktif` bila karyawan resign tapi pairing lupa
+  dicabut (fail-closed). Registrasi loket/redeem otomatis menolak gelang
+  karyawan (syarat status `tersedia` existing). Registry gelang: badge
+  ungu `Karyawan`, ubah status manual ke `karyawan` ditolak (diatur
+  pairing), gelang karyawan tak bisa diubah dari registry sebelum
+  pairing dicabut. Laporan: `masuk_karyawan` dihitung terpisah (tidak
+  mencemari "tap ditolak"). Verifikasi: 67 unit test lulus, tsc/eslint
+  bersih, build lulus, migrasi applied, PM2 restart. QA owner: Pengaturan
+  Tiket → Gelang Karyawan → Pasangkan Gelang (tap gelang tersedia + pilih
+  karyawan) → tap di Gate.

@@ -17,6 +17,7 @@ export interface TicketingReport {
     visits_opened: number;
     orang_masuk: number;
     masuk_lagi: number;
+    masuk_karyawan: number;
     tap_ditolak: number;
     tiket_net: number;
     fnb_net: number;

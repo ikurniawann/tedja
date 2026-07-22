@@ -25,13 +25,15 @@ const tapSchema = z.object({
 export type GateTapResult =
   | "masuk"
   | "masuk-lagi"
+  | "masuk-karyawan"
   | "ditolak-gelang-tak-dikenal"
   | "ditolak-tanpa-kunjungan"
   | "ditolak-sudah-masuk"
   | "ditolak-saldo-kurang"
   | "ditolak-plafon"
   | "ditolak-tanpa-kanal"
-  | "ditolak-harga-belum-diisi";
+  | "ditolak-harga-belum-diisi"
+  | "ditolak-karyawan-nonaktif";
 
 interface TapOutcome {
   result: GateTapResult;
@@ -130,6 +132,55 @@ export async function POST(request: NextRequest) {
           ok: false,
           reason: "Gelang tidak terdaftar di registry venue",
         };
+      }
+
+      // Gelang karyawan (staff pass Fase E) → free access, tanpa charge,
+      // bebas keluar-masuk; karyawan nonaktif (resign) ditolak walau
+      // pairing lupa dicabut
+      const staffResult = await client.query<{
+        pass_id: string;
+        full_name: string;
+        employee_active: boolean;
+      }>(
+        `SELECT sp.id AS pass_id, e.full_name,
+                e.is_active AS employee_active
+         FROM ticketing.ticket_staff_passes sp
+         JOIN hris.employees e ON e.id = sp.employee_id
+         WHERE sp.band_id = $1 AND sp.branch_id = $2 AND sp.company_id = $3
+           AND sp.is_active = true
+         LIMIT 1`,
+        [band.id, ctx.branchId, ctx.companyId]
+      );
+      const staffPass = staffResult.rows[0];
+      if (staffPass) {
+        const result = staffPass.employee_active
+          ? ("masuk-karyawan" as const)
+          : ("ditolak-karyawan-nonaktif" as const);
+        await logGateEvent(client, ctx, {
+          bandUid: uid,
+          bandId: band.id,
+          visitId: null,
+          gateLabel,
+          result,
+        });
+        return staffPass.employee_active
+          ? {
+              result,
+              ok: true,
+              contact_name: staffPass.full_name,
+              ticket_type_name: "Akses Karyawan",
+              band_label: band.label,
+              charged_amount: 0,
+            }
+          : {
+              result,
+              ok: false,
+              reason:
+                "Karyawan sudah nonaktif — cabut pairing gelang di Pengaturan Tiket",
+              contact_name: staffPass.full_name,
+              ticket_type_name: "Akses Karyawan",
+              band_label: band.label,
+            };
       }
 
       // Visit aktif utk gelang ini + kunci visit (serialisasi dgn settle/F&B)

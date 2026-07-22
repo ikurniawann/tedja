@@ -1,4 +1,28 @@
-export type BandStatus = "tersedia" | "dipakai" | "hilang" | "rusak";
+export type BandStatus =
+  | "tersedia"
+  | "dipakai"
+  | "hilang"
+  | "rusak"
+  | "karyawan";
+
+/** Fase E — pairing gelang NFC ↔ karyawan HRIS (akses gate gratis). */
+export interface StaffPass {
+  id: string;
+  band_id: string;
+  nfc_uid: string;
+  band_label: string | null;
+  employee_id: string;
+  full_name: string;
+  nip: string | null;
+  employee_active: boolean;
+  created_at: string;
+}
+
+export interface EmployeeOption {
+  id: string;
+  full_name: string;
+  nip: string | null;
+}
 export type ReEntryPolicy = "sekali-masuk" | "bebas-keluar-masuk";
 export type PaymentMode = "postpaid" | "prepaid";
 

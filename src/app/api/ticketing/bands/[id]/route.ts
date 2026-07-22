@@ -27,13 +27,17 @@ export async function PATCH(
     }
     const body = parsed.data;
 
-    // `dipakai` hanya boleh di-set oleh alur visit (Fase B), bukan manual —
-    // dari registry, petugas hanya menandai tersedia/hilang/rusak.
-    if (body.status === "dipakai") {
+    // `dipakai` di-set oleh alur visit (Fase B) dan `karyawan` oleh
+    // pairing staff pass (Fase E) — dari registry, petugas hanya
+    // menandai tersedia/hilang/rusak.
+    if (body.status === "dipakai" || body.status === "karyawan") {
       return NextResponse.json(
         {
           success: false,
-          error: "Status 'dipakai' diatur otomatis oleh registrasi kunjungan",
+          error:
+            body.status === "dipakai"
+              ? "Status 'dipakai' diatur otomatis oleh registrasi kunjungan"
+              : "Status 'karyawan' diatur otomatis oleh pairing Gelang Karyawan",
         },
         { status: 400 }
       );
@@ -54,7 +58,7 @@ export async function PATCH(
        WHERE id = $${values.length - 2}
          AND branch_id = $${values.length - 1}
          AND company_id = $${values.length}
-         AND status <> 'dipakai'
+         AND status NOT IN ('dipakai', 'karyawan')
        RETURNING id, nfc_uid, label, status, created_at, updated_at`,
       values
     );
@@ -63,7 +67,7 @@ export async function PATCH(
         {
           success: false,
           error:
-            "Gelang tidak ditemukan atau sedang dipakai kunjungan aktif",
+            "Gelang tidak ditemukan, sedang dipakai kunjungan aktif, atau dipegang karyawan (cabut pairing dulu)",
         },
         { status: 404 }
       );
