@@ -79,6 +79,10 @@ merangkai daripada membangun dari nol:
 2. **Website booking**: bayar di muka via Xendit (rekomendasi — kanal
    online prepaid, tap gate tidak men-charge lagi karena tiket sudah
    lunas), atau ikut postpaid juga?
+   → **DIPUTUSKAN 2026-07-22: Xendit prepaid** (bayar di muka via
+   invoice Xendit, test mode dulu). Kuota harian TIDAK ikut MVP —
+   blok-online per tanggal (R1) jadi rem manual. Detail di
+   "Rencana Implementasi Fase D".
 3. **Kebijakan gelang hilang**: denda berapa? Tagihan tab-nya bagaimana
    (tetap ditagih by data, gelang diblokir)? Untuk mode prepaid, sisa
    saldo gelang hilang dikembalikan atau hangus?
@@ -367,12 +371,75 @@ distribusi website, harga kanal website, dan tanggal blok-online.
 - Void order ber-nfc_tab → baris pembalik di tab.
 - Tab monitor live di dashboard ticketing.
 
-### Fase D — Channel Manager: website booking
-- Delta: `ticket_bookings` + items. Public page `src/app/booking/`
-  (pilih tanggal → harga musiman → bayar Xendit → kode booking + QR via
-  WA gateway).
-- Redeem kode booking di loket masuk (prepaid: tap gate tanpa charge).
-- Dashboard kelola booking + kuota harian (opsional).
+### Fase D — Website booking (public, Xendit prepaid)
+
+Rencana implementasi rinci (disepakati 2026-07-22; kuota harian
+di-skip MVP). 4 task group PR-sized, urut:
+
+**D1 — Skema & fondasi booking**
+- Delta `ticket_bookings`: tenant (`company_id`+`branch_id`),
+  `booking_code` (pendek, human-friendly, unik per venue — untuk loket),
+  `access_token` (acak 32-byte, capability URL status page — pola
+  `/api/files`), `visit_date`, `customer_name`, `customer_phone` (WA),
+  status (`menunggu-bayar`/`terbayar`/`digunakan`/`kedaluwarsa`/
+  `dibatalkan`), `total` snapshot, `xendit_invoice_id` (unik) +
+  `xendit_invoice_url`, `paid_at`, `expires_at`, `used_at`,
+  `visit_id` NULL (diisi saat redeem).
+- `ticket_booking_items`: booking_id, ticket_product_id, variant_id,
+  qty, `unit_price` + `season_kind` snapshot (resolver v2 kanal
+  website), subtotal.
+- `ticket_settings.booking_slug` (unik) — resolusi venue di URL publik
+  `/booking/[slug]` (multi-venue-proof tanpa bocor id internal).
+- Menu "Booking" di dashboard Ticketing granted `super_admin`.
+
+**D2 — API publik + Xendit (satu PR dgn D1)**
+- `GET /api/public/booking/[slug]/catalog?date=` → hanya produk Active
+  + distribusi website ON + `price_complete` kanal website (guard R2
+  kepake); harga per varian di-resolve utk tanggal itu; tanggal
+  blok-online / masa lalu ditolak. Tanpa data internal.
+- `POST /api/public/booking/[slug]` → zod (tanggal hari-ini..+90 hari,
+  qty 1..20/booking, normalisasi nomor WA); harga dihitung ulang
+  server-side (jangan percaya klien); insert `menunggu-bayar` +
+  create Xendit invoice (external_id = booking id, expiry 2 jam,
+  success_redirect → status page); rate limit per IP.
+- `POST /api/public/booking/webhook/xendit` → verifikasi
+  `x-callback-token` (`XENDIT_WEBHOOK_TOKEN`), transisi idempotent
+  `menunggu-bayar→terbayar` (sekali saja), `paid_at`, kirim WA kode
+  booking + link status ber-QR via `sendGatewayText` (gateway live);
+  invoice expired → `kedaluwarsa`.
+- `GET /api/public/booking/status/[token]` → by access_token saja
+  (404 generik, anti-enumerasi).
+- Unit test: snapshot harga booking, mesin status idempotent,
+  webhook token salah ditolak.
+
+**D3 — UI publik `src/app/(public)/booking/[slug]/`**
+- Wizard mobile-first tanpa login: kalender (blok-online disabled) →
+  pilih ticket & qty per varian (harga live per tanggal) → data
+  pemesan (nama + WA) → ringkasan → redirect invoice Xendit.
+- Halaman status `/booking/status/[token]`: menunggu-bayar (link bayar
+  ulang), terbayar (QR `qrcode.react` + kode + instruksi), digunakan /
+  kedaluwarsa / dibatalkan.
+
+**D4 — Redeem loket + gate**
+- Loket: scan QR / input kode → rincian booking → assign gelang →
+  buat visit `prepaid`: charge tiket snapshot harga booking + baris
+  pembayaran booking senilai sama di ledger (net 0; revenue tiket per
+  kanal website kebaca dari ledger existing). Booking → `digunakan`
+  idempotent (AC: tidak bisa dipakai 2x), `visit_id` terisi.
+- Guard: hanya booking `terbayar` dgn `visit_date` = hari ini; gate
+  tap tidak men-charge (charge sudah ada), re-entry per ticket tetap.
+
+**D5 — Dashboard kelola booking**
+- List per tanggal + filter status; detail; aksi: batalkan, tandai
+  refund manual (catatan — uang di luar sistem, MVP), resend WA.
+
+**Prasyarat (owner/user):** akun Xendit + `XENDIT_SECRET_KEY`
+(test mode) & `XENDIT_WEBHOOK_TOKEN` di `.env` (jangan commit);
+set webhook URL di dashboard Xendit →
+`https://sulu.within.ventures/api/public/booking/webhook/xendit`.
+
+**Non-MVP (ditunda):** kuota harian, refund via API Xendit, email,
+multi-hari/paket, pembatalan mandiri oleh pemesan.
 
 ### Fase E — Laporan & Ops
 - Laporan traffic, revenue tiket vs F&B per kanal/musim, rekap gelang,
@@ -574,3 +641,14 @@ distribusi website, harga kanal website, dan tanggal blok-online.
   start di tengah build kemarin (ChunkLoadError, route table stale) —
   ditutup dgn build ulang penuh + restart PM2; aturan: build selesai
   dulu, baru restart.
+- 2026-07-22 — **Fase D direncanakan** (blocker keputusan #2 TUTUP:
+  Xendit prepaid; kuota harian di-skip MVP — blok-online R1 jadi rem
+  manual). Rencana rinci D1–D5 ditulis di bagian "Fase D — Website
+  booking": skema `ticket_bookings`+items ber-snapshot harga, API
+  publik ber-slug venue + webhook Xendit idempotent ber-token, wizard
+  publik mobile-first, redeem loket → visit prepaid net-0 di ledger
+  (revenue kanal website kebaca laporan existing), dashboard kelola.
+  Temuan scoping: Xendit BELUM pernah terintegrasi nyata (topup cuma
+  TODO + kolom) — butuh akun & key dari owner sebelum D2 bisa diuji
+  end-to-end; WA gateway & qrcode.react siap reuse. Status: menunggu
+  review plan user sebelum koding D1.
