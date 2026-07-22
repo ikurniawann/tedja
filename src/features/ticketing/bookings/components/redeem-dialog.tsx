@@ -22,7 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { matchRedeemBands } from "@/lib/ticketing/booking";
+import { matchRedeemGuests } from "@/lib/ticketing/booking";
 import { lookupBooking } from "../api";
 import { useRedeemBooking } from "../queries";
 import {
@@ -41,7 +41,9 @@ const formatRp = (n: number) => `Rp${n.toLocaleString("id-ID")}`;
 
 /**
  * Redeem booking website di loket (D4): scan/ketik kode BK-XXXXXX →
- * rincian booking → tap gelang sesuai jumlah tiket → visit prepaid net-0.
+ * rincian booking → tiap ANGGOTA rombongan di-pair satu gelang NFC
+ * (auto-assign ke anggota berikutnya yang belum dapat) → visit prepaid
+ * net-0. Nama anggota ikut menempel ke gelang sampai ke gate.
  */
 export function RedeemDialog({ open, onOpenChange }: RedeemDialogProps) {
   const [code, setCode] = useState("");
@@ -70,22 +72,21 @@ export function RedeemDialog({ open, onOpenChange }: RedeemDialogProps) {
     onOpenChange(false);
   });
 
-  const items = useMemo(() => booking?.items ?? [], [booking]);
-
-  // Kebutuhan vs gelang ter-tap per varian — progress + auto-assign
-  const tappedByVariant = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const b of bands) {
-      counts.set(b.variant_id, (counts.get(b.variant_id) ?? 0) + 1);
-    }
-    return counts;
-  }, [bands]);
+  const guests = useMemo(() => booking?.guests ?? [], [booking]);
+  const guestById = useMemo(
+    () => new Map(guests.map((g) => [g.id, g])),
+    [guests]
+  );
+  const pairedGuestIds = useMemo(
+    () => new Set(bands.map((b) => b.guest_id)),
+    [bands]
+  );
 
   const allMatched =
     booking !== null &&
     bands.length > 0 &&
-    matchRedeemBands(
-      items.map((i) => ({ variant_id: i.variant_id, qty: i.qty })),
+    matchRedeemGuests(
+      guests.map((g) => g.id),
       bands
     ).ok;
 
@@ -96,29 +97,21 @@ export function RedeemDialog({ open, onOpenChange }: RedeemDialogProps) {
       setTapUid("");
       return;
     }
-    // Auto-assign ke varian pertama yang jatahnya belum penuh
-    const target =
-      items.find(
-        (i) => (tappedByVariant.get(i.variant_id) ?? 0) < i.qty
-      ) ?? items[0];
+    // Auto-assign ke anggota berikutnya yang belum dapat gelang
+    const target = guests.find((g) => !pairedGuestIds.has(g.id));
     if (!target) return;
-    setBands((prev) => [...prev, { nfc_uid: uid, variant_id: target.variant_id }]);
+    setBands((prev) => [...prev, { nfc_uid: uid, guest_id: target.id }]);
     setTapUid("");
   };
 
-  const setBandVariant = (index: number, variantId: string) => {
+  const setBandGuest = (index: number, guestId: string) => {
     setBands((prev) =>
-      prev.map((b, i) => (i === index ? { ...b, variant_id: variantId } : b))
+      prev.map((b, i) => (i === index ? { ...b, guest_id: guestId } : b))
     );
   };
 
   const removeBand = (index: number) => {
     setBands((prev) => prev.filter((_, i) => i !== index));
-  };
-
-  const variantLabel = (variantId: string) => {
-    const item = items.find((i) => i.variant_id === variantId);
-    return item ? `${item.product_name} — ${item.variant_name}` : variantId;
   };
 
   const handleSubmit = () => {
@@ -179,7 +172,8 @@ export function RedeemDialog({ open, onOpenChange }: RedeemDialogProps) {
                     {booking.customer_name} · {booking.customer_phone}
                   </p>
                   <p className="text-xs text-gray-500">
-                    Kunjungan {booking.visit_date} · Total {formatRp(booking.total)}
+                    Kunjungan {booking.visit_date} · {guests.length} orang ·
+                    Total {formatRp(booking.total)}
                   </p>
                 </div>
                 <Badge
@@ -201,37 +195,43 @@ export function RedeemDialog({ open, onOpenChange }: RedeemDialogProps) {
 
             {booking.redeemable ? (
               <div className="grid gap-4 sm:grid-cols-2">
-                {/* Kebutuhan tiket */}
+                {/* Daftar anggota rombongan */}
                 <div className="space-y-2">
-                  <Label>Tiket dalam Booking</Label>
-                  {items.map((item) => {
-                    const tapped = tappedByVariant.get(item.variant_id) ?? 0;
-                    const done = tapped === item.qty;
-                    return (
-                      <div
-                        key={item.variant_id}
-                        className={`flex items-center justify-between rounded-lg border px-3 py-2 text-sm ${
-                          done
-                            ? "border-emerald-200/70 bg-emerald-50/50"
-                            : "border-gray-200/70"
-                        }`}
-                      >
-                        <span className="min-w-0 truncate text-gray-800">
-                          {item.product_name} — {item.variant_name}
-                        </span>
-                        <span
-                          className={`ml-2 shrink-0 font-mono text-xs ${
-                            done ? "text-emerald-700" : "text-gray-500"
+                  <Label>Anggota Rombongan</Label>
+                  <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
+                    {guests.map((guest) => {
+                      const paired = pairedGuestIds.has(guest.id);
+                      return (
+                        <div
+                          key={guest.id}
+                          className={`flex items-center justify-between rounded-lg border px-3 py-2 text-sm ${
+                            paired
+                              ? "border-emerald-200/70 bg-emerald-50/50"
+                              : "border-gray-200/70"
                           }`}
                         >
-                          {tapped}/{item.qty}
-                        </span>
-                      </div>
-                    );
-                  })}
+                          <div className="min-w-0">
+                            <p className="truncate font-medium text-gray-800">
+                              {guest.guest_name}
+                            </p>
+                            <p className="truncate text-xs text-gray-500">
+                              {guest.product_name} — {guest.variant_name}
+                            </p>
+                          </div>
+                          <span
+                            className={`ml-2 shrink-0 text-xs ${
+                              paired ? "text-emerald-700" : "text-gray-400"
+                            }`}
+                          >
+                            {paired ? "✓ gelang" : "belum"}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
 
-                {/* Tap gelang */}
+                {/* Tap gelang → pair ke anggota */}
                 <div className="space-y-2">
                   <Label htmlFor="redeem_tap_uid">Tap Gelang Satu per Satu *</Label>
                   <Input
@@ -257,21 +257,26 @@ export function RedeemDialog({ open, onOpenChange }: RedeemDialogProps) {
                           {band.nfc_uid}
                         </span>
                         <Select
-                          value={band.variant_id}
-                          onValueChange={(v) => setBandVariant(index, v)}
+                          value={band.guest_id}
+                          onValueChange={(v) => setBandGuest(index, v)}
                         >
                           <SelectTrigger className="h-8 w-44">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            {items.map((item) => (
-                              <SelectItem
-                                key={item.variant_id}
-                                value={item.variant_id}
-                              >
-                                {variantLabel(item.variant_id)}
-                              </SelectItem>
-                            ))}
+                            {/* Hanya anggota yang belum dapat gelang + pilihan
+                                saat ini — mencegah pairing dobel dari UI */}
+                            {guests
+                              .filter(
+                                (guest) =>
+                                  guest.id === band.guest_id ||
+                                  !pairedGuestIds.has(guest.id)
+                              )
+                              .map((guest) => (
+                                <SelectItem key={guest.id} value={guest.id}>
+                                  {guest.guest_name} · {guest.variant_name}
+                                </SelectItem>
+                              ))}
                           </SelectContent>
                         </Select>
                         <Button
@@ -291,6 +296,11 @@ export function RedeemDialog({ open, onOpenChange }: RedeemDialogProps) {
                       </p>
                     ) : null}
                   </div>
+                  {guestById.size > 0 ? (
+                    <p className="text-xs text-gray-500">
+                      {bands.length}/{guests.length} anggota sudah dapat gelang
+                    </p>
+                  ) : null}
                 </div>
               </div>
             ) : null}

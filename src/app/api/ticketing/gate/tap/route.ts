@@ -39,6 +39,8 @@ interface TapOutcome {
   reason?: string;
   contact_name?: string;
   ticket_type_name?: string;
+  /** Nama anggota rombongan booking (NULL utk walk-in). */
+  guest_name?: string | null;
   band_label?: string | null;
   charged_amount?: number;
 }
@@ -135,6 +137,7 @@ export async function POST(request: NextRequest) {
         visit_band_id: string;
         visit_id: string;
         variant_id: string;
+        guest_name: string | null;
         ticket_product_id: string;
         ticket_type_name: string;
         re_entry_policy: string;
@@ -146,6 +149,7 @@ export async function POST(request: NextRequest) {
         visit_status: string;
       }>(
         `SELECT vb.id AS visit_band_id, vb.visit_id, vb.variant_id,
+                vb.guest_name,
                 tp.id AS ticket_product_id,
                 tp.name || ' — ' || pv.name AS ticket_type_name,
                 tp.re_entry_policy, vb.entered_at,
@@ -194,6 +198,7 @@ export async function POST(request: NextRequest) {
             ok: true,
             contact_name: vb.contact_name,
             ticket_type_name: vb.ticket_type_name,
+            guest_name: vb.guest_name,
             band_label: band.label,
           };
         }
@@ -210,6 +215,7 @@ export async function POST(request: NextRequest) {
           reason: "Tiket sudah dipakai masuk (kebijakan sekali masuk)",
           contact_name: vb.contact_name,
           ticket_type_name: vb.ticket_type_name,
+          guest_name: vb.guest_name,
           band_label: band.label,
         };
       }
@@ -241,6 +247,7 @@ export async function POST(request: NextRequest) {
           ok: true,
           contact_name: vb.contact_name,
           ticket_type_name: vb.ticket_type_name,
+          guest_name: vb.guest_name,
           band_label: band.label,
           charged_amount: 0,
         };
@@ -395,6 +402,7 @@ export async function POST(request: NextRequest) {
         ok: true,
         contact_name: vb.contact_name,
         ticket_type_name: vb.ticket_type_name,
+        guest_name: vb.guest_name,
         band_label: band.label,
         charged_amount: resolved.price,
       };

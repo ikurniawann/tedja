@@ -55,6 +55,7 @@ interface BookingStatusData {
   paid_at: string | null;
   used_at: string | null;
   items: BookingItem[];
+  guests: { guest_name: string; variant_name: string }[];
 }
 
 const POLL_MS = 10_000;
@@ -262,6 +263,26 @@ export function BookingStatusPage({ token }: BookingStatusPageProps) {
             </div>
           ))}
         </div>
+        {booking.guests.length > 1 && (
+          <>
+            <div className="my-3 border-t border-dashed border-gray-200" />
+            <p className="mb-1.5 text-xs font-medium text-gray-500">
+              Anggota rombongan
+            </p>
+            <ol className="space-y-1 text-sm text-gray-700">
+              {booking.guests.map((guest, i) => (
+                <li key={i} className="flex justify-between gap-3">
+                  <span className="truncate">
+                    {i + 1}. {guest.guest_name}
+                  </span>
+                  <span className="shrink-0 text-xs text-gray-400">
+                    {guest.variant_name}
+                  </span>
+                </li>
+              ))}
+            </ol>
+          </>
+        )}
         <div className="mt-3 flex justify-between border-t border-gray-200 pt-3">
           <span className="font-semibold text-gray-900">Total</span>
           <span className="font-semibold tabular-nums text-emerald-700">

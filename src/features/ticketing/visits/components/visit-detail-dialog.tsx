@@ -235,6 +235,11 @@ export function VisitDetailDialog({
                     <span className="font-mono text-xs text-gray-600">
                       {band.nfc_uid}
                     </span>
+                    {band.guest_name ? (
+                      <span className="text-xs font-medium text-gray-800">
+                        {band.guest_name}
+                      </span>
+                    ) : null}
                     <Badge className="border-0 bg-blue-100 font-normal text-blue-700">
                       {band.ticket_type_name}
                     </Badge>

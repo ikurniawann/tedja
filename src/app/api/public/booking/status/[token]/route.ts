@@ -59,20 +59,30 @@ export async function GET(
       status = "kedaluwarsa";
     }
 
-    const items = await query<{
-      product_name: string;
-      variant_name: string;
-      qty: number;
-      unit_price: string;
-      season_kind: string;
-      subtotal: string;
-    }>(
-      `SELECT product_name, variant_name, qty, unit_price, season_kind, subtotal
-       FROM ticketing.ticket_booking_items
-       WHERE booking_id = $1
-       ORDER BY product_name, variant_name`,
-      [booking.id]
-    );
+    const [items, guests] = await Promise.all([
+      query<{
+        product_name: string;
+        variant_name: string;
+        qty: number;
+        unit_price: string;
+        season_kind: string;
+        subtotal: string;
+      }>(
+        `SELECT product_name, variant_name, qty, unit_price, season_kind, subtotal
+         FROM ticketing.ticket_booking_items
+         WHERE booking_id = $1
+         ORDER BY product_name, variant_name`,
+        [booking.id]
+      ),
+      query<{ guest_name: string; variant_name: string }>(
+        `SELECT g.guest_name, i.variant_name
+         FROM ticketing.ticket_booking_guests g
+         JOIN ticketing.ticket_booking_items i ON i.id = g.booking_item_id
+         WHERE g.booking_id = $1
+         ORDER BY g.position`,
+        [booking.id]
+      ),
+    ]);
 
     return successResponse({
       booking_code: booking.booking_code,
@@ -93,6 +103,7 @@ export async function GET(
         season_kind: i.season_kind,
         subtotal: Number(i.subtotal),
       })),
+      guests,
     });
   } catch (err) {
     console.error("[booking] status error:", err);

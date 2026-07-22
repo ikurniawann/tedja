@@ -5,6 +5,9 @@ import { query, withTransaction } from "@/lib/db";
 import { normalizePhoneDigits } from "@/lib/member-portal/otp";
 import { checkRateLimit, clientIpFrom } from "@/lib/public/rate-limit";
 import {
+  BOOKING_MAX_QTY,
+  GUEST_NAME_MAX_LENGTH,
+  buildGuestNames,
   generateAccessToken,
   generateBookingCode,
   todayInJakarta,
@@ -25,7 +28,7 @@ import {
 // dibeli). Tanpa Xendit terkonfigurasi (atau mock) → 503 SEBELUM insert,
 // supaya tidak ada booking yatim yang tak mungkin dibayar.
 
-const MAX_QTY_PER_BOOKING = 20;
+const MAX_QTY_PER_BOOKING = BOOKING_MAX_QTY;
 
 const createSchema = z.object({
   visit_date: z.string(),
@@ -36,6 +39,12 @@ const createSchema = z.object({
       z.object({
         variant_id: z.string().uuid(),
         qty: z.number().int().min(1).max(MAX_QTY_PER_BOOKING),
+        // Nama anggota per unit (opsional, urut) — kosong/null diisi
+        // default "Group {pemesan} - N" server-side
+        guest_names: z
+          .array(z.string().trim().max(GUEST_NAME_MAX_LENGTH).nullable())
+          .max(MAX_QTY_PER_BOOKING)
+          .optional(),
       })
     )
     .min(1)
@@ -93,6 +102,19 @@ export async function POST(
     if (totalQty > MAX_QTY_PER_BOOKING) {
       return badRequest(`Maksimum ${MAX_QTY_PER_BOOKING} tiket per booking`);
     }
+    if (body.items.some((i) => (i.guest_names?.length ?? 0) > i.qty)) {
+      return badRequest("Jumlah nama anggota melebihi jumlah tiket");
+    }
+
+    // Nama anggota final: urutan unit mengikuti urutan item; kosong →
+    // default posisi-global (posisi 1 = pemesan)
+    const guestNames = buildGuestNames(
+      body.customer_name,
+      totalQty,
+      body.items.flatMap((i) =>
+        Array.from({ length: i.qty }, (_, k) => i.guest_names?.[k] ?? null)
+      )
+    );
 
     if (!isXenditConfigured()) {
       return NextResponse.json(
@@ -182,13 +204,15 @@ export async function POST(
             ]
           );
           const id = inserted.rows[0].id;
+          let position = 0;
           for (const item of items) {
-            await client.query(
+            const itemInserted = await client.query<{ id: string }>(
               `INSERT INTO ticketing.ticket_booking_items
                  (company_id, branch_id, booking_id, ticket_product_id,
                   variant_id, product_name, variant_name, qty, unit_price,
                   season_kind, subtotal)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+               RETURNING id`,
               [
                 venue.companyId,
                 venue.branchId,
@@ -203,6 +227,26 @@ export async function POST(
                 item.subtotal,
               ]
             );
+            const itemId = itemInserted.rows[0].id;
+            // Satu guest per unit tiket — nama sudah final dari buildGuestNames
+            for (let k = 0; k < item.qty; k++) {
+              position += 1;
+              await client.query(
+                `INSERT INTO ticketing.ticket_booking_guests
+                   (company_id, branch_id, booking_id, booking_item_id,
+                    variant_id, guest_name, position)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+                [
+                  venue.companyId,
+                  venue.branchId,
+                  id,
+                  itemId,
+                  item.variant_id,
+                  guestNames[position - 1],
+                  position,
+                ]
+              );
+            }
           }
           return id;
         });

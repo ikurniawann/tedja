@@ -4,7 +4,8 @@ import {
   canTransitionBooking,
   generateAccessToken,
   generateBookingCode,
-  matchRedeemBands,
+  buildGuestNames,
+  matchRedeemGuests,
   normalizeBookingCode,
   validateVisitDateWindow,
 } from "./booking";
@@ -89,85 +90,6 @@ describe("validateVisitDateWindow", () => {
   });
 });
 
-describe("matchRedeemBands (validasi gelang saat redeem loket)", () => {
-  const items = [
-    { variant_id: "dewasa", qty: 2 },
-    { variant_id: "anak", qty: 1 },
-  ];
-
-  test("jumlah gelang per varian persis sama → ok", () => {
-    // Arrange + Act
-    const result = matchRedeemBands(items, [
-      { variant_id: "dewasa" },
-      { variant_id: "anak" },
-      { variant_id: "dewasa" },
-    ]);
-    // Assert
-    expect(result).toEqual({ ok: true });
-  });
-
-  test("gelang kurang ditolak dengan rincian varian yang kurang", () => {
-    const result = matchRedeemBands(items, [
-      { variant_id: "dewasa" },
-      { variant_id: "anak" },
-    ]);
-    expect(result).toEqual({
-      ok: false,
-      reason: "jumlah-tak-cocok",
-      variant_id: "dewasa",
-      expected: 2,
-      actual: 1,
-    });
-  });
-
-  test("gelang lebih dari qty booking ditolak", () => {
-    const result = matchRedeemBands(items, [
-      { variant_id: "dewasa" },
-      { variant_id: "dewasa" },
-      { variant_id: "dewasa" },
-      { variant_id: "anak" },
-    ]);
-    expect(result).toEqual({
-      ok: false,
-      reason: "jumlah-tak-cocok",
-      variant_id: "dewasa",
-      expected: 2,
-      actual: 3,
-    });
-  });
-
-  test("varian di luar booking ditolak sebagai varian-asing", () => {
-    const result = matchRedeemBands(items, [
-      { variant_id: "dewasa" },
-      { variant_id: "vip" },
-    ]);
-    expect(result).toEqual({
-      ok: false,
-      reason: "varian-asing",
-      variant_id: "vip",
-      expected: 0,
-      actual: 1,
-    });
-  });
-
-  test("item duplikat varian yang sama dijumlahkan kebutuhannya", () => {
-    const doubled = [
-      { variant_id: "dewasa", qty: 1 },
-      { variant_id: "dewasa", qty: 1 },
-    ];
-    expect(
-      matchRedeemBands(doubled, [
-        { variant_id: "dewasa" },
-        { variant_id: "dewasa" },
-      ])
-    ).toEqual({ ok: true });
-  });
-
-  test("booking tanpa item vs tanpa gelang → ok (degenerate)", () => {
-    expect(matchRedeemBands([], [])).toEqual({ ok: true });
-  });
-});
-
 describe("normalizeBookingCode", () => {
   test("hasil generate selalu lolos normalisasi apa adanya", () => {
     const code = generateBookingCode();
@@ -187,5 +109,74 @@ describe("normalizeBookingCode", () => {
     expect(normalizeBookingCode("BK-ABC10I")).toBeNull(); // 0/1/I terlarang
     expect(normalizeBookingCode("BK-ABCDE")).toBeNull();
     expect(normalizeBookingCode("")).toBeNull();
+  });
+});
+
+describe("buildGuestNames (nama anggota rombongan + default)", () => {
+  test("tanpa input → posisi 1 = pemesan, sisanya Group {nama} - N", () => {
+    expect(buildGuestNames("Ilham", 3)).toEqual([
+      "Ilham",
+      "Group Ilham - 2",
+      "Group Ilham - 3",
+    ]);
+  });
+
+  test("nama yang diisi dipakai, yang kosong/null diisi default", () => {
+    expect(buildGuestNames("Ilham", 4, ["", "Budi", null, "  "])).toEqual([
+      "Ilham",
+      "Budi",
+      "Group Ilham - 3",
+      "Group Ilham - 4",
+    ]);
+  });
+
+  test("input di-trim dan dipotong ke batas kolom", () => {
+    const long = "x".repeat(200);
+    const result = buildGuestNames("Ilham", 1, [`  ${long}  `]);
+    expect(result[0]).toBe(long.slice(0, 120));
+  });
+
+  test("qty 1 tanpa input = nama pemesan saja", () => {
+    expect(buildGuestNames("  Ilham  ", 1)).toEqual(["Ilham"]);
+  });
+});
+
+describe("matchRedeemGuests (pairing gelang \u2194 anggota rombongan)", () => {
+  const guests = ["g1", "g2", "g3"];
+
+  test("semua guest dapat tepat satu gelang → ok", () => {
+    expect(
+      matchRedeemGuests(guests, [
+        { guest_id: "g2" },
+        { guest_id: "g1" },
+        { guest_id: "g3" },
+      ])
+    ).toEqual({ ok: true });
+  });
+
+  test("guest di luar booking ditolak", () => {
+    expect(
+      matchRedeemGuests(guests, [{ guest_id: "g1" }, { guest_id: "asing" }])
+    ).toEqual({ ok: false, reason: "guest-asing", guest_id: "asing" });
+  });
+
+  test("satu guest dipasang dua gelang ditolak", () => {
+    expect(
+      matchRedeemGuests(guests, [
+        { guest_id: "g1" },
+        { guest_id: "g1" },
+        { guest_id: "g2" },
+      ])
+    ).toEqual({ ok: false, reason: "guest-dobel", guest_id: "g1" });
+  });
+
+  test("ada guest belum dapat gelang ditolak dengan penunjuk guest-nya", () => {
+    expect(
+      matchRedeemGuests(guests, [{ guest_id: "g1" }, { guest_id: "g2" }])
+    ).toEqual({ ok: false, reason: "belum-lengkap", guest_id: "g3" });
+  });
+
+  test("degenerate: tanpa guest tanpa gelang → ok", () => {
+    expect(matchRedeemGuests([], [])).toEqual({ ok: true });
   });
 });

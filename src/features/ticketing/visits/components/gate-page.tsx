@@ -132,8 +132,12 @@ export function GatePage() {
           </h1>
           {current.contact_name ? (
             <p className="mt-4 text-2xl">
-              {current.contact_name}
+              {/* Anggota rombongan booking tampil dgn namanya sendiri */}
+              {current.guest_name ?? current.contact_name}
               {current.ticket_type_name ? ` · ${current.ticket_type_name}` : ""}
+              {current.guest_name && current.guest_name !== current.contact_name
+                ? ` (rombongan ${current.contact_name})`
+                : ""}
             </p>
           ) : null}
           {current.ok && current.charged_amount ? (

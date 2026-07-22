@@ -3,7 +3,7 @@ import { z } from "zod";
 import { successResponse } from "@/lib/api/auth";
 import { withTransaction } from "@/lib/db";
 import { checkRateLimit } from "@/lib/rate-limit";
-import { matchRedeemBands } from "@/lib/ticketing/booking";
+import { BOOKING_MAX_QTY, matchRedeemGuests } from "@/lib/ticketing/booking";
 import { todayJakartaDate } from "@/lib/ticketing/pricing-server";
 import {
   TICKETING_OPERATOR_ROLES,
@@ -12,11 +12,13 @@ import {
   requireTicketingContext,
 } from "@/lib/ticketing/server";
 
-// Fase D4 — redeem booking terbayar di loket: assign gelang → buat visit
+// Fase D4 — redeem booking terbayar di loket: tiap ANGGOTA rombongan
+// (ticket_booking_guests) di-pair tepat satu gelang NFC → buat visit
 // PREPAID dgn charge tiket snapshot harga booking + baris pembayaran
 // Xendit senilai sama (net 0 — revenue tiket kanal website tetap kebaca
-// dari ledger). Idempotent: booking dikunci FOR UPDATE dan transisi
-// terbayar→digunakan hanya bisa sekali; redeem ulang → 409.
+// dari ledger). Nama anggota menempel ke gelang (visit_bands.guest_name).
+// Idempotent: booking dikunci FOR UPDATE dan transisi terbayar→digunakan
+// hanya bisa sekali; redeem ulang → 409.
 // Gate tap TIDAK men-charge visit hasil booking (lihat gate/tap).
 
 const redeemSchema = z.object({
@@ -24,11 +26,11 @@ const redeemSchema = z.object({
     .array(
       z.object({
         nfc_uid: z.string().trim().min(1).max(80),
-        variant_id: z.string().uuid(),
+        guest_id: z.string().uuid(),
       })
     )
     .min(1)
-    .max(50),
+    .max(BOOKING_MAX_QTY),
 });
 
 interface LockedBookingRow {
@@ -127,33 +129,48 @@ export async function POST(
         );
       }
 
-      const itemsResult = await client.query<{
+      // Anggota rombongan + snapshot harga dari item masing-masing
+      const guestsResult = await client.query<{
+        id: string;
+        guest_name: string;
+        position: number;
         variant_id: string;
         ticket_product_id: string;
         product_name: string;
         variant_name: string;
-        qty: number;
         unit_price: string;
         season_kind: string;
       }>(
-        `SELECT variant_id, ticket_product_id, product_name, variant_name,
-                qty, unit_price, season_kind
-         FROM ticketing.ticket_booking_items
-         WHERE booking_id = $1`,
+        `SELECT g.id, g.guest_name, g.position, g.variant_id,
+                i.ticket_product_id, i.product_name, i.variant_name,
+                i.unit_price, i.season_kind
+         FROM ticketing.ticket_booking_guests g
+         JOIN ticketing.ticket_booking_items i ON i.id = g.booking_item_id
+         WHERE g.booking_id = $1
+         ORDER BY g.position`,
         [booking.id]
       );
-      const match = matchRedeemBands(
-        itemsResult.rows.map((i) => ({ variant_id: i.variant_id, qty: i.qty })),
+      if (guestsResult.rows.length === 0) {
+        throw Object.assign(
+          new Error("Booking tanpa daftar anggota — hubungi supervisor"),
+          { statusCode: 409 }
+        );
+      }
+      const guestById = new Map(guestsResult.rows.map((g) => [g.id, g]));
+
+      const match = matchRedeemGuests(
+        guestsResult.rows.map((g) => g.id),
         body.bands
       );
       if (!match.ok) {
-        const item = itemsResult.rows.find((i) => i.variant_id === match.variant_id);
-        const label = item ? `${item.product_name} — ${item.variant_name}` : "varian";
+        const guest = match.guest_id ? guestById.get(match.guest_id) : null;
         throw Object.assign(
           new Error(
-            match.reason === "varian-asing"
-              ? "Ada gelang dengan tiket di luar booking ini"
-              : `Jumlah gelang ${label} tidak cocok: booking ${match.expected}, di-tap ${match.actual}`
+            match.reason === "guest-asing"
+              ? "Ada gelang yang dipasangkan ke anggota di luar booking ini"
+              : match.reason === "guest-dobel"
+                ? `Anggota "${guest?.guest_name ?? "?"}" dipasangkan dua gelang`
+                : `Anggota "${guest?.guest_name ?? "?"}" belum dapat gelang`
           ),
           { statusCode: 400 }
         );
@@ -222,15 +239,12 @@ export async function POST(
       );
       const visitId = visitResult.rows[0].id;
 
-      // Harga per varian dari SNAPSHOT booking — master berubah ≠ redeem berubah
-      const itemByVariant = new Map(itemsResult.rows.map((i) => [i.variant_id, i]));
-
       // Ledger wajib net-0: Σ debit tiket harus = total booking (= kredit
       // pembayaran). Divergensi = data booking korup — gagal keras, jangan
       // tulis ledger pincang.
       const total = Number(booking.total);
       const debitSum = body.bands.reduce(
-        (sum, b) => sum + Number(itemByVariant.get(b.variant_id)!.unit_price),
+        (sum, b) => sum + Number(guestById.get(b.guest_id)!.unit_price),
         0
       );
       if (Math.abs(debitSum - total) > 0.01) {
@@ -245,13 +259,20 @@ export async function POST(
       for (const input of body.bands) {
         const uid = normalizeNfcUid(input.nfc_uid);
         const band = bandByUid.get(uid)!;
-        const item = itemByVariant.get(input.variant_id)!;
+        const item = guestById.get(input.guest_id)!;
 
         await client.query(
           `INSERT INTO ticketing.ticket_visit_bands
-             (company_id, branch_id, visit_id, band_id, variant_id)
-           VALUES ($1, $2, $3, $4, $5)`,
-          [ctx.companyId, ctx.branchId, visitId, band.id, input.variant_id]
+             (company_id, branch_id, visit_id, band_id, variant_id, guest_name)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [
+            ctx.companyId,
+            ctx.branchId,
+            visitId,
+            band.id,
+            item.variant_id,
+            item.guest_name,
+          ]
         );
         await client.query(
           `UPDATE ticketing.ticket_bands
@@ -274,12 +295,14 @@ export async function POST(
               visitId,
               band.id,
               `Tiket ${item.product_name} — ${item.variant_name} ` +
-                `(${item.season_kind}, ${booking.visit_date}) — booking ${booking.booking_code}`,
+                `(${item.season_kind}, ${booking.visit_date}) — ` +
+                `booking ${booking.booking_code}, a.n. ${item.guest_name}`,
               unitPrice,
               JSON.stringify({
                 booking_id: booking.id,
+                booking_guest_id: input.guest_id,
                 ticket_product_id: item.ticket_product_id,
-                variant_id: input.variant_id,
+                variant_id: item.variant_id,
                 season_kind: item.season_kind,
                 channel_id: channelId,
                 visit_date: booking.visit_date,

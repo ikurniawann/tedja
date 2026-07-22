@@ -32,6 +32,16 @@ export interface BookingLookupItem extends BookingItem {
   ticket_product_id: string;
 }
 
+/** Anggota rombongan — satu baris per unit tiket, posisi 1 = pemesan. */
+export interface BookingGuest {
+  id: string;
+  guest_name: string;
+  position: number;
+  variant_id: string;
+  product_name: string;
+  variant_name: string;
+}
+
 /** Hasil lookup kode di loket (D4) — bekal dialog redeem. */
 export interface BookingLookup {
   id: string;
@@ -47,6 +57,7 @@ export interface BookingLookup {
   redeemable: boolean;
   today: string;
   items: BookingLookupItem[];
+  guests: BookingGuest[];
 }
 
 export interface BookingListItem {
@@ -81,9 +92,11 @@ export interface BookingDetail extends BookingListItem {
   xendit_invoice_url: string | null;
   expires_at: string | null;
   items: BookingItem[];
+  guests: { guest_name: string; position: number; variant_name: string }[];
 }
 
+/** Pairing satu gelang NFC ke satu anggota rombongan. */
 export interface RedeemBand {
   nfc_uid: string;
-  variant_id: string;
+  guest_id: string;
 }

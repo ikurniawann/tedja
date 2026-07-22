@@ -26,6 +26,7 @@ interface VisitBandRow {
   label: string | null;
   variant_id: string;
   ticket_type_name: string;
+  guest_name: string | null;
   entered_at: string | null;
   status: string;
 }
@@ -70,7 +71,7 @@ export async function GET(
       query<VisitBandRow>(
         `SELECT vb.id, vb.band_id, b.nfc_uid, b.label, vb.variant_id,
                 tp.name || ' — ' || pv.name AS ticket_type_name,
-                vb.entered_at, vb.status
+                vb.guest_name, vb.entered_at, vb.status
          FROM ticketing.ticket_visit_bands vb
          JOIN ticketing.ticket_bands b ON b.id = vb.band_id
          JOIN ticketing.ticket_product_variants pv ON pv.id = vb.variant_id

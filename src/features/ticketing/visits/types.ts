@@ -47,6 +47,8 @@ export interface VisitBand {
   variant_id: string;
   /** "Nama Ticket — Varian" (label gabungan dari server). */
   ticket_type_name: string;
+  /** Nama anggota rombongan booking (null utk walk-in). */
+  guest_name: string | null;
   entered_at: string | null;
   status: "aktif" | "selesai" | "hilang";
 }
@@ -109,6 +111,8 @@ export interface GateTapResponse {
   reason?: string;
   contact_name?: string;
   ticket_type_name?: string;
+  /** Nama anggota rombongan booking (null/absen utk walk-in). */
+  guest_name?: string | null;
   band_label?: string | null;
   charged_amount?: number;
 }

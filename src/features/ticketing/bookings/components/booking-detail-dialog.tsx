@@ -174,6 +174,27 @@ function BookingDetailBody({ booking }: { booking: BookingDetail }) {
         </table>
       </div>
 
+      {booking.guests.length > 0 ? (
+        <div>
+          <p className="mb-1.5 text-xs font-medium text-gray-500">
+            Anggota Rombongan ({booking.guests.length})
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {booking.guests.map((guest) => (
+              <span
+                key={guest.position}
+                className="rounded-full bg-gray-100 px-2.5 py-1 text-xs text-gray-700"
+              >
+                {guest.position}. {guest.guest_name}
+                <span className="ml-1 text-gray-400">
+                  · {guest.variant_name}
+                </span>
+              </span>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
       {/* Catatan refund manual */}
       <div className="space-y-1.5">
         <Label htmlFor="refund_note">

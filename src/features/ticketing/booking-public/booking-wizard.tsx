@@ -72,6 +72,9 @@ export function BookingWizard({ slug }: BookingWizardProps) {
   const [qty, setQty] = useState<Record<string, number>>({});
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
+  // Nama anggota per varian per unit (opsional) — kosong = default server
+  // "Group {pemesan} - N"
+  const [guestNames, setGuestNames] = useState<Record<string, string[]>>({});
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -105,6 +108,43 @@ export function BookingWizard({ slug }: BookingWizardProps) {
   );
   const totalQty = cart.reduce((sum, c) => sum + c.qty, 0);
   const totalAmount = cart.reduce((sum, c) => sum + c.qty * c.variant.price, 0);
+
+  // Unit tiket ter-flatten urut keranjang — posisi global 1..N utk
+  // penomoran default nama anggota (posisi 1 = pemesan)
+  const units = useMemo(() => {
+    const list: {
+      variantId: string;
+      unitIndex: number;
+      position: number;
+      label: string;
+    }[] = [];
+    let position = 0;
+    for (const c of cart) {
+      for (let k = 0; k < c.qty; k++) {
+        position += 1;
+        list.push({
+          variantId: c.variant.variant_id,
+          unitIndex: k,
+          position,
+          label: `${c.product.name} — ${c.variant.variant_name}`,
+        });
+      }
+    }
+    return list;
+  }, [cart]);
+
+  const defaultGuestName = (position: number) => {
+    const base = customerName.trim() || "Anda";
+    return position === 1 ? base : `Group ${base} - ${position}`;
+  };
+
+  const setGuestName = (variantId: string, unitIndex: number, value: string) => {
+    setGuestNames((prev) => {
+      const next = [...(prev[variantId] ?? [])];
+      next[unitIndex] = value;
+      return { ...prev, [variantId]: next };
+    });
+  };
 
   const loadCatalog = useCallback(async () => {
     if (!visitDate) return;
@@ -168,6 +208,10 @@ export function BookingWizard({ slug }: BookingWizardProps) {
           items: cart.map((c) => ({
             variant_id: c.variant.variant_id,
             qty: c.qty,
+            guest_names: Array.from({ length: c.qty }, (_, k) => {
+              const name = guestNames[c.variant.variant_id]?.[k]?.trim();
+              return name || null; // kosong → default server
+            }),
           })),
         }),
       });
@@ -380,6 +424,50 @@ export function BookingWizard({ slug }: BookingWizardProps) {
                 pembayaran berhasil.
               </p>
             </div>
+
+            {totalQty > 1 && (
+              <div className="rounded-2xl bg-white p-5 shadow-sm">
+                <h2 className="font-medium text-gray-900">
+                  Nama anggota rombongan{" "}
+                  <span className="text-xs font-normal text-gray-400">
+                    (opsional)
+                  </span>
+                </h2>
+                <p className="mt-1 text-xs leading-relaxed text-gray-500">
+                  Kosongkan bila tidak perlu — otomatis diberi nama{" "}
+                  <span className="font-medium">
+                    {defaultGuestName(2)}
+                  </span>
+                  , dst. Nama ini tampil saat penukaran gelang di loket.
+                </p>
+                <div className="mt-3 space-y-2.5">
+                  {units.map((unit) => (
+                    <label
+                      key={`${unit.variantId}-${unit.unitIndex}`}
+                      className="block text-xs font-medium text-gray-500"
+                    >
+                      Tiket {unit.position} · {unit.label}
+                      <input
+                        type="text"
+                        value={
+                          guestNames[unit.variantId]?.[unit.unitIndex] ?? ""
+                        }
+                        onChange={(e) =>
+                          setGuestName(
+                            unit.variantId,
+                            unit.unitIndex,
+                            e.target.value
+                          )
+                        }
+                        maxLength={120}
+                        placeholder={defaultGuestName(unit.position)}
+                        className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-base font-normal text-gray-900 focus:border-emerald-500 focus:outline-none"
+                      />
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
           </section>
         )}
 
@@ -421,6 +509,31 @@ export function BookingWizard({ slug }: BookingWizardProps) {
                   </div>
                 ))}
               </div>
+              {totalQty > 1 && (
+                <>
+                  <div className="my-3 border-t border-dashed border-gray-200" />
+                  <p className="mb-1.5 text-xs font-medium text-gray-500">
+                    Anggota rombongan
+                  </p>
+                  <ol className="space-y-1 text-sm text-gray-700">
+                    {units.map((unit) => (
+                      <li
+                        key={`${unit.variantId}-${unit.unitIndex}`}
+                        className="flex justify-between gap-3"
+                      >
+                        <span className="truncate">
+                          {unit.position}.{" "}
+                          {guestNames[unit.variantId]?.[unit.unitIndex]?.trim() ||
+                            defaultGuestName(unit.position)}
+                        </span>
+                        <span className="shrink-0 text-xs text-gray-400">
+                          {unit.label}
+                        </span>
+                      </li>
+                    ))}
+                  </ol>
+                </>
+              )}
               <div className="mt-3 flex justify-between border-t border-gray-200 pt-3">
                 <span className="font-semibold text-gray-900">Total</span>
                 <span className="font-semibold tabular-nums text-emerald-700">

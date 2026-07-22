@@ -746,3 +746,29 @@ multi-hari/paket, pembatalan mandiri oleh pemesan.
   super_admin. QA manual owner: buat booking mock → bayar (XENDIT_MOCK)
   → redeem di loket hari-H → tap gate (tanpa charge ganda) → cek
   dashboard Booking.
+- 2026-07-22 — **Rombongan bernama** (revisi owner, status `coding`).
+  Tiap unit tiket dalam booking = satu anggota (`ticket_booking_guests`,
+  delta `20260722170000` applied: posisi global unik per booking,
+  denormalisasi variant_id, backfill booking hidup via LATERAL
+  generate_series). Nama boleh diisi pemesan per unit di wizard
+  (langkah pemesan, tampil bila qty > 1); kosong → default server
+  `buildGuestNames`: posisi 1 = nama pemesan, sisanya "Group {pemesan}
+  - N" (murni + unit test; smoke live BK-VSPEZN: "Ilham", "Budi
+  Santoso" (diisi), "Group Ilham - 3"). Redeem D4 diubah dari
+  per-varian ke PER-ANGGOTA: kontrak `bands[{nfc_uid, guest_id}]`,
+  `matchRedeemGuests` (bijeksi penuh — kurang/dobel/guest asing
+  ditolak; `matchRedeemBands` dihapus), harga debit dari snapshot item
+  guest ybs (net-0 + asersi tetap), nama menempel ke
+  `ticket_visit_bands.guest_name` → tampil di rincian visit loket dan
+  layar gate ("Budi Santoso · Ticket — Adult (rombongan Ilham)").
+  Dialog redeem: daftar anggota ber-ceklis + tap gelang auto-assign ke
+  anggota berikutnya, select pindah pasangan hanya menawarkan anggota
+  yang belum dapat. Status page publik + dashboard Booking menampilkan
+  daftar anggota. Gate hasil — code+security review APPROVE 0
+  CRITICAL/HIGH; MEDIUM ditutup (batas bands redeem disamakan
+  `BOOKING_MAX_QTY` 20, bukan 50); LOW dicatat (bulk insert guests bila
+  latensi jadi isu; key index di status page publik). Verifikasi: 776
+  unit test lulus (+3), lint/tsc bersih, build lulus, migrasi applied +
+  backfill terverifikasi (BK-X5QJHG), smoke live end-to-end: create
+  booking rombongan 3 nama parsial → status guests benar → webhook
+  PAID → terbayar (BK-VSPEZN siap QA redeem hari-H).

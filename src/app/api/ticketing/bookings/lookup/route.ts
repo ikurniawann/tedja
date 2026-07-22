@@ -68,23 +68,42 @@ export async function GET(request: NextRequest) {
       status = "kedaluwarsa";
     }
 
-    const items = await query<{
-      variant_id: string;
-      ticket_product_id: string;
-      product_name: string;
-      variant_name: string;
-      qty: number;
-      unit_price: string;
-      season_kind: string;
-      subtotal: string;
-    }>(
-      `SELECT variant_id, ticket_product_id, product_name, variant_name,
-              qty, unit_price, season_kind, subtotal
-       FROM ticketing.ticket_booking_items
-       WHERE booking_id = $1
-       ORDER BY product_name, variant_name`,
-      [booking.id]
-    );
+    const [items, guests] = await Promise.all([
+      query<{
+        variant_id: string;
+        ticket_product_id: string;
+        product_name: string;
+        variant_name: string;
+        qty: number;
+        unit_price: string;
+        season_kind: string;
+        subtotal: string;
+      }>(
+        `SELECT variant_id, ticket_product_id, product_name, variant_name,
+                qty, unit_price, season_kind, subtotal
+         FROM ticketing.ticket_booking_items
+         WHERE booking_id = $1
+         ORDER BY product_name, variant_name`,
+        [booking.id]
+      ),
+      // Anggota rombongan — bekal pairing gelang per orang di dialog redeem
+      query<{
+        id: string;
+        guest_name: string;
+        position: number;
+        variant_id: string;
+        product_name: string;
+        variant_name: string;
+      }>(
+        `SELECT g.id, g.guest_name, g.position, g.variant_id,
+                i.product_name, i.variant_name
+         FROM ticketing.ticket_booking_guests g
+         JOIN ticketing.ticket_booking_items i ON i.id = g.booking_item_id
+         WHERE g.booking_id = $1
+         ORDER BY g.position`,
+        [booking.id]
+      ),
+    ]);
 
     return successResponse({
       id: booking.id,
@@ -110,6 +129,7 @@ export async function GET(request: NextRequest) {
         season_kind: i.season_kind,
         subtotal: Number(i.subtotal),
       })),
+      guests,
     });
   } catch (err) {
     console.error("[ticketing] booking lookup error:", err);

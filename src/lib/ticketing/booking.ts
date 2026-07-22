@@ -68,6 +68,9 @@ export function generateAccessToken(): string {
 
 export const BOOKING_MAX_DAYS_AHEAD = 90;
 
+/** Batas tiket per booking — dipakai create publik DAN redeem loket. */
+export const BOOKING_MAX_QTY = 20;
+
 export type VisitDateWindowResult =
   | "ok"
   | "masa-lalu"
@@ -101,61 +104,66 @@ export function todayInJakarta(now: Date = new Date()): string {
   }).format(now);
 }
 
-// ── Redeem loket (Fase D4) ────────────────────────────────────────────
-// Booking terbayar ditukar gelang di loket: jumlah gelang per varian
-// HARUS persis sama dengan qty item booking — kurang/lebih/varian asing
-// semuanya ditolak supaya tiket yang dibayar = tiket yang dipakai.
+// ── Rombongan bernama (Fase D — revisi owner) ────────────────────────
+// Tiap unit tiket dalam booking = satu "guest" bernama. Nama boleh
+// dikosongkan pemesan; default: posisi 1 = nama pemesan, sisanya
+// "Group {pemesan} - {posisi}" (penomoran global lintas item).
 
-export interface RedeemItemNeed {
-  variant_id: string;
-  qty: number;
+export const GUEST_NAME_MAX_LENGTH = 120;
+
+/**
+ * Susun nama anggota rombongan final (panjang = totalQty). `provided`
+ * adalah input pemesan per posisi (boleh kurang panjang / null / kosong);
+ * yang kosong diisi default. Nama dipotong ke batas kolom.
+ */
+export function buildGuestNames(
+  customerName: string,
+  totalQty: number,
+  provided: readonly (string | null | undefined)[] = []
+): string[] {
+  const base = customerName.trim();
+  const names: string[] = [];
+  for (let position = 1; position <= totalQty; position++) {
+    const raw = provided[position - 1]?.trim() ?? "";
+    const fallback = position === 1 ? base : `Group ${base} - ${position}`;
+    names.push((raw || fallback).slice(0, GUEST_NAME_MAX_LENGTH));
+  }
+  return names;
 }
 
-export type MatchRedeemBandsResult =
+// ── Redeem loket (Fase D4) ────────────────────────────────────────────
+// Booking terbayar ditukar gelang di loket: SETIAP anggota rombongan
+// harus dapat tepat satu gelang — kurang/dobel/guest asing ditolak
+// supaya tiket yang dibayar = tiket yang dipakai.
+
+export type MatchRedeemGuestsResult =
   | { ok: true }
   | {
       ok: false;
-      reason: "varian-asing" | "jumlah-tak-cocok";
-      variant_id: string;
-      expected: number;
-      actual: number;
+      reason: "guest-asing" | "guest-dobel" | "belum-lengkap";
+      guest_id: string | null;
     };
 
-/** Cocokkan gelang yang di-tap dengan kebutuhan item booking (per varian). */
-export function matchRedeemBands(
-  items: readonly RedeemItemNeed[],
-  bands: readonly { variant_id: string }[]
-): MatchRedeemBandsResult {
-  const need = new Map<string, number>();
-  for (const item of items) {
-    need.set(item.variant_id, (need.get(item.variant_id) ?? 0) + item.qty);
-  }
-
-  const got = new Map<string, number>();
+/** Validasi pairing gelang↔anggota: bijeksi penuh terhadap daftar guest. */
+export function matchRedeemGuests(
+  guestIds: readonly string[],
+  bands: readonly { guest_id: string }[]
+): MatchRedeemGuestsResult {
+  const remaining = new Set(guestIds);
   for (const band of bands) {
-    if (!need.has(band.variant_id)) {
-      return {
-        ok: false,
-        reason: "varian-asing",
-        variant_id: band.variant_id,
-        expected: 0,
-        actual: (got.get(band.variant_id) ?? 0) + 1,
-      };
+    if (!guestIds.includes(band.guest_id)) {
+      return { ok: false, reason: "guest-asing", guest_id: band.guest_id };
     }
-    got.set(band.variant_id, (got.get(band.variant_id) ?? 0) + 1);
+    if (!remaining.delete(band.guest_id)) {
+      return { ok: false, reason: "guest-dobel", guest_id: band.guest_id };
+    }
   }
-
-  for (const [variantId, expected] of need) {
-    const actual = got.get(variantId) ?? 0;
-    if (actual !== expected) {
-      return {
-        ok: false,
-        reason: "jumlah-tak-cocok",
-        variant_id: variantId,
-        expected,
-        actual,
-      };
-    }
+  if (remaining.size > 0) {
+    return {
+      ok: false,
+      reason: "belum-lengkap",
+      guest_id: remaining.values().next().value ?? null,
+    };
   }
   return { ok: true };
 }
