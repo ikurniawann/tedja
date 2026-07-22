@@ -4,6 +4,20 @@ import { paginatedResponse, successResponse } from "@/lib/api/auth";
 import { query, withTransaction } from "@/lib/db";
 import { checkRateLimit } from "@/lib/rate-limit";
 import {
+  allocateBundlePrice,
+  expandBundleMembers,
+} from "@/lib/ticketing/bundle";
+import {
+  bundleCompositionIssue,
+  execFromClient,
+  loadBundleComposition,
+  toBundleComponents,
+} from "@/lib/ticketing/bundle-server";
+import {
+  resolveVariantPriceOnDate,
+  todayJakartaDate,
+} from "@/lib/ticketing/pricing-server";
+import {
   PAYMENT_MODES,
   TICKETING_OPERATOR_ROLES,
   isValidNfcUid,
@@ -133,8 +147,23 @@ const registerVisitSchema = z.object({
         variant_id: z.string().uuid(),
       })
     )
-    .min(1)
-    .max(50),
+    .max(50)
+    .default([]),
+  // Fase P — pembelian paket: 1 entri = 1 unit paket; band_uids urut
+  // mengikuti urutan anggota komposisi (server yang memetakan varian
+  // komponen — klien tidak menentukan harga/varian per gelang)
+  bundles: z
+    .array(
+      z.object({
+        bundle_variant_id: z.string().uuid(),
+        band_uids: z
+          .array(z.string().trim().min(1).max(80))
+          .min(1)
+          .max(20),
+      })
+    )
+    .max(10)
+    .default([]),
 });
 
 export async function POST(request: NextRequest) {
@@ -159,7 +188,18 @@ export async function POST(request: NextRequest) {
     }
     const body = parsed.data;
 
-    const uids = body.bands.map((b) => normalizeNfcUid(b.nfc_uid));
+    if (body.bands.length === 0 && body.bundles.length === 0) {
+      return NextResponse.json(
+        { success: false, error: "Minimal satu gelang harus di-tap" },
+        { status: 400 }
+      );
+    }
+
+    // Semua UID (satuan + anggota paket) dinormalisasi & unik global
+    const uids = [
+      ...body.bands.map((b) => normalizeNfcUid(b.nfc_uid)),
+      ...body.bundles.flatMap((bu) => bu.band_uids.map(normalizeNfcUid)),
+    ];
     if (uids.some((uid) => !isValidNfcUid(uid))) {
       return NextResponse.json(
         { success: false, error: "Ada UID gelang yang tidak valid" },
@@ -235,27 +275,138 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Varian valid = milik venue, aktif, produknya Active DAN
-      // terdistribusi ke kanal walk-in (Channel Manager)
+      // Varian satuan valid = milik venue, aktif, produk SATUAN Active
+      // DAN terdistribusi ke kanal walk-in (Channel Manager); varian
+      // paket tidak boleh menempel langsung ke satu gelang
       const variantIds = [...new Set(body.bands.map((b) => b.variant_id))];
-      const variantsResult = await client.query<{ id: string }>(
-        `SELECT pv.id
-         FROM ticketing.ticket_product_variants pv
-         JOIN ticketing.ticket_products tp ON tp.id = pv.ticket_product_id
-         JOIN ticketing.ticket_product_channels pc
-           ON pc.ticket_product_id = tp.id AND pc.channel_id = $4
-              AND pc.is_distributed = true
-         WHERE pv.branch_id = $1 AND pv.company_id = $2 AND pv.id = ANY($3)
-           AND pv.is_active = true AND tp.status = 'active'`,
-        [ctx.branchId, ctx.companyId, variantIds, channelId]
-      );
-      if (variantsResult.rows.length !== variantIds.length) {
-        throw Object.assign(
-          new Error(
-            "Ada varian ticket yang tidak dikenal / nonaktif / belum didistribusi ke POS"
-          ),
-          { statusCode: 400 }
+      if (variantIds.length > 0) {
+        const variantsResult = await client.query<{ id: string }>(
+          `SELECT pv.id
+           FROM ticketing.ticket_product_variants pv
+           JOIN ticketing.ticket_products tp ON tp.id = pv.ticket_product_id
+           JOIN ticketing.ticket_product_channels pc
+             ON pc.ticket_product_id = tp.id AND pc.channel_id = $4
+                AND pc.is_distributed = true
+           WHERE pv.branch_id = $1 AND pv.company_id = $2 AND pv.id = ANY($3)
+             AND pv.is_active = true AND tp.status = 'active'
+             AND tp.product_kind = 'single'`,
+          [ctx.branchId, ctx.companyId, variantIds, channelId]
         );
+        if (variantsResult.rows.length !== variantIds.length) {
+          throw Object.assign(
+            new Error(
+              "Ada varian ticket yang tidak dikenal / nonaktif / belum didistribusi ke POS"
+            ),
+            { statusCode: 400 }
+          );
+        }
+      }
+
+      // Fase P — pembelian paket: resolve harga paket HARI INI di kanal
+      // walk-in lalu prorata ke anggota; harga alokasi di-snapshot di
+      // visit_bands supaya gate tap tinggal men-charge tanpa resolve ulang
+      interface PreparedBundleBand {
+        uid: string;
+        component_variant_id: string;
+        bundle_product_id: string;
+        bundle_unit_no: number;
+        allocated_price: number;
+        member_label: string;
+      }
+      const bundleBands: PreparedBundleBand[] = [];
+      if (body.bundles.length > 0) {
+        const visitDate = todayJakartaDate();
+        const exec = execFromClient(client);
+        const bundleVariantIds = [
+          ...new Set(body.bundles.map((bu) => bu.bundle_variant_id)),
+        ];
+        const bundleVariantsResult = await client.query<{
+          id: string;
+          ticket_product_id: string;
+          bundle_name: string;
+        }>(
+          `SELECT pv.id, pv.ticket_product_id, tp.name AS bundle_name
+           FROM ticketing.ticket_product_variants pv
+           JOIN ticketing.ticket_products tp ON tp.id = pv.ticket_product_id
+           JOIN ticketing.ticket_product_channels pc
+             ON pc.ticket_product_id = tp.id AND pc.channel_id = $4
+                AND pc.is_distributed = true
+           WHERE pv.branch_id = $1 AND pv.company_id = $2 AND pv.id = ANY($3)
+             AND pv.is_active = true AND tp.status = 'active'
+             AND tp.product_kind = 'bundle'`,
+          [ctx.branchId, ctx.companyId, bundleVariantIds, channelId]
+        );
+        const bundleVariantById = new Map(
+          bundleVariantsResult.rows.map((r) => [r.id, r])
+        );
+        if (bundleVariantById.size !== bundleVariantIds.length) {
+          throw Object.assign(
+            new Error(
+              "Ada paket yang tidak dikenal / nonaktif / belum didistribusi ke POS"
+            ),
+            { statusCode: 400 }
+          );
+        }
+
+        let unitNo = 0;
+        for (const purchase of body.bundles) {
+          const bundleVariant = bundleVariantById.get(purchase.bundle_variant_id)!;
+          const composition = await loadBundleComposition(exec, {
+            companyId: ctx.companyId,
+            branchId: ctx.branchId,
+            bundleProductId: bundleVariant.ticket_product_id,
+          });
+          const issue = bundleCompositionIssue(composition);
+          if (issue) {
+            throw Object.assign(
+              new Error(`Paket "${bundleVariant.bundle_name}" tidak layak jual: ${issue}`),
+              { statusCode: 400 }
+            );
+          }
+
+          const resolved = await resolveVariantPriceOnDate(client, {
+            companyId: ctx.companyId,
+            branchId: ctx.branchId,
+            variantId: purchase.bundle_variant_id,
+            channelId,
+            visitDate,
+          });
+          if (!resolved.ok) {
+            throw Object.assign(
+              new Error(
+                `Harga paket "${bundleVariant.bundle_name}" belum diisi — lengkapi di Master Ticket`
+              ),
+              { statusCode: 400 }
+            );
+          }
+
+          const members = expandBundleMembers(
+            toBundleComponents(composition, resolved.seasonKind)
+          );
+          if (purchase.band_uids.length !== members.length) {
+            throw Object.assign(
+              new Error(
+                `Paket "${bundleVariant.bundle_name}" butuh ${members.length} gelang per unit — di-tap ${purchase.band_uids.length}`
+              ),
+              { statusCode: 400 }
+            );
+          }
+          const shares = allocateBundlePrice(
+            resolved.price,
+            members.map((m) => m.weight_price)
+          );
+          unitNo += 1;
+          members.forEach((member, index) => {
+            bundleBands.push({
+              uid: normalizeNfcUid(purchase.band_uids[index]),
+              component_variant_id: member.component_variant_id,
+              bundle_product_id: bundleVariant.ticket_product_id,
+              bundle_unit_no: unitNo,
+              allocated_price: shares[index],
+              member_label: `${bundleVariant.bundle_name} — ${member.member_label}`,
+            });
+          });
+        }
       }
 
       const creditLimit =
@@ -290,6 +441,34 @@ export async function POST(request: NextRequest) {
              (company_id, branch_id, visit_id, band_id, variant_id)
            VALUES ($1, $2, $3, $4, $5)`,
           [ctx.companyId, ctx.branchId, visitId, band.id, item.variant_id]
+        );
+        await client.query(
+          `UPDATE ticketing.ticket_bands
+           SET status = 'dipakai', updated_at = now()
+           WHERE id = $1`,
+          [band.id]
+        );
+      }
+
+      // Anggota paket: gelang menunjuk varian KOMPONEN + snapshot alokasi
+      for (const member of bundleBands) {
+        const band = bandByUid.get(member.uid)!;
+        await client.query(
+          `INSERT INTO ticketing.ticket_visit_bands
+             (company_id, branch_id, visit_id, band_id, variant_id,
+              bundle_product_id, bundle_unit_no, allocated_price, member_label)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+          [
+            ctx.companyId,
+            ctx.branchId,
+            visitId,
+            band.id,
+            member.component_variant_id,
+            member.bundle_product_id,
+            member.bundle_unit_no,
+            member.allocated_price,
+            member.member_label,
+          ]
         );
         await client.query(
           `UPDATE ticketing.ticket_bands

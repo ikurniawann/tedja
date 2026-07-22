@@ -89,6 +89,12 @@ export interface RegisterVisitBand {
   variant_id: string;
 }
 
+/** Fase P — 1 entri = 1 unit paket; band_uids urut anggota komposisi. */
+export interface RegisterVisitBundle {
+  bundle_variant_id: string;
+  band_uids: string[];
+}
+
 export interface RegisterVisitValues {
   contact_name: string;
   contact_phone?: string | null;
@@ -96,6 +102,7 @@ export interface RegisterVisitValues {
   credit_limit?: number | null;
   deposit?: { amount: number; method: CashMethod } | null;
   bands: RegisterVisitBand[];
+  bundles?: RegisterVisitBundle[];
 }
 
 export interface SettleValues {

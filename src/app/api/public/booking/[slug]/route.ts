@@ -13,6 +13,7 @@ import {
   todayInJakarta,
   validateVisitDateWindow,
 } from "@/lib/ticketing/booking";
+import { allocateBundlePrice, type BundleMember } from "@/lib/ticketing/bundle";
 import {
   buildPublicCatalog,
   resolvePublicVenue,
@@ -98,23 +99,6 @@ export async function POST(
     if (new Set(variantIds).size !== variantIds.length) {
       return badRequest("Varian duplikat dalam pesanan");
     }
-    const totalQty = body.items.reduce((sum, i) => sum + i.qty, 0);
-    if (totalQty > MAX_QTY_PER_BOOKING) {
-      return badRequest(`Maksimum ${MAX_QTY_PER_BOOKING} tiket per booking`);
-    }
-    if (body.items.some((i) => (i.guest_names?.length ?? 0) > i.qty)) {
-      return badRequest("Jumlah nama anggota melebihi jumlah tiket");
-    }
-
-    // Nama anggota final: urutan unit mengikuti urutan item; kosong →
-    // default posisi-global (posisi 1 = pemesan)
-    const guestNames = buildGuestNames(
-      body.customer_name,
-      totalQty,
-      body.items.flatMap((i) =>
-        Array.from({ length: i.qty }, (_, k) => i.guest_names?.[k] ?? null)
-      )
-    );
 
     if (!isXenditConfigured()) {
       return NextResponse.json(
@@ -138,6 +122,9 @@ export async function POST(
             variant_name: v.variant_name,
             price: v.price,
             season_kind: v.season_kind,
+            product_kind: p.product_kind,
+            // Fase P — paket: anggota per unit (varian komponen + bobot)
+            members: v.members ?? null,
           },
         ])
       )
@@ -146,11 +133,16 @@ export async function POST(
     interface PricedItem {
       variant_id: string;
       qty: number;
+      guest_names?: (string | null)[];
       product_id: string;
       product_name: string;
       variant_name: string;
       price: number;
       season_kind: string;
+      product_kind: "single" | "bundle";
+      members: BundleMember[] | null;
+      /** Jumlah ORANG per 1 qty item (paket = Σ anggota; satuan = 1). */
+      persons_per_unit: number;
       subtotal: number;
     }
     const items: PricedItem[] = [];
@@ -164,10 +156,47 @@ export async function POST(
       items.push({
         ...item,
         ...known,
+        persons_per_unit:
+          known.product_kind === "bundle" ? (known.members?.length ?? 0) : 1,
         // 2dp per baris — konvensi ledger Fase B, anti selisih float
         subtotal: Math.round(known.price * item.qty * 100) / 100,
       });
     }
+    if (items.some((i) => i.product_kind === "bundle" && i.persons_per_unit === 0)) {
+      return badRequest(
+        "Ada paket yang tidak tersedia untuk tanggal ini — muat ulang halaman"
+      );
+    }
+
+    // Kuota & nama dihitung per ORANG (1 unit paket = beberapa orang)
+    const totalQty = items.reduce(
+      (sum, i) => sum + i.qty * i.persons_per_unit,
+      0
+    );
+    if (totalQty > MAX_QTY_PER_BOOKING) {
+      return badRequest(`Maksimum ${MAX_QTY_PER_BOOKING} tiket per booking`);
+    }
+    if (
+      items.some(
+        (i) => (i.guest_names?.length ?? 0) > i.qty * i.persons_per_unit
+      )
+    ) {
+      return badRequest("Jumlah nama anggota melebihi jumlah tiket");
+    }
+
+    // Nama anggota final: urutan unit mengikuti urutan item; kosong →
+    // default posisi-global (posisi 1 = pemesan)
+    const guestNames = buildGuestNames(
+      body.customer_name,
+      totalQty,
+      items.flatMap((i) =>
+        Array.from(
+          { length: i.qty * i.persons_per_unit },
+          (_, k) => i.guest_names?.[k] ?? null
+        )
+      )
+    );
+
     const total =
       Math.round(items.reduce((sum, i) => sum + i.subtotal, 0) * 100) / 100;
     // Invoice Xendit IDR wajib rupiah bulat; simpanan DB tetap total 2dp
@@ -205,6 +234,7 @@ export async function POST(
           );
           const id = inserted.rows[0].id;
           let position = 0;
+          let bundleUnitNo = 0;
           for (const item of items) {
             const itemInserted = await client.query<{ id: string }>(
               `INSERT INTO ticketing.ticket_booking_items
@@ -228,24 +258,60 @@ export async function POST(
               ]
             );
             const itemId = itemInserted.rows[0].id;
-            // Satu guest per unit tiket — nama sudah final dari buildGuestNames
-            for (let k = 0; k < item.qty; k++) {
-              position += 1;
-              await client.query(
-                `INSERT INTO ticketing.ticket_booking_guests
-                   (company_id, branch_id, booking_id, booking_item_id,
-                    variant_id, guest_name, position)
-                 VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-                [
-                  venue.companyId,
-                  venue.branchId,
-                  id,
-                  itemId,
-                  item.variant_id,
-                  guestNames[position - 1],
-                  position,
-                ]
+            if (item.product_kind === "bundle" && item.members) {
+              // Fase P — paket meledak jadi guest per ANGGOTA: varian
+              // komponen + harga alokasi prorata (Σ per unit = harga
+              // paket → net-0 redeem tetap tepat)
+              const shares = allocateBundlePrice(
+                item.price,
+                item.members.map((m) => m.weight_price)
               );
+              for (let u = 0; u < item.qty; u++) {
+                bundleUnitNo += 1;
+                for (const [mi, member] of item.members.entries()) {
+                  position += 1;
+                  await client.query(
+                    `INSERT INTO ticketing.ticket_booking_guests
+                       (company_id, branch_id, booking_id, booking_item_id,
+                        variant_id, guest_name, position, bundle_product_id,
+                        bundle_unit_no, allocated_price, member_label)
+                     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+                    [
+                      venue.companyId,
+                      venue.branchId,
+                      id,
+                      itemId,
+                      member.component_variant_id,
+                      guestNames[position - 1],
+                      position,
+                      item.product_id,
+                      bundleUnitNo,
+                      shares[mi],
+                      `${item.product_name} — ${member.member_label}`,
+                    ]
+                  );
+                }
+              }
+            } else {
+              // Satu guest per unit tiket — nama final dari buildGuestNames
+              for (let k = 0; k < item.qty; k++) {
+                position += 1;
+                await client.query(
+                  `INSERT INTO ticketing.ticket_booking_guests
+                     (company_id, branch_id, booking_id, booking_item_id,
+                      variant_id, guest_name, position)
+                   VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+                  [
+                    venue.companyId,
+                    venue.branchId,
+                    id,
+                    itemId,
+                    item.variant_id,
+                    guestNames[position - 1],
+                    position,
+                  ]
+                );
+              }
             }
           }
           return id;

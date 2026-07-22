@@ -6,6 +6,7 @@ import { Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { BundleTab } from "./bundle-tab";
 import { CalendarTab } from "./calendar-tab";
 import { InfoVariantsTab } from "./info-variants-tab";
 import { PolicyTab } from "./policy-tab";
@@ -37,6 +38,11 @@ export function TicketEditorPage({ productId }: { productId: string }) {
           </Button>
           <h1 className="text-2xl font-bold text-gray-900">{product.name}</h1>
           <span className="font-mono text-sm text-gray-500">{product.code}</span>
+          {product.product_kind === "bundle" ? (
+            <Badge className="border-0 bg-purple-100 font-normal text-purple-700">
+              Paket
+            </Badge>
+          ) : null}
           <Badge
             className={`border-0 font-normal ${
               product.status === "active"
@@ -75,14 +81,28 @@ export function TicketEditorPage({ productId }: { productId: string }) {
       {/* flex-col eksplisit — pola repo (lihat logbook-page): tanpa ini
           TabsList jatuh ke samping konten, bukan di atas */}
       <Tabs defaultValue="info" className="w-full flex-col">
-        <TabsList className="grid h-9 w-full max-w-md grid-cols-3">
+        <TabsList
+          className={`grid h-9 w-full ${
+            product.product_kind === "bundle"
+              ? "max-w-lg grid-cols-4"
+              : "max-w-md grid-cols-3"
+          }`}
+        >
           <TabsTrigger value="info">Info & Varian</TabsTrigger>
+          {product.product_kind === "bundle" ? (
+            <TabsTrigger value="bundle">Komposisi</TabsTrigger>
+          ) : null}
           <TabsTrigger value="calendar">Kalender</TabsTrigger>
           <TabsTrigger value="policy">Kebijakan</TabsTrigger>
         </TabsList>
         <TabsContent value="info" className="mt-4">
           <InfoVariantsTab detail={detail} />
         </TabsContent>
+        {product.product_kind === "bundle" ? (
+          <TabsContent value="bundle" className="mt-4">
+            <BundleTab detail={detail} />
+          </TabsContent>
+        ) : null}
         <TabsContent value="calendar" className="mt-4">
           <CalendarTab detail={detail} />
         </TabsContent>

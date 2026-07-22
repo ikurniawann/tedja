@@ -5,8 +5,11 @@
 // untuk query berikutnya di server.
 
 import { query, queryOne } from "@/lib/db";
+import { expandBundleMembers, type BundleMember } from "./bundle";
 import {
+  isDateBlockedOnline,
   resolveTicketPrice,
+  resolveVariantPrice,
   type PricePair,
   type ProductDateRange,
   type SeasonKind,
@@ -58,6 +61,12 @@ export interface CatalogVariant {
   variant_name: string;
   price: number;
   season_kind: SeasonKind;
+  /**
+   * Fase P — hanya varian paket: daftar anggota per 1 unit (urut, 1 entri
+   * = 1 orang, menunjuk varian KOMPONEN + bobot alokasi). Kosong utk
+   * tiket satuan.
+   */
+  members?: BundleMember[];
 }
 
 export interface CatalogProduct {
@@ -66,6 +75,7 @@ export interface CatalogProduct {
   name: string;
   description: string | null;
   thumbnail_url: string | null;
+  product_kind: "single" | "bundle";
   variants: CatalogVariant[];
 }
 
@@ -75,6 +85,21 @@ interface ProductRow {
   name: string;
   description: string | null;
   thumbnail_url: string | null;
+  product_kind: "single" | "bundle";
+}
+
+interface CompositionRow {
+  bundle_product_id: string;
+  component_variant_id: string;
+  qty: number;
+  product_name: string;
+  variant_name: string;
+  component_product_id: string;
+  component_status: string;
+  component_kind: string;
+  variant_is_active: boolean;
+  price_regular: string | null;
+  price_high: string | null;
 }
 
 interface VariantRow {
@@ -116,7 +141,8 @@ export async function buildPublicCatalog(
 ): Promise<CatalogProduct[]> {
   const [products, variants, dates, overrides] = await Promise.all([
     query<ProductRow>(
-      `SELECT p.id, p.code, p.name, p.description, p.thumbnail_url
+      `SELECT p.id, p.code, p.name, p.description, p.thumbnail_url,
+              p.product_kind
        FROM ticketing.ticket_products p
        JOIN ticketing.ticket_product_channels pc
          ON pc.ticket_product_id = p.id AND pc.channel_id = $3
@@ -150,11 +176,67 @@ export async function buildPublicCatalog(
 
   const overrideMap = new Map(overrides.map((o) => [o.variant_id, toPair(o)]));
 
+  // Fase P — komposisi paket (batch): paket dgn komposisi kosong/komponen
+  // tidak layak disembunyikan; blok-online KOMPONEN ikut memblok paket
+  const bundleIds = products
+    .filter((p) => p.product_kind === "bundle")
+    .map((p) => p.id);
+  const compositionRows =
+    bundleIds.length > 0
+      ? await query<CompositionRow>(
+          `SELECT bi.bundle_product_id, bi.component_variant_id, bi.qty,
+                  tp.name AS product_name, pv.name AS variant_name,
+                  tp.id AS component_product_id, tp.status AS component_status,
+                  tp.product_kind AS component_kind,
+                  pv.is_active AS variant_is_active,
+                  pv.price_regular, pv.price_high
+           FROM ticketing.ticket_bundle_items bi
+           JOIN ticketing.ticket_product_variants pv
+             ON pv.id = bi.component_variant_id
+           JOIN ticketing.ticket_products tp ON tp.id = pv.ticket_product_id
+           WHERE bi.bundle_product_id = ANY($1)
+             AND bi.branch_id = $2 AND bi.company_id = $3
+           ORDER BY bi.sort_order, bi.created_at`,
+          [bundleIds, ctx.branchId, ctx.companyId]
+        )
+      : [];
+  const compositionByBundle = new Map<string, CompositionRow[]>();
+  for (const row of compositionRows) {
+    const list = compositionByBundle.get(row.bundle_product_id) ?? [];
+    list.push(row);
+    compositionByBundle.set(row.bundle_product_id, list);
+  }
+  const isSellableComposition = (rows: CompositionRow[] | undefined) =>
+    !!rows &&
+    rows.length > 0 &&
+    rows.every(
+      (r) =>
+        r.component_status === "active" &&
+        r.component_kind === "single" &&
+        r.variant_is_active
+    );
+
   const catalog: CatalogProduct[] = [];
   for (const product of products) {
     const productDates = dates.filter(
       (d) => d.ticket_product_id === product.id
     );
+
+    let composition: CompositionRow[] = [];
+    if (product.product_kind === "bundle") {
+      const rows = compositionByBundle.get(product.id);
+      if (!isSellableComposition(rows)) continue;
+      composition = rows!;
+      // Komponen diblok online tanggal ini → paketnya ikut tidak dijual
+      const componentBlocked = composition.some((c) =>
+        isDateBlockedOnline(
+          visitDate,
+          dates.filter((d) => d.ticket_product_id === c.component_product_id)
+        )
+      );
+      if (componentBlocked) continue;
+    }
+
     const resolvedVariants: CatalogVariant[] = [];
     let blocked = false;
 
@@ -172,11 +254,33 @@ export async function buildPublicCatalog(
         if (result.reason === "tanggal-diblok") blocked = true;
         continue; // harga bolong → varian disembunyikan, jangan menebak
       }
+
+      // Anggota per unit paket: bobot alokasi = harga satuan komponen utk
+      // musim paket (override kanal website menang bila terisi)
+      const members =
+        product.product_kind === "bundle"
+          ? expandBundleMembers(
+              composition.map((c) => ({
+                component_variant_id: c.component_variant_id,
+                qty: c.qty,
+                product_name: c.product_name,
+                variant_name: c.variant_name,
+                weight_price: resolveVariantPrice({
+                  variant: toPair(c),
+                  channelOverride:
+                    overrideMap.get(c.component_variant_id) ?? null,
+                  seasonKind: result.seasonKind,
+                }),
+              }))
+            )
+          : undefined;
+
       resolvedVariants.push({
         variant_id: variant.id,
         variant_name: variant.name,
         price: result.price,
         season_kind: result.seasonKind,
+        ...(members ? { members } : {}),
       });
     }
 
@@ -187,6 +291,7 @@ export async function buildPublicCatalog(
       name: product.name,
       description: product.description,
       thumbnail_url: product.thumbnail_url,
+      product_kind: product.product_kind,
       variants: resolvedVariants,
     });
   }

@@ -16,10 +16,18 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { TableRow } from "@/components/ui/table";
 import { PurchasingListSection } from "@/modules/purchasing/components/list/PurchasingListSection";
 import { CategoryAutocomplete } from "./category-autocomplete";
 import { useCreateProduct, useProducts } from "../queries";
+import type { TicketProductKind } from "../types";
 
 const formatRp = (n: number) => `Rp${n.toLocaleString("id-ID")}`;
 
@@ -28,6 +36,7 @@ export function TicketsPage() {
   const [q, setQ] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [name, setName] = useState("");
+  const [kind, setKind] = useState<TicketProductKind>("single");
   const [categoryName, setCategoryName] = useState("");
   const [basePrice, setBasePrice] = useState("");
 
@@ -37,6 +46,7 @@ export function TicketsPage() {
   const createMutation = useCreateProduct((result) => {
     setCreateOpen(false);
     setName("");
+    setKind("single");
     setCategoryName("");
     setBasePrice("");
     router.push(`/dashboard/ticketing/tickets/${result.id}`);
@@ -46,6 +56,7 @@ export function TicketsPage() {
     if (!name.trim() || createMutation.isPending) return;
     createMutation.mutate({
       name: name.trim(),
+      product_kind: kind,
       category_name: categoryName.trim() || null,
       base_price: Number(basePrice) || 0,
       status: "draft",
@@ -117,7 +128,14 @@ export function TicketsPage() {
                           </div>
                         )}
                         <div>
-                          <p className="font-medium text-gray-900">{product.name}</p>
+                          <p className="font-medium text-gray-900">
+                            {product.name}
+                            {product.product_kind === "bundle" ? (
+                              <Badge className="ml-2 border-0 bg-purple-100 font-normal text-purple-700">
+                                Paket
+                              </Badge>
+                            ) : null}
+                          </p>
                           <p className="font-mono text-xs text-gray-500">
                             {product.code}
                           </p>
@@ -195,10 +213,33 @@ export function TicketsPage() {
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-1.5">
+              <Label>Jenis</Label>
+              <Select
+                value={kind}
+                onValueChange={(v) => setKind(v as TicketProductKind)}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="single">
+                    Tiket satuan — varian Adult/Child
+                  </SelectItem>
+                  <SelectItem value="bundle">
+                    Paket bundling — gabungan beberapa tiket satuan
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
               <Label htmlFor="ticket_name">Nama Ticket *</Label>
               <Input
                 id="ticket_name"
-                placeholder="mis. Tiket Masuk Reguler"
+                placeholder={
+                  kind === "bundle"
+                    ? "mis. Paket Keluarga (2 Dewasa + 2 Anak)"
+                    : "mis. Tiket Masuk Reguler"
+                }
                 value={name}
                 onChange={(e) => setName(e.target.value)}
               />
@@ -222,8 +263,9 @@ export function TicketsPage() {
               />
             </div>
             <p className="text-xs text-gray-500">
-              Ticket dibuat berstatus Draft dengan varian Adult & Child —
-              lengkapi harga, kalender, dan kebijakan di halaman berikutnya.
+              {kind === "bundle"
+                ? "Paket dibuat berstatus Draft dengan satu varian “Paket” — susun komposisi & harga paket di halaman berikutnya sebelum diaktifkan."
+                : "Ticket dibuat berstatus Draft dengan varian Adult & Child — lengkapi harga, kalender, dan kebijakan di halaman berikutnya."}
             </p>
           </div>
           <DialogFooter>

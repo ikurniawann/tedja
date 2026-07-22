@@ -24,7 +24,18 @@ import { useTicketingSettings } from "../../masters/queries";
 import { useLoketOptions } from "../../products/queries";
 import { useRegisterVisit } from "../queries";
 import type { PaymentMode } from "../../masters/types";
-import { CASH_METHOD_LABELS, type CashMethod, type RegisterVisitBand } from "../types";
+import {
+  CASH_METHOD_LABELS,
+  type CashMethod,
+  type RegisterVisitBand,
+  type RegisterVisitBundle,
+} from "../types";
+
+interface BundleUnitDraft extends RegisterVisitBundle {
+  key: string;
+  ticket_name: string;
+  member_labels: string[];
+}
 
 interface RegistrationDialogProps {
   open: boolean;
@@ -36,8 +47,17 @@ const formatRp = (n: number) => `Rp${n.toLocaleString("id-ID")}`;
 export function RegistrationDialog({ open, onOpenChange }: RegistrationDialogProps) {
   const optionsQuery = useLoketOptions();
   const settingsQuery = useTicketingSettings();
-  // Opsi = varian dari ticket Active yang didistribusi ke POS
+  // Opsi = varian dari ticket Active yang didistribusi ke POS; paket
+  // (Fase P) dijual per unit — lihat bundleUnits
   const options = useMemo(() => optionsQuery.data ?? [], [optionsQuery.data]);
+  const singleOptions = useMemo(
+    () => options.filter((o) => o.product_kind === "single"),
+    [options]
+  );
+  const bundleOptions = useMemo(
+    () => options.filter((o) => o.product_kind === "bundle"),
+    [options]
+  );
 
   const [contactName, setContactName] = useState("");
   const [contactPhone, setContactPhone] = useState("");
@@ -45,12 +65,13 @@ export function RegistrationDialog({ open, onOpenChange }: RegistrationDialogPro
   const [depositAmount, setDepositAmount] = useState("");
   const [depositMethod, setDepositMethod] = useState<CashMethod>("cash");
   const [bands, setBands] = useState<RegisterVisitBand[]>([]);
+  const [bundleUnits, setBundleUnits] = useState<BundleUnitDraft[]>([]);
   const [tapUid, setTapUid] = useState("");
 
   const effectiveMode: PaymentMode =
     paymentMode ?? settingsQuery.data?.default_payment_mode ?? "postpaid";
   const defaultLimit = Number(settingsQuery.data?.default_credit_limit ?? 0);
-  const defaultVariantId = options[0]?.variant_id ?? "";
+  const defaultVariantId = singleOptions[0]?.variant_id ?? "";
 
   const reset = () => {
     setContactName("");
@@ -59,6 +80,7 @@ export function RegistrationDialog({ open, onOpenChange }: RegistrationDialogPro
     setDepositAmount("");
     setDepositMethod("cash");
     setBands([]);
+    setBundleUnits([]);
     setTapUid("");
   };
 
@@ -67,13 +89,58 @@ export function RegistrationDialog({ open, onOpenChange }: RegistrationDialogPro
     onOpenChange(false);
   });
 
+  const allUids = useMemo(
+    () => [
+      ...bands.map((b) => b.nfc_uid.toUpperCase()),
+      ...bundleUnits.flatMap((u) => u.band_uids.map((x) => x.toUpperCase())),
+    ],
+    [bands, bundleUnits]
+  );
+
+  // Tap berikutnya mengisi unit paket yang belum lengkap dulu (urut),
+  // baru menjadi tiket satuan — satu kolom input utk reader NFC/wedge
+  const pendingUnitIndex = bundleUnits.findIndex(
+    (u) => u.band_uids.length < u.member_labels.length
+  );
+
+  const addBundleUnit = (bundleVariantId: string) => {
+    const option = bundleOptions.find((o) => o.variant_id === bundleVariantId);
+    if (!option) return;
+    setBundleUnits((prev) => [
+      ...prev,
+      {
+        key: `${bundleVariantId}-${Date.now()}-${prev.length}`,
+        bundle_variant_id: bundleVariantId,
+        band_uids: [],
+        ticket_name: option.ticket_name,
+        member_labels: option.members.flatMap((m) =>
+          Array.from({ length: m.qty }, () => m.label)
+        ),
+      },
+    ]);
+  };
+
+  const removeBundleUnit = (key: string) => {
+    setBundleUnits((prev) => prev.filter((u) => u.key !== key));
+  };
+
   const addBand = () => {
     const uid = tapUid.trim();
-    if (!uid || !defaultVariantId) return;
-    if (bands.some((b) => b.nfc_uid.toUpperCase() === uid.toUpperCase())) {
+    if (!uid) return;
+    if (allUids.includes(uid.toUpperCase())) {
       setTapUid("");
       return;
     }
+    if (pendingUnitIndex >= 0) {
+      setBundleUnits((prev) =>
+        prev.map((u, i) =>
+          i === pendingUnitIndex ? { ...u, band_uids: [...u.band_uids, uid] } : u
+        )
+      );
+      setTapUid("");
+      return;
+    }
+    if (!defaultVariantId) return;
     setBands((prev) => [...prev, { nfc_uid: uid, variant_id: defaultVariantId }]);
     setTapUid("");
   };
@@ -89,9 +156,11 @@ export function RegistrationDialog({ open, onOpenChange }: RegistrationDialogPro
   };
 
   const depositValue = Number(depositAmount) || 0;
+  const allUnitsComplete = pendingUnitIndex < 0;
   const canSubmit =
     contactName.trim() !== "" &&
-    bands.length > 0 &&
+    (bands.length > 0 || bundleUnits.length > 0) &&
+    allUnitsComplete &&
     (effectiveMode !== "prepaid" || depositValue > 0) &&
     !mutation.isPending;
 
@@ -106,6 +175,10 @@ export function RegistrationDialog({ open, onOpenChange }: RegistrationDialogPro
           ? { amount: depositValue, method: depositMethod }
           : null,
       bands,
+      bundles: bundleUnits.map((u) => ({
+        bundle_variant_id: u.bundle_variant_id,
+        band_uids: u.band_uids,
+      })),
     });
   };
 
@@ -114,11 +187,21 @@ export function RegistrationDialog({ open, onOpenChange }: RegistrationDialogPro
     for (const b of bands) {
       counts.set(b.variant_id, (counts.get(b.variant_id) ?? 0) + 1);
     }
-    return options
+    const singles = options
       .filter((o) => counts.has(o.variant_id))
-      .map((o) => `${counts.get(o.variant_id)} ${o.ticket_name} ${o.variant_name}`)
-      .join(" + ");
-  }, [bands, options]);
+      .map((o) => `${counts.get(o.variant_id)} ${o.ticket_name} ${o.variant_name}`);
+    const bundleCounts = new Map<string, number>();
+    for (const u of bundleUnits) {
+      bundleCounts.set(
+        u.ticket_name,
+        (bundleCounts.get(u.ticket_name) ?? 0) + 1
+      );
+    }
+    const bundles = [...bundleCounts.entries()].map(
+      ([name, n]) => `${n} unit ${name}`
+    );
+    return [...bundles, ...singles].join(" + ");
+  }, [bands, bundleUnits, options]);
 
   return (
     <Dialog
@@ -230,7 +313,13 @@ export function RegistrationDialog({ open, onOpenChange }: RegistrationDialogPro
                 className="font-mono"
               />
               <p className="text-xs text-gray-500">
-                Tiap gelang terikat satu tiket — ganti ticket/varian di daftar
+                {pendingUnitIndex >= 0
+                  ? `Tap berikutnya → ${bundleUnits[pendingUnitIndex].ticket_name} · ${
+                      bundleUnits[pendingUnitIndex].member_labels[
+                        bundleUnits[pendingUnitIndex].band_uids.length
+                      ]
+                    }`
+                  : "Tiap gelang terikat satu tiket — ganti ticket/varian di daftar"}
               </p>
               {!optionsQuery.isLoading && options.length === 0 ? (
                 <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
@@ -238,9 +327,62 @@ export function RegistrationDialog({ open, onOpenChange }: RegistrationDialogPro
                   Master Ticket dulu.
                 </p>
               ) : null}
+              {bundleOptions.length > 0 ? (
+                <Select value="" onValueChange={addBundleUnit}>
+                  <SelectTrigger className="h-8 w-full">
+                    <SelectValue placeholder="+ Tambah unit paket…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {bundleOptions.map((option) => (
+                      <SelectItem key={option.variant_id} value={option.variant_id}>
+                        {option.ticket_name} ({option.members_per_unit} gelang)
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : null}
             </div>
 
             <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
+              {bundleUnits.map((unit, unitIndex) => (
+                <div
+                  key={unit.key}
+                  className={`rounded-lg border px-3 py-2 ${
+                    unitIndex === pendingUnitIndex
+                      ? "border-purple-300 bg-purple-50/50"
+                      : "border-gray-200/70"
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="min-w-0 flex-1 truncate text-xs font-medium text-purple-700">
+                      Paket: {unit.ticket_name} ({unit.band_uids.length}/
+                      {unit.member_labels.length} gelang)
+                    </span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => removeBundleUnit(unit.key)}
+                      className="h-8 w-8 p-0 text-gray-400 hover:bg-red-50 hover:text-red-600"
+                    >
+                      <TrashIcon className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <ul className="mt-1 space-y-0.5">
+                    {unit.member_labels.map((label, mi) => (
+                      <li
+                        key={`${unit.key}-${mi}`}
+                        className="flex items-center justify-between gap-2 text-xs"
+                      >
+                        <span className="text-gray-500">{label}</span>
+                        <span className="font-mono text-gray-700">
+                          {unit.band_uids[mi] ?? "— tap gelang —"}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
               {bands.map((band, index) => (
                 <div
                   key={band.nfc_uid}
@@ -257,7 +399,7 @@ export function RegistrationDialog({ open, onOpenChange }: RegistrationDialogPro
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {options.map((option) => (
+                      {singleOptions.map((option) => (
                         <SelectItem key={option.variant_id} value={option.variant_id}>
                           {option.ticket_name} — {option.variant_name}
                         </SelectItem>
@@ -275,15 +417,15 @@ export function RegistrationDialog({ open, onOpenChange }: RegistrationDialogPro
                   </Button>
                 </div>
               ))}
-              {bands.length === 0 ? (
+              {bands.length === 0 && bundleUnits.length === 0 ? (
                 <p className="rounded-lg border border-dashed border-gray-300 px-3 py-6 text-center text-xs text-gray-400">
                   Belum ada gelang di-tap
                 </p>
               ) : null}
             </div>
-            {bands.length > 0 ? (
+            {allUids.length > 0 ? (
               <Badge className="border-0 bg-pink-100 font-normal text-pink-700">
-                {bands.length} gelang: {typeCounts}
+                {allUids.length} gelang: {typeCounts}
               </Badge>
             ) : null}
           </div>

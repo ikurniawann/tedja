@@ -12,6 +12,7 @@ import {
   fetchLoketOptions,
   fetchProductDetail,
   fetchProducts,
+  saveBundleItems,
   saveChannelPrices,
   toggleProductChannel,
   updateProduct,
@@ -153,6 +154,19 @@ export const useSaveChannelPrices = (onSuccess?: () => void) =>
       };
     }) => saveChannelPrices(id, values),
     "Harga kanal tersimpan",
+    onSuccess
+  );
+
+export const useSaveBundleItems = (onSuccess?: () => void) =>
+  useProductMutation(
+    ({
+      id,
+      values,
+    }: {
+      id: string;
+      values: { items: { component_variant_id: string; qty: number }[] };
+    }) => saveBundleItems(id, values),
+    "Komposisi paket tersimpan",
     onSuccess
   );
 

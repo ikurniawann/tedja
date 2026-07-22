@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { successResponse } from "@/lib/api/auth";
 import { query, queryOne, withTransaction } from "@/lib/db";
+import {
+  bundleCompositionIssue,
+  execFromClient,
+  loadBundleComposition,
+} from "@/lib/ticketing/bundle-server";
 import { RE_ENTRY_POLICIES, requireTicketingContext } from "@/lib/ticketing/server";
 
 interface ProductRow {
@@ -11,6 +16,7 @@ interface ProductRow {
   category_id: string | null;
   category_name: string | null;
   status: "draft" | "active";
+  product_kind: "single" | "bundle";
   base_price: string;
   thumbnail_url: string | null;
   description: string | null;
@@ -31,8 +37,8 @@ export async function GET(
     const { id } = await params;
     const product = await queryOne<ProductRow>(
       `SELECT tp.id, tp.code, tp.name, tp.category_id, c.name AS category_name,
-              tp.status, tp.base_price, tp.thumbnail_url, tp.description,
-              tp.re_entry_policy, tp.created_at, tp.updated_at
+              tp.status, tp.product_kind, tp.base_price, tp.thumbnail_url,
+              tp.description, tp.re_entry_policy, tp.created_at, tp.updated_at
        FROM ticketing.ticket_products tp
        LEFT JOIN ticketing.ticket_categories c ON c.id = tp.category_id
        WHERE tp.id = $1 AND tp.branch_id = $2 AND tp.company_id = $3`,
@@ -44,6 +50,27 @@ export async function GET(
         { status: 404 }
       );
     }
+
+    // Komposisi paket (kosong utk produk satuan) — komponen + status
+    // kelayakannya, supaya editor bisa menampilkan peringatan
+    const bundleItems =
+      product.product_kind === "bundle"
+        ? await query(
+            `SELECT bi.id, bi.component_variant_id, bi.qty, bi.sort_order,
+                    tp.id AS component_product_id, tp.code AS component_code,
+                    tp.name AS product_name, pv.name AS variant_name,
+                    tp.status AS component_status,
+                    pv.is_active AS variant_is_active,
+                    pv.price_regular, pv.price_high
+             FROM ticketing.ticket_bundle_items bi
+             JOIN ticketing.ticket_product_variants pv
+               ON pv.id = bi.component_variant_id
+             JOIN ticketing.ticket_products tp ON tp.id = pv.ticket_product_id
+             WHERE bi.bundle_product_id = $1
+             ORDER BY bi.sort_order, bi.created_at`,
+            [id]
+          )
+        : [];
 
     const [variants, dates, channels] = await Promise.all([
       query(
@@ -81,6 +108,12 @@ export async function GET(
       })),
       dates,
       channels,
+      bundle_items: bundleItems.map((row) => ({
+        ...row,
+        price_regular:
+          row.price_regular === null ? null : Number(row.price_regular),
+        price_high: row.price_high === null ? null : Number(row.price_high),
+      })),
     });
   } catch (err) {
     console.error("[ticketing] product detail error:", err);
@@ -134,8 +167,11 @@ export async function PATCH(
     const body = parsed.data;
 
     await withTransaction(async (client) => {
-      const existing = await client.query<{ id: string }>(
-        `SELECT id FROM ticketing.ticket_products
+      const existing = await client.query<{
+        id: string;
+        product_kind: "single" | "bundle";
+      }>(
+        `SELECT id, product_kind FROM ticketing.ticket_products
          WHERE id = $1 AND branch_id = $2 AND company_id = $3
          FOR UPDATE`,
         [id, ctx.branchId, ctx.companyId]
@@ -144,6 +180,23 @@ export async function PATCH(
         throw Object.assign(new Error("Ticket tidak ditemukan"), {
           statusCode: 404,
         });
+      }
+
+      // Paket hanya boleh naik Active bila komposisinya layak jual
+      // (ada isi, semua komponen tiket satuan Active ber-varian aktif)
+      if (body.status === "active" && existing.rows[0].product_kind === "bundle") {
+        const composition = await loadBundleComposition(execFromClient(client), {
+          companyId: ctx.companyId,
+          branchId: ctx.branchId,
+          bundleProductId: id,
+        });
+        const issue = bundleCompositionIssue(composition);
+        if (issue) {
+          throw Object.assign(
+            new Error(`Paket belum bisa diaktifkan: ${issue}`),
+            { statusCode: 400 }
+          );
+        }
       }
 
       let categoryId = body.category_id;

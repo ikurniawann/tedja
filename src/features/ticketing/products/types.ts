@@ -2,6 +2,7 @@ import type { ReEntryPolicy } from "../masters/types";
 
 export type TicketStatus = "draft" | "active";
 export type ProductDateKind = "high-season" | "blok-online";
+export type TicketProductKind = "single" | "bundle";
 
 export interface TicketCategory {
   id: string;
@@ -14,6 +15,7 @@ export interface TicketProductListItem {
   name: string;
   category_name: string | null;
   status: TicketStatus;
+  product_kind: TicketProductKind;
   base_price: number;
   thumbnail_url: string | null;
   variant_count: number;
@@ -48,6 +50,22 @@ export interface TicketProductChannel {
   is_distributed: boolean;
 }
 
+/** Fase P — satu baris komposisi paket (varian komponen × qty). */
+export interface TicketBundleItem {
+  id: string;
+  component_variant_id: string;
+  qty: number;
+  sort_order: number;
+  component_product_id: string;
+  component_code: string;
+  product_name: string;
+  variant_name: string;
+  component_status: TicketStatus;
+  variant_is_active: boolean;
+  price_regular: number | null;
+  price_high: number | null;
+}
+
 export interface TicketProductDetail {
   product: {
     id: string;
@@ -56,6 +74,7 @@ export interface TicketProductDetail {
     category_id: string | null;
     category_name: string | null;
     status: TicketStatus;
+    product_kind: TicketProductKind;
     base_price: number;
     thumbnail_url: string | null;
     description: string | null;
@@ -66,10 +85,12 @@ export interface TicketProductDetail {
   variants: TicketVariant[];
   dates: TicketProductDate[];
   channels: TicketProductChannel[];
+  bundle_items: TicketBundleItem[];
 }
 
 export interface CreateTicketValues {
   name: string;
+  product_kind?: TicketProductKind;
   category_id?: string | null;
   category_name?: string | null;
   status?: TicketStatus;
@@ -122,6 +143,7 @@ export interface ChannelManagerItem {
   code: string;
   name: string;
   status: TicketStatus;
+  product_kind: TicketProductKind;
   thumbnail_url: string | null;
   variants: {
     id: string;
@@ -138,6 +160,11 @@ export interface LoketOption {
   ticket_product_id: string;
   ticket_code: string;
   ticket_name: string;
+  product_kind: TicketProductKind;
   price_regular: number | null;
   price_high: number | null;
+  /** Fase P — komposisi paket (kosong utk tiket satuan). */
+  members: { component_variant_id: string; qty: number; label: string }[];
+  /** Jumlah gelang yang dibutuhkan per 1 unit paket (0 utk satuan). */
+  members_per_unit: number;
 }

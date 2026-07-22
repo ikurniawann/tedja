@@ -11,6 +11,7 @@ interface ProductListRow {
   name: string;
   category_name: string | null;
   status: "draft" | "active";
+  product_kind: "single" | "bundle";
   base_price: string;
   thumbnail_url: string | null;
   variant_count: string;
@@ -34,7 +35,7 @@ export async function GET(request: NextRequest) {
 
     const rows = await query<ProductListRow>(
       `SELECT tp.id, tp.code, tp.name, c.name AS category_name, tp.status,
-              tp.base_price, tp.thumbnail_url, tp.updated_at,
+              tp.product_kind, tp.base_price, tp.thumbnail_url, tp.updated_at,
               (SELECT COUNT(*) FROM ticketing.ticket_product_variants pv
                WHERE pv.ticket_product_id = tp.id AND pv.is_active) AS variant_count,
               (SELECT array_agg(ch.code) FROM ticketing.ticket_product_channels pc
@@ -66,6 +67,9 @@ export async function GET(request: NextRequest) {
 
 const createProductSchema = z.object({
   name: z.string().trim().min(1).max(150),
+  // satuan (Adult/Child) atau paket bundling (satu varian "Paket" +
+  // komposisi diatur setelah dibuat) — Fase P
+  product_kind: z.enum(["single", "bundle"]).default("single"),
   // kategori: pilih existing ATAU nama baru (auto-add)
   category_id: z.string().uuid().optional().nullable(),
   category_name: z.string().trim().max(100).optional().nullable(),
@@ -93,6 +97,17 @@ export async function POST(request: NextRequest) {
       );
     }
     const body = parsed.data;
+
+    // Paket baru wajib Draft: belum ada komposisi, belum boleh dijual
+    if (body.product_kind === "bundle" && body.status === "active") {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Paket baru wajib berstatus Draft — lengkapi komposisi dulu",
+        },
+        { status: 400 }
+      );
+    }
 
     const result = await withTransaction(async (client) => {
       // Default venue utk kebijakan re-entry ticket baru
@@ -146,8 +161,8 @@ export async function POST(request: NextRequest) {
       const productResult = await client.query<{ id: string }>(
         `INSERT INTO ticketing.ticket_products
            (company_id, branch_id, code, name, category_id, status,
-            base_price, description, re_entry_policy, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            product_kind, base_price, description, re_entry_policy, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
          RETURNING id`,
         [
           ctx.companyId,
@@ -156,6 +171,7 @@ export async function POST(request: NextRequest) {
           body.name,
           categoryId,
           body.status,
+          body.product_kind,
           body.base_price,
           body.description || null,
           reEntry,
@@ -164,15 +180,25 @@ export async function POST(request: NextRequest) {
       );
       const productId = productResult.rows[0].id;
 
-      // Varian default Adult/Child (harga kosong = wajib dilengkapi)
-      await client.query(
-        `INSERT INTO ticketing.ticket_product_variants
-           (company_id, branch_id, ticket_product_id, code, name, sort_order)
-         VALUES
-           ($1, $2, $3, 'adult', 'Adult', 10),
-           ($1, $2, $3, 'child', 'Child', 20)`,
-        [ctx.companyId, ctx.branchId, productId]
-      );
+      // Varian default (harga kosong = wajib dilengkapi sebelum jual):
+      // satuan → Adult/Child; paket → SATU varian "Paket" (harga paket)
+      if (body.product_kind === "bundle") {
+        await client.query(
+          `INSERT INTO ticketing.ticket_product_variants
+             (company_id, branch_id, ticket_product_id, code, name, sort_order)
+           VALUES ($1, $2, $3, 'paket', 'Paket', 10)`,
+          [ctx.companyId, ctx.branchId, productId]
+        );
+      } else {
+        await client.query(
+          `INSERT INTO ticketing.ticket_product_variants
+             (company_id, branch_id, ticket_product_id, code, name, sort_order)
+           VALUES
+             ($1, $2, $3, 'adult', 'Adult', 10),
+             ($1, $2, $3, 'child', 'Child', 20)`,
+          [ctx.companyId, ctx.branchId, productId]
+        );
+      }
 
       // Pastikan kanal venue ada, lalu distribusi default
       await client.query(

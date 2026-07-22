@@ -147,6 +147,9 @@ export async function POST(request: NextRequest) {
         credit_limit: string | null;
         channel_id: string | null;
         visit_status: string;
+        allocated_price: string | null;
+        member_label: string | null;
+        bundle_product_id: string | null;
       }>(
         `SELECT vb.id AS visit_band_id, vb.visit_id, vb.variant_id,
                 vb.guest_name,
@@ -154,7 +157,8 @@ export async function POST(request: NextRequest) {
                 tp.name || ' — ' || pv.name AS ticket_type_name,
                 tp.re_entry_policy, vb.entered_at,
                 v.contact_name, v.payment_mode, v.credit_limit, v.channel_id,
-                v.status AS visit_status
+                v.status AS visit_status,
+                vb.allocated_price, vb.member_label, vb.bundle_product_id
          FROM ticketing.ticket_visit_bands vb
          JOIN ticketing.ticket_visits v ON v.id = vb.visit_id
          JOIN ticketing.ticket_product_variants pv ON pv.id = vb.variant_id
@@ -271,35 +275,66 @@ export async function POST(request: NextRequest) {
         };
       }
       const visitDate = todayJakartaDate();
-      const resolved = await resolveVariantPriceOnDate(client, {
-        companyId: ctx.companyId,
-        branchId: ctx.branchId,
-        variantId: vb.variant_id,
-        channelId: vb.channel_id,
-        visitDate,
-      });
-      if (!resolved.ok) {
-        await logGateEvent(client, ctx, {
-          bandUid: uid,
-          bandId: band.id,
-          visitId: vb.visit_id,
-          gateLabel,
-          result: "ditolak-harga-belum-diisi",
+
+      // Fase P — anggota paket walk-in: harga alokasi sudah di-snapshot
+      // saat registrasi; charge langsung TANPA resolve matriks (master
+      // berubah ≠ tagihan berubah). Selain itu → resolve seperti biasa.
+      let chargeAmount: number;
+      let chargeDescription: string;
+      let priceContext: Record<string, unknown>;
+      if (vb.allocated_price !== null) {
+        chargeAmount = Number(vb.allocated_price);
+        chargeDescription =
+          `Tiket ${vb.member_label ?? vb.ticket_type_name} ` +
+          `(alokasi paket, ${visitDate})`;
+        priceContext = {
+          ticket_product_id: vb.ticket_product_id,
+          variant_id: vb.variant_id,
+          bundle_product_id: vb.bundle_product_id,
+          allocated: true,
+          channel_id: vb.channel_id,
+          visit_date: visitDate,
+        };
+      } else {
+        const resolved = await resolveVariantPriceOnDate(client, {
+          companyId: ctx.companyId,
+          branchId: ctx.branchId,
+          variantId: vb.variant_id,
+          channelId: vb.channel_id,
+          visitDate,
         });
-        return {
-          result: "ditolak-harga-belum-diisi",
-          ok: false,
-          reason:
-            resolved.reason === "tanggal-diblok"
-              ? "Tanggal ini diblok untuk kanal kunjungan — hubungi supervisor"
-              : `Harga ${vb.ticket_type_name} belum diisi — lengkapi di Master Ticket`,
-          contact_name: vb.contact_name,
-          ticket_type_name: vb.ticket_type_name,
+        if (!resolved.ok) {
+          await logGateEvent(client, ctx, {
+            bandUid: uid,
+            bandId: band.id,
+            visitId: vb.visit_id,
+            gateLabel,
+            result: "ditolak-harga-belum-diisi",
+          });
+          return {
+            result: "ditolak-harga-belum-diisi",
+            ok: false,
+            reason:
+              resolved.reason === "tanggal-diblok"
+                ? "Tanggal ini diblok untuk kanal kunjungan — hubungi supervisor"
+                : `Harga ${vb.ticket_type_name} belum diisi — lengkapi di Master Ticket`,
+            contact_name: vb.contact_name,
+            ticket_type_name: vb.ticket_type_name,
+          };
+        }
+        chargeAmount = resolved.price;
+        chargeDescription = `Tiket ${vb.ticket_type_name} (${resolved.seasonKind}, ${visitDate})`;
+        priceContext = {
+          ticket_product_id: vb.ticket_product_id,
+          variant_id: vb.variant_id,
+          season_kind: resolved.seasonKind,
+          channel_id: vb.channel_id,
+          visit_date: visitDate,
         };
       }
 
       // Harga 0 = tiket gratis/comp yang sah — masuk tanpa baris ledger
-      if (resolved.price === 0) {
+      if (chargeAmount === 0) {
         await client.query(
           `UPDATE ticketing.ticket_visit_bands
            SET entered_at = now(), updated_at = now() WHERE id = $1`,
@@ -339,7 +374,7 @@ export async function POST(request: NextRequest) {
       const guard = canCharge({
         paymentMode: vb.payment_mode,
         summary,
-        amount: resolved.price,
+        amount: chargeAmount,
         creditLimit: vb.credit_limit === null ? null : Number(vb.credit_limit),
       });
       if (!guard.ok) {
@@ -373,15 +408,9 @@ export async function POST(request: NextRequest) {
           ctx.branchId,
           vb.visit_id,
           band.id,
-          `Tiket ${vb.ticket_type_name} (${resolved.seasonKind}, ${visitDate})`,
-          resolved.price,
-          JSON.stringify({
-            ticket_product_id: vb.ticket_product_id,
-            variant_id: vb.variant_id,
-            season_kind: resolved.seasonKind,
-            channel_id: vb.channel_id,
-            visit_date: visitDate,
-          }),
+          chargeDescription,
+          chargeAmount,
+          JSON.stringify(priceContext),
           ctx.user.id,
         ]
       );
@@ -404,7 +433,7 @@ export async function POST(request: NextRequest) {
         ticket_type_name: vb.ticket_type_name,
         guest_name: vb.guest_name,
         band_label: band.label,
-        charged_amount: resolved.price,
+        charged_amount: chargeAmount,
       };
     });
 

@@ -156,3 +156,14 @@ export const fetchLoketOptions = () =>
     "/api/ticketing/products/loket-options",
     "Gagal memuat opsi ticket"
   );
+
+export const saveBundleItems = (
+  id: string,
+  values: { items: { component_variant_id: string; qty: number }[] }
+) =>
+  sendJson<{ id: string }>(
+    `/api/ticketing/products/${id}/bundle-items`,
+    "PUT",
+    values,
+    "Gagal menyimpan komposisi paket"
+  );

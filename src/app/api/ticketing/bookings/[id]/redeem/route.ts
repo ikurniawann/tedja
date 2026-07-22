@@ -140,10 +140,16 @@ export async function POST(
         variant_name: string;
         unit_price: string;
         season_kind: string;
+        bundle_product_id: string | null;
+        bundle_unit_no: number | null;
+        allocated_price: string | null;
+        member_label: string | null;
       }>(
         `SELECT g.id, g.guest_name, g.position, g.variant_id,
                 i.ticket_product_id, i.product_name, i.variant_name,
-                i.unit_price, i.season_kind
+                i.unit_price, i.season_kind,
+                g.bundle_product_id, g.bundle_unit_no, g.allocated_price,
+                g.member_label
          FROM ticketing.ticket_booking_guests g
          JOIN ticketing.ticket_booking_items i ON i.id = g.booking_item_id
          WHERE g.booking_id = $1
@@ -242,9 +248,20 @@ export async function POST(
       // Ledger wajib net-0: Σ debit tiket harus = total booking (= kredit
       // pembayaran). Divergensi = data booking korup — gagal keras, jangan
       // tulis ledger pincang.
+      // Harga per orang: guest paket memakai allocated_price (prorata
+      // Fase P); guest satuan memakai unit_price item — dua-duanya
+      // snapshot saat booking dibuat
+      const guestPrice = (guest: {
+        unit_price: string;
+        allocated_price: string | null;
+      }) =>
+        guest.allocated_price === null
+          ? Number(guest.unit_price)
+          : Number(guest.allocated_price);
+
       const total = Number(booking.total);
       const debitSum = body.bands.reduce(
-        (sum, b) => sum + Number(guestById.get(b.guest_id)!.unit_price),
+        (sum, b) => sum + guestPrice(guestById.get(b.guest_id)!),
         0
       );
       if (Math.abs(debitSum - total) > 0.01) {
@@ -263,8 +280,9 @@ export async function POST(
 
         await client.query(
           `INSERT INTO ticketing.ticket_visit_bands
-             (company_id, branch_id, visit_id, band_id, variant_id, guest_name)
-           VALUES ($1, $2, $3, $4, $5, $6)`,
+             (company_id, branch_id, visit_id, band_id, variant_id, guest_name,
+              bundle_product_id, bundle_unit_no, allocated_price, member_label)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
           [
             ctx.companyId,
             ctx.branchId,
@@ -272,6 +290,10 @@ export async function POST(
             band.id,
             item.variant_id,
             item.guest_name,
+            item.bundle_product_id,
+            item.bundle_unit_no,
+            item.allocated_price,
+            item.member_label,
           ]
         );
         await client.query(
@@ -282,8 +304,10 @@ export async function POST(
         );
 
         // amount > 0 saja (constraint ledger); tiket gratis = tanpa baris
-        const unitPrice = Number(item.unit_price);
+        const unitPrice = guestPrice(item);
         if (unitPrice > 0) {
+          const label =
+            item.member_label ?? `${item.product_name} — ${item.variant_name}`;
           await client.query(
             `INSERT INTO ticketing.ticket_visit_charges
                (company_id, branch_id, visit_id, band_id, charge_type, direction,
@@ -294,7 +318,7 @@ export async function POST(
               ctx.branchId,
               visitId,
               band.id,
-              `Tiket ${item.product_name} — ${item.variant_name} ` +
+              `Tiket ${label} ` +
                 `(${item.season_kind}, ${booking.visit_date}) — ` +
                 `booking ${booking.booking_code}, a.n. ${item.guest_name}`,
               unitPrice,
@@ -303,6 +327,7 @@ export async function POST(
                 booking_guest_id: input.guest_id,
                 ticket_product_id: item.ticket_product_id,
                 variant_id: item.variant_id,
+                bundle_product_id: item.bundle_product_id,
                 season_kind: item.season_kind,
                 channel_id: channelId,
                 visit_date: booking.visit_date,

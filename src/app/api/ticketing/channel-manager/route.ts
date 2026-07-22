@@ -31,6 +31,7 @@ interface ProductRow {
   code: string;
   name: string;
   status: "draft" | "active";
+  product_kind: "single" | "bundle";
   thumbnail_url: string | null;
 }
 
@@ -55,7 +56,7 @@ export async function GET() {
     const [products, variants, channels, distributions, overrides] =
       await Promise.all([
         query<ProductRow>(
-          `SELECT id, code, name, status, thumbnail_url
+          `SELECT id, code, name, status, product_kind, thumbnail_url
            FROM ticketing.ticket_products
            WHERE branch_id = $1 AND company_id = $2
            ORDER BY created_at DESC`,
@@ -106,6 +107,7 @@ export async function GET() {
         code: product.code,
         name: product.name,
         status: product.status,
+        product_kind: product.product_kind,
         thumbnail_url: product.thumbnail_url,
         variants: productVariants.map((v) => ({
           id: v.id,

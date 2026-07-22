@@ -30,11 +30,19 @@ const formatDateLong = (iso: string) =>
     year: "numeric",
   });
 
+interface CatalogBundleMember {
+  component_variant_id: string;
+  member_label: string;
+  weight_price: number | null;
+}
+
 interface CatalogVariant {
   variant_id: string;
   variant_name: string;
   price: number;
   season_kind: "regular" | "high";
+  /** Fase P — paket: anggota per 1 unit (1 entri = 1 orang/gelang). */
+  members?: CatalogBundleMember[];
 }
 
 interface CatalogProduct {
@@ -43,8 +51,13 @@ interface CatalogProduct {
   name: string;
   description: string | null;
   thumbnail_url: string | null;
+  product_kind: "single" | "bundle";
   variants: CatalogVariant[];
 }
+
+/** Jumlah ORANG per 1 qty varian (paket = jumlah anggota; satuan = 1). */
+const personsPerUnit = (variant: CatalogVariant) =>
+  variant.members?.length || 1;
 
 type Step = "tanggal" | "tiket" | "pemesan" | "ringkasan";
 
@@ -106,11 +119,16 @@ export function BookingWizard({ slug }: BookingWizardProps) {
         .filter((x): x is NonNullable<typeof x> => x !== null),
     [qty, variantIndex]
   );
-  const totalQty = cart.reduce((sum, c) => sum + c.qty, 0);
+  // Kuota & nama dihitung per ORANG — 1 unit paket = beberapa orang
+  const totalQty = cart.reduce(
+    (sum, c) => sum + c.qty * personsPerUnit(c.variant),
+    0
+  );
   const totalAmount = cart.reduce((sum, c) => sum + c.qty * c.variant.price, 0);
 
-  // Unit tiket ter-flatten urut keranjang — posisi global 1..N utk
-  // penomoran default nama anggota (posisi 1 = pemesan)
+  // Unit ORANG ter-flatten urut keranjang (paket meledak per anggota) —
+  // posisi global 1..N utk penomoran default nama anggota (1 = pemesan);
+  // urutan HARUS sama dengan flatten server (item → qty → anggota)
   const units = useMemo(() => {
     const list: {
       variantId: string;
@@ -120,14 +138,28 @@ export function BookingWizard({ slug }: BookingWizardProps) {
     }[] = [];
     let position = 0;
     for (const c of cart) {
+      const members = c.variant.members;
+      let flatIndex = 0;
       for (let k = 0; k < c.qty; k++) {
-        position += 1;
-        list.push({
-          variantId: c.variant.variant_id,
-          unitIndex: k,
-          position,
-          label: `${c.product.name} — ${c.variant.variant_name}`,
-        });
+        if (members && members.length > 0) {
+          for (const member of members) {
+            position += 1;
+            list.push({
+              variantId: c.variant.variant_id,
+              unitIndex: flatIndex++,
+              position,
+              label: `${c.product.name} · ${member.member_label}`,
+            });
+          }
+        } else {
+          position += 1;
+          list.push({
+            variantId: c.variant.variant_id,
+            unitIndex: flatIndex++,
+            position,
+            label: `${c.product.name} — ${c.variant.variant_name}`,
+          });
+        }
       }
     }
     return list;
@@ -182,10 +214,15 @@ export function BookingWizard({ slug }: BookingWizardProps) {
   const changeQty = (variantId: string, delta: number) => {
     setQty((prev) => {
       const next = Math.max(0, (prev[variantId] ?? 0) + delta);
+      // Batas per ORANG: paket menyumbang anggota × qty
+      const persons = (id: string, n: number) => {
+        const known = variantIndex.get(id);
+        return known ? n * personsPerUnit(known.variant) : n;
+      };
       const others = Object.entries(prev)
         .filter(([id]) => id !== variantId)
-        .reduce((sum, [, n]) => sum + n, 0);
-      if (others + next > MAX_QTY_PER_BOOKING) return prev;
+        .reduce((sum, [id, n]) => sum + persons(id, n), 0);
+      if (others + persons(variantId, next) > MAX_QTY_PER_BOOKING) return prev;
       return { ...prev, [variantId]: next };
     });
   };
@@ -208,10 +245,14 @@ export function BookingWizard({ slug }: BookingWizardProps) {
           items: cart.map((c) => ({
             variant_id: c.variant.variant_id,
             qty: c.qty,
-            guest_names: Array.from({ length: c.qty }, (_, k) => {
-              const name = guestNames[c.variant.variant_id]?.[k]?.trim();
-              return name || null; // kosong → default server
-            }),
+            // nama per ORANG (paket = qty × anggota), urutan = flatten server
+            guest_names: Array.from(
+              { length: c.qty * personsPerUnit(c.variant) },
+              (_, k) => {
+                const name = guestNames[c.variant.variant_id]?.[k]?.trim();
+                return name || null; // kosong → default server
+              }
+            ),
           })),
         }),
       });
@@ -342,7 +383,13 @@ export function BookingWizard({ slug }: BookingWizardProps) {
                         >
                           <div>
                             <p className="text-sm font-medium text-gray-800">
-                              {variant.variant_name}
+                              {product.product_kind === "bundle" ? (
+                                <>
+                                  Paket ({variant.members?.length ?? 0} orang)
+                                </>
+                              ) : (
+                                variant.variant_name
+                              )}
                             </p>
                             <p className="text-sm text-gray-600">
                               {formatRp(variant.price)}
@@ -352,6 +399,24 @@ export function BookingWizard({ slug }: BookingWizardProps) {
                                 </span>
                               )}
                             </p>
+                            {product.product_kind === "bundle" &&
+                              variant.members ? (
+                              <p className="mt-0.5 text-[11px] leading-snug text-gray-400">
+                                Termasuk:{" "}
+                                {Object.entries(
+                                  variant.members.reduce<Record<string, number>>(
+                                    (acc, m) => ({
+                                      ...acc,
+                                      [m.member_label]:
+                                        (acc[m.member_label] ?? 0) + 1,
+                                    }),
+                                    {}
+                                  )
+                                )
+                                  .map(([label, n]) => `${n}× ${label}`)
+                                  .join(", ")}
+                              </p>
+                            ) : null}
                           </div>
                           <div className="flex items-center gap-2.5">
                             <button
@@ -370,7 +435,10 @@ export function BookingWizard({ slug }: BookingWizardProps) {
                               type="button"
                               aria-label={`Tambah ${variant.variant_name}`}
                               onClick={() => changeQty(variant.variant_id, 1)}
-                              disabled={totalQty >= MAX_QTY_PER_BOOKING}
+                              disabled={
+                                totalQty + personsPerUnit(variant) >
+                                MAX_QTY_PER_BOOKING
+                              }
                               className="rounded-full border border-emerald-500 bg-emerald-500 p-1.5 text-white disabled:opacity-30"
                             >
                               <Plus className="h-4 w-4" />

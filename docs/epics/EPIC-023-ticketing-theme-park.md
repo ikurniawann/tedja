@@ -441,6 +441,21 @@ set webhook URL di dashboard Xendit →
 **Non-MVP (ditunda):** kuota harian, refund via API Xendit, email,
 multi-hari/paket, pembatalan mandiri oleh pemesan.
 
+### Fase P — Ticket Bundling (Paket)
+- Paket = `ticket_product` ber-`product_kind='bundle'` dgn satu varian
+  "Paket" (harga Regular/High + override kanal + kalender ikut infra
+  existing); komposisi `ticket_bundle_items` (varian komponen SATUAN ×
+  qty, paket-dalam-paket ditolak, FK RESTRICT).
+- Saat dijual, paket meledak per ORANG: gelang/guest menunjuk varian
+  KOMPONEN (re-entry ikut tiket komponen) + `allocated_price` prorata
+  harga paket (kumulatif 2dp, Σ per unit = harga paket → net-0 redeem
+  aman; bobot = harga satuan komponen, bolong → bagi rata).
+- Loket: tambah unit paket → tap N gelang urut anggota; gate tap
+  men-charge `allocated_price` snapshot tanpa resolve matriks.
+- Website: paket tampil di katalog (blok-online komponen ikut memblok),
+  guest per anggota ber-nama; redeem pakai `allocated_price` guest.
+- Scope: bundle SESAMA tiket saja; tiket+F&B (voucher) = epic terpisah.
+
 ### Fase E — Laporan & Ops
 - Laporan traffic, revenue tiket vs F&B per kanal/musim, rekap gelang,
   tab menggantung; sambungan ke closing report shift.
@@ -772,3 +787,35 @@ multi-hari/paket, pembatalan mandiri oleh pemesan.
   backfill terverifikasi (BK-X5QJHG), smoke live end-to-end: create
   booking rombongan 3 nama parsial → status guests benar → webhook
   PAID → terbayar (BK-VSPEZN siap QA redeem hari-H).
+- 2026-07-22 — **Fase P SELESAI** (Ticket Bundling / Paket, status
+  `coding`). Delta `20260722180000` applied: `product_kind`
+  (single/bundle) di `ticket_products`, tabel `ticket_bundle_items`
+  (komponen = varian tiket satuan × qty, UNIQUE per paket, FK
+  RESTRICT), kolom jejak paket di `ticket_visit_bands` +
+  `ticket_booking_guests` (`bundle_product_id`, `bundle_unit_no`,
+  `allocated_price`, `member_label`). Lib murni `bundle.ts`:
+  `expandBundleMembers` + `allocateBundlePrice` (prorata pembulatan
+  KUMULATIF 2dp — Σ per unit selalu tepat = harga paket, tak ada bagian
+  negatif; bobot bolong → bagi rata; 8 unit test). Master Ticket: buat
+  ticket ber-jenis (paket → satu varian "Paket", wajib Draft), tab
+  Komposisi (replace-all `PUT bundle-items`, kandidat = varian satuan
+  Active, pembanding harga satuan vs paket), guard aktivasi
+  (komposisi kosong/komponen nonaktif → tolak); Channel Manager &
+  katalog otomatis ikut karena paket = produk. Loket: opsi paket ber-
+  `members_per_unit`, dialog registrasi "+ Tambah unit paket" (tap
+  mengisi slot anggota berurutan), server memetakan gelang → varian
+  komponen + `allocated_price` snapshot saat REGISTRASI; gate tap
+  men-charge alokasi tanpa resolve matriks (branch `allocated_price
+  IS NOT NULL`). Website: katalog memuat `members` per varian paket
+  (bobot override-aware), blok-online KOMPONEN ikut memblok paket,
+  kuota & nama rombongan dihitung per ORANG (1 unit paket = N nama),
+  create meledakkan guest per anggota ber-alokasi; redeem D4 memakai
+  `allocated_price` guest (fallback `unit_price`) — asersi net-0 tetap.
+  Keputusan desain: bundle sesama tiket saja (tiket+F&B ditunda,
+  bentuknya nanti voucher entitlement); harga paket fixed manual, bukan
+  diskon terhitung; musim alokasi ikut kalender PAKET. Verifikasi: 67
+  unit test ticketing lulus (742+ total), tsc/eslint bersih, build
+  lulus, migrasi applied, PM2 restart, smoke katalog publik OK
+  (`product_kind` tampil, produk lama utuh). Belum ada data paket di
+  dev — QA owner: buat paket via Master Ticket → Komposisi → aktifkan →
+  distribusi kanal → uji loket & booking.
