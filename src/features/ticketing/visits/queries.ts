@@ -6,6 +6,7 @@ import {
   fetchTabStats,
   fetchVisitDetail,
   fetchVisits,
+  markBandLost,
   registerVisit,
   settleVisit,
   topupVisit,
@@ -88,6 +89,14 @@ export const useTabStats = () =>
     queryFn: fetchTabStats,
     refetchInterval: 30_000, // tab monitor live
   });
+
+export const useMarkBandLost = (onSuccess?: () => void) =>
+  useVisitMutation(
+    ({ visitId, visitBandId }: { visitId: string; visitBandId: string }) =>
+      markBandLost(visitId, visitBandId),
+    "Gelang ditandai hilang — tagihan tetap tertagih saat settlement",
+    onSuccess
+  );
 
 export const useVoidCharge = (onSuccess?: () => void) =>
   useVisitMutation(

@@ -72,6 +72,8 @@ export interface BookingListItem {
   used_at: string | null;
   visit_id: string | null;
   refund_note: string | null;
+  /** Anomali webhook Xendit yang butuh tindak lanjut manual (null = aman). */
+  webhook_alert: string | null;
   created_at: string;
 }
 

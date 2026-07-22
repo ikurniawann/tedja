@@ -1,6 +1,6 @@
 # EPIC-023: Ticketing Theme Park — NFC Postpaid, Harga Musiman & Channel Manager
 
-status: coding
+status: ready-for-qa
 environment: dev
 retries: 0
 
@@ -71,24 +71,27 @@ merangkai daripada membangun dari nol:
    `bebas-keluar-masuk`) — masih dilema, jadi jangan di-hardcode;
    default awal ditentukan saat Fase B.
 
-## Keputusan Menunggu Owner (blocker sebelum on-progress)
+## Keputusan Menunggu Owner — SEMUA TUTUP (2026-07-22)
 
-1. **Kategori tiket**: cukup `child`/`adult`, atau + `toddler` (gratis) /
-   `senior`? Batas kategori pakai **umur** atau **tinggi badan** (praktik
-   umum theme park)?
-2. **Website booking**: bayar di muka via Xendit (rekomendasi — kanal
-   online prepaid, tap gate tidak men-charge lagi karena tiket sudah
-   lunas), atau ikut postpaid juga?
-   → **DIPUTUSKAN 2026-07-22: Xendit prepaid** (bayar di muka via
-   invoice Xendit, test mode dulu). Kuota harian TIDAK ikut MVP —
-   blok-online per tanggal (R1) jadi rem manual. Detail di
-   "Rencana Implementasi Fase D".
-3. **Kebijakan gelang hilang**: denda berapa? Tagihan tab-nya bagaimana
-   (tetap ditagih by data, gelang diblokir)? Untuk mode prepaid, sisa
-   saldo gelang hilang dikembalikan atau hangus?
-4. **Penempatan modul**: theme park = **branch/venue baru** di hierarki
-   existing (rekomendasi — tenancy `company_id`+`branch_id` langsung
-   bekerja) atau entitas terpisah?
+1. **Kategori tiket** → **DIPUTUSKAN 2026-07-22**: cukup Adult & Child,
+   PLUS opsi tiket ber-**satu varian "Umum"** yang berlaku semua umur —
+   dipilih per ticket saat pembuatan (`variant_preset` di Master Ticket).
+2. **Website booking** → **DIPUTUSKAN 2026-07-22: Xendit prepaid**
+   (bayar di muka via invoice Xendit, test mode dulu). Kuota harian
+   TIDAK ikut MVP — blok-online per tanggal (R1) jadi rem manual.
+   Detail di "Rencana Implementasi Fase D".
+3. **Kebijakan gelang hilang** → **DIPUTUSKAN 2026-07-22: TANPA denda**;
+   tagihan tetap ditagih **by data** — kasir mencari kunjungan via
+   **nama / no. WA** (pencarian loket existing), settlement rombongan
+   seperti biasa. Gelang ditandai `hilang` (diblokir di gate/kasir/
+   registrasi); ketemu lagi → aktifkan ulang dari registry setelah
+   settlement.
+4. **Penempatan modul** → **DIPUTUSKAN 2026-07-22: fleksibel** — theme
+   park boleh jadi branch existing ATAU venue baru; di venue baru hanya
+   ada theme park (wahana ticketing + F&B di dalamnya). Tenancy
+   `company_id`+`branch_id` existing sudah menutup dua-duanya — tidak
+   ada perubahan kode; setup = buat branch baru + aktifkan menu
+   Ticketing & POS di sana.
 
 ## Prinsip Desain
 
@@ -872,3 +875,34 @@ multi-hari/paket, pembatalan mandiri oleh pemesan.
   bersih, build lulus, migrasi applied, PM2 restart. QA owner: Pengaturan
   Tiket → Gelang Karyawan → Pasangkan Gelang (tap gelang tersedia + pilih
   karyawan) → tap di Gate.
+- 2026-07-22 — **Penutupan keputusan owner + task medium SELESAI**
+  (status **ready-for-qa** — sisa dev = Xendit produksi, menyusul).
+  Semua commit EPIC-022/023 di-push ke origin/development. Keputusan
+  owner ditutup: (1) gelang hilang TANPA denda, ditagih by data
+  (nama/WA); (2) kategori cukup Adult/Child + opsi varian tunggal
+  "Umum"; (3) penempatan fleksibel branch/venue baru (tenancy existing
+  cukup, nol kode). Implementasi delta `20260722210000` applied:
+  (a) **Flow gelang hilang** — endpoint
+  `POST /visits/[id]/bands/[bandId]/lost` (lock visit+band, visit_band
+  & registry → 'hilang'; gate/F&B/registrasi otomatis menolak karena
+  guard `status='aktif'`/'tersedia' existing; tagihan tetap di ledger →
+  tertagih saat settlement rombongan; TIDAK ada baris denda) + tombol
+  "Hilang" ber-konfirmasi di rincian kunjungan loket, badge merah.
+  Ketemu lagi → registry set 'tersedia' (jalur existing, setelah
+  settlement). (b) **Varian tunggal** — `variant_preset`
+  (`adult-child`/`umum`) di create product; pilihan "Umum — satu harga
+  semua umur" di dialog Buat Ticket; downstream (harga/kanal/loket/
+  gate/booking) generik, nol perubahan (paket sudah 1 varian).
+  (c) **Anomali webhook di-surface** — kolom `ticket_bookings
+  .webhook_alert` diisi saat PAID-nominal-janggal / PAID-utk-dibatalkan
+  (tetap console.error); dashboard Booking: badge "⚠ perlu perhatian"
+  di list + kotak merah di rincian + tombol "Sudah Ditindaklanjuti"
+  (PATCH `clear_webhook_alert`). Catatan: rate limiter Redis TIDAK
+  dikerjakan (kondisi multi-instance belum ada — prasyarat scale-out);
+  integration test route ber-uang tetap hutang teknis (butuh infra mock
+  auth); role kelola booking tetap super_admin (konfirmasi owner belum
+  ada). Verifikasi: 67 unit test lulus, eslint bersih, tsc bersih
+  (error pre-existing .next/purchasing tak tersentuh), build lulus,
+  migrasi applied, PM2 restart. **SISA EPIC: Xendit produksi saja** —
+  key asli + webhook URL di dashboard Xendit + matikan `XENDIT_MOCK`
+  (owner: "menyusul").

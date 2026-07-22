@@ -20,6 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  useMarkBandLost,
   useSettleVisit,
   useTopupVisit,
   useVisitDetail,
@@ -84,10 +85,12 @@ export function VisitDetailDialog({
   const [topupAmount, setTopupAmount] = useState("");
   const [topupMethod, setTopupMethod] = useState<CashMethod>("cash");
   const [settlingBand, setSettlingBand] = useState<VisitBand | null>(null);
+  const [losingBand, setLosingBand] = useState<VisitBand | null>(null);
   const [voidingCharge, setVoidingCharge] = useState<VisitCharge | null>(null);
   const [voidReason, setVoidReason] = useState("");
 
   const settleMutation = useSettleVisit(() => setSettlingBand(null));
+  const lostMutation = useMarkBandLost(() => setLosingBand(null));
   const topupMutation = useTopupVisit(() => setTopupAmount(""));
   const voidMutation = useVoidCharge(() => {
     setVoidingCharge(null);
@@ -250,7 +253,13 @@ export function VisitDetailDialog({
                     </span>
                     <span className="ml-auto flex items-center gap-2">
                       {band.status !== "aktif" ? (
-                        <Badge className="border-0 bg-gray-100 font-normal text-gray-500">
+                        <Badge
+                          className={`border-0 font-normal ${
+                            band.status === "hilang"
+                              ? "bg-red-100 text-red-700"
+                              : "bg-gray-100 text-gray-500"
+                          }`}
+                        >
                           {band.status}
                         </Badge>
                       ) : null}
@@ -263,6 +272,16 @@ export function VisitDetailDialog({
                           onClick={() => setSettlingBand(band)}
                         >
                           Settle {formatRp(bandDue.get(band.band_id) ?? 0)}
+                        </Button>
+                      ) : null}
+                      {isOpen && band.status === "aktif" ? (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 px-2 text-xs text-gray-400 hover:bg-red-50 hover:text-red-600"
+                          onClick={() => setLosingBand(band)}
+                        >
+                          Hilang
                         </Button>
                       ) : null}
                     </span>
@@ -336,6 +355,44 @@ export function VisitDetailDialog({
                 </table>
               </div>
             </div>
+
+            {/* Konfirmasi gelang hilang — keputusan owner: TANPA denda,
+                tagihan tetap ditagih by data saat settlement */}
+            {losingBand ? (
+              <div className="rounded-lg border-2 border-red-200 bg-red-50/50 p-4">
+                <p className="text-sm text-gray-700">
+                  Tandai gelang{" "}
+                  <span className="font-mono text-xs">{losingBand.nfc_uid}</span>{" "}
+                  hilang? Tanpa denda — tagihannya tetap tertagih saat
+                  settlement rombongan (cari kunjungan via nama / no. WA).
+                  Gelang langsung diblokir di gate & kasir dan tidak bisa
+                  dibatalkan; bila ketemu lagi, aktifkan ulang dari registry
+                  gelang setelah settlement.
+                </p>
+                <div className="mt-2 flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    disabled={lostMutation.isPending}
+                    onClick={() =>
+                      lostMutation.mutate({
+                        visitId: detail.visit.id,
+                        visitBandId: losingBand.id,
+                      })
+                    }
+                  >
+                    {lostMutation.isPending ? "Memproses…" : "Ya, Gelang Hilang"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setLosingBand(null)}
+                  >
+                    Batal
+                  </Button>
+                </div>
+              </div>
+            ) : null}
 
             {/* Konfirmasi void tagihan (wewenang supervisor — server menolak kasir) */}
             {voidingCharge ? (

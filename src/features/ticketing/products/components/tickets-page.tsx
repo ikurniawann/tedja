@@ -27,7 +27,7 @@ import { TableRow } from "@/components/ui/table";
 import { PurchasingListSection } from "@/modules/purchasing/components/list/PurchasingListSection";
 import { CategoryAutocomplete } from "./category-autocomplete";
 import { useCreateProduct, useProducts } from "../queries";
-import type { TicketProductKind } from "../types";
+import type { TicketProductKind, TicketVariantPreset } from "../types";
 
 const formatRp = (n: number) => `Rp${n.toLocaleString("id-ID")}`;
 
@@ -37,6 +37,8 @@ export function TicketsPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [name, setName] = useState("");
   const [kind, setKind] = useState<TicketProductKind>("single");
+  const [variantPreset, setVariantPreset] =
+    useState<TicketVariantPreset>("adult-child");
   const [categoryName, setCategoryName] = useState("");
   const [basePrice, setBasePrice] = useState("");
 
@@ -47,6 +49,7 @@ export function TicketsPage() {
     setCreateOpen(false);
     setName("");
     setKind("single");
+    setVariantPreset("adult-child");
     setCategoryName("");
     setBasePrice("");
     router.push(`/dashboard/ticketing/tickets/${result.id}`);
@@ -57,6 +60,7 @@ export function TicketsPage() {
     createMutation.mutate({
       name: name.trim(),
       product_kind: kind,
+      variant_preset: variantPreset,
       category_name: categoryName.trim() || null,
       base_price: Number(basePrice) || 0,
       status: "draft",
@@ -223,7 +227,7 @@ export function TicketsPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="single">
-                    Tiket satuan — varian Adult/Child
+                    Tiket satuan — dijual per orang
                   </SelectItem>
                   <SelectItem value="bundle">
                     Paket bundling — gabungan beberapa tiket satuan
@@ -231,6 +235,29 @@ export function TicketsPage() {
                 </SelectContent>
               </Select>
             </div>
+            {kind === "single" ? (
+              <div className="space-y-1.5">
+                <Label>Varian</Label>
+                <Select
+                  value={variantPreset}
+                  onValueChange={(v) =>
+                    setVariantPreset(v as TicketVariantPreset)
+                  }
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="adult-child">
+                      Adult & Child — harga beda per kategori
+                    </SelectItem>
+                    <SelectItem value="umum">
+                      Umum — satu harga berlaku semua umur
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : null}
             <div className="space-y-1.5">
               <Label htmlFor="ticket_name">Nama Ticket *</Label>
               <Input
@@ -265,7 +292,9 @@ export function TicketsPage() {
             <p className="text-xs text-gray-500">
               {kind === "bundle"
                 ? "Paket dibuat berstatus Draft dengan satu varian “Paket” — susun komposisi & harga paket di halaman berikutnya sebelum diaktifkan."
-                : "Ticket dibuat berstatus Draft dengan varian Adult & Child — lengkapi harga, kalender, dan kebijakan di halaman berikutnya."}
+                : variantPreset === "umum"
+                  ? "Ticket dibuat berstatus Draft dengan satu varian “Umum” (berlaku semua umur) — lengkapi harga, kalender, dan kebijakan di halaman berikutnya."
+                  : "Ticket dibuat berstatus Draft dengan varian Adult & Child — lengkapi harga, kalender, dan kebijakan di halaman berikutnya."}
             </p>
           </div>
           <DialogFooter>

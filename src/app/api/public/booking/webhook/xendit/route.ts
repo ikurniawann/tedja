@@ -86,6 +86,17 @@ export async function POST(request: NextRequest) {
             `[booking] webhook PAID nominal janggal: booking ${bookingId} ` +
               `total ${expected.total}, callback amount ${callback.amount} — diabaikan`
           );
+          // Simpan sebagai alert — tampil di dashboard Booking sampai
+          // petugas menandainya selesai (bukan cuma jejak di log server)
+          await query(
+            `UPDATE ticketing.ticket_bookings
+             SET webhook_alert = $2, updated_at = now()
+             WHERE id = $1::uuid`,
+            [
+              bookingId,
+              `Xendit melapor PAID dengan nominal Rp${callback.amount.toLocaleString("id-ID")} — kurang dari total booking Rp${Number(expected.total).toLocaleString("id-ID")}. Pembayaran TIDAK ditandai lunas; periksa dashboard Xendit.`,
+            ]
+          );
           return NextResponse.json({ success: true, ignored: true });
         }
       }
@@ -117,6 +128,15 @@ export async function POST(request: NextRequest) {
           console.error(
             `[booking] PAID diterima utk booking DIBATALKAN ${bookingId} — ` +
               `uang masuk tanpa tiket, perlu tindak lanjut manual/refund`
+          );
+          await query(
+            `UPDATE ticketing.ticket_bookings
+             SET webhook_alert = $2, updated_at = now()
+             WHERE id = $1::uuid`,
+            [
+              bookingId,
+              "Pembayaran Xendit MASUK untuk booking yang sudah DIBATALKAN — uang diterima tanpa tiket. Perlu refund manual; catat di Catatan Refund.",
+            ]
           );
         }
       }

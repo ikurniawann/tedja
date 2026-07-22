@@ -88,9 +88,13 @@ export interface TicketProductDetail {
   bundle_items: TicketBundleItem[];
 }
 
+export type TicketVariantPreset = "adult-child" | "umum";
+
 export interface CreateTicketValues {
   name: string;
   product_kind?: TicketProductKind;
+  /** Tiket satuan: Adult/Child atau satu varian "Umum" semua umur. */
+  variant_preset?: TicketVariantPreset;
   category_id?: string | null;
   category_name?: string | null;
   status?: TicketStatus;

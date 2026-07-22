@@ -24,6 +24,7 @@ interface BookingDetailRow {
   used_at: string | null;
   visit_id: string | null;
   refund_note: string | null;
+  webhook_alert: string | null;
   created_at: string;
 }
 
@@ -49,7 +50,7 @@ export async function GET(
       `SELECT id, booking_code, visit_date::text AS visit_date, customer_name,
               customer_phone, status, total, xendit_invoice_url,
               paid_at::text AS paid_at, expires_at::text AS expires_at,
-              used_at::text AS used_at, visit_id, refund_note,
+              used_at::text AS used_at, visit_id, refund_note, webhook_alert,
               created_at::text AS created_at
        FROM ticketing.ticket_bookings
        WHERE id = $1 AND branch_id = $2 AND company_id = $3`,
@@ -109,9 +110,17 @@ export async function GET(
   }
 }
 
-const refundNoteSchema = z.object({
-  refund_note: z.string().trim().min(1).max(500),
-});
+// PATCH melayani dua aksi kecil dashboard: simpan catatan refund manual
+// dan/atau menutup alert webhook (anomali sudah ditindaklanjuti petugas).
+const patchSchema = z
+  .object({
+    refund_note: z.string().trim().min(1).max(500).optional(),
+    clear_webhook_alert: z.literal(true).optional(),
+  })
+  .refine(
+    (body) => body.refund_note !== undefined || body.clear_webhook_alert,
+    { message: "Tidak ada perubahan yang dikirim" }
+  );
 
 export async function PATCH(
   request: NextRequest,
@@ -136,7 +145,7 @@ export async function PATCH(
         { status: 404 }
       );
     }
-    const parsed = refundNoteSchema.safeParse(await request.json());
+    const parsed = patchSchema.safeParse(await request.json());
     if (!parsed.success) {
       return NextResponse.json(
         { success: false, error: "Catatan refund wajib diisi (maks 500 karakter)" },
@@ -144,12 +153,22 @@ export async function PATCH(
       );
     }
 
+    const sets: string[] = ["updated_at = now()"];
+    const values: unknown[] = [id, ctx.branchId, ctx.companyId];
+    if (parsed.data.refund_note !== undefined) {
+      values.push(parsed.data.refund_note);
+      sets.push(`refund_note = $${values.length}`);
+    }
+    if (parsed.data.clear_webhook_alert) {
+      sets.push("webhook_alert = NULL");
+    }
+
     const updated = await queryOne<{ id: string }>(
       `UPDATE ticketing.ticket_bookings
-       SET refund_note = $4, updated_at = now()
+       SET ${sets.join(", ")}
        WHERE id = $1 AND branch_id = $2 AND company_id = $3
        RETURNING id`,
-      [id, ctx.branchId, ctx.companyId, parsed.data.refund_note]
+      values
     );
     if (!updated) {
       return NextResponse.json(
@@ -157,7 +176,12 @@ export async function PATCH(
         { status: 404 }
       );
     }
-    return successResponse({ id: updated.id }, "Catatan refund tersimpan");
+    return successResponse(
+      { id: updated.id },
+      parsed.data.clear_webhook_alert && parsed.data.refund_note === undefined
+        ? "Alert ditandai selesai"
+        : "Catatan refund tersimpan"
+    );
   } catch (err) {
     console.error("[ticketing] booking refund note error:", err);
     return NextResponse.json(

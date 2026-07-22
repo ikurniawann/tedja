@@ -14,6 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   useBookingDetail,
   useCancelBooking,
+  useClearWebhookAlert,
   useResendBookingWa,
   useSaveRefundNote,
 } from "../queries";
@@ -88,6 +89,7 @@ function BookingDetailBody({ booking }: { booking: BookingDetail }) {
   const cancelMutation = useCancelBooking(() => setCancelMode(false));
   const refundNoteMutation = useSaveRefundNote();
   const resendMutation = useResendBookingWa();
+  const clearAlertMutation = useClearWebhookAlert();
 
   const canCancel =
     booking.status === "menunggu-bayar" || booking.status === "terbayar";
@@ -95,6 +97,28 @@ function BookingDetailBody({ booking }: { booking: BookingDetail }) {
 
   return (
     <div className="space-y-5">
+      {/* Anomali webhook Xendit — tampil sampai petugas menandai selesai */}
+      {booking.webhook_alert ? (
+        <div className="space-y-2 rounded-lg border-2 border-red-200 bg-red-50/60 px-4 py-3">
+          <p className="text-sm font-semibold text-red-700">
+            ⚠ Anomali pembayaran Xendit
+          </p>
+          <p className="text-sm text-red-700">{booking.webhook_alert}</p>
+          <div className="flex justify-end">
+            <Button
+              size="sm"
+              variant="outline"
+              className="border-red-200 text-red-600 hover:bg-red-100"
+              disabled={clearAlertMutation.isPending}
+              onClick={() => clearAlertMutation.mutate({ id: booking.id })}
+            >
+              {clearAlertMutation.isPending
+                ? "Menyimpan…"
+                : "Sudah Ditindaklanjuti"}
+            </Button>
+          </div>
+        </div>
+      ) : null}
       <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
         <div>
           <p className="text-xs text-gray-500">Pemesan</p>

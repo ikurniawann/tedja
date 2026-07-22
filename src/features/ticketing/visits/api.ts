@@ -102,3 +102,10 @@ export const voidCharge = (visitId: string, chargeId: string, reason: string) =>
     { reason },
     "Gagal mem-void tagihan"
   );
+
+export const markBandLost = (visitId: string, visitBandId: string) =>
+  postJson<{ visit_band_id: string; nfc_uid: string }>(
+    `/api/ticketing/visits/${visitId}/bands/${visitBandId}/lost`,
+    {},
+    "Gagal menandai gelang hilang"
+  );

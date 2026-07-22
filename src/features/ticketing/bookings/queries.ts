@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   cancelBooking,
+  clearWebhookAlert,
   fetchBookingDetail,
   fetchBookings,
   redeemBooking,
@@ -79,6 +80,12 @@ export const useSaveRefundNote = (onSuccess?: () => void) =>
       saveRefundNote(id, refundNote),
     "Catatan refund tersimpan",
     onSuccess
+  );
+
+export const useClearWebhookAlert = () =>
+  useBookingMutation(
+    ({ id }: { id: string }) => clearWebhookAlert(id),
+    "Alert ditandai selesai"
   );
 
 export const useResendBookingWa = () =>

@@ -88,6 +88,14 @@ export const saveRefundNote = (id: string, refundNote: string) =>
     "Gagal menyimpan catatan refund"
   );
 
+export const clearWebhookAlert = (id: string) =>
+  sendJson<{ id: string }>(
+    `/api/ticketing/bookings/${id}`,
+    "PATCH",
+    { clear_webhook_alert: true },
+    "Gagal menandai alert selesai"
+  );
+
 export const resendBookingWa = (id: string) =>
   sendJson<{ booking_code: string }>(
     `/api/ticketing/bookings/${id}/resend-wa`,

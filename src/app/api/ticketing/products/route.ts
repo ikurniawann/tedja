@@ -70,6 +70,9 @@ const createProductSchema = z.object({
   // satuan (Adult/Child) atau paket bundling (satu varian "Paket" +
   // komposisi diatur setelah dibuat) — Fase P
   product_kind: z.enum(["single", "bundle"]).default("single"),
+  // Keputusan owner 2026-07-22: tiket satuan boleh Adult/Child ATAU satu
+  // varian "Umum" yang berlaku semua umur — dipilih saat pembuatan
+  variant_preset: z.enum(["adult-child", "umum"]).default("adult-child"),
   // kategori: pilih existing ATAU nama baru (auto-add)
   category_id: z.string().uuid().optional().nullable(),
   category_name: z.string().trim().max(100).optional().nullable(),
@@ -181,12 +184,20 @@ export async function POST(request: NextRequest) {
       const productId = productResult.rows[0].id;
 
       // Varian default (harga kosong = wajib dilengkapi sebelum jual):
-      // satuan → Adult/Child; paket → SATU varian "Paket" (harga paket)
+      // satuan → Adult/Child atau satu varian "Umum" (preset pilihan
+      // owner); paket → SATU varian "Paket" (harga paket)
       if (body.product_kind === "bundle") {
         await client.query(
           `INSERT INTO ticketing.ticket_product_variants
              (company_id, branch_id, ticket_product_id, code, name, sort_order)
            VALUES ($1, $2, $3, 'paket', 'Paket', 10)`,
+          [ctx.companyId, ctx.branchId, productId]
+        );
+      } else if (body.variant_preset === "umum") {
+        await client.query(
+          `INSERT INTO ticketing.ticket_product_variants
+             (company_id, branch_id, ticket_product_id, code, name, sort_order)
+           VALUES ($1, $2, $3, 'umum', 'Umum', 10)`,
           [ctx.companyId, ctx.branchId, productId]
         );
       } else {

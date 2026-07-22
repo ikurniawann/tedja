@@ -20,6 +20,7 @@ interface BookingListRow {
   used_at: string | null;
   visit_id: string | null;
   refund_note: string | null;
+  webhook_alert: string | null;
   created_at: string;
   total_count: string;
 }
@@ -61,7 +62,8 @@ export async function GET(request: NextRequest) {
       `SELECT b.id, b.booking_code, b.visit_date::text AS visit_date,
               b.customer_name, b.customer_phone, b.status, b.total,
               b.paid_at::text AS paid_at, b.used_at::text AS used_at,
-              b.visit_id, b.refund_note, b.created_at::text AS created_at,
+              b.visit_id, b.refund_note, b.webhook_alert,
+              b.created_at::text AS created_at,
               COUNT(*) OVER() AS total_count
        FROM ticketing.ticket_bookings b
        WHERE ${conditions.join(" AND ")}

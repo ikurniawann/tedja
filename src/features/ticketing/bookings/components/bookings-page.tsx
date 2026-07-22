@@ -149,6 +149,11 @@ export function BookingsPage() {
                       >
                         {BOOKING_STATUS_LABELS[booking.status]}
                       </Badge>
+                      {booking.webhook_alert ? (
+                        <p className="mt-0.5 text-[11px] font-medium text-red-600">
+                          ⚠ perlu perhatian
+                        </p>
+                      ) : null}
                       {booking.refund_note ? (
                         <p className="mt-0.5 text-[11px] text-gray-400">
                           ada catatan refund
