@@ -25,6 +25,7 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
 import { formatIdrInput, parseIdrDigits } from "./idr-input";
+import type { CfdPayment } from "@/lib/pos/cfd";
 
 export type PaymentMethod = "cash" | "qris" | "credit_card" | "ark_coin" | "nfc_tab";
 
@@ -76,6 +77,12 @@ interface Props {
    * opsi NFC Tab disembunyikan, mis. dipakai di luar kasir venue ticketing).
    */
   onCheckNfcTab?: (uid: string) => Promise<NfcTabCheckResult>;
+  /**
+   * EPIC-024 — sinkron state pembayaran ke customer display (opsional).
+   * Bila diberikan: perubahan metode/tunai/QR dipancarkan; metode QRIS
+   * membuat QR dinamis Xendit ber-nominal terkunci.
+   */
+  onCfdPayment?: (payment: CfdPayment | null) => void;
 }
 
 export function PaymentModal({
@@ -90,6 +97,7 @@ export function PaymentModal({
   formatArk,
   onTapNFC,
   onCheckNfcTab,
+  onCfdPayment,
 }: Props) {
   const [method, setMethod] = useState<PaymentMethod>("cash");
   const [cashReceived, setCashReceived] = useState("");
@@ -99,6 +107,12 @@ export function PaymentModal({
   const [tabResult, setTabResult] = useState<
     (NfcTabCheckResult & { uid: string }) | null
   >(null);
+  // QRIS dinamis (EPIC-024) — QR per transaksi ber-nominal terkunci
+  const [qris, setQris] = useState<{ amount: number; qr_string: string } | null>(
+    null
+  );
+  const [qrisLoading, setQrisLoading] = useState(false);
+  const [qrisError, setQrisError] = useState<string | null>(null);
 
   const checkTabUid = async (rawUid: string) => {
     const uid = rawUid.trim();
@@ -137,11 +151,64 @@ export function PaymentModal({
       setArkToUse(0);
       setTabUidInput("");
       setTabResult(null);
+      setQris(null);
+      setQrisError(null);
     }
   }, [open]);
 
+  // Buat QR dinamis saat QRIS dipilih (sekali per nominal) — gagal bukan
+  // penghalang bayar: kasir bisa lanjut dgn QRIS statis di meja.
+  useEffect(() => {
+    if (!open || method !== "qris" || !onCfdPayment) return;
+    if (qrisLoading || (qris && qris.amount === totalAfterArk)) return;
+    let cancelled = false;
+    setQrisLoading(true);
+    setQrisError(null);
+    fetch("/api/pos/qris", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ amount: totalAfterArk }),
+    })
+      .then(async (res) => {
+        const body = await res.json();
+        if (cancelled) return;
+        if (!res.ok) {
+          setQrisError(body.error || "Gagal membuat QR dinamis");
+          return;
+        }
+        setQris({ amount: body.data.amount, qr_string: body.data.qr_string });
+      })
+      .catch(() => {
+        if (!cancelled) setQrisError("Gagal membuat QR dinamis");
+      })
+      .finally(() => {
+        if (!cancelled) setQrisLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, method, totalAfterArk, onCfdPayment]);
+
   const cashAmount = parseIdrDigits(cashReceived);
   const change = method === "cash" ? cashAmount - totalAfterArk : 0;
+
+  // Pancarkan state pembayaran ke customer display (satu arah, read-only)
+  useEffect(() => {
+    if (!onCfdPayment) return;
+    if (!open) {
+      onCfdPayment(null);
+      return;
+    }
+    onCfdPayment({
+      method,
+      amount: totalAfterArk,
+      cash_received: method === "cash" && cashAmount > 0 ? cashAmount : undefined,
+      change: method === "cash" && cashAmount > 0 && change >= 0 ? change : undefined,
+      qr_string: method === "qris" ? (qris?.qr_string ?? null) : undefined,
+      qr_loading: method === "qris" ? qrisLoading : undefined,
+    });
+  }, [open, method, cashAmount, change, totalAfterArk, qris, qrisLoading, onCfdPayment]);
 
   const isValid = (() => {
     if (method === "cash") {
@@ -247,6 +314,28 @@ export function PaymentModal({
                   {formatCurrency(Math.abs(change))}
                 </span>
               </div>
+            </div>
+          )}
+
+          {method === "qris" && onCfdPayment && (
+            <div className="rounded-xl border border-gray-200/70 bg-muted/30 p-4 text-sm">
+              {qrisLoading ? (
+                <span className="inline-flex items-center gap-2 text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Membuat QR dinamis…
+                </span>
+              ) : qris ? (
+                <span className="inline-flex items-center gap-2 font-medium text-emerald-700">
+                  <QrCode className="h-4 w-4" />
+                  QR tampil di layar customer — nominal terkunci{" "}
+                  {formatCurrency(qris.amount)}
+                </span>
+              ) : (
+                <span className="text-amber-700">
+                  {qrisError ?? "QR dinamis tidak tersedia"} — lanjutkan dengan
+                  QRIS statis di meja.
+                </span>
+              )}
             </div>
           )}
 

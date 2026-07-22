@@ -107,6 +107,84 @@ export async function createInvoice(
   };
 }
 
+// ── QRIS dinamis (EPIC-024 — customer display POS) ─────────────────────
+
+const XENDIT_QR_URL = "https://api.xendit.co/qr_codes";
+const QR_EXPIRY_MINUTES = 30;
+
+export interface CreatedQris {
+  qrId: string;
+  /** Payload QR standar QRIS — dirender jadi gambar QR di display. */
+  qrString: string;
+  amount: number;
+  expiresAt: Date;
+}
+
+/**
+ * Buat QR dinamis ber-nominal terkunci (Xendit QR Codes API). Mode mock
+ * mengembalikan payload palsu ber-prefiks jelas supaya alur display bisa
+ * diuji end-to-end tanpa key.
+ */
+export async function createQrisCode(input: {
+  externalId: string;
+  amount: number;
+}): Promise<CreatedQris> {
+  const expiresAt = new Date(Date.now() + QR_EXPIRY_MINUTES * 60 * 1000);
+
+  if (isXenditMock()) {
+    return {
+      qrId: `mock-qr-${input.externalId}`,
+      // Payload palsu tapi valid utk dirender QR — terbaca jelas MOCK
+      qrString: `00020101021226MOCK-XENDIT-QRIS|${input.externalId}|${Math.round(input.amount)}`,
+      amount: Math.round(input.amount),
+      expiresAt,
+    };
+  }
+
+  const secretKey = process.env.XENDIT_SECRET_KEY;
+  if (!secretKey) {
+    throw new Error("XENDIT_SECRET_KEY belum dikonfigurasi");
+  }
+
+  const response = await fetch(XENDIT_QR_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Basic ${Buffer.from(`${secretKey}:`).toString("base64")}`,
+      // Versi API QR Codes v2 (dynamic QR ber-expiry)
+      "api-version": "2022-07-31",
+    },
+    body: JSON.stringify({
+      reference_id: input.externalId,
+      type: "DYNAMIC",
+      currency: "IDR",
+      amount: Math.round(input.amount),
+      expires_at: expiresAt.toISOString(),
+    }),
+    signal: AbortSignal.timeout(15_000),
+  });
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    throw new Error(
+      `Xendit menolak pembuatan QR (HTTP ${response.status}): ${body.slice(0, 300)}`
+    );
+  }
+
+  const data = (await response.json()) as {
+    id: string;
+    qr_string: string;
+    amount?: number;
+    expires_at?: string;
+  };
+  return {
+    qrId: data.id,
+    qrString: data.qr_string,
+    amount: data.amount ?? Math.round(input.amount),
+    expiresAt: data.expires_at ? new Date(data.expires_at) : expiresAt,
+  };
+}
+
 /** Verifikasi callback webhook Xendit via header x-callback-token. */
 export function isValidWebhookToken(headerToken: string | null): boolean {
   const expected = process.env.XENDIT_WEBHOOK_TOKEN;

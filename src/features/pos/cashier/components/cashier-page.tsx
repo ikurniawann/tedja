@@ -46,6 +46,12 @@ const CASHIER_ID = '00000000-0000-0000-0000-000000000001';
 import { CartPanel } from '@/components/pos/CartPanel';
 import { CustomizationModal, type SelectedCustomization } from '@/components/pos/CustomizationModal';
 import { PaymentModal, type PaymentMethod } from '@/components/pos/PaymentModal';
+import {
+  firstNameOnly,
+  idleCfdState,
+  publishCfdState,
+  type CfdPayment,
+} from '@/lib/pos/cfd';
 import { NFCModal } from '@/components/pos/NFCModal';
 import { CustomerSearchModal } from '@/components/pos/CustomerSearchModal';
 import { usePosNfcOptional, findCustomerByCard, POS_NFC_CARD_EVENT, buildTopupCardPath } from '@/features/pos/nfc';
@@ -191,7 +197,20 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
   const storeResultPayload = useCallback((payload: ReceiptPayload) => {
     setResultPayload(payload);
     window.sessionStorage.setItem(LAST_RECEIPT_KEY, JSON.stringify(payload));
+    // EPIC-024: layar customer merayakan transaksi selesai + kembalian.
+    // Semua jalur sukses bayar (online/offline/open-bill) lewat sini —
+    // satu titik publish, display menahan layar ini beberapa detik.
+    publishCfdState({
+      ...idleCfdState(),
+      status: 'done',
+      total: payload.total,
+      done_change: payload.change > 0 ? payload.change : 0,
+      updated_at: Date.now(),
+    });
   }, []);
+
+  /* EPIC-024 — state pembayaran dari PaymentModal utk customer display */
+  const [cfdPayment, setCfdPayment] = useState<CfdPayment | null>(null);
 
   /* Offline */
   const { isOnline } = usePosOnline();
@@ -374,6 +393,42 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
   const maxArkUsable = selectedCustomer ? Math.min(selectedCustomer.ark_coin_balance, total) : 0;
   const arkToUseCapped = Math.min(currentArkToUse, maxArkUsable);
   const totalAfterArk = total - arkToUseCapped;
+
+  /* EPIC-024 — pancarkan state cart/pembayaran ke customer display
+     (BroadcastChannel, satu arah). Publish adalah sinkronisasi ke sistem
+     eksternal — persis guna useEffect. */
+  useEffect(() => {
+    if (cart.items.length === 0 && !cfdPayment) {
+      publishCfdState(idleCfdState());
+      return;
+    }
+    publishCfdState({
+      status: cfdPayment ? 'payment' : 'cart',
+      items: cart.items.map((item) => ({
+        name: item.name,
+        qty: item.quantity,
+        unit_price: item.price,
+        line_total: Math.round(item.price * item.quantity),
+      })),
+      subtotal: cart.subtotal,
+      discount: discountAmount,
+      tax: taxAmount,
+      ark_used: arkToUseCapped,
+      total,
+      payment: cfdPayment,
+      member_name: firstNameOnly(selectedCustomer?.name),
+      updated_at: Date.now(),
+    });
+  }, [
+    cart.items,
+    cart.subtotal,
+    discountAmount,
+    taxAmount,
+    arkToUseCapped,
+    total,
+    cfdPayment,
+    selectedCustomer?.name,
+  ]);
 
   /* Product filter */
   const filteredProducts = useMemo(() => products.filter(p => {
@@ -1584,6 +1639,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         formatCurrency={formatCurrency}
         formatArk={formatArk}
         onTapNFC={() => setShowNFC(true)}
+        onCfdPayment={setCfdPayment}
         onCheckNfcTab={async (uid) => {
           const res = await fetch('/api/ticketing/tab/check', {
             method: 'POST',

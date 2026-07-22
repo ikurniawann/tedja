@@ -28,7 +28,8 @@ deploying-dev · ready-for-qa · blocked · done).
 | [EPIC-020](./EPIC-020-notifikasi-wa-owner.md) | Notifikasi WhatsApp untuk Owner | ready-for-qa | 2026-07-23 |
 | [EPIC-021](./EPIC-021-dashboard-eksekutif.md) | /dashboard — Ringkasan Eksekutif Lintas Modul | coding | 2026-07-21 |
 | [EPIC-022](./EPIC-022-sales-crm-funnel.md) | Sales Funneling — Leads B2B (Corporate, Sekolah & Acara Privat) | ready-for-qa | 2026-07-22 |
-| [EPIC-023](./EPIC-023-ticketing-theme-park.md) | Ticketing Theme Park — NFC Postpaid, Harga Musiman & Channel Manager | ready-for-qa | 2026-07-22 |
+| [EPIC-023](./EPIC-023-ticketing-theme-park.md) | Ticketing Theme Park — NFC Postpaid, Harga Musiman & Channel Manager | ready-for-qa | 2026-07-23 |
+| [EPIC-024](./EPIC-024-pos-customer-display.md) | POS Customer Display — Layar Customer + QRIS Dinamis | ready-for-qa | 2026-07-23 |
 
 Aturan:
 - Epic + registry ini adalah sumber kebenaran status pekerjaan (canonical).
