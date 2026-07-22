@@ -59,6 +59,20 @@ interface CatalogProduct {
 const personsPerUnit = (variant: CatalogVariant) =>
   variant.members?.length || 1;
 
+/**
+ * Total harga satuan anggota paket — pembanding "hemat". Null bila ada
+ * bobot bolong (jangan menampilkan klaim hemat dari data tak lengkap).
+ */
+const bundleStandaloneTotal = (variant: CatalogVariant): number | null => {
+  if (!variant.members || variant.members.length === 0) return null;
+  let total = 0;
+  for (const member of variant.members) {
+    if (member.weight_price === null) return null;
+    total += member.weight_price;
+  }
+  return total;
+};
+
 type Step = "tanggal" | "tiket" | "pemesan" | "ringkasan";
 
 const todayIso = () =>
@@ -392,7 +406,29 @@ export function BookingWizard({ slug }: BookingWizardProps) {
                               )}
                             </p>
                             <p className="text-sm text-gray-600">
-                              {formatRp(variant.price)}
+                              {(() => {
+                                const standalone = bundleStandaloneTotal(variant);
+                                const saving =
+                                  standalone !== null &&
+                                  standalone > variant.price
+                                    ? standalone - variant.price
+                                    : null;
+                                return saving !== null ? (
+                                  <>
+                                    <span className="mr-1.5 text-xs text-gray-400 line-through">
+                                      {formatRp(standalone!)}
+                                    </span>
+                                    <span className="font-semibold text-emerald-700">
+                                      {formatRp(variant.price)}
+                                    </span>
+                                    <span className="ml-1.5 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">
+                                      Hemat {formatRp(saving)}
+                                    </span>
+                                  </>
+                                ) : (
+                                  <>{formatRp(variant.price)}</>
+                                );
+                              })()}
                               {variant.season_kind === "high" && (
                                 <span className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
                                   High Season

@@ -819,3 +819,30 @@ multi-hari/paket, pembatalan mandiri oleh pemesan.
   (`product_kind` tampil, produk lama utuh). Belum ada data paket di
   dev — QA owner: buat paket via Master Ticket → Komposisi → aktifkan →
   distribusi kanal → uji loket & booking.
+- 2026-07-22 — **Fase E SELESAI (laporan) + tampilan hemat paket** (status
+  `coding`). (1) Laporan Ticketing: delta `20260722190000` applied (menu
+  `ticketing.reports` → `/dashboard/ticketing/reports`, akses super_admin
+  + pos_supervisor; kasir 'pos' tidak dapat). API `GET
+  /api/ticketing/reports?from&to` (default 7 hari, maks 92, hari
+  operasional WIB): SEMUA angka uang NET dari ledger — baris void
+  (`koreksi` kredit) di-atribusikan ke jenis & price_context baris ASAL
+  via `voided_by_charge_id`, jadi revenue yang di-void tidak
+  menggelembung. Isi: ringkasan (kunjungan, orang masuk/re-entry/tap
+  ditolak dari gate_events, tiket/F&B/denda net, uang masuk, refund
+  keluar), deret harian, rincian tiket per produk/kanal/musim/paket
+  (dari `price_context`: variant_id → nama via master; baris alokasi
+  paket ber-`bundle_product_id` masuk tabel "Kontribusi Paket", musim
+  tampil "alokasi paket"), uang masuk per metode
+  (deposit/pembayaran/refund − rekonsiliasi kasir), rekap gelang
+  (keadaan kini), tab menggantung (visit open ber-outstanding > 0,
+  keadaan kini, limit 50). UI `features/ticketing/reports` (stat cards +
+  tabel harian + 4 tabel agregat + metode + gelang/menggantung).
+  Sambungan closing report shift POS = BELUM (uang masuk per metode per
+  hari sudah cukup utk rekonsiliasi manual; integrasi shift menyusul
+  bila owner minta). (2) Wizard booking publik: kartu paket kini
+  menampilkan harga coret total satuan + badge "Hemat RpX" — hanya bila
+  SEMUA bobot anggota terisi dan totalnya > harga paket (tidak
+  menampilkan klaim hemat dari data bolong). Verifikasi: 67 unit test
+  ticketing lulus, tsc/eslint bersih, build lulus, migrasi applied, PM2
+  restart, SQL laporan tervalidasi langsung ke DB dev (ledger masih
+  kosong pasca-wipe R1 — angka baru muncul setelah ada transaksi).
