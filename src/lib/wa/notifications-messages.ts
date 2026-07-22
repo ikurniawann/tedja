@@ -18,12 +18,31 @@ export function hourWib(now = new Date()): number {
   return new Date(now.getTime() + 7 * 60 * 60 * 1000).getUTCHours();
 }
 
+/** Nomor minggu ISO (WIB) — kunci dedup mingguan omzet anjlok. */
+export function isoWeekWib(now = new Date()): string {
+  const wib = new Date(now.getTime() + 7 * 60 * 60 * 1000);
+  const d = new Date(Date.UTC(wib.getUTCFullYear(), wib.getUTCMonth(), wib.getUTCDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const yearStart = Date.UTC(d.getUTCFullYear(), 0, 1);
+  const week = Math.ceil(((d.getTime() - yearStart) / 86_400_000 + 1) / 7);
+  return `${d.getUTCFullYear()}-W${String(week).padStart(2, "0")}`;
+}
+
 // ---------- Kunci dedup (unik per kejadian, lihat uq_wa_notif_log_dedup) ----
 
 export const digestDedupKey = (dateWib: string) => dateWib;
 export const voidDedupKey = (orderId: string) => orderId;
 export const stokHabisDedupKey = (rawMaterialId: string, dateWib: string) =>
   `${rawMaterialId}:${dateWib}`;
+export const komplainDedupKey = (conversationId: string) => conversationId;
+export const reviewRendahDedupKey = (reviewId: string) => reviewId;
+/** Maks 1×/minggu selama masih anjlok — tidak diberondong sebulan penuh. */
+export const omzetAnjlokDedupKey = (isoWeek: string) => isoWeek;
+export const approvalMenginapDedupKey = (dateWib: string) => dateWib;
+/** Ganti kontrak (end_date baru) = kejadian baru. */
+export const kontrakHabisDedupKey = (contractId: string, endDate: string) =>
+  `${contractId}:${endDate}`;
 
 // ---------- Pesan ----------
 
@@ -60,6 +79,122 @@ export function buildStokHabisMessage(items: StokHabisItem[]): string {
     daftar,
     ``,
     `Segera restock atau nonaktifkan menu terdampak.`,
+  ].join("\n");
+}
+
+export function buildKomplainMessage(input: {
+  displayName: string | null;
+  phone: string;
+  category: string | null;
+  priority: string | null;
+}): string {
+  return [
+    `🚨 *Komplain Pelanggan Masuk*`,
+    ``,
+    `Dari: ${input.displayName || input.phone}`,
+    input.category ? `Kategori: ${input.category}` : null,
+    input.priority ? `Prioritas: ${input.priority}` : null,
+    ``,
+    `Buka CRM → Inbox WA untuk menangani.`,
+  ]
+    .filter((l): l is string => l !== null)
+    .join("\n");
+}
+
+export function buildReviewRendahMessage(input: {
+  reviewerName: string | null;
+  starRating: number;
+  comment: string | null;
+}): string {
+  const bintang = "⭐".repeat(Math.max(1, Math.min(5, input.starRating)));
+  return [
+    `🚨 *Review Google Bintang Rendah*`,
+    ``,
+    `${bintang} (${input.starRating}/5) dari ${input.reviewerName || "Anonim"}`,
+    input.comment ? `"${input.comment.slice(0, 300)}"` : null,
+    ``,
+    `Balas segera di CRM → Google Review — respons cepat menyelamatkan reputasi.`,
+  ]
+    .filter((l): l is string => l !== null)
+    .join("\n");
+}
+
+/**
+ * Omzet MTD anjlok (keputusan owner 2026-07-22): bandingkan omzet tanggal
+ * 1..kemarin dengan pace target bulanan (bila diisi) atau MTD bulan lalu.
+ */
+export function buildOmzetAnjlokMessage(input: {
+  mtd: number;
+  baseline: number;
+  /** Persen MTD terhadap baseline (sudah dibulatkan). */
+  pct: number;
+  source: "target" | "bulan-lalu";
+  /** Jumlah hari penuh yang dihitung (tanggal 1..kemarin). */
+  hariBerjalan: number;
+}): string {
+  const pembanding =
+    input.source === "target"
+      ? `pace target bulanan (${formatRp(input.baseline)} s/d hari ke-${input.hariBerjalan})`
+      : `omzet bulan lalu di titik yang sama (${formatRp(input.baseline)})`;
+  return [
+    `⚠️ *Omzet Bulan Ini Anjlok*`,
+    ``,
+    `Omzet berjalan (tgl 1–${input.hariBerjalan}): *${formatRp(input.mtd)}*`,
+    `Baru *${input.pct}%* dari ${pembanding}.`,
+    ``,
+    `Cek /dashboard untuk rincian per outlet & harian.`,
+  ].join("\n");
+}
+
+export function buildApprovalMenginapMessage(input: {
+  cuti: number;
+  lembur: number;
+  pinjaman: number;
+  poDraft: number;
+}): string {
+  const total = input.cuti + input.lembur + input.pinjaman + input.poDraft;
+  const rincian = [
+    input.cuti > 0 ? `• ${input.cuti} pengajuan cuti` : null,
+    input.lembur > 0 ? `• ${input.lembur} pengajuan lembur` : null,
+    input.pinjaman > 0 ? `• ${input.pinjaman} pengajuan pinjaman` : null,
+    input.poDraft > 0 ? `• ${input.poDraft} PO draft` : null,
+  ]
+    .filter((l): l is string => l !== null)
+    .join("\n");
+  return [
+    `⚠️ *Approval Menginap*`,
+    ``,
+    `${total} pengajuan menunggu keputusan lebih dari 2 hari:`,
+    rincian,
+    ``,
+    `Tim menunggu — buka dashboard untuk memutuskan.`,
+  ].join("\n");
+}
+
+export interface KontrakHabisItem {
+  employeeName: string;
+  endDate: string;
+  daysLeft: number;
+}
+
+export function buildKontrakHabisMessage(items: KontrakHabisItem[]): string {
+  const daftar = items
+    .map((i) => {
+      const tgl = new Date(`${i.endDate}T00:00:00+07:00`).toLocaleDateString(
+        "id-ID",
+        { day: "numeric", month: "short" }
+      );
+      const sisa = i.daysLeft <= 0 ? "SUDAH LEWAT" : `${i.daysLeft} hari lagi`;
+      return `• ${i.employeeName} — ${tgl} (${sisa})`;
+    })
+    .join("\n");
+  return [
+    `⚠️ *Kontrak PKWT Mendekati Habis*`,
+    ``,
+    `${items.length} kontrak berakhir ≤ 30 hari:`,
+    daftar,
+    ``,
+    `Putuskan perpanjang/akhiri di HRIS → Kontrak sebelum jatuh tempo.`,
   ].join("\n");
 }
 

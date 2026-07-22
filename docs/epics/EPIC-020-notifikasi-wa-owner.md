@@ -1,6 +1,6 @@
 # EPIC-020: Notifikasi WhatsApp untuk Owner
 
-status: coding
+status: ready-for-qa
 environment: dev
 retries: 0
 
@@ -46,10 +46,10 @@ berita di desktop, sampah di WA.
 - Dedup & cooldown: kejadian sama tidak dikirim dua kali; stok habis maks
   1×/bahan/hari. Jam tenang: non-kritis ditahan sampai pagi.
 
-**Fase C — Sambungan omnichannel (belum)**
+**Fase C — Sambungan omnichannel (selesai)**
 - Komplain (EPIC-012) & review rendah (EPIC-013) memanggil pengirim yang sama.
 
-**Fase D — Ambang lanjutan (belum)**
+**Fase D — Ambang lanjutan (selesai)**
 - Omzet anjlok (perbandingan dengan rata-rata hari sejenis), approval menginap,
   kontrak habis (reuse logika `ContractExpiryBanner`).
 
@@ -66,8 +66,8 @@ berita di desktop, sampah di WA.
       menolak tanpa login; Kirim Tes membuktikan sambungan gateway.
 - [x] Fase B: ringkasan harian terkirim terjadwal; void besar & stok habis
       terkirim seketika dengan dedup.
-- [ ] Fase C: komplain & review rendah terkirim.
-- [ ] Fase D: tiga notifikasi ambang berjalan.
+- [x] Fase C: komplain & review rendah terkirim.
+- [x] Fase D: tiga notifikasi ambang berjalan.
 - [ ] Semua: jenis yang dimatikan TIDAK PERNAH terkirim; master mati = senyap total.
 
 ## Test Plan
@@ -84,6 +84,29 @@ berita di desktop, sampah di WA.
 
 ## Automation Log
 
+- 2026-07-23 — **Fase C+D selesai — epic TUNTAS, status ready-for-qa.**
+  Keputusan owner: omzet anjlok dihitung **month-to-date** (bukan intraday
+  per-jam) — MTD tanggal 1..kemarin dibanding **pace target bulanan**
+  (`sales_target_config` EPIC-021, prorata hari berjalan) bila target
+  diisi, **fallback MTD bulan lalu** di titik hari yang sama (bulan pendek
+  di-cap); anjlok bila < `omzetAnjlokPct` (config baru, default 80%, input
+  di panel). Pagar: evaluasi mulai tanggal 5, baseline min Rp500rb, maks
+  1 pesan/minggu (dedup key = minggu ISO WIB). Fase C: komplain → kait di
+  aksi `set_complaint` inbox CRM (dedup per percakapan — toggle
+  bolak-balik tidak spam); review rendah → kait di `syncGoogleReviews`
+  hanya utk review BARU ber-bintang ≤2 (dedup per review id). Fase D
+  lainnya: approval menginap (pending >2 hari: cuti/lembur/pinjaman/PO
+  draft — definisi nav-badges + filter umur; 1 pesan/hari) & kontrak PKWT
+  habis ≤30 hari (definisi route contracts/expiring, jaring -7 hari utk
+  yang terlewat; sekali per kontrak per end_date — perpanjangan = kejadian
+  baru; klaim-gabungan satu pesan). Semua ambang hanya dikirim jam 8-21
+  WIB (jam tenang ditahan — non-kritis tidak menyela tidur). Verifikasi:
+  804 unit test lulus (29 di lib wa), eslint bersih, build lulus (gagal
+  sekali fetch font Google — transient, retry OK), PM2 restart, app
+  online. Tidak ada migrasi baru (reuse wa_notif_log Fase B). QA owner:
+  nyalakan master switch + nomor di Settings desktop; uji komplain
+  (tandai percakapan inbox), omzet anjlok (kosongkan/isi target lalu cek
+  log `[wa-notif]`), kontrak (buat PKWT dummy end_date <30 hari).
 - 2026-07-22 — **Fase B selesai** (mesin pengirim). Delta `20260722230000`:
   tabel `configuration.wa_notif_log` = jejak + kunci dedup (UNIQUE
   notif_type+dedup_key); pengirim MENGKLAIM baris dulu (INSERT ON CONFLICT

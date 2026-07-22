@@ -63,8 +63,9 @@ export const WA_NOTIF_TYPES: WaNotifTypeMeta[] = [
   },
   {
     key: "omzetAnjlok",
-    label: "Omzet hari berjalan anjlok",
-    description: "Peringatan dini bila omzet siang hari jauh di bawah kebiasaan.",
+    label: "Omzet bulan berjalan anjlok",
+    description:
+      "Omzet month-to-date jauh di bawah pace target bulanan (bila diisi) atau MTD bulan lalu — keputusan owner 2026-07-22.",
     tier: "ambang",
     defaultOn: true,
   },
@@ -94,11 +95,14 @@ export interface WaNotifConfig {
   voidThresholdRp: number;
   /** Jam WIB (0-23) pengiriman ringkasan harian — default jam tutup 22:00. */
   digestHour: number;
+  /** Omzet MTD dianggap anjlok bila < persen ini dari baseline (1-99). */
+  omzetAnjlokPct: number;
 }
 
 export const WA_NOTIF_SETTING_KEY = "wa_notif_config";
 export const DEFAULT_VOID_THRESHOLD_RP = 500_000;
 export const DEFAULT_DIGEST_HOUR = 22;
+export const DEFAULT_OMZET_ANJLOK_PCT = 80;
 export const MAX_RECIPIENTS = 5;
 
 export function defaultWaNotifConfig(): WaNotifConfig {
@@ -111,6 +115,7 @@ export function defaultWaNotifConfig(): WaNotifConfig {
     >,
     voidThresholdRp: DEFAULT_VOID_THRESHOLD_RP,
     digestHour: DEFAULT_DIGEST_HOUR,
+    omzetAnjlokPct: DEFAULT_OMZET_ANJLOK_PCT,
   };
 }
 
@@ -174,11 +179,20 @@ export function parseWaNotifConfig(raw: string | null): WaNotifConfig {
       ? o.digestHour
       : base.digestHour;
 
+  const omzetAnjlokPct =
+    typeof o.omzetAnjlokPct === "number" &&
+    Number.isInteger(o.omzetAnjlokPct) &&
+    o.omzetAnjlokPct >= 1 &&
+    o.omzetAnjlokPct <= 99
+      ? o.omzetAnjlokPct
+      : base.omzetAnjlokPct;
+
   return {
     enabled: typeof o.enabled === "boolean" ? o.enabled : base.enabled,
     recipients: [...new Set(recipients)],
     types,
     voidThresholdRp: threshold,
     digestHour,
+    omzetAnjlokPct,
   };
 }

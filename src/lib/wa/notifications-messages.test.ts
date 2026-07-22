@@ -1,11 +1,21 @@
 import { describe, expect, it } from "vitest";
 import type { DesktopOverview } from "@/lib/desktop/overview";
 import {
+  buildApprovalMenginapMessage,
   buildDigestMessage,
+  buildKomplainMessage,
+  buildKontrakHabisMessage,
+  buildOmzetAnjlokMessage,
+  buildReviewRendahMessage,
   buildStokHabisMessage,
   buildVoidBesarMessage,
   digestDedupKey,
   hourWib,
+  isoWeekWib,
+  komplainDedupKey,
+  kontrakHabisDedupKey,
+  omzetAnjlokDedupKey,
+  reviewRendahDedupKey,
   stokHabisDedupKey,
   todayWib,
   voidDedupKey,
@@ -146,5 +156,99 @@ describe("buildDigestMessage", () => {
       "2026-07-22"
     );
     expect(tanpaAntrean).not.toContain("Menunggu keputusan");
+  });
+});
+
+describe("Fase C+D — formatter & kunci baru", () => {
+  it("isoWeekWib konsisten dalam satu minggu, beda antar minggu", () => {
+    // Senin & Minggu di minggu ISO yang sama (WIB)
+    expect(isoWeekWib(new Date("2026-07-20T03:00:00Z"))).toBe(
+      isoWeekWib(new Date("2026-07-26T03:00:00Z"))
+    );
+    expect(isoWeekWib(new Date("2026-07-20T03:00:00Z"))).not.toBe(
+      isoWeekWib(new Date("2026-07-27T03:00:00Z"))
+    );
+    // Jam 20:00 UTC Minggu = Senin WIB → sudah minggu berikutnya
+    expect(isoWeekWib(new Date("2026-07-26T20:00:00Z"))).toBe(
+      isoWeekWib(new Date("2026-07-27T03:00:00Z"))
+    );
+  });
+
+  it("buildKomplainMessage jatuh ke nomor bila nama kosong", () => {
+    const msg = buildKomplainMessage({
+      displayName: null,
+      phone: "6281200011122",
+      category: "produk",
+      priority: "tinggi",
+    });
+    expect(msg).toContain("6281200011122");
+    expect(msg).toContain("produk");
+    expect(msg).toContain("tinggi");
+  });
+
+  it("buildReviewRendahMessage memuat bintang & memotong komentar panjang", () => {
+    const msg = buildReviewRendahMessage({
+      reviewerName: "Andi",
+      starRating: 1,
+      comment: "x".repeat(1000),
+    });
+    expect(msg).toContain("(1/5)");
+    expect(msg).toContain("Andi");
+    expect(msg.length).toBeLessThan(600);
+  });
+
+  it("buildOmzetAnjlokMessage membedakan sumber target vs bulan lalu", () => {
+    const vsTarget = buildOmzetAnjlokMessage({
+      mtd: 4_000_000,
+      baseline: 10_000_000,
+      pct: 40,
+      source: "target",
+      hariBerjalan: 21,
+    });
+    expect(vsTarget).toContain("40%");
+    expect(vsTarget).toContain("pace target bulanan");
+    expect(vsTarget).toContain("tgl 1–21");
+
+    const vsBulanLalu = buildOmzetAnjlokMessage({
+      mtd: 4_000_000,
+      baseline: 10_000_000,
+      pct: 40,
+      source: "bulan-lalu",
+      hariBerjalan: 21,
+    });
+    expect(vsBulanLalu).toContain("bulan lalu");
+  });
+
+  it("buildApprovalMenginapMessage hanya mendaftar jenis yang ada", () => {
+    const msg = buildApprovalMenginapMessage({
+      cuti: 3,
+      lembur: 0,
+      pinjaman: 1,
+      poDraft: 0,
+    });
+    expect(msg).toContain("4 pengajuan");
+    expect(msg).toContain("3 pengajuan cuti");
+    expect(msg).not.toContain("lembur");
+  });
+
+  it("buildKontrakHabisMessage menandai yang sudah lewat", () => {
+    const msg = buildKontrakHabisMessage([
+      { employeeName: "Budi", endDate: "2026-08-10", daysLeft: 19 },
+      { employeeName: "Sari", endDate: "2026-07-20", daysLeft: -2 },
+    ]);
+    expect(msg).toContain("2 kontrak");
+    expect(msg).toContain("Budi");
+    expect(msg).toContain("19 hari lagi");
+    expect(msg).toContain("SUDAH LEWAT");
+  });
+
+  it("kunci dedup baru unik per kejadian", () => {
+    
+    expect(komplainDedupKey("c1")).toBe("c1");
+    expect(reviewRendahDedupKey("r1")).toBe("r1");
+    expect(omzetAnjlokDedupKey("2026-W30")).toBe("2026-W30");
+    expect(kontrakHabisDedupKey("k1", "2026-08-01")).not.toBe(
+      kontrakHabisDedupKey("k1", "2026-09-01")
+    );
   });
 });

@@ -101,6 +101,17 @@ export async function PUT(request: NextRequest) {
       current.digestHour = n;
     }
 
+    if (body.omzetAnjlokPct !== undefined) {
+      const n = Number(body.omzetAnjlokPct);
+      if (!Number.isInteger(n) || n < 1 || n > 99) {
+        return NextResponse.json(
+          { error: "Ambang omzet harus 1-99 (persen dari baseline)" },
+          { status: 400 }
+        );
+      }
+      current.omzetAnjlokPct = n;
+    }
+
     await setSetting(WA_NOTIF_SETTING_KEY, JSON.stringify(current));
     return NextResponse.json({ data: { config: current } });
   } catch (error) {

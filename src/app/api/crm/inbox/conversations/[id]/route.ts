@@ -9,6 +9,11 @@ import { sendWhatsAppText } from "@/lib/whatsapp";
 import { messagePreview } from "@/lib/whatsapp/inbound";
 import { CS_CATEGORIES, CS_PRIORITIES } from "@/lib/crm/cs-rules";
 import { onAgentReply, onResolved } from "@/lib/crm/cs-server";
+import {
+  buildKomplainMessage,
+  komplainDedupKey,
+} from "@/lib/wa/notifications-messages";
+import { fireOwnerNotification } from "@/lib/wa/notifications-sender";
 
 /**
  * EPIC-012 Fase C — detail percakapan (pesan + konteks member) & aksi agent.
@@ -208,6 +213,21 @@ export async function POST(
           WHERE id = $1`,
         [id, payload.is_complaint, payload.category ?? null, payload.priority ?? null]
       );
+      // EPIC-020 Fase C: komplain → WA owner. Tembak-dan-lupakan (tidak
+      // menggagalkan aksi CS); dedup per percakapan — toggle bolak-balik
+      // tidak mengirim ulang.
+      if (payload.is_complaint) {
+        fireOwnerNotification({
+          type: "komplain",
+          dedupKey: komplainDedupKey(id),
+          message: buildKomplainMessage({
+            displayName: conversation.display_name ?? null,
+            phone: conversation.phone,
+            category: payload.category ?? conversation.category ?? null,
+            priority: payload.priority ?? conversation.priority ?? null,
+          }),
+        });
+      }
       return NextResponse.json({ success: true });
     }
 

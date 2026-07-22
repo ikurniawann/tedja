@@ -77,3 +77,13 @@ describe("digestHour (Fase B)", () => {
     expect(parseWaNotifConfig(JSON.stringify({ digestHour: "22" })).digestHour).toBe(22);
   });
 });
+
+describe("omzetAnjlokPct (Fase D)", () => {
+  it("default 80, nilai valid tersimpan, di luar 1-99 jatuh ke default", () => {
+    expect(defaultWaNotifConfig().omzetAnjlokPct).toBe(80);
+    expect(parseWaNotifConfig(JSON.stringify({ omzetAnjlokPct: 60 })).omzetAnjlokPct).toBe(60);
+    expect(parseWaNotifConfig(JSON.stringify({ omzetAnjlokPct: 0 })).omzetAnjlokPct).toBe(80);
+    expect(parseWaNotifConfig(JSON.stringify({ omzetAnjlokPct: 100 })).omzetAnjlokPct).toBe(80);
+    expect(parseWaNotifConfig(JSON.stringify({ omzetAnjlokPct: 79.5 })).omzetAnjlokPct).toBe(80);
+  });
+});

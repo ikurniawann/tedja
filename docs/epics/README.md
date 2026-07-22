@@ -16,7 +16,7 @@ deploying-dev · ready-for-qa · blocked · done).
 | [EPIC-008](./EPIC-008-payroll-revamp.md) | Payroll & Gaji — Integrasi Flow HRIS Terbaru | ready-for-qa | 2026-07-17 |
 | [EPIC-009](./EPIC-009-logbook-revamp.md) | Logbook Revamp | ready-for-qa | 2026-07-18 |
 | [EPIC-010](./EPIC-010-kpi-scorecard.md) | KPI Scorecard | ready-for-qa | 2026-07-19 |
-| [EPIC-011](./EPIC-011-crm-revamp.md) | CRM Revamp — Member Global, XP Lifetime, ARK Coin & Portal Member | on-progress | 2026-07-19 |
+| [EPIC-011](./EPIC-011-crm-revamp.md) | CRM Revamp — Member Global, XP Lifetime, ARK Coin & Portal Member | ready-for-qa | 2026-07-19 |
 | [EPIC-012](./EPIC-012-wa-customer-service.md) | WhatsApp Customer Service — Riwayat Pesan, Inbox & Komplain | ready-for-qa | 2026-07-20 |
 | [EPIC-013](./EPIC-013-omnichannel-ig-google-review.md) | Omnichannel — Google Review & Instagram DM | coding | 2026-07-20 |
 | [EPIC-014](./EPIC-014-crm-collectibles.md) | CRM Collectibles — Artwork, Wallpaper & Badge | on-progress | 2026-07-20 |
@@ -25,10 +25,10 @@ deploying-dev · ready-for-qa · blocked · done).
 | [EPIC-017](./EPIC-017-do-assistant-powerful.md) | Do — Asisten yang Benar-Benar Berguna | on-progress | 2026-07-21 |
 | [EPIC-018](./EPIC-018-lampiran-ocr.md) | Lampiran & OCR — Do Bisa Membaca Dokumen | on-progress | 2026-07-21 |
 | [EPIC-019](./EPIC-019-desktop-owner-monitoring.md) | Desktop Arkiv OS — Pusat Monitoring Owner | coding | 2026-07-21 |
-| [EPIC-020](./EPIC-020-notifikasi-wa-owner.md) | Notifikasi WhatsApp untuk Owner | coding | 2026-07-21 |
+| [EPIC-020](./EPIC-020-notifikasi-wa-owner.md) | Notifikasi WhatsApp untuk Owner | ready-for-qa | 2026-07-23 |
 | [EPIC-021](./EPIC-021-dashboard-eksekutif.md) | /dashboard — Ringkasan Eksekutif Lintas Modul | coding | 2026-07-21 |
-| [EPIC-022](./EPIC-022-sales-crm-funnel.md) | Sales Funneling — Leads B2B (Corporate, Sekolah & Acara Privat) | on-progress | 2026-07-21 |
-| [EPIC-023](./EPIC-023-ticketing-theme-park.md) | Ticketing Theme Park — NFC Postpaid, Harga Musiman & Channel Manager | coding | 2026-07-21 |
+| [EPIC-022](./EPIC-022-sales-crm-funnel.md) | Sales Funneling — Leads B2B (Corporate, Sekolah & Acara Privat) | ready-for-qa | 2026-07-22 |
+| [EPIC-023](./EPIC-023-ticketing-theme-park.md) | Ticketing Theme Park — NFC Postpaid, Harga Musiman & Channel Manager | ready-for-qa | 2026-07-22 |
 
 Aturan:
 - Epic + registry ini adalah sumber kebenaran status pekerjaan (canonical).

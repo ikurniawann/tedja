@@ -17,6 +17,11 @@ import {
   validateReply,
   type NormalizedReview,
 } from "./google-reviews";
+import {
+  buildReviewRendahMessage,
+  reviewRendahDedupKey,
+} from "@/lib/wa/notifications-messages";
+import { fireOwnerNotification } from "@/lib/wa/notifications-sender";
 
 export interface GoogleReviewSettings {
   complaintMaxRating: number;
@@ -141,6 +146,21 @@ export async function syncGoogleReviews(db: Pool = getPool()): Promise<SyncSumma
       const outcome = await upsertReview(db, normalized, settings);
       if (outcome === "inserted") inserted += 1;
       else updated += 1;
+      // EPIC-020 Fase C: review BARU ber-bintang ≤2 → WA owner. Hanya saat
+      // insert (edit review lama tidak memicu ulang); dedup per review id
+      // jadi restart sync pun aman. Tembak-dan-lupakan — gagal WA tidak
+      // menggagalkan sync.
+      if (outcome === "inserted" && normalized.starRating <= 2) {
+        fireOwnerNotification({
+          type: "reviewRendah",
+          dedupKey: reviewRendahDedupKey(normalized.reviewId),
+          message: buildReviewRendahMessage({
+            reviewerName: normalized.reviewerName,
+            starRating: normalized.starRating,
+            comment: normalized.comment,
+          }),
+        });
+      }
     } catch (error) {
       skipped += 1;
       console.error(
