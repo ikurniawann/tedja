@@ -95,3 +95,12 @@ dengan yang diketik kasir.
   asli terpasang otomatis memakai API sungguhan. Fase lanjut yang
   disiapkan kontraknya: SSE bridge (tablet terpisah), webhook
   auto-confirm QRIS, promo slideshow idle.
+- 2026-07-23 — **Akses menu ditambahkan** (pertanyaan owner "menunya di
+  mana?"): (1) menu sidebar **POS → Operasional → Layar Customer**
+  (delta `20260723150000`, grant menyalin persis pemegang menu Kasir:
+  super_admin/admin/pos/pos_supervisor/demo); (2) tombol **"Layar
+  Customer"** di header halaman kasir — window.open popup 1024×640
+  supaya gampang di-drag ke monitor kedua lalu F11 (BroadcastChannel
+  butuh sesama browser; window baru dari kasir = jalur paling pasti).
+  Verifikasi: migrasi applied + grant dicek query DB, lint bersih (4
+  error any pre-existing tak berubah), build lulus, PM2 restart.

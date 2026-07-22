@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Search, Utensils, ShoppingBag, Table as TableIcon,
   User, X, Sparkles, Printer, CheckCircle, AlertCircle, Loader2, ArrowLeft,
+  Monitor as MonitorIcon,
 } from 'lucide-react';
 import { ArrowsPointingInIcon, ArrowsPointingOutIcon } from '@heroicons/react/24/outline';
 import { toast } from 'sonner';
@@ -1076,6 +1077,24 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
               Back to Restaurant
             </Button>
           )}
+          {/* EPIC-024: buka layar customer sebagai window baru — drag ke
+              monitor kedua lalu F11 (BroadcastChannel sesama browser) */}
+          <Button
+            type="button"
+            variant="outline"
+            title="Buka layar customer di window baru — drag ke monitor kedua, lalu F11"
+            className="border-gray-200/80 text-gray-700 hover:border-primary/30 hover:bg-primary/10 hover:text-primary"
+            onClick={() =>
+              window.open(
+                '/dashboard/pos/customer-display',
+                'pos-customer-display',
+                'popup=yes,width=1024,height=640'
+              )
+            }
+          >
+            <MonitorIcon className="mr-2 h-4 w-4" />
+            Layar Customer
+          </Button>
           {isFullscreen ? (
             <Button
               type="button"
