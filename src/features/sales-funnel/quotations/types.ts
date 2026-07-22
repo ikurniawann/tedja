@@ -13,6 +13,14 @@ export interface QuotationItem {
 
 export type BomStatus = "terpotong" | "tidak-terpotong";
 
+/** Termin pembayaran (Fase G) — persen dari total, Σ = 100. */
+export interface QuotationTerm {
+  id: string;
+  label: string;
+  percent: string | number;
+  due_date: string | null;
+}
+
 export interface Quotation {
   id: string;
   quote_number: string;
@@ -28,6 +36,7 @@ export interface Quotation {
   bom_status: BomStatus | null;
   created_at: string;
   items: QuotationItem[];
+  terms: QuotationTerm[];
 }
 
 export interface StockShortage {
@@ -65,12 +74,20 @@ export interface QuotationItemForm {
   unit_price: string;
 }
 
+export interface QuotationTermForm {
+  label: string;
+  percent: string;
+  due_date: string;
+}
+
 export interface QuotationFormValues {
   use_ppn: boolean;
   ppn_persen: string;
   notes: string;
   valid_until: string;
   items: QuotationItemForm[];
+  /** Kosong = tanpa termin; terisi = Σ persen wajib 100. */
+  terms: QuotationTermForm[];
 }
 
 export const QUOTATION_STATUS_LABELS: Record<QuotationStatus, string> = {
@@ -95,13 +112,34 @@ export const EMPTY_ITEM_FORM: QuotationItemForm = {
   unit_price: "",
 };
 
+export const EMPTY_TERM_FORM: QuotationTermForm = {
+  label: "",
+  percent: "",
+  due_date: "",
+};
+
+/** Preset umum theme park/event: DP 50% + pelunasan 50%. */
+export const DEFAULT_TERMS_PRESET: QuotationTermForm[] = [
+  { label: "DP", percent: "50", due_date: "" },
+  { label: "Pelunasan", percent: "50", due_date: "" },
+];
+
 export const EMPTY_QUOTATION_FORM: QuotationFormValues = {
   use_ppn: true,
   ppn_persen: "11",
   notes: "",
   valid_until: "",
   items: [{ ...EMPTY_ITEM_FORM }],
+  terms: [],
 };
+
+/** Σ persen termin form (2dp) — 0 bila tanpa termin. */
+export function termPercentSum(terms: QuotationTermForm[]): number {
+  return (
+    Math.round(terms.reduce((sum, t) => sum + (Number(t.percent) || 0), 0) * 100) /
+    100
+  );
+}
 
 export function itemLineTotal(item: QuotationItemForm): number {
   const qty = Number(item.qty) || 0;
@@ -138,6 +176,13 @@ export function formToPayload(form: QuotationFormValues) {
         description: item.description.trim(),
         qty: Number(item.qty),
         unit_price: Number(item.unit_price) || 0,
+      })),
+    terms: form.terms
+      .filter((term) => term.label.trim() && Number(term.percent) > 0)
+      .map((term) => ({
+        label: term.label.trim(),
+        percent: Number(term.percent),
+        due_date: term.due_date || null,
       })),
   };
 }

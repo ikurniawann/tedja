@@ -21,6 +21,14 @@ export interface QuotationPdfItem {
   line_total: number;
 }
 
+/** Termin pembayaran (Fase G) — nominal sudah dialokasikan dari persen. */
+export interface QuotationPdfTerm {
+  label: string;
+  percent: number;
+  amount: number;
+  due_date: string | null;
+}
+
 export interface QuotationPdfData {
   quote_number: string;
   created_at: string;
@@ -42,6 +50,7 @@ export interface QuotationPdfData {
   notes: string | null;
   owner_name: string | null;
   items: QuotationPdfItem[];
+  terms?: QuotationPdfTerm[];
 }
 
 function rupiah(value: number): string {
@@ -202,6 +211,32 @@ export async function buildQuotationPdf(data: QuotationPdfData): Promise<Buffer>
     totalRow(`PPN ${data.ppn_persen}%`, rupiah(data.ppn_nominal));
   }
   totalRow("TOTAL", rupiah(data.total), true);
+
+  // ── Termin pembayaran (Fase G) ──
+  if (data.terms && data.terms.length > 0) {
+    doc.moveDown(0.8);
+    doc.font("Helvetica-Bold").fontSize(8.5).fillColor(COLOR_MUTED);
+    doc.text("TERMIN PEMBAYARAN", left, doc.y);
+    doc.moveDown(0.3);
+    for (const term of data.terms) {
+      if (doc.y + 16 > pageBottom()) doc.addPage();
+      const y = doc.y;
+      doc.font("Helvetica").fontSize(9).fillColor(COLOR_TEXT);
+      doc.text(
+        `${term.label} (${Number(term.percent).toLocaleString("id-ID")}%)` +
+          (term.due_date ? ` — jatuh tempo ${tanggal(term.due_date)}` : ""),
+        left,
+        y,
+        { width: colTotal - left - 8 }
+      );
+      doc.font("Helvetica-Bold");
+      doc.text(rupiah(term.amount), colTotal, y, {
+        width: right - colTotal,
+        align: "right",
+      });
+      doc.moveDown(0.25);
+    }
+  }
 
   // ── Catatan ──
   if (data.notes) {

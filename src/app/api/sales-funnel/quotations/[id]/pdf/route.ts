@@ -6,6 +6,7 @@ import {
   quotationFileName,
   type QuotationPdfItem,
 } from "@/lib/sales-funnel/quotation-pdf";
+import { allocateTermAmounts } from "@/lib/sales-funnel/quotations";
 import { requireSalesFunnelRole } from "@/lib/sales-funnel/server";
 
 const EVENT_LABELS: Record<string, string> = {
@@ -93,18 +94,31 @@ export async function GET(
       );
     }
 
-    const items = await query<{
-      description: string;
-      item_type: string;
-      qty: string;
-      unit_price: string;
-      line_total: string;
-    }>(
-      `SELECT description, item_type, qty, unit_price, line_total
-       FROM crm.crm_sales_quotation_items
-       WHERE quotation_id = $1
-       ORDER BY sort_order ASC`,
-      [id]
+    const [items, terms] = await Promise.all([
+      query<{
+        description: string;
+        item_type: string;
+        qty: string;
+        unit_price: string;
+        line_total: string;
+      }>(
+        `SELECT description, item_type, qty, unit_price, line_total
+         FROM crm.crm_sales_quotation_items
+         WHERE quotation_id = $1
+         ORDER BY sort_order ASC`,
+        [id]
+      ),
+      query<{ label: string; percent: string; due_date: string | null }>(
+        `SELECT label, percent, due_date::text AS due_date
+         FROM crm.crm_sales_quotation_terms
+         WHERE quotation_id = $1
+         ORDER BY sort_order ASC`,
+        [id]
+      ),
+    ]);
+    const termAmounts = allocateTermAmounts(
+      Number(quotation.total),
+      terms.map((t) => Number(t.percent))
     );
 
     const pdf = await buildQuotationPdf({
@@ -136,6 +150,12 @@ export async function GET(
           line_total: Number(item.line_total),
         })
       ),
+      terms: terms.map((term, i) => ({
+        label: term.label,
+        percent: Number(term.percent),
+        amount: termAmounts[i],
+        due_date: term.due_date,
+      })),
     });
 
     return new NextResponse(new Uint8Array(pdf), {

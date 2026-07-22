@@ -7,6 +7,7 @@ import {
   QUOTATION_STATUSES,
   computeTotals,
   insertItems,
+  insertTerms,
   quotationPayloadSchema,
   validateProducts,
 } from "@/lib/sales-funnel/quotations";
@@ -121,6 +122,11 @@ export async function PATCH(
           [id]
         );
         await insertItems(client, id, lines);
+        await client.query(
+          `DELETE FROM crm.crm_sales_quotation_terms WHERE quotation_id = $1`,
+          [id]
+        );
+        await insertTerms(client, id, payload.terms);
 
         // Estimasi deal mengikuti quotation terbaru selama deal berjalan
         await client.query(

@@ -86,3 +86,70 @@ export async function deleteDeal(id: string) {
   const res = await fetch(`/api/sales-funnel/deals/${id}`, { method: "DELETE" });
   if (!res.ok && res.status !== 204) await parseError(res, "Gagal menghapus deal");
 }
+
+// ── Pembayaran deal (Fase G) ─────────────────────────────────────────
+
+export interface DealPayment {
+  id: string;
+  amount: number;
+  method: string;
+  paid_on: string;
+  note: string | null;
+  created_by_name: string | null;
+  created_at: string;
+}
+
+export interface DealPaymentTermProgress {
+  label: string;
+  due_date: string | null;
+  percent: number;
+  amount: number;
+  paid: number;
+  status: "lunas" | "sebagian" | "belum";
+}
+
+export interface DealPaymentData {
+  payments: DealPayment[];
+  summary: {
+    reference_total: number;
+    reference_quote_number: string | null;
+    reference_is_accepted: boolean;
+    total_paid: number;
+    outstanding: number;
+  };
+  terms: DealPaymentTermProgress[];
+}
+
+export interface CreatePaymentValues {
+  amount: number;
+  method: string;
+  paid_on: string;
+  note?: string | null;
+}
+
+export async function fetchDealPayments(dealId: string): Promise<DealPaymentData> {
+  const res = await fetch(`/api/sales-funnel/deals/${dealId}/payments`);
+  if (!res.ok) await parseError(res, "Gagal memuat pembayaran");
+  const body = (await res.json()) as { data: DealPaymentData };
+  return body.data;
+}
+
+export async function createDealPayment(dealId: string, values: CreatePaymentValues) {
+  const res = await fetch(`/api/sales-funnel/deals/${dealId}/payments`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(values),
+  });
+  if (!res.ok) await parseError(res, "Gagal mencatat pembayaran");
+  return res.json();
+}
+
+export async function deleteDealPayment(dealId: string, paymentId: string) {
+  const res = await fetch(
+    `/api/sales-funnel/deals/${dealId}/payments/${paymentId}`,
+    { method: "DELETE" }
+  );
+  if (!res.ok && res.status !== 204) {
+    await parseError(res, "Gagal menghapus catatan pembayaran");
+  }
+}

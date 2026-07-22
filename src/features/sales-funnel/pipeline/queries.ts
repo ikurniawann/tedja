@@ -4,12 +4,16 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   createDeal,
+  createDealPayment,
   deleteDeal,
+  deleteDealPayment,
+  fetchDealPayments,
   fetchDeals,
   fetchLostReasons,
   fetchStages,
   updateDeal,
   updateStage,
+  type CreatePaymentValues,
 } from "./api";
 import type {
   DealFilters,
@@ -26,6 +30,44 @@ export const pipelineQueryKeys = {
   lostReasons: ["sales-funnel", "pipeline", "lost-reasons"] as const,
   deals: (filters: DealFilters) =>
     ["sales-funnel", "pipeline", "deals", filters] as const,
+  payments: (dealId: string) =>
+    ["sales-funnel", "pipeline", "payments", dealId] as const,
+};
+
+export const useDealPayments = (dealId: string, enabled: boolean) =>
+  useQuery({
+    queryKey: pipelineQueryKeys.payments(dealId),
+    queryFn: () => fetchDealPayments(dealId),
+    enabled: enabled && dealId !== "",
+  });
+
+export const useCreateDealPayment = (dealId: string, onSuccess?: () => void) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (values: CreatePaymentValues) => createDealPayment(dealId, values),
+    onSuccess: () => {
+      toast.success("Pembayaran tercatat");
+      queryClient.invalidateQueries({
+        queryKey: pipelineQueryKeys.payments(dealId),
+      });
+      onSuccess?.();
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+};
+
+export const useDeleteDealPayment = (dealId: string) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (paymentId: string) => deleteDealPayment(dealId, paymentId),
+    onSuccess: () => {
+      toast.success("Catatan pembayaran dihapus");
+      queryClient.invalidateQueries({
+        queryKey: pipelineQueryKeys.payments(dealId),
+      });
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
 };
 
 export const useStages = (all = false) =>

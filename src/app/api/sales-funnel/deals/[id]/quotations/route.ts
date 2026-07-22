@@ -5,6 +5,7 @@ import { findAccessibleDeal } from "@/lib/sales-funnel/access";
 import {
   computeTotals,
   insertItems,
+  insertTerms,
   quotationPayloadSchema,
   validateProducts,
 } from "@/lib/sales-funnel/quotations";
@@ -42,7 +43,16 @@ export async function GET(
                  FROM crm.crm_sales_quotation_items i
                  WHERE i.quotation_id = q.id),
                 '[]'::json
-              ) AS items
+              ) AS items,
+              COALESCE(
+                (SELECT json_agg(json_build_object(
+                   'id', t.id, 'label', t.label, 'percent', t.percent,
+                   'due_date', t.due_date
+                 ) ORDER BY t.sort_order)
+                 FROM crm.crm_sales_quotation_terms t
+                 WHERE t.quotation_id = q.id),
+                '[]'::json
+              ) AS terms
        FROM crm.crm_sales_quotations q
        WHERE q.deal_id = $1 AND q.deleted_at IS NULL
        ORDER BY q.created_at DESC
@@ -121,6 +131,7 @@ export async function POST(
       );
       const quotation = inserted.rows[0];
       await insertItems(client, quotation.id, lines);
+      await insertTerms(client, quotation.id, payload.terms);
 
       // Total penawaran = estimasi nilai deal berjalan
       await client.query(

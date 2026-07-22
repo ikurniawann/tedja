@@ -516,3 +516,36 @@ Keputusan owner FINAL (2026-07-21) — Fase F resmi on-progress:
   inventory_movements production orders siap dicontoh. Rencana rinci +
   5 pertanyaan keputusan owner ditulis di Task Groups Fase F — status
   epic tetap ready-for-qa utk A–E; F menunggu jawaban owner.
+- 2026-07-23 — **Fase G SELESAI: termin pembayaran quotation + pencatatan
+  pembayaran deal** (permintaan owner hari ini; status tetap
+  ready-for-qa). Delta `20260723110000` applied:
+  `crm_sales_quotation_terms` (label + PERSEN Σ wajib 100 — validasi zod
+  server & UI, toleransi 0.01 utk 33.33×3; due_date opsional; CASCADE
+  ikut quotation) + `crm_sales_deal_payments` (append-only + soft delete
+  deleted_at/by utk koreksi salah catat). Nominal termin TIDAK disimpan —
+  dialokasikan saat baca dari total × persen dgn pembulatan KUMULATIF 2dp
+  (`allocateTermAmounts`, Σ = total persis; pola allocateBundlePrice
+  ticketing) sehingga edit item/PPN tidak membuat termin basi. Progress
+  per termin = **waterfall** (`termProgress`): pembayaran bebas nominal
+  mengisi termin berurutan → status lunas/sebagian/belum diturunkan,
+  kasir tidak memilih termin manual. Acuan tagihan (prioritas): quotation
+  DITERIMA terbaru → value_final deal → quotation terbaru → estimasi.
+  API: terms ikut payload create/update quotation (replace-all) + GET
+  list; `GET/POST /deals/[id]/payments` (summary + progress; rate limit
+  20/mnt) + `DELETE /payments/[id]` (soft). PDF quotation kini memuat
+  tabel "TERMIN PEMBAYARAN" (label, persen, nominal alokasi, jatuh
+  tempo). UI: builder quotation ber-section Termin (tombol "Pakai
+  Termin" preset DP 50/Pelunasan 50, live nominal per termin, guard Σ
+  100% sebelum submit — validasi sama dgn server); deal detail sheet
+  ber-section Pembayaran (progress bar terbayar/total + sisa, status per
+  termin ber-badge + jatuh tempo, form catat nominal/metode/tanggal/
+  catatan, riwayat ber-hapus koreksi). Verifikasi: 818 unit test lulus
+  (10 baru: skema termin, alokasi kumulatif, waterfall), eslint bersih
+  di semua file yang disentuh, build lulus, migrasi applied, PM2
+  restart, smoke: payments 401 tanpa auth. CATATAN pre-existing (bukan
+  dari fase ini): 7 file dialog sales-funnel lama kena rule lint baru
+  `react-hooks/set-state-in-effect` (pola setState-dlm-effect dari fase
+  B–F) — kandidat rapikan terpisah, terverifikasi sudah error di HEAD
+  sebelum Fase G. QA owner: buka deal → buat/edit quotation → "Pakai
+  Termin" → simpan → unduh PDF (tabel termin tampil) → catat pembayaran
+  parsial → status termin berubah lunas/sebagian.

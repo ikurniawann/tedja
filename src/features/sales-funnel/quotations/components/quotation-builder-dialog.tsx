@@ -24,13 +24,17 @@ import { Textarea } from "@/components/ui/textarea";
 import { formatRupiah } from "../../pipeline/types";
 import { useCatalogProducts, useCreateQuotation, useUpdateQuotation } from "../queries";
 import {
+  DEFAULT_TERMS_PRESET,
   EMPTY_ITEM_FORM,
   EMPTY_QUOTATION_FORM,
+  EMPTY_TERM_FORM,
   formTotals,
   itemLineTotal,
+  termPercentSum,
   type Quotation,
   type QuotationFormValues,
   type QuotationItemForm,
+  type QuotationTermForm,
 } from "../types";
 
 interface QuotationBuilderDialogProps {
@@ -53,6 +57,11 @@ function quotationToForm(quotation: Quotation): QuotationFormValues {
       description: item.description,
       qty: String(Number(item.qty)),
       unit_price: String(Number(item.unit_price)),
+    })),
+    terms: (quotation.terms ?? []).map((term) => ({
+      label: term.label,
+      percent: String(Number(term.percent)),
+      due_date: term.due_date?.slice(0, 10) ?? "",
     })),
   };
 }
@@ -115,15 +124,39 @@ export function QuotationBuilderDialog({
     });
   };
 
+  const setTerm = (index: number, patch: Partial<QuotationTermForm>) =>
+    setForm((prev) => ({
+      ...prev,
+      terms: prev.terms.map((term, i) =>
+        i === index ? { ...term, ...patch } : term
+      ),
+    }));
+  const addTerm = () =>
+    setForm((prev) => ({ ...prev, terms: [...prev.terms, { ...EMPTY_TERM_FORM }] }));
+  const removeTerm = (index: number) =>
+    setForm((prev) => ({
+      ...prev,
+      terms: prev.terms.filter((_, i) => i !== index),
+    }));
+
   const totals = formTotals(form);
   const isCompleteRow = (item: QuotationItemForm) =>
     item.description.trim() !== "" &&
     Number(item.qty) > 0 &&
     (item.item_type !== "produk" || item.product_id !== "");
   const incompleteCount = form.items.filter((item) => !isCompleteRow(item)).length;
+  const percentSum = termPercentSum(form.terms);
+  const incompleteTermCount = form.terms.filter(
+    (term) => term.label.trim() === "" || !(Number(term.percent) > 0)
+  ).length;
+  // Termin opsional; bila diisi: baris lengkap + Σ persen tepat 100
+  // (validasi sama dgn server — jangan sampai 400 baru ketahuan)
+  const termsValid =
+    form.terms.length === 0 ||
+    (incompleteTermCount === 0 && Math.abs(percentSum - 100) <= 0.01);
   // Semua baris wajib lengkap — baris setengah jadi JANGAN dibuang
   // diam-diam saat simpan (temuan gate F1: item hilang tanpa peringatan)
-  const canSubmit = form.items.length > 0 && incompleteCount === 0;
+  const canSubmit = form.items.length > 0 && incompleteCount === 0 && termsValid;
 
   const handleSubmit = () => {
     if (!canSubmit || isPending) return;
@@ -301,6 +334,113 @@ export function QuotationBuilderDialog({
           </div>
         </div>
 
+        {/* ── Termin pembayaran (Fase G) ── */}
+        <div className="rounded-xl border border-gray-200/80 p-3.5">
+          <div className="mb-2 flex items-center justify-between">
+            <div>
+              <p className="text-sm font-semibold text-gray-900">
+                Termin Pembayaran
+              </p>
+              <p className="text-xs text-gray-500">
+                Opsional — jadwal cicilan (Σ persen wajib 100%); tampil di PDF
+                & jadi acuan progress pelunasan deal.
+              </p>
+            </div>
+            {form.terms.length === 0 ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  setForm((prev) => ({
+                    ...prev,
+                    terms: DEFAULT_TERMS_PRESET.map((t) => ({ ...t })),
+                  }))
+                }
+                className="h-8 gap-1.5 rounded-lg"
+              >
+                <Plus className="h-3.5 w-3.5" /> Pakai Termin
+              </Button>
+            ) : null}
+          </div>
+          {form.terms.length > 0 ? (
+            <div className="space-y-2">
+              {form.terms.map((term, index) => (
+                <div
+                  key={index}
+                  className="grid grid-cols-1 items-center gap-2 sm:grid-cols-12"
+                >
+                  <div className="sm:col-span-4">
+                    <Input
+                      value={term.label}
+                      onChange={(e) => setTerm(index, { label: e.target.value })}
+                      placeholder={`mis. ${index === 0 ? "DP" : "Pelunasan"}`}
+                      className="h-9 text-sm"
+                    />
+                  </div>
+                  <div className="flex items-center gap-1 sm:col-span-2">
+                    <Input
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={term.percent}
+                      onChange={(e) => setTerm(index, { percent: e.target.value })}
+                      placeholder="%"
+                      className="h-9 text-sm"
+                    />
+                    <span className="text-xs text-gray-500">%</span>
+                  </div>
+                  <div className="sm:col-span-3">
+                    <Input
+                      type="date"
+                      value={term.due_date}
+                      onChange={(e) => setTerm(index, { due_date: e.target.value })}
+                      title="Jatuh tempo (opsional)"
+                      className="h-9 text-sm"
+                    />
+                  </div>
+                  <div className="flex items-center justify-end gap-2 sm:col-span-3">
+                    <span className="text-sm font-medium text-gray-700">
+                      {formatRupiah(
+                        Math.round(totals.total * (Number(term.percent) || 0)) / 100
+                      )}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => removeTerm(index)}
+                      className="text-gray-300 hover:text-red-500"
+                      aria-label="Hapus termin"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+              <div className="flex items-center justify-between">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={addTerm}
+                  disabled={form.terms.length >= 12}
+                  className="h-8 gap-1.5 rounded-lg"
+                >
+                  <Plus className="h-3.5 w-3.5" /> Tambah Termin
+                </Button>
+                <span
+                  className={`text-xs font-medium ${
+                    Math.abs(percentSum - 100) <= 0.01
+                      ? "text-emerald-600"
+                      : "text-amber-600"
+                  }`}
+                >
+                  Total: {percentSum}% {Math.abs(percentSum - 100) <= 0.01 ? "✓" : "— harus 100%"}
+                </span>
+              </div>
+            </div>
+          ) : null}
+        </div>
+
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div className="space-y-1.5">
             <Label htmlFor="q_valid">Berlaku Sampai</Label>
@@ -333,6 +473,10 @@ export function QuotationBuilderDialog({
           {incompleteCount > 0 ? (
             <p className="mr-auto text-xs text-amber-600">
               {incompleteCount} baris belum lengkap — isi atau hapus dulu.
+            </p>
+          ) : !termsValid ? (
+            <p className="mr-auto text-xs text-amber-600">
+              Termin belum sah — lengkapi label/persen dan pastikan total 100%.
             </p>
           ) : null}
           <Button variant="outline" onClick={close} disabled={isPending}>
