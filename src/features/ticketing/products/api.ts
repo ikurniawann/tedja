@@ -1,4 +1,5 @@
 import type {
+  ChannelManagerItem,
   CreateDateValues,
   CreateTicketValues,
   LoketOption,
@@ -28,7 +29,7 @@ async function getJson<T>(url: string, fallback: string): Promise<T> {
 
 async function sendJson<T>(
   url: string,
-  method: "POST" | "PATCH" | "DELETE",
+  method: "POST" | "PATCH" | "PUT" | "DELETE",
   payload: unknown,
   fallback: string
 ): Promise<T> {
@@ -114,6 +115,41 @@ export const uploadThumbnail = async (id: string, file: File) => {
   const body = (await res.json()) as { data: { thumbnail_url: string } };
   return body.data;
 };
+
+export const fetchChannelManager = () =>
+  getJson<ChannelManagerItem[]>(
+    "/api/ticketing/channel-manager",
+    "Gagal memuat channel manager"
+  );
+
+export const toggleProductChannel = (
+  id: string,
+  values: { channel_id: string; is_distributed: boolean }
+) =>
+  sendJson<{ id: string }>(
+    `/api/ticketing/products/${id}/channels`,
+    "PATCH",
+    values,
+    "Gagal mengubah distribusi"
+  );
+
+export const saveChannelPrices = (
+  id: string,
+  values: {
+    channel_id: string;
+    prices: {
+      variant_id: string;
+      price_regular: number | null;
+      price_high: number | null;
+    }[];
+  }
+) =>
+  sendJson<{ id: string }>(
+    `/api/ticketing/products/${id}/channel-prices`,
+    "PUT",
+    values,
+    "Gagal menyimpan harga kanal"
+  );
 
 export const fetchLoketOptions = () =>
   getJson<LoketOption[]>(

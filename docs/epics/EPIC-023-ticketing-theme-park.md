@@ -545,3 +545,32 @@ distribusi website, harga kanal website, dan tanggal blok-online.
   = settle rombongan Fase B; member bayar sendiri = settle per gelang.
   Sisa R2: Channel Manager UI (toggle distribusi + override harga per
   kanal + guard harga lengkap).
+- 2026-07-22 — **Fase R2 SELESAI** (status `coding`). Delta
+  `20260722110000_ticketing_fase_r2.sql` applied (hanya menu — skema
+  distribusi/override sudah ada sejak R1): menu "Channel Manager"
+  (`/dashboard/ticketing/channel-manager`, anak menu Ticketing, granted
+  `super_admin`). API baru: GET `/api/ticketing/channel-manager` (papan
+  semua ticket × kanal venue — status distribusi, override per varian,
+  `price_complete` dihitung server supaya UI jujur), PATCH
+  `/api/ticketing/products/[id]/channels` (toggle distribusi dalam
+  `withTransaction` + `FOR UPDATE`; guard nyalakan: produk wajib Active,
+  punya varian aktif, dan SEMUA varian lengkap harga Regular & High —
+  langsung di varian atau tertutup override kanal via
+  `isVariantPriceComplete`; mematikan selalu boleh), PUT
+  `/api/ticketing/products/[id]/channel-prices` (upsert override per
+  varian; NULL+NULL → baris dihapus; varian divalidasi milik ticket &
+  masih aktif — anti baris hantu). UI `channel-manager-page.tsx`:
+  papan per ticket, Switch per kanal (blocked + alasan bila draft/harga
+  belum lengkap — hanya blokir nyalakan), dialog harga kanal (input
+  kosong = ikut varian; terisi wajib angka ≥ 0, "0" sah tidak dipaksa
+  null). Ikutan: PATCH produk turun-ke-Draft mematikan semua distribusi
+  (papan tidak menampilkan toggle menyala yang bohong); editor ticket
+  kini nge-link ke Channel Manager. Verifikasi: 35 unit test lulus,
+  build lulus, smoke API live (papan OK; toggle ON produk draft ditolak
+  400 dgn pesan jelas). Catatan minor disengaja: produk BARU (draft)
+  tetap default walk-in ON dari R1 — by design agar langsung siap jual
+  saat diaktifkan; loket hanya menawarkan produk Active jadi tidak
+  bocor. Insiden pagi 22 Jul ("dashboard terjadi kesalahan") = server
+  start di tengah build kemarin (ChunkLoadError, route table stale) —
+  ditutup dgn build ulang penuh + restart PM2; aturan: build selesai
+  dulu, baru restart.

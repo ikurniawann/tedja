@@ -60,8 +60,15 @@ export function TicketEditorPage({ productId }: { productId: string }) {
           </span>
         </div>
         <p className="mt-1 text-sm text-gray-500">
-          Konfigurasi produk ticket — distribusi kanal diatur di Channel
-          Manager (Fase R2).
+          Konfigurasi produk ticket — distribusi kanal & harga per kanal
+          diatur di{" "}
+          <Link
+            href="/dashboard/ticketing/channel-manager"
+            className="text-pink-600 underline-offset-2 hover:underline"
+          >
+            Channel Manager
+          </Link>
+          .
         </p>
       </div>
 

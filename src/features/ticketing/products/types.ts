@@ -101,6 +101,37 @@ export interface CreateDateValues {
   end_date: string;
 }
 
+export interface ChannelOverride {
+  variant_id: string;
+  price_regular: number | null;
+  price_high: number | null;
+}
+
+export interface ChannelManagerChannel {
+  channel_id: string;
+  channel_code: string;
+  channel_name: string;
+  is_online: boolean;
+  is_distributed: boolean;
+  price_complete: boolean;
+  overrides: ChannelOverride[];
+}
+
+export interface ChannelManagerItem {
+  id: string;
+  code: string;
+  name: string;
+  status: TicketStatus;
+  thumbnail_url: string | null;
+  variants: {
+    id: string;
+    name: string;
+    price_regular: number | null;
+    price_high: number | null;
+  }[];
+  channels: ChannelManagerChannel[];
+}
+
 export interface LoketOption {
   variant_id: string;
   variant_name: string;

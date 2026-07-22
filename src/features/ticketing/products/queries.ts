@@ -8,9 +8,12 @@ import {
   createProductDate,
   deleteProductDate,
   fetchCategories,
+  fetchChannelManager,
   fetchLoketOptions,
   fetchProductDetail,
   fetchProducts,
+  saveChannelPrices,
+  toggleProductChannel,
   updateProduct,
   uploadThumbnail,
 } from "./api";
@@ -113,6 +116,44 @@ export const useDeleteProductDate = () =>
     ({ id, dateId }: { id: string; dateId: string }) =>
       deleteProductDate(id, dateId),
     "Rentang tanggal dihapus"
+  );
+
+export const useChannelManager = () =>
+  useQuery({
+    queryKey: ["ticketing", "products", "channel-manager"] as const,
+    queryFn: fetchChannelManager,
+  });
+
+export const useToggleChannel = () =>
+  useProductMutation(
+    ({
+      id,
+      values,
+    }: {
+      id: string;
+      values: { channel_id: string; is_distributed: boolean };
+    }) => toggleProductChannel(id, values),
+    "Distribusi diperbarui"
+  );
+
+export const useSaveChannelPrices = (onSuccess?: () => void) =>
+  useProductMutation(
+    ({
+      id,
+      values,
+    }: {
+      id: string;
+      values: {
+        channel_id: string;
+        prices: {
+          variant_id: string;
+          price_regular: number | null;
+          price_high: number | null;
+        }[];
+      };
+    }) => saveChannelPrices(id, values),
+    "Harga kanal tersimpan",
+    onSuccess
   );
 
 export const useUploadThumbnail = () =>

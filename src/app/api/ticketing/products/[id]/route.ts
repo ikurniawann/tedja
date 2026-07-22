@@ -196,6 +196,18 @@ export async function PATCH(
         );
       }
 
+      // Turun ke Draft = tidak boleh tetap terdistribusi. Registrasi loket
+      // sudah menolak produk Draft, tapi papan Channel Manager jangan
+      // memperlihatkan toggle "menyala" yang sebetulnya mati (hasil review).
+      if (body.status === "draft") {
+        await client.query(
+          `UPDATE ticketing.ticket_product_channels
+           SET is_distributed = false, updated_at = now()
+           WHERE ticket_product_id = $1 AND is_distributed = true`,
+          [id]
+        );
+      }
+
       for (const variant of body.variants ?? []) {
         const vSets: string[] = ["updated_at = now()"];
         const vValues: unknown[] = [];
