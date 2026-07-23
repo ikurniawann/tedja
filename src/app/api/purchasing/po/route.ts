@@ -67,6 +67,31 @@ const productPoSchema = z.object({
   ).min(1, "At least one PO item is required"),
 });
 
+// EPIC-026 B3 — PO barang operasional (scope 'general'): pemasok REUSE `vendors`
+// (seperti product), diskriminan item = `supply_item_id`.
+const generalPoSchema = z.object({
+  vendor_id: z.string().uuid("Vendor wajib dipilih"),
+  pr_id: z.string().uuid().optional(),
+  tanggal_po: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Format tanggal: YYYY-MM-DD"),
+  tanggal_kirim_estimasi: optionalDateSchema,
+  catatan: z.string().optional(),
+  alamat_pengiriman: z.string().optional(),
+  diskon_persen: z.number().min(0).max(100).default(0),
+  diskon_nominal: z.number().min(0).default(0),
+  ppn_persen: z.number().min(0).max(100).default(11),
+  source_type: z.enum(["manual", "production_order", "low_stock"]).optional().default("manual"),
+  items: z.array(
+    z.object({
+      supply_item_id: z.string().uuid("Barang operasional wajib dipilih"),
+      pr_item_id: z.string().uuid().optional(),
+      satuan_id: z.string().uuid().optional(),
+      qty_ordered: z.number().min(0.0001, "Jumlah pesanan minimal 0.0001"),
+      harga_satuan: z.number().min(0, "Harga tidak boleh negatif"),
+      notes: z.string().optional(),
+    })
+  ).min(1, "Minimal 1 item PO"),
+});
+
 function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
 }
@@ -128,7 +153,8 @@ export async function GET(request: NextRequest) {
 
     // Filters
     if (search) {
-      if (moduleType === "product") {
+      // general REUSE vendors (seperti product) → cari via vendor_name.
+      if (moduleType === "product" || moduleType === "general") {
         query = query.or(`nomor_po.ilike.%${search}%,vendor_name.ilike.%${search}%`);
       } else {
         query = query.or(`nomor_po.ilike.%${search}%,nama_supplier.ilike.%${search}%`);
@@ -143,7 +169,7 @@ export async function GET(request: NextRequest) {
     if (vendorId) {
       query = query.eq("vendor_id", vendorId);
     }
-    if (moduleType === "raw_material" || moduleType === "product") {
+    if (moduleType === "raw_material" || moduleType === "product" || moduleType === "general") {
       query = query.eq("module_type", moduleType);
     }
     if (tanggalMulai) {
@@ -249,9 +275,20 @@ export async function POST(request: NextRequest) {
   try {
     const db = await createServerPgClient();
     const body = await request.json();
-    const moduleType = body?.module_type === "product" ? "product" : "raw_material";
+    const moduleType =
+      body?.module_type === "product"
+        ? "product"
+        : body?.module_type === "general"
+          ? "general"
+          : "raw_material";
+    // general & product sama-sama memakai `vendors` sbg pemasok.
+    const usesVendor = moduleType === "product" || moduleType === "general";
     const validated =
-      moduleType === "product" ? productPoSchema.parse(body) : poSchema.parse(body);
+      moduleType === "product"
+        ? productPoSchema.parse(body)
+        : moduleType === "general"
+          ? generalPoSchema.parse(body)
+          : poSchema.parse(body);
     const scope = await getApiUserScope();
     let companyId = effectiveCompanyId(scope);
     let branchId = effectiveBranchId(scope);
@@ -297,7 +334,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (!companyId || !branchId) {
-      if (moduleType === "product" && "vendor_id" in validated) {
+      if (usesVendor && "vendor_id" in validated) {
         const { data: vendor, error: vendorError } = await db
           .from("vendors")
           .select("company_id, branch_id")
@@ -349,8 +386,8 @@ export async function POST(request: NextRequest) {
       company_id: companyId,
       branch_id: branchId,
       module_type: moduleType,
-      supplier_id: moduleType === "product" ? null : (poPayload as { supplier_id: string }).supplier_id,
-      vendor_id: moduleType === "product" ? (validated as z.infer<typeof productPoSchema>).vendor_id : null,
+      supplier_id: usesVendor ? null : (poPayload as { supplier_id: string }).supplier_id,
+      vendor_id: usesVendor ? (validated as { vendor_id: string }).vendor_id : null,
       status: "draft",
       subtotal,
       diskon_nominal: diskonNominal,
@@ -373,6 +410,21 @@ export async function POST(request: NextRequest) {
           purchase_order_id: data.id,
           product_id: item.product_id,
           raw_material_id: null,
+          supply_item_id: null,
+          pr_item_id: item.pr_item_id || null,
+          satuan_id: item.satuan_id || null,
+          qty_ordered: item.qty_ordered,
+          harga_satuan: item.harga_satuan,
+          catatan: item.notes || null,
+          is_active: true,
+        };
+      }
+      if ("supply_item_id" in item) {
+        return {
+          purchase_order_id: data.id,
+          product_id: null,
+          raw_material_id: null,
+          supply_item_id: item.supply_item_id,
           pr_item_id: item.pr_item_id || null,
           satuan_id: item.satuan_id || null,
           qty_ordered: item.qty_ordered,

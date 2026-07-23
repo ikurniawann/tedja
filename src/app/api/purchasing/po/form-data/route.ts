@@ -51,6 +51,46 @@ export async function GET(request: NextRequest) {
       });
     }
 
+    if (moduleType === "general") {
+      // EPIC-026 B3 — PO barang operasional: pemasok REUSE tabel `vendors`,
+      // sumber item = item.supply_items (harga_beli sbagai harga default).
+      let vendorsQuery = db
+        .from("vendors")
+        .select("id, code, name")
+        .eq("is_active", true)
+        .order("name");
+
+      const companyOr = companyScopeOr(scope);
+      if (companyOr) vendorsQuery = vendorsQuery.or(companyOr);
+      const branchOr = branchScopeOr(scope);
+      if (branchOr) vendorsQuery = vendorsQuery.or(branchOr);
+
+      let suppliesQuery = db
+        .from("supply_items")
+        .select("id, kode, nama, satuan_id, stockable, harga_beli")
+        .eq("is_active", true)
+        .is("deleted_at", null)
+        .order("nama");
+
+      if (companyOr) suppliesQuery = suppliesQuery.or(companyOr);
+      if (branchOr) suppliesQuery = suppliesQuery.or(branchOr);
+
+      const [{ data: vendors }, { data: supplies }, { data: units }] = await Promise.all([
+        vendorsQuery,
+        suppliesQuery,
+        db.from("units").select("id, nama, kode").eq("is_active", true).order("nama"),
+      ]);
+
+      return NextResponse.json({
+        success: true,
+        data: {
+          vendors: vendors || [],
+          supplies: supplies || [],
+          units: units || [],
+        },
+      });
+    }
+
     const [{ data: suppliers }, { data: materials }, { data: units }] = await Promise.all([
       db.from("suppliers").select("id, kode, nama_supplier").eq("is_active", true).order("nama_supplier"),
       db
