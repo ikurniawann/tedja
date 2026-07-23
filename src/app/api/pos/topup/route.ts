@@ -1,37 +1,62 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from "next/server";
 import { createPgClient } from "@/lib/pg/create-client";
-import { getPosSession } from '@/lib/api/auth';
-import { getCrmDefaultVenue, getCrmTopupBonusPercent } from '@/lib/crm/server';
+import { getPosSession } from "@/lib/api/auth";
+import { awardCrmXpForTopup } from "@/lib/crm/loyalty-engine";
+import {
+  calculateTopupXp,
+  idrToArk,
+  loadPosLoyaltySettings,
+} from "@/lib/pos/loyalty-settings";
+import {
+  buildQrImageUrl,
+  createXenditDynamicQr,
+  loadActiveXenditConfig,
+} from "@/lib/payments/xendit";
 
 function getErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : 'Unknown error';
+  return error instanceof Error ? error.message : "Unknown error";
+}
+
+function resolvePaymentMethod(raw: unknown): "cash" | "qris" | "credit" {
+  const value = String(raw || "qris").toLowerCase();
+  if (value === "cash") return "cash";
+  if (value === "credit" || value === "credit_card") return "credit";
+  return "qris";
+}
+
+function resolveWebhookCallbackUrl(request: NextRequest, configured: string | null) {
+  if (configured) return configured;
+  const origin =
+    process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ||
+    request.nextUrl.origin;
+  return `${origin}/api/payments/xendit/webhook`;
 }
 
 // GET /api/pos/topup/history - Get customer topup history
 export async function GET(request: NextRequest) {
   const sessionUserId = await getPosSession();
   if (!sessionUserId) {
-    return NextResponse.json({ success: false, error: 'Authentication required' }, { status: 401 });
+    return NextResponse.json({ success: false, error: "Authentication required" }, { status: 401 });
   }
 
   try {
     const db = createPgClient();
     const searchParams = request.nextUrl.searchParams;
-    const customerId = searchParams.get('customer_id');
-    const limit = parseInt(searchParams.get('limit') || '50');
+    const customerId = searchParams.get("customer_id");
+    const limit = parseInt(searchParams.get("limit") || "50");
 
     let query = db
-      .from('pos_wallet_transactions')
+      .from("pos_wallet_transactions")
       .select(`
         *,
         customer:pos_customers(name, phone)
       `)
-      .eq('type', 'topup')
-      .order('created_at', { ascending: false })
+      .eq("type", "topup")
+      .order("created_at", { ascending: false })
       .limit(limit);
 
     if (customerId) {
-      query = query.eq('customer_id', customerId);
+      query = query.eq("customer_id", customerId);
     }
 
     const { data, error } = await query;
@@ -40,19 +65,19 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ success: true, data });
   } catch (error: unknown) {
-    console.error('Error fetching topup history:', error, getErrorMessage(error));
+    console.error("Error fetching topup history:", error);
     return NextResponse.json(
-      { success: false, error: 'Gagal memuat riwayat topup' },
+      { success: false, error: getErrorMessage(error) },
       { status: 500 }
     );
   }
 }
 
-// POST /api/pos/topup - Process Ark Coin topup
+// POST /api/pos/topup - Process Ark Coin topup (cash immediate; QRIS via Xendit)
 export async function POST(request: NextRequest) {
   const sessionUserId = await getPosSession();
   if (!sessionUserId) {
-    return NextResponse.json({ success: false, error: 'Authentication required' }, { status: 401 });
+    return NextResponse.json({ success: false, error: "Authentication required" }, { status: 401 });
   }
 
   try {
@@ -60,102 +85,182 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const {
       customer_id,
-      amount, // Fiat amount (IDR)
-      payment_method = 'qris',
-      xendit_transaction_id
+      amount,
+      payment_method: rawMethod = "qris",
+      xendit_transaction_id,
     } = body;
 
-    // Validate required fields
+    const payment_method = resolvePaymentMethod(rawMethod);
+
     if (!customer_id || !amount || amount <= 0) {
       return NextResponse.json(
-        { success: false, error: 'Customer ID and valid amount are required' },
+        { success: false, error: "Customer ID and valid amount are required" },
         { status: 400 }
       );
     }
 
-    // Balance is stored as Rupiah-equivalent; UI displays ARK with 1 ARK = Rp 1,000.
+    const loyaltySettings = await loadPosLoyaltySettings(db);
     const amountValue = Number(amount) || 0;
 
-    // Topup atomik via RPC: lock saldo, cek member KARTU, bonus % dari
-    // konfigurasi (baris wallet topup_bonus terpisah), TANPA menambah
-    // total_spent — EPIC-011 Fase A+C.
-    const [{ companyId, branchId }, bonusPercent] = await Promise.all([
-      getCrmDefaultVenue(db),
-      getCrmTopupBonusPercent(db),
-    ]);
-    const { data: topupResult, error: topupError } = await db.rpc('process_ark_topup', {
-      p_customer_id: customer_id,
-      p_amount: amountValue,
-      p_payment_method: payment_method,
-      p_xendit_transaction_id: xendit_transaction_id || null,
-      p_company_id: companyId,
-      p_branch_id: branchId,
-      p_bonus_percent: bonusPercent,
-    });
-
-    if (topupError) {
-      const notFound = topupError.message?.includes('not found');
-      const cardOnly = topupError.message?.includes('CARD_MEMBER_ONLY');
-      if (cardOnly) {
-        return NextResponse.json(
-          {
-            success: false,
-            error:
-              'Topup ARK Coin hanya untuk member kartu — tautkan kartu NFC terlebih dulu',
-          },
-          { status: 403 }
-        );
-      }
+    if (amountValue < loyaltySettings.topup_min_amount) {
       return NextResponse.json(
-        { success: false, error: notFound ? 'Customer not found' : 'Gagal memproses topup' },
-        { status: notFound ? 404 : 500 }
+        {
+          success: false,
+          error: `Minimum top-up is Rp ${loyaltySettings.topup_min_amount.toLocaleString("id-ID")}`,
+        },
+        { status: 400 }
       );
     }
 
-    const result = topupResult as {
-      transaction_id: string;
-      bonus_transaction_id: string | null;
-      balance_before: number;
-      balance_after: number;
-      topup_amount: number;
-      bonus_amount: number;
-      ark_coins: number;
-    };
+    const arkCoins = idrToArk(amountValue, loyaltySettings.ark_rate);
 
-    const { data: transaction } = await db
-      .from('pos_wallet_transactions')
-      .select('*')
-      .eq('id', result.transaction_id)
+    const { data: customer, error: customerError } = await db
+      .from("pos_customers")
+      .select("ark_coin_balance, total_spent")
+      .eq("id", customer_id)
       .single();
 
-    const balanceBefore = Number(result.balance_before) || 0;
-    const balanceAfter = Number(result.balance_after) || 0;
-    const arkCoins = Number(result.ark_coins) || 0;
-
-    // 3. If QRIS, generate QR code URL (integrate with Xendit/Midtrans later)
-    let qrCodeUrl = null;
-    if (payment_method === 'qris') {
-      // TODO: Integrate with Xendit QRIS API
-      // For now, return mock QR code
-      qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=QRIS_${Date.now()}`;
+    if (customerError || !customer) {
+      return NextResponse.json({ success: false, error: "Customer not found" }, { status: 404 });
     }
 
-    return NextResponse.json({
-      success: true,
-      data: {
-        transaction,
-        balance_before: balanceBefore,
-        balance_after: balanceAfter,
+    const balanceBefore = Number(customer.ark_coin_balance) || 0;
+
+    // ── Cash / credit: credit wallet immediately ───────────────────────────
+    if (payment_method === "cash" || payment_method === "credit") {
+      const balanceAfter = balanceBefore + amountValue;
+
+      // Topup tidak menambah total_spent (CRM: dasar top spender = belanja order saja).
+      const { error: updateError } = await db
+        .from("pos_customers")
+        .update({
+          ark_coin_balance: balanceAfter,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", customer_id);
+
+      if (updateError) throw updateError;
+
+      const { data: transaction, error: transactionError } = await db
+        .from("pos_wallet_transactions")
+        .insert({
+          customer_id,
+          type: "topup",
+          amount: amountValue,
+          ark_coins: arkCoins,
+          balance_before: balanceBefore,
+          balance_after: balanceAfter,
+          payment_method,
+          status: "completed",
+          xendit_transaction_id: xendit_transaction_id || null,
+          notes: payment_method === "cash" ? "Cash top-up" : "Card top-up",
+          metadata: { settled_via: "cashier" },
+        })
+        .select()
+        .single();
+
+      if (transactionError) throw transactionError;
+
+      const xpPreview = calculateTopupXp(amountValue, loyaltySettings);
+      const crmXp = transaction?.id
+        ? await awardCrmXpForTopup(db, {
+            customerId: customer_id,
+            topupAmountIdr: amountValue,
+            transactionId: String(transaction.id),
+          })
+        : { status: "skipped" as const, xpAwarded: 0, reason: "missing_transaction" };
+
+      return NextResponse.json(
+        {
+          success: true,
+          data: {
+            status: "completed",
+            transaction,
+            balance_before: balanceBefore,
+            balance_after: balanceAfter,
+            ark_coins: arkCoins,
+            ark_rate: loyaltySettings.ark_rate,
+            xp_awarded: crmXp.xpAwarded || xpPreview,
+            crm_xp: crmXp,
+            qr_code_url: null,
+          },
+        },
+        { status: 201 }
+      );
+    }
+
+    // ── QRIS: create dynamic QR, keep wallet pending until paid ─────────────
+    if (amountValue < 1500) {
+      return NextResponse.json(
+        { success: false, error: "Minimum QRIS top-up is Rp 1.500" },
+        { status: 400 }
+      );
+    }
+
+    const xendit = await loadActiveXenditConfig(db);
+    const referenceId = `topup_${crypto.randomUUID().replace(/-/g, "").slice(0, 24)}`;
+    const callbackUrl = resolveWebhookCallbackUrl(request, xendit.callbackUrl);
+
+    const qr = await createXenditDynamicQr({
+      secretKey: xendit.secretKey,
+      referenceId,
+      amount: amountValue,
+      callbackUrl,
+      description: `ARK topup ${amountValue}`,
+    });
+
+    const { data: transaction, error: transactionError } = await db
+      .from("pos_wallet_transactions")
+      .insert({
+        customer_id,
+        type: "topup",
+        amount: amountValue,
         ark_coins: arkCoins,
-        bonus_amount: Number(result.bonus_amount) || 0,
-        bonus_percent: bonusPercent,
-        qr_code_url: qrCodeUrl
-      }
-    }, { status: 201 });
-  } catch (error: unknown) {
-    console.error('Error processing topup:', error, getErrorMessage(error));
+        balance_before: balanceBefore,
+        balance_after: balanceBefore,
+        payment_method: "qris",
+        status: "pending",
+        xendit_transaction_id: qr.id,
+        reference_id: referenceId,
+        notes: "Waiting for QRIS payment",
+        metadata: {
+          provider: "xendit",
+          environment: xendit.environment,
+          qr_string: qr.qr_string,
+          expires_at: qr.expires_at,
+          xendit_status: qr.status,
+        },
+      })
+      .select()
+      .single();
+
+    if (transactionError) throw transactionError;
+
     return NextResponse.json(
-      { success: false, error: 'Gagal memproses topup' },
+      {
+        success: true,
+        data: {
+          status: "pending",
+          transaction,
+          topup_id: transaction.id,
+          balance_before: balanceBefore,
+          balance_after: balanceBefore,
+          ark_coins: arkCoins,
+          ark_rate: loyaltySettings.ark_rate,
+          xp_awarded: 0,
+          qr_code_url: buildQrImageUrl(qr.qr_string),
+          qr_string: qr.qr_string,
+          xendit_qr_id: qr.id,
+          reference_id: referenceId,
+          expires_at: qr.expires_at,
+        },
+      },
+      { status: 201 }
+    );
+  } catch (error: unknown) {
+    console.error("Error processing topup:", error);
+    return NextResponse.json(
+      { success: false, error: getErrorMessage(error) },
       { status: 500 }
     );
   }

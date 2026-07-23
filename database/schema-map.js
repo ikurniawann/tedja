@@ -34,6 +34,7 @@ const DOMAINS = {
   pos: { order: 60, schema: "public", realSchema: "pos" },
   ticketing: { order: 65, schema: "public", realSchema: "ticketing" },
   crm: { order: 70, schema: "public", realSchema: "crm" },
+  accounting: { order: 75, schema: "public", realSchema: "accounting" },
   core: { order: 90, schema: "public", realSchema: "public" },
 };
 
@@ -43,6 +44,7 @@ const TABLE_DOMAIN = {
   users: "configuration",
   user_approval_permissions: "configuration",
   user_warehouses: "configuration",
+  payment_gateways: "configuration",
   admin_user_audit_logs: "configuration",
   activity_logs: "configuration",
 
@@ -161,6 +163,7 @@ function domainForTable(table, schema) {
   if (schema === "auth") return "iam"; // auth ikut grup identitas (file manual)
   if (table.startsWith("pos_")) return "pos";
   if (table.startsWith("crm_")) return "crm";
+  if (table.startsWith("account_") || table === "chart_of_accounts") return "accounting";
   return TABLE_DOMAIN[table] || "core";
 }
 

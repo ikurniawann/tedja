@@ -42,6 +42,7 @@ type DeliveryRow = {
 export async function GET(request: Request) {
   try {
     await requireApiRole([
+      "admin",
       "purchasing_admin",
       "purchasing_staff",
       "purchasing_manager",

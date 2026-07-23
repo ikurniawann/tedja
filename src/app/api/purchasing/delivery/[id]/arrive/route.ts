@@ -18,6 +18,7 @@ export async function POST(
 ) {
   try {
     const user = await requireApiRole([
+      "admin",
       "purchasing_admin",
       "purchasing_staff",
       "warehouse_staff",

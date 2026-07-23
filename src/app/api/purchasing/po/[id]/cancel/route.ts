@@ -11,7 +11,7 @@ const cancelSchema = z.object({
   reason: z.string().min(1, "Alasan pembatalan wajib diisi"),
 });
 
-const CANCEL_ROLES = ["super_admin", "purchasing_admin", "purchasing_manager"] as const;
+const CANCEL_ROLES = ["admin", "super_admin", "purchasing_admin", "purchasing_manager"] as const;
 
 function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;

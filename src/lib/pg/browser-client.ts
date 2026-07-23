@@ -160,8 +160,17 @@ function browserAuth() {
       fetch("/api/auth/me")
         .then((r) => r.json())
         .then((json) => {
-          if (json.success) cb("SIGNED_IN", { user: json.data });
-          else cb("SIGNED_OUT", null);
+          if (json.success) {
+            // Bentuk session harus sama dengan getSession() — konsumen (mis.
+            // useAuth) membaca role dari user.user_metadata.role.
+            cb("SIGNED_IN", {
+              user: {
+                id: json.data.id,
+                email: json.data.email,
+                user_metadata: { role: json.data.role, full_name: json.data.full_name },
+              },
+            });
+          } else cb("SIGNED_OUT", null);
         })
         .catch(() => cb("SIGNED_OUT", null));
       return { data: { subscription: { unsubscribe: () => {} } } };

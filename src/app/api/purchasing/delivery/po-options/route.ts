@@ -22,6 +22,7 @@ function getErrorMessage(error: unknown, fallback: string) {
 export async function GET(request: NextRequest) {
   try {
     await requireApiRole([
+      "admin",
       "purchasing_admin",
       "purchasing_staff",
       "purchasing_manager",

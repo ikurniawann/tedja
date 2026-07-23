@@ -1,9 +1,19 @@
 "use client";
 
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
-import { getProfitReport, getClosingReport } from "./api";
+import {
+  getProfitReport,
+  getClosingReport,
+  getTransactionReport,
+  getProductSalesReport,
+} from "./api";
 import { reportsQueryKeys } from "./query-keys";
-import type { ProfitReportParams, ClosingReportParams } from "./types";
+import type {
+  ProfitReportParams,
+  ClosingReportParams,
+  TransactionReportParams,
+  ProductSalesReportParams,
+} from "./types";
 
 export const useProfitReport = (params: ProfitReportParams) =>
   useQuery({
@@ -19,4 +29,20 @@ export const useClosingReport = (params: ClosingReportParams) =>
     queryFn: () => getClosingReport(params),
     placeholderData: keepPreviousData,
     enabled: Boolean(params.date),
+  });
+
+export const useTransactionReport = (params: TransactionReportParams) =>
+  useQuery({
+    queryKey: reportsQueryKeys.transactions(params),
+    queryFn: () => getTransactionReport(params),
+    placeholderData: keepPreviousData,
+    enabled: Boolean(params.date_from && params.date_to),
+  });
+
+export const useProductSalesReport = (params: ProductSalesReportParams) =>
+  useQuery({
+    queryKey: reportsQueryKeys.productSales(params),
+    queryFn: () => getProductSalesReport(params),
+    placeholderData: keepPreviousData,
+    enabled: Boolean(params.date_from && params.date_to),
   });

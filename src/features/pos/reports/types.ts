@@ -104,3 +104,80 @@ export interface ClosingReport {
     printed_by: string;
   };
 }
+
+export interface ReportStallOption {
+  id: string;
+  code: string;
+  name: string;
+}
+
+export interface TransactionReportParams {
+  date_from: string;
+  date_to: string;
+  warehouse_id?: string;
+}
+
+export interface TransactionReportRow {
+  id: string;
+  order_number: string | null;
+  ordered_at: string | null;
+  status: string | null;
+  payment_status: string | null;
+  payment_method: string | null;
+  total_amount: number;
+  ark_coins_used: number;
+  cashier_id: string | null;
+  warehouse_id: string | null;
+  stall_code: string | null;
+  stall_name: string | null;
+}
+
+export interface TransactionReport {
+  filters: {
+    date_from: string;
+    date_to: string;
+    warehouse_id: string | null;
+  };
+  stall_options: ReportStallOption[];
+  stall_locked: boolean;
+  summary: {
+    transactions: number;
+    total_sales: number;
+    total_ark_used: number;
+  };
+  rows: TransactionReportRow[];
+}
+
+export interface ProductSalesReportParams {
+  date_from: string;
+  date_to: string;
+  warehouse_id?: string;
+}
+
+export interface ProductSalesReportRow {
+  product_id: string | null;
+  product_name: string;
+  product_sku: string | null;
+  warehouse_id: string | null;
+  stall_code: string | null;
+  stall_name: string | null;
+  quantity: number;
+  revenue: number;
+  order_count: number;
+}
+
+export interface ProductSalesReport {
+  filters: {
+    date_from: string;
+    date_to: string;
+    warehouse_id: string | null;
+  };
+  stall_options: ReportStallOption[];
+  stall_locked: boolean;
+  summary: {
+    products: number;
+    quantity: number;
+    revenue: number;
+  };
+  rows: ProductSalesReportRow[];
+}

@@ -6,7 +6,7 @@ import { NextRequest } from "next/server";
 import { createServerPgClient } from "@/lib/pg/create-client";
 import { ApiError, requireApiRole } from "@/lib/api/auth";
 
-const APPROVE_ROLES = ["super_admin", "purchasing_admin", "purchasing_manager"] as const;
+const APPROVE_ROLES = ["admin", "super_admin", "purchasing_admin", "purchasing_manager"] as const;
 
 // POST /api/purchasing/po/:id/approve
 export async function POST(
