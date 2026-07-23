@@ -150,15 +150,13 @@ export function RegistrationDialog({ open, onOpenChange }: RegistrationDialogPro
     [cart]
   );
 
-  const addToCart = (option: LoketOption) => {
+  // Klik card = toggle pilih/batal (qty 1) — BUKAN nambah qty setiap klik.
+  // Jumlah tiket diatur lewat stepper +/- di keranjang kanan.
+  const toggleCartLine = (option: LoketOption) => {
     setCart((prev) => {
       const existing = prev.find((l) => l.variantId === option.variant_id);
       if (existing) {
-        return prev.map((l) =>
-          l.variantId === option.variant_id
-            ? { ...l, qty: l.qty + 1, uids: [...l.uids, ...Array(slotsPerUnit(l)).fill(null)] }
-            : l
-        );
+        return prev.filter((l) => l.variantId !== option.variant_id);
       }
       const memberLabels =
         option.product_kind === "bundle"
@@ -289,7 +287,7 @@ export function RegistrationDialog({ open, onOpenChange }: RegistrationDialogPro
                   <button
                     key={option.variant_id}
                     type="button"
-                    onClick={() => addToCart(option)}
+                    onClick={() => toggleCartLine(option)}
                     className={`group relative flex flex-col rounded-2xl border p-3 text-left transition-all ${
                       qty > 0
                         ? "border-rose-500 shadow-[0_4px_12px_rgba(244,63,94,0.15)] ring-1 ring-rose-500"
