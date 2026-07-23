@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Table,
   TableBody,
@@ -31,7 +32,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { useForm, Controller } from "react-hook-form";
-import { Loader2, Plus, Download, Search, User, Trash2, Upload, FileText, Menu, X } from "lucide-react";
+import { Loader2, Plus, Download, Search, User, Trash2, Upload, FileText, Menu, X, ScanText } from "lucide-react";
 import type { Candidate, CandidateStatus } from "@/types";
 import { useCandidateList, useCandidateBrands } from "../queries";
 import { useCreateCandidate, useDeleteCandidate } from "../mutations";
@@ -78,6 +79,9 @@ export function CandidatesPage() {
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [deleteCandidate, setDeleteCandidate] = useState<Candidate | null>(null);
   const [cvFile, setCvFile] = useState<File | null>(null);
+  const [ocrEnabled, setOcrEnabled] = useState(false);
+  const [ocrLoading, setOcrLoading] = useState(false);
+  const [ocrError, setOcrError] = useState<string | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const cvFileRef = useRef<HTMLInputElement>(null);
   const perPage = 20;
@@ -156,14 +160,54 @@ export function CandidatesPage() {
     }
 
     setCvFile(null);
+    setOcrEnabled(false);
+    setOcrError(null);
     setShowAddDialog(false);
     addForm.reset({ status: "applied", source: "walk_in" });
+  };
+
+  // OCR CV via OpenAI: isi otomatis Nama, Email, No HP, Domisili
+  const runCvOcr = async (file: File) => {
+    setOcrLoading(true);
+    setOcrError(null);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch("/api/candidates/cv-extract", {
+        method: "POST",
+        body: formData,
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(json?.error || "OCR CV gagal");
+      }
+      const fields = json?.data ?? {};
+      if (fields.full_name) addForm.setValue("full_name", fields.full_name, { shouldValidate: true });
+      if (fields.email) addForm.setValue("email", fields.email, { shouldValidate: true });
+      if (fields.phone) addForm.setValue("phone", fields.phone, { shouldValidate: true });
+      if (fields.domicile) addForm.setValue("domicile", fields.domicile, { shouldValidate: true });
+      if (!fields.full_name && !fields.email && !fields.phone && !fields.domicile) {
+        setOcrError("Tidak ada data yang terbaca dari CV. Silakan isi manual.");
+      }
+    } catch (error) {
+      setOcrError(error instanceof Error ? error.message : "OCR CV gagal");
+    } finally {
+      setOcrLoading(false);
+    }
   };
 
   const handleCvFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setCvFile(file);
+    setOcrError(null);
+    if (ocrEnabled) void runCvOcr(file);
+  };
+
+  const handleOcrToggle = (checked: boolean) => {
+    setOcrEnabled(checked);
+    setOcrError(null);
+    if (checked && cvFile) void runCvOcr(cvFile);
   };
 
   const handleExportCSV = async () => {
@@ -583,7 +627,17 @@ export function CandidatesPage() {
       </Card>
 
       {/* Add Candidate Dialog */}
-      <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
+      <Dialog
+        open={showAddDialog}
+        onOpenChange={(open) => {
+          setShowAddDialog(open);
+          if (!open) {
+            setCvFile(null);
+            setOcrEnabled(false);
+            setOcrError(null);
+          }
+        }}
+      >
         <DialogContent className="w-[90vw] sm:max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-lg font-semibold">Tambah Kandidat Manual</DialogTitle>
@@ -593,6 +647,58 @@ export function CandidatesPage() {
           </DialogHeader>
 
           <form onSubmit={addForm.handleSubmit(handleAddCandidate)} className="space-y-4 mt-4">
+            <div className="space-y-2 rounded-lg border border-gray-200 bg-gray-50/50 p-3">
+              <Label className="text-xs font-medium">CV / Resume</Label>
+              <input
+                ref={cvFileRef}
+                type="file"
+                accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                onChange={handleCvFileChange}
+                className="hidden"
+              />
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => cvFileRef.current?.click()}
+                  disabled={uploadingCv || ocrLoading}
+                  className="h-9 text-sm"
+                >
+                  {cvFile ? (
+                    <FileText className="w-4 h-4 mr-2 text-blue-600" />
+                  ) : (
+                    <Upload className="w-4 h-4 mr-2" />
+                  )}
+                  {cvFile ? "Ganti File" : "Pilih File"}
+                </Button>
+                {cvFile && (
+                  <span className="text-sm text-gray-600 truncate max-w-[200px]">
+                    {cvFile.name}
+                  </span>
+                )}
+                <span className="text-xs text-gray-400">PDF, DOC, DOCX, JPG, PNG (max 10MB)</span>
+              </div>
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <Checkbox
+                  checked={ocrEnabled}
+                  onCheckedChange={(checked) => handleOcrToggle(checked === true)}
+                  disabled={ocrLoading}
+                />
+                <span className="text-xs text-gray-700 flex items-center gap-1">
+                  <ScanText className="w-3.5 h-3.5 text-pink-600" />
+                  Isi otomatis dari CV (OCR AI) — Nama, Email, No. HP, Domisili
+                </span>
+              </label>
+              {ocrLoading && (
+                <p className="text-xs text-blue-600 flex items-center gap-1.5">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  Membaca CV dengan AI...
+                </p>
+              )}
+              {ocrError && <p className="text-xs text-red-500">{ocrError}</p>}
+            </div>
+
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-xs font-medium">
@@ -729,40 +835,6 @@ export function CandidatesPage() {
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-xs font-medium">CV / Resume</Label>
-              <input
-                ref={cvFileRef}
-                type="file"
-                accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
-                onChange={handleCvFileChange}
-                className="hidden"
-              />
-              <div className="flex items-center gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => cvFileRef.current?.click()}
-                  disabled={uploadingCv}
-                  className="h-9 text-sm"
-                >
-                  {cvFile ? (
-                    <FileText className="w-4 h-4 mr-2 text-blue-600" />
-                  ) : (
-                    <Upload className="w-4 h-4 mr-2" />
-                  )}
-                  {cvFile ? "Ganti File" : "Pilih File"}
-                </Button>
-                {cvFile && (
-                  <span className="text-sm text-gray-600 truncate max-w-[200px]">
-                    {cvFile.name}
-                  </span>
-                )}
-                <span className="text-xs text-gray-400">PDF, DOC, DOCX, JPG, PNG (max 10MB)</span>
-              </div>
-            </div>
-
-            <div className="space-y-1.5">
               <Label className="text-xs font-medium">Catatan</Label>
               <Textarea
                 placeholder="Catatan internal (opsional)"
@@ -835,13 +907,15 @@ export function CandidatesPage() {
                 onClick={() => {
                   setShowAddDialog(false);
                   setCvFile(null);
+                  setOcrEnabled(false);
+                  setOcrError(null);
                 }}
               >
                 Batal
               </Button>
-              <Button 
-                type="submit" 
-                disabled={addForm.formState.isSubmitting || uploadingCv}
+              <Button
+                type="submit"
+                disabled={addForm.formState.isSubmitting || uploadingCv || ocrLoading}
                 className="bg-pink-600 hover:bg-pink-700"
               >
                 {addForm.formState.isSubmitting || uploadingCv ? (
