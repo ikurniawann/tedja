@@ -55,12 +55,29 @@ bertahap) — dibedakan per item lewat flag `stockable`.
    `purchase_request_items`; relaksasi XOR jadi "tepat satu dari tiga".
 5. Extend view `v_purchase_orders` (join supply meta) — jangan pecah scope lama.
 
-**B. Siklus dokumen (reuse mesin)**
-6. Cabang `module_type === 'general'` di route PR/PO/GRN/Return/Invoice/Approval
-   (`src/app/api/purchasing/*`) + schema Zod item bercabang ke `supply_item_id`.
-7. Pemasok: reuse tabel `vendors` (pola product scope) untuk barang operasional.
-8. Route & menu: duplikat `PRODUCT_ROUTES`/`PRODUCT_NAV_GROUPS` jadi
-   `GENERAL_ROUTES`/`GENERAL_NAV_GROUPS`; TANPA grup Production/BOM.
+**B. Siklus dokumen — DIPECAH BERTAHAP (temuan 23 Jul, lihat Automation Log)**
+
+Realita: scope `product` BUKAN toggle query-param melainkan **klon pipeline
+penuh** — 8 folder feature `product-*`, ~40 route fisik di
+`items/product/*`, rewrites `next.config.ts`, 26 baris `iam-menus.sql` + grant,
+`module_type` di-hardcode per-feature (`api.ts`). Maka `general` dibangun
+bertahap (keputusan owner: irisan vertikal dulu). Cakupan akhir yang dipakai:
+**PR + PO + Receive + Invoice + Approval** (TANPA Return, Delivery, Production/BOM).
+
+- **B1 — Master barang operasional** (fondasi; harus ada barang dulu):
+  master `supply_items` + `supply_categories` (kategori reuse route generik
+  `/api/purchasing/items/[lookup]`), API CRUD ramping (tanpa warehouse/COGS/BOM
+  ala product), feature + UI master, menetapkan pola routing/menu `general`.
+- **B2 — PR general**: cabang `general` di `pr/form-data` (sumber item =
+  `supply_items`) + `pr/route.ts` (filter GET + insert `supply_item_id`) +
+  `pr-schemas.ts`; feature `general-pr` (clone `product-pr`, `MODULE_TYPE`),
+  form `general-pr-form`, route+menu. Di sini tipe `PurchasingModuleType` &
+  union sempit `returns/*/grn/*` dilebarkan ke `general`.
+- **B3 — PO general**: `po/form-data` + `po/route.ts` (`generalPoSchema`,
+  insert `supply_item_id`) + feature/form/route/menu; reuse tabel `vendors`.
+- **B4 — Receive (GRN) general**: cabang di grn/receiving-workspace; percabangan
+  stok vs expense (Task C) menyatu di sini.
+- **B5 — Invoice + Approval general**: cabang invoice + approval PR/PO.
 
 **C. Percabangan stok vs expense**
 9. Receive item `stockable=false` → tandai diterima TANPA membuat pergerakan
@@ -92,6 +109,20 @@ bertahap) — dibedakan per item lewat flag `stockable`.
       semua endpoint scope `general`.
 - [ ] Menu `general` tidak menampilkan BOM/Produksi; nav Inventory hanya relevan
       untuk item stockable.
+
+## Progress B1 (master barang operasional)
+
+- **Backend SELESAI & terverifikasi** (belum di-deploy — belum ada UI/menu):
+  - Kategori: `supply-categories` ditambah ke route generik
+    `/api/purchasing/items/[lookup]` (+`[id]`) — CRUD kategori gratis, company-scoped.
+  - Item master: `/api/purchasing/supply-items` (GET list+filter stockable/aktif,
+    POST create + auto-kode `SUP-YYYYMMDD-NNN`) & `/[id]` (GET/PATCH/DELETE soft),
+    ramping tanpa warehouse/COGS/BOM, scope company+branch fail-closed
+    (`isRowInBusinessScope`).
+  - Verifikasi: typecheck baseline (0 tambahan), semua query insert/list/update/
+    soft-delete diuji langsung ke Postgres (skema cocok, rollback).
+- **Sisa B1**: UI halaman master (list + form kategori & item) + baris menu
+  `iam-menus.sql` + route fisik + grant role, lalu build+deploy.
 
 ## Test Plan
 

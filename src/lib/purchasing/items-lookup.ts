@@ -3,6 +3,8 @@ import { z } from "zod";
 export const ITEMS_LOOKUP_TYPES = [
   "raw-material-categories",
   "product-categories",
+  // EPIC-026: kategori barang operasional (scope 'general')
+  "supply-categories",
 ] as const;
 
 export type ItemsLookupType = (typeof ITEMS_LOOKUP_TYPES)[number];
@@ -23,6 +25,11 @@ export const ITEMS_LOOKUP_CONFIG: Record<ItemsLookupType, ItemsLookupConfig> = {
     table: "product_categories",
     title: "Product Categories",
     description: "Manage categories for finished products",
+  },
+  "supply-categories": {
+    table: "supply_categories",
+    title: "Kategori Barang Operasional",
+    description: "Kelola kategori barang operasional (ATK, spare part, dll)",
   },
 };
 

@@ -23,6 +23,7 @@ import { useSaveItemsLookup, useDeleteItemsLookup } from "@/features/purchasing/
 const LOOKUP_ICONS: Record<ItemsLookupType, ComponentType<{ className?: string }>> = {
   "raw-material-categories": Tags,
   "product-categories": FolderOpen,
+  "supply-categories": Tags,
 };
 
 interface ItemsLookupPageProps {
