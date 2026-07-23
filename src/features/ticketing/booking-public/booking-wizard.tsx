@@ -1,21 +1,27 @@
 "use client";
 
 // Fase D3 — wizard booking publik mobile-first, tanpa login:
-// tanggal → pilih tiket & qty per varian (harga live per tanggal) →
-// data pemesan → ringkasan → redirect invoice Xendit.
+// tanggal → pilih 1 jenis tiket (card) → atur qty → data pemesan →
+// ringkasan → redirect invoice Xendit.
 // Harga di sini murni tampilan; server menghitung ulang saat POST.
+// Redesign 23 Jul: UI ala Airbnb (kalender inline custom, sel bulat;
+// ringkasan kartu ber-shadow; CTA rose).
+// 23 Jul: satu transaksi = SATU varian tiket — pilih card dulu, stepper qty
+// muncul di card terpilih; state qty tetap Record agar payload items[] &
+// flatten nama rombongan tidak berubah (isinya kini maksimal 1 entri).
 
 import { useCallback, useMemo, useState } from "react";
 import {
   ArrowLeft,
-  CalendarDays,
+  Check,
   ChevronRight,
   Loader2,
   Minus,
   Plus,
-  Ticket,
-  UserRound,
+  ShieldCheck,
+  Sparkles,
 } from "lucide-react";
+import { BookingCalendar } from "./booking-calendar";
 
 const MAX_QTY_PER_BOOKING = 20;
 const MAX_DAYS_AHEAD = 90;
@@ -27,6 +33,13 @@ const formatDateLong = (iso: string) =>
     weekday: "long",
     day: "numeric",
     month: "long",
+    year: "numeric",
+  });
+
+const formatDateShort = (iso: string) =>
+  new Date(`${iso}T00:00:00`).toLocaleDateString("id-ID", {
+    day: "numeric",
+    month: "short",
     year: "numeric",
   });
 
@@ -86,6 +99,26 @@ const todayIso = () =>
 const addDaysIso = (iso: string, days: number) => {
   const [y, m, d] = iso.split("-").map(Number);
   return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+};
+
+const STEP_TITLES: Record<Step, { title: string; subtitle: string }> = {
+  tanggal: {
+    title: "Kapan mau berkunjung?",
+    subtitle: "Pilih tanggal kunjunganmu — harga bisa berbeda per tanggal.",
+  },
+  tiket: {
+    title: "Pilih tiketmu",
+    subtitle:
+      "Pilih satu jenis tiket lalu atur jumlahnya — 1 jenis tiket per transaksi.",
+  },
+  pemesan: {
+    title: "Siapa yang memesan?",
+    subtitle: "Kode booking & QR tiket dikirim lewat WhatsApp.",
+  },
+  ringkasan: {
+    title: "Periksa pesananmu",
+    subtitle: "Pastikan semuanya benar sebelum lanjut ke pembayaran.",
+  },
 };
 
 interface BookingWizardProps {
@@ -225,19 +258,24 @@ export function BookingWizard({ slug }: BookingWizardProps) {
     }
   }, [slug, visitDate]);
 
+  // 1 transaksi = 1 varian: pilih card → qty mulai dari 1, ganti card →
+  // qty varian lama dibuang (state hanya menyimpan varian terpilih)
+  const selectedVariantId = cart[0]?.variant.variant_id ?? null;
+
+  const selectVariant = (variantId: string) => {
+    if (variantId === selectedVariantId) return;
+    setQty({ [variantId]: 1 });
+    setGuestNames({});
+  };
+
   const changeQty = (variantId: string, delta: number) => {
     setQty((prev) => {
-      const next = Math.max(0, (prev[variantId] ?? 0) + delta);
-      // Batas per ORANG: paket menyumbang anggota × qty
-      const persons = (id: string, n: number) => {
-        const known = variantIndex.get(id);
-        return known ? n * personsPerUnit(known.variant) : n;
-      };
-      const others = Object.entries(prev)
-        .filter(([id]) => id !== variantId)
-        .reduce((sum, [id, n]) => sum + persons(id, n), 0);
-      if (others + persons(variantId, next) > MAX_QTY_PER_BOOKING) return prev;
-      return { ...prev, [variantId]: next };
+      // Minimal 1 selama card terpilih — batal = pilih card lain
+      const next = Math.max(1, (prev[variantId] ?? 1) + delta);
+      const known = variantIndex.get(variantId);
+      const persons = known ? next * personsPerUnit(known.variant) : next;
+      if (persons > MAX_QTY_PER_BOOKING) return prev;
+      return { [variantId]: next };
     });
   };
 
@@ -285,11 +323,13 @@ export function BookingWizard({ slug }: BookingWizardProps) {
   };
 
   const stepIndex = ["tanggal", "tiket", "pemesan", "ringkasan"].indexOf(step);
+  const heading = STEP_TITLES[step];
 
   return (
-    <div className="mx-auto flex min-h-dvh w-full max-w-lg flex-col bg-gray-50">
-      <header className="sticky top-0 z-10 border-b border-gray-200 bg-white/95 px-4 py-3 backdrop-blur">
-        <div className="flex items-center gap-3">
+    <div className="mx-auto flex min-h-dvh w-full max-w-lg flex-col bg-white md:max-w-2xl">
+      {/* ── Header ala Airbnb: minimal, tombol kembali bulat ── */}
+      <header className="sticky top-0 z-10 bg-white/95 px-5 pt-4 backdrop-blur">
+        <div className="flex h-9 items-center">
           {step !== "tanggal" && (
             <button
               type="button"
@@ -303,216 +343,260 @@ export function BookingWizard({ slug }: BookingWizardProps) {
                       : "pemesan"
                 )
               }
-              className="rounded-full p-1.5 text-gray-600 hover:bg-gray-100"
+              className="-ml-2 flex h-9 w-9 items-center justify-center rounded-full text-gray-800 hover:bg-gray-100"
             >
               <ArrowLeft className="h-5 w-5" />
             </button>
           )}
-          <div>
-            <h1 className="text-base font-semibold text-gray-900">
-              Booking Tiket Online
-            </h1>
-            {visitDate && step !== "tanggal" && (
-              <p className="text-xs text-gray-500">{formatDateLong(visitDate)}</p>
-            )}
-          </div>
+          {visitDate && step !== "tanggal" && (
+            <span className="ml-auto rounded-full border border-gray-200 px-3 py-1 text-xs font-medium text-gray-700">
+              {formatDateShort(visitDate)}
+              {totalQty > 0 ? ` · ${totalQty} tiket` : ""}
+            </span>
+          )}
         </div>
-        <div className="mt-3 flex gap-1.5">
+        <div className="mt-3 flex gap-1">
           {[0, 1, 2, 3].map((i) => (
             <div
               key={i}
-              className={`h-1 flex-1 rounded-full ${
-                i <= stepIndex ? "bg-emerald-500" : "bg-gray-200"
+              className={`h-[3px] flex-1 rounded-full transition-colors ${
+                i <= stepIndex ? "bg-gray-900" : "bg-gray-200"
               }`}
             />
           ))}
         </div>
       </header>
 
-      <main className="flex-1 px-4 py-5 pb-28">
+      <main className="flex-1 px-5 pb-32 pt-6">
+        <h1 className="text-[26px] font-semibold leading-tight tracking-tight text-gray-900">
+          {heading.title}
+        </h1>
+        <p className="mt-1.5 text-sm text-gray-500">{heading.subtitle}</p>
+
         {error && (
-          <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700">
+          <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             {error}
           </div>
         )}
 
         {step === "tanggal" && (
-          <section className="space-y-4">
-            <div className="rounded-2xl bg-white p-5 shadow-sm">
-              <div className="mb-3 flex items-center gap-2 text-gray-900">
-                <CalendarDays className="h-5 w-5 text-emerald-600" />
-                <h2 className="font-medium">Pilih tanggal kunjungan</h2>
-              </div>
-              <input
-                type="date"
+          <section className="mt-6">
+            <div className="rounded-3xl border border-gray-200 p-5 shadow-[0_6px_16px_rgba(0,0,0,0.08)]">
+              <BookingCalendar
                 value={visitDate}
-                min={minDate}
-                max={maxDate}
-                onChange={(e) => setVisitDate(e.target.value)}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-base focus:border-emerald-500 focus:outline-none"
+                minDate={minDate}
+                maxDate={maxDate}
+                onChange={setVisitDate}
               />
-              <p className="mt-2 text-xs text-gray-500">
-                Bisa dipesan untuk hari ini sampai {MAX_DAYS_AHEAD} hari ke depan.
-              </p>
             </div>
+            <div className="mt-4 flex items-center justify-between px-1">
+              <p className="text-sm text-gray-500">
+                {visitDate ? (
+                  <span className="font-medium text-gray-900">
+                    {formatDateLong(visitDate)}
+                  </span>
+                ) : (
+                  "Belum ada tanggal dipilih"
+                )}
+              </p>
+              {visitDate && (
+                <button
+                  type="button"
+                  onClick={() => setVisitDate("")}
+                  className="text-sm font-medium text-gray-500 underline hover:text-gray-900"
+                >
+                  Hapus
+                </button>
+              )}
+            </div>
+            <p className="mt-1 px-1 text-xs text-gray-400">
+              Bisa dipesan untuk hari ini sampai {MAX_DAYS_AHEAD} hari ke depan.
+            </p>
           </section>
         )}
 
         {step === "tiket" && (
-          <section className="space-y-3">
-            {catalog.map((product) => (
-              <div
-                key={product.ticket_product_id}
-                className="overflow-hidden rounded-2xl bg-white shadow-sm"
-              >
-                {product.thumbnail_url && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={product.thumbnail_url}
-                    alt={product.name}
-                    className="h-36 w-full object-cover"
-                  />
-                )}
-                <div className="p-4">
-                  <div className="flex items-start gap-2">
-                    <Ticket className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
-                    <div>
-                      <h3 className="font-semibold text-gray-900">
-                        {product.name}
-                      </h3>
+          <section className="mt-6 space-y-4">
+            {catalog.flatMap((product) =>
+              product.variants.map((variant) => {
+                const selected = variant.variant_id === selectedVariantId;
+                const n = qty[variant.variant_id] ?? 0;
+                const standalone = bundleStandaloneTotal(variant);
+                const saving =
+                  standalone !== null && standalone > variant.price
+                    ? standalone - variant.price
+                    : null;
+                const variantLabel =
+                  product.product_kind === "bundle"
+                    ? `Paket (${variant.members?.length ?? 0} orang)`
+                    : variant.variant_name;
+                return (
+                  <div
+                    key={variant.variant_id}
+                    role="radio"
+                    aria-checked={selected}
+                    tabIndex={0}
+                    onClick={() => selectVariant(variant.variant_id)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        selectVariant(variant.variant_id);
+                      }
+                    }}
+                    className={`cursor-pointer overflow-hidden rounded-3xl border transition-all ${
+                      selected
+                        ? "border-rose-500 shadow-[0_6px_16px_rgba(244,63,94,0.15)] ring-1 ring-rose-500"
+                        : "border-gray-200 hover:border-gray-400"
+                    }`}
+                  >
+                    {product.thumbnail_url && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={product.thumbnail_url}
+                        alt={product.name}
+                        className="aspect-[2/1] w-full object-cover"
+                      />
+                    )}
+                    <div className="p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <h3 className="text-[15px] font-semibold text-gray-900">
+                            {product.name}
+                          </h3>
+                          <p className="mt-0.5 text-sm text-gray-600">
+                            {variantLabel}
+                            {variant.season_kind === "high" && (
+                              <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700">
+                                High Season
+                              </span>
+                            )}
+                          </p>
+                        </div>
+                        {/* Indikator radio */}
+                        <span
+                          className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border transition-colors ${
+                            selected
+                              ? "border-rose-500 bg-rose-500 text-white"
+                              : "border-gray-300 text-transparent"
+                          }`}
+                        >
+                          <Check className="h-3.5 w-3.5" />
+                        </span>
+                      </div>
                       {product.description && (
-                        <p className="mt-0.5 text-xs leading-relaxed text-gray-500">
+                        <p className="mt-2 text-sm leading-relaxed text-gray-500">
                           {product.description}
                         </p>
                       )}
-                    </div>
-                  </div>
-                  <div className="mt-3 space-y-2">
-                    {product.variants.map((variant) => {
-                      const n = qty[variant.variant_id] ?? 0;
-                      return (
-                        <div
-                          key={variant.variant_id}
-                          className="flex items-center justify-between rounded-xl border border-gray-100 bg-gray-50 px-3 py-2.5"
-                        >
-                          <div>
-                            <p className="text-sm font-medium text-gray-800">
-                              {product.product_kind === "bundle" ? (
-                                <>
-                                  Paket ({variant.members?.length ?? 0} orang)
-                                </>
-                              ) : (
-                                variant.variant_name
-                              )}
-                            </p>
-                            <p className="text-sm text-gray-600">
-                              {(() => {
-                                const standalone = bundleStandaloneTotal(variant);
-                                const saving =
-                                  standalone !== null &&
-                                  standalone > variant.price
-                                    ? standalone - variant.price
-                                    : null;
-                                return saving !== null ? (
-                                  <>
-                                    <span className="mr-1.5 text-xs text-gray-400 line-through">
-                                      {formatRp(standalone!)}
-                                    </span>
-                                    <span className="font-semibold text-emerald-700">
-                                      {formatRp(variant.price)}
-                                    </span>
-                                    <span className="ml-1.5 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">
-                                      Hemat {formatRp(saving)}
-                                    </span>
-                                  </>
-                                ) : (
-                                  <>{formatRp(variant.price)}</>
-                                );
-                              })()}
-                              {variant.season_kind === "high" && (
-                                <span className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
-                                  High Season
-                                </span>
-                              )}
-                            </p>
-                            {product.product_kind === "bundle" &&
-                              variant.members ? (
-                              <p className="mt-0.5 text-[11px] leading-snug text-gray-400">
-                                Termasuk:{" "}
-                                {Object.entries(
-                                  variant.members.reduce<Record<string, number>>(
-                                    (acc, m) => ({
-                                      ...acc,
-                                      [m.member_label]:
-                                        (acc[m.member_label] ?? 0) + 1,
-                                    }),
-                                    {}
-                                  )
-                                )
-                                  .map(([label, n]) => `${n}× ${label}`)
-                                  .join(", ")}
-                              </p>
-                            ) : null}
-                          </div>
-                          <div className="flex items-center gap-2.5">
+                      {product.product_kind === "bundle" && variant.members ? (
+                        <p className="mt-2 text-xs leading-snug text-gray-400">
+                          Termasuk:{" "}
+                          {Object.entries(
+                            variant.members.reduce<Record<string, number>>(
+                              (acc, m) => ({
+                                ...acc,
+                                [m.member_label]:
+                                  (acc[m.member_label] ?? 0) + 1,
+                              }),
+                              {}
+                            )
+                          )
+                            .map(([label, count]) => `${count}× ${label}`)
+                            .join(", ")}
+                        </p>
+                      ) : null}
+                      <p className="mt-3 text-sm">
+                        {saving !== null ? (
+                          <>
+                            <span className="mr-1.5 text-xs text-gray-400 line-through">
+                              {formatRp(standalone!)}
+                            </span>
+                            <span className="text-base font-semibold text-gray-900">
+                              {formatRp(variant.price)}
+                            </span>
+                            <span className="ml-1.5 rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-medium text-rose-600">
+                              Hemat {formatRp(saving)}
+                            </span>
+                          </>
+                        ) : (
+                          <span className="text-base font-semibold text-gray-900">
+                            {formatRp(variant.price)}
+                          </span>
+                        )}
+                        <span className="text-gray-400"> / tiket</span>
+                      </p>
+                      {/* Qty muncul setelah card dipilih */}
+                      {selected && (
+                        <div className="mt-4 flex items-center justify-between border-t border-gray-100 pt-4">
+                          <span className="text-sm font-medium text-gray-900">
+                            Jumlah tiket
+                          </span>
+                          <div className="flex shrink-0 items-center gap-3">
                             <button
                               type="button"
-                              aria-label={`Kurangi ${variant.variant_name}`}
-                              onClick={() => changeQty(variant.variant_id, -1)}
-                              disabled={n === 0}
-                              className="rounded-full border border-gray-300 bg-white p-1.5 text-gray-700 disabled:opacity-30"
+                              aria-label={`Kurangi ${variantLabel}`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                changeQty(variant.variant_id, -1);
+                              }}
+                              disabled={n <= 1}
+                              className="flex h-8 w-8 items-center justify-center rounded-full border border-gray-300 text-gray-600 transition-colors hover:border-gray-900 hover:text-gray-900 disabled:cursor-default disabled:opacity-25 disabled:hover:border-gray-300 disabled:hover:text-gray-600"
                             >
                               <Minus className="h-4 w-4" />
                             </button>
-                            <span className="w-5 text-center text-sm font-semibold tabular-nums">
+                            <span className="w-6 text-center text-[15px] font-medium tabular-nums text-gray-900">
                               {n}
                             </span>
                             <button
                               type="button"
-                              aria-label={`Tambah ${variant.variant_name}`}
-                              onClick={() => changeQty(variant.variant_id, 1)}
+                              aria-label={`Tambah ${variantLabel}`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                changeQty(variant.variant_id, 1);
+                              }}
                               disabled={
-                                totalQty + personsPerUnit(variant) >
+                                (n + 1) * personsPerUnit(variant) >
                                 MAX_QTY_PER_BOOKING
                               }
-                              className="rounded-full border border-emerald-500 bg-emerald-500 p-1.5 text-white disabled:opacity-30"
+                              className="flex h-8 w-8 items-center justify-center rounded-full border border-gray-300 text-gray-600 transition-colors hover:border-gray-900 hover:text-gray-900 disabled:cursor-default disabled:opacity-25 disabled:hover:border-gray-300 disabled:hover:text-gray-600"
                             >
                               <Plus className="h-4 w-4" />
                             </button>
                           </div>
                         </div>
-                      );
-                    })}
+                      )}
+                    </div>
                   </div>
-                </div>
-              </div>
-            ))}
-            <p className="px-1 text-xs text-gray-400">
-              Maksimum {MAX_QTY_PER_BOOKING} tiket per pemesanan.
+                );
+              })
+            )}
+            <p className="text-xs text-gray-400">
+              1 jenis tiket per transaksi · maksimum {MAX_QTY_PER_BOOKING} tiket
+              per pemesanan.
             </p>
           </section>
         )}
 
         {step === "pemesan" && (
-          <section className="space-y-4">
-            <div className="rounded-2xl bg-white p-5 shadow-sm">
-              <div className="mb-3 flex items-center gap-2 text-gray-900">
-                <UserRound className="h-5 w-5 text-emerald-600" />
-                <h2 className="font-medium">Data pemesan</h2>
-              </div>
-              <label className="block text-sm font-medium text-gray-700">
-                Nama lengkap
+          <section className="mt-6 space-y-6">
+            <div className="space-y-4">
+              <label className="block">
+                <span className="text-sm font-medium text-gray-900">
+                  Nama lengkap
+                </span>
                 <input
                   type="text"
                   value={customerName}
                   onChange={(e) => setCustomerName(e.target.value)}
                   maxLength={120}
                   placeholder="Nama sesuai identitas"
-                  className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2.5 text-base font-normal focus:border-emerald-500 focus:outline-none"
+                  className="mt-1.5 w-full rounded-xl border border-gray-300 px-4 py-3 text-base text-gray-900 placeholder:text-gray-400 focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900"
                 />
               </label>
-              <label className="mt-4 block text-sm font-medium text-gray-700">
-                Nomor WhatsApp
+              <label className="block">
+                <span className="text-sm font-medium text-gray-900">
+                  Nomor WhatsApp
+                </span>
                 <input
                   type="tel"
                   inputMode="tel"
@@ -520,18 +604,19 @@ export function BookingWizard({ slug }: BookingWizardProps) {
                   onChange={(e) => setCustomerPhone(e.target.value)}
                   maxLength={25}
                   placeholder="08xxxxxxxxxx"
-                  className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2.5 text-base font-normal focus:border-emerald-500 focus:outline-none"
+                  className="mt-1.5 w-full rounded-xl border border-gray-300 px-4 py-3 text-base text-gray-900 placeholder:text-gray-400 focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900"
                 />
               </label>
-              <p className="mt-2 text-xs text-gray-500">
+              <p className="flex items-start gap-2 text-xs leading-relaxed text-gray-500">
+                <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
                 Kode booking & QR tiket dikirim ke nomor WhatsApp ini setelah
                 pembayaran berhasil.
               </p>
             </div>
 
             {totalQty > 1 && (
-              <div className="rounded-2xl bg-white p-5 shadow-sm">
-                <h2 className="font-medium text-gray-900">
+              <div className="rounded-3xl border border-gray-200 p-5">
+                <h2 className="font-semibold text-gray-900">
                   Nama anggota rombongan{" "}
                   <span className="text-xs font-normal text-gray-400">
                     (opsional)
@@ -539,12 +624,10 @@ export function BookingWizard({ slug }: BookingWizardProps) {
                 </h2>
                 <p className="mt-1 text-xs leading-relaxed text-gray-500">
                   Kosongkan bila tidak perlu — otomatis diberi nama{" "}
-                  <span className="font-medium">
-                    {defaultGuestName(2)}
-                  </span>
-                  , dst. Nama ini tampil saat penukaran gelang di loket.
+                  <span className="font-medium">{defaultGuestName(2)}</span>,
+                  dst. Nama ini tampil saat penukaran gelang di loket.
                 </p>
-                <div className="mt-3 space-y-2.5">
+                <div className="mt-4 space-y-3">
                   {units.map((unit) => (
                     <label
                       key={`${unit.variantId}-${unit.unitIndex}`}
@@ -553,9 +636,7 @@ export function BookingWizard({ slug }: BookingWizardProps) {
                       Tiket {unit.position} · {unit.label}
                       <input
                         type="text"
-                        value={
-                          guestNames[unit.variantId]?.[unit.unitIndex] ?? ""
-                        }
+                        value={guestNames[unit.variantId]?.[unit.unitIndex] ?? ""}
                         onChange={(e) =>
                           setGuestName(
                             unit.variantId,
@@ -565,7 +646,7 @@ export function BookingWizard({ slug }: BookingWizardProps) {
                         }
                         maxLength={120}
                         placeholder={defaultGuestName(unit.position)}
-                        className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-base font-normal text-gray-900 focus:border-emerald-500 focus:outline-none"
+                        className="mt-1 w-full rounded-xl border border-gray-300 px-4 py-2.5 text-base font-normal text-gray-900 placeholder:text-gray-400 focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900"
                       />
                     </label>
                   ))}
@@ -576,38 +657,38 @@ export function BookingWizard({ slug }: BookingWizardProps) {
         )}
 
         {step === "ringkasan" && (
-          <section className="space-y-3">
-            <div className="rounded-2xl bg-white p-5 shadow-sm">
-              <h2 className="mb-3 font-medium text-gray-900">Ringkasan pesanan</h2>
-              <dl className="space-y-1.5 text-sm">
-                <div className="flex justify-between">
+          <section className="mt-6 space-y-4">
+            {/* Kartu ringkasan ber-shadow ala booking card Airbnb */}
+            <div className="rounded-3xl border border-gray-200 p-5 shadow-[0_6px_16px_rgba(0,0,0,0.10)]">
+              <dl className="space-y-3 text-sm">
+                <div className="flex items-center justify-between">
                   <dt className="text-gray-500">Tanggal kunjungan</dt>
                   <dd className="font-medium text-gray-900">
                     {formatDateLong(visitDate)}
                   </dd>
                 </div>
-                <div className="flex justify-between">
+                <div className="flex items-center justify-between">
                   <dt className="text-gray-500">Pemesan</dt>
                   <dd className="font-medium text-gray-900">
                     {customerName.trim()}
                   </dd>
                 </div>
-                <div className="flex justify-between">
+                <div className="flex items-center justify-between">
                   <dt className="text-gray-500">WhatsApp</dt>
                   <dd className="font-medium text-gray-900">{customerPhone}</dd>
                 </div>
               </dl>
-              <div className="my-3 border-t border-dashed border-gray-200" />
-              <div className="space-y-2 text-sm">
+              <div className="my-4 border-t border-gray-100" />
+              <div className="space-y-2.5 text-sm">
                 {cart.map((c) => (
                   <div
                     key={c.variant.variant_id}
-                    className="flex justify-between"
+                    className="flex justify-between gap-3"
                   >
                     <span className="text-gray-700">
                       {c.product.name} — {c.variant.variant_name} × {c.qty}
                     </span>
-                    <span className="font-medium tabular-nums">
+                    <span className="font-medium tabular-nums text-gray-900">
                       {formatRp(c.variant.price * c.qty)}
                     </span>
                   </div>
@@ -615,11 +696,11 @@ export function BookingWizard({ slug }: BookingWizardProps) {
               </div>
               {totalQty > 1 && (
                 <>
-                  <div className="my-3 border-t border-dashed border-gray-200" />
-                  <p className="mb-1.5 text-xs font-medium text-gray-500">
+                  <div className="my-4 border-t border-gray-100" />
+                  <p className="mb-2 text-xs font-medium uppercase tracking-wide text-gray-400">
                     Anggota rombongan
                   </p>
-                  <ol className="space-y-1 text-sm text-gray-700">
+                  <ol className="space-y-1.5 text-sm text-gray-700">
                     {units.map((unit) => (
                       <li
                         key={`${unit.variantId}-${unit.unitIndex}`}
@@ -638,14 +719,17 @@ export function BookingWizard({ slug }: BookingWizardProps) {
                   </ol>
                 </>
               )}
-              <div className="mt-3 flex justify-between border-t border-gray-200 pt-3">
-                <span className="font-semibold text-gray-900">Total</span>
-                <span className="font-semibold tabular-nums text-emerald-700">
+              <div className="mt-4 flex justify-between border-t border-gray-200 pt-4">
+                <span className="text-base font-semibold text-gray-900">
+                  Total
+                </span>
+                <span className="text-base font-semibold tabular-nums text-gray-900">
                   {formatRp(totalAmount)}
                 </span>
               </div>
             </div>
-            <p className="px-1 text-xs leading-relaxed text-gray-500">
+            <p className="flex items-start gap-2 px-1 text-xs leading-relaxed text-gray-500">
+              <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
               Setelah menekan <b>Bayar Sekarang</b> Anda diarahkan ke halaman
               pembayaran. Selesaikan dalam 2 jam — lewat dari itu booking
               otomatis kedaluwarsa.
@@ -654,13 +738,14 @@ export function BookingWizard({ slug }: BookingWizardProps) {
         )}
       </main>
 
-      <footer className="fixed inset-x-0 bottom-0 z-10 mx-auto w-full max-w-lg border-t border-gray-200 bg-white px-4 py-3">
+      {/* ── Bar bawah ala checkout Airbnb ── */}
+      <footer className="fixed inset-x-0 bottom-0 z-10 mx-auto w-full max-w-lg border-t border-gray-200 bg-white px-5 py-3.5 md:max-w-2xl">
         {step === "tanggal" && (
           <button
             type="button"
             onClick={loadCatalog}
             disabled={!visitDate || loading}
-            className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 py-3 font-semibold text-white disabled:opacity-40"
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-rose-500 py-3.5 text-[15px] font-semibold text-white transition-colors hover:bg-rose-600 disabled:opacity-40 disabled:hover:bg-rose-500"
           >
             {loading ? (
               <Loader2 className="h-5 w-5 animate-spin" />
@@ -672,18 +757,20 @@ export function BookingWizard({ slug }: BookingWizardProps) {
           </button>
         )}
         {step === "tiket" && (
-          <div className="flex items-center gap-3">
-            <div className="min-w-0 flex-1">
-              <p className="text-xs text-gray-500">{totalQty} tiket</p>
-              <p className="truncate font-semibold tabular-nums text-gray-900">
+          <div className="flex items-center justify-between gap-4">
+            <div className="min-w-0">
+              <p className="truncate text-base font-semibold tabular-nums text-gray-900">
                 {formatRp(totalAmount)}
+              </p>
+              <p className="text-xs text-gray-500 underline">
+                {totalQty} tiket · {formatDateShort(visitDate)}
               </p>
             </div>
             <button
               type="button"
               onClick={() => setStep("pemesan")}
               disabled={totalQty === 0}
-              className="rounded-xl bg-emerald-600 px-6 py-3 font-semibold text-white disabled:opacity-40"
+              className="rounded-xl bg-rose-500 px-8 py-3.5 text-[15px] font-semibold text-white transition-colors hover:bg-rose-600 disabled:opacity-40 disabled:hover:bg-rose-500"
             >
               Lanjut
             </button>
@@ -694,7 +781,7 @@ export function BookingWizard({ slug }: BookingWizardProps) {
             type="button"
             onClick={() => setStep("ringkasan")}
             disabled={!pemesanValid}
-            className="w-full rounded-xl bg-emerald-600 py-3 font-semibold text-white disabled:opacity-40"
+            className="w-full rounded-xl bg-rose-500 py-3.5 text-[15px] font-semibold text-white transition-colors hover:bg-rose-600 disabled:opacity-40 disabled:hover:bg-rose-500"
           >
             Lihat Ringkasan
           </button>
@@ -704,7 +791,7 @@ export function BookingWizard({ slug }: BookingWizardProps) {
             type="button"
             onClick={submitBooking}
             disabled={submitting}
-            className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 py-3 font-semibold text-white disabled:opacity-60"
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-rose-500 py-3.5 text-[15px] font-semibold text-white transition-colors hover:bg-rose-600 disabled:opacity-60"
           >
             {submitting ? (
               <>
