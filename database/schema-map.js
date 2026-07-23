@@ -32,6 +32,7 @@ const DOMAINS = {
   inventory: { order: 50, schema: "public", realSchema: "inventory" },
   manufacturing: { order: 55, schema: "public", realSchema: "manufacturing" },
   pos: { order: 60, schema: "public", realSchema: "pos" },
+  ticketing: { order: 65, schema: "public", realSchema: "ticketing" },
   crm: { order: 70, schema: "public", realSchema: "crm" },
   accounting: { order: 75, schema: "public", realSchema: "accounting" },
   core: { order: 90, schema: "public", realSchema: "public" },
@@ -73,8 +74,8 @@ const TABLE_DOMAIN = {
   development_plans: "hris",
   project_assignments: "hris",
   staff: "hris",
-  staff_schedules: "hris",
-  staff_sections: "hris",
+  // staff_schedules & staff_sections di-drop di EPIC-015 Fase C
+  // (migrasi 20260720200000). Jadwal hidup di shifts + employee_shifts.
   hris_logbook_entries: "hris",
   hris_logbook_entry_items: "hris",
   hris_logbook_templates: "hris",

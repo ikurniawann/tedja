@@ -49,11 +49,14 @@ export async function GET(request: NextRequest) {
       .from('loans')
       .select(`
         *,
-        employee:employees (
+        employee:employees!employee_id (
           id,
           full_name,
           nip,
-          photo_url
+          photo_url,
+          department:departments (
+            name
+          )
         ),
         approved_by:employees!approved_by (
           id,
@@ -231,7 +234,7 @@ export async function POST(request: NextRequest) {
       })
       .select(`
         *,
-        employee:employees (
+        employee:employees!employee_id (
           id,
           full_name,
           nip

@@ -50,7 +50,7 @@ function parseAmountInput(raw: string) {
 }
 
 function tierBadgeClass(tier?: string | null) {
-  const value = String(tier || 'bronze').toLowerCase();
+  const value = String(tier || 'regular').toLowerCase();
   if (value === 'platinum') return 'bg-violet-100 text-violet-700';
   if (value === 'gold') return 'bg-amber-100 text-amber-800';
   if (value === 'silver') return 'bg-slate-100 text-slate-700';
@@ -156,7 +156,7 @@ export function TopupPage() {
       name: payload.name,
       phone: payload.phone,
       email: payload.email,
-      membership_tier: 'bronze',
+      membership_tier: 'regular',
       enroll_member: payload.enroll_member,
       nfc_uid: payload.nfc_uid,
     });
@@ -853,7 +853,7 @@ export function TopupPage() {
                           tierBadgeClass(item.membership_tier)
                         )}
                       >
-                        {item.membership_tier || 'bronze'}
+                        {item.membership_tier || 'regular'}
                       </div>
                     </div>
                   </button>
@@ -1136,7 +1136,7 @@ function WalletCard({
             'bg-white/20 text-white'
           )}
         >
-          {customer.membership_tier || 'bronze'}
+          {customer.membership_tier || 'regular'}
         </span>
       </div>
 

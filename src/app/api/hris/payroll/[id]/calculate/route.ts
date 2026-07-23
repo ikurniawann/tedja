@@ -155,6 +155,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           unpaid_leave_deduction: payrollResult.unpaidLeaveDeduction,
           late_deduction: payrollResult.lateDeduction,
           loan_deduction: payrollResult.loanDeduction,
+          loan_details: JSON.stringify(input.loanBreakdown ?? []),
           other_deduction: payrollResult.otherDeduction,
           total_deductions: payrollResult.totalDeductions,
           net_salary: payrollResult.netSalary,

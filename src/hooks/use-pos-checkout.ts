@@ -33,6 +33,7 @@ export function usePosCheckout() {
       notes,
       arkToUse,
       shiftId,
+      nfcTabUid,
     }: {
       cart: PosCartItem[];
       orderType: string;
@@ -44,6 +45,8 @@ export function usePosCheckout() {
       notes: string;
       arkToUse: number;
       shiftId?: string | null;
+      /** UID gelang ticketing — wajib saat paymentMethod 'nfc_tab' */
+      nfcTabUid?: string;
     }): Promise<PaymentResult> => {
       const snap = {
         snapshotCart: [...cart],
@@ -83,7 +86,9 @@ export function usePosCheckout() {
         const paidAmount =
           paymentMethod === "cash"
             ? Number(parseFloat(cashReceived) || total)
-            : total;
+            : paymentMethod === "nfc_tab"
+              ? 0 // tagihan pindah ke tab ticketing — kasir tidak menerima uang
+              : total;
 
         const payload: CreateOrderRequest = {
           order_type: orderType as any,
@@ -96,13 +101,14 @@ export function usePosCheckout() {
           tax_amount: tax,
           service_charge_amount: 0,
           total_amount: total,
-          payment_method: paymentMethod === "qris" ? "qris" : paymentMethod === "credit_card" ? "credit" : paymentMethod === "ark_coin" ? "ark_coin" : "cash",
+          payment_method: paymentMethod === "qris" ? "qris" : paymentMethod === "credit_card" ? "credit" : paymentMethod === "ark_coin" ? "ark_coin" : paymentMethod === "nfc_tab" ? "nfc_tab" : "cash",
           amount_paid: paidAmount,
           include_tax: includeTax,
           membership_discount_pct: discountPct,
           notes,
           ark_coins_used: paymentMethod === "ark_coin" ? arkToUse : 0,
           shift_id: shiftId || undefined,
+          nfc_tab_uid: paymentMethod === "nfc_tab" ? nfcTabUid : undefined,
         };
 
         const response = await createOrder(payload);

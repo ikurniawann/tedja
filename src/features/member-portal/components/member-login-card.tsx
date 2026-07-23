@@ -1,11 +1,8 @@
 "use client";
 
+import Image from "next/image";
 import { useState } from "react";
-import { Loader2, MessageCircle } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { ArrowLeft, Loader2, MessageCircle, ShieldCheck } from "lucide-react";
 
 /** Login OTP WhatsApp 2 langkah (nomor → kode). EPIC-011 Fase D. */
 export function MemberLoginCard({ onSuccess }: { onSuccess: () => void }) {
@@ -62,85 +59,129 @@ export function MemberLoginCard({ onSuccess }: { onSuccess: () => void }) {
   }
 
   return (
-    <div className="flex flex-1 flex-col justify-center gap-6">
-      <div className="text-center">
-        <p className="text-xs uppercase tracking-[0.3em] text-purple-500">
-          Sulu Wonderland
-        </p>
-        <h1 className="mt-1 text-2xl font-bold text-gray-900">Portal Member</h1>
-        <p className="mt-1 text-sm text-gray-500">
-          Cek saldo ARK Coin, XP, tier & riwayat transaksi Anda
+    <div className="flex flex-1 flex-col justify-center gap-7 py-8">
+      <div className="mp-rise flex flex-col items-center text-center">
+        <Image
+          src="/logos/sulu-in-wounderland-logo.png"
+          alt="Sulu in Wounderland"
+          width={112}
+          height={112}
+          className="size-28 object-contain"
+          priority
+        />
+        <h1 className="mt-1 text-2xl font-bold" style={{ color: "var(--mp-ink)" }}>
+          Portal Member
+        </h1>
+        <p className="mt-1.5 max-w-[19rem] text-sm text-[color:var(--mp-ink-soft)]">
+          Cek saldo ARK Coin, XP, tier, dan tukar reward Anda.
         </p>
       </div>
 
-      <Card className="shadow-md">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <MessageCircle className="h-4 w-4 text-emerald-500" />
-            Masuk dengan WhatsApp
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
+      <div className="mp-rise mp-rise-1 rounded-3xl bg-white/85 p-5 shadow-lg shadow-black/5 ring-1 ring-black/5 backdrop-blur">
+        <div className="flex items-center gap-2 border-b border-black/5 pb-3">
+          <span className="grid size-8 place-items-center rounded-full bg-emerald-50">
+            <MessageCircle className="size-4 text-emerald-600" />
+          </span>
+          <h2 className="text-sm font-semibold" style={{ color: "var(--mp-ink)" }}>
+            {step === "phone" ? "Masuk dengan WhatsApp" : "Masukkan kode OTP"}
+          </h2>
+        </div>
+
+        <div className="space-y-3 pt-4">
           {step === "phone" ? (
             <>
-              <div className="space-y-1">
-                <Label>No. WhatsApp terdaftar</Label>
-                <Input
+              <label className="block">
+                <span className="mp-label text-[color:var(--mp-ink-soft)]">
+                  No. WhatsApp terdaftar
+                </span>
+                <input
                   type="tel"
                   inputMode="tel"
                   value={phone}
                   onChange={(event) => setPhone(event.target.value)}
                   placeholder="08xxxxxxxxxx"
                   onKeyDown={(event) => event.key === "Enter" && requestOtp()}
+                  className="mp-figure mt-1.5 h-12 w-full rounded-xl border border-black/10 bg-white px-4 text-base outline-none transition focus:border-[color:var(--brand-primary)] focus:ring-4 focus:ring-[color:var(--mp-line)]"
                 />
-              </div>
-              <Button className="w-full" onClick={requestOtp} disabled={busy || !phone}>
-                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Kirim Kode OTP"}
-              </Button>
+              </label>
+              <PrimaryButton onClick={requestOtp} disabled={busy || !phone}>
+                {busy ? <Loader2 className="size-4 animate-spin" /> : "Kirim Kode OTP"}
+              </PrimaryButton>
             </>
           ) : (
             <>
-              {info && <p className="text-xs text-emerald-600">{info}</p>}
-              <div className="space-y-1">
-                <Label>Kode OTP (6 digit)</Label>
-                <Input
+              {info && (
+                <p className="flex items-start gap-1.5 rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+                  <ShieldCheck className="mt-0.5 size-3.5 shrink-0" />
+                  {info}
+                </p>
+              )}
+              <label className="block">
+                <span className="mp-label text-[color:var(--mp-ink-soft)]">Kode 6 digit</span>
+                <input
                   inputMode="numeric"
                   maxLength={6}
+                  autoFocus
                   value={code}
-                  onChange={(event) =>
-                    setCode(event.target.value.replace(/\D/g, ""))
-                  }
+                  onChange={(event) => setCode(event.target.value.replace(/\D/g, ""))}
                   placeholder="••••••"
-                  className="text-center text-xl tracking-[0.5em]"
                   onKeyDown={(event) => event.key === "Enter" && verify()}
+                  className="mp-figure mt-1.5 h-14 w-full rounded-xl border border-black/10 bg-white text-center text-2xl font-bold tracking-[0.45em] outline-none transition focus:border-[color:var(--brand-primary)] focus:ring-4 focus:ring-[color:var(--mp-line)]"
                 />
-              </div>
-              <Button
-                className="w-full"
-                onClick={verify}
-                disabled={busy || code.length !== 6}
-              >
-                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Masuk"}
-              </Button>
+              </label>
+              <PrimaryButton onClick={verify} disabled={busy || code.length !== 6}>
+                {busy ? <Loader2 className="size-4 animate-spin" /> : "Masuk"}
+              </PrimaryButton>
               <button
-                className="w-full text-center text-xs text-gray-400 underline"
+                type="button"
                 onClick={() => {
                   setStep("phone");
                   setCode("");
                   setInfo("");
+                  setError("");
                 }}
+                className="flex w-full items-center justify-center gap-1.5 py-1 text-xs text-[color:var(--mp-ink-soft)] transition hover:text-[color:var(--mp-ink)]"
               >
+                <ArrowLeft className="size-3.5" />
                 Ganti nomor / kirim ulang
               </button>
             </>
           )}
-          {error && <p className="text-xs text-red-600">{error}</p>}
-        </CardContent>
-      </Card>
 
-      <p className="text-center text-[11px] text-gray-400">
+          {error && (
+            <p className="rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-700">{error}</p>
+          )}
+        </div>
+      </div>
+
+      <p className="mp-rise mp-rise-2 text-center text-xs text-[color:var(--mp-ink-soft)]">
         Belum jadi member? Daftar gratis di kasir venue kami.
       </p>
     </div>
+  );
+}
+
+function PrimaryButton({
+  onClick,
+  disabled,
+  children,
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl text-sm font-semibold text-white shadow-lg transition active:scale-[0.99] disabled:opacity-50 disabled:shadow-none"
+      style={{
+        backgroundColor: "var(--brand-primary)",
+        boxShadow: "0 10px 20px -10px var(--brand-primary)",
+      }}
+    >
+      {children}
+    </button>
   );
 }

@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   isLoanDue,
   loanDeductionForPeriod,
+  loanInstallmentDetails,
   allocateLoanPayment,
   validateLoanLimits,
   type LoanDeductionRow,
@@ -136,5 +137,66 @@ describe("validateLoanLimits", () => {
     expect(validateLoanLimits({ ...base, baseSalary: null })).toMatch(
       /struktur gaji/
     );
+  });
+});
+
+describe("loanInstallmentDetails", () => {
+  const base = {
+    id: "loan-1",
+    loan_type: "kasbon",
+    principal_amount: 3_000_000,
+    monthly_installment: 1_000_000,
+    tenor_months: 3,
+    first_installment_month: 1,
+    first_installment_year: 2026,
+    status: "approved",
+    is_active: true,
+  };
+
+  it("menomori angsuran dari pokok yang sudah terbayar", () => {
+    const belum = loanInstallmentDetails([{ ...base, remaining_balance: 3_000_000 }], 1, 2026);
+    expect(belum[0].installment_no).toBe(1);
+
+    const sekali = loanInstallmentDetails([{ ...base, remaining_balance: 2_000_000 }], 2, 2026);
+    expect(sekali[0].installment_no).toBe(2);
+
+    const duaKali = loanInstallmentDetails([{ ...base, remaining_balance: 1_000_000 }], 3, 2026);
+    expect(duaKali[0].installment_no).toBe(3);
+    expect(duaKali[0].tenor_months).toBe(3);
+  });
+
+  it("tidak memotong melebihi sisa pinjaman pada angsuran terakhir", () => {
+    const detail = loanInstallmentDetails([{ ...base, remaining_balance: 400_000 }], 3, 2026);
+    expect(detail[0].amount).toBe(400_000);
+    expect(detail[0].remaining_after).toBe(0);
+  });
+
+  it("mengabaikan pinjaman yang belum jatuh tempo", () => {
+    const detail = loanInstallmentDetails(
+      [{ ...base, remaining_balance: 3_000_000, first_installment_month: 5 }],
+      2,
+      2026
+    );
+    expect(detail).toHaveLength(0);
+  });
+
+  it("tetap benar walau satu periode terlewat (payroll telat dijalankan)", () => {
+    // Sisa 1jt dari pokok 3jt berarti 2 angsuran sudah terbayar, sehingga
+    // periode ini adalah angsuran ke-3 — bukan ke-4 meski bulannya lompat.
+    const detail = loanInstallmentDetails([{ ...base, remaining_balance: 1_000_000 }], 6, 2026);
+    expect(detail[0].installment_no).toBe(3);
+  });
+
+  it("merinci setiap pinjaman saat karyawan punya lebih dari satu", () => {
+    const detail = loanInstallmentDetails(
+      [
+        { ...base, remaining_balance: 3_000_000 },
+        { ...base, id: "loan-2", loan_type: "darurat", remaining_balance: 500_000 },
+      ],
+      2,
+      2026
+    );
+    expect(detail).toHaveLength(2);
+    expect(detail.map((d) => d.loan_id)).toEqual(["loan-1", "loan-2"]);
   });
 });

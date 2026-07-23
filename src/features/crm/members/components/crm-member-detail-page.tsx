@@ -83,7 +83,7 @@ function formatDateTime(value?: string | null) {
 }
 
 function tierName(member: CrmMember) {
-  return member.tier?.name || member.customer?.membership_tier || "Bronze";
+  return member.tier?.name || member.customer?.membership_tier || "Regular";
 }
 
 function avatarSourceLabel(source: string) {
@@ -782,9 +782,16 @@ export function CrmMemberDetailPage() {
 
                 <div className="mt-4 space-y-3 text-sm text-slate-600">
                   <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
-                    Redeem reward dengan potong XP sudah dipensiunkan (EPIC-011).
-                    XP kini menjadi skor seumur hidup yang menentukan tier dan
-                    membuka privilege produk khusus (syarat minimal XP/tier) di kasir.
+                    XP adalah skor seumur hidup dan tidak pernah dipotong. XP
+                    menentukan tier, membuka privilege produk khusus di kasir,
+                    dan menjadi syarat kelayakan menukar reward.
+                    <Link
+                      href="/dashboard/crm/rewards"
+                      className="mt-2 inline-flex items-center gap-1.5 font-medium text-slate-900 underline underline-offset-2"
+                    >
+                      <Gift className="size-3.5" />
+                      Kelola &amp; klaim reward
+                    </Link>
                   </div>
                 </div>
               </div>
@@ -815,7 +822,9 @@ export function CrmMemberDetailPage() {
                               {redemption.voucher_code ? ` · ${redemption.voucher_code}` : ""}
                             </div>
                           </div>
-                          <div className="text-sm font-semibold text-red-700">-{formatNumber(redemption.xp_cost)}</div>
+                          <div className="text-right text-xs text-slate-500">
+                            syarat {formatNumber(redemption.min_xp_at_redeem)} XP
+                          </div>
                         </div>
                       ))}
                     </div>

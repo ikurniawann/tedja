@@ -5,6 +5,9 @@ import { awardCrmXpForPosOrder, syncPosCustomerOrderStats } from '@/lib/crm/loya
 import { getCrmDefaultVenue } from '@/lib/crm/server';
 import { checkProductPrivileges } from '@/lib/crm/product-privilege';
 import { buildCostSnapshot, loadPosProductCostMap } from '@/lib/pos/purchasing-sync';
+import { checkRateLimit } from '@/lib/rate-limit';
+import { isValidNfcUid, normalizeNfcUid } from '@/lib/ticketing/server';
+import { chargeFnbOrderToTab } from '@/lib/ticketing/tab-server';
 
 type PosOrderItemRequest = {
   product_id?: string;
@@ -41,6 +44,8 @@ type PosOrderBody = {
   splits?: unknown[];
   branch_id?: string;
   shift_id?: string;
+  /** UID gelang ticketing — wajib saat payment_method 'nfc_tab' (EPIC-023 Fase C) */
+  nfc_tab_uid?: string;
 };
 
 type PosOrderRow = {
@@ -266,11 +271,48 @@ export async function POST(request: NextRequest) {
     const serverDiscount = Number(discount_amount) || 0;
     const serverTax = include_tax ? Number(tax_amount) || 0 : 0;
     const serverServiceCharge = Number(service_charge_amount) || 0;
-    const serverTotal = Number(total_amount) || (serverSubtotal - serverDiscount + serverTax + serverServiceCharge);
+    const serverDerivedTotal =
+      serverSubtotal - serverDiscount + serverTax + serverServiceCharge;
+    // NFC Tab (EPIC-023 Fase C): order lunas secara kasir, tagihannya pindah
+    // ke tab visit ticketing — tidak ada uang diterima di sini. Nominal yang
+    // masuk ledger tab WAJIB turunan server, bukan total_amount kiriman klien.
+    const isNfcTab = payment_method === 'nfc_tab';
+    const serverTotal = isNfcTab
+      ? serverDerivedTotal
+      : Number(total_amount) || serverDerivedTotal;
     const paidAmount = Number(amount_paid) || 0;
     const arkUsed = Number(ark_coins_used) || 0;
+    const nfcTabUid = String(body.nfc_tab_uid || '').trim();
 
-    if (paidAmount + arkUsed < serverTotal) {
+    if (isNfcTab) {
+      const rate = checkRateLimit(`pos-nfc-tab:${sessionUserId}`, 30);
+      if (!rate.allowed) {
+        return NextResponse.json(
+          { success: false, error: 'Terlalu banyak percobaan NFC Tab — tunggu sebentar' },
+          { status: 429 }
+        );
+      }
+    }
+    if (isNfcTab && !nfcTabUid) {
+      return NextResponse.json(
+        { success: false, error: 'Pembayaran NFC Tab membutuhkan tap gelang' },
+        { status: 400 }
+      );
+    }
+    if (isNfcTab && !isValidNfcUid(normalizeNfcUid(nfcTabUid))) {
+      return NextResponse.json(
+        { success: false, error: 'UID gelang tidak valid — tap ulang gelang' },
+        { status: 400 }
+      );
+    }
+    if (isNfcTab && arkUsed > 0) {
+      return NextResponse.json(
+        { success: false, error: 'NFC Tab tidak bisa dicampur ARK Coin — 1 transaksi 1 metode' },
+        { status: 400 }
+      );
+    }
+
+    if (!isNfcTab && paidAmount + arkUsed < serverTotal) {
       return NextResponse.json({ success: false, error: 'Payment insufficient' }, { status: 400 });
     }
 
@@ -296,15 +338,16 @@ export async function POST(request: NextRequest) {
 
     const venue = await getCrmDefaultVenue(db);
     const payWithArk = arkUsed > 0 && Boolean(customer_id);
+    // Order ARK/NFC Tab dibuat pending dulu; paid setelah debit/charge sukses
+    const deferPaid = payWithArk || isNfcTab;
 
     const { data: orderData, error: orderErr } = await db
       .from('pos_orders')
       .insert({
         order_number: orderNumber,
         order_type,
-        // Order ARK dibuat pending dulu; jadi paid setelah debit wallet sukses
-        status: payWithArk ? 'pending' : 'completed',
-        payment_status: payWithArk ? 'unpaid' : 'paid',
+        status: deferPaid ? 'pending' : 'completed',
+        payment_status: deferPaid ? 'unpaid' : 'paid',
         company_id: venue.companyId,
         branch_id: body.branch_id || venue.branchId,
         customer_id: customer_id || null,
@@ -325,7 +368,7 @@ export async function POST(request: NextRequest) {
         notes: notes || null,
         special_requests: special_requests || null,
         ordered_at: new Date().toISOString(),
-        ...(payWithArk ? {} : { completed_at: new Date().toISOString() }),
+        ...(deferPaid ? {} : { completed_at: new Date().toISOString() }),
       })
       .select()
       .single();
@@ -337,6 +380,52 @@ export async function POST(request: NextRequest) {
 
     // Debit saldo ARK atomik (fix bug: checkout langsung sebelumnya tidak
     // pernah memotong saldo). Gagal debit → order dibatalkan, bukan paid.
+    // Charge tab ticketing + tandai order paid dalam SATU transaksi DB
+    // (lock visit + guard saldo/plafon di dalamnya) — charge dan status
+    // order tidak mungkin terpisah. Gagal charge → order dibatalkan.
+    if (isNfcTab) {
+      const tabResult = await chargeFnbOrderToTab({
+        orderId: orderData.id,
+        orderNumber,
+        amount: serverTotal,
+        bandUid: nfcTabUid,
+        companyId: venue.companyId,
+        branchId: body.branch_id || venue.branchId,
+        createdBy: sessionUserId,
+        markOrderPaid: true,
+      });
+
+      if (!tabResult.ok) {
+        // Jejak audit sebelum order kompensasi dihapus (percobaan gagal
+        // tidak meninggalkan baris DB)
+        console.error(
+          `[pos] nfc_tab charge rejected: order=${orderData.id} user=${sessionUserId} reason=${tabResult.reason}`
+        );
+        const { error: delErr } = await db
+          .from('pos_orders')
+          .delete()
+          .eq('id', orderData.id);
+        if (delErr) {
+          console.error(
+            `[pos] nfc_tab compensation delete failed: order=${orderData.id}:`,
+            delErr
+          );
+          // Jangan biarkan order zombie pending nongol di daftar aktif kasir
+          await db
+            .from('pos_orders')
+            .update({ status: 'cancelled', updated_at: new Date().toISOString() })
+            .eq('id', orderData.id);
+        }
+        return NextResponse.json(
+          { success: false, error: tabResult.reason },
+          { status: tabResult.status === 402 ? 400 : tabResult.status }
+        );
+      }
+
+      orderData.status = 'completed';
+      orderData.payment_status = 'paid';
+    }
+
     if (payWithArk) {
       const { error: coinError } = await db.rpc('update_ark_coin_balance', {
         p_customer_id: customer_id,

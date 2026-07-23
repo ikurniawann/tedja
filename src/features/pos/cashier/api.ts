@@ -40,6 +40,8 @@ export interface PayOpenOrderPayload {
   payment_method: string;
   amount_paid: number;
   ark_coins_used?: number;
+  /** UID gelang ticketing — wajib saat payment_method 'nfc_tab' */
+  nfc_tab_uid?: string;
 }
 
 export async function listCashierTables(): Promise<PosTable[]> {
@@ -65,6 +67,7 @@ export async function payOpenOrder(orderId: string, payload: PayOpenOrderPayload
     payment_method: payload.payment_method,
     amount_paid: payload.amount_paid,
     ark_coins_used: payload.ark_coins_used,
+    nfc_tab_uid: payload.nfc_tab_uid,
   });
 }
 

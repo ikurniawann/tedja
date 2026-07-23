@@ -1,6 +1,15 @@
 export type CrmSettings = {
   topup_bonus_percent: number;
   profile_completion_free_xp: number;
+  /** Customer service (EPIC-012 Fase D). */
+  cs_sla_response_minutes: number;
+  cs_sla_resolution_minutes: number;
+  cs_business_hours_start: number;
+  cs_business_hours_end: number;
+  cs_auto_reply_enabled: boolean;
+  cs_auto_reply_text: string;
+  cs_csat_enabled: boolean;
+  cs_csat_text: string;
 };
 
 export type CrmTierConfig = {
@@ -14,6 +23,15 @@ export type CrmTierConfig = {
   discount_percent: number;
   display_color?: string | null;
   is_active: boolean;
+};
+
+export type PosProductXp = {
+  id: string;
+  sku: string;
+  name: string;
+  base_price: number;
+  xp: number;
+  category?: { name: string } | null;
 };
 
 export type CrmXpRuleConfig = {

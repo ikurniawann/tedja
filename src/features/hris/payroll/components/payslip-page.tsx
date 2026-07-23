@@ -1,10 +1,16 @@
 "use client";
 
+import {
+  loanInstallmentLabel,
+  type LoanInstallmentDetail,
+} from "@/lib/payroll/loans";
 import { useParams, useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { formatShareOfGross } from "@/lib/payroll/share";
 import { Badge } from "@/components/ui/badge";
-import { PrinterIcon, ArrowDownOnSquareIcon, ArrowLeftIcon } from "@heroicons/react/24/outline";
+import { ArrowDownTrayIcon,
+  PrinterIcon, ArrowDownOnSquareIcon, ArrowLeftIcon } from "@heroicons/react/24/outline";
 import { usePayslip } from "../queries";
 import { prorateNote } from "@/lib/payroll/prorate-note";
 
@@ -31,6 +37,7 @@ interface PayrollDetail {
   unpaid_leave_deduction: number;
   late_deduction?: number;
   loan_deduction?: number;
+  loan_details?: LoanInstallmentDetail[];
   other_deduction: number;
   total_deductions: number;
   net_salary: number;
@@ -103,6 +110,10 @@ export function PayslipPage() {
     window.print();
   }
 
+  /** Porsi potongan terhadap bruto — makna sama untuk semua baris. */
+  const bagian = (amount: number | undefined) =>
+    formatShareOfGross(Number(amount) || 0, Number(detail?.gross_salary) || 0);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -141,9 +152,20 @@ export function PayslipPage() {
           Kembali
         </Button>
         <div className="flex gap-2">
-          <Button onClick={handlePrint}>
+          {/* PDF dibuat server (pdfkit) — hasilnya seragam di semua perangkat,
+              tidak seperti cetak browser. Memakai <a> + buttonVariants karena
+              Button di repo ini tidak mendukung asChild. */}
+          <a
+            href={`/api/hris/payslips/${detail.id}/pdf`}
+            download
+            className="inline-flex h-9 shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-primary px-3 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 active:translate-y-px"
+          >
+            <ArrowDownTrayIcon className="w-4 h-4 mr-2" />
+            Unduh PDF
+          </a>
+          <Button variant="outline" onClick={handlePrint}>
             <PrinterIcon className="w-4 h-4 mr-2" />
-            Cetak / Simpan PDF
+            Cetak
           </Button>
         </div>
       </div>
@@ -227,22 +249,30 @@ export function PayslipPage() {
           <div>
             <h3 className="font-semibold text-lg mb-3 text-red-700">Potongan</h3>
             <div className="space-y-2">
-              <DeductionRow label="BPJS TK (JHT)" amount={detail.bpjs_tk_jht_deduction} />
-              <DeductionRow label="BPJS TK (JP)" amount={detail.bpjs_tk_jp_deduction} />
-              <DeductionRow label="BPJS Kesehatan" amount={detail.bpjs_kes_deduction} />
-              <DeductionRow label="Tapera" amount={detail.tapera_deduction} />
-              <DeductionRow label="PPh 21" amount={detail.pph21_deduction} />
+              <DeductionRow label="BPJS TK (JHT)" amount={detail.bpjs_tk_jht_deduction} share={bagian(detail.bpjs_tk_jht_deduction)} />
+              <DeductionRow label="BPJS TK (JP)" amount={detail.bpjs_tk_jp_deduction} share={bagian(detail.bpjs_tk_jp_deduction)} />
+              <DeductionRow label="BPJS Kesehatan" amount={detail.bpjs_kes_deduction} share={bagian(detail.bpjs_kes_deduction)} />
+              <DeductionRow label="Tapera" amount={detail.tapera_deduction} share={bagian(detail.tapera_deduction)} />
+              <DeductionRow label="PPh 21" amount={detail.pph21_deduction} share={bagian(detail.pph21_deduction)} />
               {detail.unpaid_leave_deduction > 0 && (
-                <DeductionRow label="Cuti Tanpa Bayaran" amount={detail.unpaid_leave_deduction} />
+                <DeductionRow label="Cuti Tanpa Bayaran" amount={detail.unpaid_leave_deduction} share={bagian(detail.unpaid_leave_deduction)} />
               )}
               {(detail.late_deduction ?? 0) > 0 && (
-                <DeductionRow label="Potongan Keterlambatan" amount={detail.late_deduction ?? 0} />
+                <DeductionRow label="Potongan Keterlambatan" amount={detail.late_deduction ?? 0} share={bagian(detail.late_deduction ?? 0)} />
               )}
-              {(detail.loan_deduction ?? 0) > 0 && (
-                <DeductionRow label="Cicilan Pinjaman" amount={detail.loan_deduction ?? 0} />
-              )}
+              {(detail.loan_details?.length ?? 0) > 0
+                ? detail.loan_details!.map((loan) => (
+                    <DeductionRow
+                      key={loan.loan_id}
+                      label={loanInstallmentLabel(loan)}
+                      amount={loan.amount}
+                    />
+                  ))
+                : (detail.loan_deduction ?? 0) > 0 && (
+                    <DeductionRow label="Cicilan Pinjaman" amount={detail.loan_deduction ?? 0} share={bagian(detail.loan_deduction ?? 0)} />
+                  )}
               {detail.other_deduction > 0 && (
-                <DeductionRow label="Potongan Lain" amount={detail.other_deduction} />
+                <DeductionRow label="Potongan Lain" amount={detail.other_deduction} share={bagian(detail.other_deduction)} />
               )}
               <div className="border-t pt-2 mt-2">
                 <DeductionRow 
@@ -328,12 +358,26 @@ function EarningRow({ label, amount, bold = false }: { label: string; amount: nu
   );
 }
 
-function DeductionRow({ label, amount, bold = false }: { label: string; amount: number; bold?: boolean }) {
+function DeductionRow({
+  label,
+  amount,
+  bold = false,
+  share,
+}: {
+  label: string;
+  amount: number;
+  bold?: boolean;
+  /** Porsi terhadap bruto, mis. "1,8%". Kosong = tidak ditampilkan. */
+  share?: string | null;
+}) {
   return (
-    <div className="flex items-center justify-between">
+    <div className="flex items-baseline justify-between gap-2">
       <span className={`text-gray-700 ${bold ? 'font-semibold' : ''}`}>{label}</span>
-      <span className={`text-red-600 ${bold ? 'font-bold' : ''}`}>
-        {amount > 0 ? `- ${formatCurrency(amount)}` : '-'}
+      <span className="flex items-baseline gap-2">
+        {share && <span className="text-xs font-normal text-gray-400">{share}</span>}
+        <span className={`text-red-600 ${bold ? 'font-bold' : ''}`}>
+          {amount > 0 ? `- ${formatCurrency(amount)}` : '-'}
+        </span>
       </span>
     </div>
   );

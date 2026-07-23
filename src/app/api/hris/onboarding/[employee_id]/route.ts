@@ -24,7 +24,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       .from('onboarding_checklists')
       .select(`
         *,
-        employee:employees(
+        employee:employees!employee_id(
           id,
           full_name,
           nip,

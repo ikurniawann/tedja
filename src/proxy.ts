@@ -40,7 +40,9 @@ export async function proxy(request: NextRequest) {
 
   // Redirect old HRIS paths to new /dashboard/hris/* structure.
   // Must run before the session check so the redirect target is also authenticated.
-  const hrisModules = ["candidates", "pipeline", "talent-pool", "staff", "analytics"];
+  // "staff" sengaja tidak ada di daftar: /dashboard/hris/staff tidak pernah dibuat,
+  // jadi redirect-nya hanya mengantar ke 404 (EPIC-015).
+  const hrisModules = ["candidates", "pipeline", "talent-pool", "analytics"];
   for (const hrisModule of hrisModules) {
     // Match /dashboard/{module}/* but NOT /dashboard/hris/{module}/*
     if (

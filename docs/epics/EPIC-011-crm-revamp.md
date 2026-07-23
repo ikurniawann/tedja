@@ -1,6 +1,6 @@
 # EPIC-011: CRM Revamp — Member Global, XP Lifetime, ARK Coin & Portal Member
 
-status: on-progress
+status: ready-for-qa
 environment: dev
 retries: 0
 
@@ -29,6 +29,13 @@ Hasil diskusi desain — SEMUA sudah diputuskan owner:
 4. **"Redeem" berubah jadi privilege**: produk khusus bersyarat `min_xp`
    (dan/atau min tier). Member yang memenuhi boleh membeli (bayar normal), XP
    tidak dipotong. Alur `crm_rewards` + `crm_redemptions` lama PENSIUN.
+   **REVISI Fase F (19 Jul 2026, keputusan owner):** alur reward DIHIDUPKAN
+   kembali dengan semantik yang benar — `crm_rewards.xp_cost` menjadi
+   `min_xp` (syarat kelayakan, TIDAK dipotong), admin mengelola reward mana
+   yang bisa di-redeem dan berapa kali jatah tiap member
+   (`max_redemptions_per_member` × `quota_period`). Privilege produk ber-`min_xp`
+   di kasir (Fase C) tetap berjalan berdampingan — keduanya memakai prinsip
+   sama: XP/tier = compliance, bukan mata uang.
 5. **4 tier default: Regular, Bronze, Silver, Gold** — nama & ambang XP
    (`min_lifetime_xp`) konfigurable Super Admin (tabel `crm_membership_tiers`
    existing sudah mendukung). Regular mulai dari 0 XP (tier awal semua member).
@@ -101,6 +108,13 @@ Hasil diskusi desain — SEMUA sudah diputuskan owner:
 - Top spender (basis order), frequent visitor, laporan rekonsiliasi
   antar-venue (topup di A dibelanjakan di B), dashboard CRM menyesuaikan
   skema baru.
+
+### Fase F — Reward redeem berbasis syarat XP
+- `min_xp` sebagai ambang kelayakan (XP tidak dipotong), kuota per member
+  (`max_redemptions_per_member` × `quota_period`: total/harian/bulanan/tahunan),
+  stok global, dan toggle aktif — semuanya dikelola admin di `/dashboard/crm/rewards`.
+- Dua kanal redeem: member mengajukan dari portal (status `pending`, perlu
+  approve) dan kasir/admin mengklaim langsung di venue (langsung `fulfilled`).
 
 ## Acceptance Criteria
 
@@ -280,3 +294,230 @@ Hasil diskusi desain — SEMUA sudah diputuskan owner:
     selalu "terisi" utk member baru (kelengkapan efektif 7 field); dinilai
     aman (default opt-out). Upload foto profil = URL dulu; file upload
     menyusul. Sisa: Fase E laporan & rekonsiliasi antar-venue.
+- 2026-07-19 — **Fase E SELESAI: Laporan & Rekonsiliasi — SEMUA FASE A–E
+  TUNTAS.** Migrasi `20260720000000_crm_revamp_fase_e.sql` (applied+tracked):
+  - **RPC `update_ark_coin_balance` v2 stempel venue**: fix gap acceptance —
+    baris wallet `payment` sebelumnya TANPA venue. Venue = eksplisit param >
+    derive dari `p_order_id` (pos_orders) > default venue `crm_settings`.
+    GOTCHA Fase C diulang dengan benar: signature lama 5-arg di-DROP dulu
+    (anti-overload). Backfill venue baris wallet lama dari order terkait /
+    default venue + index `(company_id, branch_id, created_at)` dan
+    `(customer_id, payment_status, created_at)`. Diverifikasi psql (tx
+    rollback): debit payment tanpa venue eksplisit → baris wallet tetap
+    ber-venue (fallback settings).
+  - **Gap ikutan difix**: route table-order (QR publik) tidak menstempel
+    venue di pos_orders + debit wallet-nya — kini keduanya via
+    `getCrmDefaultVenue`.
+  - **API `GET /api/crm/reports?from&to`** (guard role super_admin/admin/
+    direksi = `requireCrmReportRole`): top spender BASIS ORDER paid (semua
+    metode, topup tak dihitung — keputusan #11, exclude status
+    cancelled/voided), frequent visitor (hari kunjungan distinct per zona
+    Asia/Jakarta + lifetime visit_count), rekonsiliasi per venue dari
+    wallet (topup/bonus/spend/net = topup+bonus-spend), saldo ARK beredar
+    (liabilitas platform), breakdown member kartu vs terdaftar. Helper pure
+    `src/lib/crm/reports.ts` + 12 unit test (periode default bulan berjalan,
+    to-eksklusif +1 hari, max 366 hari).
+  - BUG tertangkap saat verifikasi SQL: `COALESCE(o.status,'')` meledak
+    (enum `pos_order_status` tak menerima '') — difix jadi
+    `o.status IS NULL OR o.status NOT IN ('cancelled','voided')`
+    (nilai enum riil: voided, BUKAN void; refunded tidak ada).
+  - **UI `/dashboard/crm/reports`** (`src/features/crm/reports/`): filter
+    periode (preset Bulan ini / 30 hari), 6 kartu ringkasan, tabel
+    rekonsiliasi antar-venue + total, leaderboard Top Spender & Frequent
+    Visitor. Menu sidebar `crm.reports`/`crm.reports.overview` (grant
+    super_admin+admin+direksi, selaras menu CRM lain).
+  - **Dashboard CRM disesuaikan skema baru**: stat cards kini Customers /
+    Member Kartu / Member Terdaftar / Saldo ARK Beredar / XP Rules / Tiers
+    (Rewards & Partner Events dilepas dari kartu), API dashboard tambah
+    `cardMembers`/`registeredMembers`/`arkOutstanding`, tierLabel fallback
+    "Regular" (bukan Bronze), tombol Laporan di header.
+  - Gate: 513 unit test hijau (71 file), `next build` sukses (route
+    `/api/crm/reports` + `/dashboard/crm/reports` ter-generate), tsc 0 error
+    baru (459 = noise lama; 1 error `server.ts:153` pre-existing dari Fase
+    C). Deploy dev: build + `pm2 restart arkiv-pos-saas`; smoke: API 401
+    tanpa sesi, halaman terlayani.
+- 2026-07-19 — **Fix lanjutan pasca-UAT: "update tier invalid" di
+  /dashboard/crm + restrukturisasi dashboard.** Akar masalah: panel
+  konfigurasi tier di dashboard (legacy pra-Fase B) memaksa
+  `rank: Math.max(1, ...)` + input Rank `min=1`/`|| 1` — menyimpan tier
+  Regular (rank 0, Fase A) memaksa rank jadi 1 yang bentrok UNIQUE
+  `crm_membership_tiers_rank_key` (rank 1 = Bronze) → 500. Panel juga
+  tampil untuk admin/direksi padahal API konfigurasi super_admin-only
+  (selalu 403), plus bug audit lama draft-ketimpa-refetch.
+  Keputusan owner: **restrukturisasi** (bukan quick fix) — dashboard CRM
+  jadi monitoring murni (stats, leaderboard, XP activity; panel
+  Konfigurasi Tier & Konfigurasi XP POS DIHAPUS), satu-satunya fitur unik
+  panel lama (editor XP per produk) DIPINDAH ke `/dashboard/crm/settings`
+  (seksi "XP Produk" baru: pencarian nama/SKU/kategori, render max 30,
+  PATCH `xp_points`). Halaman settings = satu-satunya tempat konfigurasi
+  (rank 0 ditangani benar di sana — rename tier owner sebelumnya berhasil
+  lewat halaman ini). Cleanup: `features/crm/dashboard` dirampingkan
+  (mutations.ts dihapus, api/queries/types konfigurasi dibuang), baris
+  "Reward catalog" dihapus dari Foundation Status (alur reward pensiun).
+  Gate: 513 unit test hijau, build sukses, tsc 459 (0 baru), deploy dev
+  PM2 restart, halaman dashboard+settings 200.
+  - Status epic → **ready-for-qa**. UAT owner tersisa: (1) skenario Fase B
+    (lihat entri deploy Fase B); (2) buka `/dashboard/crm/reports` sebagai
+    super_admin/admin/direksi — filter periode, angka rekonsiliasi cocok
+    dengan topup/belanja uji; (3) role lain tidak melihat menu Laporan; (4)
+    infra di luar repo: ingress Cloudflare Tunnel
+    `member.suluindwounderland.com` → :3459 masih perlu ditambahkan.
+- 2026-07-19 — **Fix minor pasca-analisa: benefits jsonb + fallback tier
+  regular.** (1) `POST /api/crm/tiers` mengirim array JS mentah ke kolom
+  jsonb `benefits` — driver pg menserialisasinya jadi literal array
+  Postgres sehingga `[]` tersimpan `{}` (objek) dan benefits non-kosong
+  akan gagal insert; fix: `JSON.stringify(payload.benefits)` sebelum
+  upsert + delta `20260720010000_crm_fix_tier_benefits_jsonb.sql`
+  menormalkan data existing ke `[]` (sudah diterapkan ke dev DB, 4 baris
+  tier kini bertipe array). (2) Fallback tier UI "bronze"/"Bronze"
+  disamakan ke "regular"/"Regular" (keputusan owner #5, Regular = tier
+  awal): `crm-members-page.tsx`, `crm-member-detail-page.tsx`, dan
+  `topup-page.tsx` (badge class, pembuatan customer baru dari topup, 2
+  label fallback). Verifikasi update tier via API sebagai super_admin:
+  Regular rank 0 sukses (bug "update tier invalid" tuntas — tidak
+  reproduce lagi setelah restrukturisasi c6e9f49).
+  Gate: 513 unit test hijau, `next build` sukses, migrasi applied, PM2
+  restart; smoke: POST tier benefits `["smoke-test"]` tersimpan sebagai
+  JSON array lalu direstorasi `[]`.
+- 2026-07-19 — **Fase F SELESAI: Reward redeem berbasis syarat XP (revisi
+  keputusan #4).** Owner meminta reward bisa di-redeem member dengan XP
+  sebagai syarat compliance, bukan biaya — konsisten dengan keputusan #2
+  (XP tidak pernah berkurang). Migrasi
+  `20260720020000_crm_revamp_fase_f_rewards.sql` (sudah diterapkan ke dev):
+  `crm_rewards.xp_cost` → `min_xp` (+ constraint baru), kolom `quota_period`
+  (total|daily|monthly|yearly), `crm_redemptions.xp_cost` →
+  `min_xp_at_redeem` (snapshot audit), kolom `channel` (portal|admin),
+  `total_xp_at_redeem`, `requested_by_user_id`, `processed_by_user_id`,
+  `member_id` jadi nullable + `customer_id` NOT NULL (sumber kebenaran
+  member sejak Fase B adalah `pos_customers`), indeks kuota
+  `(customer_id, reward_id, requested_at DESC)`.
+  - Mesin aturan: `src/lib/crm/rewards.ts` (fungsi murni
+    `evaluateRewardEligibility` + `quotaWindowStart`) dengan 14 unit test di
+    `rewards.test.ts` — menutup ambang XP inklusif, kuota per periode, stok,
+    tier, status nonaktif, dan rentang tanggal.
+  - Sisi server: `src/lib/crm/rewards-server.ts` — `createRedemption` memakai
+    transaksi + `SELECT ... FOR UPDATE OF r` pada baris reward lalu
+    mengevaluasi ulang kelayakan di dalam transaksi, sehingga dua permintaan
+    konkuren tidak bisa menembus stok/kuota (acceptance criteria "atomik +
+    lock"). Stok ditahan sejak status `pending` dan dikembalikan saat
+    `cancel`. `evaluateCatalogForMember` menghitung kuota seluruh katalog
+    dalam 1 query (hindari N+1).
+  - API: `POST/PATCH /api/crm/redemptions` dihidupkan kembali (dulu 410 Gone)
+    dengan guard `requireCrmOperator` (super_admin/admin/pos/pos_supervisor —
+    klaim reward operasi harian, bukan konfigurasi); GET menerima filter
+    `status`/`customer_id`/`member_id` dan tetap mengembalikan objek `reward`
+    bersarang agar detail member lama tidak rusak. Baru:
+    `GET/POST /api/member-portal/rewards` (katalog + kelayakan + riwayat, dan
+    pengajuan redeem oleh member).
+  - UI: `/dashboard/crm/rewards` dirombak — 2 tab (Katalog Reward &
+    Permintaan Redeem dengan badge jumlah pending), form dikelompokkan jadi
+    "Syarat kelayakan" (Min XP + tier) dan "Batas pengambilan" (stok, maks per
+    member, periode kuota), banner penjelas "XP tidak dipotong saat redeem",
+    dan aksi Setujui/Serahkan/Batalkan. Portal member dapat tab "Reward"
+    (`member-rewards-card.tsx`): tiap reward menampilkan syarat XP, sisa
+    jatah, alasan bila belum layak (mis. "kurang 800 XP"), plus daftar
+    "Reward Saya" berstatus.
+  - Detail member: kolom redemption yang dulu tampil `-XP` (menyiratkan
+    potongan) diganti "syarat N XP"; tipe `CrmRedemption.xp_cost` →
+    `min_xp_at_redeem`, `CrmReward.xp_cost` → `min_xp`.
+  - Gate: 527 unit test hijau (72 file), `next build` sukses, tsc tanpa error
+    baru (sisa 1 pre-existing di `server.ts` yang hanya bergeser barisnya),
+    migrasi applied, PM2 restart (PID baru melayani :3459).
+  - Verifikasi DB: query `getMemberContext` benar (member uji 12.000 XP →
+    tier rank 2), insert redemption portal sukses
+    (`RDM-20260719-1AAA776F`), hitung kuota bulanan = 1 sehingga jatah
+    berikutnya tertutup, dan **`total_xp` tetap 12.000 setelah redeem** —
+    tidak ada trigger pemotong XP di `crm_redemptions`/`crm_rewards`.
+  - Data dev disiapkan untuk UAT: 3 reward contoh — `voucher-kopi` (min 0 XP,
+    1x/bulan, stok 100), `merch-tumbler` (min 10.000 XP, 1x total, stok 20),
+    `diskon-ultah` (min 30.000 XP + tier Gold, 1x/tahun) — plus member uji
+    "Budi Uji Reward" (628111222333, 12.000 XP) dengan 1 permintaan pending
+    agar tab approval bisa dicoba.
+  - UAT owner: (1) `/dashboard/crm/rewards` → tab Katalog, ubah kuota/periode
+    sebuah reward, pastikan tersimpan; (2) tab Permintaan Redeem → Setujui
+    lalu Serahkan permintaan Budi, cek status berubah; (3) login portal
+    `member.within.ventures` sebagai member ber-XP → tab Reward, pastikan
+    reward di atas ambang XP terkunci dengan alasan jelas dan yang layak bisa
+    ditukar; (4) redeem 2x reward berkuota 1x/bulan → percobaan kedua ditolak;
+    (5) pastikan XP member TIDAK berubah setelah redeem.
+- 2026-07-19 — **Fase F: gate review & security dijalankan, semua temuan
+  HIGH/MEDIUM ditutup.** Dua reviewer paralel (security + typescript) menelaah
+  diff Fase F. Perbaikan yang diterapkan:
+  - **HIGH (security) — `GET /api/crm/redemptions` bocor PII.** Endpoint hanya
+    cek `getPosSession()` sementara respons barunya memuat nama/telepon/XP
+    customer, sehingga peran mana pun yang login (mis. `warehouse_staff`)
+    bisa memanen kontak seluruh member. Ditambah guard `requireCrmReader`
+    (`CRM_READ_ROLES` = operator + `direksi` untuk kebutuhan laporan);
+    `requireCrmOperator`/`requireCrmReader` kini berbagi helper
+    `requireCrmRoles`. Diverifikasi: tanpa auth → 401.
+  - **HIGH (security) — tidak ada rate limit di redeem portal.** Tiap POST
+    memakai 1 koneksi dari pool global (`max: 10`) yang dipakai seluruh
+    aplikasi, jadi flood bisa membuat POS/HRIS ikut kehabisan koneksi.
+    Ditambah `checkRedeemRateLimit` (10 percobaan/menit per member, jendela
+    bergulir in-memory, pola selaras rate limit OTP Fase D) → HTTP 429 +
+    header `Retry-After`. Diverifikasi live: 12 permintaan beruntun →
+    `409 ×10` lalu `429 ×2`.
+  - **HIGH (review) — `quotaWindowStart` bergantung TZ host.** Semula memakai
+    getter `Date` lokal, padahal konvensi repo (`hris/shifts.ts`,
+    `kpi/*`) memakai aritmetika UTC + `WIB_OFFSET_HOURS`. Bila di-deploy ke
+    container ber-TZ UTC, batas kuota harian/bulanan meleset 7 jam. Ditulis
+    ulang memakai `Date.UTC` + offset WIB eksplisit; tes diubah memakai instan
+    absolut `+07:00` dan **lulus di `TZ=UTC` maupun `TZ=Asia/Jakarta`**
+    (sebelumnya hanya lulus di WIB), plus kasus dini hari & pergantian bulan.
+  - **HIGH (review) — riwayat redemption bisa hilang di detail member.**
+    `members/api.ts` memfilter `?member_id=` padahal Fase F membuat kolom itu
+    nullable (member portal tanpa profil CRM → `member_id` NULL), dan
+    redemption hanya diambil bila member punya profil CRM. Diubah ke
+    `?customer_id=` dan selalu diambil; inventory avatar tetap `member_id`
+    (tabel terpisah).
+  - **MEDIUM (security) — reward tipe `avatar` bisa diselundupkan.**
+    `getRewardById` tidak memfilter tipe, sehingga id avatar yang dikirim
+    langsung bisa masuk alur redemption. Ditambah blocker `not_redeemable` di
+    `evaluateRewardEligibility`. Diverifikasi live: avatar tidak muncul di
+    katalog portal dan POST dengan id avatar → "Reward ini tidak bisa
+    ditukar".
+  - **MEDIUM (review) — kanal klaim kasir tidak punya UI.** Keputusan owner
+    "keduanya" baru terpenuhi di backend. Ditambah panel **Klaim Reward di
+    Venue** pada tab Permintaan Redeem (cari member ber-debounce 300ms via
+    `/api/crm/members`, pilih reward aktif, klaim → langsung `fulfilled`),
+    hook `useClaimRedemption`/`useClaimMembers`. Pesan usang "redeem sudah
+    dipensiunkan" di detail member diganti + tautan ke halaman Rewards.
+  - **LOW — hardening.** Kolom timestamp pada `updateRedemptionStatus` tidak
+    lagi dirangkai dari input: dipetakan lewat whitelist `TRANSITIONS`
+    (`as const satisfies`) dengan penolakan aksi tak dikenal di dalam fungsi;
+    param `limit` pada GET redemptions divalidasi `Number.isFinite` + batas
+    bawah 1.
+  - Tidak diubah (diterima sebagai risiko rendah): kemungkinan double-click
+    tombol Tukar — sudah dijaga transaksi ber-lock sehingga hanya memunculkan
+    error 409 duplikat, bukan double-redeem; serta pola `rows as X` pada
+    akses pg yang konsisten dengan seluruh repo.
+  - Gate ulang: **534 unit test hijau** (72 file, +7 test baru untuk avatar,
+    rate limit, dan batas WIB), `next build` sukses, tsc tanpa error baru,
+    PM2 restart, smoke `/member` `/login` 200 & kedua API 401 tanpa auth.
+  - Data uji dibersihkan (member/reward/sesi avatar dihapus); tersisa 3 reward
+    contoh + member "Budi Uji Reward" dengan 2 redemption pending untuk UAT.
+- 2026-07-19 — **OTP WhatsApp LIVE via gateway mandiri.** Rangkaian keputusan
+  provider: Fonnte (runbook dibuat, lalu ditemukan URL API-nya salah/404 dan
+  kode OTP bocor ke log — keduanya di-fix `793506d`) → owner pilih Meta Cloud
+  API resmi (lapisan provider + template AUTHENTICATION dibangun, `8261ee8`)
+  → verifikasi bisnis Meta dinilai terlalu lama → owner putuskan **bangun
+  gateway sendiri** (`dd9ce10`): `services/wa-gateway`, Baileys 6.7.23 pinned,
+  proses PM2 terpisah agar sesi tahan deploy, sesi persisten, kirim serial
+  berjeda acak 1,5–3,5 dtk, HTTP hanya 127.0.0.1 + token (di `.env` service,
+  gitignored). Halaman pairing **Settings → WhatsApp Gateway** (super_admin
+  only, QR dirender lokal qrcode.react, poll 4 dtk) di `acd5605` + migrasi
+  menu `20260720030000`. Nomor sender +6285880974659 (keputusan owner,
+  `f87c115`) di-pairing owner 19 Jul ± 19:11 WIB.
+  - **Verifikasi live:** `/health` connected sebagai 6285880974659; kirim tes
+    via gateway sukses (messageId `3EB0CA7EA2A3C0528B4344`); alur penuh
+    aplikasi → provider → gateway → WhatsApp menghasilkan `wa_delivered: true`
+    pada `POST /api/member-portal/otp`. Member sementara utk uji (nomor
+    sender) sudah dihapus; `pm2 save` dijalankan agar gateway hidup lagi
+    setelah reboot.
+  - Provider aktif: `WHATSAPP_PROVIDER=gateway`. Meta & Fonnte tetap tersedia
+    lewat env yang sama. Catatan risiko & batas Fase 1 (tanpa monitoring
+    otomatis, tanpa inbox masuk, tanpa fallback otomatis) di
+    `docs/crm/RUNBOOK-WA-GATEWAY-MANDIRI.md`.
+  - Portal member kini bisa di-UAT penuh dengan nomor WhatsApp asli — ganti
+    nomor member uji ke nomor asli (SQL di runbook) lalu jalankan skenario
+    UAT Fase F.

@@ -63,6 +63,7 @@
     "next": "16.2.3",
     "pdfkit": "^0.19.1",
     "pg": "^8.20.0",
+    "qrcode.react": "^4.2.0",
     "quill": "^2.0.3",
     "react": "19.2.4",
     "react-apexcharts": "^2.1.1",

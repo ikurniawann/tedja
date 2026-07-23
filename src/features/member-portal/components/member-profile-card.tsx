@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { Loader2 } from "lucide-react";
+import { useRef, useState } from "react";
+import { Camera, Loader2, Trash2, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -11,8 +11,9 @@ import type { MemberMe } from "./member-portal-page";
 
 /**
  * Form profil member — profil 100% lengkap → Free XP sekali seumur hidup.
- * Nomor WA tidak bisa diubah (identitas login OTP). Foto profil: URL/emoji
- * upload menyusul; sementara input URL sederhana.
+ * Nomor WA tidak bisa diubah (identitas login OTP). Foto profil diunggah
+ * langsung dari galeri/kamera HP; URL manual dihapus karena tidak realistis
+ * diisi customer dari ponsel.
  */
 export function MemberProfileCard({
   me,
@@ -31,8 +32,36 @@ export function MemberProfileCard({
     wa_consent: me.profile.wa_consent,
   });
   const [busy, setBusy] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  async function uploadPhoto(file: File) {
+    setUploading(true);
+    setError("");
+    setMessage("");
+    try {
+      const body = new FormData();
+      body.append("file", file);
+      const res = await fetch("/api/member-portal/profile/photo", {
+        method: "POST",
+        body,
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        setError(json.error || "Gagal mengunggah foto");
+        return;
+      }
+      setForm((current) => ({ ...current, photo_url: json.data.photo_url }));
+      setMessage("Foto profil diperbarui.");
+      onSaved();
+    } catch {
+      setError("Jaringan bermasalah — coba lagi");
+    } finally {
+      setUploading(false);
+    }
+  }
 
   async function save() {
     setBusy(true);
@@ -63,7 +92,7 @@ export function MemberProfileCard({
   }
 
   return (
-    <Card>
+    <Card className="rounded-2xl border-0 bg-white/85 shadow-sm ring-1 ring-black/5 backdrop-blur">
       <CardHeader>
         <CardTitle className="text-base">
           Profil Saya{" "}
@@ -130,14 +159,70 @@ export function MemberProfileCard({
             placeholder="Bandung"
           />
         </div>
-        <div className="space-y-1">
-          <Label>Foto profil (URL)</Label>
-          <Input
-            value={form.photo_url}
-            onChange={(event) =>
-              setForm({ ...form, photo_url: event.target.value })
-            }
-            placeholder="https://..."
+        <div className="space-y-1.5">
+          <Label>Foto profil</Label>
+          <div className="flex items-center gap-3">
+            <div className="relative size-16 shrink-0 overflow-hidden rounded-full ring-2 ring-[color:var(--mp-line)]">
+              {form.photo_url ? (
+                // Foto berasal dari /api/files (host sendiri); <img> dipakai
+                // agar tidak perlu mendaftarkan remote pattern next/image.
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={form.photo_url}
+                  alt="Foto profil"
+                  className="size-full object-cover"
+                />
+              ) : (
+                <div className="grid size-full place-items-center bg-[color:var(--mp-line)] text-[color:var(--brand-primary)]">
+                  <UserRound className="size-7" />
+                </div>
+              )}
+              {uploading && (
+                <div className="absolute inset-0 grid place-items-center bg-black/40">
+                  <Loader2 className="size-5 animate-spin text-white" />
+                </div>
+              )}
+            </div>
+
+            <div className="min-w-0 flex-1 space-y-1.5">
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploading}
+                  className="inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold text-white transition active:scale-[0.98] disabled:opacity-60"
+                  style={{ backgroundColor: "var(--brand-primary)" }}
+                >
+                  <Camera className="size-3.5" />
+                  {form.photo_url ? "Ganti Foto" : "Pilih Foto"}
+                </button>
+                {form.photo_url && (
+                  <button
+                    type="button"
+                    onClick={() => setForm((current) => ({ ...current, photo_url: "" }))}
+                    disabled={uploading}
+                    className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-black/10 bg-white px-3 text-xs font-medium text-rose-600 transition hover:bg-rose-50 disabled:opacity-60"
+                  >
+                    <Trash2 className="size-3.5" />
+                    Hapus
+                  </button>
+                )}
+              </div>
+              <p className="text-[11px] text-gray-400">JPG, PNG, atau WEBP · maks 5 MB</p>
+            </div>
+          </div>
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            className="hidden"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              // Reset supaya memilih file yang sama dua kali tetap memicu event.
+              event.target.value = "";
+              if (file) void uploadPhoto(file);
+            }}
           />
         </div>
         <div className="flex items-center justify-between rounded-lg border p-3">

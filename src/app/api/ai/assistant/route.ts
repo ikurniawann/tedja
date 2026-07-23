@@ -4,14 +4,20 @@ import { createServerPgClient } from "@/lib/pg/create-client";
 import {
   type AiAssistantModel,
   type AiAssistantScope,
+  modelSupportsTemperature,
   resolveAiAssistantModel,
   resolveAiAssistantScope,
+  stripOpenAiPrefix,
 } from "@/lib/ai-assistant-config";
+import { SETTING_KEYS, getSettings } from "@/lib/settings/app-settings";
+import { extractSseData, readOpenAiDelta, splitSseEvents } from "@/lib/assistant/sse";
+import { contextSizeChars, selectContextForIntent, type AssistantIntent } from "@/lib/assistant/context";
+import { parseToolArguments, runTool, toolDefinitions } from "@/lib/assistant/tools";
 import { appendFile, mkdir } from "fs/promises";
 import path from "path";
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
-type Intent = "all" | "hris" | "procurement" | "pos" | "inventory" | "performance" | "payroll" | "integration" | "master";
+type Intent = AssistantIntent;
 type DetailRow = Record<string, unknown>;
 type DbQueryResult = { data?: unknown[] | null; error?: unknown; count?: number | null };
 type DbQuery = PromiseLike<DbQueryResult> & {
@@ -37,7 +43,7 @@ type LlmResult = {
   mode: string;
   model: string;
   status: "live" | "fallback";
-  provider?: "ollama" | "internal";
+  provider?: "openai" | "internal";
   fallbackReason?: string;
   error?: string;
 };
@@ -132,6 +138,40 @@ export async function DELETE(request: NextRequest) {
   }
 }
 
+/** PATCH /api/ai/assistant?session_id=… — ganti judul sesi milik sendiri. */
+export async function PATCH(request: NextRequest) {
+  try {
+    const db = await createServerPgClient();
+    const {
+      data: { user },
+    } = await db.auth.getUser();
+    if (!user) return NextResponse.json({ error: "Login required" }, { status: 401 });
+
+    const { searchParams } = new URL(request.url);
+    const sessionId = searchParams.get("session_id");
+    if (!sessionId) return NextResponse.json({ error: "session_id required" }, { status: 400 });
+
+    const body = (await request.json()) as { title?: unknown };
+    const title = typeof body.title === "string" ? body.title.trim() : "";
+    if (!title) return NextResponse.json({ error: "Judul tidak boleh kosong" }, { status: 400 });
+
+    const admin = createPgClient();
+    // eq(user_id) wajib: admin client melewati RLS, jadi kepemilikan diperiksa
+    // di sini — tanpa itu siapa pun bisa mengganti judul sesi orang lain.
+    const { error } = await admin
+      .from("ai_assistant_sessions")
+      .update({ title: title.slice(0, 120), updated_at: new Date().toISOString() })
+      .eq("id", sessionId)
+      .eq("user_id", user.id);
+    if (error) throw error;
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("AI assistant PATCH error:", error);
+    return NextResponse.json({ error: "Gagal mengganti judul" }, { status: 500 });
+  }
+}
+
 export async function POST(request: NextRequest) {
   const startedAt = Date.now();
   let prompt = "";
@@ -144,13 +184,16 @@ export async function POST(request: NextRequest) {
       session_id?: string;
       model?: string;
       scope?: string;
+      stream?: boolean;
+      attachments?: Array<{ name?: unknown; text?: unknown }>;
     };
     prompt = body.message ?? "Summary semua module";
     let sessionId = body.session_id;
     const history = (body.history ?? []).slice(-8);
-    const model = resolveAiAssistantModel(body.model, process.env.OLLAMA_MODEL);
+    const model = resolveAiAssistantModel(body.model);
     const scope = resolveAiAssistantScope(body.scope);
     const includeProjectData = scope !== "general";
+    const attachments = sanitizeAttachments(body.attachments);
 
     const db = await createServerPgClient();
     const {
@@ -171,9 +214,11 @@ export async function POST(request: NextRequest) {
     const summary = includeProjectData
       ? await buildSystemSummary(admin as unknown as DbAdmin, intent)
       : createEmptySystemSummary();
+    if (includeProjectData) logContextSaving(summary, intent);
+
     const fallbackAnswer = includeProjectData
       ? generateSummaryAnswer(prompt, summary, profile?.full_name ?? user.email ?? "User", intent)
-      : "AI Assistant belum bisa menghubungi model Ollama saat ini. Coba lagi sebentar atau pilih model lain di Arkiv OS Settings.";
+      : "Do belum bisa menghubungi tingkat yang dipilih saat ini. Coba lagi sebentar atau pilih tingkat lain di Arkiv OS Settings.";
 
     // Create session if none exists (first user message in a fresh chat)
     if (!sessionId) {
@@ -196,58 +241,23 @@ export async function POST(request: NextRequest) {
     const persistedHistory = sessionId ? await loadSessionHistory(admin as unknown as DbAdmin, sessionId) : [];
     const mergedHistory = compactChatHistory([...persistedHistory, ...history]);
 
-    const llmResult = await generateWithOllama({
-      message: prompt,
-      history: mergedHistory,
-      summary,
-      fallbackAnswer,
-      userName: profile?.full_name ?? user.email ?? "User",
-      intent,
-      scope,
-      model,
-    });
+    const userName = profile?.full_name ?? user.email ?? "User";
 
-    // Persist messages
-    if (sessionId) {
-      const rows: { session_id: string; role: string; content: string; meta?: unknown }[] = [
-        { session_id: sessionId, role: "user", content: prompt },
-        {
-          session_id: sessionId,
-          role: "assistant",
-          content: llmResult.answer,
-          meta: { mode: llmResult.mode, model: llmResult.model, status: llmResult.status, intent, scope },
-        },
-      ];
-      await admin.from("ai_assistant_messages").insert(rows);
-    }
-
-    await appendAssistantMarkdown({
-      userId: user.id,
-      userEmail: user.email ?? "unknown",
-      userName: profile?.full_name ?? user.email ?? "User",
-      sessionId,
-      prompt,
-      answer: llmResult.answer,
-      model: llmResult.model,
-      scope,
-    });
-
-    await auditAiRequest(admin as unknown as DbAdmin, {
-      user_id: user.id,
-      user_email: user.email,
-      prompt,
-      intent,
-      mode: llmResult.mode,
-      model: llmResult.model,
-      latency_ms: Date.now() - startedAt,
-      error: llmResult.error,
-    });
-
-    return NextResponse.json({
-      answer: llmResult.answer,
-      summary,
-      session_id: sessionId,
-      meta: {
+    /** Simpan pesan, tulis log markdown, audit — sama untuk stream & non-stream. */
+    const finalize = async (llmResult: LlmResult) => {
+      await persistAndAudit({
+        admin: admin as unknown as DbAdmin,
+        sessionId,
+        prompt,
+        llmResult,
+        intent,
+        scope,
+        userId: user.id,
+        userEmail: user.email ?? "unknown",
+        userName,
+        startedAt,
+      });
+      return {
         mode: llmResult.mode,
         model: llmResult.model,
         intent,
@@ -255,12 +265,181 @@ export async function POST(request: NextRequest) {
         status: llmResult.status,
         fallbackReason: llmResult.fallbackReason,
         user: user.email,
-      },
+      };
+    };
+
+    if (body.stream === true) {
+      const encoder = new TextEncoder();
+      const stream = new ReadableStream({
+        async start(controller) {
+          const send = (payload: unknown) =>
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
+          try {
+            const llmResult = await generateAnswer({
+              message: prompt,
+              history: mergedHistory,
+              summary,
+              fallbackAnswer,
+              userName,
+              intent,
+              scope,
+              model,
+              attachments,
+              onDelta: (text) => send({ type: "delta", text }),
+            });
+            // Penyimpanan dilakukan SETELAH stream selesai, memakai teks utuh
+            // yang dikumpulkan server — bukan hasil rakitan klien.
+            const meta = await finalize(llmResult);
+            send({ type: "done", answer: llmResult.answer, session_id: sessionId, meta });
+          } catch (error) {
+            console.error("AI assistant stream error:", error);
+            send({ type: "error", error: "Gagal memproses permintaan Do" });
+          } finally {
+            controller.close();
+          }
+        },
+      });
+
+      return new Response(stream, {
+        headers: {
+          "Content-Type": "text/event-stream; charset=utf-8",
+          "Cache-Control": "no-cache, no-transform",
+          Connection: "keep-alive",
+          // Cegah proxy (nginx/cloudflared) menahan buffer sampai stream tuntas —
+          // tanpa ini jawaban tetap muncul sekaligus meski sudah streaming.
+          "X-Accel-Buffering": "no",
+        },
+      });
+    }
+
+    const llmResult = await generateAnswer({
+      message: prompt,
+      history: mergedHistory,
+      summary,
+      fallbackAnswer,
+      userName,
+      intent,
+      scope,
+      model,
+      attachments,
+    });
+
+    // Persist messages
+    const meta = await finalize(llmResult);
+
+    return NextResponse.json({
+      answer: llmResult.answer,
+      summary,
+      session_id: sessionId,
+      meta,
     });
   } catch (error) {
     console.error("AI assistant error:", error);
-    return NextResponse.json({ error: "Gagal memproses AI Assistant" }, { status: 500 });
+    return NextResponse.json({ error: "Gagal memproses permintaan Do" }, { status: 500 });
   }
+}
+
+/** Lampiran yang sudah divalidasi & dibatasi, siap masuk prompt. */
+type SafeAttachment = { name: string; text: string; truncated: boolean };
+
+/**
+ * Isi lampiran datang dari klien (hasil endpoint ekstraksi), jadi tetap
+ * dibatasi di sini: jumlah file, panjang per file, dan total gabungan. Tanpa
+ * batas ini satu permintaan bisa membengkak tak terkendali.
+ */
+const MAX_ATTACHMENTS = 5;
+const MAX_ATTACHMENT_TEXT = 20_000;
+const MAX_ATTACHMENT_TOTAL = 40_000;
+
+function sanitizeAttachments(input: unknown): SafeAttachment[] {
+  if (!Array.isArray(input)) return [];
+  const out: SafeAttachment[] = [];
+  let total = 0;
+
+  for (const item of input.slice(0, MAX_ATTACHMENTS)) {
+    if (!item || typeof item !== "object") continue;
+    const raw = item as { name?: unknown; text?: unknown };
+    const text = typeof raw.text === "string" ? raw.text.trim() : "";
+    if (!text) continue;
+
+    const name = typeof raw.name === "string" && raw.name.trim() ? raw.name.trim().slice(0, 120) : "lampiran";
+    const sisa = MAX_ATTACHMENT_TOTAL - total;
+    if (sisa <= 0) break;
+
+    const batas = Math.min(MAX_ATTACHMENT_TEXT, sisa);
+    const dipotong = text.length > batas;
+    out.push({ name, text: dipotong ? text.slice(0, batas) : text, truncated: dipotong });
+    total += Math.min(text.length, batas);
+  }
+
+  return out;
+}
+
+/** Penyimpanan pesan + log markdown + audit, dipakai jalur stream & non-stream. */
+async function persistAndAudit({
+  admin,
+  sessionId,
+  prompt,
+  llmResult,
+  intent,
+  scope,
+  userId,
+  userEmail,
+  userName,
+  startedAt,
+}: {
+  admin: DbAdmin;
+  sessionId?: string;
+  prompt: string;
+  llmResult: LlmResult;
+  intent: Intent;
+  scope: AiAssistantScope;
+  userId: string;
+  userEmail: string;
+  userName: string;
+  startedAt: number;
+}) {
+  if (sessionId) {
+    await admin.from("ai_assistant_messages").insert([
+      { session_id: sessionId, role: "user", content: prompt },
+      {
+        session_id: sessionId,
+        role: "assistant",
+        content: llmResult.answer,
+        meta: { mode: llmResult.mode, model: llmResult.model, status: llmResult.status, intent, scope },
+      },
+    ]);
+  }
+
+  await appendAssistantMarkdown({
+    userId,
+    userEmail,
+    userName,
+    sessionId,
+    prompt,
+    answer: llmResult.answer,
+    model: llmResult.model,
+    scope,
+  });
+
+  await auditAiRequest(admin, {
+    user_id: userId,
+    user_email: userEmail,
+    prompt,
+    intent,
+    mode: llmResult.mode,
+    model: llmResult.model,
+    latency_ms: Date.now() - startedAt,
+    error: llmResult.error,
+  });
+}
+
+/** Log ukuran konteks: bukti penghematan Fase C, bukan klaim. */
+function logContextSaving(summary: Summary, intent: Intent) {
+  const before = contextSizeChars(summary);
+  const after = contextSizeChars(selectContextForIntent(summary, intent));
+  const saved = before === 0 ? 0 : Math.round(((before - after) / before) * 100);
+  console.info(`[do:context] intent=${intent} ${before} -> ${after} char (hemat ${saved}%)`);
 }
 
 function detectIntent(message: string): Intent {
@@ -513,7 +692,191 @@ function createEmptySystemSummary(): Summary {
   };
 }
 
-async function generateWithOllama({
+/**
+ * Panggil OpenAI Chat Completions untuk model berprefix `openai:`.
+ *
+ * Sumber kredensial: setting `openai_api_key` di database (Settings → Integrasi)
+ * SELALU didahulukan, sama seperti seluruh integrasi lain di aplikasi ini.
+ * Env `OPENAI_API_KEY` hanya dipakai bila setting itu kosong.
+ *
+ * Urutannya dulu terbalik dan itu menimbulkan bug yang sulit dilihat: shell
+ * server mengekspor `OPENAI_API_KEY` lama di ~/.bashrc, PM2 mewarisinya, dan
+ * aplikasi memakai key mati itu (429 insufficient_quota) meskipun key yang benar
+ * sudah tersimpan rapi lewat UI. Key yang diatur dari dashboard harus menang —
+ * itu satu-satunya yang bisa dilihat dan diganti oleh admin.
+ */
+type OpenAiCall = { apiKey: string; baseUrl: string; timeoutMs: number };
+
+async function resolveOpenAiCall(): Promise<OpenAiCall> {
+  const s = await getSettings([SETTING_KEYS.OPENAI_API_KEY, SETTING_KEYS.OPENAI_BASE_URL]);
+  const apiKey = s[SETTING_KEYS.OPENAI_API_KEY] || process.env.OPENAI_API_KEY?.trim();
+  if (!apiKey) {
+    throw new Error(
+      "API key OpenAI belum tersedia (env OPENAI_API_KEY maupun Settings → Integrasi kosong)"
+    );
+  }
+  return {
+    apiKey,
+    baseUrl: (s[SETTING_KEYS.OPENAI_BASE_URL] || "https://api.openai.com/v1").replace(/\/$/, ""),
+    timeoutMs: Number(process.env.OPENAI_TIMEOUT || "120000"),
+  };
+}
+
+function buildChatBody(model: string, messages: ChatMsg[], stream: boolean) {
+  return JSON.stringify({
+    model: stripOpenAiPrefix(model),
+    // Sebagian model generasi baru hanya menerima temperature = 1 dan menolak
+    // request dengan HTTP 400 bila field ini dikirim.
+    ...(modelSupportsTemperature(model) ? { temperature: 0.7 } : {}),
+    ...(stream ? { stream: true } : {}),
+    messages,
+  });
+}
+
+type ChatMsg = { role: string; content: string | null; tool_calls?: unknown; tool_call_id?: string; name?: string };
+
+/**
+ * Putaran tool calling (EPIC-017 Fase D).
+ *
+ * Dijalankan NON-stream lebih dulu: model memutuskan perlu data apa, tool-nya
+ * dieksekusi di server, hasilnya dilampirkan ke percakapan. Jawaban final untuk
+ * user baru dialirkan streaming — jadi user tetap melihat teks mengalir tanpa
+ * kita perlu merakit tool_calls dari potongan delta yang rapuh.
+ *
+ * Mengembalikan daftar pesan yang sudah diperkaya hasil tool (atau apa adanya
+ * bila model tidak meminta tool apa pun).
+ */
+async function runToolRounds(
+  model: string,
+  messages: ChatMsg[],
+  maxRounds = 3
+): Promise<{ messages: ChatMsg[]; toolsUsed: string[] }> {
+  const { apiKey, baseUrl, timeoutMs } = await resolveOpenAiCall();
+  const working = [...messages];
+  const toolsUsed: string[] = [];
+
+  for (let round = 0; round < maxRounds; round++) {
+    const response = await fetch(`${baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model: stripOpenAiPrefix(model),
+        ...(modelSupportsTemperature(model) ? { temperature: 0.7 } : {}),
+        tools: toolDefinitions(),
+        messages: working,
+      }),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!response.ok) {
+      throw new Error(`OpenAI ${response.status}: ${(await response.text()).slice(0, 300)}`);
+    }
+
+    const json = (await response.json()) as {
+      choices?: Array<{
+        message?: {
+          content?: string | null;
+          tool_calls?: Array<{ id: string; function?: { name?: string; arguments?: string } }>;
+        };
+      }>;
+    };
+    const choice = json.choices?.[0]?.message;
+    const calls = choice?.tool_calls ?? [];
+    if (!calls.length) return { messages: working, toolsUsed };
+
+    // Pesan asisten yang memuat tool_calls WAJIB ikut disertakan sebelum hasil
+    // tool-nya; OpenAI menolak tool message yang tidak punya panggilan induk.
+    working.push({ role: "assistant", content: choice?.content ?? null, tool_calls: calls });
+
+    for (const call of calls) {
+      const name = call.function?.name ?? "";
+      const args = parseToolArguments(call.function?.arguments);
+      const result = await runTool(name, args);
+      toolsUsed.push(name);
+      console.info(`[do:tool] ${name} ${JSON.stringify(args)}`);
+      working.push({
+        role: "tool",
+        tool_call_id: call.id,
+        name,
+        content: JSON.stringify(result),
+      });
+    }
+  }
+
+  // Batas putaran tercapai: lanjutkan dengan data yang sudah terkumpul daripada
+  // membiarkan model memanggil tool tanpa henti.
+  console.warn("[do:tool] batas putaran tool tercapai");
+  return { messages: working, toolsUsed };
+}
+
+async function callOpenAiChat(model: string, messages: ChatMsg[]): Promise<string> {
+  const { apiKey, baseUrl, timeoutMs } = await resolveOpenAiCall();
+  const response = await fetch(`${baseUrl}/chat/completions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+    body: buildChatBody(model, messages, false),
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  if (!response.ok) {
+    throw new Error(`OpenAI ${response.status}: ${(await response.text()).slice(0, 300)}`);
+  }
+  const json = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> };
+  const answer = normalizePlainTextAnswer(json.choices?.[0]?.message?.content);
+  if (!answer) throw new Error("OpenAI mengembalikan jawaban kosong");
+  return answer;
+}
+
+/**
+ * Versi streaming: potongan jawaban dikirim lewat `onDelta` begitu tiba, dan
+ * teks utuhnya dikembalikan setelah stream selesai (dipakai untuk disimpan &
+ * diaudit persis seperti jalur non-stream).
+ */
+async function callOpenAiChatStream(
+  model: string,
+  messages: ChatMsg[],
+  onDelta: (text: string) => void
+): Promise<string> {
+  const { apiKey, baseUrl, timeoutMs } = await resolveOpenAiCall();
+  const response = await fetch(`${baseUrl}/chat/completions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+    body: buildChatBody(model, messages, true),
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  if (!response.ok) {
+    throw new Error(`OpenAI ${response.status}: ${(await response.text()).slice(0, 300)}`);
+  }
+  if (!response.body) throw new Error("OpenAI stream tanpa body");
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let full = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    const { events, rest } = splitSseEvents(buffer);
+    buffer = rest;
+
+    for (const event of events) {
+      for (const payload of extractSseData(event)) {
+        const piece = readOpenAiDelta(payload);
+        if (piece) {
+          full += piece;
+          onDelta(piece);
+        }
+      }
+    }
+  }
+
+  const answer = normalizePlainTextAnswer(full);
+  if (!answer) throw new Error("OpenAI mengembalikan jawaban kosong");
+  return answer;
+}
+
+async function generateAnswer({
   message,
   history,
   summary,
@@ -522,6 +885,8 @@ async function generateWithOllama({
   intent,
   scope,
   model,
+  attachments,
+  onDelta,
 }: {
   message: string;
   history: ChatMessage[];
@@ -531,23 +896,22 @@ async function generateWithOllama({
   intent: Intent;
   scope: AiAssistantScope;
   model: AiAssistantModel;
+  attachments?: SafeAttachment[];
+  /** Bila diisi, jawaban dialirkan potong demi potong lewat callback ini. */
+  onDelta?: (text: string) => void;
 }): Promise<LlmResult> {
-  const baseUrl = (process.env.AI_ASSISTANT_OLLAMA_API_BASE || "http://127.0.0.1:11434")
-    .trim()
-    .replace(/^http:\/\/localhost(?=:|\/|$)/, "http://127.0.0.1")
-    .replace(/\/$/, "");
-  const apiKey = process.env.OLLAMA_API_KEY?.trim();
-  const timeoutMs = Number(process.env.OLLAMA_TIMEOUT || "120000");
   const includeProjectData = scope !== "general";
   const scopeInstruction = buildScopeInstruction(scope);
 
   const systemPrompt = [
-    "Kamu adalah Arkiv OS AI Assistant untuk semua user Arkiv OS.",
+    "Kamu adalah Do, asisten Arkiv OS untuk semua user Arkiv OS.",
+    "Perkenalkan dirimu sebagai Do. Jangan menyebut vendor atau nama model di balik layar kecuali user bertanya langsung.",
     scopeInstruction,
     "Jawab dalam Bahasa Indonesia yang ramah, jelas, natural, dan actionable.",
     "Gunakan bahasa awam seperti asisten operasional, bukan bahasa developer.",
     "Jangan menyebut JSON, API, query, schema, database, payload, object, array, model, prompt, system, atau istilah teknis internal kecuali user secara eksplisit meminta penjelasan teknis.",
     "Jika user bertanya data bisnis Arkiv OS, gunakan data internal yang tersedia dan jangan mengarang angka.",
+    "Kamu punya alat untuk mengambil data terkini (karyawan, absensi, stok, penjualan, kandidat). Pakai alat itu bila pertanyaannya spesifik, jangan menebak dari ringkasan.",
     "Jika data yang diperlukan tidak tersedia, cukup katakan data tersebut belum tersedia di sistem dan sarankan module atau filter yang perlu dibuka.",
     "Jika menjawab angka atau ringkasan, jelaskan artinya dalam konteks bisnis secara singkat.",
     "Ingat konteks percakapan dari history yang diberikan.",
@@ -556,10 +920,24 @@ async function generateWithOllama({
   const userPrompt = [
     `Nama user: ${userName}`,
     `Mode konteks: ${scope}`,
-    `Model: ${model}`,
+    // Nama model sengaja TIDAK dikirim: dulu ikut masuk prompt dan bisa terbawa
+    // ke jawaban ("saya memakai gpt-4o-mini"), padahal Do harus tampil sebagai
+    // satu merek sendiri. Model juga tidak butuh tahu namanya untuk menjawab.
     `Intent terdeteksi: ${intent}`,
     `Pertanyaan user: ${message}`,
-    includeProjectData ? `\nKonteks internal Arkiv OS yang tersedia jika relevan:\n${JSON.stringify(summary, null, 2)}` : "\nKonteks operasional Arkiv OS tidak dikirim untuk mode General Chat.",
+    attachments?.length
+      ? `\nIsi lampiran yang dikirim user (sudah diekstrak; gambar & PDF hasil scan lewat OCR sehingga bisa ada salah baca):\n${attachments
+          .map(
+            (item) =>
+              `--- ${item.name}${item.truncated ? " (dipotong karena panjang)" : ""} ---\n${item.text}`
+          )
+          .join("\n\n")}`
+      : "",
+    // Hanya modul yang relevan dengan intent yang dikirim — bukan seluruh
+    // summary. Lihat lib/assistant/context.ts untuk alasan & pengujiannya.
+    includeProjectData
+      ? `\nKonteks internal Arkiv OS yang tersedia jika relevan:\n${JSON.stringify(selectContextForIntent(summary, intent), null, 2)}`
+      : "\nKonteks operasional Arkiv OS tidak dikirim untuk mode General Chat.",
   ].join("\n");
   const messages = [
     { role: "system", content: systemPrompt },
@@ -567,63 +945,51 @@ async function generateWithOllama({
     { role: "user", content: userPrompt },
   ];
 
-  const errors: string[] = [];
+  // Tool calling hanya masuk akal saat konteks project dibawa; mode General Chat
+  // sengaja tidak diberi akses data operasional.
+  let working: ChatMsg[] = messages;
+  let toolsUsed: string[] = [];
+  if (includeProjectData) {
+    try {
+      const rounds = await runToolRounds(model, messages);
+      working = rounds.messages;
+      toolsUsed = rounds.toolsUsed;
+    } catch (error) {
+      // Gagal di tahap tool bukan alasan gagal menjawab: lanjutkan tanpa data
+      // tambahan, memakai konteks ringkasan seperti sebelumnya.
+      console.warn("[do:tool] putaran tool gagal:", formatProviderError(error, "openai-tools"));
+    }
+  }
+  const modeSuffix = toolsUsed.length ? `_tools:${[...new Set(toolsUsed)].join("+")}` : "";
 
-  if (!baseUrl) {
+  // Semua model kini dilayani OpenAI; pilihan Ollama sudah dihapus.
+  if (onDelta) {
+    try {
+      const answer = await callOpenAiChatStream(model, working, onDelta);
+      return { answer, mode: `openai_stream_live${modeSuffix}`, model, provider: "openai", status: "live" };
+    } catch (error) {
+      // Streaming gagal (mis. proxy memotong koneksi) bukan alasan menyerah:
+      // coba sekali lagi tanpa stream sebelum jatuh ke ringkasan internal.
+      console.warn("AI assistant stream gagal, coba non-stream:", formatProviderError(error, "openai-stream"));
+    }
+  }
+
+  try {
+    const answer = await callOpenAiChat(model, working);
+    return { answer, mode: `openai_chat_completions_live${modeSuffix}`, model, provider: "openai", status: "live" };
+  } catch (error) {
+    const detail = formatProviderError(error, "openai");
+    console.warn("AI assistant OpenAI fallback:", detail);
     return {
       answer: fallbackAnswer,
-      mode: "rule_based_summary_v1",
-      model: "none",
+      mode: "openai_unavailable_fallback",
+      model,
       provider: "internal",
       status: "fallback",
-      fallbackReason: "OLLAMA_API_BASE belum dikonfigurasi",
+      fallbackReason: "Do sedang tidak bisa menjangkau layanan AI. Saya memakai ringkasan internal sementara.",
+      error: detail,
     };
   }
-
-  const headers = buildOllamaHeaders(baseUrl, apiKey);
-  try {
-    const response = await fetch(`${baseUrl}/api/chat`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ model, stream: false, options: { temperature: 0.7, num_ctx: 4096, num_gpu: 1 }, messages }),
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-    if (!response.ok) throw new Error(`/api/chat ${response.status}: ${await response.text()}`);
-    const json = await response.json() as { message?: { content?: string }; response?: string };
-    const answer = normalizePlainTextAnswer(json.message?.content || json.response);
-    if (!answer) throw new Error("/api/chat response kosong");
-    return { answer, mode: "ollama_api_chat_live", model, provider: "ollama", status: "live" };
-  } catch (error) {
-    errors.push(formatProviderError(error, "/api/chat"));
-  }
-
-  try {
-    const response = await fetch(`${baseUrl}/v1/chat/completions`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ model, temperature: 0.7, messages }),
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-    if (!response.ok) throw new Error(`/v1/chat/completions ${response.status}: ${await response.text()}`);
-    const json = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
-    const answer = normalizePlainTextAnswer(json.choices?.[0]?.message?.content);
-    if (!answer) throw new Error("/v1/chat/completions response kosong");
-    return { answer, mode: "ollama_chat_completions_live", model, provider: "ollama", status: "live" };
-  } catch (error) {
-    errors.push(formatProviderError(error, "/v1"));
-  }
-
-  console.warn("AI assistant Ollama fallback:", errors.join(" | "));
-
-  return {
-    answer: fallbackAnswer,
-    mode: "ollama_unavailable_fallback",
-    model,
-    provider: "internal",
-    status: "fallback",
-    fallbackReason: "Ollama sedang tidak tersedia. Saya memakai fallback internal sementara.",
-    error: errors.join(" | "),
-  };
 }
 
 function buildScopeInstruction(scope: AiAssistantScope): string {
@@ -660,13 +1026,6 @@ function normalizePlainTextAnswer(value: unknown): string {
     .replace(/^\s*>\s?/gm, "")
     .replace(/`([^`\n]+)`/g, "$1")
     .trim();
-}
-
-function buildOllamaHeaders(baseUrl: string, apiKey?: string): Record<string, string> {
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(?::|\/|$)/i.test(baseUrl);
-  if (apiKey && !isLocal) headers.Authorization = `Bearer ${apiKey}`;
-  return headers;
 }
 
 function formatProviderError(error: unknown, endpoint: string): string {

@@ -5,17 +5,20 @@ import { createPgClient } from "@/lib/pg/create-client";
 import { apiErrorResponse, isMissingCrmSchema, validationErrorResponse,
   requireCrmConfigRole,
 } from "@/lib/crm/server";
+import { QUOTA_PERIODS } from "@/lib/crm/rewards";
 
 const rewardSchema = z.object({
   code: z.string().trim().min(1).max(80).transform((value) => value.toLowerCase()),
   name: z.string().trim().min(1).max(120),
   reward_type: z.enum(["discount", "merchandise", "avatar", "voucher", "ark_coin", "custom"]),
-  xp_cost: z.number().int().nonnegative(),
+  // Syarat kelayakan, BUKAN biaya: XP member tidak dipotong saat redeem.
+  min_xp: z.number().int().nonnegative(),
   required_tier_id: z.string().uuid().nullable().optional(),
   linked_avatar_id: z.string().uuid().nullable().optional(),
   stock_total: z.number().int().nonnegative().nullable().optional(),
   stock_redeemed: z.number().int().nonnegative().default(0),
   max_redemptions_per_member: z.number().int().positive().nullable().optional(),
+  quota_period: z.enum(QUOTA_PERIODS).default("total"),
   image_url: z.string().trim().url().nullable().optional(),
   reward_data: z.record(z.string(), z.unknown()).default({}),
   starts_at: z.string().datetime().nullable().optional(),

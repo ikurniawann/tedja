@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getPosSession } from "@/lib/api/auth";
 import { createPgClient } from "@/lib/pg/create-client";
+import { queryOne } from "@/lib/db";
 import { apiErrorResponse, isMissingCrmSchema, toNumber } from "@/lib/crm/server";
 
 const POS_CUSTOMER_COLUMNS = "id, name, phone, email, membership_tier, ark_coin_balance, total_xp, total_spent, visit_count, is_active";
@@ -66,6 +67,16 @@ export async function GET() {
       .eq("is_active", true);
 
     if (customerCountError) throw customerCountError;
+
+    // Skema baru EPIC-011: breakdown tipe member + liabilitas ARK beredar.
+    const memberSummary = await queryOne(
+      `SELECT
+         COUNT(*) FILTER (WHERE member_type = 'card') AS card_members,
+         COUNT(*) FILTER (WHERE member_type = 'registered') AS registered_members,
+         COALESCE(SUM(ark_coin_balance), 0) AS ark_outstanding
+       FROM pos.pos_customers
+       WHERE is_active`
+    );
 
     const [
       memberCount,
@@ -168,6 +179,9 @@ export async function GET() {
         stats: {
           totalCustomers: totalCustomers ?? 0,
           totalMembers: schemaReady ? memberCount.count : (posMemberFallbackCount ?? 0),
+          cardMembers: toNumber(memberSummary?.card_members),
+          registeredMembers: toNumber(memberSummary?.registered_members),
+          arkOutstanding: toNumber(memberSummary?.ark_outstanding),
           tierCount: tierCount.count,
           xpRuleCount: xpRuleCount.count,
           rewardCount: rewardCount.count,

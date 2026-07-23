@@ -45,7 +45,12 @@ interface LoanRow {
   purpose: string | null;
   rejection_reason: string | null;
   created_at: string;
-  employee?: { id: string; full_name: string; nip: string | null } | null;
+  employee?: {
+    id: string;
+    full_name: string;
+    nip: string | null;
+    department?: { name: string } | null;
+  } | null;
 }
 
 interface EmployeeOption {
@@ -250,6 +255,7 @@ export function LoansPage() {
           <thead>
             <tr className="border-b bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
               <th className="px-4 py-3">Karyawan</th>
+              <th className="px-4 py-3">Departemen</th>
               <th className="px-4 py-3">Jenis</th>
               <th className="px-4 py-3">Pokok</th>
               <th className="px-4 py-3">Cicilan/Bulan</th>
@@ -262,13 +268,13 @@ export function LoansPage() {
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={8} className="py-10 text-center text-gray-400">
+                <td colSpan={9} className="py-10 text-center text-gray-400">
                   <Loader2 className="mx-auto h-6 w-6 animate-spin" />
                 </td>
               </tr>
             ) : rows.length === 0 ? (
               <tr>
-                <td colSpan={8} className="py-10 text-center text-gray-400">
+                <td colSpan={9} className="py-10 text-center text-gray-400">
                   Belum ada pinjaman pada filter ini.
                 </td>
               </tr>
@@ -280,13 +286,16 @@ export function LoansPage() {
                 return (
                   <tr key={row.id} className="border-b last:border-0 hover:bg-gray-50/60">
                     <td className="px-4 py-3 font-medium text-gray-900">
-                      {row.employee?.full_name ?? "—"}
+                      {row.employee
+                        ? `${row.employee.full_name}${row.employee.nip ? ` - [${row.employee.nip}]` : ""}`
+                        : "—"}
                       {row.purpose ? (
                         <p className="max-w-[180px] truncate text-xs font-normal text-gray-400" title={row.purpose}>
                           {row.purpose}
                         </p>
                       ) : null}
                     </td>
+                    <td className="px-4 py-3">{row.employee?.department?.name ?? "—"}</td>
                     <td className="px-4 py-3">{loanTypeLabel(row.loan_type)}</td>
                     <td className="px-4 py-3">{formatCurrency(row.principal_amount)}</td>
                     <td className="px-4 py-3">{formatCurrency(row.monthly_installment)}</td>

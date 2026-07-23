@@ -2,8 +2,13 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { Toaster } from "sonner";
 import { requireUser } from "@/lib/auth/require-user";
-import { getUserMenus, filterEssNav, isEssOnlyUser } from "@/lib/iam/get-user-menus";
-import { isEssPath } from "@/lib/iam/access";
+import { getUserMenus, filterNavByPrefixes } from "@/lib/iam/get-user-menus";
+import {
+  allowedModulePaths,
+  canAccessPath,
+  ESS_HOME_PATH,
+  isEssOnlyRole,
+} from "@/lib/iam/access";
 import { AppSidebar } from "@/components/shared";
 
 export default async function DashboardGroupLayout({
@@ -15,19 +20,23 @@ export default async function DashboardGroupLayout({
   // Kebijakan ESS-only ditentukan IAM (permission menu non-ESS), bukan daftar role di kode.
   const essOnly = await isEssOnlyUser(user.id, user.role);
 
-  // Role ESS-only dikunci ke Area Karyawan: URL modul lain → balik ke beranda.
+  // Role ESS-only dikunci ke Area Karyawan + modul tambahannya (mis. sales →
+  // Sales Funneling): URL di luar itu → balik ke beranda ESS.
   if (essOnly) {
     const pathname = (await headers()).get("x-pathname") ?? "";
-    if (pathname && !isEssPath(pathname)) {
-      redirect("/dashboard/me");
+    if (pathname && !canAccessPath(user.role, pathname)) {
+      redirect(ESS_HOME_PATH);
     }
   }
 
   const allNavItems = await getUserMenus(user.id, user.role);
-  // ESS-only: hanya menu Area Karyawan. Full-access: buang "Beranda" ESS
-  // (/dashboard/me) agar tak ganda dengan Beranda utama (/dashboard).
+  // ESS-only: menu Area Karyawan + modul tambahan role. Full-access: buang
+  // "Beranda" ESS (/dashboard/me) agar tak ganda dengan Beranda utama.
   const navItems = essOnly
-    ? filterEssNav(allNavItems)
+    ? filterNavByPrefixes(allNavItems, [
+        ESS_HOME_PATH,
+        ...allowedModulePaths(user.role),
+      ])
     : allNavItems.filter((item) => item.href !== "/dashboard/me");
 
   return (

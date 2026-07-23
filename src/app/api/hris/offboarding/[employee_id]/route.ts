@@ -28,7 +28,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       .from('offboarding_checklists')
       .select(`
         *,
-        employee:employees(
+        employee:employees!employee_id(
           id,
           full_name,
           nip,
@@ -154,7 +154,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       })
       .select(`
         *,
-        employee:employees(
+        employee:employees!employee_id(
           id,
           full_name,
           nip,
@@ -309,7 +309,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       .eq('id', offboarding.id)
       .select(`
         *,
-        employee:employees(id, full_name, nip)
+        employee:employees!employee_id(id, full_name, nip)
       `)
       .single();
 

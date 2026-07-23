@@ -13,6 +13,15 @@ export const SETTING_KEYS = {
   OPENAI_API_KEY: "openai_api_key",
   OPENAI_MODEL: "openai_model",
   OPENAI_BASE_URL: "openai_base_url",
+  // Suara AI / text-to-speech (EPIC-016) — dipakai Interview AI.
+  // Provider dipisah dari kredensial OpenAI di atas karena suara bisa dipindah
+  // ke Azure/ElevenLabs tanpa mengubah konfigurasi teks/vision.
+  TTS_PROVIDER: "tts_provider",
+  TTS_VOICE: "tts_voice",
+  TTS_MODEL: "tts_model",
+  AZURE_SPEECH_KEY: "azure_speech_key",
+  AZURE_SPEECH_REGION: "azure_speech_region",
+  ELEVENLABS_API_KEY: "elevenlabs_api_key",
   // Profil legal perusahaan — dipakai dokumen kontrak kerja (PIHAK PERTAMA).
   // Kosong = dirender sebagai garis isian di PDF.
   COMPANY_LEGAL_NAME: "company_legal_name",
@@ -20,6 +29,19 @@ export const SETTING_KEYS = {
   COMPANY_CITY: "company_city",
   COMPANY_SIGNER_NAME: "company_signer_name",
   COMPANY_SIGNER_TITLE: "company_signer_title",
+  // Google Business Profile (EPIC-013 Fase A) — diisi Super Admin lewat UI.
+  // Rahasia tidak pernah dikirim balik ke browser, hanya versi tersamar.
+  GOOGLE_BP_CLIENT_ID: "google_bp_client_id",
+  GOOGLE_BP_CLIENT_SECRET: "google_bp_client_secret",
+  GOOGLE_BP_REFRESH_TOKEN: "google_bp_refresh_token",
+  GOOGLE_BP_ACCOUNT_ID: "google_bp_account_id",
+  GOOGLE_BP_LOCATION_ID: "google_bp_location_id",
+  // Instagram Messaging (EPIC-013 Fase C) — diisi Super Admin lewat UI.
+  // Rahasia tidak pernah dikirim balik ke browser, hanya versi tersamar.
+  IG_APP_SECRET: "ig_app_secret",
+  IG_VERIFY_TOKEN: "ig_verify_token",
+  IG_ACCESS_TOKEN: "ig_access_token",
+  IG_ACCOUNT_ID: "ig_account_id",
 } as const;
 
 export const DEEPSEEK_DEFAULTS = {

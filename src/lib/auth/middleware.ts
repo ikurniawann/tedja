@@ -38,6 +38,18 @@ export async function updateSession(request: NextRequest) {
     // sesi OTP WA sendiri (cookie member_session), bukan arkiv_session.
     "/member",
     "/api/member-portal",
+    // Penerima event dari wa-gateway (mesin yang sama) — auth = header
+    // x-gateway-token, bukan sesi user.
+    "/api/wa/inbound",
+    // Webhook Instagram dari Meta — dipanggil server Meta tanpa sesi.
+    // Auth = tanda tangan HMAC X-Hub-Signature-256 atas raw body, diperiksa
+    // di dalam route itu sendiri.
+    "/api/crm/instagram/webhook",
+    // Website booking tiket (EPIC-023 Fase D) — halaman & API publik.
+    // Status booking = capability token 64-hex; webhook Xendit diverifikasi
+    // x-callback-token di dalam route; semua endpoint ber-rate-limit.
+    "/booking",
+    "/api/public/booking",
   ];
   const isPublicRoute =
     pathname === "/" ||

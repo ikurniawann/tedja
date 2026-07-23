@@ -286,11 +286,24 @@ export const isEssOnlyUser = cache(
  * Dipakai untuk role ESS-only agar sidebar bersih dari modul bisnis.
  */
 export function filterEssNav(items: NavItem[]): NavItem[] {
+  return filterNavByPrefixes(items, ["/dashboard/me"]);
+}
+
+/**
+ * Generalisasi filterEssNav (EPIC-022): pertahankan item yang href-nya cocok
+ * salah satu prefix, plus group yang punya anak lolos. Dipakai role dengan
+ * modul tambahan (mis. `sales` → ESS + /dashboard/sales-funnel).
+ */
+export function filterNavByPrefixes(
+  items: NavItem[],
+  prefixes: readonly string[]
+): NavItem[] {
+  const matches = (href: string) =>
+    prefixes.some((prefix) => href === prefix || href.startsWith(`${prefix}/`));
   const keep = (item: NavItem): NavItem | null => {
     const children =
       item.children?.map(keep).filter((c): c is NavItem => c !== null) ?? [];
-    const selfEss = item.href.startsWith("/dashboard/me");
-    if (selfEss || children.length > 0) {
+    if (matches(item.href) || children.length > 0) {
       return { ...item, ...(children.length > 0 ? { children } : {}) };
     }
     return null;

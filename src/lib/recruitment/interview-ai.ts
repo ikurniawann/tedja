@@ -5,6 +5,7 @@ import {
   getSettings,
 } from "@/lib/settings/app-settings";
 import { DeepseekNotConfiguredError } from "./deepseek";
+import { synthesizeSpeechOrNull } from "@/lib/tts/synthesize";
 
 /**
  * Interview AI (EPIC-003): AI interviewer menanyakan hal basic ke kandidat
@@ -13,7 +14,9 @@ import { DeepseekNotConfiguredError } from "./deepseek";
  *
  * Pembagian engine (mengikuti pola psikotes-ai):
  * - DeepSeek  → generate pertanyaan adaptif + kesimpulan akhir (text-only).
- * - OpenAI    → Whisper (transkrip rekaman jawaban) + TTS (suara pertanyaan).
+ * - OpenAI    → Whisper (transkrip rekaman jawaban).
+ * - TTS       → suara pertanyaan; provider/voice-nya dipilih di
+ *               Settings → Suara AI (`src/lib/tts/`), tidak lagi dikunci OpenAI.
  *
  * Hasil kesimpulan bersifat INDIKATIF sebagai bahan pertimbangan HRD —
  * bukan keputusan final.
@@ -332,40 +335,12 @@ export async function transcribeInterviewAudio(
   return { transcript, model: WHISPER_MODEL };
 }
 
-const TTS_MODEL = "gpt-4o-mini-tts";
-const TTS_FALLBACK_MODEL = "tts-1";
-const TTS_VOICE = "coral";
-/** Arahan aksen — hanya didukung gpt-4o-mini-tts (tts-1 menolak field ini). */
-const TTS_INSTRUCTIONS =
-  "Bicaralah sepenuhnya dalam bahasa Indonesia dengan pelafalan penutur asli Indonesia " +
-  "yang natural (bukan aksen asing). Nada ramah, profesional, dan jelas — seperti seorang " +
-  "HR interviewer yang menenangkan kandidat. Tempo sedang, artikulasi rapi.";
-
 /**
- * Suara pertanyaan via OpenAI TTS → buffer mp3.
+ * Suara pertanyaan → buffer mp3. Provider & voice dipilih di
+ * Settings → Suara AI (EPIC-016); lihat `src/lib/tts/`.
  * Return null bila gagal — client fallback ke Web Speech API / teks saja.
  */
 export async function synthesizeInterviewSpeech(text: string): Promise<Buffer | null> {
-  try {
-    const { apiKey, baseUrl } = await getOpenAiConfig();
-    const call = (model: string) =>
-      fetch(`${baseUrl}/audio/speech`, {
-        method: "POST",
-        signal: AbortSignal.timeout(60_000),
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-        body: JSON.stringify({
-          model,
-          voice: TTS_VOICE,
-          input: text.slice(0, 600),
-          response_format: "mp3",
-          ...(model === TTS_MODEL ? { instructions: TTS_INSTRUCTIONS } : {}),
-        }),
-      });
-    let res = await call(TTS_MODEL);
-    if (!res.ok) res = await call(TTS_FALLBACK_MODEL);
-    if (!res.ok) return null;
-    return Buffer.from(await res.arrayBuffer());
-  } catch {
-    return null;
-  }
+  const result = await synthesizeSpeechOrNull(text);
+  return result?.buffer ?? null;
 }

@@ -1,6 +1,8 @@
 // Fonnte WhatsApp API integration
 
-const FONNTE_API_URL = "https://api.fonnte.com/api/send-message";
+// Endpoint resmi Fonnte. Jangan diubah ke /api/send-message — path itu 404
+// dan membuat seluruh pengiriman WA gagal diam-diam.
+const FONNTE_API_URL = "https://api.fonnte.com/send";
 
 export interface FonnteMessagePayload {
   target: string; // phone number, e.g. "6281234567890"

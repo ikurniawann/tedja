@@ -7,6 +7,29 @@ async function ensureDir(dir: string) {
   await fs.mkdir(dir, { recursive: true });
 }
 
+// Ekstensi diturunkan dari MIME TERVALIDASI, bukan nama file kiriman klien
+// (hasil security review: filename "evil.svg" + Content-Type image/png dulu
+// tersimpan ber-ekstensi svg → celah stored-XSS saat disajikan).
+const MIME_EXTENSIONS: Record<string, string> = {
+  "application/pdf": "pdf",
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+  "image/heic": "heic",
+  "application/msword": "doc",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+    "docx",
+};
+
+function safeExtension(file: File | Buffer): string {
+  if (!(file instanceof File)) return "bin";
+  const fromMime = MIME_EXTENSIONS[file.type];
+  if (fromMime) return fromMime;
+  // MIME tak dikenal → pakai ekstensi nama file HANYA bila alfanumerik pendek
+  const raw = file.name.split(".").pop() ?? "";
+  return /^[a-z0-9]{1,5}$/i.test(raw) ? raw.toLowerCase() : "bin";
+}
+
 /**
  * Upload file ke storage lokal (filesystem / object storage).
  * File disimpan di storage/uploads/{bucket}/...
@@ -20,7 +43,7 @@ export async function uploadFile(
     const fileBuffer = file instanceof File ? Buffer.from(await file.arrayBuffer()) : file;
     const timestamp = Date.now();
     const random = Math.random().toString(36).substring(2, 8);
-    const ext = file instanceof File ? file.name.split(".").pop() ?? "bin" : "bin";
+    const ext = safeExtension(file);
     const fileName = folder
       ? `${folder}/${timestamp}-${random}.${ext}`
       : `${timestamp}-${random}.${ext}`;
@@ -32,8 +55,11 @@ export async function uploadFile(
 
     const url = `/api/files/${bucket}/${fileName.split("/").map(encodeURIComponent).join("/")}`;
     return { url, error: null };
-  } catch (err: any) {
-    return { url: "", error: err.message };
+  } catch (err: unknown) {
+    return {
+      url: "",
+      error: err instanceof Error ? err.message : "Upload gagal",
+    };
   }
 }
 
@@ -46,8 +72,8 @@ export async function deleteFile(bucket: string, fileUrl: string): Promise<{ err
     const absPath = path.join(UPLOAD_ROOT, bucket, rel);
     await fs.unlink(absPath);
     return { error: null };
-  } catch (err: any) {
-    return { error: err.message ?? null };
+  } catch (err: unknown) {
+    return { error: err instanceof Error ? err.message : null };
   }
 }
 

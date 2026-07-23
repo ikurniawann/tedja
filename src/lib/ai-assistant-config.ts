@@ -1,44 +1,84 @@
+/**
+ * Tingkatan model asisten "Do".
+ *
+ * Label & deskripsi sengaja netral: nama vendor/model tidak boleh muncul di UI
+ * (permintaan owner — Do adalah merek sendiri). Id internal tetap membawa nama
+ * teknis karena itulah yang dikirim ke API; jangan tampilkan id ini di layar.
+ *
+ * Pilihan Ollama (Kimi/DeepSeek/Gemma/Qwen/GLM) sudah dihapus; id lamanya
+ * otomatis jatuh ke default lewat `normalizeModel`, jadi sesi & localStorage
+ * lama tidak error.
+ *
+ * `supportsTemperature: false` untuk model yang menolak `temperature` selain 1 —
+ * diverifikasi langsung ke API: gpt-5-mini dan gpt-5.5 mengembalikan HTTP 400
+ * "Unsupported value: 'temperature' does not support 0.7 with this model",
+ * sementara gpt-4o-mini, gpt-4.1-mini, gpt-4o, dan gpt-5.4-mini menerimanya.
+ */
 export const AI_ASSISTANT_MODELS = [
   {
-    id: "kimi-k2.5:cloud",
-    label: "Kimi K2.5 Cloud",
-    logo: "K",
-    logoSrc: "/logollm/kimi.png",
-    logoClassName: "from-violet-300 via-fuchsia-400 to-rose-400 text-slate-950",
+    id: "openai:gpt-4o-mini",
+    label: "Do Ringan",
+    description: "Paling cepat dan hemat. Cocok untuk pertanyaan harian.",
+    logo: "D",
+    logoSrc: null,
+    logoClassName: "from-emerald-200 via-teal-300 to-emerald-500 text-slate-950",
+    supportsTemperature: true,
   },
   {
-    id: "deepseek-v4-flash:cloud",
-    label: "DeepSeek V4 Flash",
-    logo: "DS",
-    logoSrc: "/logollm/deepseek.png",
-    logoClassName: "from-sky-300 via-cyan-300 to-blue-500 text-slate-950",
+    id: "openai:gpt-4.1-mini",
+    label: "Do Standar",
+    description: "Seimbang antara kecepatan dan kedalaman jawaban.",
+    logo: "D",
+    logoSrc: null,
+    logoClassName: "from-sky-200 via-cyan-300 to-blue-500 text-slate-950",
+    supportsTemperature: true,
   },
   {
-    id: "gemma4:e2b",
-    label: "Gemma 4 E2B",
-    logo: "G",
-    logoSrc: "/logollm/gemma4.png",
-    logoClassName: "from-blue-300 via-emerald-300 to-yellow-300 text-slate-950",
+    id: "openai:gpt-4o",
+    label: "Do Lanjut",
+    description: "Jawaban lebih dalam untuk pertanyaan yang rumit.",
+    logo: "D",
+    logoSrc: null,
+    logoClassName: "from-violet-200 via-fuchsia-300 to-rose-400 text-slate-950",
+    supportsTemperature: true,
   },
   {
-    id: "qwen3.5:cloud",
-    label: "Qwen 3.5 Cloud",
-    logo: "Q",
-    logoSrc: "/logollm/qwen.png",
-    logoClassName: "from-cyan-200 via-blue-400 to-indigo-500 text-white",
+    id: "openai:gpt-5.4-mini",
+    label: "Do Neo",
+    description: "Generasi terbaru, ringkas dan gesit.",
+    logo: "D",
+    logoSrc: null,
+    logoClassName: "from-amber-200 via-orange-300 to-rose-400 text-slate-950",
+    supportsTemperature: true,
   },
   {
-    id: "glm-5:cloud",
-    label: "GLM 5 Cloud",
-    logo: "GLM",
-    logoSrc: "/logollm/glm.png",
+    id: "openai:gpt-5.5",
+    label: "Do Maks",
+    description: "Paling kuat. Pakai saat butuh analisis paling teliti.",
+    logo: "D",
+    logoSrc: null,
     logoClassName: "from-zinc-100 via-slate-300 to-zinc-500 text-slate-950",
+    supportsTemperature: false,
   },
 ] as const;
 
 export type AiAssistantModel = (typeof AI_ASSISTANT_MODELS)[number]["id"];
 
-export const DEFAULT_AI_ASSISTANT_MODEL: AiAssistantModel = "kimi-k2.5:cloud";
+export const DEFAULT_AI_ASSISTANT_MODEL: AiAssistantModel = "openai:gpt-4o-mini";
+
+/** Model berprefix ini dipanggil ke OpenAI, bukan Ollama. */
+export const OPENAI_MODEL_PREFIX = "openai:";
+
+export function isOpenAiAssistantModel(model: string): boolean {
+  return model.startsWith(OPENAI_MODEL_PREFIX);
+}
+
+/** "openai:gpt-4o-mini" → "gpt-4o-mini" (id yang dikenal API OpenAI). */
+export function stripOpenAiPrefix(model: string): string {
+  return model.startsWith(OPENAI_MODEL_PREFIX)
+    ? model.slice(OPENAI_MODEL_PREFIX.length)
+    : model;
+}
 
 export const AI_ASSISTANT_SCOPES = [
   {
@@ -61,7 +101,13 @@ export const AI_ASSISTANT_SCOPES = [
 export type AiAssistantScope = (typeof AI_ASSISTANT_SCOPES)[number]["id"];
 
 export const DEFAULT_AI_ASSISTANT_SCOPE: AiAssistantScope = "project_plus_general";
-export const AI_ASSISTANT_SETTINGS_STORAGE_KEY = "arkiv-ai-assistant-settings";
+/**
+ * Versi `-v2`: pilihan model tersimpan di localStorage per browser, sehingga
+ * user yang pernah membuka Arkiv OS akan terus memakai model Ollama lamanya dan
+ * jatuh ke fallback meski default sudah pindah ke OpenAI. Menaikkan versi kunci
+ * memaksa reset sekali ke default baru. Naikkan lagi bila default berpindah.
+ */
+export const AI_ASSISTANT_SETTINGS_STORAGE_KEY = "arkiv-ai-assistant-settings-v2";
 
 export type AiAssistantSettings = {
   model: AiAssistantModel;
@@ -93,11 +139,16 @@ export function resolveAiAssistantScope(value: unknown, fallback?: unknown): AiA
   return DEFAULT_AI_ASSISTANT_SCOPE;
 }
 
+/** Id lama (model Ollama, atau varian yang sudah dihapus) → null → default. */
 function normalizeModel(value: unknown): AiAssistantModel | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
-  if (trimmed === "gemma4:31b-cloud") return "gemma4:e2b";
   return AI_ASSISTANT_MODELS.some((model) => model.id === trimmed) ? (trimmed as AiAssistantModel) : null;
+}
+
+/** Model yang menolak temperature kustom harus dikirim tanpa field itu. */
+export function modelSupportsTemperature(model: string): boolean {
+  return AI_ASSISTANT_MODELS.find((m) => m.id === model)?.supportsTemperature ?? true;
 }
 
 function normalizeScope(value: unknown): AiAssistantScope | null {

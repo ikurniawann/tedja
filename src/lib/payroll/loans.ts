@@ -15,6 +15,22 @@ export interface LoanDeductionRow {
   first_installment_year: number | null;
   status: string;
   is_active: boolean;
+  /** Dipakai hanya untuk rincian slip; boleh absen pada pemanggil lama. */
+  principal_amount?: number;
+  tenor_months?: number | null;
+  loan_type?: string | null;
+}
+
+/** Rincian satu cicilan untuk ditampilkan di slip gaji. */
+export interface LoanInstallmentDetail {
+  loan_id: string;
+  loan_type: string | null;
+  /** Angsuran ke berapa, dihitung dari pokok yang sudah terbayar. */
+  installment_no: number;
+  tenor_months: number | null;
+  amount: number;
+  remaining_before: number;
+  remaining_after: number;
 }
 
 export interface LoanAllocation {
@@ -123,4 +139,62 @@ export function validateLoanLimits(params: {
     );
   }
   return null;
+}
+
+/**
+ * Rincian cicilan periode ini, satu baris per pinjaman yang jatuh tempo.
+ *
+ * `installment_no` diturunkan dari pokok yang sudah terbayar, bukan dari
+ * selisih bulan, agar tetap benar ketika ada periode yang terlewat (payroll
+ * telat dijalankan) atau ketika karyawan membayar di muka.
+ */
+export function loanInstallmentDetails(
+  loans: LoanDeductionRow[],
+  periodMonth: number,
+  periodYear: number
+): LoanInstallmentDetail[] {
+  return loans
+    .filter((loan) => isLoanDue(loan, periodMonth, periodYear))
+    .map((loan) => {
+      const installment = Math.round(Number(loan.monthly_installment));
+      const remainingBefore = Math.round(Number(loan.remaining_balance));
+      const amount = Math.min(installment, remainingBefore);
+      const principal = Math.round(Number(loan.principal_amount ?? 0));
+
+      // Berapa angsuran yang sudah lunas sebelum periode ini.
+      const paidSoFar = Math.max(0, principal - remainingBefore);
+      const installmentNo =
+        installment > 0 ? Math.floor(paidSoFar / installment) + 1 : 1;
+
+      return {
+        loan_id: loan.id,
+        loan_type: loan.loan_type ?? null,
+        installment_no: installmentNo,
+        tenor_months: loan.tenor_months ?? null,
+        amount,
+        remaining_before: remainingBefore,
+        remaining_after: remainingBefore - amount,
+      };
+    });
+}
+
+/** Label jenis pinjaman untuk slip gaji. */
+export const LOAN_TYPE_LABELS: Record<string, string> = {
+  kasbon: "Kasbon",
+  loan: "Pinjaman",
+  emergency: "Pinjaman Darurat",
+};
+
+/**
+ * Label baris potongan di slip, mis. "Cicilan Kasbon (2/3)".
+ * Tenor bisa kosong pada data lama, jadi nomor angsuran hanya ditampilkan
+ * bila tenornya diketahui — lebih baik tanpa keterangan daripada menyesatkan.
+ */
+export function loanInstallmentLabel(detail: LoanInstallmentDetail): string {
+  const jenis = detail.loan_type
+    ? LOAN_TYPE_LABELS[detail.loan_type] ?? detail.loan_type
+    : "Pinjaman";
+  return detail.tenor_months
+    ? `Cicilan ${jenis} (${detail.installment_no}/${detail.tenor_months})`
+    : `Cicilan ${jenis}`;
 }

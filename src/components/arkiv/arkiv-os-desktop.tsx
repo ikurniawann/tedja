@@ -3,6 +3,21 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { extractSseData, splitSseEvents } from "@/lib/assistant/sse";
+import {
+  DesktopMonitorBoard,
+  MONITOR_WIDGETS,
+  NotificationPopups,
+  useDesktopOverview,
+  type MonitorWidgetKey,
+} from "./desktop-monitor";
+import type { DesktopOverview as DesktopOverviewData } from "@/lib/desktop/overview";
+import { WaNotifSettingsPanel } from "./wa-notif-settings";
+import {
+  MAX_NOTIFICATION_HISTORY,
+  diffOverviewNotifications,
+  type ActivityNotification,
+} from "@/lib/desktop/notifications";
 import type { ComponentType, CSSProperties, FormEvent as ReactFormEvent, MouseEvent as ReactMouseEvent } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -20,6 +35,7 @@ import {
   ChevronRight,
   Cloud,
   Command,
+  Copy,
   CreditCard,
   ExternalLink,
   Folder,
@@ -33,6 +49,9 @@ import {
   Plug,
   MessageSquareMore,
   MonitorDot,
+  Paperclip,
+  Pencil,
+  RefreshCw,
   Search,
   Send,
   Settings,
@@ -75,7 +94,8 @@ type DesktopModule = {
   disabled?: boolean;
 };
 
-type WidgetVisibility = { calendar: boolean; system: boolean };
+type DesktopIconPosition = { left: number; top: number };
+type WidgetVisibility = { calendar: boolean } & Record<MonitorWidgetKey, boolean>;
 
 const pinkAccent = "from-pink-300 via-pink-500 to-rose-600";
 
@@ -122,13 +142,6 @@ const modules: DesktopModule[] = [
   },
 ];
 
-const notifications = [
-  "5 kandidat baru menunggu review HRIS",
-  "3 PO perlu approval Procurement",
-  "POS outlet siap digunakan",
-  "CRM membership foundation aktif",
-];
-
 const wallpapers = [
   { id: "arkiv", name: "Arkiv Aurora", src: "/bg.avif" },
   { id: "pink", name: "Pink Dusk", src: "linear-gradient(135deg,#16091d,#5b1239 45%,#111827)" },
@@ -137,8 +150,12 @@ const wallpapers = [
 ];
 
 const defaultWidgetVisibility: WidgetVisibility = {
-  calendar: true,
-  system: false,
+  calendar: false,
+  pulsa: true,
+  tim: true,
+  keputusan: true,
+  stok: true,
+  member: true,
 };
 
 function formatTime(date: Date) {
@@ -157,6 +174,7 @@ export default function ArkivOsDesktop() {
   const [showCommand, setShowCommand] = useState(false);
   const [showLibrary, setShowLibrary] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showWaNotif, setShowWaNotif] = useState(false);
   const [showAssistant, setShowAssistant] = useState(false);
   const [showFiles, setShowFiles] = useState(false);
   const [showApplicationFolder, setShowApplicationFolder] = useState(false);
@@ -178,7 +196,6 @@ export default function ArkivOsDesktop() {
   const [widgetVisibility, setWidgetVisibility] = useState<WidgetVisibility>(defaultWidgetVisibility);
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [assistantSettings, setAssistantSettings] = useState<AiAssistantSettings>(DEFAULT_AI_ASSISTANT_SETTINGS);
-  const [toast, setToast] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; module?: DesktopModule; desktop?: boolean } | null>(null);
   const assistantShortcutRef = useRef<HTMLFormElement>(null);
   const assistantShortcutInputRef = useRef<HTMLInputElement>(null);
@@ -197,12 +214,55 @@ export default function ArkivOsDesktop() {
   } as CSSProperties;
 
   const isLoggedIn = Boolean(userAccount);
+  const overview = useDesktopOverview(isLoggedIn);
+  // Notifikasi aktivitas: snapshot overview dibandingkan tiap poll; kenaikan
+  // melahirkan popup + masuk riwayat Notification Center.
+  const [notifHistory, setNotifHistory] = useState<ActivityNotification[]>([]);
+  const [notifPopups, setNotifPopups] = useState<ActivityNotification[]>([]);
+  const prevOverviewRef = useRef<DesktopOverviewData | null>(null);
+  useEffect(() => {
+    if (!overview.data) return;
+    const fresh = diffOverviewNotifications(prevOverviewRef.current, overview.data);
+    prevOverviewRef.current = overview.data;
+    if (fresh.length === 0) return;
+    setNotifHistory((prev) => [...fresh, ...prev].slice(0, MAX_NOTIFICATION_HISTORY));
+    setNotifPopups((prev) => [...prev, ...fresh]);
+  }, [overview.data]);
+  const dismissPopup = useCallback((id: string) => {
+    setNotifPopups((prev) => prev.filter((n) => n.id !== id));
+  }, []);
+  const openNotification = useCallback((n: ActivityNotification) => {
+    setNotifPopups((prev) => prev.filter((item) => item.id !== n.id));
+    router.push(n.href);
+  }, [router]);
+  const askDoFromWidget = useCallback((prompt: string) => {
+    setQueuedAssistantPrompt(prompt);
+    setShowAssistant(true);
+  }, []);
 
   const filteredModules = useMemo(() => {
     const normalized = query.trim().toLowerCase();
     if (!normalized) return modules;
     return modules.filter((module) => `${module.name} ${module.subtitle}`.toLowerCase().includes(normalized));
   }, [query]);
+
+  const desktopIcons = useMemo(
+    () => [
+      { id: "assistant", name: "Do", subtitle: "Super User", icon: Bot, action: "assistant" as const },
+      { id: "drive", name: "Arkiv Drive", subtitle: "Files", icon: Folder, action: "files" as const },
+      { id: "Application", name: "Application", subtitle: "All Modules", icon: Grid3X3, action: "folder" as const },
+      {
+        id: "userManagement",
+        name: "User Management",
+        subtitle: "Super Admin",
+        icon: ShieldCheck,
+        action: "route" as const,
+        href: "/dashboard/settings/users",
+        loginHref: "/login?redirect=/dashboard/settings/users",
+      },
+    ],
+    [],
+  );
 
   const moduleHref = (module: DesktopModule) => module.externalHref ?? (isLoggedIn ? module.dashboardHref : module.loginHref);
 
@@ -321,7 +381,7 @@ export default function ArkivOsDesktop() {
       if (savedWallpaper) setWallpaper(wallpapers.find((item) => item.id === savedWallpaper) ?? wallpapers[0]);
       if (savedWidgets) {
         const parsedWidgets = JSON.parse(savedWidgets);
-        const nextWidgets = { ...defaultWidgetVisibility, ...parsedWidgets, calendar: true };
+        const nextWidgets = { ...defaultWidgetVisibility, ...parsedWidgets };
         setWidgetVisibility(nextWidgets);
         window.localStorage.setItem("arkiv-widget-visibility", JSON.stringify(nextWidgets));
       } else {
@@ -343,8 +403,6 @@ export default function ArkivOsDesktop() {
       } else {
         window.localStorage.setItem(AI_ASSISTANT_SETTINGS_STORAGE_KEY, JSON.stringify(DEFAULT_AI_ASSISTANT_SETTINGS));
       }
-      setToast("Arkiv OS ready · 3 pending approval notifications");
-      window.setTimeout(() => setToast(null), 4200);
     }, 0);
     const interval = window.setInterval(() => setNow(new Date()), 30_000);
     return () => {
@@ -465,7 +523,7 @@ export default function ArkivOsDesktop() {
           </button>
           <nav className="hidden items-center gap-4 text-white/72 md:flex">
             <button onClick={() => setShowLibrary(true)}>Applications</button>
-            <button onClick={() => setShowNotifications(true)}>Notifications</button>
+            {notifHistory.length > 0 && <button onClick={() => setShowNotifications(true)}>Notifications</button>}
             <button onClick={() => setShowWidgetSettings(true)}>Widgets</button>
             <button onClick={() => setShowCommand(true)}>Search</button>
           </nav>
@@ -487,16 +545,20 @@ export default function ArkivOsDesktop() {
 
       <section className="relative z-10 min-h-dvh px-6 pb-28 pt-14">
         {now && widgetVisibility.calendar && <CalendarWidget date={now} onClose={() => updateWidgetVisibility("calendar", false)} />}
-        {now && widgetVisibility.system && <DesktopWidgets date={now} onClose={() => updateWidgetVisibility("system", false)} />}
+        {isLoggedIn && (
+          <DesktopMonitorBoard state={overview} visibility={widgetVisibility} onAskDo={askDoFromWidget} />
+        )}
       </section>
 
-      <nav className="fixed bottom-5 left-1/2 z-30 flex -translate-x-1/2 items-end gap-2 rounded-[28px] border border-white/18 bg-white/14 p-2 shadow-[0_24px_80px_rgba(0,0,0,.38)] backdrop-blur-2xl">
+      <nav className="fixed bottom-3 left-1/2 z-30 flex max-w-[calc(100vw-12px)] -translate-x-1/2 items-end gap-1 overflow-x-auto rounded-3xl border border-white/18 bg-white/14 p-1.5 shadow-[0_24px_80px_rgba(0,0,0,.38)] backdrop-blur-2xl sm:bottom-5 sm:gap-2 sm:rounded-[28px] sm:p-2">
         <DockButton label="Launchpad" icon={MonitorDot} active={showLibrary} onClick={() => setShowLibrary((value) => !value)} />
         {modules.filter((module) => !module.disabled).map((module) => <DockButton key={module.name} label={module.name} icon={module.icon} active={previewModule?.name === module.name} onClick={() => setPreviewModule((current) => current?.name === module.name ? null : module)} />)}
-        <DockButton label="AI Assistant" icon={Bot} active={showAssistant} onClick={() => setShowAssistant((value) => !value)} />
+        <DockButton label="Do" icon={Bot} active={showAssistant} onClick={() => setShowAssistant((value) => !value)} />
         <DockButton label="Apps" icon={Grid3X3} active={showLibrary} onClick={() => setShowLibrary((value) => !value)} />
-        <div className="mx-1 h-9 w-px bg-white/18" />
-        <DockButton label="Notifications" icon={Bell} active={showNotifications} onClick={() => setShowNotifications((value) => !value)} />
+        <div className="mx-0.5 h-7 w-px shrink-0 bg-white/18 sm:mx-1 sm:h-9" />
+        {notifHistory.length > 0 && (
+          <DockButton label={`Notifications (${notifHistory.length})`} icon={Bell} active={showNotifications} onClick={() => setShowNotifications((value) => !value)} />
+        )}
         <DockButton label="Files" icon={Folder} active={showFiles} onClick={() => setShowFiles((value) => !value)} />
         <DockButton label="Settings" icon={Settings} active={showSettings} onClick={() => setShowSettings((value) => !value)} />
       </nav>
@@ -525,7 +587,7 @@ export default function ArkivOsDesktop() {
                 onChange={(event) => setAssistantShortcutInput(event.target.value)}
                 onFocus={() => setAssistantShortcutFocused(true)}
                 onBlur={() => setAssistantShortcutFocused(false)}
-                aria-label="Ask Arkiv AI Assistant"
+                aria-label="Tanya Do"
                 className="arkiv-assistant-shortcut-input absolute inset-0 h-full w-full cursor-text appearance-none border-0 bg-transparent p-0 text-transparent caret-transparent opacity-0 outline-none"
               />
             </label>
@@ -544,7 +606,7 @@ export default function ArkivOsDesktop() {
               type="submit"
               disabled={!assistantShortcutInput.trim()}
               className="grid size-10 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-pink-400 to-rose-600 text-white shadow-lg transition hover:from-pink-300 hover:to-rose-500 disabled:cursor-not-allowed disabled:opacity-45"
-              title="Open AI Assistant"
+              title="Buka Do"
             >
               <Send className="size-4" />
             </button>
@@ -571,12 +633,21 @@ export default function ArkivOsDesktop() {
           onSettings={() => setShowSettings(true)}
         />
       )}
-      {showNotifications && <NotificationCenter onClose={() => setShowNotifications(false)} />}
+      {showWaNotif && (
+        <WindowShell title="Notifikasi WA" onClose={() => setShowWaNotif(false)} className="left-1/2 top-14 max-h-[calc(100vh-140px)] w-[min(560px,calc(100vw-32px))] -translate-x-1/2 overflow-y-auto">
+          <WaNotifSettingsPanel />
+        </WindowShell>
+      )}
+      {showNotifications && notifHistory.length > 0 && (
+        <NotificationCenter items={notifHistory} onOpen={openNotification} onClear={() => { setNotifHistory([]); setShowNotifications(false); }} onClose={() => setShowNotifications(false)} />
+      )}
+      <NotificationPopups popups={notifPopups} onDismiss={dismissPopup} onOpen={openNotification} />
       {showFiles && <FileExplorer onClose={() => setShowFiles(false)} isLoggedIn={isLoggedIn} />}
       {showWallpaperPicker && <WallpaperPicker selected={wallpaper.id} onSelect={(item) => { setWallpaper(item); window.localStorage.setItem("arkiv-wallpaper", item.id); }} onClose={() => setShowWallpaperPicker(false)} />}
       {showWidgetSettings && <WidgetSettings visibility={widgetVisibility} onChange={updateWidgetVisibility} onClose={() => setShowWidgetSettings(false)} />}
       {showSettings && (
         <SystemSettings
+          onOpenWaNotif={() => { setShowSettings(false); setShowWaNotif(true); }}
           soundEnabled={soundEnabled}
           assistantSettings={assistantSettings}
           onSoundChange={updateSoundEnabled}
@@ -606,7 +677,6 @@ export default function ArkivOsDesktop() {
           onOpenNewTab={() => openModuleInNewTab(moduleOpenChoice)}
         />
       )}
-      {toast && <ToastNotification message={toast} onOpen={() => setShowNotifications(true)} onClose={() => setToast(null)} />}
       {showAccount && (
         <OsAccountPopup
           account={userAccount}
@@ -673,51 +743,6 @@ function CalendarWidget({ date, onClose }: { date: Date; onClose: () => void }) 
   );
 }
 
-function DesktopWidgets({ date, onClose }: { date: Date; onClose: () => void }) {
-  const widgetItems = [
-    { icon: Activity, label: "System Health", value: "98%", note: "All modules online" },
-    { icon: Bell, label: "Pending", value: "8", note: "Approvals & reviews" },
-    { icon: CalendarDays, label: "Today", value: formatTime(date), note: formatDate(date) },
-  ];
-
-  return (
-    <WindowShell title="System Widgets" onClose={onClose} className="bottom-28 right-5 hidden w-80 lg:block">
-      <div className="grid grid-cols-1 gap-3 p-4">
-        {widgetItems.map((item) => {
-          const Icon = item.icon;
-          return (
-            <div key={item.label} className="rounded-3xl border border-white/14 bg-white/10 p-4 shadow-2xl backdrop-blur-2xl">
-              <div className="flex items-center gap-3">
-                <div className={`grid size-10 place-items-center rounded-2xl bg-gradient-to-br ${pinkAccent}`}><Icon className="size-5" /></div>
-                <div className="min-w-0 flex-1">
-                  <div className="text-xs text-white/50">{item.label}</div>
-                  <div className="text-lg font-semibold">{item.value}</div>
-                </div>
-              </div>
-              <div className="mt-3 rounded-2xl bg-black/12 px-3 py-2 text-xs text-white/55">{item.note}</div>
-            </div>
-          );
-        })}
-      </div>
-    </WindowShell>
-  );
-}
-
-function ToastNotification({ message, onOpen, onClose }: { message: string; onOpen: () => void; onClose: () => void }) {
-  return (
-    <div className="fixed right-5 top-14 z-[70] w-[min(360px,calc(100vw-32px))] rounded-3xl border border-white/18 bg-slate-950/75 p-4 text-white shadow-2xl backdrop-blur-2xl">
-      <div className="flex items-start gap-3">
-        <div className={`grid size-10 shrink-0 place-items-center rounded-2xl bg-gradient-to-br ${pinkAccent}`}><Bell className="size-5" /></div>
-        <button onClick={onOpen} className="min-w-0 flex-1 text-left">
-          <div className="text-sm font-semibold">Notification Center</div>
-          <div className="mt-1 text-xs leading-5 text-white/60">{message}</div>
-        </button>
-        <button onClick={onClose} className="rounded-full p-1 text-white/50 hover:bg-white/10 hover:text-white"><X className="size-4" /></button>
-      </div>
-    </div>
-  );
-}
-
 function DockButton({ label, icon: Icon, onClick, active = false }: { label: string; icon: ComponentType<{ className?: string }>; onClick: () => void; active?: boolean }) {
   return (
     <button
@@ -725,9 +750,9 @@ function DockButton({ label, icon: Icon, onClick, active = false }: { label: str
       aria-label={label}
       title={label}
       onClick={onClick}
-      className={`group relative grid size-12 place-items-center rounded-2xl border border-white/14 text-white shadow-lg transition duration-200 hover:-translate-y-3 hover:scale-125 hover:bg-white/24 ${active ? "bg-white/24 ring-1 ring-pink-200/50" : "bg-white/14"}`}
+      className={`group relative grid size-10 shrink-0 place-items-center rounded-xl border border-white/14 text-white shadow-lg transition duration-200 hover:-translate-y-3 hover:scale-125 hover:bg-white/24 sm:size-12 sm:rounded-2xl ${active ? "bg-white/24 ring-1 ring-pink-200/50" : "bg-white/14"}`}
     >
-      <Icon className="size-5 transition group-hover:scale-110" />
+      <Icon className="size-4 transition group-hover:scale-110 sm:size-5" />
       {active && <span className="absolute -bottom-1 size-1.5 rounded-full bg-pink-200 shadow-[0_0_12px_rgba(244,114,182,.9)]" />}
     </button>
   );
@@ -817,7 +842,7 @@ function WindowShell({ title, children, onClose, className = "" }: { title: stri
       ref={windowRef}
       style={{ ...floatingStyle, zIndex }}
       onMouseDown={focusWindow}
-      className={`fixed overflow-hidden rounded-3xl border bg-slate-950/55 shadow-2xl backdrop-blur-2xl ${zIndex === topWindowZ ? "border-pink-200/35 ring-1 ring-pink-300/20" : "border-white/18"} ${activeClassName}`}
+      className={`fixed overflow-hidden rounded-3xl border bg-slate-950/55 shadow-2xl backdrop-blur-2xl max-sm:inset-x-2! max-sm:top-11! max-sm:bottom-[72px]! max-sm:h-auto! max-sm:max-h-none! max-sm:w-auto! max-sm:translate-x-0! max-sm:translate-y-0! max-sm:rounded-2xl! ${minimized ? "max-sm:bottom-auto!" : ""} ${zIndex === topWindowZ ? "border-pink-200/35 ring-1 ring-pink-300/20" : "border-white/18"} ${activeClassName}`}
     >
       <div className="flex h-11 cursor-move items-center justify-between border-b border-white/10 px-4" onMouseDown={startDrag}>
         <div className="flex items-center gap-2" onMouseDown={(event) => event.stopPropagation()}>
@@ -999,7 +1024,7 @@ function CommandPalette({
   const actions = [
     { label: "System Settings", subtitle: "Theme, widgets, sound, account", icon: Settings, run: onSettings },
     { label: "Arkiv Drive", subtitle: "Open file explorer", icon: Folder, run: onFiles },
-    { label: "Ask Arkiv AI", subtitle: "Open AI Assistant", icon: Bot, run: onAssistant },
+    { label: "Tanya Do", subtitle: "Buka asisten Do", icon: Bot, run: onAssistant },
     { label: "Notification Center", subtitle: "Review alerts and approvals", icon: Bell, run: onNotifications },
     { label: "Widgets", subtitle: "Turn desktop widgets on or off", icon: Activity, run: onWidgets },
     { label: "Change Wallpaper", subtitle: "Open Desktop settings", icon: MonitorDot, run: onWallpaper },
@@ -1374,30 +1399,49 @@ function FileExplorer({ onClose, isLoggedIn }: { onClose: () => void; isLoggedIn
   );
 }
 
-function NotificationCenter({ onClose }: { onClose: () => void }) {
+function NotificationCenter({
+  items,
+  onOpen,
+  onClear,
+  onClose,
+}: {
+  items: ActivityNotification[];
+  onOpen: (n: ActivityNotification) => void;
+  onClear: () => void;
+  onClose: () => void;
+}) {
   return (
     <WindowShell title="Notification Center" onClose={onClose} className="right-5 top-14 w-[min(390px,calc(100vw-32px))]">
       <div className="space-y-3 p-4">
         <div className="rounded-3xl border border-white/10 bg-white/8 p-4">
           <div className="flex items-center justify-between">
             <div>
-              <div className="text-sm font-semibold">Today</div>
-              <div className="text-xs text-white/45">Operational summary</div>
+              <div className="text-sm font-semibold">Aktivitas</div>
+              <div className="text-xs text-white/45">Kejadian terbaru di bisnis Anda</div>
             </div>
-            <span className="rounded-full bg-pink-500/20 px-3 py-1 text-xs font-semibold text-pink-100">{notifications.length} alerts</span>
+            <button
+              onClick={onClear}
+              className="rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-white/60 transition hover:bg-white/16 hover:text-white"
+            >
+              Bersihkan
+            </button>
           </div>
         </div>
-        {notifications.map((notification, index) => (
-          <button key={notification} className="block w-full rounded-3xl border border-white/10 bg-white/8 p-3 text-left text-sm text-white/72 transition hover:bg-white/12">
-            <div className="flex gap-3">
-              <div className={`mt-0.5 size-2.5 rounded-full ${index < 2 ? "bg-pink-300" : "bg-emerald-300"}`} />
-              <div>
-                <div>{notification}</div>
-                <div className="mt-1 text-xs text-white/40">Arkiv OS · just now</div>
+
+        <div className="max-h-[55vh] space-y-2 overflow-y-auto">
+          {items.map((n) => (
+            <button
+              key={n.id}
+              onClick={() => onOpen(n)}
+              className="block w-full rounded-3xl border border-white/10 bg-white/8 p-3 text-left text-sm text-white/72 transition hover:bg-white/12"
+            >
+              <div>{n.text}</div>
+              <div className="mt-1 text-xs text-white/40">
+                {new Date(n.at).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })} · klik untuk membuka
               </div>
-            </div>
-          </button>
-        ))}
+            </button>
+          ))}
+        </div>
       </div>
     </WindowShell>
   );
@@ -1422,11 +1466,22 @@ function AiAssistantWindow({
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [assistantStatus, setAssistantStatus] = useState<"ready" | "live" | "fallback">("ready");
-  const [statusNote, setStatusNote] = useState("Ollama siap. Kirim pesan untuk mulai.");
+  const [statusNote, setStatusNote] = useState("Do siap. Kirim pesan untuk mulai.");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [sessions, setSessions] = useState<Array<{ id: string; title: string; updated_at: string }>>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [view, setView] = useState<"landing" | "chat">("landing");
+  const messageListRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+  type Attachment = { name: string; text: string; method: string; truncated: boolean; chars: number };
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  /** Auto-scroll hanya saat user memang sedang di dasar percakapan; kalau ia
+   *  menggulir ke atas untuk membaca jawaban lama, jangan disentak turun. */
+  const stickToBottomRef = useRef(true);
   const skipSessionRestoreRef = useRef(Boolean(initialPrompt?.trim()));
   const initialPromptSentRef = useRef(false);
   const isAllowed = account?.role === "super_admin";
@@ -1443,12 +1498,12 @@ function AiAssistantWindow({
   const applyAssistantMeta = useCallback((meta?: AssistantMessage["meta"]) => {
     if (meta?.status === "live" && meta.model === activeModel.id) {
       setAssistantStatus("live");
-      setStatusNote(`Live: ${meta.model ?? "Ollama"}`);
+      setStatusNote(`Live: ${activeModel.label}`);
       return;
     }
 
     setAssistantStatus("ready");
-    setStatusNote(`Ollama siap · ${activeModel.id}`);
+    setStatusNote(`Do siap · ${activeModel.label}`);
   }, [activeModel.id]);
 
   // On mount: fetch sessions + restore active session if any
@@ -1481,7 +1536,7 @@ function AiAssistantWindow({
 
   useEffect(() => {
     if (assistantStatus === "ready") {
-      setStatusNote(`Ollama siap · ${activeModel.id}`);
+      setStatusNote(`Do siap · ${activeModel.label}`);
     }
   }, [activeModel.id, assistantStatus]);
 
@@ -1495,11 +1550,11 @@ function AiAssistantWindow({
     setMessages([
       {
         role: "assistant",
-        content: `Halo, saya Arkiv AI Assistant. Mode aktif: ${activeScope.label}. Model: ${activeModel.label}.`,
+        content: `Halo, saya Do. Mode aktif: ${activeScope.label}. Tingkat: ${activeModel.label}.`,
       },
     ]);
     setAssistantStatus("ready");
-    setStatusNote(`Ollama siap · ${activeModel.id}`);
+    setStatusNote(`Do siap · ${activeModel.label}`);
     setView("chat");
     if (typeof window !== "undefined") localStorage.removeItem("arkiv-ai-session");
   };
@@ -1518,9 +1573,31 @@ function AiAssistantWindow({
     } else {
       setMessages([]);
       setAssistantStatus("ready");
-      setStatusNote("Ollama siap. Kirim pesan untuk mulai.");
+      setStatusNote("Do siap. Kirim pesan untuk mulai.");
     }
     setView("chat");
+  };
+
+  const renameSession = async (id: string, currentTitle: string) => {
+    if (typeof window === "undefined") return;
+    const next = window.prompt("Judul baru untuk chat ini:", currentTitle || "");
+    if (next === null) return;
+    const title = next.trim();
+    if (!title || title === currentTitle) return;
+
+    // Optimistic: judul langsung berubah di daftar, dikembalikan bila gagal.
+    const before = sessions;
+    setSessions((prev) => prev.map((item) => (item.id === id ? { ...item, title } : item)));
+    try {
+      const response = await fetch(`/api/ai/assistant?session_id=${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title }),
+      });
+      if (!response.ok) throw new Error("gagal");
+    } catch {
+      setSessions(before);
+    }
   };
 
   const deleteSession = async (id: string) => {
@@ -1537,7 +1614,7 @@ function AiAssistantWindow({
         setSessionId(null);
         setMessages([]);
         setAssistantStatus("ready");
-        setStatusNote(`Ollama siap · ${activeModel.id}`);
+        setStatusNote(`Do siap · ${activeModel.label}`);
         setView("landing");
         if (typeof window !== "undefined") localStorage.removeItem("arkiv-ai-session");
       }
@@ -1550,8 +1627,18 @@ function AiAssistantWindow({
     const message = text.trim();
     if (!message || loading) return;
 
-    setMessages((prev) => [...prev, { role: "user", content: message }]);
+    // User baru saja menekan Enter: apa pun posisi scroll-nya, tarik ke bawah.
+    stickToBottomRef.current = true;
+    // Lampiran ikut pesan ini saja, lalu dikosongkan — pertanyaan berikutnya
+    // tidak diam-diam membawa dokumen lama.
+    const attachmentsToSend = attachments;
+    const label = attachmentsToSend.length
+      ? `${message}\n\n[Lampiran: ${attachmentsToSend.map((a) => a.name).join(", ")}]`
+      : message;
+    setMessages((prev) => [...prev, { role: "user", content: label }]);
     setInput("");
+    setAttachments([]);
+    setUploadError(null);
     setLoading(true);
 
     try {
@@ -1561,22 +1648,101 @@ function AiAssistantWindow({
       const response = await fetch("/api/ai/assistant", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message, history, session_id: sessionId, model: settings.model, scope: settings.scope }),
+        body: JSON.stringify({
+          message,
+          history,
+          session_id: sessionId,
+          model: settings.model,
+          scope: settings.scope,
+          stream: true,
+          attachments: attachmentsToSend.map((item) => ({ name: item.name, text: item.text })),
+        }),
       });
-      const json = await response.json();
 
       if (!response.ok) {
-        throw new Error(json.error || "AI Assistant gagal merespons");
+        const failure = (await response.json().catch(() => ({}))) as { error?: string };
+        throw new Error(failure.error || "Do gagal merespons");
       }
 
-      if (json.session_id) {
-        setSessionId(json.session_id);
-        if (typeof window !== "undefined") localStorage.setItem("arkiv-ai-session", json.session_id);
+      const applyResult = (payload: { session_id?: string; answer?: string; meta?: AssistantMessage["meta"] }) => {
+        if (payload.session_id) {
+          setSessionId(payload.session_id);
+          if (typeof window !== "undefined") localStorage.setItem("arkiv-ai-session", payload.session_id);
+        }
+        const live = payload.meta?.status === "live";
+        setAssistantStatus(live ? "live" : "fallback");
+        setStatusNote(live ? `Live: ${activeModel.label}` : payload.meta?.fallbackReason ?? "Fallback aktif");
+      };
+
+      const isStream = response.headers.get("content-type")?.includes("text/event-stream");
+
+      if (!isStream || !response.body) {
+        // Server menjawab sekali-jadi (mis. jalur lama atau proxy menolak SSE).
+        const json = await response.json();
+        applyResult(json);
+        setMessages((prev) => [...prev, { role: "assistant", content: json.answer, meta: json.meta }]);
+        refreshSessions();
+        return;
       }
 
-      setAssistantStatus(json.meta?.status === "live" ? "live" : "fallback");
-      setStatusNote(json.meta?.status === "live" ? `Live: ${json.meta?.model ?? "Ollama"}` : json.meta?.fallbackReason ?? "Fallback aktif");
-      setMessages((prev) => [...prev, { role: "assistant", content: json.answer, meta: json.meta }]);
+      // Placeholder kosong yang isinya tumbuh seiring token berdatangan.
+      let streamed = "";
+      let placeholderAdded = false;
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      const pushDelta = (piece: string) => {
+        streamed += piece;
+        setMessages((prev) => {
+          const next = [...prev];
+          if (!placeholderAdded) {
+            placeholderAdded = true;
+            next.push({ role: "assistant", content: streamed });
+            return next;
+          }
+          next[next.length - 1] = { ...next[next.length - 1], content: streamed };
+          return next;
+        });
+        // Token pertama sudah tiba: sembunyikan indikator "Memproses...".
+        setLoading(false);
+      };
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const { events, rest } = splitSseEvents(buffer);
+        buffer = rest;
+
+        for (const event of events) {
+          for (const raw of extractSseData(event)) {
+            let payload: { type?: string; text?: string; answer?: string; error?: string; session_id?: string; meta?: AssistantMessage["meta"] };
+            try {
+              payload = JSON.parse(raw);
+            } catch {
+              continue;
+            }
+            if (payload.type === "delta" && payload.text) {
+              pushDelta(payload.text);
+            } else if (payload.type === "done") {
+              applyResult(payload);
+              // Teks final dari server dipakai apa adanya — hasil rakitan klien
+              // bisa berbeda bila ada event yang terlewat.
+              setMessages((prev) => {
+                const next = [...prev];
+                const finalMessage = { role: "assistant" as const, content: payload.answer ?? streamed, meta: payload.meta };
+                if (placeholderAdded) next[next.length - 1] = finalMessage;
+                else next.push(finalMessage);
+                return next;
+              });
+              placeholderAdded = true;
+            } else if (payload.type === "error") {
+              throw new Error(payload.error || "Do gagal merespons");
+            }
+          }
+        }
+      }
 
       refreshSessions();
     } catch (error) {
@@ -1587,7 +1753,93 @@ function AiAssistantWindow({
     } finally {
       setLoading(false);
     }
-  }, [input, loading, messages, refreshSessions, sessionId, settings.model, settings.scope]);
+  }, [attachments, input, loading, messages, refreshSessions, sessionId, settings.model, settings.scope]);
+
+  // Tinggi textarea mengikuti jumlah baris; direset dulu agar bisa mengecil lagi
+  // saat teks dihapus.
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+  }, [input]);
+
+  const handleAttach = useCallback(async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    setUploading(true);
+    setUploadError(null);
+    try {
+      for (const file of Array.from(files).slice(0, 5)) {
+        const form = new FormData();
+        form.append("file", file);
+        const res = await fetch("/api/ai/assistant/attachment", { method: "POST", body: form });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error || `Gagal membaca ${file.name}`);
+        setAttachments((prev) => [...prev.slice(-4), json.data as Attachment]);
+      }
+    } catch (error) {
+      setUploadError(error instanceof Error ? error.message : "Gagal membaca lampiran");
+    } finally {
+      setUploading(false);
+      // Reset input supaya file yang sama bisa dipilih lagi setelah dihapus.
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }, []);
+
+  const copyMessage = useCallback(async (text: string, index: number) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedIndex(index);
+      setTimeout(() => setCopiedIndex((current) => (current === index ? null : current)), 1800);
+    } catch {
+      // clipboard diblokir (mis. konteks non-HTTPS) — diamkan, tombol tetap ada
+    }
+  }, []);
+
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
+    const el = messageListRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior });
+  }, []);
+
+  const handleMessageListScroll = useCallback(() => {
+    const el = messageListRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    stickToBottomRef.current = distanceFromBottom < 80;
+  }, []);
+
+  // Pesan baru & indikator "Memproses..." sama-sama menambah tinggi konten,
+  // jadi keduanya perlu memicu scroll.
+  useEffect(() => {
+    if (view !== "chat") return;
+    if (!stickToBottomRef.current) return;
+    const id = requestAnimationFrame(() => scrollToBottom());
+    return () => cancelAnimationFrame(id);
+  }, [messages, loading, view, scrollToBottom]);
+
+  // Masuk ke sebuah chat: langsung tampilkan bagian terbawah tanpa animasi.
+  useEffect(() => {
+    if (view !== "chat") return;
+    stickToBottomRef.current = true;
+    const id = requestAnimationFrame(() => scrollToBottom("auto"));
+    return () => cancelAnimationFrame(id);
+  }, [view, sessionId, scrollToBottom]);
+
+  /** Buang jawaban terakhir lalu kirim ulang pertanyaan yang sama. */
+  const regenerateLastAnswer = useCallback(() => {
+    if (loading) return;
+    const lastUser = [...messages].reverse().find((m) => m.role === "user");
+    if (!lastUser) return;
+    // Jawaban lama dibuang dari state supaya tidak ada dua jawaban berdampingan;
+    // riwayat di server tetap utuh sebagai jejak.
+    setMessages((prev) => {
+      const next = [...prev];
+      while (next.length && next[next.length - 1].role === "assistant") next.pop();
+      return next.filter((m) => m !== lastUser);
+    });
+    sendMessage(lastUser.content);
+  }, [loading, messages, sendMessage]);
 
   useEffect(() => {
     const message = initialPrompt?.trim();
@@ -1606,7 +1858,7 @@ function AiAssistantWindow({
   }, [initialPrompt, isAllowed, onInitialPromptConsumed, sendMessage]);
 
   return (
-    <WindowShell title="AI Assistant" onClose={onClose} className="right-5 top-14 flex h-[min(760px,calc(100vh-86px))] w-[min(780px,calc(100vw-32px))] flex-col">
+    <WindowShell title="Do" onClose={onClose} className="right-5 top-14 flex h-[min(760px,calc(100vh-86px))] w-[min(780px,calc(100vw-32px))] flex-col">
       <div className="flex h-full overflow-hidden">
         {/* Sidebar: Chat history */}
         {showHistory && (
@@ -1636,6 +1888,13 @@ function AiAssistantWindow({
                     </div>
                   </button>
                   <button
+                    onClick={() => renameSession(s.id, s.title)}
+                    className="grid size-7 shrink-0 place-items-center rounded-lg text-white/35 transition hover:bg-white/12 hover:text-white/80"
+                    title="Ganti nama session"
+                  >
+                    <Pencil className="size-3.5" />
+                  </button>
+                  <button
                     onClick={() => deleteSession(s.id)}
                     className="mr-1 grid size-7 shrink-0 place-items-center rounded-lg text-white/35 transition hover:bg-rose-500/16 hover:text-rose-200"
                     title="Hapus session"
@@ -1658,9 +1917,9 @@ function AiAssistantWindow({
                 <Bot className="size-6" />
               </div>
               <div className="min-w-0 flex-1">
-                <div className="font-semibold">Arkiv AI Assistant</div>
+                <div className="font-semibold">Do</div>
                 <div className="truncate text-xs text-white/50">
-                  {isAllowed ? `${activeScope.label} · ${activeModel.id}` : account ? "Only super_admin can use this assistant" : "Login as super_admin required"}
+                  {isAllowed ? `${activeScope.label} · ${activeModel.label}` : account ? "Only super_admin can use this assistant" : "Login as super_admin required"}
                 </div>
               </div>
               {view === "chat" && (
@@ -1682,7 +1941,7 @@ function AiAssistantWindow({
                 History
               </button>
               <div className={`rounded-full px-3 py-1 text-xs font-semibold ${assistantStatus === "live" ? "bg-emerald-400/15 text-emerald-200" : assistantStatus === "fallback" ? "bg-amber-400/15 text-amber-200" : "bg-white/10 text-white/55"}`} title={statusNote}>
-                {assistantStatus === "live" ? "Ollama Live" : assistantStatus === "fallback" ? "Fallback" : "Ready"}
+                {assistantStatus === "live" ? "Do Live" : assistantStatus === "fallback" ? "Fallback" : "Ready"}
               </div>
             </div>
           </div>
@@ -1691,7 +1950,7 @@ function AiAssistantWindow({
             <div className="flex flex-1 flex-col items-center justify-center p-6 text-center">
               <Bot className="mb-4 size-12 text-pink-200" />
               <h3 className="text-lg font-semibold">Akses dibatasi</h3>
-              <p className="mt-2 text-sm leading-6 text-white/60">AI Assistant hanya bisa digunakan setelah login sebagai akun super_admin.</p>
+              <p className="mt-2 text-sm leading-6 text-white/60">Do hanya bisa digunakan setelah login sebagai akun super_admin.</p>
               <Link href="/login?redirect=/arkiv-os" className="mt-5 rounded-2xl bg-pink-600 px-5 py-3 text-sm font-semibold hover:bg-pink-500">
                 Login Super User
               </Link>
@@ -1701,9 +1960,9 @@ function AiAssistantWindow({
               <div className="mb-5 grid size-16 place-items-center rounded-3xl bg-gradient-to-br from-pink-300 via-pink-500 to-rose-600 shadow-xl">
                 <Bot className="size-8 text-white" />
               </div>
-              <h3 className="text-xl font-bold text-white/90">Arkiv AI Assistant</h3>
+              <h3 className="text-xl font-bold text-white/90">Do</h3>
               <p className="mt-2 max-w-sm text-sm leading-6 text-white/55">
-                Assistant cerdas untuk super_admin. Mode {activeScope.label} memakai {activeModel.label}.
+                Asisten cerdas untuk super_admin. Mode {activeScope.label} memakai {activeModel.label}.
               </p>
               <button
                 onClick={startNewChat}
@@ -1738,6 +1997,13 @@ function AiAssistantWindow({
                           <ChevronRight className="size-3 text-white/30" />
                         </button>
                         <button
+                          onClick={() => renameSession(s.id, s.title)}
+                          className="grid size-8 shrink-0 place-items-center rounded-lg text-white/35 transition hover:bg-white/12 hover:text-white/80"
+                          title="Ganti nama session"
+                        >
+                          <Pencil className="size-3.5" />
+                        </button>
+                        <button
                           onClick={() => deleteSession(s.id)}
                           className="mr-2 grid size-8 shrink-0 place-items-center rounded-lg text-white/35 transition hover:bg-rose-500/16 hover:text-rose-200"
                           title="Hapus session"
@@ -1756,14 +2022,47 @@ function AiAssistantWindow({
             </div>
           ) : (
             <>
-              <div className="flex-1 space-y-3 overflow-y-auto p-4">
-                {messages.map((message, index) => (
-                  <div key={index} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>
-                    <div className={`max-w-[85%] whitespace-pre-line rounded-2xl px-4 py-3 text-sm font-normal leading-6 ${message.role === "user" ? "bg-pink-600 text-white" : "bg-white/10 text-white/78"}`}>
-                      {formatPlainChatText(message.content)}
+              <div
+                ref={messageListRef}
+                onScroll={handleMessageListScroll}
+                className="flex-1 space-y-3 overflow-y-auto p-4"
+              >
+                {messages.map((message, index) => {
+                  const isAssistant = message.role === "assistant";
+                  // Regenerate hanya untuk jawaban terakhir: mengulang jawaban di
+                  // tengah percakapan akan membuat sisa riwayat tidak nyambung.
+                  const canRegenerate = isAssistant && index === messages.length - 1 && !loading;
+                  return (
+                    <div key={index} className={`group flex flex-col ${message.role === "user" ? "items-end" : "items-start"}`}>
+                      <div className={`max-w-[85%] whitespace-pre-line rounded-2xl px-4 py-3 text-sm font-normal leading-6 ${message.role === "user" ? "bg-pink-600 text-white" : "bg-white/10 text-white/78"}`}>
+                        {formatPlainChatText(message.content)}
+                      </div>
+                      {isAssistant && (
+                        <div className="mt-1 flex items-center gap-1 opacity-0 transition group-hover:opacity-100 focus-within:opacity-100">
+                          <button
+                            type="button"
+                            onClick={() => copyMessage(message.content, index)}
+                            className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] text-white/45 transition hover:bg-white/10 hover:text-white/80"
+                            title="Salin jawaban"
+                          >
+                            {copiedIndex === index ? <Check className="size-3" /> : <Copy className="size-3" />}
+                            {copiedIndex === index ? "Tersalin" : "Salin"}
+                          </button>
+                          {canRegenerate && (
+                            <button
+                              type="button"
+                              onClick={regenerateLastAnswer}
+                              className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] text-white/45 transition hover:bg-white/10 hover:text-white/80"
+                              title="Minta jawaban ulang"
+                            >
+                              <RefreshCw className="size-3" /> Ulangi
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
                 {loading && (
                   <div className="flex justify-start">
                     <div className="flex items-center gap-2 rounded-2xl bg-white/10 px-4 py-3 text-sm text-white/70">
@@ -1784,6 +2083,33 @@ function AiAssistantWindow({
                     </button>
                   )}
                 </div>
+                {(attachments.length > 0 || uploadError) && (
+                  <div className="mb-2 space-y-1">
+                    {attachments.map((item, index) => (
+                      <div
+                        key={`${item.name}-${index}`}
+                        className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/8 px-2.5 py-1.5 text-[11px] text-white/70"
+                      >
+                        <Paperclip className="size-3 shrink-0 text-white/40" />
+                        <span className="min-w-0 flex-1 truncate">{item.name}</span>
+                        <span className="shrink-0 text-white/35">
+                          {item.method === "ocr" ? "OCR" : item.method === "spreadsheet" ? "tabel" : item.method}
+                          {item.truncated ? " · dipotong" : ""}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setAttachments((prev) => prev.filter((_, i) => i !== index))}
+                          className="shrink-0 rounded-md p-0.5 text-white/35 transition hover:bg-white/10 hover:text-white/80"
+                          aria-label={`Hapus lampiran ${item.name}`}
+                        >
+                          <X className="size-3" />
+                        </button>
+                      </div>
+                    ))}
+                    {uploadError && <p className="px-1 text-[11px] text-rose-300">{uploadError}</p>}
+                  </div>
+                )}
+
                 <form
                   onSubmit={(event) => {
                     event.preventDefault();
@@ -1792,12 +2118,40 @@ function AiAssistantWindow({
                   className="flex gap-2"
                 >
                   <input
-                    value={input}
-                    onChange={(event) => setInput(event.target.value)}
-                    placeholder={settings.scope === "general" ? "Tanyakan apapun..." : "Tanyakan data Talentpool atau hal umum..."}
-                    className="min-w-0 flex-1 rounded-xl border border-white/20 bg-white px-3 py-2 text-sm text-black outline-none placeholder:text-gray-600 focus:border-pink-300/70"
+                    ref={fileInputRef}
+                    type="file"
+                    multiple
+                    accept=".pdf,.docx,.doc,.jpg,.jpeg,.png,.webp,.bmp,.tiff,.xlsx,.xls,.xlsm,.csv,.txt,.md,.tsv"
+                    className="hidden"
+                    onChange={(event) => handleAttach(event.target.files)}
                   />
-                  <button disabled={loading || !input.trim()} className="grid size-10 shrink-0 place-items-center rounded-xl bg-pink-600 transition hover:bg-pink-500 disabled:opacity-50">
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploading}
+                    title="Lampirkan file (PDF, gambar, Excel, CSV)"
+                    className="grid size-10 shrink-0 place-items-center self-end rounded-xl border border-white/20 bg-white/8 text-white/60 transition hover:bg-white/14 hover:text-white disabled:opacity-50"
+                  >
+                    {uploading ? <Loader2 className="size-4 animate-spin" /> : <Paperclip className="size-4" />}
+                  </button>
+                  <textarea
+                    ref={inputRef}
+                    value={input}
+                    rows={1}
+                    onChange={(event) => setInput(event.target.value)}
+                    onKeyDown={(event) => {
+                      // Enter mengirim; Shift+Enter menyisipkan baris baru.
+                      // IME (mis. mengetik aksara) memakai Enter untuk memilih
+                      // kandidat, jadi jangan kirim saat composing.
+                      if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                        event.preventDefault();
+                        sendMessage();
+                      }
+                    }}
+                    placeholder={settings.scope === "general" ? "Tanyakan apapun... (Shift+Enter untuk baris baru)" : "Tanyakan data Talentpool atau hal umum... (Shift+Enter untuk baris baru)"}
+                    className="min-h-[40px] max-h-40 min-w-0 flex-1 resize-none rounded-xl border border-white/20 bg-white px-3 py-2 text-sm leading-6 text-black outline-none placeholder:text-gray-600 focus:border-pink-300/70"
+                  />
+                  <button disabled={loading || !input.trim()} className="grid size-10 shrink-0 place-items-center self-end rounded-xl bg-pink-600 transition hover:bg-pink-500 disabled:opacity-50">
                     <Send className="size-4" />
                   </button>
                 </form>
@@ -1948,6 +2302,7 @@ function SystemSettings({
   onAssistantSettingsChange,
   onOpenWallpaper,
   onOpenWidgets,
+  onOpenWaNotif,
   onClose,
 }: {
   soundEnabled: boolean;
@@ -1956,11 +2311,13 @@ function SystemSettings({
   onAssistantSettingsChange: (next: Partial<AiAssistantSettings>) => void;
   onOpenWallpaper: () => void;
   onOpenWidgets: () => void;
+  onOpenWaNotif: () => void;
   onClose: () => void;
 }) {
   const settings = [
     { title: "Desktop & Wallpaper", description: "Pilih wallpaper Arkiv OS.", icon: MonitorDot, action: onOpenWallpaper },
     { title: "Widgets", description: "Atur Calendar dan System Widgets.", icon: Activity, action: onOpenWidgets },
+    { title: "Notifikasi WA", description: "Kabar penting bisnis dikirim otomatis ke WhatsApp.", icon: Bell, action: onOpenWaNotif },
   ];
   const SoundIcon = soundEnabled ? Volume2 : VolumeX;
   const [showModelMenu, setShowModelMenu] = useState(false);
@@ -1972,14 +2329,14 @@ function SystemSettings({
         <aside className="rounded-3xl border border-white/10 bg-white/8 p-4">
           <div className={`mb-4 grid size-12 place-items-center rounded-2xl bg-gradient-to-br ${pinkAccent}`}><Settings className="size-6" /></div>
           <div className="font-semibold">Arkiv OS Settings</div>
-          <div className="mt-1 text-xs leading-5 text-white/50">Theme, widgets, sound, AI Assistant, dan desktop preferences.</div>
+          <div className="mt-1 text-xs leading-5 text-white/50">Theme, widgets, sound, Do, dan desktop preferences.</div>
         </aside>
         <section className="space-y-3">
           <div className="rounded-3xl border border-white/10 bg-white/8 p-4">
             <div className="mb-4 flex items-center gap-3">
               <div className={`grid size-11 place-items-center rounded-2xl bg-gradient-to-br ${pinkAccent}`}><Bot className="size-5" /></div>
               <div className="min-w-0 flex-1">
-                <div className="text-sm font-semibold">AI Assistant</div>
+                <div className="text-sm font-semibold">Do</div>
                 <div className="truncate text-xs leading-5 text-white/45">{assistantSettings.model}</div>
               </div>
             </div>
@@ -2012,7 +2369,7 @@ function SystemSettings({
                 <LlmModelLogo model={activeModel} />
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm font-semibold">{activeModel.label}</div>
-                  <div className="truncate text-[11px] text-white/55">{activeModel.id}</div>
+                  <div className="truncate text-[11px] text-white/55">{activeModel.description}</div>
                 </div>
                 <ChevronDown className={`size-4 text-white/55 transition ${showModelMenu ? "rotate-180" : ""}`} />
               </button>
@@ -2036,7 +2393,7 @@ function SystemSettings({
                         <LlmModelLogo model={model} />
                         <span className="min-w-0 flex-1">
                           <span className="block truncate text-sm font-semibold">{model.label}</span>
-                          <span className="block truncate text-[11px] text-white/52">{model.id}</span>
+                          <span className="block truncate text-[11px] text-white/52">{model.description}</span>
                         </span>
                         {selected && <Check className="size-4 shrink-0 text-white/75" />}
                       </button>
@@ -2077,7 +2434,12 @@ function SystemSettings({
 function WidgetSettings({ visibility, onChange, onClose }: { visibility: WidgetVisibility; onChange: (key: keyof WidgetVisibility, value: boolean) => void; onClose: () => void }) {
   const items: Array<{ key: keyof WidgetVisibility; title: string; description: string; icon: ComponentType<{ className?: string }> }> = [
     { key: "calendar", title: "Calendar Widget", description: "Kalender bulanan yang bisa dipindahkan dan di-resize.", icon: CalendarDays },
-    { key: "system", title: "System Widgets", description: "Health, pending approval, dan clock cards.", icon: Activity },
+    ...MONITOR_WIDGETS.map((w) => ({
+      key: w.key as keyof WidgetVisibility,
+      title: w.title,
+      description: w.description,
+      icon: Activity,
+    })),
   ];
 
   return (
@@ -2112,7 +2474,7 @@ function AboutArkiv({ onClose }: { onClose: () => void }) {
       <div className="p-6 text-center">
         <div className={`mx-auto mb-4 grid size-16 place-items-center rounded-3xl bg-gradient-to-br ${pinkAccent}`}><MonitorDot className="size-8" /></div>
         <h2 className="text-xl font-semibold">Arkiv</h2>
-        <p className="mt-2 text-sm leading-6 text-white/60">Desktop portal untuk HRIS, Procurement, POS, CRM, dan AI Assistant.</p>
+        <p className="mt-2 text-sm leading-6 text-white/60">Desktop portal untuk HRIS, Procurement, POS, CRM, dan Do.</p>
         <div className="mt-5 rounded-2xl bg-white/8 p-3 text-xs text-white/50">Version 1.0 · macOS-inspired shell</div>
       </div>
     </WindowShell>

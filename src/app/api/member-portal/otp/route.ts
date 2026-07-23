@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPool } from "@/lib/db";
-import { sendWhatsApp } from "@/lib/fonnte";
+import { sendWhatsAppOtp } from "@/lib/whatsapp";
 import {
   generateOtpCode,
   hashSecret,
@@ -70,12 +70,25 @@ export async function POST(request: NextRequest) {
       [phone, hashSecret(code), OTP_TTL_MS]
     );
 
-    const sent = await sendWhatsApp({ target: phone, message: otpMessage(code) });
+    const sent = await sendWhatsAppOtp({
+      target: phone,
+      code,
+      fallbackText: otpMessage(code),
+    });
     if (!sent.success) {
-      // Jangan bocorkan kode; di dev tanpa FONNTE_API_KEY cek log server.
-      console.warn(
-        `[member-portal] OTP WA gagal terkirim ke ${phone} (${sent.reason}); kode utk debug dev: ${code}`
-      );
+      // Kode hanya boleh muncul di log NON-produksi (jalan keluar saat
+      // FONNTE_API_KEY belum diisi). Di produksi log cukup mencatat
+      // kegagalannya — kode OTP di log = siapa pun yang bisa membaca log
+      // bisa masuk sebagai member mana pun.
+      if (process.env.NODE_ENV === "production") {
+        console.error(
+          `[member-portal] OTP WA gagal terkirim ke ${phone} (${sent.reason})`
+        );
+      } else {
+        console.warn(
+          `[member-portal] OTP WA gagal terkirim ke ${phone} (${sent.reason}); kode utk debug dev: ${code}`
+        );
+      }
     }
 
     return NextResponse.json({

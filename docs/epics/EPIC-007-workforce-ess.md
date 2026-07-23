@@ -88,6 +88,15 @@ perhitungan keterlambatan.
 
 ## Automation Log
 
+- **20 Jul 2026** — Badge notifikasi navigasi dua arah untuk seluruh pengajuan
+  (izin & cuti, lembur, pinjaman). Sisi HR menghitung pengajuan `pending`;
+  sisi karyawan menghitung pembaruan sejak terakhir halaman dibuka, memakai
+  tabel penanda baru `hris.ess_module_reads`. Pengajuan yang masih `pending`
+  sengaja tidak memberi badge kepada karyawan agar ia tidak dinotifikasi atas
+  perbuatannya sendiri. Angka antrean HR hanya dikembalikan kepada role HR di
+  level API, bukan sekadar disembunyikan di UI. Badge pengumuman yang dulu
+  punya fetch sendiri ikut disatukan ke endpoint yang sama.
+
 - 2026-07-16: Audit menyeluruh (agen eksplorasi) menemukan 2 bug kritis
   (FK approval/validasi; is_late mati total karena tak ada jadwal employee),
   2 endpoint tanpa auth, dan modul Jadwal ternyata mengelola staff POS —

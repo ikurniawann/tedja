@@ -61,6 +61,9 @@ export async function PATCH(
   let totalDebit = 0;
   let totalCredit = 0;
   let totalArk = 0;
+  // Volume F&B yang pindah ke tab ticketing (EPIC-023) — bukan uang masuk
+  // shift (ditagih saat settlement kasir keluar), tampil hanya utk laporan
+  let totalNfcTab = 0;
 
   rows.forEach((r: any) => {
     const amt = Number(r.total_amount) || 0;
@@ -72,6 +75,7 @@ export async function PATCH(
       case 'debit': totalDebit += amt; break;
       case 'credit': totalCredit += amt; break;
       case 'ark_coin': totalArk += ark; break;
+      case 'nfc_tab': totalNfcTab += amt; break;
     }
   });
 
@@ -115,7 +119,7 @@ export async function PATCH(
       expected_cash: expectedCash,
       closing_cash: Number(closing_cash),
       variance,
-      method_breakdown: { cash: totalCash, qris: totalQris, debit: totalDebit, credit: totalCredit, ark_coin: totalArk },
+      method_breakdown: { cash: totalCash, qris: totalQris, debit: totalDebit, credit: totalCredit, ark_coin: totalArk, nfc_tab: totalNfcTab },
     },
   });
 }

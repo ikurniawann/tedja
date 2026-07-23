@@ -1,11 +1,28 @@
 "use client";
 
+import Image from "next/image";
 import { useCallback, useEffect, useState } from "react";
-import { Sparkles, Wallet, LogOut, Loader2, Crown, History } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  ArrowDownLeft,
+  ArrowUpRight,
+  CreditCard,
+  Gift,
+  History,
+  Home,
+  Info,
+  LogOut,
+  Loader2,
+  Plus,
+  ShoppingBag,
+  Sparkles,
+  UserRound,
+  X,
+} from "lucide-react";
 import { MemberLoginCard } from "./member-login-card";
 import { MemberProfileCard } from "./member-profile-card";
+import { MemberCollectionCard } from "./member-collection-card";
+import { MemberRewardsCard } from "./member-rewards-card";
+import { MemberWalletCard } from "./member-wallet-card";
 
 /** Bentuk respons GET /api/member-portal/me */
 export interface MemberMe {
@@ -48,8 +65,7 @@ interface OrderRow {
   created_at: string;
 }
 
-const rupiah = (value: number) =>
-  `Rp ${Math.round(value).toLocaleString("id-ID")}`;
+const rupiah = (value: number) => `Rp ${Math.round(value).toLocaleString("id-ID")}`;
 const tanggal = (iso: string) =>
   new Date(iso).toLocaleDateString("id-ID", {
     day: "numeric",
@@ -64,6 +80,16 @@ const WALLET_LABELS: Record<string, string> = {
   purchase: "Pembayaran",
 };
 
+const TABS = [
+  ["beranda", "Beranda", Home],
+  ["rewards", "Reward", Gift],
+  ["koleksi", "Koleksi", Sparkles],
+  ["profil", "Profil", UserRound],
+  ["riwayat", "Riwayat", History],
+] as const;
+
+type TabKey = (typeof TABS)[number][0];
+
 export function MemberPortalPage() {
   const [checking, setChecking] = useState(true);
   const [me, setMe] = useState<MemberMe | null>(null);
@@ -71,7 +97,8 @@ export function MemberPortalPage() {
     wallet: WalletRow[];
     orders: OrderRow[];
   } | null>(null);
-  const [tab, setTab] = useState<"beranda" | "profil" | "riwayat">("beranda");
+  const [tab, setTab] = useState<TabKey>("beranda");
+  const [topupInfoOpen, setTopupInfoOpen] = useState(false);
 
   const loadMe = useCallback(async () => {
     try {
@@ -109,7 +136,7 @@ export function MemberPortalPage() {
   if (checking) {
     return (
       <div className="flex flex-1 items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-purple-500" />
+        <Loader2 className="size-8 animate-spin" style={{ color: "var(--brand-primary)" }} />
       </div>
     );
   }
@@ -118,199 +145,350 @@ export function MemberPortalPage() {
     return <MemberLoginCard onSuccess={loadMe} />;
   }
 
-  const xpProgress = me.next_tier
-    ? Math.min(
-        100,
-        Math.round((me.total_xp / me.next_tier.min_lifetime_xp) * 100)
-      )
-    : 100;
+  const namaDepan = me.profile.name?.split(" ")[0] ?? "Member";
 
   return (
-    <div className="space-y-4">
-      <header className="flex items-center justify-between">
-        <div>
-          <p className="text-xs uppercase tracking-widest text-purple-500">
-            Sulu Wonderland
-          </p>
-          <h1 className="text-xl font-bold text-gray-900">
-            Halo, {me.profile.name?.split(" ")[0] ?? "Member"} 👋
-          </h1>
+    <div className="space-y-5">
+      <header className="mp-rise flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <Image
+            src="/logos/sulu-in-wounderland-logo.png"
+            alt="Sulu in Wounderland"
+            width={40}
+            height={40}
+            className="size-10 object-contain"
+            priority
+          />
+          <div>
+            <p className="mp-label" style={{ color: "var(--brand-primary)" }}>
+              Portal Member
+            </p>
+            <h1 className="text-lg font-bold leading-tight" style={{ color: "var(--mp-ink)" }}>
+              Halo, {namaDepan}
+            </h1>
+          </div>
         </div>
-        <Button variant="ghost" size="icon" onClick={logout} aria-label="Keluar">
-          <LogOut className="h-5 w-5 text-gray-500" />
-        </Button>
+        <button
+          type="button"
+          onClick={logout}
+          aria-label="Keluar"
+          className="grid size-9 place-items-center rounded-full bg-white/70 text-[color:var(--mp-ink-soft)] shadow-sm ring-1 ring-black/5 transition hover:bg-white"
+        >
+          <LogOut className="size-4" />
+        </button>
       </header>
 
-      {/* Kartu saldo & tier */}
-      <Card className="border-0 bg-gradient-to-br from-purple-600 to-fuchsia-500 text-white shadow-lg">
-        <CardContent className="space-y-4 pt-5">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-xs text-purple-100">Saldo ARK Coin</p>
-              <p className="text-3xl font-bold">
-                {rupiah(me.ark_coin_balance)}
-              </p>
-            </div>
-            <Wallet className="h-8 w-8 text-purple-200" />
-          </div>
-          <div className="flex items-center justify-between text-sm">
-            <span className="inline-flex items-center gap-1 rounded-full bg-white/20 px-3 py-1 font-semibold">
-              <Crown className="h-4 w-4" /> {me.tier?.name ?? "Regular"}
-              {me.tier && me.tier.discount_percent > 0
-                ? ` · diskon ${me.tier.discount_percent}%`
-                : ""}
-            </span>
-            <span className="inline-flex items-center gap-1 font-semibold">
-              <Sparkles className="h-4 w-4" /> {me.total_xp.toLocaleString("id-ID")} XP
-            </span>
-          </div>
-          {me.next_tier && (
-            <div>
-              <div className="h-2 rounded-full bg-white/25">
-                <div
-                  className="h-2 rounded-full bg-amber-300"
-                  style={{ width: `${xpProgress}%` }}
-                />
-              </div>
-              <p className="mt-1 text-xs text-purple-100">
-                {me.next_tier.xp_needed.toLocaleString("id-ID")} XP lagi menuju{" "}
-                {me.next_tier.name}
-              </p>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      <MemberWalletCard me={me} />
+
+      <QuickActions
+        memberType={me.member_type}
+        topupInfoOpen={topupInfoOpen}
+        onToggleTopupInfo={() => setTopupInfoOpen((current) => !current)}
+        onGoRewards={() => setTab("rewards")}
+      />
 
       {!me.free_xp_granted && me.free_xp_amount > 0 && (
         <button
           onClick={() => setTab("profil")}
-          className="w-full rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-left text-sm text-amber-800"
+          className="mp-rise mp-rise-3 flex w-full items-center gap-3 rounded-2xl border border-amber-200/80 bg-gradient-to-r from-amber-50 to-white px-4 py-3 text-left shadow-sm transition hover:shadow-md"
         >
-          🎁 Lengkapi profil Anda ({me.completion.percent}%) dan dapatkan{" "}
-          <span className="font-bold">{me.free_xp_amount} Free XP!</span>
+          <span className="grid size-9 shrink-0 place-items-center rounded-full bg-amber-100">
+            <Sparkles className="size-4 text-amber-600" />
+          </span>
+          <span className="text-sm text-amber-900">
+            Lengkapi profil ({me.completion.percent}%) dan dapatkan{" "}
+            <strong className="font-bold">{me.free_xp_amount} Free XP</strong>
+          </span>
         </button>
       )}
 
-      {/* Tab bar */}
-      <nav className="grid grid-cols-3 gap-1 rounded-xl bg-gray-100 p-1 text-sm font-medium">
-        {(
-          [
-            ["beranda", "Beranda"],
-            ["profil", "Profil"],
-            ["riwayat", "Riwayat"],
-          ] as const
-        ).map(([value, label]) => (
-          <button
-            key={value}
-            onClick={() => setTab(value)}
-            className={`rounded-lg px-3 py-2 transition ${
-              tab === value ? "bg-white shadow text-purple-700" : "text-gray-500"
-            }`}
-          >
-            {label}
-          </button>
-        ))}
+      {/* Tab bar segmented — pil aktif berwarna brand, bukan abu-abu datar. */}
+      <nav className="mp-rise mp-rise-3 grid grid-cols-5 gap-1 rounded-2xl bg-white/70 p-1 shadow-sm ring-1 ring-black/5 backdrop-blur">
+        {TABS.map(([value, label, Icon]) => {
+          const active = tab === value;
+          return (
+            <button
+              key={value}
+              onClick={() => setTab(value)}
+              aria-current={active ? "page" : undefined}
+              className={`flex flex-col items-center gap-1 rounded-xl px-2 py-2 text-[11px] font-semibold transition ${
+                active ? "text-white shadow-sm" : "text-[color:var(--mp-ink-soft)] hover:bg-black/5"
+              }`}
+              style={active ? { backgroundColor: "var(--brand-primary)" } : undefined}
+            >
+              <Icon className="size-4" />
+              {label}
+            </button>
+          );
+        })}
       </nav>
 
-      {tab === "beranda" && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Ringkasan</CardTitle>
-          </CardHeader>
-          <CardContent className="grid grid-cols-2 gap-3 text-sm">
-            <div className="rounded-lg bg-purple-50 p-3">
-              <p className="text-xs text-gray-500">Tipe Member</p>
-              <p className="font-semibold">
-                {me.member_type === "card" ? "Member Kartu" : "Member Terdaftar"}
-              </p>
-            </div>
-            <div className="rounded-lg bg-amber-50 p-3">
-              <p className="text-xs text-gray-500">Kunjungan</p>
-              <p className="font-semibold">{me.visit_count}×</p>
-            </div>
-            {me.member_type !== "card" && (
-              <p className="col-span-2 rounded-lg bg-gray-50 p-3 text-xs text-gray-500">
-                Tautkan kartu member di kasir untuk bisa topup ARK Coin &
-                mengumpulkan XP dari transaksi.
-              </p>
-            )}
-          </CardContent>
-        </Card>
-      )}
+      <div className="mp-rise mp-rise-3">
+        {tab === "beranda" && <BerandaTab me={me} />}
+        {tab === "rewards" && <MemberRewardsCard onRedeemed={loadMe} />}
+        {tab === "koleksi" && <MemberCollectionCard onEquipped={loadMe} />}
+        {tab === "profil" && <MemberProfileCard me={me} onSaved={loadMe} />}
+        {tab === "riwayat" && <RiwayatTab transactions={transactions} />}
+      </div>
 
-      {tab === "profil" && (
-        <MemberProfileCard me={me} onSaved={loadMe} />
-      )}
+      <p className="pt-2 text-center text-[11px] text-[color:var(--mp-ink-soft)]">
+        Sulu in Wounderland · Portal Member
+      </p>
+    </div>
+  );
+}
 
-      {tab === "riwayat" && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <History className="h-4 w-4" /> Riwayat
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2 text-sm">
-            {!transactions && (
-              <Loader2 className="mx-auto h-5 w-5 animate-spin text-gray-400" />
-            )}
-            {transactions && transactions.wallet.length === 0 &&
-              transactions.orders.length === 0 && (
-                <p className="py-4 text-center text-gray-400">
-                  Belum ada transaksi.
-                </p>
-              )}
-            {transactions?.wallet.map((row) => (
-              <div
-                key={row.id}
-                className="flex items-center justify-between rounded-lg border p-3"
-              >
-                <div>
-                  <p className="font-medium">
-                    {WALLET_LABELS[row.type] ?? row.type}
+/**
+ * Aksi cepat di bawah kartu. Topup TIDAK dilayani portal (hanya kasir, dan
+ * khusus member kartu) — jadi tombolnya memandu, bukan menjanjikan fitur yang
+ * tidak ada.
+ */
+function QuickActions({
+  memberType,
+  topupInfoOpen,
+  onToggleTopupInfo,
+  onGoRewards,
+}: {
+  memberType: MemberMe["member_type"];
+  topupInfoOpen: boolean;
+  onToggleTopupInfo: () => void;
+  onGoRewards: () => void;
+}) {
+  return (
+    <div className="mp-rise mp-rise-2 space-y-2">
+      <div className="grid grid-cols-2 gap-2.5">
+        <button
+          type="button"
+          onClick={onToggleTopupInfo}
+          aria-expanded={topupInfoOpen}
+          className="flex items-center gap-2.5 rounded-2xl bg-white/85 px-3.5 py-3 text-left shadow-sm ring-1 ring-black/5 backdrop-blur transition active:scale-[0.98] hover:shadow-md"
+        >
+          <span
+            className="grid size-9 shrink-0 place-items-center rounded-xl text-white"
+            style={{ backgroundColor: "var(--brand-primary)" }}
+          >
+            <Plus className="size-4" />
+          </span>
+          <span className="min-w-0">
+            <span className="block text-sm font-semibold" style={{ color: "var(--mp-ink)" }}>
+              Topup
+            </span>
+            <span className="block text-[11px] text-[color:var(--mp-ink-soft)]">Isi ARK Coin</span>
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={onGoRewards}
+          className="flex items-center gap-2.5 rounded-2xl bg-white/85 px-3.5 py-3 text-left shadow-sm ring-1 ring-black/5 backdrop-blur transition active:scale-[0.98] hover:shadow-md"
+        >
+          <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-amber-400 text-amber-950">
+            <Gift className="size-4" />
+          </span>
+          <span className="min-w-0">
+            <span className="block text-sm font-semibold" style={{ color: "var(--mp-ink)" }}>
+              Tukar Reward
+            </span>
+            <span className="block text-[11px] text-[color:var(--mp-ink-soft)]">Pakai XP kamu</span>
+          </span>
+        </button>
+      </div>
+
+      {topupInfoOpen && (
+        <div className="rounded-2xl border border-[color:var(--mp-line)] bg-white/90 p-4 shadow-sm backdrop-blur">
+          <div className="flex items-start gap-2.5">
+            <Info className="mt-0.5 size-4 shrink-0" style={{ color: "var(--brand-primary)" }} />
+            <div className="min-w-0 flex-1 text-sm leading-relaxed text-[color:var(--mp-ink-soft)]">
+              {memberType === "card" ? (
+                <>
+                  <p className="font-semibold" style={{ color: "var(--mp-ink)" }}>
+                    Topup dilakukan di kasir
                   </p>
-                  <p className="text-xs text-gray-400">{tanggal(row.created_at)}</p>
-                </div>
-                <p
-                  className={`font-semibold ${
-                    row.type.startsWith("topup") ? "text-emerald-600" : "text-gray-800"
+                  <p className="mt-1">
+                    Tunjukkan kartu member Anda ke kasir venue kami untuk mengisi saldo
+                    ARK Coin. Saldo langsung bertambah dan bisa dipakai saat itu juga.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="font-semibold" style={{ color: "var(--mp-ink)" }}>
+                    Tautkan kartu member dulu
+                  </p>
+                  <p className="mt-1">
+                    Topup ARK Coin hanya untuk member kartu. Minta kasir menautkan kartu
+                    member ke akun Anda — setelah itu Anda bisa topup dan mengumpulkan XP
+                    dari setiap transaksi.
+                  </p>
+                </>
+              )}
+              <p className="mt-2 inline-flex items-center gap-1.5 text-xs">
+                <CreditCard className="size-3.5" />
+                Saldo ARK Coin tidak dapat diuangkan kembali.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onToggleTopupInfo}
+              aria-label="Tutup"
+              className="grid size-6 shrink-0 place-items-center rounded-full text-[color:var(--mp-ink-soft)] transition hover:bg-black/5"
+            >
+              <X className="size-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BerandaTab({ me }: { me: MemberMe }) {
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-3">
+        <StatTile
+          label="Tipe Member"
+          value={me.member_type === "card" ? "Kartu" : "Terdaftar"}
+          hint={me.member_type === "card" ? "Bisa topup ARK" : "Belum bisa topup"}
+        />
+        <StatTile
+          label="Kunjungan"
+          value={`${me.visit_count}×`}
+          hint="Total kunjungan tercatat"
+        />
+      </div>
+
+      {me.member_type !== "card" && (
+        <div className="rounded-2xl border border-dashed border-[color:var(--mp-line)] bg-white/60 px-4 py-3 text-xs leading-relaxed text-[color:var(--mp-ink-soft)]">
+          Tautkan kartu member di kasir untuk bisa topup ARK Coin dan
+          mengumpulkan XP dari setiap transaksi.
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StatTile({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: string;
+  hint: string;
+}) {
+  return (
+    <div className="rounded-2xl bg-white/80 p-4 shadow-sm ring-1 ring-black/5">
+      <p className="mp-label text-[color:var(--mp-ink-soft)]">{label}</p>
+      <p className="mp-figure mt-1.5 text-xl font-bold" style={{ color: "var(--mp-ink)" }}>
+        {value}
+      </p>
+      <p className="mt-0.5 text-[11px] text-[color:var(--mp-ink-soft)]">{hint}</p>
+    </div>
+  );
+}
+
+function RiwayatTab({
+  transactions,
+}: {
+  transactions: { wallet: WalletRow[]; orders: OrderRow[] } | null;
+}) {
+  if (!transactions) {
+    return (
+      <div className="flex justify-center py-10">
+        <Loader2 className="size-5 animate-spin text-[color:var(--mp-ink-soft)]" />
+      </div>
+    );
+  }
+
+  const kosong = transactions.wallet.length === 0 && transactions.orders.length === 0;
+  if (kosong) {
+    return (
+      <div className="rounded-2xl bg-white/70 py-10 text-center text-sm text-[color:var(--mp-ink-soft)] ring-1 ring-black/5">
+        Belum ada transaksi.
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {transactions.wallet.length > 0 && (
+        <section className="space-y-2">
+          <h2 className="mp-label px-1 text-[color:var(--mp-ink-soft)]">ARK Coin</h2>
+          <div className="overflow-hidden rounded-2xl bg-white/80 shadow-sm ring-1 ring-black/5">
+            {transactions.wallet.map((row, index) => {
+              const masuk = row.type.startsWith("topup");
+              return (
+                <div
+                  key={row.id}
+                  className={`flex items-center gap-3 px-4 py-3 ${
+                    index > 0 ? "border-t border-black/5" : ""
                   }`}
                 >
-                  {row.type.startsWith("topup") ? "+" : "−"}
-                  {rupiah(Math.abs(row.amount))}
+                  <span
+                    className={`grid size-9 shrink-0 place-items-center rounded-full ${
+                      masuk ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-500"
+                    }`}
+                  >
+                    {masuk ? (
+                      <ArrowDownLeft className="size-4" />
+                    ) : (
+                      <ArrowUpRight className="size-4" />
+                    )}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium" style={{ color: "var(--mp-ink)" }}>
+                      {WALLET_LABELS[row.type] ?? row.type}
+                    </p>
+                    <p className="text-[11px] text-[color:var(--mp-ink-soft)]">
+                      {tanggal(row.created_at)}
+                    </p>
+                  </div>
+                  <p
+                    className={`mp-figure shrink-0 text-sm font-bold ${
+                      masuk ? "text-emerald-600" : "text-[color:var(--mp-ink)]"
+                    }`}
+                  >
+                    {masuk ? "+" : "−"}
+                    {rupiah(Math.abs(row.amount))}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {transactions.orders.length > 0 && (
+        <section className="space-y-2">
+          <h2 className="mp-label px-1 text-[color:var(--mp-ink-soft)]">Pembelian</h2>
+          <div className="overflow-hidden rounded-2xl bg-white/80 shadow-sm ring-1 ring-black/5">
+            {transactions.orders.map((order, index) => (
+              <div
+                key={order.id}
+                className={`flex items-center gap-3 px-4 py-3 ${
+                  index > 0 ? "border-t border-black/5" : ""
+                }`}
+              >
+                <span className="grid size-9 shrink-0 place-items-center rounded-full bg-[color:var(--mp-line)] text-[color:var(--brand-primary)]">
+                  <ShoppingBag className="size-4" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium" style={{ color: "var(--mp-ink)" }}>
+                    {order.order_number ?? order.id.slice(0, 8)}
+                  </p>
+                  <p className="text-[11px] text-[color:var(--mp-ink-soft)]">
+                    {tanggal(order.created_at)}
+                    {order.payment_method ? ` · ${order.payment_method.replace("_", " ")}` : ""}
+                  </p>
+                </div>
+                <p className="mp-figure shrink-0 text-sm font-bold" style={{ color: "var(--mp-ink)" }}>
+                  {rupiah(order.total_amount)}
                 </p>
               </div>
             ))}
-            {transactions && transactions.orders.length > 0 && (
-              <>
-                <p className="pt-2 text-xs font-semibold uppercase text-gray-400">
-                  Pembelian
-                </p>
-                {transactions.orders.map((order) => (
-                  <div
-                    key={order.id}
-                    className="flex items-center justify-between rounded-lg border p-3"
-                  >
-                    <div>
-                      <p className="font-medium">
-                        {order.order_number ?? order.id.slice(0, 8)}
-                      </p>
-                      <p className="text-xs text-gray-400">
-                        {tanggal(order.created_at)} ·{" "}
-                        {(order.payment_method ?? "").replace("_", " ")}
-                      </p>
-                    </div>
-                    <p className="font-semibold">{rupiah(order.total_amount)}</p>
-                  </div>
-                ))}
-              </>
-            )}
-          </CardContent>
-        </Card>
+          </div>
+        </section>
       )}
-
-      <p className="pb-2 pt-4 text-center text-[11px] text-gray-400">
-        Sulu Indo Wonderland · Portal Member
-      </p>
     </div>
   );
 }

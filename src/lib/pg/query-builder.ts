@@ -37,7 +37,14 @@ async function loadForeignKeys(pool: Pool): Promise<ForeignKey[]> {
      JOIN pg_namespace tgt_ns ON tgt_ns.oid = tgt.relnamespace
      JOIN pg_attribute src_att ON src_att.attrelid = con.conrelid AND src_att.attnum = con.conkey[1]
      JOIN pg_attribute tgt_att ON tgt_att.attrelid = con.confrelid AND tgt_att.attnum = con.confkey[1]
-     WHERE con.contype = 'f' AND array_length(con.conkey, 1) = 1`
+     WHERE con.contype = 'f' AND array_length(con.conkey, 1) = 1
+     -- Urutan wajib deterministik. Saat sebuah tabel punya lebih dari satu FK
+     -- ke tabel yang sama, embed tanpa penunjuk (employees!kolom) memakai
+     -- kandidat pertama; tanpa ORDER BY urutannya mengikuti urutan fisik baris
+     -- katalog dan bisa berubah setelah tabel ditulis ulang. Ini tidak membuat
+     -- pilihan otomatisnya benar — untuk itu tetap pakai penunjuk eksplisit —
+     -- tetapi mencegahnya berubah diam-diam.
+     ORDER BY src_ns.nspname, src.relname, src_att.attname`
   );
   fkCache = rows.map((r) => ({
     srcSchema: r.src_schema,

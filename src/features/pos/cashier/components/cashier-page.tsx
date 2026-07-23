@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Search, Utensils, ShoppingBag, Table as TableIcon,
   User, X, Sparkles, Printer, CheckCircle, AlertCircle, Loader2, ArrowLeft,
+  Monitor as MonitorIcon,
 } from 'lucide-react';
 import { ArrowsPointingInIcon, ArrowsPointingOutIcon } from '@heroicons/react/24/outline';
 import { toast } from 'sonner';
@@ -46,6 +47,12 @@ const CASHIER_ID = '00000000-0000-0000-0000-000000000001';
 import { CartPanel } from '@/components/pos/CartPanel';
 import { CustomizationModal, type SelectedCustomization } from '@/components/pos/CustomizationModal';
 import { PaymentModal, type PaymentMethod } from '@/components/pos/PaymentModal';
+import {
+  firstNameOnly,
+  idleCfdState,
+  publishCfdState,
+  type CfdPayment,
+} from '@/lib/pos/cfd';
 import { NFCModal } from '@/components/pos/NFCModal';
 import { CustomerSearchModal } from '@/components/pos/CustomerSearchModal';
 import { usePosNfcOptional, findCustomerByCard, POS_NFC_CARD_EVENT, buildTopupCardPath } from '@/features/pos/nfc';
@@ -193,7 +200,20 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
   const storeResultPayload = useCallback((payload: ReceiptPayload) => {
     setResultPayload(payload);
     window.sessionStorage.setItem(LAST_RECEIPT_KEY, JSON.stringify(payload));
+    // EPIC-024: layar customer merayakan transaksi selesai + kembalian.
+    // Semua jalur sukses bayar (online/offline/open-bill) lewat sini —
+    // satu titik publish, display menahan layar ini beberapa detik.
+    publishCfdState({
+      ...idleCfdState(),
+      status: 'done',
+      total: payload.total,
+      done_change: payload.change > 0 ? payload.change : 0,
+      updated_at: Date.now(),
+    });
   }, []);
+
+  /* EPIC-024 — state pembayaran dari PaymentModal utk customer display */
+  const [cfdPayment, setCfdPayment] = useState<CfdPayment | null>(null);
 
   /* Offline */
   const { isOnline } = usePosOnline();
@@ -377,6 +397,42 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
   const arkToUseCapped = Math.min(currentArkToUse, maxArkUsable);
   const totalAfterArk = total - arkToUseCapped;
 
+  /* EPIC-024 — pancarkan state cart/pembayaran ke customer display
+     (BroadcastChannel, satu arah). Publish adalah sinkronisasi ke sistem
+     eksternal — persis guna useEffect. */
+  useEffect(() => {
+    if (cart.items.length === 0 && !cfdPayment) {
+      publishCfdState(idleCfdState());
+      return;
+    }
+    publishCfdState({
+      status: cfdPayment ? 'payment' : 'cart',
+      items: cart.items.map((item) => ({
+        name: item.name,
+        qty: item.quantity,
+        unit_price: item.price,
+        line_total: Math.round(item.price * item.quantity),
+      })),
+      subtotal: cart.subtotal,
+      discount: discountAmount,
+      tax: taxAmount,
+      ark_used: arkToUseCapped,
+      total,
+      payment: cfdPayment,
+      member_name: firstNameOnly(selectedCustomer?.name),
+      updated_at: Date.now(),
+    });
+  }, [
+    cart.items,
+    cart.subtotal,
+    discountAmount,
+    taxAmount,
+    arkToUseCapped,
+    total,
+    cfdPayment,
+    selectedCustomer?.name,
+  ]);
+
   /* Product filter */
   const filteredProducts = useMemo(() => products.filter(p => {
     const okCat = selectedCategory === 'All' || (p.category?.name || 'Uncategorized') === selectedCategory;
@@ -532,10 +588,102 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
   }, [processNFCCard]);
 
   /* Checkout */
-  const handleCreateOrder = useCallback(async () => {
+  const handleCreateOrder = useCallback(async (overrides?: {
+    method?: PaymentMethod;
+    nfcTabUid?: string;
+  }) => {
     if (processingPayment) return;
     if (cart.items.length === 0) return;
     if (!requireActiveShift()) return;
+
+    // NFC Tab (EPIC-023 Fase C): nilai dioper eksplisit dari PaymentModal —
+    // state paymentMethod belum ter-flush di tick yang sama (stale closure).
+    if (overrides?.method === 'nfc_tab') {
+      const nfcTabUid = overrides.nfcTabUid?.trim() || '';
+      if (!nfcTabUid) { toast.error('Tap gelang pengunjung dulu'); return; }
+      if (!isOnline) {
+        toast.error('Pembayaran NFC Tab membutuhkan koneksi — gunakan metode lain saat offline');
+        return;
+      }
+
+      setProcessingPayment(true);
+      try {
+        let orderId: string;
+        let orderNumber: string;
+        const cTotal = cart.total;
+
+        if (paymentOrderId) {
+          const data = await payOpenOrderMutation.mutateAsync({
+            orderId: paymentOrderId,
+            payload: {
+              status: 'completed',
+              payment_status: 'paid',
+              payment_method: 'nfc_tab',
+              amount_paid: 0,
+              ark_coins_used: 0,
+              nfc_tab_uid: nfcTabUid,
+            },
+          });
+          orderId = paymentOrderId;
+          orderNumber = payingOrderNumber || data.data?.order_number || paymentOrderId;
+        } else {
+          const res = await checkout({
+            cart: cart.items,
+            orderType: cart.orderType,
+            selectedTable: effectiveTableId,
+            selectedCustomer,
+            paymentMethod: 'nfc_tab',
+            cashReceived: '',
+            includeTax: cart.includeTax,
+            notes: cart.notes,
+            arkToUse: 0,
+            shiftId: shift?.id || null,
+            nfcTabUid,
+          });
+          if (!res.success) {
+            toast.error(res.error || 'Charge ke tab gagal');
+            setProcessingPayment(false);
+            return;
+          }
+          orderId = res.orderId || '';
+          orderNumber = res.orderNumber || '';
+        }
+
+        const receipt: ReceiptPayload = {
+          orderId,
+          orderNumber,
+          orderType: cart.orderType,
+          table: selectedTableDisplay,
+          items: [...cart.items],
+          notes: cart.notes,
+          total: cTotal,
+          change: 0,
+          paymentMethod: 'nfc_tab',
+          customerName: selectedCustomer?.name,
+          discountAmount,
+          taxAmount,
+        };
+        storeResultPayload(receipt);
+        setShowPayment(false);
+        setLastResultType('standard');
+        cart.clearCart();
+        setCashReceived('');
+        setPaymentMethod('cash');
+        setCurrentArkToUse(0);
+        loadedPaymentOrderRef.current = null;
+        if (paymentOrderId && !deferReturnToRestaurant()) {
+          router.replace(homeRoute);
+        } else if (!paymentOrderId) {
+          deferReturnToRestaurant();
+        }
+      } catch (e: unknown) {
+        toast.error(e instanceof Error ? e.message : 'Charge ke tab gagal');
+      } finally {
+        setProcessingPayment(false);
+      }
+      return;
+    }
+
     if (paymentMethod === 'ark_coin' && !selectedCustomer) { setShowNFC(true); return; }
     if (paymentMethod === 'cash' && (parseFloat(cashReceived) || 0) < totalAfterArk) return;
 
@@ -931,6 +1079,24 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
               Back to Restaurant
             </Button>
           )}
+          {/* EPIC-024: buka layar customer sebagai window baru — drag ke
+              monitor kedua lalu F11 (BroadcastChannel sesama browser) */}
+          <Button
+            type="button"
+            variant="outline"
+            title="Buka layar customer di window baru — drag ke monitor kedua, lalu F11"
+            className="border-gray-200/80 text-gray-700 hover:border-primary/30 hover:bg-primary/10 hover:text-primary"
+            onClick={() =>
+              window.open(
+                '/pos/customer-display',
+                'pos-customer-display',
+                'popup=yes,width=1024,height=640'
+              )
+            }
+          >
+            <MonitorIcon className="mr-2 h-4 w-4" />
+            Layar Customer
+          </Button>
           {isFullscreen ? (
             <Button
               type="button"
@@ -1483,15 +1649,37 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         selectedCustomer={selectedCustomer}
         onClose={() => setShowPayment(false)}
         submitting={processingPayment || submitting}
-        onConfirm={async ({ method, cashReceived, arkToUse }) => {
+        onConfirm={async ({ method, cashReceived, arkToUse, nfcTabUid }) => {
           setPaymentMethod(method);
           setCashReceived(cashReceived);
           setCurrentArkToUse(arkToUse);
-          await handleCreateOrder();
+          await handleCreateOrder(
+            method === 'nfc_tab' ? { method, nfcTabUid } : undefined
+          );
         }}
         formatCurrency={formatCurrency}
         formatArk={formatArk}
         onTapNFC={() => setShowNFC(true)}
+        onCfdPayment={setCfdPayment}
+        onCheckNfcTab={async (uid) => {
+          const res = await fetch('/api/ticketing/tab/check', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ nfc_uid: uid, amount: total }),
+          });
+          const body = await res.json();
+          if (!res.ok) {
+            return { ok: false, reason: body.error || 'Gagal memeriksa gelang' };
+          }
+          const data = body.data || {};
+          return {
+            ok: Boolean(data.ok),
+            reason: data.reason,
+            contactName: data.contactName,
+            paymentMode: data.paymentMode,
+            available: data.available,
+          };
+        }}
       />
 
       {/* ── NFC Modal ── */}

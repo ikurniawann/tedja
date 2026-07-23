@@ -18,7 +18,11 @@ import {
   type PayrollResult,
 } from "./calculator";
 import { loadPayrollConfig, type PayrollConfig } from "./config";
-import { loanDeductionForPeriod, type LoanDeductionRow } from "./loans";
+import {
+  loanDeductionForPeriod,
+  loanInstallmentDetails,
+  type LoanDeductionRow,
+} from "./loans";
 import {
   clampedLeaveDays,
   computeLateStats,
@@ -135,7 +139,7 @@ export async function loadEmployeePayrollInput(
     db
       .from("loans")
       .select(
-        "id, monthly_installment, remaining_balance, first_installment_month, first_installment_year, status, is_active"
+        "id, loan_type, principal_amount, tenor_months, monthly_installment, remaining_balance, first_installment_month, first_installment_year, status, is_active"
       )
       .eq("employee_id", employee.id)
       .eq("status", "approved")
@@ -292,6 +296,9 @@ export async function loadEmployeePayrollInput(
   // Cicilan pinjaman jatuh tempo periode ini
   const loanRows: LoanDeductionRow[] = loans ?? [];
   const loanDeduction = loanDeductionForPeriod(loanRows, periodMonth, periodYear);
+  // Rincian dibekukan bersama payroll agar slip lama tidak ikut berubah saat
+  // saldo pinjaman berkurang di periode berikutnya.
+  const loanBreakdown = loanInstallmentDetails(loanRows, periodMonth, periodYear);
 
   return {
     employeeId: employee.id,
@@ -310,6 +317,7 @@ export async function loadEmployeePayrollInput(
     lateMinutes,
     unpaidLeaveDays,
     loanDeduction,
+    loanBreakdown,
     joinDate: employee.join_date,
     employmentStatus: employee.employment_status,
     contractType: latestContract?.contract_type ?? null,
