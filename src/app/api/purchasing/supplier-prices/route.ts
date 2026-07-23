@@ -104,7 +104,7 @@ export async function GET(request: NextRequest) {
 // POST /api/purchasing/supplier-prices - Create
 export async function POST(request: NextRequest) {
   try {
-    const user = await requireApiRole(["purchasing_admin", "purchasing_staff", "purchasing_manager", "super_admin"]);
+    const user = await requireApiRole(["admin", "purchasing_admin", "purchasing_staff", "purchasing_manager", "super_admin"]);
     const db = await createServerPgClient();
 
     const body = await request.json();

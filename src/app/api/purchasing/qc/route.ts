@@ -89,6 +89,7 @@ function mapInspectionRow(row: Record<string, unknown>) {
 export async function GET(request: NextRequest) {
   try {
     await requireApiRole([
+      "admin",
       "purchasing_admin",
       "purchasing_staff",
       "warehouse_staff",
@@ -158,6 +159,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const user = await requireApiRole([
+      "admin",
       "purchasing_admin",
       "purchasing_staff",
       "warehouse_staff",

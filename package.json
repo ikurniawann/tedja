@@ -37,6 +37,7 @@
     "db:seed:pos-loyalty-settings": "node database/seeders/pos-loyalty-settings.js",
     "db:seed:payment-gateways": "node database/seeders/payment-gateways.js",
     "db:seed:accounting-sulu-coa": "node database/seeders/accounting-sulu-coa.js",
+    "db:seed:purchasing-sulu-suppliers": "node database/seeders/purchasing-sulu-suppliers.js",
     "pos:nfc-bridge": "npm --prefix tools/pos-nfc-bridge start",
     "pos:nfc-bridge:install": "npm install --prefix tools/pos-nfc-bridge"
   },

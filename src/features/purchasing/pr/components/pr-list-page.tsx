@@ -47,7 +47,9 @@ function canCreatePurchaseOrder(
   return (
     pr.status === "approved" &&
     !pr.converted_po_id &&
-    (role === "purchasing_manager" || role === "purchasing_staff")
+    ["purchasing_manager", "purchasing_staff", "purchasing_admin", "admin", "super_admin"].includes(
+      role ?? ""
+    )
   );
 }
 

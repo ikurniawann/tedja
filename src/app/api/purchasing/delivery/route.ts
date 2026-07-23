@@ -65,7 +65,7 @@ const createDeliverySchema = z.object({
 
 export async function GET(request: NextRequest) {
   try {
-    await requireApiRole(["purchasing_admin", "purchasing_staff", "purchasing_manager", "super_admin"]);
+    await requireApiRole(["admin", "purchasing_admin", "purchasing_staff", "purchasing_manager", "super_admin"]);
     const db = await createServerPgClient();
 
     const { searchParams } = new URL(request.url);
@@ -157,7 +157,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const user = await requireApiRole(["purchasing_admin", "purchasing_staff", "purchasing_manager", "super_admin"]);
+    const user = await requireApiRole(["admin", "purchasing_admin", "purchasing_staff", "purchasing_manager", "super_admin"]);
     const db = await createServerPgClient();
 
     const body = await request.json();

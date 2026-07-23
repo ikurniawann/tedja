@@ -20,7 +20,7 @@ const querySchema = z.object({
 
 export async function GET(request: NextRequest) {
   try {
-    await requireApiRole(["purchasing_admin", "purchasing_manager", "purchasing_staff"]);
+    await requireApiRole(["admin", "purchasing_admin", "purchasing_manager", "purchasing_staff"]);
     const db = await createServerPgClient();
 
     const { searchParams } = new URL(request.url);

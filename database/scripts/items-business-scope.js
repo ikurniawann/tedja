@@ -1,7 +1,7 @@
 const HOLDING_CODE = process.env.SEED_HOLDING_CODE || "PROLOGE";
 const COMPANY_CODE = process.env.SEED_COMPANY_CODE || "SULU";
-const BRANCH_CODE = process.env.SEED_BRANCH_CODE || "SULU-BANDUNG";
-const BRANCH_NAME = process.env.SEED_BRANCH_NAME || "Sulu Bandung";
+const BRANCH_CODE = process.env.SEED_BRANCH_CODE || "SULU-DAGO";
+const BRANCH_NAME = process.env.SEED_BRANCH_NAME || "Dago";
 
 async function resolveSeedBusinessScope(client) {
   const { rows } = await client.query(

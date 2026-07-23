@@ -33,7 +33,7 @@ const MENU_ROLE = "sulu_bandung_demo";
 
 const HOLDING_CODE = "PROLOGE";
 const COMPANY_CODE = "SULU";
-const BRANCH_CODE = "SULU-BANDUNG";
+const BRANCH_CODE = "SULU-DAGO";
 
 function loadEnv() {
   const shellKeys = new Set(Object.keys(process.env));

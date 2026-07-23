@@ -8,6 +8,7 @@ import {
 import { listWarehouseInventoryForOpname } from "@/lib/inventory/stock-opname";
 
 const TRANSFER_ROLES = [
+  "admin",
   "super_admin",
   "warehouse_admin",
   "warehouse_staff",

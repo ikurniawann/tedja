@@ -63,7 +63,7 @@ export const RAW_MATERIAL_IMPORT_COLUMNS = [
     key: "stall_code",
     label: "Stall Code",
     required: false,
-    description: "MAIN (default), STALL-01 … STALL-13",
+    description: "WH-01 (Main Storage), STALL-02 … STALL-14",
   },
   { key: "deskripsi", label: "Description", required: false },
   { key: "status", label: "Status", required: false, description: "active or inactive" },

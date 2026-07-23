@@ -32,7 +32,7 @@ const additionalCostSchema = z.object({
 
 export async function POST(request: NextRequest) {
   try {
-    const user = await requireApiRole(["purchasing_admin", "purchasing_staff", "purchasing_manager", "super_admin"]);
+    const user = await requireApiRole(["admin", "purchasing_admin", "purchasing_staff", "purchasing_manager", "super_admin"]);
     const db = await createServerPgClient();
 
     const body = await request.json();
@@ -210,7 +210,7 @@ export async function POST(request: NextRequest) {
 // GET /api/purchasing/cogs/additional-cost
 export async function GET(request: NextRequest) {
   try {
-    await requireApiRole(["purchasing_admin", "purchasing_staff", "purchasing_manager"]);
+    await requireApiRole(["admin", "purchasing_admin", "purchasing_staff", "purchasing_manager"]);
     const db = await createServerPgClient();
 
     const { searchParams } = new URL(request.url);

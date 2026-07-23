@@ -15,6 +15,7 @@ import {
 } from "@/lib/inventory/stock-transfer";
 
 const TRANSFER_ROLES = [
+  "admin",
   "super_admin",
   "warehouse_admin",
   "warehouse_staff",

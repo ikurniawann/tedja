@@ -169,7 +169,7 @@ function SuppliersListInner() {
     setPage(1);
   }
 
-  const canManageSuppliers = ["purchasing_admin", "purchasing_manager", "purchasing_staff"].includes(user?.role ?? "");
+  const canManageSuppliers = ["admin", "super_admin", "purchasing_admin", "purchasing_manager", "purchasing_staff"].includes(user?.role ?? "");
   const isFilterActive = statusFilter !== "all" || paymentFilter !== "all";
 
   return (

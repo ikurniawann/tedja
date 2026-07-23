@@ -7,7 +7,7 @@ import {
 } from "@/lib/purchasing/po-payments";
 import { z } from "zod";
 
-const PAYMENT_ROLES = ["super_admin", "purchasing_admin", "finance_staff"] as const;
+const PAYMENT_ROLES = ["admin", "super_admin", "purchasing_admin", "finance_staff"] as const;
 
 const paymentSchema = z.object({
   payment_term_id: z.string().uuid().optional().nullable(),

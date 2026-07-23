@@ -10,6 +10,7 @@ export async function GET(
 ) {
   try {
     await requireApiRole([
+      "admin",
       "warehouse_staff",
       "warehouse_admin",
       "purchasing_admin",

@@ -198,6 +198,7 @@ function buildProductPayload(
 export async function POST(request: NextRequest) {
   try {
     const user = await requireApiRole([
+      "admin",
       "purchasing_admin",
       "purchasing_staff",
       "purchasing_manager",

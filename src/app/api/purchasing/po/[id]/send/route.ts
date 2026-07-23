@@ -13,6 +13,7 @@ const sendSchema = z.object({
 });
 
 const SEND_ROLES = [
+  "admin",
   "super_admin",
   "purchasing_admin",
   "purchasing_manager",
