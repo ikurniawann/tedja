@@ -23,7 +23,15 @@ build:
   stage: build
   script:
     - git fetch origin development && git reset --hard origin/development
-    - docker build -t $DOCKER_IMAGE:latest .
+    # Runner sering IPv4-only; Docker Hub CDN (CloudFront) bisa resolve AAAA
+    # lalu gagal: dial tcp [2600:...]:443 network is unreachable.
+    # Prefer IPv4 + legacy builder (BuildKit sering lebih agresif ke IPv6).
+    - |
+      if [ -w /etc/gai.conf ] && ! grep -q 'precedence :ffff:0:0/96' /etc/gai.conf; then
+        echo 'precedence :ffff:0:0/96  100' >> /etc/gai.conf
+      fi
+    - DOCKER_BUILDKIT=0 docker pull node:22-alpine
+    - DOCKER_BUILDKIT=0 docker build --network=host -t $DOCKER_IMAGE:latest .
   only:
     - development
 
