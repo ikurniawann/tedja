@@ -17,6 +17,8 @@ export interface CvOcrFields {
   email: string | null;
   phone: string | null;
   domicile: string | null;
+  last_experience: string | null;
+  last_education: string | null;
 }
 
 export class OpenAiNotConfiguredError extends Error {
@@ -31,13 +33,15 @@ const OCR_TIMEOUT_MS = 60_000;
 
 const SYSTEM_PROMPT = `Kamu adalah asisten HR yang membaca CV/resume kandidat (bahasa Indonesia atau Inggris).
 Ekstrak data berikut dari CV dan balas HANYA dengan JSON valid (tanpa markdown):
-{"full_name": string|null, "email": string|null, "phone": string|null, "domicile": string|null}
+{"full_name": string|null, "email": string|null, "phone": string|null, "domicile": string|null, "last_experience": string|null, "last_education": string|null}
 
 Ketentuan:
 - "full_name": nama lengkap kandidat (bukan nama perusahaan/referensi).
 - "email": alamat email kandidat.
 - "phone": nomor HP/WhatsApp kandidat, tulis apa adanya (boleh berawalan 0 atau +62), hanya angka dan tanda + tanpa spasi/strip.
 - "domicile": kota/kabupaten domisili kandidat saat ini (cukup nama kota, bukan alamat lengkap).
+- "last_experience": pengalaman kerja TERAKHIR/terbaru kandidat, format ringkas "Nama Perusahaan - Posisi (durasi)", contoh: "PT Maju Jaya - Kasir (2 tahun)". Bila fresh graduate tanpa pengalaman, isi null.
+- "last_education": pendidikan/lulusan TERAKHIR (jenjang tertinggi yang sudah lulus atau sedang ditempuh), format ringkas "Jenjang - Jurusan - Nama Sekolah/Universitas", contoh: "S1 - Manajemen - Universitas Indonesia" atau "SMA - IPA - SMAN 1 Bandung".
 - Isi null bila informasi benar-benar tidak ditemukan. Jangan mengarang.`;
 
 async function resolveOpenAi(): Promise<{ apiKey: string; baseUrl: string }> {
@@ -144,5 +148,7 @@ export async function ocrCandidateCv(
     email: normalizeField(parsed.email),
     phone: normalizeField(parsed.phone),
     domicile: normalizeField(parsed.domicile),
+    last_experience: normalizeField(parsed.last_experience),
+    last_education: normalizeField(parsed.last_education),
   };
 }
