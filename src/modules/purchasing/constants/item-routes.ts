@@ -125,6 +125,9 @@ export const GENERAL_ROUTES = {
   purchasingPo: `${GENERAL_BASE}/purchasing/po`,
   purchasingPoInsert: `${GENERAL_BASE}/purchasing/po/insert`,
   purchasingPoDetail: (id: string) => `${GENERAL_BASE}/purchasing/po/${id}`,
+  // B4 — Penerimaan barang operasional (tanpa langkah delivery manual).
+  purchasingReceive: `${GENERAL_BASE}/purchasing/receive`,
+  purchasingReceiveForm: (poId: string) => `${GENERAL_BASE}/purchasing/receive/${poId}`,
   approvalPr: `${GENERAL_BASE}/approval/pr`,
   approvalPo: `${GENERAL_BASE}/approval/po`,
 } as const;

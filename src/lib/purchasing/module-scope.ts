@@ -1,6 +1,6 @@
 import type { DbClient } from "@/lib/pg/types";
 
-export type PurchasingModuleType = "raw_material" | "product";
+export type PurchasingModuleType = "raw_material" | "product" | "general";
 
 export async function getPurchaseOrderIdsByModuleType(
   db: DbClient,
@@ -20,5 +20,7 @@ export function parsePurchasingModuleType(
   value: string | null | undefined,
   fallback: PurchasingModuleType = "raw_material"
 ): PurchasingModuleType {
-  return value === "product" ? "product" : fallback;
+  if (value === "product") return "product";
+  if (value === "general") return "general";
+  return fallback;
 }

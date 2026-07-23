@@ -206,6 +206,72 @@ bertahap (keputusan owner: irisan vertikal dulu). Cakupan akhir yang dipakai:
   - Lanjut B4: Receive (GRN) general + percabangan stok (stockable=true) vs expense
     (stockable=false, Task C) menyatu di sini.
 
+## Progress B4 (penerimaan/GRN barang operasional) — SELESAI & LIVE
+
+**Keputusan owner (2 fork desain, dikonfirmasi sebelum koding):**
+1. **Alur delivery** — Pipeline receive lama = PO → Delivery → GRN → QC, dan
+   GRN/receiving-workspace WAJIB ada record delivery. Scope general = "TANPA
+   Delivery". → **Auto-buat delivery di balik layar**: penerimaan langsung dari PO
+   approved/sent; delivery dibuat otomatis di backend, user tak lihat langkah
+   delivery (UX ramping, honor scope).
+2. **Posting stok (Task C)** — Tidak ada tabel/movement inventory ber-key
+   `supply_item_id`. → **v1 = tandai diterima saja**: SEMUA item general (stockable
+   & non) hanya ditandai "diterima" TANPA pergerakan stok riil & TANPA QC. Inventory
+   supply nyata + posting expense/GL = fase lanjut (selaras Non-Goals). AC
+   "stockable=false tidak menambah stok" terpenuhi; AC "stockable=true menambah stok"
+   DITUNDA fase lanjut.
+
+**Backend** (reuse GRN POST bersama + cabang general):
+- Migrasi `20260723250000_purchasing_general_grn.sql`: kolom `grn_items.supply_item_id`
+  + FK `item.supply_items`; relaksasi `grn_items_item_target_check` →
+  `num_nonnulls(raw_material_id, product_id, supply_item_id) = 1`. (deliveries & grn
+  SUDAH punya `vendor_id`+`*_party_check` dari migrasi product → general reuse jalur
+  vendor, tak perlu diubah.)
+- `grn/route.ts`: skema `module_type += general`, item `supply_item_id`, superRefine
+  1-dari-3; `delivery_id` jadi opsional + terima `po_id`. Cabang general: **auto-create
+  delivery** dari PO (validasi `validatePOCanDelivery`, `vendor_id` dari PO,
+  `no_surat_jalan=AUTO-<tgl>`, status pending) lalu jalur GRN yang sama. `usesVendor =
+  moduleType !== raw_material` (supplier vs vendor). `grnStatus = general ? "received"
+  : "pending"` (skip QC & stok). freshPoItems + qty-find + grnItems menyertakan
+  `supply_item_id`. `updatePOStatusAfterGrn` module-agnostic → PO general jadi
+  received/partially_received via `qty_received` (partial receive aman: delivery
+  "delivered" bukan status open).
+- `module-scope.ts`: `PurchasingModuleType += general` + `parsePurchasingModuleType`
+  handle general. **Cascade widening** (dijadwalkan B4/B5): duplikat sempit
+  `"raw_material" | "product"` dilebarkan `+ "general"` di `approval/*`,
+  `returns/*`, `vendor-payments/*`, `types/purchasing.ts` (7 error TS teratasi;
+  general belum benar-benar dipakai di returns tapi tipe mengalir lewat shared layer).
+  Bonus: perbaiki 2 error baseline (`grn/route.ts` key `string|undefined`, `vendor_id`
+  di `DeliveryForGrn`) → net **461** (turun dari 463).
+
+**Frontend** ( RAMPING, bukan klon pipeline penuh — tak reuse receiving-workspace
+delivery-centric):
+- Feature `src/features/purchasing/general-receive/*` (api + 2 komponen). `api.ts`
+  reuse `listGeneralPurchaseOrders`/`getGeneralPurchaseOrder` dari `general-po` +
+  `listWarehouses` dari `grn`; `createGeneralGrn` POST `/grn` dengan `po_id` +
+  `module_type=general`.
+- `general-receive-list-page`: daftar PO general receivable (status approved/sent/
+  partially_received, belum tuntas) → tombol "Terima".
+- `general-receive-form-page`: muat PO detail, input qty diterima per item (default =
+  sisa) + pilih gudang + catatan, badge Stok/Expense per item; submit → GRN. Riwayat
+  qty_received tampil di detail PO (tak perlu halaman GRN detail terpisah di v1 →
+  hindari kopling `GRNDetailPage` yang ber-rasa raw_material/QC).
+- `GENERAL_ROUTES` (+`purchasingReceive`, `purchasingReceiveForm(poId)`) + 2 route
+  fisik `/dashboard/items/general/purchasing/receive/{,,[poId]}` (langsung, TANPA
+  rewrite) + menu migrasi `20260723260000_purchasing_general_receive_menu.sql`
+  (sidebar `items.general.purchasing.receive`, grant 9 role sama B1–B3).
+
+**Verifikasi**: typecheck 461 (0 tambahan, 2 baseline diperbaiki); build hijau (2 route
+receive terkompilasi); 2 migrasi apply bersih; uji constraint DB rollback (supply-only
+lolos, dual-target & zero-target ditolak `grn_items_item_target_check`, supply_item_id
+column ada, menu 9 grant terverifikasi); PM2 restart; smoke: 2 route receive=307 + POST
+`/api/purchasing/grn` general=401. **B4 (Receive general) TUNTAS → siap human QA.**
+- **QA manusia**: buat master supply_item (stockable & non) → PR → PO → approve/kirim →
+  menu "Penerimaan Barang" → PO muncul → Terima (isi qty + gudang) → PO jadi
+  diterima/sebagian; item stockable & non sama-sama hanya ditandai diterima (stok tak
+  berubah di v1).
+- Lanjut B5: Invoice + Approval general (cabang invoice + approval PR/PO).
+
 ## Test Plan
 
 - Typecheck + build hijau; migrasi apply bersih di dev (idempoten, pola
@@ -265,3 +331,15 @@ bertahap (keputusan owner: irisan vertikal dulu). Cakupan akhir yang dipakai:
   `/dashboard/items/general/purchasing/po/*` + menu `20260723240000`. Detail lengkap
   di "Progress B3". Typecheck 0 tambahan, build hijau, menu terverifikasi, smoke OK.
   Lanjut B4: Receive (GRN) general + percabangan stok vs expense (Task C).
+- 2026-07-24: **B4 (Receive/GRN general) SELESAI & LIVE di dev**. 2 fork desain
+  dikonfirmasi owner: (1) **auto-buat delivery** di balik layar (receive langsung dari
+  PO, honor scope "TANPA Delivery"); (2) **v1 tandai-diterima saja TANPA stok riil &
+  TANPA QC** (inventory supply nyata = fase lanjut). Backend: migrasi
+  `20260723250000` (`grn_items.supply_item_id` + diskriminan 3-arah) + cabang general
+  di `grn/route.ts` (auto-create delivery dari `po_id`, `usesVendor`, status received,
+  supply_item_id) + `PurchasingModuleType += general` dengan cascade widening union
+  sempit di approval/returns/vendor-payments (7 error TS, dijadwalkan). Frontend: feature
+  `general-receive` ramping (list PO receivable + form terima qty/gudang, badge
+  Stok/Expense) + 2 route fisik + menu `20260723260000`. Detail lengkap di "Progress B4".
+  Typecheck 461 (0 tambahan, 2 baseline diperbaiki), build hijau, constraint DB rollback
+  OK, smoke route=307 + API=401. Siap human QA. Lanjut B5: Invoice + Approval general.

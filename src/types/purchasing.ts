@@ -776,7 +776,7 @@ export interface PurchaseReturnFormData {
   grn_id: string;
   supplier_id?: string;
   vendor_id?: string;
-  module_type?: "raw_material" | "product";
+  module_type?: "raw_material" | "product" | "general";
   return_date: string;
   reason_type: ReturnReasonType;
   reason_notes: string;
@@ -798,7 +798,7 @@ export interface ReturnListParams {
   limit?: number;
   supplier_id?: string;
   vendor_id?: string;
-  module_type?: "raw_material" | "product";
+  module_type?: "raw_material" | "product" | "general";
   status?: ReturnStatus | 'all';
   reason_type?: ReturnReasonType | 'all';
   date_from?: string;

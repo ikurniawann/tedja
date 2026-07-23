@@ -9,6 +9,7 @@ import { toQty } from "@/lib/purchasing/utils";
 export type GrnStatus = "pending" | "partially_received" | "received" | "rejected";
 
 type DeliveryForGrn = {
+  vendor_id?: string | null;
   id: string;
   purchase_order_id?: string | null;
   supplier_id?: string | null;

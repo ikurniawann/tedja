@@ -9,7 +9,7 @@ import { prQueryKeys } from "@/features/purchasing/pr/query-keys";
 import { productPrQueryKeys } from "@/features/purchasing/product-pr/query-keys";
 import { productPoQueryKeys } from "@/features/purchasing/product-po/query-keys";
 
-export const useApprovePRApproval = (moduleType: "raw_material" | "product" = "raw_material") => {
+export const useApprovePRApproval = (moduleType: "raw_material" | "product" | "general" = "raw_material") => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => approvePRApproval(id),
@@ -25,7 +25,7 @@ export const useApprovePRApproval = (moduleType: "raw_material" | "product" = "r
   });
 };
 
-export const useRejectPRApproval = (moduleType: "raw_material" | "product" = "raw_material") => {
+export const useRejectPRApproval = (moduleType: "raw_material" | "product" | "general" = "raw_material") => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ id, reason }: { id: string; reason: string }) => rejectPRApproval(id, reason),

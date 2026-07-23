@@ -60,7 +60,7 @@ function formatPct(value: number) {
 export function PurchaseInvoicesPage({
   moduleType = "raw_material",
 }: {
-  moduleType?: "raw_material" | "product";
+  moduleType?: "raw_material" | "product" | "general";
 }) {
   const routes = moduleType === "product" ? PRODUCT_ROUTES : RM_ROUTES;
   const partyLabel = moduleType === "product" ? "Vendor" : "Supplier";
