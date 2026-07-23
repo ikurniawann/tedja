@@ -188,9 +188,10 @@ export function CandidatesPage() {
       if (fields.domicile) addForm.setValue("domicile", fields.domicile, { shouldValidate: true });
       if (fields.last_experience) addForm.setValue("last_experience", fields.last_experience);
       if (fields.last_education) addForm.setValue("last_education", fields.last_education);
+      if (fields.notes) addForm.setValue("notes", fields.notes);
       const hasAnyField =
         fields.full_name || fields.email || fields.phone || fields.domicile ||
-        fields.last_experience || fields.last_education;
+        fields.last_experience || fields.last_education || fields.notes;
       if (!hasAnyField) {
         setOcrError("Tidak ada data yang terbaca dari CV. Silakan isi manual.");
       }
@@ -692,7 +693,7 @@ export function CandidatesPage() {
                 />
                 <span className="text-xs text-gray-700 flex items-center gap-1">
                   <ScanText className="w-3.5 h-3.5 text-pink-600" />
-                  Isi otomatis dari CV (OCR AI) — Nama, Email, No. HP, Domisili, Pengalaman & Pendidikan Terakhir
+                  Isi otomatis dari CV (OCR AI) — Nama, Email, No. HP, Domisili, Pengalaman, Pendidikan & Catatan
                 </span>
               </label>
               {ocrLoading && (
