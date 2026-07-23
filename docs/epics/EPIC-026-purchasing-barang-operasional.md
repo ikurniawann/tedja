@@ -1,6 +1,6 @@
 # EPIC-026: Purchasing Barang Operasional (Non-F&B, Non-Jual)
 
-status: on-progress
+status: coding
 environment: dev
 retries: 0
 
@@ -114,3 +114,27 @@ bertahap) — dibedakan per item lewat flag `stockable`.
   `stockable`; (c) reuse tabel `vendors` untuk pemasok; (d) tanpa BOM/Produksi.
   Template implementasi = cara scope `product` ditambahkan (migrasi
   20260702130000 + 20260702140000). Implementasi belum dimulai.
+- 2026-07-23: **Task Group A SELESAI** (migrasi
+  `20260723210000_purchasing_general_supply.sql`, applied di dev). Isi:
+  - CHECK `module_type` di `purchase_requests` & `purchase_orders` dilonggarkan
+    menerima `general`.
+  - Master baru `item.supply_items` (ber-flag `stockable`) + `item.supply_categories`
+    (mirror `raw_material_categories`); unik per-tenant `(company_id,branch_id,kode)`.
+  - Kolom `supply_item_id` + FK di `purchase_order_items` & `pr_items`.
+  - Diskriminan item PO dilonggarkan `raw_material XOR product` →
+    `num_nonnulls(raw_material_id, product_id, supply_item_id) = 1`. Diuji: supply
+    saja lolos, dua target ditolak, nol ditolak, raw_material saja tetap lolos
+    (regresi aman).
+  - **Deviasi dari asumsi Scope**: (1) tabel item PR bernama `purchasing.pr_items`
+    (bukan `purchase_request_items`) dan TAK punya CHECK diskriminan → cukup tambah
+    kolom. (2) Master pakai konvensi asli: `kategori` varchar denormalisasi +
+    `satuan_id` FK ke `item.units` (bukan `category_id`/`unit_id`). (3) View
+    `v_purchase_orders` = level header (join vendor sudah ada) → TIDAK diubah.
+    (4) Pelebaran tipe TS `PurchasingModuleType` ditunda ke Task B — ada union
+    sempit duplikat `"raw_material"|"product"` di `src/features/purchasing/returns/*`
+    yang harus dilebarkan bersamaan saat wiring feature layer (menghindari 7 error
+    TS menggantung di Task A).
+  - Verifikasi: migrasi apply bersih (ledger tercatat), typecheck tetap di baseline
+    (463 error pre-existing, 0 tambahan). Belum ada perubahan runtime → tak perlu
+    rebuild/PM2. Lanjut Task B: cabang `module_type='general'` di route
+    PR/PO/GRN/Return/Invoice + route/menu `/dashboard/general`.
