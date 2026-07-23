@@ -172,6 +172,40 @@ bertahap (keputusan owner: irisan vertikal dulu). Cakupan akhir yang dipakai:
     Permintaan Barang" → buat PR (pilih supply_item, harga auto dari master) →
     draft/ajukan → list terfilter module_type=general → detail → edit draft.
 
+## Progress B3 (PO barang operasional)
+
+- **B3a backend SELESAI & terverifikasi** (commit `d7a450d`): PO general jalan lewat
+  route bersama, difilter `module_type=general`.
+  - `po/route.ts`: `generalPoSchema` (`vendor_id` + item `supply_item_id`); moduleType
+    derive general; `usesVendor = product|general` → `supplier_id=null` + `vendor_id`;
+    GET filter+search `vendor_name` untuk general; POST item mapping cabang `supply_item_id`
+    (num_nonnulls=1). Guard "wajib dari PR" tetap hanya untuk `raw_material` (general boleh
+    PO manual, seperti product).
+  - `po/form-data/route.ts`: cabang general → `vendors` (REUSE) + `supplies`
+    (item.supply_items, harga_beli) + units.
+  - `po/[id]/route.ts`: resolusi manual `supply_item` (pola PR B2a), param map bertipe.
+  - `pr/for-po`: sudah module-type generik (`.eq("module_type", moduleType)`) → dipakai
+    apa adanya untuk daftar PR general yang siap di-PO-kan.
+  - Verifikasi DB rollback: insert PO general + item supply lolos, dua-target ditolak
+    (CHECK `purchase_order_items_item_target_check`), `v_purchase_orders` surface
+    `module_type=general` + `vendor_name`, join supply OK; typecheck 0 tambahan (463).
+- **B3b frontend SELESAI & LIVE** (deploy dev): feature
+  `src/features/purchasing/general-po/*` (klon `product-po`: types/api/queries/mutations/
+  query-keys/index + list/detail/new) + form ramping `general-po-form.tsx` (harga default
+  dari `supply_items.harga_beli`, TANPA vendor price list; satuan resolve dari `units`;
+  badge Stok/Expense; dukung prefill dari PR via `?pr_id=`) + 3 route fisik
+  `/dashboard/items/general/purchasing/po/{,,insert,[id]}` + `GENERAL_ROUTES` (+purchasingPo,
+  approvalPo) + menu migrasi `20260723240000_purchasing_general_po_menu.sql`
+  (sidebar `items.general.purchasing.po`, grant 9 role).
+  - Reuse endpoint aksi PO module-agnostic: approve/cancel murni transisi status; send
+    hanya menyentuh inventory bila `raw_material_id` (null utk general → aman). Detail PO
+    general punya tombol Setujui/Kirim/Batalkan seperti product.
+  - Verifikasi: typecheck 463 (0 tambahan), build hijau (3 route baru), migrasi apply
+    bersih (menu terverifikasi), PM2 restart, smoke: 3 route PO=307 + po/form-data &
+    pr/for-po general=401. **B3 (PO general) TUNTAS → siap human QA.**
+  - Lanjut B4: Receive (GRN) general + percabangan stok (stockable=true) vs expense
+    (stockable=false, Task C) menyatu di sini.
+
 ## Test Plan
 
 - Typecheck + build hijau; migrasi apply bersih di dev (idempoten, pola
@@ -223,5 +257,11 @@ bertahap (keputusan owner: irisan vertikal dulu). Cakupan akhir yang dipakai:
   `20260723230000_purchasing_general_pr_menu.sql`. Detail lengkap di "Progress B2"
   di atas. Typecheck 0 tambahan, build hijau, menu terverifikasi, PM2 restart,
   smoke route+API OK. B2 (PR general) TUNTAS backend+frontend → siap human QA.
-  Lanjut B3: PO general (`po/form-data` + `po/route.ts` + feature/form/route/menu,
-  reuse tabel `vendors`).
+- 2026-07-23: **B3 (PO general) SELESAI & LIVE di dev** (B3a backend commit `d7a450d`
+  + B3b frontend). Backend: `generalPoSchema` + cabang general di `po/route.ts`,
+  `po/form-data`, `po/[id]` (reuse `vendors`, insert `supply_item_id`), verifikasi DB
+  rollback. Frontend: feature `general-po` (klon `product-po`) + form ramping
+  `general-po-form` (harga dari harga_beli, dukung prefill `?pr_id=`) + 3 route fisik
+  `/dashboard/items/general/purchasing/po/*` + menu `20260723240000`. Detail lengkap
+  di "Progress B3". Typecheck 0 tambahan, build hijau, menu terverifikasi, smoke OK.
+  Lanjut B4: Receive (GRN) general + percabangan stok vs expense (Task C).

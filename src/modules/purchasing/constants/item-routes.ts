@@ -122,9 +122,11 @@ export const GENERAL_ROUTES = {
   purchasingPrInsert: `${GENERAL_BASE}/purchasing/pr/insert`,
   purchasingPrDetail: (id: string) => `${GENERAL_BASE}/purchasing/pr/${id}`,
   purchasingPrEdit: (id: string) => `${GENERAL_BASE}/purchasing/pr/edit/${id}`,
+  purchasingPo: `${GENERAL_BASE}/purchasing/po`,
   purchasingPoInsert: `${GENERAL_BASE}/purchasing/po/insert`,
   purchasingPoDetail: (id: string) => `${GENERAL_BASE}/purchasing/po/${id}`,
   approvalPr: `${GENERAL_BASE}/approval/pr`,
+  approvalPo: `${GENERAL_BASE}/approval/po`,
 } as const;
 
 /** @deprecated Use RM_ROUTES.materials */
