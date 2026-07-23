@@ -14,6 +14,8 @@ import {
  * EPIC-024 — layar menghadap customer (monitor kedua PC kasir).
  * Read-only: subscribe state dari kasir via BroadcastChannel. Buka
  * window ini, drag ke monitor kedua, F11 fullscreen.
+ * Redesign 23 Jul: light mode ala Airbnb (selaras wizard booking) —
+ * bg putih, teks gray-900, panel kanan gray-50, aksen rose.
  */
 
 const formatRp = (n: number) => `Rp ${Math.round(n).toLocaleString("id-ID")}`;
@@ -70,7 +72,7 @@ export function CustomerDisplayPage() {
   }, [view.items.length]);
 
   return (
-    <div className="flex h-dvh flex-col bg-gray-950 text-white">
+    <div className="flex h-dvh flex-col bg-white text-gray-900">
       {view.status === "idle" ? (
         <IdleScreen />
       ) : view.status === "done" ? (
@@ -80,7 +82,7 @@ export function CustomerDisplayPage() {
           {/* Daftar item */}
           <div className="flex min-h-0 flex-1 flex-col p-8">
             {view.member_name ? (
-              <p className="mb-3 text-lg text-pink-300">
+              <p className="mb-3 text-lg font-medium text-rose-500">
                 Halo, {view.member_name} 👋
               </p>
             ) : null}
@@ -88,14 +90,14 @@ export function CustomerDisplayPage() {
               <table className="w-full text-lg">
                 <tbody>
                   {view.items.map((item, index) => (
-                    <tr key={index} className="border-b border-white/10">
+                    <tr key={index} className="border-b border-gray-100">
                       <td className="py-3 pr-3">
-                        <span className="text-white">{item.name}</span>
-                        <span className="ml-2 text-sm text-white/50">
+                        <span className="text-gray-900">{item.name}</span>
+                        <span className="ml-2 text-sm text-gray-400">
                           × {item.qty}
                         </span>
                       </td>
-                      <td className="py-3 text-right font-medium text-white">
+                      <td className="py-3 text-right font-medium tabular-nums text-gray-900">
                         {formatRp(item.line_total)}
                       </td>
                     </tr>
@@ -107,7 +109,7 @@ export function CustomerDisplayPage() {
           </div>
 
           {/* Panel total / pembayaran */}
-          <div className="flex w-[42%] flex-col justify-between border-l border-white/10 bg-white/5 p-8">
+          <div className="flex w-[42%] flex-col justify-between border-l border-gray-200 bg-gray-50 p-8">
             {view.status === "payment" && view.payment ? (
               <PaymentPanel state={view} />
             ) : (
@@ -132,11 +134,11 @@ export function CustomerDisplayPage() {
                   accent
                 />
               ) : null}
-              <div className="border-t border-white/15 pt-3">
-                <p className="text-sm uppercase tracking-widest text-white/50">
+              <div className="border-t border-gray-200 pt-3">
+                <p className="text-sm uppercase tracking-widest text-gray-400">
                   Total
                 </p>
-                <p className="text-6xl font-bold tracking-tight">
+                <p className="text-6xl font-bold tracking-tight text-gray-900">
                   {formatRp(view.total - view.ark_used)}
                 </p>
               </div>
@@ -161,12 +163,16 @@ function Row({
 }) {
   return (
     <div className="flex items-baseline justify-between text-lg">
-      <span className={accent ? "text-emerald-300" : "text-white/50"}>
+      <span className={accent ? "text-rose-500" : "text-gray-400"}>
         {label}
       </span>
       <span
         className={
-          accent ? "font-medium text-emerald-300" : muted ? "text-white/80" : ""
+          accent
+            ? "font-medium tabular-nums text-rose-500"
+            : muted
+              ? "tabular-nums text-gray-600"
+              : "tabular-nums"
         }
       >
         {value}
@@ -178,8 +184,10 @@ function Row({
 function IdleScreen() {
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-4">
-      <p className="text-5xl font-bold tracking-tight">Selamat Datang 👋</p>
-      <p className="text-xl text-white/50">
+      <p className="text-5xl font-semibold tracking-tight text-gray-900">
+        Selamat Datang 👋
+      </p>
+      <p className="text-xl text-gray-500">
         Silakan lakukan pemesanan di kasir
       </p>
     </div>
@@ -191,19 +199,19 @@ function PaymentPanel({ state }: { state: CfdState }) {
   if (payment.method === "qris") {
     return (
       <div className="flex flex-col items-center gap-4">
-        <p className="text-xl font-semibold text-white/80">Scan untuk bayar</p>
+        <p className="text-xl font-semibold text-gray-900">Scan untuk bayar</p>
         {payment.qr_loading ? (
-          <div className="flex h-64 w-64 items-center justify-center rounded-2xl bg-white/10">
-            <Loader2 className="h-10 w-10 animate-spin text-white/60" />
+          <div className="flex h-64 w-64 items-center justify-center rounded-3xl border border-gray-200 bg-white">
+            <Loader2 className="h-10 w-10 animate-spin text-rose-500" />
           </div>
         ) : payment.qr_string ? (
-          <div className="rounded-2xl bg-white p-5">
+          <div className="rounded-3xl border border-gray-200 bg-white p-5 shadow-[0_6px_16px_rgba(0,0,0,0.08)]">
             <QRCodeSVG value={payment.qr_string} size={256} />
           </div>
         ) : (
-          <p className="text-white/50">QR belum tersedia — tunggu kasir</p>
+          <p className="text-gray-500">QR belum tersedia — tunggu kasir</p>
         )}
-        <p className="text-sm text-white/50">
+        <p className="text-sm text-gray-500">
           QRIS · nominal terkunci {formatRp(payment.amount)}
         </p>
       </div>
@@ -212,16 +220,16 @@ function PaymentPanel({ state }: { state: CfdState }) {
   if (payment.method === "cash") {
     return (
       <div className="space-y-2 text-right">
-        <p className="text-xl font-semibold text-white/80">Pembayaran Tunai</p>
+        <p className="text-xl font-semibold text-gray-900">Pembayaran Tunai</p>
         {payment.cash_received !== undefined && payment.cash_received > 0 ? (
           <>
             <Row label="Diterima" value={formatRp(payment.cash_received)} muted />
             {payment.change !== undefined && payment.change >= 0 ? (
               <div>
-                <p className="text-sm uppercase tracking-widest text-emerald-300/70">
+                <p className="text-sm uppercase tracking-widest text-gray-400">
                   Kembalian
                 </p>
-                <p className="text-4xl font-bold text-emerald-300">
+                <p className="text-4xl font-bold tabular-nums text-rose-500">
                   {formatRp(payment.change)}
                 </p>
               </div>
@@ -232,7 +240,7 @@ function PaymentPanel({ state }: { state: CfdState }) {
     );
   }
   return (
-    <p className="text-right text-xl font-semibold text-white/80">
+    <p className="text-right text-xl font-semibold text-gray-900">
       Pembayaran {METHOD_LABELS[payment.method] ?? payment.method}
     </p>
   );
@@ -242,13 +250,15 @@ function DoneScreen({ state }: { state: CfdState }) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-4">
       <p className="text-6xl">🙏</p>
-      <p className="text-5xl font-bold tracking-tight">Terima Kasih!</p>
+      <p className="text-5xl font-semibold tracking-tight text-gray-900">
+        Terima Kasih!
+      </p>
       {state.done_change !== undefined && state.done_change > 0 ? (
-        <p className="text-2xl text-emerald-300">
+        <p className="text-2xl font-medium tabular-nums text-rose-500">
           Kembalian: {formatRp(state.done_change)}
         </p>
       ) : null}
-      <p className="text-lg text-white/50">Sampai jumpa kembali ✨</p>
+      <p className="text-lg text-gray-500">Sampai jumpa kembali ✨</p>
     </div>
   );
 }
