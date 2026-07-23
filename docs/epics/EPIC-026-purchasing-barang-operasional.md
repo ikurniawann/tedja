@@ -110,19 +110,26 @@ bertahap (keputusan owner: irisan vertikal dulu). Cakupan akhir yang dipakai:
 - [ ] Menu `general` tidak menampilkan BOM/Produksi; nav Inventory hanya relevan
       untuk item stockable.
 
-## Progress B1 (master barang operasional)
+## Progress B1 (master barang operasional) — SELESAI & LIVE
 
-- **Backend SELESAI & terverifikasi** (belum di-deploy — belum ada UI/menu):
-  - Kategori: `supply-categories` ditambah ke route generik
-    `/api/purchasing/items/[lookup]` (+`[id]`) — CRUD kategori gratis, company-scoped.
-  - Item master: `/api/purchasing/supply-items` (GET list+filter stockable/aktif,
-    POST create + auto-kode `SUP-YYYYMMDD-NNN`) & `/[id]` (GET/PATCH/DELETE soft),
-    ramping tanpa warehouse/COGS/BOM, scope company+branch fail-closed
-    (`isRowInBusinessScope`).
-  - Verifikasi: typecheck baseline (0 tambahan), semua query insert/list/update/
-    soft-delete diuji langsung ke Postgres (skema cocok, rollback).
-- **Sisa B1**: UI halaman master (list + form kategori & item) + baris menu
-  `iam-menus.sql` + route fisik + grant role, lalu build+deploy.
+- **Backend** (commit `7cdfb5d`): kategori `supply-categories` via route generik
+  `/api/purchasing/items/[lookup]`; item master `/api/purchasing/supply-items`
+  (+`/[id]`) ramping tanpa warehouse/COGS/BOM, scope company+branch fail-closed.
+- **UI + menu + routing** (commit ini): feature `src/features/purchasing/supply-items/*`
+  (data layer + `SupplyItemsPage`: list + dialog buat/ubah + hapus, flag `stockable`,
+  dropdown kategori & satuan); halaman kategori reuse `ItemsLookupPage`. Route fisik
+  `/dashboard/items/general/{items,categories}` (langsung, TANPA rewrite next.config —
+  KISS). Menu via migrasi `20260723220000_purchasing_general_menu.sql`: grup
+  `items.general` "Barang Operasional" > `master` > {items, categories}, grant 9 role
+  (sama dengan master product).
+- **Verifikasi**: typecheck baseline (0 tambahan), migrasi menu diuji rollback lalu
+  apply, build hijau (3 route baru terkompilasi), PM2 restart, smoke:
+  `/api/purchasing/supply-items`=401, `/dashboard/items/general/items`=307 (bukan 404).
+- **QA manusia**: login role purchasing/warehouse → menu "Barang Operasional" muncul →
+  buat kategori → buat barang stockable & non-stockable → edit/hapus.
+- **Lanjut B2**: PR general (cabang `general` di pr/form-data + pr/route + pr-schemas,
+  feature `general-pr`, form, route/menu) — di sini `PurchasingModuleType` + union
+  sempit `returns/*`,`grn/*` dilebarkan ke `general`.
 
 ## Test Plan
 
