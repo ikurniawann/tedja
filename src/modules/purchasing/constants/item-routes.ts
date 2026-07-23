@@ -2,6 +2,12 @@
 
 export const RM_BASE = "/dashboard/raw-material";
 export const PRODUCT_BASE = "/dashboard/product";
+/**
+ * EPIC-026 — scope `general` (Barang Operasional). Berbeda dari RM/Product,
+ * scope ini TIDAK memakai rewrite next.config (keputusan B1, KISS): base URL =
+ * lokasi fisik `/dashboard/items/general`.
+ */
+export const GENERAL_BASE = "/dashboard/items/general";
 export const ITEMS_LANDING_PATH = "/dashboard/items";
 
 export const RM_ROUTES = {
@@ -102,6 +108,23 @@ export const PRODUCT_ROUTES = {
   productionRecipes: `${PRODUCT_BASE}/production/recipes`,
   productionHub: `${PRODUCT_BASE}/production`,
   productionOrder: (id: string) => `${PRODUCT_BASE}/production/orders/${id}`,
+} as const;
+
+/**
+ * EPIC-026 B2 — rute scope `general` (Barang Operasional). Subset dari pipeline
+ * penuh: master + PR. Rute PO/approval sudah didefinisikan agar detail PR bisa
+ * merujuknya (halaman fisik menyusul di B3/B5).
+ */
+export const GENERAL_ROUTES = {
+  items: `${GENERAL_BASE}/items`,
+  categories: `${GENERAL_BASE}/categories`,
+  purchasingPr: `${GENERAL_BASE}/purchasing/pr`,
+  purchasingPrInsert: `${GENERAL_BASE}/purchasing/pr/insert`,
+  purchasingPrDetail: (id: string) => `${GENERAL_BASE}/purchasing/pr/${id}`,
+  purchasingPrEdit: (id: string) => `${GENERAL_BASE}/purchasing/pr/edit/${id}`,
+  purchasingPoInsert: `${GENERAL_BASE}/purchasing/po/insert`,
+  purchasingPoDetail: (id: string) => `${GENERAL_BASE}/purchasing/po/${id}`,
+  approvalPr: `${GENERAL_BASE}/approval/pr`,
 } as const;
 
 /** @deprecated Use RM_ROUTES.materials */

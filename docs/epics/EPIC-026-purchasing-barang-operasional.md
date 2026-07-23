@@ -149,9 +149,28 @@ bertahap (keputusan owner: irisan vertikal dulu). Cakupan akhir yang dipakai:
   - CATATAN: hanya `PrModuleType` (pr-schemas) yang dilebarkan — `PurchasingModuleType`
     (module-scope) & union `returns/grn/*` TIDAK perlu disentuh di B2 (PR tak memakainya),
     jadi tak ada cascade 7-error. Union itu untuk B4/B5.
-- **Sisa B2 (B2b frontend)**: feature `general-pr` (clone `product-pr`, MODULE_TYPE),
-  form ramping (tanpa vendor-price-list, harga dari supply_items), route fisik
-  `/dashboard/items/general/purchasing/pr/*`, menu `items.general.purchasing.pr`.
+- **B2b frontend SELESAI & LIVE** (deploy dev): feature
+  `src/features/purchasing/general-pr/*` (klon `product-pr`, `MODULE_TYPE="general"`,
+  diskriminan item `supply_item_id`, sumber item form = `supplies`) + form ramping
+  `src/components/purchasing/general-pr-form.tsx` (harga estimasi langsung dari
+  `supply_items.harga_beli`, TANPA vendor price list; satuan di-resolve dari `units`
+  karena form-data general tak kirim `satuan_nama`; badge Stok/Expense per item) +
+  4 route fisik `/dashboard/items/general/purchasing/pr/{,,insert,[id],edit/[id]}`
+  (langsung, TANPA rewrite next.config — konsisten B1) + konstanta `GENERAL_ROUTES`
+  di `item-routes.ts` (subset PR + rute PO/approval untuk rujukan detail, halaman
+  fisiknya menyusul B3/B5) + menu via migrasi `20260723230000_purchasing_general_pr_menu.sql`
+  (grup `items.general.purchasing` > `pr`, grant 9 role sama dgn B1).
+  - CATATAN reuse: `PRApprovalActions`/`PRRevisionButton` dipakai apa adanya (sama
+    seperti product-pr); keduanya baru relevan setelah approval general (B5) —
+    revision button masih hardcode `RM_ROUTES` (bug warisan product-pr, di luar scope B2).
+  - Verifikasi: typecheck kembali ke baseline (463, 0 tambahan — 2 error klon dari
+    product-pr sengaja diperbaiki di kode baru: double-invoke `submitWithAction` &
+    tipe param `queryKeys.list`), build hijau (4 route baru terkompilasi), migrasi
+    apply bersih (menu terverifikasi: hierarki benar, 9 grant/menu), PM2 restart,
+    smoke: 4 route PR=307 (redirect login, bukan 404), form-data API general=401.
+  - QA manusia: login role purchasing → menu "Barang Operasional > Purchasing >
+    Permintaan Barang" → buat PR (pilih supply_item, harga auto dari master) →
+    draft/ajukan → list terfilter module_type=general → detail → edit draft.
 
 ## Test Plan
 
@@ -198,3 +217,11 @@ bertahap (keputusan owner: irisan vertikal dulu). Cakupan akhir yang dipakai:
     (463 error pre-existing, 0 tambahan). Belum ada perubahan runtime → tak perlu
     rebuild/PM2. Lanjut Task B: cabang `module_type='general'` di route
     PR/PO/GRN/Return/Invoice + route/menu `/dashboard/general`.
+- 2026-07-23: **B2b (frontend PR general) SELESAI & LIVE di dev**. Feature
+  `general-pr` (klon `product-pr`) + form ramping `general-pr-form` + 4 route fisik
+  `/dashboard/items/general/purchasing/pr/*` + `GENERAL_ROUTES` + migrasi menu
+  `20260723230000_purchasing_general_pr_menu.sql`. Detail lengkap di "Progress B2"
+  di atas. Typecheck 0 tambahan, build hijau, menu terverifikasi, PM2 restart,
+  smoke route+API OK. B2 (PR general) TUNTAS backend+frontend → siap human QA.
+  Lanjut B3: PO general (`po/form-data` + `po/route.ts` + feature/form/route/menu,
+  reuse tabel `vendors`).
