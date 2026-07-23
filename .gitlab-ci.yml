@@ -23,6 +23,8 @@ build:
   stage: build
   script:
     - git fetch origin development && git reset --hard origin/development
+    # Jangan biarkan .next host menempel di context (page baru bisa 404 di prod).
+    - rm -rf .next node_modules/.cache
     # Runner sering IPv4-only; Docker Hub CDN (CloudFront) bisa resolve AAAA
     # lalu gagal: dial tcp [2600:...]:443 network is unreachable.
     # Prefer IPv4 + legacy builder (BuildKit sering lebih agresif ke IPv6).
