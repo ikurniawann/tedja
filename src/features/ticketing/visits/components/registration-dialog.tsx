@@ -267,7 +267,7 @@ export function RegistrationDialog({ open, onOpenChange }: RegistrationDialogPro
         onOpenChange(next);
       }}
     >
-      <DialogContent className="flex h-[88vh] w-[95vw] max-w-6xl flex-col gap-0 overflow-hidden p-0">
+      <DialogContent className="flex h-[88vh] w-[95vw] flex-col gap-0 overflow-hidden p-0 sm:max-w-6xl">
         <DialogHeader className="border-b border-gray-200/70 px-6 py-4">
           <DialogTitle>Registrasi Kunjungan Baru</DialogTitle>
         </DialogHeader>
