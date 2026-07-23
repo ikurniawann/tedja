@@ -28,7 +28,15 @@ const METHOD_LABELS: Record<string, string> = {
   nfc_tab: "NFC Tab",
 };
 
-export function CustomerDisplayPage() {
+interface CustomerDisplayPageProps {
+  venueName?: string | null;
+  venueAddress?: string | null;
+}
+
+export function CustomerDisplayPage({
+  venueName,
+  venueAddress,
+}: CustomerDisplayPageProps) {
   const [view, setView] = useState<CfdState>(() => idleCfdState());
   const listEndRef = useRef<HTMLDivElement>(null);
 
@@ -73,6 +81,23 @@ export function CustomerDisplayPage() {
 
   return (
     <div className="flex h-dvh flex-col bg-white text-gray-900">
+      {/* ── Header venue: logo + nama + alamat, ala wizard booking ── */}
+      <header className="flex items-center gap-4 border-b border-gray-100 px-8 py-4">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/logo.png"
+          alt={venueName ?? "Logo"}
+          className="h-12 w-12 shrink-0 rounded-2xl object-contain"
+        />
+        <div className="min-w-0">
+          <p className="truncate text-lg font-semibold tracking-tight text-gray-900">
+            {venueName || "Selamat Datang"}
+          </p>
+          {venueAddress ? (
+            <p className="truncate text-sm text-gray-500">{venueAddress}</p>
+          ) : null}
+        </div>
+      </header>
       {view.status === "idle" ? (
         <IdleScreen />
       ) : view.status === "done" ? (
