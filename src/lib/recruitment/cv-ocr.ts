@@ -104,6 +104,34 @@ function normalizeField(value: unknown): string | null {
   return trimmed ? trimmed : null;
 }
 
+const NETWORK_RETRY_ATTEMPTS = 3;
+const NETWORK_RETRY_DELAY_MS = 1000;
+
+/**
+ * DNS/connect ke api.openai.com dari server ini kadang gagal sesaat
+ * (ConnectTimeoutError 10dtk / EAI_AGAIN) lalu langsung pulih di percobaan
+ * berikutnya — gejala resolver DNS yang belum "hangat", bukan API key salah
+ * atau limit rate. Hanya retry kegagalan JARINGAN (fetch melempar TypeError),
+ * BUKAN respons HTTP error (4xx/5xx tetap gagal langsung — itu error asli API).
+ */
+async function fetchWithNetworkRetry(
+  url: string,
+  init: RequestInit
+): Promise<Response> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= NETWORK_RETRY_ATTEMPTS; attempt++) {
+    try {
+      return await fetch(url, init);
+    } catch (error) {
+      lastError = error;
+      if (attempt < NETWORK_RETRY_ATTEMPTS) {
+        await new Promise((r) => setTimeout(r, NETWORK_RETRY_DELAY_MS));
+      }
+    }
+  }
+  throw lastError;
+}
+
 export async function ocrCandidateCv(
   buffer: Buffer,
   filename: string
@@ -114,7 +142,7 @@ export async function ocrCandidateCv(
     buildUserContent(buffer, filename, ext),
   ]);
 
-  const res = await fetch(`${baseUrl}/chat/completions`, {
+  const res = await fetchWithNetworkRetry(`${baseUrl}/chat/completions`, {
     method: "POST",
     signal: AbortSignal.timeout(OCR_TIMEOUT_MS),
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
