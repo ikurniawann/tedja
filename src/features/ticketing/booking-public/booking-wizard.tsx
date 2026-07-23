@@ -1,14 +1,15 @@
 "use client";
 
 // Fase D3 — wizard booking publik mobile-first, tanpa login:
-// tanggal → pilih 1 jenis tiket (card) → atur qty → data pemesan →
-// ringkasan → redirect invoice Xendit.
+// tanggal → pilih 1 jenis tiket (card produk) → qty per varian (Dewasa/Anak)
+// → data pemesan → ringkasan → redirect invoice Xendit.
 // Harga di sini murni tampilan; server menghitung ulang saat POST.
 // Redesign 23 Jul: UI ala Airbnb (kalender inline custom, sel bulat;
 // ringkasan kartu ber-shadow; CTA rose).
-// 23 Jul: satu transaksi = SATU varian tiket — pilih card dulu, stepper qty
-// muncul di card terpilih; state qty tetap Record agar payload items[] &
-// flatten nama rombongan tidak berubah (isinya kini maksimal 1 entri).
+// 23 Jul: satu transaksi = SATU produk tiket — step "tiket" memilih produk
+// via card, step "varian" mengatur qty per varian produk terpilih; state qty
+// tetap Record agar payload items[] & flatten nama rombongan tidak berubah
+// (isinya kini hanya varian dari satu produk).
 
 import { useCallback, useMemo, useState } from "react";
 import {
@@ -86,7 +87,9 @@ const bundleStandaloneTotal = (variant: CatalogVariant): number | null => {
   return total;
 };
 
-type Step = "tanggal" | "tiket" | "pemesan" | "ringkasan";
+type Step = "tanggal" | "tiket" | "varian" | "pemesan" | "ringkasan";
+
+const STEP_ORDER: Step[] = ["tanggal", "tiket", "varian", "pemesan", "ringkasan"];
 
 const todayIso = () =>
   new Intl.DateTimeFormat("en-CA", {
@@ -108,8 +111,11 @@ const STEP_TITLES: Record<Step, { title: string; subtitle: string }> = {
   },
   tiket: {
     title: "Pilih tiketmu",
-    subtitle:
-      "Pilih satu jenis tiket lalu atur jumlahnya — 1 jenis tiket per transaksi.",
+    subtitle: "Pilih satu jenis tiket — 1 jenis tiket per transaksi.",
+  },
+  varian: {
+    title: "Berapa tiketnya?",
+    subtitle: "Atur jumlah tiket untuk tiap kategori yang tersedia.",
   },
   pemesan: {
     title: "Siapa yang memesan?",
@@ -129,6 +135,10 @@ export function BookingWizard({ slug }: BookingWizardProps) {
   const [step, setStep] = useState<Step>("tanggal");
   const [visitDate, setVisitDate] = useState("");
   const [catalog, setCatalog] = useState<CatalogProduct[]>([]);
+  // 1 transaksi = 1 produk tiket; qty diisi per varian produk terpilih
+  const [selectedProductId, setSelectedProductId] = useState<string | null>(
+    null
+  );
   const [qty, setQty] = useState<Record<string, number>>({});
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
@@ -250,6 +260,7 @@ export function BookingWizard({ slug }: BookingWizardProps) {
       }
       setCatalog(products);
       setQty({});
+      setSelectedProductId(null);
       setStep("tiket");
     } catch {
       setError("Jaringan bermasalah — coba lagi");
@@ -258,24 +269,30 @@ export function BookingWizard({ slug }: BookingWizardProps) {
     }
   }, [slug, visitDate]);
 
-  // 1 transaksi = 1 varian: pilih card → qty mulai dari 1, ganti card →
-  // qty varian lama dibuang (state hanya menyimpan varian terpilih)
-  const selectedVariantId = cart[0]?.variant.variant_id ?? null;
+  // Ganti produk membuang qty & nama rombongan produk sebelumnya
+  const selectedProduct =
+    catalog.find((p) => p.ticket_product_id === selectedProductId) ?? null;
 
-  const selectVariant = (variantId: string) => {
-    if (variantId === selectedVariantId) return;
-    setQty({ [variantId]: 1 });
+  const selectProduct = (productId: string) => {
+    if (productId === selectedProductId) return;
+    setSelectedProductId(productId);
+    setQty({});
     setGuestNames({});
   };
 
   const changeQty = (variantId: string, delta: number) => {
     setQty((prev) => {
-      // Minimal 1 selama card terpilih — batal = pilih card lain
-      const next = Math.max(1, (prev[variantId] ?? 1) + delta);
-      const known = variantIndex.get(variantId);
-      const persons = known ? next * personsPerUnit(known.variant) : next;
-      if (persons > MAX_QTY_PER_BOOKING) return prev;
-      return { [variantId]: next };
+      const next = Math.max(0, (prev[variantId] ?? 0) + delta);
+      // Batas per ORANG: paket menyumbang anggota × qty
+      const persons = (id: string, n: number) => {
+        const known = variantIndex.get(id);
+        return known ? n * personsPerUnit(known.variant) : n;
+      };
+      const others = Object.entries(prev)
+        .filter(([id]) => id !== variantId)
+        .reduce((sum, [id, n]) => sum + persons(id, n), 0);
+      if (others + persons(variantId, next) > MAX_QTY_PER_BOOKING) return prev;
+      return { ...prev, [variantId]: next };
     });
   };
 
@@ -322,7 +339,7 @@ export function BookingWizard({ slug }: BookingWizardProps) {
     }
   };
 
-  const stepIndex = ["tanggal", "tiket", "pemesan", "ringkasan"].indexOf(step);
+  const stepIndex = STEP_ORDER.indexOf(step);
   const heading = STEP_TITLES[step];
 
   return (
@@ -334,15 +351,7 @@ export function BookingWizard({ slug }: BookingWizardProps) {
             <button
               type="button"
               aria-label="Kembali"
-              onClick={() =>
-                setStep(
-                  step === "tiket"
-                    ? "tanggal"
-                    : step === "pemesan"
-                      ? "tiket"
-                      : "pemesan"
-                )
-              }
+              onClick={() => setStep(STEP_ORDER[Math.max(0, stepIndex - 1)])}
               className="-ml-2 flex h-9 w-9 items-center justify-center rounded-full text-gray-800 hover:bg-gray-100"
             >
               <ArrowLeft className="h-5 w-5" />
@@ -356,7 +365,7 @@ export function BookingWizard({ slug }: BookingWizardProps) {
           )}
         </div>
         <div className="mt-3 flex gap-1">
-          {[0, 1, 2, 3].map((i) => (
+          {STEP_ORDER.map((_, i) => (
             <div
               key={i}
               className={`h-[3px] flex-1 rounded-full transition-colors ${
@@ -417,162 +426,213 @@ export function BookingWizard({ slug }: BookingWizardProps) {
 
         {step === "tiket" && (
           <section className="mt-6 space-y-4">
-            {catalog.flatMap((product) =>
-              product.variants.map((variant) => {
-                const selected = variant.variant_id === selectedVariantId;
-                const n = qty[variant.variant_id] ?? 0;
-                const standalone = bundleStandaloneTotal(variant);
-                const saving =
-                  standalone !== null && standalone > variant.price
-                    ? standalone - variant.price
-                    : null;
-                const variantLabel =
-                  product.product_kind === "bundle"
-                    ? `Paket (${variant.members?.length ?? 0} orang)`
-                    : variant.variant_name;
-                return (
-                  <div
-                    key={variant.variant_id}
-                    role="radio"
-                    aria-checked={selected}
-                    tabIndex={0}
-                    onClick={() => selectVariant(variant.variant_id)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        selectVariant(variant.variant_id);
-                      }
-                    }}
-                    className={`cursor-pointer overflow-hidden rounded-3xl border transition-all ${
-                      selected
-                        ? "border-rose-500 shadow-[0_6px_16px_rgba(244,63,94,0.15)] ring-1 ring-rose-500"
-                        : "border-gray-200 hover:border-gray-400"
-                    }`}
-                  >
-                    {product.thumbnail_url && (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={product.thumbnail_url}
-                        alt={product.name}
-                        className="aspect-[2/1] w-full object-cover"
-                      />
+            {catalog.map((product) => {
+              const selected =
+                product.ticket_product_id === selectedProductId;
+              return (
+                <div
+                  key={product.ticket_product_id}
+                  role="radio"
+                  aria-checked={selected}
+                  tabIndex={0}
+                  onClick={() => selectProduct(product.ticket_product_id)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      selectProduct(product.ticket_product_id);
+                    }
+                  }}
+                  className={`cursor-pointer overflow-hidden rounded-3xl border transition-all ${
+                    selected
+                      ? "border-rose-500 shadow-[0_6px_16px_rgba(244,63,94,0.15)] ring-1 ring-rose-500"
+                      : "border-gray-200 hover:border-gray-400"
+                  }`}
+                >
+                  {product.thumbnail_url && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={product.thumbnail_url}
+                      alt={product.name}
+                      className="aspect-[2/1] w-full object-cover"
+                    />
+                  )}
+                  <div className="p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <h3 className="min-w-0 text-[15px] font-semibold text-gray-900">
+                        {product.name}
+                      </h3>
+                      {/* Indikator radio */}
+                      <span
+                        className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border transition-colors ${
+                          selected
+                            ? "border-rose-500 bg-rose-500 text-white"
+                            : "border-gray-300 text-transparent"
+                        }`}
+                      >
+                        <Check className="h-3.5 w-3.5" />
+                      </span>
+                    </div>
+                    {product.description && (
+                      <p className="mt-1 text-sm leading-relaxed text-gray-500">
+                        {product.description}
+                      </p>
                     )}
-                    <div className="p-4">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <h3 className="text-[15px] font-semibold text-gray-900">
-                            {product.name}
-                          </h3>
-                          <p className="mt-0.5 text-sm text-gray-600">
-                            {variantLabel}
-                            {variant.season_kind === "high" && (
-                              <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700">
-                                High Season
-                              </span>
-                            )}
-                          </p>
-                        </div>
-                        {/* Indikator radio */}
-                        <span
-                          className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border transition-colors ${
-                            selected
-                              ? "border-rose-500 bg-rose-500 text-white"
-                              : "border-gray-300 text-transparent"
-                          }`}
-                        >
-                          <Check className="h-3.5 w-3.5" />
-                        </span>
-                      </div>
-                      {product.description && (
-                        <p className="mt-2 text-sm leading-relaxed text-gray-500">
-                          {product.description}
-                        </p>
-                      )}
-                      {product.product_kind === "bundle" && variant.members ? (
-                        <p className="mt-2 text-xs leading-snug text-gray-400">
-                          Termasuk:{" "}
-                          {Object.entries(
-                            variant.members.reduce<Record<string, number>>(
-                              (acc, m) => ({
-                                ...acc,
-                                [m.member_label]:
-                                  (acc[m.member_label] ?? 0) + 1,
-                              }),
-                              {}
-                            )
-                          )
-                            .map(([label, count]) => `${count}× ${label}`)
-                            .join(", ")}
-                        </p>
-                      ) : null}
-                      <p className="mt-3 text-sm">
-                        {saving !== null ? (
-                          <>
-                            <span className="mr-1.5 text-xs text-gray-400 line-through">
-                              {formatRp(standalone!)}
+                    {/* Ringkasan harga per varian — pembeda antar tiket */}
+                    <div className="mt-3 space-y-1.5 border-t border-gray-100 pt-3">
+                      {product.variants.map((variant) => {
+                        const standalone = bundleStandaloneTotal(variant);
+                        const saving =
+                          standalone !== null && standalone > variant.price
+                            ? standalone - variant.price
+                            : null;
+                        return (
+                          <div
+                            key={variant.variant_id}
+                            className="flex items-center justify-between gap-3 text-sm"
+                          >
+                            <span className="min-w-0 text-gray-600">
+                              {product.product_kind === "bundle"
+                                ? `Paket (${variant.members?.length ?? 0} orang)`
+                                : variant.variant_name}
+                              {variant.season_kind === "high" && (
+                                <span className="ml-1.5 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700">
+                                  High Season
+                                </span>
+                              )}
+                              {saving !== null && (
+                                <span className="ml-1.5 rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-medium text-rose-600">
+                                  Hemat {formatRp(saving)}
+                                </span>
+                              )}
                             </span>
-                            <span className="text-base font-semibold text-gray-900">
+                            <span className="shrink-0 font-semibold tabular-nums text-gray-900">
                               {formatRp(variant.price)}
                             </span>
-                            <span className="ml-1.5 rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-medium text-rose-600">
-                              Hemat {formatRp(saving)}
-                            </span>
-                          </>
-                        ) : (
-                          <span className="text-base font-semibold text-gray-900">
-                            {formatRp(variant.price)}
-                          </span>
-                        )}
-                        <span className="text-gray-400"> / tiket</span>
-                      </p>
-                      {/* Qty muncul setelah card dipilih */}
-                      {selected && (
-                        <div className="mt-4 flex items-center justify-between border-t border-gray-100 pt-4">
-                          <span className="text-sm font-medium text-gray-900">
-                            Jumlah tiket
-                          </span>
-                          <div className="flex shrink-0 items-center gap-3">
-                            <button
-                              type="button"
-                              aria-label={`Kurangi ${variantLabel}`}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                changeQty(variant.variant_id, -1);
-                              }}
-                              disabled={n <= 1}
-                              className="flex h-8 w-8 items-center justify-center rounded-full border border-gray-300 text-gray-600 transition-colors hover:border-gray-900 hover:text-gray-900 disabled:cursor-default disabled:opacity-25 disabled:hover:border-gray-300 disabled:hover:text-gray-600"
-                            >
-                              <Minus className="h-4 w-4" />
-                            </button>
-                            <span className="w-6 text-center text-[15px] font-medium tabular-nums text-gray-900">
-                              {n}
-                            </span>
-                            <button
-                              type="button"
-                              aria-label={`Tambah ${variantLabel}`}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                changeQty(variant.variant_id, 1);
-                              }}
-                              disabled={
-                                (n + 1) * personsPerUnit(variant) >
-                                MAX_QTY_PER_BOOKING
-                              }
-                              className="flex h-8 w-8 items-center justify-center rounded-full border border-gray-300 text-gray-600 transition-colors hover:border-gray-900 hover:text-gray-900 disabled:cursor-default disabled:opacity-25 disabled:hover:border-gray-300 disabled:hover:text-gray-600"
-                            >
-                              <Plus className="h-4 w-4" />
-                            </button>
                           </div>
-                        </div>
-                      )}
+                        );
+                      })}
                     </div>
                   </div>
-                );
-              })
-            )}
+                </div>
+              );
+            })}
             <p className="text-xs text-gray-400">
-              1 jenis tiket per transaksi · maksimum {MAX_QTY_PER_BOOKING} tiket
-              per pemesanan.
+              1 jenis tiket per transaksi — jumlah tiket diatur di langkah
+              berikutnya.
+            </p>
+          </section>
+        )}
+
+        {step === "varian" && selectedProduct && (
+          <section className="mt-6">
+            <div className="rounded-3xl border border-gray-200 p-5">
+              <h3 className="text-lg font-semibold text-gray-900">
+                {selectedProduct.name}
+              </h3>
+              {selectedProduct.description && (
+                <p className="mt-1 text-sm leading-relaxed text-gray-500">
+                  {selectedProduct.description}
+                </p>
+              )}
+              <div className="mt-2 divide-y divide-gray-100">
+                {selectedProduct.variants.map((variant) => {
+                  const n = qty[variant.variant_id] ?? 0;
+                  const standalone = bundleStandaloneTotal(variant);
+                  const saving =
+                    standalone !== null && standalone > variant.price
+                      ? standalone - variant.price
+                      : null;
+                  const variantLabel =
+                    selectedProduct.product_kind === "bundle"
+                      ? `Paket (${variant.members?.length ?? 0} orang)`
+                      : variant.variant_name;
+                  return (
+                    <div
+                      key={variant.variant_id}
+                      className="flex items-center justify-between gap-4 py-4"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-[15px] font-medium text-gray-900">
+                          {variantLabel}
+                          {variant.season_kind === "high" && (
+                            <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700">
+                              High Season
+                            </span>
+                          )}
+                        </p>
+                        <p className="mt-0.5 text-sm text-gray-600">
+                          {saving !== null ? (
+                            <>
+                              <span className="mr-1.5 text-xs text-gray-400 line-through">
+                                {formatRp(standalone!)}
+                              </span>
+                              <span className="font-semibold text-gray-900">
+                                {formatRp(variant.price)}
+                              </span>
+                              <span className="ml-1.5 rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-medium text-rose-600">
+                                Hemat {formatRp(saving)}
+                              </span>
+                            </>
+                          ) : (
+                            <span className="font-semibold text-gray-900">
+                              {formatRp(variant.price)}
+                            </span>
+                          )}
+                          <span className="text-gray-400"> / tiket</span>
+                        </p>
+                        {selectedProduct.product_kind === "bundle" &&
+                        variant.members ? (
+                          <p className="mt-0.5 text-xs leading-snug text-gray-400">
+                            Termasuk:{" "}
+                            {Object.entries(
+                              variant.members.reduce<Record<string, number>>(
+                                (acc, m) => ({
+                                  ...acc,
+                                  [m.member_label]:
+                                    (acc[m.member_label] ?? 0) + 1,
+                                }),
+                                {}
+                              )
+                            )
+                              .map(([label, count]) => `${count}× ${label}`)
+                              .join(", ")}
+                          </p>
+                        ) : null}
+                      </div>
+                      {/* Stepper bulat ala pemilih tamu Airbnb */}
+                      <div className="flex shrink-0 items-center gap-3">
+                        <button
+                          type="button"
+                          aria-label={`Kurangi ${variantLabel}`}
+                          onClick={() => changeQty(variant.variant_id, -1)}
+                          disabled={n === 0}
+                          className="flex h-8 w-8 items-center justify-center rounded-full border border-gray-300 text-gray-600 transition-colors hover:border-gray-900 hover:text-gray-900 disabled:cursor-default disabled:opacity-25 disabled:hover:border-gray-300 disabled:hover:text-gray-600"
+                        >
+                          <Minus className="h-4 w-4" />
+                        </button>
+                        <span className="w-6 text-center text-[15px] font-medium tabular-nums text-gray-900">
+                          {n}
+                        </span>
+                        <button
+                          type="button"
+                          aria-label={`Tambah ${variantLabel}`}
+                          onClick={() => changeQty(variant.variant_id, 1)}
+                          disabled={
+                            totalQty + personsPerUnit(variant) >
+                            MAX_QTY_PER_BOOKING
+                          }
+                          className="flex h-8 w-8 items-center justify-center rounded-full border border-gray-300 text-gray-600 transition-colors hover:border-gray-900 hover:text-gray-900 disabled:cursor-default disabled:opacity-25 disabled:hover:border-gray-300 disabled:hover:text-gray-600"
+                        >
+                          <Plus className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            <p className="mt-3 px-1 text-xs text-gray-400">
+              Maksimum {MAX_QTY_PER_BOOKING} tiket per pemesanan.
             </p>
           </section>
         )}
@@ -757,6 +817,26 @@ export function BookingWizard({ slug }: BookingWizardProps) {
           </button>
         )}
         {step === "tiket" && (
+          <div className="flex items-center justify-between gap-4">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium text-gray-900">
+                {selectedProduct ? selectedProduct.name : "Belum ada tiket dipilih"}
+              </p>
+              <p className="text-xs text-gray-500 underline">
+                {formatDateShort(visitDate)}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setStep("varian")}
+              disabled={!selectedProduct}
+              className="rounded-xl bg-rose-500 px-8 py-3.5 text-[15px] font-semibold text-white transition-colors hover:bg-rose-600 disabled:opacity-40 disabled:hover:bg-rose-500"
+            >
+              Lanjut
+            </button>
+          </div>
+        )}
+        {step === "varian" && (
           <div className="flex items-center justify-between gap-4">
             <div className="min-w-0">
               <p className="truncate text-base font-semibold tabular-nums text-gray-900">
