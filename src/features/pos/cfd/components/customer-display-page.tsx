@@ -20,6 +20,18 @@ import {
 
 const formatRp = (n: number) => `Rp ${Math.round(n).toLocaleString("id-ID")}`;
 
+/**
+ * Persentase pajak dihitung dari angka transaksi (tax ÷ dasar pengenaan),
+ * BUKAN angka tetap — supaya label selalu sinkron dengan tarif yang benar-benar
+ * dipakai kasir (lihat taxAmount di cashier-page.tsx), termasuk bila tarif
+ * itu berubah di kemudian hari.
+ */
+const taxPercentLabel = (tax: number, subtotal: number, discount: number) => {
+  const base = subtotal - discount;
+  if (base <= 0) return null;
+  return Math.round((tax / base) * 100);
+};
+
 const METHOD_LABELS: Record<string, string> = {
   cash: "Tunai",
   qris: "QRIS",
@@ -78,6 +90,8 @@ export function CustomerDisplayPage({
   useEffect(() => {
     listEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [view.items.length]);
+
+  const taxPercent = taxPercentLabel(view.tax, view.subtotal, view.discount);
 
   return (
     <div className="flex h-dvh flex-col bg-white text-gray-900">
@@ -150,7 +164,11 @@ export function CustomerDisplayPage({
                 />
               ) : null}
               {view.tax > 0 ? (
-                <Row label="Pajak" value={formatRp(view.tax)} muted />
+                <Row
+                  label={taxPercent !== null ? `Pajak (${taxPercent}%)` : "Pajak"}
+                  value={formatRp(view.tax)}
+                  muted
+                />
               ) : null}
               {view.ark_used > 0 ? (
                 <Row
