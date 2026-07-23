@@ -66,6 +66,34 @@ export async function GET(request: NextRequest) {
       });
     }
 
+    if (moduleType === "general") {
+      // EPIC-026 B2 — sumber item PR barang operasional = item.supply_items.
+      let supplyQuery = db
+        .from("supply_items")
+        .select("id, kode, nama, satuan_id, stockable, harga_beli")
+        .eq("is_active", true)
+        .is("deleted_at", null)
+        .order("nama");
+
+      const companyOr = companyScopeOr(scope);
+      if (companyOr) supplyQuery = supplyQuery.or(companyOr);
+      const branchOr = branchScopeOr(scope);
+      if (branchOr) supplyQuery = supplyQuery.or(branchOr);
+
+      const [{ data: supplies }, { data: units }] = await Promise.all([
+        supplyQuery,
+        db.from("units").select("id, nama").eq("is_active", true).order("nama"),
+      ]);
+
+      return NextResponse.json({
+        data: {
+          departments: departments || [],
+          supplies: supplies || [],
+          units: units || [],
+        },
+      });
+    }
+
     const [{ data: materials }, { data: units }] = await Promise.all([
       db
         .from("v_raw_materials_stock")

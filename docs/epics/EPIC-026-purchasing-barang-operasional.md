@@ -131,6 +131,28 @@ bertahap (keputusan owner: irisan vertikal dulu). Cakupan akhir yang dipakai:
   feature `general-pr`, form, route/menu) — di sini `PurchasingModuleType` + union
   sempit `returns/*`,`grn/*` dilebarkan ke `general`.
 
+## Progress B2 (PR barang operasional)
+
+- **B2a backend SELESAI & terverifikasi** (belum deploy — belum ada UI PR general):
+  - `pr-schemas.ts`: `generalPrItemSchema` (`supply_item_id`) + `generalPrWriteSchema`,
+    `PrModuleType` += `general`, `parsePrWriteBody` cabang general, tipe union
+    `PrWriteItem` (collapse union-of-arrays → array-of-union agar insert TS bersih),
+    map error `pr_items_supply_item_id_fkey`.
+  - `pr/route.ts`: GET filter += general; POST derive moduleType general + insert
+    `supply_item_id`.
+  - `pr/[id]/route.ts`: detail resolve `supply_item` (mirror product); PUT moduleType
+    general + insert `supply_item_id`.
+  - `pr/form-data/route.ts`: cabang `general` → item dari `item.supply_items`
+    (key `supplies`), scope company+branch.
+  - Verifikasi: typecheck baseline (0 tambahan), alur create(header+item supply)+
+    filter module_type=general+detail-join diuji langsung ke Postgres (rollback).
+  - CATATAN: hanya `PrModuleType` (pr-schemas) yang dilebarkan — `PurchasingModuleType`
+    (module-scope) & union `returns/grn/*` TIDAK perlu disentuh di B2 (PR tak memakainya),
+    jadi tak ada cascade 7-error. Union itu untuk B4/B5.
+- **Sisa B2 (B2b frontend)**: feature `general-pr` (clone `product-pr`, MODULE_TYPE),
+  form ramping (tanpa vendor-price-list, harga dari supply_items), route fisik
+  `/dashboard/items/general/purchasing/pr/*`, menu `items.general.purchasing.pr`.
+
 ## Test Plan
 
 - Typecheck + build hijau; migrasi apply bersih di dev (idempoten, pola

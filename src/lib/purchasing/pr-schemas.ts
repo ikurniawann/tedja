@@ -52,6 +52,16 @@ export const productPrItemSchema = z.object({
   estimated_price: moneySchema,
 });
 
+// EPIC-026 B2 — item PR barang operasional (scope 'general').
+export const generalPrItemSchema = z.object({
+  supply_item_id: z.string().uuid("Barang operasional wajib dipilih"),
+  satuan_id: optionalUuidSchema,
+  description: z.string().min(1, "Deskripsi barang wajib diisi"),
+  qty: qtySchema,
+  unit: z.string().min(1, "Satuan wajib diisi"),
+  estimated_price: moneySchema,
+});
+
 export const prWriteSchema = z.object({
   department_id: z.string().uuid("Department tidak valid"),
   priority: z.enum(["low", "medium", "high", "urgent"]),
@@ -70,12 +80,29 @@ export const productPrWriteSchema = z.object({
   action: z.enum(["draft", "submit"]).optional().default("draft"),
 });
 
-export type PrModuleType = "raw_material" | "product";
+export const generalPrWriteSchema = z.object({
+  department_id: z.string().uuid("Departemen tidak valid"),
+  priority: z.enum(["low", "medium", "high", "urgent"]),
+  required_date: optionalTextSchema,
+  notes: optionalTextSchema,
+  items: z.array(generalPrItemSchema).min(1, "Minimal 1 item"),
+  action: z.enum(["draft", "submit"]).optional().default("draft"),
+});
+
+export type PrModuleType = "raw_material" | "product" | "general";
+
+// Union item PR lintas-scope. Dipakai untuk meng-collapse union-of-arrays
+// (hasil parsePrWriteBody 3-arah) menjadi array-of-union sebelum di-normalize +
+// insert, supaya TS menerima satu tipe baris, bukan union tiga array.
+export type PrWriteItem =
+  | z.infer<typeof prItemSchema>
+  | z.infer<typeof productPrItemSchema>
+  | z.infer<typeof generalPrItemSchema>;
 
 export function parsePrWriteBody(body: unknown, moduleType: PrModuleType = "raw_material") {
-  return moduleType === "product"
-    ? productPrWriteSchema.parse(body)
-    : prWriteSchema.parse(body);
+  if (moduleType === "product") return productPrWriteSchema.parse(body);
+  if (moduleType === "general") return generalPrWriteSchema.parse(body);
+  return prWriteSchema.parse(body);
 }
 
 export function formatZodError(error: z.ZodError) {
@@ -105,6 +132,9 @@ export function mapPrPgErrorMessage(message: string): string {
   }
   if (message.includes("pr_items_product_id_fkey")) {
     return "Product on PR item is invalid.";
+  }
+  if (message.includes("pr_items_supply_item_id_fkey")) {
+    return "Barang operasional pada item PR tidak valid.";
   }
   if (message.includes("department_id")) {
     return "Departemen tidak valid.";
