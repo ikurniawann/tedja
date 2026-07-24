@@ -51,7 +51,11 @@ export async function GET(
     if (!venue) return notFound();
 
     const catalog = await buildPublicCatalog(venue, visitDate);
-    return successResponse({ visit_date: visitDate, products: catalog });
+    return successResponse({
+      visit_date: visitDate,
+      venue: { name: venue.venueName },
+      products: catalog,
+    });
   } catch (err) {
     console.error("[booking] catalog error:", err);
     return NextResponse.json(

@@ -1,26 +1,30 @@
 "use client";
 
-// Fase D3 — wizard booking publik mobile-first, tanpa login:
-// tanggal → pilih 1 jenis tiket (card produk) → qty per varian (Dewasa/Anak)
-// → data pemesan → ringkasan → redirect invoice Xendit.
-// Harga di sini murni tampilan; server menghitung ulang saat POST.
-// Redesign 23 Jul: UI ala Airbnb (kalender inline custom, sel bulat;
-// ringkasan kartu ber-shadow; CTA rose).
-// 23 Jul: satu transaksi = SATU produk tiket — step "tiket" memilih produk
-// via card, step "varian" mengatur qty per varian produk terpilih; state qty
-// tetap Record agar payload items[] & flatten nama rombongan tidak berubah
-// (isinya kini hanya varian dari satu produk).
+// Booking publik tanpa login — REDESAIN 24 Jul (struktur ala tiket.com "to-do"):
+// halaman SATU layar untuk pemilihan tiket (hero venue → highlight → pilih
+// tanggal → daftar kartu paket + stepper qty langsung di kartu → bar total
+// sticky), lalu langkah pemesan → ringkasan → invoice Xendit.
+//
+// Aturan bisnis DIPERTAHANKAN: 1 transaksi = SATU produk tiket. Di layar satu
+// halaman ini, menaikkan qty varian sebuah produk otomatis menjadikannya produk
+// terpilih dan mereset produk lain (radio implisit). Harga di sini murni
+// tampilan; server menghitung ulang saat POST. Payload items[] & flatten nama
+// rombongan TIDAK berubah.
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
+  CalendarDays,
   Check,
-  ChevronRight,
+  ChevronDown,
   Loader2,
+  MapPin,
   Minus,
   Plus,
+  QrCode,
   ShieldCheck,
   Sparkles,
+  Zap,
 } from "lucide-react";
 import { BookingCalendar } from "./booking-calendar";
 
@@ -39,6 +43,7 @@ const formatDateLong = (iso: string) =>
 
 const formatDateShort = (iso: string) =>
   new Date(`${iso}T00:00:00`).toLocaleDateString("id-ID", {
+    weekday: "short",
     day: "numeric",
     month: "short",
     year: "numeric",
@@ -87,9 +92,19 @@ const bundleStandaloneTotal = (variant: CatalogVariant): number | null => {
   return total;
 };
 
-type Step = "tanggal" | "tiket" | "varian" | "pemesan" | "ringkasan";
+const variantLabelOf = (product: CatalogProduct, variant: CatalogVariant) =>
+  product.product_kind === "bundle"
+    ? `Paket (${variant.members?.length ?? 0} orang)`
+    : variant.variant_name;
 
-const STEP_ORDER: Step[] = ["tanggal", "tiket", "varian", "pemesan", "ringkasan"];
+const priceRangeOf = (product: CatalogProduct) => {
+  const prices = product.variants.map((v) => v.price);
+  return prices.length ? Math.min(...prices) : 0;
+};
+
+type Step = "pilih" | "pemesan" | "ringkasan";
+
+const STEP_ORDER: Step[] = ["pilih", "pemesan", "ringkasan"];
 
 const todayIso = () =>
   new Intl.DateTimeFormat("en-CA", {
@@ -104,36 +119,21 @@ const addDaysIso = (iso: string, days: number) => {
   return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
 };
 
-const STEP_TITLES: Record<Step, { title: string; subtitle: string }> = {
-  tanggal: {
-    title: "Kapan mau berkunjung?",
-    subtitle: "Pilih tanggal kunjunganmu — harga bisa berbeda per tanggal.",
-  },
-  tiket: {
-    title: "Pilih tiketmu",
-    subtitle: "Pilih satu jenis tiket — 1 jenis tiket per transaksi.",
-  },
-  varian: {
-    title: "Berapa tiketnya?",
-    subtitle: "Atur jumlah tiket untuk tiap kategori yang tersedia.",
-  },
-  pemesan: {
-    title: "Siapa yang memesan?",
-    subtitle: "Kode booking & QR tiket dikirim lewat WhatsApp.",
-  },
-  ringkasan: {
-    title: "Periksa pesananmu",
-    subtitle: "Pastikan semuanya benar sebelum lanjut ke pembayaran.",
-  },
-};
+const HIGHLIGHTS = [
+  { icon: Zap, label: "Konfirmasi instan" },
+  { icon: QrCode, label: "E-tiket via WhatsApp" },
+  { icon: ShieldCheck, label: "Tanpa cetak" },
+];
 
 interface BookingWizardProps {
   slug: string;
 }
 
 export function BookingWizard({ slug }: BookingWizardProps) {
-  const [step, setStep] = useState<Step>("tanggal");
-  const [visitDate, setVisitDate] = useState("");
+  const [step, setStep] = useState<Step>("pilih");
+  const [visitDate, setVisitDate] = useState(todayIso());
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  const [venueName, setVenueName] = useState("");
   const [catalog, setCatalog] = useState<CatalogProduct[]>([]);
   // 1 transaksi = 1 produk tiket; qty diisi per varian produk terpilih
   const [selectedProductId, setSelectedProductId] = useState<string | null>(
@@ -235,55 +235,74 @@ export function BookingWizard({ slug }: BookingWizardProps) {
     });
   };
 
-  const loadCatalog = useCallback(async () => {
-    if (!visitDate) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch(
-        `/api/public/booking/${slug}/catalog?date=${visitDate}`
-      );
-      const body = await res.json();
-      if (!res.ok || !body.success) {
-        setError(
-          body.error ??
-            (res.status === 404
-              ? "Halaman booking tidak ditemukan"
-              : "Gagal memuat tiket — coba lagi")
+  const loadCatalog = useCallback(
+    async (date: string) => {
+      if (!date) return;
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await fetch(
+          `/api/public/booking/${slug}/catalog?date=${date}`
         );
-        return;
+        const body = await res.json();
+        if (body?.data?.venue?.name) setVenueName(body.data.venue.name);
+        if (!res.ok || !body.success) {
+          setCatalog([]);
+          setError(
+            body.error ??
+              (res.status === 404
+                ? "Halaman booking tidak ditemukan"
+                : "Gagal memuat tiket — coba lagi")
+          );
+          return;
+        }
+        const products: CatalogProduct[] = body.data.products;
+        // Ganti tanggal membuang pilihan sebelumnya (harga bisa beda)
+        setCatalog(products);
+        setQty({});
+        setSelectedProductId(null);
+        setGuestNames({});
+        if (products.length === 0) {
+          setError("Tidak ada tiket tersedia untuk tanggal ini");
+        }
+      } catch {
+        setCatalog([]);
+        setError("Jaringan bermasalah — coba lagi");
+      } finally {
+        setLoading(false);
       }
-      const products: CatalogProduct[] = body.data.products;
-      if (products.length === 0) {
-        setError("Tidak ada tiket tersedia untuk tanggal ini");
-        return;
-      }
-      setCatalog(products);
-      setQty({});
-      setSelectedProductId(null);
-      setStep("tiket");
-    } catch {
-      setError("Jaringan bermasalah — coba lagi");
-    } finally {
-      setLoading(false);
-    }
-  }, [slug, visitDate]);
+    },
+    [slug]
+  );
 
-  // Ganti produk membuang qty & nama rombongan produk sebelumnya
+  // Muat katalog saat mount (default hari ini) & setiap tanggal berubah
+  useEffect(() => {
+    loadCatalog(visitDate);
+  }, [visitDate, loadCatalog]);
+
   const selectedProduct =
     catalog.find((p) => p.ticket_product_id === selectedProductId) ?? null;
 
-  const selectProduct = (productId: string) => {
-    if (productId === selectedProductId) return;
-    setSelectedProductId(productId);
-    setQty({});
-    setGuestNames({});
-  };
+  const heroUrl = useMemo(
+    () => catalog.find((p) => p.thumbnail_url)?.thumbnail_url ?? null,
+    [catalog]
+  );
 
-  const changeQty = (variantId: string, delta: number) => {
+  // Menaikkan qty varian → jadikan produknya terpilih (reset produk lain)
+  const changeQty = (product: CatalogProduct, variant: CatalogVariant, delta: number) => {
+    const variantId = variant.variant_id;
+    const switchingProduct =
+      delta > 0 && selectedProductId !== product.ticket_product_id;
+
+    if (switchingProduct) {
+      setSelectedProductId(product.ticket_product_id);
+      setGuestNames({});
+      setQty({ [variantId]: 1 });
+      return;
+    }
+
     setQty((prev) => {
       const next = Math.max(0, (prev[variantId] ?? 0) + delta);
-      // Batas per ORANG: paket menyumbang anggota × qty
       const persons = (id: string, n: number) => {
         const known = variantIndex.get(id);
         return known ? n * personsPerUnit(known.variant) : n;
@@ -292,7 +311,8 @@ export function BookingWizard({ slug }: BookingWizardProps) {
         .filter(([id]) => id !== variantId)
         .reduce((sum, [id, n]) => sum + persons(id, n), 0);
       if (others + persons(variantId, next) > MAX_QTY_PER_BOOKING) return prev;
-      return { ...prev, [variantId]: next };
+      const draft = { ...prev, [variantId]: next };
+      return draft;
     });
   };
 
@@ -340,14 +360,13 @@ export function BookingWizard({ slug }: BookingWizardProps) {
   };
 
   const stepIndex = STEP_ORDER.indexOf(step);
-  const heading = STEP_TITLES[step];
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-lg flex-col bg-white md:max-w-2xl">
-      {/* ── Header ala Airbnb: minimal, tombol kembali bulat ── */}
-      <header className="sticky top-0 z-10 bg-white/95 px-5 pt-4 backdrop-blur">
+      {/* ── Header ── */}
+      <header className="sticky top-0 z-20 bg-white/95 px-5 pt-4 backdrop-blur">
         <div className="flex h-9 items-center">
-          {step !== "tanggal" && (
+          {step !== "pilih" && (
             <button
               type="button"
               aria-label="Kembali"
@@ -357,12 +376,10 @@ export function BookingWizard({ slug }: BookingWizardProps) {
               <ArrowLeft className="h-5 w-5" />
             </button>
           )}
-          {visitDate && step !== "tanggal" && (
-            <span className="ml-auto rounded-full border border-gray-200 px-3 py-1 text-xs font-medium text-gray-700">
-              {formatDateShort(visitDate)}
-              {totalQty > 0 ? ` · ${totalQty} tiket` : ""}
-            </span>
-          )}
+          <span className="ml-auto rounded-full border border-gray-200 px-3 py-1 text-xs font-medium text-gray-700">
+            {formatDateShort(visitDate)}
+            {totalQty > 0 ? ` · ${totalQty} tiket` : ""}
+          </span>
         </div>
         <div className="mt-3 flex gap-1">
           {STEP_ORDER.map((_, i) => (
@@ -376,269 +393,152 @@ export function BookingWizard({ slug }: BookingWizardProps) {
         </div>
       </header>
 
-      <main className="flex-1 px-5 pb-32 pt-6">
-        <h1 className="text-[26px] font-semibold leading-tight tracking-tight text-gray-900">
-          {heading.title}
-        </h1>
-        <p className="mt-1.5 text-sm text-gray-500">{heading.subtitle}</p>
-
-        {error && (
-          <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+      <main className="flex-1 pb-32">
+        {error && step === "pilih" && catalog.length === 0 && !loading && (
+          <div className="mx-5 mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
             {error}
           </div>
         )}
 
-        {step === "tanggal" && (
-          <section className="mt-6">
-            <div className="rounded-3xl border border-gray-200 p-5 shadow-[0_6px_16px_rgba(0,0,0,0.08)]">
-              <BookingCalendar
-                value={visitDate}
-                minDate={minDate}
-                maxDate={maxDate}
-                onChange={setVisitDate}
-              />
-            </div>
-            <div className="mt-4 flex items-center justify-between px-1">
-              <p className="text-sm text-gray-500">
-                {visitDate ? (
-                  <span className="font-medium text-gray-900">
-                    {formatDateLong(visitDate)}
-                  </span>
-                ) : (
-                  "Belum ada tanggal dipilih"
-                )}
-              </p>
-              {visitDate && (
-                <button
-                  type="button"
-                  onClick={() => setVisitDate("")}
-                  className="text-sm font-medium text-gray-500 underline hover:text-gray-900"
-                >
-                  Hapus
-                </button>
-              )}
-            </div>
-            <p className="mt-1 px-1 text-xs text-gray-400">
-              Bisa dipesan untuk hari ini sampai {MAX_DAYS_AHEAD} hari ke depan.
-            </p>
-          </section>
-        )}
-
-        {step === "tiket" && (
-          <section className="mt-6 space-y-4">
-            {catalog.map((product) => {
-              const selected =
-                product.ticket_product_id === selectedProductId;
-              return (
-                <div
-                  key={product.ticket_product_id}
-                  role="radio"
-                  aria-checked={selected}
-                  tabIndex={0}
-                  onClick={() => selectProduct(product.ticket_product_id)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      selectProduct(product.ticket_product_id);
-                    }
-                  }}
-                  className={`cursor-pointer overflow-hidden rounded-3xl border transition-all ${
-                    selected
-                      ? "border-rose-500 shadow-[0_6px_16px_rgba(244,63,94,0.15)] ring-1 ring-rose-500"
-                      : "border-gray-200 hover:border-gray-400"
-                  }`}
-                >
-                  {product.thumbnail_url && (
+        {/* ══════════════ LAYAR PILIH (single-page ala tiket.com) ══════════════ */}
+        {step === "pilih" && (
+          <>
+            {/* Hero venue */}
+            <section className="px-5 pt-4">
+              <div className="relative overflow-hidden rounded-3xl">
+                <div className="aspect-[16/9] w-full bg-gradient-to-br from-rose-400 via-rose-500 to-rose-600">
+                  {heroUrl && (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
-                      src={product.thumbnail_url}
-                      alt={product.name}
-                      className="aspect-[2/1] w-full object-cover"
+                      src={heroUrl}
+                      alt={venueName}
+                      className="h-full w-full object-cover"
                     />
                   )}
-                  <div className="p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <h3 className="min-w-0 text-[15px] font-semibold text-gray-900">
-                        {product.name}
-                      </h3>
-                      {/* Indikator radio */}
-                      <span
-                        className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border transition-colors ${
-                          selected
-                            ? "border-rose-500 bg-rose-500 text-white"
-                            : "border-gray-300 text-transparent"
-                        }`}
-                      >
-                        <Check className="h-3.5 w-3.5" />
-                      </span>
-                    </div>
-                    {product.description && (
-                      <p className="mt-1 text-sm leading-relaxed text-gray-500">
-                        {product.description}
-                      </p>
-                    )}
-                    {/* Ringkasan harga per varian — pembeda antar tiket */}
-                    <div className="mt-3 space-y-1.5 border-t border-gray-100 pt-3">
-                      {product.variants.map((variant) => {
-                        const standalone = bundleStandaloneTotal(variant);
-                        const saving =
-                          standalone !== null && standalone > variant.price
-                            ? standalone - variant.price
-                            : null;
-                        return (
-                          <div
-                            key={variant.variant_id}
-                            className="flex items-center justify-between gap-3 text-sm"
-                          >
-                            <span className="min-w-0 text-gray-600">
-                              {product.product_kind === "bundle"
-                                ? `Paket (${variant.members?.length ?? 0} orang)`
-                                : variant.variant_name}
-                              {variant.season_kind === "high" && (
-                                <span className="ml-1.5 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700">
-                                  High Season
-                                </span>
-                              )}
-                              {saving !== null && (
-                                <span className="ml-1.5 rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-medium text-rose-600">
-                                  Hemat {formatRp(saving)}
-                                </span>
-                              )}
-                            </span>
-                            <span className="shrink-0 font-semibold tabular-nums text-gray-900">
-                              {formatRp(variant.price)}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/10 to-transparent" />
                 </div>
-              );
-            })}
-            <p className="text-xs text-gray-400">
-              1 jenis tiket per transaksi — jumlah tiket diatur di langkah
-              berikutnya.
-            </p>
-          </section>
-        )}
-
-        {step === "varian" && selectedProduct && (
-          <section className="mt-6">
-            <div className="rounded-3xl border border-gray-200 p-5">
-              <h3 className="text-lg font-semibold text-gray-900">
-                {selectedProduct.name}
-              </h3>
-              {selectedProduct.description && (
-                <p className="mt-1 text-sm leading-relaxed text-gray-500">
-                  {selectedProduct.description}
-                </p>
-              )}
-              <div className="mt-2 divide-y divide-gray-100">
-                {selectedProduct.variants.map((variant) => {
-                  const n = qty[variant.variant_id] ?? 0;
-                  const standalone = bundleStandaloneTotal(variant);
-                  const saving =
-                    standalone !== null && standalone > variant.price
-                      ? standalone - variant.price
-                      : null;
-                  const variantLabel =
-                    selectedProduct.product_kind === "bundle"
-                      ? `Paket (${variant.members?.length ?? 0} orang)`
-                      : variant.variant_name;
-                  return (
-                    <div
-                      key={variant.variant_id}
-                      className="flex items-center justify-between gap-4 py-4"
-                    >
-                      <div className="min-w-0">
-                        <p className="text-[15px] font-medium text-gray-900">
-                          {variantLabel}
-                          {variant.season_kind === "high" && (
-                            <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700">
-                              High Season
-                            </span>
-                          )}
-                        </p>
-                        <p className="mt-0.5 text-sm text-gray-600">
-                          {saving !== null ? (
-                            <>
-                              <span className="mr-1.5 text-xs text-gray-400 line-through">
-                                {formatRp(standalone!)}
-                              </span>
-                              <span className="font-semibold text-gray-900">
-                                {formatRp(variant.price)}
-                              </span>
-                              <span className="ml-1.5 rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-medium text-rose-600">
-                                Hemat {formatRp(saving)}
-                              </span>
-                            </>
-                          ) : (
-                            <span className="font-semibold text-gray-900">
-                              {formatRp(variant.price)}
-                            </span>
-                          )}
-                          <span className="text-gray-400"> / tiket</span>
-                        </p>
-                        {selectedProduct.product_kind === "bundle" &&
-                        variant.members ? (
-                          <p className="mt-0.5 text-xs leading-snug text-gray-400">
-                            Termasuk:{" "}
-                            {Object.entries(
-                              variant.members.reduce<Record<string, number>>(
-                                (acc, m) => ({
-                                  ...acc,
-                                  [m.member_label]:
-                                    (acc[m.member_label] ?? 0) + 1,
-                                }),
-                                {}
-                              )
-                            )
-                              .map(([label, count]) => `${count}× ${label}`)
-                              .join(", ")}
-                          </p>
-                        ) : null}
-                      </div>
-                      {/* Stepper bulat ala pemilih tamu Airbnb */}
-                      <div className="flex shrink-0 items-center gap-3">
-                        <button
-                          type="button"
-                          aria-label={`Kurangi ${variantLabel}`}
-                          onClick={() => changeQty(variant.variant_id, -1)}
-                          disabled={n === 0}
-                          className="flex h-8 w-8 items-center justify-center rounded-full border border-gray-300 text-gray-600 transition-colors hover:border-gray-900 hover:text-gray-900 disabled:cursor-default disabled:opacity-25 disabled:hover:border-gray-300 disabled:hover:text-gray-600"
-                        >
-                          <Minus className="h-4 w-4" />
-                        </button>
-                        <span className="w-6 text-center text-[15px] font-medium tabular-nums text-gray-900">
-                          {n}
-                        </span>
-                        <button
-                          type="button"
-                          aria-label={`Tambah ${variantLabel}`}
-                          onClick={() => changeQty(variant.variant_id, 1)}
-                          disabled={
-                            totalQty + personsPerUnit(variant) >
-                            MAX_QTY_PER_BOOKING
-                          }
-                          className="flex h-8 w-8 items-center justify-center rounded-full border border-gray-300 text-gray-600 transition-colors hover:border-gray-900 hover:text-gray-900 disabled:cursor-default disabled:opacity-25 disabled:hover:border-gray-300 disabled:hover:text-gray-600"
-                        >
-                          <Plus className="h-4 w-4" />
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
+                <div className="absolute inset-x-0 bottom-0 p-4">
+                  <h1 className="text-xl font-bold leading-tight text-white drop-shadow-sm">
+                    {venueName || "Pesan Tiket"}
+                  </h1>
+                  <p className="mt-1 flex items-center gap-1 text-xs font-medium text-white/90">
+                    <MapPin className="h-3.5 w-3.5" /> Tiket masuk resmi · e-ticket
+                  </p>
+                </div>
               </div>
-            </div>
-            <p className="mt-3 px-1 text-xs text-gray-400">
-              Maksimum {MAX_QTY_PER_BOOKING} tiket per pemesanan.
-            </p>
-          </section>
+
+              {/* Highlight chips (pernyataan faktual) */}
+              <div className="mt-3 flex flex-wrap gap-2">
+                {HIGHLIGHTS.map(({ icon: Icon, label }) => (
+                  <span
+                    key={label}
+                    className="inline-flex items-center gap-1.5 rounded-full bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-700"
+                  >
+                    <Icon className="h-3.5 w-3.5 text-rose-500" /> {label}
+                  </span>
+                ))}
+              </div>
+            </section>
+
+            {/* Pilih tanggal */}
+            <section className="mt-6 px-5">
+              <h2 className="text-base font-semibold text-gray-900">
+                Tanggal kunjungan
+              </h2>
+              <button
+                type="button"
+                onClick={() => setCalendarOpen((v) => !v)}
+                className="mt-2 flex w-full items-center justify-between gap-3 rounded-2xl border border-gray-200 px-4 py-3.5 text-left transition-colors hover:border-gray-400"
+              >
+                <span className="flex items-center gap-3">
+                  <CalendarDays className="h-5 w-5 text-rose-500" />
+                  <span className="text-[15px] font-medium text-gray-900">
+                    {formatDateLong(visitDate)}
+                  </span>
+                </span>
+                <ChevronDown
+                  className={`h-5 w-5 shrink-0 text-gray-400 transition-transform ${
+                    calendarOpen ? "rotate-180" : ""
+                  }`}
+                />
+              </button>
+              {calendarOpen && (
+                <div className="mt-3 rounded-3xl border border-gray-200 p-5 shadow-[0_6px_16px_rgba(0,0,0,0.08)]">
+                  <BookingCalendar
+                    value={visitDate}
+                    minDate={minDate}
+                    maxDate={maxDate}
+                    onChange={(iso) => {
+                      setVisitDate(iso);
+                      setCalendarOpen(false);
+                    }}
+                  />
+                </div>
+              )}
+              <p className="mt-2 px-1 text-xs text-gray-400">
+                Harga bisa berbeda per tanggal · bisa dipesan sampai{" "}
+                {MAX_DAYS_AHEAD} hari ke depan.
+              </p>
+            </section>
+
+            {/* Daftar paket */}
+            <section className="mt-6 px-5">
+              <div className="flex items-baseline justify-between">
+                <h2 className="text-base font-semibold text-gray-900">
+                  Pilih tiket
+                </h2>
+                <span className="text-xs text-gray-400">1 jenis / transaksi</span>
+              </div>
+
+              {loading ? (
+                <div className="mt-4 space-y-3">
+                  {[0, 1].map((i) => (
+                    <div
+                      key={i}
+                      className="h-28 animate-pulse rounded-3xl bg-gray-100"
+                    />
+                  ))}
+                </div>
+              ) : (
+                <div className="mt-3 space-y-4">
+                  {catalog.map((product) => {
+                    const isSelected =
+                      product.ticket_product_id === selectedProductId;
+                    return (
+                      <PackageCard
+                        key={product.ticket_product_id}
+                        product={product}
+                        isSelected={isSelected}
+                        qty={qty}
+                        totalQty={totalQty}
+                        onChangeQty={changeQty}
+                      />
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+          </>
         )}
 
+        {/* ══════════════ PEMESAN ══════════════ */}
         {step === "pemesan" && (
-          <section className="mt-6 space-y-6">
+          <section className="mt-2 space-y-6 px-5 pt-4">
+            <div>
+              <h1 className="text-2xl font-semibold tracking-tight text-gray-900">
+                Siapa yang memesan?
+              </h1>
+              <p className="mt-1 text-sm text-gray-500">
+                Kode booking & QR tiket dikirim lewat WhatsApp.
+              </p>
+            </div>
+
+            {error && (
+              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                {error}
+              </div>
+            )}
+
             <div className="space-y-4">
               <label className="block">
                 <span className="text-sm font-medium text-gray-900">
@@ -716,9 +616,24 @@ export function BookingWizard({ slug }: BookingWizardProps) {
           </section>
         )}
 
+        {/* ══════════════ RINGKASAN ══════════════ */}
         {step === "ringkasan" && (
-          <section className="mt-6 space-y-4">
-            {/* Kartu ringkasan ber-shadow ala booking card Airbnb */}
+          <section className="mt-2 space-y-4 px-5 pt-4">
+            <div>
+              <h1 className="text-2xl font-semibold tracking-tight text-gray-900">
+                Periksa pesananmu
+              </h1>
+              <p className="mt-1 text-sm text-gray-500">
+                Pastikan semuanya benar sebelum lanjut ke pembayaran.
+              </p>
+            </div>
+
+            {error && (
+              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                {error}
+              </div>
+            )}
+
             <div className="rounded-3xl border border-gray-200 p-5 shadow-[0_6px_16px_rgba(0,0,0,0.10)]">
               <dl className="space-y-3 text-sm">
                 <div className="flex items-center justify-between">
@@ -798,59 +713,31 @@ export function BookingWizard({ slug }: BookingWizardProps) {
         )}
       </main>
 
-      {/* ── Bar bawah ala checkout Airbnb ── */}
-      <footer className="fixed inset-x-0 bottom-0 z-10 mx-auto w-full max-w-lg border-t border-gray-200 bg-white px-5 py-3.5 md:max-w-2xl">
-        {step === "tanggal" && (
-          <button
-            type="button"
-            onClick={loadCatalog}
-            disabled={!visitDate || loading}
-            className="flex w-full items-center justify-center gap-2 rounded-xl bg-rose-500 py-3.5 text-[15px] font-semibold text-white transition-colors hover:bg-rose-600 disabled:opacity-40 disabled:hover:bg-rose-500"
-          >
-            {loading ? (
-              <Loader2 className="h-5 w-5 animate-spin" />
-            ) : (
-              <>
-                Lihat Tiket <ChevronRight className="h-4 w-4" />
-              </>
-            )}
-          </button>
-        )}
-        {step === "tiket" && (
+      {/* ── Bar bawah sticky (ringkasan pesanan + CTA) ── */}
+      <footer className="fixed inset-x-0 bottom-0 z-20 mx-auto w-full max-w-lg border-t border-gray-200 bg-white px-5 py-3.5 md:max-w-2xl">
+        {step === "pilih" && (
           <div className="flex items-center justify-between gap-4">
             <div className="min-w-0">
-              <p className="truncate text-sm font-medium text-gray-900">
-                {selectedProduct ? selectedProduct.name : "Belum ada tiket dipilih"}
-              </p>
-              <p className="text-xs text-gray-500 underline">
-                {formatDateShort(visitDate)}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setStep("varian")}
-              disabled={!selectedProduct}
-              className="rounded-xl bg-rose-500 px-8 py-3.5 text-[15px] font-semibold text-white transition-colors hover:bg-rose-600 disabled:opacity-40 disabled:hover:bg-rose-500"
-            >
-              Lanjut
-            </button>
-          </div>
-        )}
-        {step === "varian" && (
-          <div className="flex items-center justify-between gap-4">
-            <div className="min-w-0">
-              <p className="truncate text-base font-semibold tabular-nums text-gray-900">
-                {formatRp(totalAmount)}
-              </p>
-              <p className="text-xs text-gray-500 underline">
-                {totalQty} tiket · {formatDateShort(visitDate)}
-              </p>
+              {totalQty > 0 ? (
+                <>
+                  <p className="truncate text-base font-semibold tabular-nums text-gray-900">
+                    {formatRp(totalAmount)}
+                  </p>
+                  <p className="truncate text-xs text-gray-500">
+                    {selectedProduct?.name} · {totalQty} tiket
+                  </p>
+                </>
+              ) : (
+                <p className="text-sm text-gray-500">
+                  Pilih jumlah tiket untuk lanjut
+                </p>
+              )}
             </div>
             <button
               type="button"
               onClick={() => setStep("pemesan")}
               disabled={totalQty === 0}
-              className="rounded-xl bg-rose-500 px-8 py-3.5 text-[15px] font-semibold text-white transition-colors hover:bg-rose-600 disabled:opacity-40 disabled:hover:bg-rose-500"
+              className="shrink-0 rounded-xl bg-rose-500 px-8 py-3.5 text-[15px] font-semibold text-white transition-colors hover:bg-rose-600 disabled:opacity-40 disabled:hover:bg-rose-500"
             >
               Lanjut
             </button>
@@ -883,6 +770,190 @@ export function BookingWizard({ slug }: BookingWizardProps) {
           </button>
         )}
       </footer>
+    </div>
+  );
+}
+
+/* ── Kartu paket ala tiket.com: header + expand detail + stepper per varian ── */
+interface PackageCardProps {
+  product: CatalogProduct;
+  isSelected: boolean;
+  qty: Record<string, number>;
+  totalQty: number;
+  onChangeQty: (
+    product: CatalogProduct,
+    variant: CatalogVariant,
+    delta: number
+  ) => void;
+}
+
+function PackageCard({
+  product,
+  isSelected,
+  qty,
+  totalQty,
+  onChangeQty,
+}: PackageCardProps) {
+  const [detailOpen, setDetailOpen] = useState(false);
+  const fromPrice = priceRangeOf(product);
+  const productQty = product.variants.reduce(
+    (sum, v) => sum + (qty[v.variant_id] ?? 0),
+    0
+  );
+
+  return (
+    <div
+      className={`overflow-hidden rounded-3xl border transition-all ${
+        isSelected
+          ? "border-rose-500 shadow-[0_6px_16px_rgba(244,63,94,0.15)] ring-1 ring-rose-500"
+          : "border-gray-200"
+      }`}
+    >
+      <div className="flex gap-3 p-4">
+        {product.thumbnail_url && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={product.thumbnail_url}
+            alt={product.name}
+            className="h-20 w-20 shrink-0 rounded-2xl object-cover"
+          />
+        )}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-2">
+            <h3 className="min-w-0 text-[15px] font-semibold text-gray-900">
+              {product.name}
+            </h3>
+            {isSelected && productQty > 0 && (
+              <span className="flex h-6 shrink-0 items-center gap-1 rounded-full bg-rose-500 px-2 text-[11px] font-semibold text-white">
+                <Check className="h-3 w-3" /> {productQty}
+              </span>
+            )}
+          </div>
+          {product.description && (
+            <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-gray-500">
+              {product.description}
+            </p>
+          )}
+          <div className="mt-2 flex items-baseline gap-1">
+            <span className="text-[11px] text-gray-400">Mulai</span>
+            <span className="text-[15px] font-bold text-gray-900">
+              {formatRp(fromPrice)}
+            </span>
+            <span className="text-[11px] text-gray-400">/tiket</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Toggle detail */}
+      <button
+        type="button"
+        onClick={() => setDetailOpen((v) => !v)}
+        className="flex w-full items-center gap-1 border-t border-gray-100 px-4 py-2.5 text-xs font-semibold text-rose-600"
+      >
+        {detailOpen ? "Sembunyikan detail" : "Lihat detail & pilih jumlah"}
+        <ChevronDown
+          className={`h-4 w-4 transition-transform ${
+            detailOpen ? "rotate-180" : ""
+          }`}
+        />
+      </button>
+
+      {detailOpen && (
+        <div className="divide-y divide-gray-100 border-t border-gray-100 bg-gray-50/60 px-4">
+          {product.variants.map((variant) => {
+            const n = qty[variant.variant_id] ?? 0;
+            const standalone = bundleStandaloneTotal(variant);
+            const saving =
+              standalone !== null && standalone > variant.price
+                ? standalone - variant.price
+                : null;
+            const label = variantLabelOf(product, variant);
+            return (
+              <div
+                key={variant.variant_id}
+                className="flex items-center justify-between gap-4 py-4"
+              >
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-gray-900">
+                    {label}
+                    {variant.season_kind === "high" && (
+                      <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700">
+                        High Season
+                      </span>
+                    )}
+                  </p>
+                  <p className="mt-0.5 text-sm">
+                    {saving !== null ? (
+                      <>
+                        <span className="mr-1.5 text-xs text-gray-400 line-through">
+                          {formatRp(standalone!)}
+                        </span>
+                        <span className="font-semibold text-gray-900">
+                          {formatRp(variant.price)}
+                        </span>
+                        <span className="ml-1.5 rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-medium text-rose-600">
+                          Hemat {formatRp(saving)}
+                        </span>
+                      </>
+                    ) : (
+                      <span className="font-semibold text-gray-900">
+                        {formatRp(variant.price)}
+                      </span>
+                    )}
+                  </p>
+                  {product.product_kind === "bundle" && variant.members ? (
+                    <p className="mt-0.5 text-xs leading-snug text-gray-400">
+                      Termasuk:{" "}
+                      {Object.entries(
+                        variant.members.reduce<Record<string, number>>(
+                          (acc, m) => ({
+                            ...acc,
+                            [m.member_label]: (acc[m.member_label] ?? 0) + 1,
+                          }),
+                          {}
+                        )
+                      )
+                        .map(([lbl, count]) => `${count}× ${lbl}`)
+                        .join(", ")}
+                    </p>
+                  ) : null}
+                </div>
+                {/* Stepper */}
+                <div className="flex shrink-0 items-center gap-3">
+                  <button
+                    type="button"
+                    aria-label={`Kurangi ${label}`}
+                    onClick={() => onChangeQty(product, variant, -1)}
+                    disabled={n === 0}
+                    className="flex h-8 w-8 items-center justify-center rounded-full border border-gray-300 text-gray-600 transition-colors hover:border-gray-900 hover:text-gray-900 disabled:cursor-default disabled:opacity-25 disabled:hover:border-gray-300 disabled:hover:text-gray-600"
+                  >
+                    <Minus className="h-4 w-4" />
+                  </button>
+                  <span className="w-6 text-center text-[15px] font-medium tabular-nums text-gray-900">
+                    {n}
+                  </span>
+                  <button
+                    type="button"
+                    aria-label={`Tambah ${label}`}
+                    onClick={() => onChangeQty(product, variant, 1)}
+                    disabled={
+                      isSelected &&
+                      totalQty + personsPerUnit(variant) > MAX_QTY_PER_BOOKING
+                    }
+                    className="flex h-8 w-8 items-center justify-center rounded-full border border-gray-300 text-gray-600 transition-colors hover:border-gray-900 hover:text-gray-900 disabled:cursor-default disabled:opacity-25 disabled:hover:border-gray-300 disabled:hover:text-gray-600"
+                  >
+                    <Plus className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+          <p className="py-3 text-[11px] text-gray-400">
+            Maks {MAX_QTY_PER_BOOKING} tiket / pemesanan · 1 jenis tiket per
+            transaksi.
+          </p>
+        </div>
+      )}
     </div>
   );
 }
