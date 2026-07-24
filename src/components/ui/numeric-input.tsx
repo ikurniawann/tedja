@@ -6,12 +6,14 @@ import { cn } from "@/lib/utils";
 
 type NumericInputProps = Omit<
   React.ComponentProps<typeof Input>,
-  "type" | "value" | "onChange"
+  "type" | "value" | "onChange" | "prefix"
 > & {
   value?: number | null;
   onValueChange: (value: number) => void;
   decimalScale?: number;
   allowNegative?: boolean;
+  /** Label statis di sisi kiri input, mis. "Rp" untuk kolom nominal. */
+  prefix?: React.ReactNode;
 };
 
 function sanitizeNumberInput(value: string, decimalScale: number, allowNegative: boolean) {
@@ -64,6 +66,7 @@ export function NumericInput({
   allowNegative = false,
   className,
   onBlur,
+  prefix,
   ...props
 }: NumericInputProps) {
   const [displayValue, setDisplayValue] = React.useState(
@@ -74,7 +77,7 @@ export function NumericInput({
     setDisplayValue(formatDisplayValue(value, decimalScale));
   }, [decimalScale, value]);
 
-  return (
+  const input = (
     <Input
       {...props}
       type="text"
@@ -96,7 +99,22 @@ export function NumericInput({
         setDisplayValue(event.target.value === "" ? "" : formatNumber(clamped, decimalScale));
         onBlur?.(event);
       }}
-      className={cn("text-left tabular-nums", className)}
+      className={cn(
+        "text-left tabular-nums",
+        prefix != null && "pl-9",
+        className
+      )}
     />
+  );
+
+  if (prefix == null) return input;
+
+  return (
+    <div className="relative">
+      <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-sm text-gray-500">
+        {prefix}
+      </span>
+      {input}
+    </div>
   );
 }

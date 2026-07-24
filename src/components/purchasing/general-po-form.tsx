@@ -11,7 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Combobox } from "@/components/ui/combobox";
 import { DsDateTimePicker } from "@/components/design-system";
 import { NumericInput } from "@/components/ui/numeric-input";
-import { formatAmount } from "@/lib/purchasing/utils";
+import { formatRp } from "@/lib/purchasing/utils";
 import { toast } from "sonner";
 import type {
   ApprovedGeneralPRForPO,
@@ -301,13 +301,14 @@ export function GeneralPOForm({
                           )
                         }
                         decimalScale={0}
+                        prefix="Rp"
                         className="h-9 text-sm"
                       />
                     </div>
                     <div className="md:col-span-2 rounded-lg bg-gray-50 p-3">
                       <p className="text-xs text-gray-500">Subtotal</p>
                       <p className="text-sm font-semibold">
-                        {formatAmount((item.qty_ordered || 0) * (item.harga_satuan || 0))}
+                        {formatRp((item.qty_ordered || 0) * (item.harga_satuan || 0))}
                       </p>
                     </div>
                   </div>
@@ -338,11 +339,11 @@ export function GeneralPOForm({
                 <Textarea value={catatan} onChange={(e) => setCatatan(e.target.value)} rows={3} className="text-sm" />
               </div>
               <div className="space-y-2 rounded-xl border border-gray-200/70 bg-gray-50/70 p-4 text-sm">
-                <div className="flex justify-between"><span>Subtotal</span><span>{formatAmount(subtotal)}</span></div>
-                <div className="flex justify-between"><span>Diskon</span><span>{formatAmount(discount)}</span></div>
-                <div className="flex justify-between"><span>PPN</span><span>{formatAmount(ppn)}</span></div>
+                <div className="flex justify-between"><span>Subtotal</span><span>{formatRp(subtotal)}</span></div>
+                <div className="flex justify-between"><span>Diskon</span><span>{formatRp(discount)}</span></div>
+                <div className="flex justify-between"><span>PPN</span><span>{formatRp(ppn)}</span></div>
                 <div className="flex justify-between border-t border-gray-200/70 pt-2 font-semibold">
-                  <span>Total</span><span>{formatAmount(total)}</span>
+                  <span>Total</span><span>{formatRp(total)}</span>
                 </div>
               </div>
               <div className="flex flex-col gap-2">

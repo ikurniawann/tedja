@@ -44,8 +44,7 @@ import {
   useDeleteSupplyItem,
 } from "../mutations";
 import type { SupplyItem } from "../types";
-
-const formatRp = (n: number) => `Rp${(n || 0).toLocaleString("id-ID")}`;
+import { formatRp } from "@/lib/purchasing/utils";
 
 interface FormState {
   nama: string;

@@ -23,6 +23,8 @@ const vendorCategoryEnum = z.enum([
   "other",
 ]);
 
+const vendorUsageEnum = z.enum(["fnb", "operasional", "keduanya"]);
+
 const updateVendorSchema = z.object({
   name: z.string().min(1).optional(),
   contact_person: z.string().min(1).optional(),
@@ -30,6 +32,7 @@ const updateVendorSchema = z.object({
   email: z.string().email().optional(),
   address: z.string().min(1).optional(),
   category: vendorCategoryEnum.optional(),
+  usage_scope: vendorUsageEnum.optional(),
   npwp: z.string().optional(),
   bank_name: z.string().optional(),
   bank_account: z.string().optional(),

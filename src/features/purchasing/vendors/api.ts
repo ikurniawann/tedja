@@ -4,6 +4,7 @@ function buildListParams(params: VendorListParams) {
   const sp = new URLSearchParams();
   if (params.search) sp.set("search", params.search);
   if (params.category && params.category !== "all") sp.set("category", params.category);
+  if (params.usage_scope && params.usage_scope !== "all") sp.set("usage_scope", params.usage_scope);
   if (params.status && params.status !== "all") sp.set("status", params.status);
   if (params.page) sp.set("page", String(params.page));
   if (params.limit) sp.set("limit", String(params.limit));

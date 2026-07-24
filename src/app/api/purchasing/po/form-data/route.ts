@@ -14,10 +14,12 @@ export async function GET(request: NextRequest) {
     const scope = await getApiUserScope();
 
     if (moduleType === "product") {
+      // PO produk/F&B: hanya vendor ber-peruntukan 'fnb' atau 'keduanya'.
       let vendorsQuery = db
         .from("vendors")
         .select("id, code, name")
         .eq("is_active", true)
+        .in("usage_scope", ["fnb", "keduanya"])
         .order("name");
 
       const companyOr = companyScopeOr(scope);
@@ -54,10 +56,12 @@ export async function GET(request: NextRequest) {
     if (moduleType === "general") {
       // EPIC-026 B3 — PO barang operasional: pemasok REUSE tabel `vendors`,
       // sumber item = item.supply_items (harga_beli sbagai harga default).
+      // Hanya vendor ber-peruntukan 'operasional' atau 'keduanya'.
       let vendorsQuery = db
         .from("vendors")
         .select("id, code, name")
         .eq("is_active", true)
+        .in("usage_scope", ["operasional", "keduanya"])
         .order("name");
 
       const companyOr = companyScopeOr(scope);

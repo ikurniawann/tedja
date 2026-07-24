@@ -13,7 +13,7 @@ import { PurchasingTablePagination } from "@/modules/purchasing/components/pagin
 import { GENERAL_ROUTES } from "@/modules/purchasing/constants/item-routes";
 import { FileText, Plus, Search, Filter, Eye, X } from "lucide-react";
 import { toast } from "sonner";
-import { formatAmount, formatDate } from "@/lib/purchasing/utils";
+import { formatRp, formatDate } from "@/lib/purchasing/utils";
 import { useGeneralPurchaseOrderList } from "../queries";
 
 const STATUS_OPTIONS = [
@@ -175,7 +175,7 @@ export function GeneralPOListPage() {
                         <div className="text-xs text-gray-500">{po.vendor_code || ""}</div>
                       </td>
                       <td className="px-4 py-3 text-right font-medium">
-                        {formatAmount(po.grand_total ?? po.total ?? 0)}
+                        {formatRp(po.grand_total ?? po.total ?? 0)}
                       </td>
                       <td className="px-4 py-3 text-center">
                         <Badge className={STATUS_STYLES[po.status] || "bg-gray-100 text-gray-700"}>

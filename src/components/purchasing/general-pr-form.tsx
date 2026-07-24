@@ -19,7 +19,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { NumericInput } from "@/components/ui/numeric-input";
 import { DsDateTimePicker } from "@/components/design-system";
-import { formatAmount } from "@/lib/purchasing/utils";
+import { formatRp } from "@/lib/purchasing/utils";
 import { parseLocaleNumber } from "@/lib/purchasing/parse-locale-number";
 import { toast } from "sonner";
 import type { GeneralPRFormInput, GeneralPRFormSupply } from "@/features/purchasing/general-pr/types";
@@ -356,13 +356,14 @@ export function GeneralPRForm({
                             })
                           }
                           decimalScale={0}
+                          prefix="Rp"
                           className="h-9 text-sm"
                         />
                       </div>
                       <div className="min-w-0 rounded-lg bg-gray-50/80 p-3 lg:col-span-3">
                         <p className="text-xs text-gray-500">Subtotal</p>
                         <p className="text-sm font-semibold text-gray-900">
-                          {formatAmount((items[index]?.qty || 0) * (items[index]?.estimated_price || 0))}
+                          {formatRp((items[index]?.qty || 0) * (items[index]?.estimated_price || 0))}
                         </p>
                       </div>
                     </div>
@@ -389,7 +390,7 @@ export function GeneralPRForm({
               </div>
               <div className="rounded-xl border border-gray-200/70 bg-gray-50/70 p-4">
                 <p className="text-sm text-gray-500">Estimasi Total</p>
-                <p className="mt-1 text-2xl font-bold text-gray-900">{formatAmount(totalAmount)}</p>
+                <p className="mt-1 text-2xl font-bold text-gray-900">{formatRp(totalAmount)}</p>
               </div>
               <div className="flex flex-col gap-2">
                 <Button

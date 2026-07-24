@@ -19,6 +19,7 @@ import {
   GrnStatus,
 } from "@/lib/purchasing/grn";
 import { toQty } from "@/lib/purchasing/utils";
+import { addSupplyStockFromGrn } from "@/lib/purchasing/supply-inventory";
 import { syncReceiveRejectCredits } from "@/lib/purchasing/vendor-credit-service";
 import { parsePurchasingModuleType } from "@/lib/purchasing/module-scope";
 import { validatePOCanDelivery } from "@/lib/purchasing/delivery";
@@ -102,6 +103,7 @@ type POQtyValidationItem = {
   supply_item_id?: string | null;
   qty_ordered?: number | null;
   qty_received?: number | null;
+  harga_satuan?: number | null;
   raw_material?: {
     nama?: string | null;
     nama_bahan?: string | null;
@@ -565,6 +567,59 @@ export async function POST(request: NextRequest) {
         }
       } else {
         console.warn(`[GRN] item missing purchase_order_item_id for raw_material ${item.raw_material_id}`);
+      }
+    }
+
+    // EPIC-026 C1 — Posting stok riil barang operasional. Hanya untuk scope
+    // general + item stockable=true; item stockable=false di-expense (tak ada stok).
+    // Non-fatal: kegagalan inventory tidak membatalkan penerimaan.
+    if (moduleType === "general" && grnStatus !== "rejected") {
+      try {
+        const supplyIds = Array.from(
+          new Set(
+            validated.items
+              .filter((it) => it.supply_item_id && toQty(it.qty_diterima) > 0)
+              .map((it) => it.supply_item_id as string)
+          )
+        );
+
+        if (supplyIds.length > 0) {
+          const { data: supplyRows } = await adminDb
+            .from("supply_items")
+            .select("id, stockable")
+            .in("id", supplyIds);
+          const stockableSet = new Set(
+            (supplyRows ?? [])
+              .filter((r: { stockable?: boolean }) => r.stockable === true)
+              .map((r: { id: string }) => r.id)
+          );
+
+          for (const item of validated.items) {
+            const supplyItemId = item.supply_item_id;
+            const qty = toQty(item.qty_diterima);
+            if (!supplyItemId || qty <= 0 || !stockableSet.has(supplyItemId)) continue;
+
+            const poItem = effectivePoItems.find(
+              (p) =>
+                (item.purchase_order_item_id && p.id === item.purchase_order_item_id) ||
+                p.supply_item_id === supplyItemId
+            );
+
+            await addSupplyStockFromGrn(adminDb, {
+              supplyItemId,
+              warehouseId: validated.warehouse_id,
+              qtyReceived: qty,
+              unitCost: toQty(poItem?.harga_satuan),
+              grnId: grn.id,
+              grnNumber,
+              companyId: businessScope?.company_id ?? null,
+              branchId: businessScope?.branch_id ?? null,
+              userId: user.id,
+            });
+          }
+        }
+      } catch (stockErr) {
+        console.error("[GRN] Supply stock posting error (non-fatal):", stockErr);
       }
     }
 

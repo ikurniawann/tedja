@@ -24,6 +24,8 @@ const vendorCategoryEnum = z.enum([
   "other",
 ]);
 
+const vendorUsageEnum = z.enum(["fnb", "operasional", "keduanya"]);
+
 const vendorSchema = z.object({
   name: z.string().min(1, "Vendor name is required"),
   contact_person: z.string().min(1, "Contact person is required"),
@@ -31,6 +33,7 @@ const vendorSchema = z.object({
   email: z.string().email("Invalid email address"),
   address: z.string().min(1, "Address is required"),
   category: vendorCategoryEnum,
+  usage_scope: vendorUsageEnum.default("keduanya"),
   npwp: z.string().optional(),
   bank_name: z.string().optional(),
   bank_account: z.string().optional(),
@@ -41,6 +44,7 @@ const vendorSchema = z.object({
 const queryParamsSchema = z.object({
   search: z.string().optional(),
   category: vendorCategoryEnum.optional(),
+  usage_scope: vendorUsageEnum.optional(),
   status: z.enum(["all", "active", "inactive"]).optional(),
   page: z.coerce.number().min(1).default(1),
   limit: z.coerce.number().min(1).max(100).default(10),
@@ -57,7 +61,7 @@ export async function GET(request: NextRequest) {
 
     const url = new URL(request.url);
     const params = queryParamsSchema.parse(Object.fromEntries(url.searchParams));
-    const { page, limit, search, category, status } = params;
+    const { page, limit, search, category, usage_scope, status } = params;
     const offset = (page - 1) * limit;
 
     const db = await createServerPgClient();
@@ -77,6 +81,15 @@ export async function GET(request: NextRequest) {
 
     if (category) {
       query = query.eq("category", category);
+    }
+
+    // Filter peruntukan: modul yang meminta vendor "operasional"/"fnb" tetap
+    // ikut menampilkan vendor "keduanya".
+    if (usage_scope) {
+      query =
+        usage_scope === "keduanya"
+          ? query.eq("usage_scope", "keduanya")
+          : query.in("usage_scope", [usage_scope, "keduanya"]);
     }
 
     if (search) {

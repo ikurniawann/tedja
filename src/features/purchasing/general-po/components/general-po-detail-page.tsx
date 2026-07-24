@@ -19,7 +19,7 @@ import {
 import { Combobox } from "@/components/ui/combobox";
 import { ArrowLeft, CheckCircle, Loader2, Printer, Send, XCircle } from "lucide-react";
 import { toast } from "sonner";
-import { formatAmount, formatDate } from "@/lib/purchasing/utils";
+import { formatRp, formatDate } from "@/lib/purchasing/utils";
 import { GENERAL_ROUTES } from "@/modules/purchasing/constants/item-routes";
 import { NAV_FROM_APPROVAL_PO } from "@/lib/iam/nav-context";
 import { useNavFrom } from "@/lib/iam/use-nav-from";
@@ -204,8 +204,8 @@ export function GeneralPODetailPage() {
                         </td>
                         <td className="px-4 py-3 text-right">{item.qty_ordered}</td>
                         <td className="px-4 py-3 text-right">{item.qty_received ?? 0}</td>
-                        <td className="px-4 py-3 text-right">{formatAmount(item.harga_satuan || 0)}</td>
-                        <td className="px-4 py-3 text-right font-medium">{formatAmount(item.subtotal || 0)}</td>
+                        <td className="px-4 py-3 text-right">{formatRp(item.harga_satuan || 0)}</td>
+                        <td className="px-4 py-3 text-right font-medium">{formatRp(item.subtotal || 0)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -220,14 +220,14 @@ export function GeneralPODetailPage() {
             <CardTitle className="text-base">Ringkasan Keuangan</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3 p-4 text-sm">
-            <div className="flex justify-between"><span>Subtotal</span><span>{formatAmount(po.subtotal || 0)}</span></div>
-            <div className="flex justify-between"><span>Diskon</span><span>{formatAmount(po.diskon_nominal || 0)}</span></div>
-            <div className="flex justify-between"><span>PPN</span><span>{formatAmount(po.ppn_nominal || 0)}</span></div>
+            <div className="flex justify-between"><span>Subtotal</span><span>{formatRp(po.subtotal || 0)}</span></div>
+            <div className="flex justify-between"><span>Diskon</span><span>{formatRp(po.diskon_nominal || 0)}</span></div>
+            <div className="flex justify-between"><span>PPN</span><span>{formatRp(po.ppn_nominal || 0)}</span></div>
             <div className="flex justify-between border-t border-gray-200/70 pt-2 font-semibold">
-              <span>Total</span><span className="text-pink-700">{formatAmount(po.grand_total ?? po.total ?? 0)}</span>
+              <span>Total</span><span className="text-pink-700">{formatRp(po.grand_total ?? po.total ?? 0)}</span>
             </div>
-            <div className="flex justify-between text-gray-500"><span>Dibayar</span><span>{formatAmount(po.paid_amount || 0)}</span></div>
-            <div className="flex justify-between text-gray-500"><span>Sisa</span><span>{formatAmount(po.outstanding_amount || 0)}</span></div>
+            <div className="flex justify-between text-gray-500"><span>Dibayar</span><span>{formatRp(po.paid_amount || 0)}</span></div>
+            <div className="flex justify-between text-gray-500"><span>Sisa</span><span>{formatRp(po.outstanding_amount || 0)}</span></div>
           </CardContent>
         </Card>
       </div>

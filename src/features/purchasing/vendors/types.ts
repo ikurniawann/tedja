@@ -6,6 +6,13 @@ export type VendorCategory =
   | "raw_material"
   | "other";
 
+/**
+ * Peruntukan vendor — menentukan di modul PO mana vendor muncul.
+ * 'fnb' = hanya PO produk/F&B; 'operasional' = hanya PO barang operasional;
+ * 'keduanya' = muncul di kedua modul.
+ */
+export type VendorUsageScope = "fnb" | "operasional" | "keduanya";
+
 export interface Vendor {
   id: string;
   code: string;
@@ -15,6 +22,7 @@ export interface Vendor {
   email: string;
   address: string;
   category: VendorCategory;
+  usage_scope: VendorUsageScope;
   npwp?: string | null;
   bank_name?: string | null;
   bank_account?: string | null;
@@ -33,6 +41,7 @@ export interface VendorFormData {
   email: string;
   address: string;
   category: VendorCategory;
+  usage_scope: VendorUsageScope;
   npwp?: string;
   bank_name?: string;
   bank_account?: string;
@@ -43,6 +52,7 @@ export interface VendorFormData {
 export interface VendorListParams {
   search?: string;
   category?: VendorCategory | "all";
+  usage_scope?: VendorUsageScope | "all";
   status?: "all" | "active" | "inactive";
   page?: number;
   limit?: number;
@@ -59,4 +69,14 @@ export const VENDOR_CATEGORY_OPTIONS: { value: VendorCategory; label: string }[]
 
 export function getVendorCategoryLabel(category?: VendorCategory | string | null) {
   return VENDOR_CATEGORY_OPTIONS.find((row) => row.value === category)?.label ?? category ?? "-";
+}
+
+export const VENDOR_USAGE_OPTIONS: { value: VendorUsageScope; label: string }[] = [
+  { value: "fnb", label: "Produk / F&B" },
+  { value: "operasional", label: "Barang Operasional" },
+  { value: "keduanya", label: "Keduanya" },
+];
+
+export function getVendorUsageLabel(usage?: VendorUsageScope | string | null) {
+  return VENDOR_USAGE_OPTIONS.find((row) => row.value === usage)?.label ?? usage ?? "-";
 }

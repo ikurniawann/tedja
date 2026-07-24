@@ -130,6 +130,11 @@ export const GENERAL_ROUTES = {
   purchasingReceiveForm: (poId: string) => `${GENERAL_BASE}/purchasing/receive/${poId}`,
   approvalPr: `${GENERAL_BASE}/approval/pr`,
   approvalPo: `${GENERAL_BASE}/approval/po`,
+  // C1–C2 — Inventory riil barang operasional.
+  inventory: `${GENERAL_BASE}/inventory`,
+  inventoryDetail: (id: string) => `${GENERAL_BASE}/inventory/${id}`,
+  inventoryUsage: `${GENERAL_BASE}/inventory/usage`,
+  inventoryAdjustment: `${GENERAL_BASE}/inventory/adjustment`,
 } as const;
 
 /** @deprecated Use RM_ROUTES.materials */

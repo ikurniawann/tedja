@@ -14,7 +14,7 @@ import {
   Printer,
   XCircle,
 } from "lucide-react";
-import { formatAmount, formatDate, getPRStatusLabel, getPriorityBadge } from "@/lib/purchasing/utils";
+import { formatRp, formatDate, getPRStatusLabel, getPriorityBadge } from "@/lib/purchasing/utils";
 import { PRRevisionButton } from "@/components/purchasing/pr-revision-button";
 import { PRDetailToast } from "@/components/purchasing/pr-detail-toast";
 import { PRApprovalActions } from "@/components/purchasing/pr-approval-actions";
@@ -252,10 +252,10 @@ export function GeneralPRDetailPage({ params }: GeneralPRDetailPageProps) {
                             {item.satuan?.nama || item.unit || "-"}
                           </td>
                           <td className="px-4 py-3 text-right text-gray-700">
-                            {formatAmount(item.estimated_price || 0)}
+                            {formatRp(item.estimated_price || 0)}
                           </td>
                           <td className="px-4 py-3 text-right font-medium text-gray-900">
-                            {formatAmount(item.total || 0)}
+                            {formatRp(item.total || 0)}
                           </td>
                         </tr>
                       ))}
@@ -285,7 +285,7 @@ export function GeneralPRDetailPage({ params }: GeneralPRDetailPageProps) {
                 </div>
                 <div className="flex items-start justify-between gap-3 border-t border-gray-200/70 pt-3">
                   <dt className="font-medium text-gray-900">Estimasi Total</dt>
-                  <dd className="font-semibold text-pink-700">{formatAmount(pr.total_amount)}</dd>
+                  <dd className="font-semibold text-pink-700">{formatRp(pr.total_amount)}</dd>
                 </div>
               </dl>
               {pr.status === "rejected" && pr.rejection_reason && (
