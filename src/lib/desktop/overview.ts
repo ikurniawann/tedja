@@ -16,6 +16,8 @@ import { query, queryOne } from "@/lib/db";
 export interface SalesPulse {
   hariIni: { omzet: number; pesanan: number; rataRata: number };
   kemarin: { omzet: number; pesanan: number };
+  /** Hari yang sama minggu lalu (H-7) — pembanding pola mingguan (Fase C). */
+  mingguLalu: { omzet: number; pesanan: number };
   /** Omzet per hari, 7 hari terakhir (indeks 6 = hari ini) — bahan sparkline. */
   tujuhHari: Array<{ tanggal: string; omzet: number }>;
 }
@@ -74,12 +76,14 @@ async function fetchSalesPulse(): Promise<SalesPulse> {
   const today = todayJakarta();
   // Filter identik dengan tool Do `penjualan_periode`: pesanan batal & void
   // tidak dihitung.
+  // Rentang -7 hari (bukan -6) supaya hari yang sama minggu lalu ikut terambil
+  // untuk pembanding mingguan; sparkline tetap memakai 7 titik terakhir.
   const rows = await query<{ tanggal: string; omzet: string; pesanan: string }>(
     `SELECT (created_at AT TIME ZONE 'Asia/Jakarta')::date::text AS tanggal,
             COALESCE(sum(total_amount), 0)::float8 AS omzet,
             count(*)::int AS pesanan
        FROM pos.pos_orders
-      WHERE created_at >= ($1::date - interval '6 days')
+      WHERE created_at >= ($1::date - interval '7 days')
         AND created_at < ($1::date + interval '1 day')
         AND status <> 'cancelled'
         AND voided_at IS NULL
@@ -100,6 +104,10 @@ async function fetchSalesPulse(): Promise<SalesPulse> {
   const hariIni = byDate.get(today) ?? { omzet: 0, pesanan: 0 };
   const kemarinTgl = tujuhHari[5]?.tanggal ?? today;
   const kemarin = byDate.get(kemarinTgl) ?? { omzet: 0, pesanan: 0 };
+  const mingguLaluTgl = new Date(new Date(`${today}T00:00:00Z`).getTime() - 7 * 86_400_000)
+    .toISOString()
+    .slice(0, 10);
+  const mingguLalu = byDate.get(mingguLaluTgl) ?? { omzet: 0, pesanan: 0 };
 
   return {
     hariIni: {
@@ -108,6 +116,7 @@ async function fetchSalesPulse(): Promise<SalesPulse> {
       rataRata: hariIni.pesanan > 0 ? hariIni.omzet / hariIni.pesanan : 0,
     },
     kemarin: { omzet: kemarin.omzet, pesanan: kemarin.pesanan },
+    mingguLalu: { omzet: mingguLalu.omzet, pesanan: mingguLalu.pesanan },
     tujuhHari,
   };
 }

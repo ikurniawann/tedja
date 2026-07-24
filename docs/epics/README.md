@@ -24,7 +24,7 @@ deploying-dev · ready-for-qa · blocked · done).
 | [EPIC-016](./EPIC-016-suara-ai-tts.md) | Suara AI — Provider TTS Bisa Dipilih + Preview | ready-for-qa | 2026-07-20 |
 | [EPIC-017](./EPIC-017-do-assistant-powerful.md) | Do — Asisten yang Benar-Benar Berguna | ready-for-qa | 2026-07-25 |
 | [EPIC-018](./EPIC-018-lampiran-ocr.md) | Lampiran & OCR — Do Bisa Membaca Dokumen | on-progress | 2026-07-21 |
-| [EPIC-019](./EPIC-019-desktop-owner-monitoring.md) | Desktop Arkiv OS — Pusat Monitoring Owner | coding | 2026-07-21 |
+| [EPIC-019](./EPIC-019-desktop-owner-monitoring.md) | Desktop Arkiv OS — Pusat Monitoring Owner | ready-for-qa | 2026-07-25 |
 | [EPIC-020](./EPIC-020-notifikasi-wa-owner.md) | Notifikasi WhatsApp untuk Owner | ready-for-qa | 2026-07-23 |
 | [EPIC-021](./EPIC-021-dashboard-eksekutif.md) | /dashboard — Ringkasan Eksekutif Lintas Modul | coding | 2026-07-21 |
 | [EPIC-022](./EPIC-022-sales-crm-funnel.md) | Sales Funneling — Leads B2B (Corporate, Sekolah & Acara Privat) | ready-for-qa | 2026-07-22 |

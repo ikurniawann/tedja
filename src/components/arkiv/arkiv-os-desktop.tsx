@@ -8,6 +8,7 @@ import {
   DesktopMonitorBoard,
   MONITOR_WIDGETS,
   NotificationPopups,
+  normalizeWidgetOrder,
   useDesktopOverview,
   type MonitorWidgetKey,
 } from "./desktop-monitor";
@@ -33,6 +34,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
   Cloud,
   Command,
   Copy,
@@ -194,6 +196,7 @@ export default function ArkivOsDesktop() {
   const [assistantShortcutFocused, setAssistantShortcutFocused] = useState(false);
   const [wallpaper, setWallpaper] = useState(wallpapers[0]);
   const [widgetVisibility, setWidgetVisibility] = useState<WidgetVisibility>(defaultWidgetVisibility);
+  const [widgetOrder, setWidgetOrder] = useState<MonitorWidgetKey[]>(() => normalizeWidgetOrder(null));
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [assistantSettings, setAssistantSettings] = useState<AiAssistantSettings>(DEFAULT_AI_ASSISTANT_SETTINGS);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; module?: DesktopModule; desktop?: boolean } | null>(null);
@@ -338,6 +341,17 @@ export default function ArkivOsDesktop() {
     window.localStorage.setItem("arkiv-widget-visibility", JSON.stringify(next));
   };
 
+  /** Geser widget monitoring satu langkah ke atas/bawah (Fase C). */
+  const moveWidget = (key: MonitorWidgetKey, direction: -1 | 1) => {
+    const index = widgetOrder.indexOf(key);
+    const target = index + direction;
+    if (index < 0 || target < 0 || target >= widgetOrder.length) return;
+    const next = [...widgetOrder];
+    [next[index], next[target]] = [next[target], next[index]];
+    setWidgetOrder(next);
+    window.localStorage.setItem("arkiv-widget-order", JSON.stringify(next));
+  };
+
   const updateSoundEnabled = (value: boolean) => {
     setSoundEnabled(value);
     window.localStorage.setItem("arkiv-sound-enabled", String(value));
@@ -376,6 +390,14 @@ export default function ArkivOsDesktop() {
       setNow(new Date());
       const savedWallpaper = window.localStorage.getItem("arkiv-wallpaper");
       const savedWidgets = window.localStorage.getItem("arkiv-widget-visibility");
+      const savedOrder = window.localStorage.getItem("arkiv-widget-order");
+      if (savedOrder) {
+        try {
+          setWidgetOrder(normalizeWidgetOrder(JSON.parse(savedOrder)));
+        } catch {
+          window.localStorage.removeItem("arkiv-widget-order");
+        }
+      }
       const savedSound = window.localStorage.getItem("arkiv-sound-enabled");
       const savedAssistantSettings = window.localStorage.getItem(AI_ASSISTANT_SETTINGS_STORAGE_KEY);
       if (savedWallpaper) setWallpaper(wallpapers.find((item) => item.id === savedWallpaper) ?? wallpapers[0]);
@@ -546,7 +568,7 @@ export default function ArkivOsDesktop() {
       <section className="relative z-10 min-h-dvh px-6 pb-28 pt-14">
         {now && widgetVisibility.calendar && <CalendarWidget date={now} onClose={() => updateWidgetVisibility("calendar", false)} />}
         {isLoggedIn && (
-          <DesktopMonitorBoard state={overview} visibility={widgetVisibility} onAskDo={askDoFromWidget} />
+          <DesktopMonitorBoard state={overview} visibility={widgetVisibility} order={widgetOrder} onAskDo={askDoFromWidget} />
         )}
       </section>
 
@@ -644,7 +666,7 @@ export default function ArkivOsDesktop() {
       <NotificationPopups popups={notifPopups} onDismiss={dismissPopup} onOpen={openNotification} />
       {showFiles && <FileExplorer onClose={() => setShowFiles(false)} isLoggedIn={isLoggedIn} />}
       {showWallpaperPicker && <WallpaperPicker selected={wallpaper.id} onSelect={(item) => { setWallpaper(item); window.localStorage.setItem("arkiv-wallpaper", item.id); }} onClose={() => setShowWallpaperPicker(false)} />}
-      {showWidgetSettings && <WidgetSettings visibility={widgetVisibility} onChange={updateWidgetVisibility} onClose={() => setShowWidgetSettings(false)} />}
+      {showWidgetSettings && <WidgetSettings visibility={widgetVisibility} order={widgetOrder} onChange={updateWidgetVisibility} onMove={moveWidget} onClose={() => setShowWidgetSettings(false)} />}
       {showSettings && (
         <SystemSettings
           onOpenWaNotif={() => { setShowSettings(false); setShowWaNotif(true); }}
@@ -2543,38 +2565,71 @@ function SystemSettings({
   );
 }
 
-function WidgetSettings({ visibility, onChange, onClose }: { visibility: WidgetVisibility; onChange: (key: keyof WidgetVisibility, value: boolean) => void; onClose: () => void }) {
-  const items: Array<{ key: keyof WidgetVisibility; title: string; description: string; icon: ComponentType<{ className?: string }> }> = [
-    { key: "calendar", title: "Calendar Widget", description: "Kalender bulanan yang bisa dipindahkan dan di-resize.", icon: CalendarDays },
-    ...MONITOR_WIDGETS.map((w) => ({
-      key: w.key as keyof WidgetVisibility,
-      title: w.title,
-      description: w.description,
-      icon: Activity,
-    })),
-  ];
+function WidgetSettings({
+  visibility,
+  order,
+  onChange,
+  onMove,
+  onClose,
+}: {
+  visibility: WidgetVisibility;
+  order: MonitorWidgetKey[];
+  onChange: (key: keyof WidgetVisibility, value: boolean) => void;
+  onMove: (key: MonitorWidgetKey, direction: -1 | 1) => void;
+  onClose: () => void;
+}) {
+  // Baris widget monitoring mengikuti urutan pilihan user (Fase C); Calendar
+  // adalah window mengambang, bukan bagian papan, jadi tanpa kontrol urutan.
+  const monitorItems = order
+    .map((key) => MONITOR_WIDGETS.find((w) => w.key === key))
+    .filter((w): w is (typeof MONITOR_WIDGETS)[number] => Boolean(w));
+  const calendar = { key: "calendar" as const, title: "Calendar Widget", description: "Kalender bulanan yang bisa dipindahkan dan di-resize." };
 
   return (
     <WindowShell title="Widgets" onClose={onClose} className="left-1/2 top-24 w-[min(460px,calc(100vw-32px))] -translate-x-1/2">
       <div className="space-y-3 p-5">
         <div className="rounded-3xl border border-white/10 bg-white/8 p-4">
           <div className="text-sm font-semibold">Desktop Widgets</div>
-          <div className="mt-1 text-xs leading-5 text-white/50">Calendar Widget aktif secara default. System Widget bisa diaktifkan sesuai kebutuhan, lalu drag window widget dari title bar.</div>
+          <div className="mt-1 text-xs leading-5 text-white/50">Calendar Widget aktif secara default. Widget monitoring bisa diaktifkan dan diatur urutannya dengan tombol panah — urutan tersimpan di perangkat ini.</div>
         </div>
-        {items.map((item) => {
-          const Icon = item.icon;
-          const enabled = visibility[item.key];
-          return (
-            <div key={item.key} className="flex items-center gap-3 rounded-3xl border border-white/10 bg-white/8 p-4">
-              <div className={`grid size-11 place-items-center rounded-2xl bg-gradient-to-br ${pinkAccent}`}><Icon className="size-5" /></div>
-              <div className="min-w-0 flex-1">
-                <div className="text-sm font-semibold">{item.title}</div>
-                <div className="text-xs leading-5 text-white/45">{item.description}</div>
-              </div>
-              <ToggleSwitch enabled={enabled} onChange={(value) => onChange(item.key, value)} label={`Toggle ${item.title}`} />
+        <div className="flex items-center gap-3 rounded-3xl border border-white/10 bg-white/8 p-4">
+          <div className={`grid size-11 place-items-center rounded-2xl bg-gradient-to-br ${pinkAccent}`}><CalendarDays className="size-5" /></div>
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-semibold">{calendar.title}</div>
+            <div className="text-xs leading-5 text-white/45">{calendar.description}</div>
+          </div>
+          <ToggleSwitch enabled={visibility.calendar} onChange={(value) => onChange("calendar", value)} label={`Toggle ${calendar.title}`} />
+        </div>
+        {monitorItems.map((item, index) => (
+          <div key={item.key} className="flex items-center gap-3 rounded-3xl border border-white/10 bg-white/8 p-4">
+            <div className="flex shrink-0 flex-col gap-0.5">
+              <button
+                type="button"
+                disabled={index === 0}
+                onClick={() => onMove(item.key, -1)}
+                aria-label={`Naikkan urutan ${item.title}`}
+                className="rounded-lg p-1 text-white/50 transition hover:bg-white/10 hover:text-white disabled:opacity-25"
+              >
+                <ChevronUp className="size-4" />
+              </button>
+              <button
+                type="button"
+                disabled={index === monitorItems.length - 1}
+                onClick={() => onMove(item.key, 1)}
+                aria-label={`Turunkan urutan ${item.title}`}
+                className="rounded-lg p-1 text-white/50 transition hover:bg-white/10 hover:text-white disabled:opacity-25"
+              >
+                <ChevronDown className="size-4" />
+              </button>
             </div>
-          );
-        })}
+            <div className={`grid size-11 shrink-0 place-items-center rounded-2xl bg-gradient-to-br ${pinkAccent}`}><Activity className="size-5" /></div>
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-semibold">{item.title}</div>
+              <div className="text-xs leading-5 text-white/45">{item.description}</div>
+            </div>
+            <ToggleSwitch enabled={visibility[item.key]} onChange={(value) => onChange(item.key, value)} label={`Toggle ${item.title}`} />
+          </div>
+        ))}
       </div>
     </WindowShell>
   );

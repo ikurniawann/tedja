@@ -106,6 +106,7 @@ describe("buildDigestMessage", () => {
       pulsaBisnis: {
         hariIni: { omzet: 1_200_000, pesanan: 10, rataRata: 120_000 },
         kemarin: { omzet: 1_000_000, pesanan: 8 },
+        mingguLalu: { omzet: 0, pesanan: 0 },
         tujuhHari: [],
       },
     };
@@ -120,6 +121,7 @@ describe("buildDigestMessage", () => {
       pulsaBisnis: {
         hariIni: { omzet: 500_000, pesanan: 3, rataRata: 166_667 },
         kemarin: { omzet: 0, pesanan: 0 },
+        mingguLalu: { omzet: 0, pesanan: 0 },
         tujuhHari: [],
       },
     };
