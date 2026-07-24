@@ -4,6 +4,7 @@ import { ApiError, requireApiRole } from "@/lib/api/auth";
 import {
   getPoPayableContext,
   resolvePaymentTermId,
+  resolvePoPaymentParty,
 } from "@/lib/purchasing/po-payments";
 import { z } from "zod";
 
@@ -107,10 +108,11 @@ export async function POST(
       );
     }
 
+    const party = resolvePoPaymentParty(ctx);
+
     const termId = await resolvePaymentTermId(
       db,
       id,
-      ctx.supplierId,
       validated.amount,
       paymentDate,
       validated.payment_term_id
@@ -123,7 +125,8 @@ export async function POST(
         payment_number: paymentNumber,
         purchase_order_id: id,
         payment_term_id: termId,
-        supplier_id: ctx.supplierId,
+        supplier_id: party.supplier_id,
+        vendor_id: party.vendor_id,
         payment_date: paymentDate,
         amount: validated.amount,
         method: validated.method,

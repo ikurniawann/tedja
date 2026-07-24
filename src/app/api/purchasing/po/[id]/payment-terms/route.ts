@@ -3,6 +3,7 @@ import { createPgClient } from "@/lib/pg/create-client";
 import {
   getPoPayableContext,
   normalizeTermDescription,
+  resolvePoPaymentParty,
 } from "@/lib/purchasing/po-payments";
 import { z } from "zod";
 
@@ -64,18 +65,14 @@ export async function POST(
     const body = await request.json();
     const validated = termSchema.parse(body);
 
-    const { data: po, error: poError } = await db
-      .from("purchase_orders")
-      .select("id, supplier_id")
-      .eq("id", id)
-      .single();
+    const ctx = await getPoPayableContext(db, id);
 
-    if (poError || !po) {
+    if (!ctx) {
       return Response.json({ success: false, message: "Purchase order not found" }, { status: 404 });
     }
 
-    const ctx = await getPoPayableContext(db, id);
-    const payableAmount = ctx?.payableAmount ?? 0;
+    const party = resolvePoPaymentParty(ctx);
+    const payableAmount = ctx.payableAmount ?? 0;
 
     const { data: existingTerms, error: existingTermsError } = await db
       .from("purchase_order_payment_terms")
@@ -124,7 +121,8 @@ export async function POST(
       .from("purchase_order_payment_terms")
       .insert({
         purchase_order_id: id,
-        supplier_id: po.supplier_id,
+        supplier_id: party.supplier_id,
+        vendor_id: party.vendor_id,
         term_no: termNo,
         description,
         due_date: validated.due_date,

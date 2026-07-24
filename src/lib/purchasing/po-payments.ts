@@ -9,13 +9,33 @@ function toAmount(value: unknown) {
 }
 
 export type PoPayableContext = {
-  supplierId: string;
+  /**
+   * Kolom pihak terutang: PO F&B memakai `supplier_id`, PO product/general
+   * memakai `vendor_id`. Tepat satu yang terisi (lihat *_party_check di DB).
+   */
+  supplierId: string | null;
+  vendorId: string | null;
   grossPayableAmount: number;
   returnCreditAmount: number;
   payableAmount: number;
   paidAmount: number;
   outstandingAmount: number;
 };
+
+/**
+ * Kolom pihak terutang untuk di-insert ke purchase_order_payment_terms /
+ * vendor_payments — meniru pola party_check (supplier XOR vendor).
+ */
+export type PoPaymentParty = { supplier_id: string | null; vendor_id: string | null };
+
+export function resolvePoPaymentParty(ctx: {
+  supplierId: string | null;
+  vendorId: string | null;
+}): PoPaymentParty {
+  if (ctx.vendorId) return { supplier_id: null, vendor_id: ctx.vendorId };
+  if (ctx.supplierId) return { supplier_id: ctx.supplierId, vendor_id: null };
+  throw new Error("Purchase order has no supplier or vendor assigned");
+}
 
 export type PoInvoiceAmounts = {
   gross_payable_amount: number;
@@ -176,7 +196,7 @@ export async function getPoPayableContext(
 ): Promise<PoPayableContext | null> {
   const { data: po, error: poError } = await db
     .from("purchase_orders")
-    .select("id, supplier_id, total, subtotal, diskon_nominal, ppn_nominal")
+    .select("id, supplier_id, vendor_id, total, subtotal, diskon_nominal, ppn_nominal")
     .eq("id", poId)
     .maybeSingle();
 
@@ -203,7 +223,8 @@ export async function getPoPayableContext(
   });
 
   return {
-    supplierId: po.supplier_id as string,
+    supplierId: (po.supplier_id as string | null) ?? null,
+    vendorId: (po.vendor_id as string | null) ?? null,
     grossPayableAmount,
     returnCreditAmount: creditBreakdown.total_credit_amount,
     payableAmount: amounts.payable_amount,
@@ -226,7 +247,6 @@ export function resolvePaymentTermLabel(
 export async function resolvePaymentTermId(
   db: DbClient,
   poId: string,
-  supplierId: string,
   amount: number,
   paymentDate: string,
   explicitTermId?: string | null
@@ -235,6 +255,7 @@ export async function resolvePaymentTermId(
   if (!ctx) {
     throw new Error("Purchase order not found");
   }
+  const party = resolvePoPaymentParty(ctx);
 
   if (amount > ctx.outstandingAmount + QTY_EPSILON) {
     throw new Error(
@@ -294,7 +315,8 @@ export async function resolvePaymentTermId(
     .from("purchase_order_payment_terms")
     .insert({
       purchase_order_id: poId,
-      supplier_id: supplierId,
+      supplier_id: party.supplier_id,
+      vendor_id: party.vendor_id,
       term_no: nextTermNo,
       description,
       due_date: paymentDate,
