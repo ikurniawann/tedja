@@ -130,6 +130,10 @@ export const GENERAL_ROUTES = {
   purchasingReceiveForm: (poId: string) => `${GENERAL_BASE}/purchasing/receive/${poId}`,
   approvalPr: `${GENERAL_BASE}/approval/pr`,
   approvalPo: `${GENERAL_BASE}/approval/po`,
+  // B5 — Invoice/pembayaran vendor barang operasional. Detail invoice me-reuse
+  // halaman general PO detail (seperti product) → tanpa route fisik terpisah.
+  purchasingInvoice: `${GENERAL_BASE}/purchasing/invoice`,
+  purchasingInvoicePoDetail: (id: string) => `${GENERAL_BASE}/purchasing/po/${id}`,
   // C1–C2 — Inventory riil barang operasional.
   inventory: `${GENERAL_BASE}/inventory`,
   inventoryDetail: (id: string) => `${GENERAL_BASE}/inventory/${id}`,

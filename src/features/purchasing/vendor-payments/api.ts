@@ -22,7 +22,9 @@ export async function listPurchaseInvoices(
   const sp = new URLSearchParams();
   if (params.search) sp.set("search", params.search);
   if (params.status && params.status !== "all") sp.set("status", params.status);
-  if (moduleType === "product") sp.set("module_type", "product");
+  // Kirim module_type utk semua scope non-default (product & general); tanpa ini
+  // server jatuh ke default raw_material dan invoice general tak pernah tampil.
+  if (moduleType && moduleType !== "raw_material") sp.set("module_type", moduleType);
 
   const response = await fetch(`/api/purchasing/vendor-payments?${sp.toString()}`);
   const result = await parseJsonResponse<{ success?: boolean; message?: string; data?: PurchaseInvoiceRow[] }>(

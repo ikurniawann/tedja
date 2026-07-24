@@ -25,7 +25,7 @@ import { Combobox } from "@/components/ui/combobox";
 import { PurchasingPageHeader } from "@/modules/purchasing/components/page/purchasing-page-header";
 import { PurchasingListSection } from "@/modules/purchasing/components/list/PurchasingListSection";
 import { PurchasingTablePagination } from "@/modules/purchasing/components/pagination/PurchasingTablePagination";
-import { RM_ROUTES, PRODUCT_ROUTES } from "@/modules/purchasing/constants/item-routes";
+import { RM_ROUTES, PRODUCT_ROUTES, GENERAL_ROUTES } from "@/modules/purchasing/constants/item-routes";
 import { formatAmount, formatDate } from "@/lib/purchasing/utils";
 import { usePurchaseInvoiceList } from "../queries";
 import { PurchaseInvoicePayDialog } from "./purchase-invoice-pay-dialog";
@@ -62,8 +62,14 @@ export function PurchaseInvoicesPage({
 }: {
   moduleType?: "raw_material" | "product" | "general";
 }) {
-  const routes = moduleType === "product" ? PRODUCT_ROUTES : RM_ROUTES;
-  const partyLabel = moduleType === "product" ? "Vendor" : "Supplier";
+  const routes =
+    moduleType === "general"
+      ? GENERAL_ROUTES
+      : moduleType === "product"
+        ? PRODUCT_ROUTES
+        : RM_ROUTES;
+  // Product & general REUSE tabel vendors → label "Vendor"; raw_material = "Supplier".
+  const partyLabel = moduleType === "raw_material" ? "Supplier" : "Vendor";
   const router = useRouter();
   const [page, setPage] = useState(1);
   const limit = 10;
