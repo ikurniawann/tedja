@@ -3,6 +3,9 @@ import { z } from "zod";
 import { query, queryOne } from "@/lib/db";
 import { checkRateLimit, clientIpFrom } from "@/lib/public/rate-limit";
 import { sendBookingPaidWa } from "@/lib/ticketing/booking-wa";
+import { sendPassPaidWa } from "@/lib/ticketing/pass-wa";
+import { todayInJakarta } from "@/lib/ticketing/booking";
+import { addMonthsIso } from "@/lib/ticketing/season-pass";
 import { isValidWebhookToken } from "@/lib/xendit/client";
 
 // Webhook invoice Xendit (PAID/EXPIRED). Keamanan: verifikasi
@@ -23,6 +26,7 @@ const callbackSchema = z.object({
 });
 
 const EXTERNAL_ID_PREFIX = "tkt-booking-";
+const PASS_EXTERNAL_ID_PREFIX = "tkt-pass-";
 
 interface PaidBookingRow {
   id: string;
@@ -61,6 +65,67 @@ export async function POST(request: NextRequest) {
       );
     }
     const callback = parsed.data;
+
+    // EPIC-028 B2 — invoice Season Pass (prefix berbeda). Aktivasi pass:
+    // valid_from = tanggal bayar (rolling), valid_until = + validity_months.
+    if (callback.external_id.startsWith(PASS_EXTERNAL_ID_PREFIX)) {
+      const passId = callback.external_id.slice(PASS_EXTERNAL_ID_PREFIX.length);
+      if (!z.string().uuid().safeParse(passId).success) {
+        return NextResponse.json({ success: true, ignored: true });
+      }
+      if (callback.status === "PAID" || callback.status === "SETTLED") {
+        const info = await queryOne<{ validity_months: number; unit_price: string }>(
+          `SELECT pc.validity_months, sp.unit_price
+           FROM ticketing.ticket_season_passes sp
+           JOIN ticketing.ticket_pass_configs pc
+             ON pc.ticket_product_id = sp.ticket_product_id
+           WHERE sp.id = $1::uuid`,
+          [passId]
+        );
+        if (!info) return NextResponse.json({ success: true, ignored: true });
+        if (
+          callback.amount !== undefined &&
+          callback.amount < Math.floor(Number(info.unit_price))
+        ) {
+          console.error(
+            `[pass] webhook PAID nominal janggal: pass ${passId} harga ${info.unit_price}, ` +
+              `callback ${callback.amount} — diabaikan`
+          );
+          return NextResponse.json({ success: true, ignored: true });
+        }
+        const today = todayInJakarta();
+        const validUntil = addMonthsIso(today, info.validity_months);
+        const activated = await queryOne<{
+          pass_code: string;
+          access_token: string;
+          holder_name: string;
+          holder_phone: string | null;
+          valid_until: string;
+        }>(
+          `UPDATE ticketing.ticket_season_passes
+           SET status = 'active', paid_at = COALESCE($2::timestamptz, now()),
+               valid_from = $3, valid_until = $4, activated_at = now(),
+               xendit_invoice_id = COALESCE(xendit_invoice_id, $5), updated_at = now()
+           WHERE id = $1::uuid AND status = 'pending'
+           RETURNING pass_code, access_token, holder_name, holder_phone,
+                     valid_until::text AS valid_until`,
+          [passId, callback.paid_at ?? null, today, validUntil, callback.id]
+        );
+        if (activated) await sendPassPaidWa(activated);
+        return NextResponse.json({ success: true });
+      }
+      if (callback.status === "EXPIRED") {
+        await query(
+          `UPDATE ticketing.ticket_season_passes
+           SET status = 'cancelled', updated_at = now()
+           WHERE id = $1::uuid AND status = 'pending'`,
+          [passId]
+        );
+        return NextResponse.json({ success: true });
+      }
+      return NextResponse.json({ success: true, ignored: true });
+    }
+
     if (!callback.external_id.startsWith(EXTERNAL_ID_PREFIX)) {
       // Callback produk lain (mis. topup nanti) — ACK saja, bukan error
       return NextResponse.json({ success: true, ignored: true });

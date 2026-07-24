@@ -108,7 +108,7 @@ Blackout reuse `ticket_product_dates` (`date_kind='blackout'`).
 - **Exit**: ✅ bisa membuat produk Season Pass + config di dashboard; tersimpan & tervalidasi.
   **Fase A TUNTAS.**
 
-### Fase B — Penjualan & penerbitan pass `[coding]`
+### Fase B — Penjualan & penerbitan pass `[testing]` (TUNTAS B1+B2)
 - B1. ✅ **SELESAI** — **Loket**: halaman **Season Pass** (`/dashboard/ticketing/passes`,
   role operator) — daftar pass terbit + dialog "Terbitkan Pass" (pilih produk pass aktif,
   nama/HP pemegang, UID gelang NFC opsional) → pass `active`, `valid_until = today +
@@ -117,11 +117,17 @@ Blackout reuse `ticket_product_dates` (`date_kind='blackout'`).
   `POST/GET /api/ticketing/season-passes` + `pass-options`; lib `season-pass.ts`
   (addMonthsIso, generatePassCode). Menu `20260724180000` (grant super_admin/pos_supervisor/pos).
   Terverifikasi end-to-end (DB rollback) + route 307/401 + menu 3 grant.
-- B2. **Online**: halaman publik beli pass → isi data pemegang → Xendit invoice →
-  webhook `paid` → pass `active` + kirim QR via WhatsApp. Reuse pola booking-public
-  & webhook; pass punya field jual/bayar sendiri (tak sentuh `ticket_bookings`).
-- **Exit**: pass bisa dijual dari loket & online; status pending→active setelah bayar;
-  QR terkirim.
+- B2. ✅ **SELESAI** — **Online**: halaman publik `/pass/[slug]` (pilih produk pass →
+  data pemegang → Xendit invoice) → webhook `PAID` (prefix `tkt-pass-`) → pass `active`,
+  `valid_from`=tanggal bayar (rolling), `valid_until`=+validity_months, kirim QR via
+  WhatsApp (`pass-wa.ts`). Halaman status `/pass/status/[token]` (polling: pending→tombol
+  bayar; active→QR+masa berlaku; expired/cancelled→info). API publik `passes` (katalog
+  website-distributed) + `pass` (beli) + `pass-status`. Field jual/bayar di pass sendiri
+  (tak sentuh `ticket_bookings`). **Fix**: allowlist middleware `/pass` (halaman publik).
+  Terverifikasi end-to-end (DB rollback: katalog online→beli pending→webhook PAID aktivasi
+  valid_from/until) + route publik 200. Xendit MOCK aktif di dev.
+- **Exit**: ✅ pass bisa dijual dari loket & online; status pending→active setelah bayar;
+  QR tampil di halaman status + terkirim WA. **Fase B TUNTAS.**
 
 ### Fase C — Validasi masuk di gate `[backlog]`
 - C1. Perluas `gate/tap`: deteksi input = pass (`pass_code`/`access_token`/`band_uid`
@@ -197,4 +203,10 @@ teruji, 0 regresi booking harian → **ready-for-qa**.
   GET list) + `pass-options`, lib `season-pass.ts`, menu `20260724180000`. QR pakai
   `qrcode.react` (access_token). Terverifikasi DB rollback (issue path + valid_until +12bln)
   + route 307/401 + menu 3 grant. Dialog buat-produk juga dilebarkan sm:max-w-lg.
-  Berikutnya **B2** (jual online Xendit + WA QR) lalu **Fase C** (validasi gate).
+- 2026-07-24 — **B2 SELESAI (Fase B TUNTAS)**: jual pass online. Halaman publik
+  `/pass/[slug]` (beli) + `/pass/status/[token]` (QR/status polling); API publik
+  `passes`/`pass`/`pass-status`; webhook Xendit diperluas prefix `tkt-pass-` (PAID→active
+  rolling valid_from/until + WA via `pass-wa.ts`; EXPIRED→cancelled); lib pass-wa.
+  **Fix**: allowlist middleware `/pass`. Terverifikasi DB rollback (katalog online→beli
+  pending→webhook aktivasi) + `/pass/sulu` 200. Xendit MOCK aktif dev. Build hijau.
+  Berikutnya **Fase C** (validasi masuk di gate).
