@@ -1,6 +1,6 @@
 # EPIC-017: Do — Asisten yang Benar-Benar Berguna
 
-status: on-progress
+status: ready-for-qa
 environment: dev
 retries: 0
 

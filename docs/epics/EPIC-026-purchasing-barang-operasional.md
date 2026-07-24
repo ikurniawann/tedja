@@ -1,6 +1,6 @@
 # EPIC-026: Purchasing Barang Operasional (Non-F&B, Non-Jual)
 
-status: coding
+status: ready-for-qa
 environment: dev
 retries: 0
 
@@ -343,3 +343,23 @@ column ada, menu 9 grant terverifikasi); PM2 restart; smoke: 2 route receive=307
   Stok/Expense) + 2 route fisik + menu `20260723260000`. Detail lengkap di "Progress B4".
   Typecheck 461 (0 tambahan, 2 baseline diperbaiki), build hijau, constraint DB rollback
   OK, smoke route=307 + API=401. Siap human QA. Lanjut B5: Invoice + Approval general.
+- 2026-07-24: **B5 (Approval + Invoice general) SELESAI & LIVE di dev** (commit
+  `b5ecaab`). Fitur SHARED approval/vendor-payments di-cabang 3-arah + mount
+  `moduleType=general` (BUKAN klon): 3 route fisik
+  `/dashboard/items/general/{approval/pr,approval/po,purchasing/invoice}` + 2 migrasi
+  menu. Siklus dokumen general TUNTAS: PR → PO → GRN → Approval → Invoice → Bayar.
+  Detail lengkap di companion `EPIC-026-purchasing-barang-operasional-SISTEM.md`.
+- 2026-07-24: **C1 (Inventory supply RIIL) SELESAI & LIVE di dev** (commit `77c17d1`,
+  migrasi `20260724100000`–`20260724140000`). Tabel `inventory.supply_inventory` +
+  `supply_inventory_movements` (stok per-gudang, costing rata-rata tertimbang);
+  GRN → stok TERSAMBUNG (non-fatal) untuk item `stockable=true`, non-stockable tetap
+  expense. API + feature `supply-inventory` + 4 halaman `/dashboard/items/general/
+  inventory`. BUNDLED: vendor `usage_scope` (fnb|operasional|keduanya, backfill
+  'keduanya'). Typecheck 461 (0 tambahan). Detail di companion SISTEM.
+- 2026-07-24: Semua fase inti TUNTAS (A + B1–B5 + C1), ter-push ke origin
+  (merge `5d649ce`) → **status epic naik ke ready-for-qa**. Fase lanjut OPSIONAL
+  (bukan blocker QA): QC riil item stockable, posting expense/GL non-stockable,
+  Return/Delivery general. Utang teknis kecil: `PRRevisionButton` masih hardcode
+  `RM_ROUTES` (warisan klon product-pr).
+- 2026-07-25: Sinkronisasi dokumen — field `status:` file ini tertinggal di `coding`
+  padahal README + companion SISTEM sudah mencatat ready-for-qa; disamakan.
