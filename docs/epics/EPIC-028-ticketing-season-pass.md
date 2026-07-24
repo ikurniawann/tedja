@@ -108,10 +108,15 @@ Blackout reuse `ticket_product_dates` (`date_kind='blackout'`).
 - **Exit**: ✅ bisa membuat produk Season Pass + config di dashboard; tersimpan & tervalidasi.
   **Fase A TUNTAS.**
 
-### Fase B — Penjualan & penerbitan pass `[backlog]`
-- B1. **Loket**: staff terbitkan pass (data pemegang, pilih produk, bayar) → pass
-  `active`, hitung `valid_until = today + validity_months`, generate `pass_code` +
-  `access_token` + QR; opsional tautkan band NFC.
+### Fase B — Penjualan & penerbitan pass `[coding]`
+- B1. ✅ **SELESAI** — **Loket**: halaman **Season Pass** (`/dashboard/ticketing/passes`,
+  role operator) — daftar pass terbit + dialog "Terbitkan Pass" (pilih produk pass aktif,
+  nama/HP pemegang, UID gelang NFC opsional) → pass `active`, `valid_until = today +
+  validity_months` (rolling), `pass_code` SP-YYYYMMDD-#### + `access_token` +
+  **QR (QRCodeSVG)**; band NFC opsional divalidasi terdaftar. API
+  `POST/GET /api/ticketing/season-passes` + `pass-options`; lib `season-pass.ts`
+  (addMonthsIso, generatePassCode). Menu `20260724180000` (grant super_admin/pos_supervisor/pos).
+  Terverifikasi end-to-end (DB rollback) + route 307/401 + menu 3 grant.
 - B2. **Online**: halaman publik beli pass → isi data pemegang → Xendit invoice →
   webhook `paid` → pass `active` + kirim QR via WhatsApp. Reuse pola booking-public
   & webhook; pass punya field jual/bayar sendiri (tak sentuh `ticket_bookings`).
@@ -186,4 +191,10 @@ teruji, 0 regresi booking harian → **ready-for-qa**.
   fix**: kolom `product_kind` varchar(10) tak muat 'season_pass' (11 char) → migrasi
   `20260724170000` lebarkan ke varchar(20). Terverifikasi end-to-end (DB rollback):
   produk+config+varian terbentuk, unique config per-produk tegak. Build hijau, PM2 restart.
-  Berikutnya **Fase B** (jual & terbit pass — B1 loket, B2 online).
+- 2026-07-24 — **B1 SELESAI**: penerbitan pass di loket. Halaman
+  `/dashboard/ticketing/passes` (feature `season-passes`: page+dialog terbit+QR result),
+  API `season-passes` (POST issue → active, rolling valid_until, pass_code+access_token;
+  GET list) + `pass-options`, lib `season-pass.ts`, menu `20260724180000`. QR pakai
+  `qrcode.react` (access_token). Terverifikasi DB rollback (issue path + valid_until +12bln)
+  + route 307/401 + menu 3 grant. Dialog buat-produk juga dilebarkan sm:max-w-lg.
+  Berikutnya **B2** (jual online Xendit + WA QR) lalu **Fase C** (validasi gate).
