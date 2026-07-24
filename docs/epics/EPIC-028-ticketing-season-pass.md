@@ -97,10 +97,16 @@ Blackout reuse `ticket_product_dates` (`date_kind='blackout'`).
   `product_kind` terima `season_pass`, FK ke products/bands, unique once/day
   (dibatasi `entry_policy='once_per_day'`), index gate-lookup. Terverifikasi:
   constraint kuota `limited_visits` & unique once/day tepat.
-- A2. ⏳ **BERIKUTNYA** — Master produk pass: extend form produk ticketing → jenis
-  "Season Pass" dengan `validity_months`, `entry_policy`, `visit_quota` (muncul saat
-  limited_visits), harga. API `products` + `pass-configs`.
-- **Exit**: bisa membuat produk Season Pass + config di dashboard; tersimpan & tervalidasi.
+- A2. ✅ **SELESAI** — Master produk pass: dialog "Buat Ticket" dapat jenis **Season
+  Pass** + field `validity_months` / `entry_policy` (1×hari · tak terbatas · punch-card)
+  / `visit_quota` (muncul saat punch-card, wajib). API `products` POST diperluas:
+  buat produk kind `season_pass` + 1 varian "Umum" penampung harga + row
+  `ticket_pass_configs`. Badge "Season Pass" di daftar. Migrasi fix
+  `20260724170000` (lebarkan `product_kind` varchar(10)→(20) — 'season_pass' 11 char).
+  Terverifikasi (DB rollback): produk+config+varian terbentuk; harga diisi di editor
+  (varian Umum) lalu diaktifkan.
+- **Exit**: ✅ bisa membuat produk Season Pass + config di dashboard; tersimpan & tervalidasi.
+  **Fase A TUNTAS.**
 
 ### Fase B — Penjualan & penerbitan pass `[backlog]`
 - B1. **Loket**: staff terbitkan pass (data pemegang, pilih produk, bayar) → pass
@@ -174,4 +180,10 @@ teruji, 0 regresi booking harian → **ready-for-qa**.
 - 2026-07-24 — **A1 SELESAI**: migrasi `20260724160000_ticketing_season_pass.sql` applied di
   dev. 3 tabel + `product_kind='season_pass'` + unique once/day (partial, hanya once_per_day)
   + FK products/bands. Verifikasi DB: constraint kuota limited_visits menolak kuota kosong;
-  index once/day tepat. Berikutnya A2 (master produk pass).
+  index once/day tepat.
+- 2026-07-24 — **A2 SELESAI (Fase A TUNTAS)**: dialog buat produk + API POST products
+  (kind season_pass → varian Umum + ticket_pass_configs) + badge daftar. **Bug ketemu &
+  fix**: kolom `product_kind` varchar(10) tak muat 'season_pass' (11 char) → migrasi
+  `20260724170000` lebarkan ke varchar(20). Terverifikasi end-to-end (DB rollback):
+  produk+config+varian terbentuk, unique config per-produk tegak. Build hijau, PM2 restart.
+  Berikutnya **Fase B** (jual & terbit pass — B1 loket, B2 online).

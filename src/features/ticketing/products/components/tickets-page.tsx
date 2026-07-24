@@ -27,7 +27,11 @@ import { TableRow } from "@/components/ui/table";
 import { PurchasingListSection } from "@/modules/purchasing/components/list/PurchasingListSection";
 import { CategoryAutocomplete } from "./category-autocomplete";
 import { useCreateProduct, useProducts } from "../queries";
-import type { TicketProductKind, TicketVariantPreset } from "../types";
+import type {
+  PassEntryPolicy,
+  TicketProductKind,
+  TicketVariantPreset,
+} from "../types";
 
 const formatRp = (n: number) => `Rp${n.toLocaleString("id-ID")}`;
 
@@ -41,6 +45,11 @@ export function TicketsPage() {
     useState<TicketVariantPreset>("adult-child");
   const [categoryName, setCategoryName] = useState("");
   const [basePrice, setBasePrice] = useState("");
+  // EPIC-028 — konfigurasi season pass
+  const [validityMonths, setValidityMonths] = useState("12");
+  const [entryPolicy, setEntryPolicy] =
+    useState<PassEntryPolicy>("once_per_day");
+  const [visitQuota, setVisitQuota] = useState("");
 
   const productsQuery = useProducts(q);
   const products = productsQuery.data ?? [];
@@ -52,11 +61,18 @@ export function TicketsPage() {
     setVariantPreset("adult-child");
     setCategoryName("");
     setBasePrice("");
+    setValidityMonths("12");
+    setEntryPolicy("once_per_day");
+    setVisitQuota("");
     router.push(`/dashboard/ticketing/tickets/${result.id}`);
   });
 
+  const isPass = kind === "season_pass";
+  const passQuotaMissing =
+    isPass && entryPolicy === "limited_visits" && !(Number(visitQuota) > 0);
+
   const handleCreate = () => {
-    if (!name.trim() || createMutation.isPending) return;
+    if (!name.trim() || createMutation.isPending || passQuotaMissing) return;
     createMutation.mutate({
       name: name.trim(),
       product_kind: kind,
@@ -64,6 +80,14 @@ export function TicketsPage() {
       category_name: categoryName.trim() || null,
       base_price: Number(basePrice) || 0,
       status: "draft",
+      ...(isPass
+        ? {
+            validity_months: Number(validityMonths) || 12,
+            entry_policy: entryPolicy,
+            visit_quota:
+              entryPolicy === "limited_visits" ? Number(visitQuota) : null,
+          }
+        : {}),
     });
   };
 
@@ -137,6 +161,10 @@ export function TicketsPage() {
                             {product.product_kind === "bundle" ? (
                               <Badge className="ml-2 border-0 bg-purple-100 font-normal text-purple-700">
                                 Paket
+                              </Badge>
+                            ) : product.product_kind === "season_pass" ? (
+                              <Badge className="ml-2 border-0 bg-emerald-100 font-normal text-emerald-700">
+                                Season Pass
                               </Badge>
                             ) : null}
                           </p>
@@ -232,9 +260,73 @@ export function TicketsPage() {
                   <SelectItem value="bundle">
                     Paket bundling — gabungan beberapa tiket satuan
                   </SelectItem>
+                  <SelectItem value="season_pass">
+                    Season Pass — pass masuk berlaku (annual/berkala)
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>
+            {isPass ? (
+              <div className="space-y-4 rounded-xl border border-pink-100 bg-pink-50/50 p-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="pass_validity">Masa berlaku (bulan)</Label>
+                    <Input
+                      id="pass_validity"
+                      type="number"
+                      min={1}
+                      max={120}
+                      value={validityMonths}
+                      onChange={(e) => setValidityMonths(e.target.value)}
+                    />
+                    <p className="text-[11px] text-gray-500">
+                      Rolling sejak pembelian (mis. 12 = annual).
+                    </p>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Kebijakan masuk</Label>
+                    <Select
+                      value={entryPolicy}
+                      onValueChange={(v) => setEntryPolicy(v as PassEntryPolicy)}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="once_per_day">
+                          1× per hari
+                        </SelectItem>
+                        <SelectItem value="unlimited">
+                          Tak terbatas
+                        </SelectItem>
+                        <SelectItem value="limited_visits">
+                          Jatah kunjungan (punch card)
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                {entryPolicy === "limited_visits" && (
+                  <div className="space-y-1.5">
+                    <Label htmlFor="pass_quota">Jatah kunjungan *</Label>
+                    <Input
+                      id="pass_quota"
+                      type="number"
+                      min={1}
+                      max={1000}
+                      placeholder="mis. 10"
+                      value={visitQuota}
+                      onChange={(e) => setVisitQuota(e.target.value)}
+                    />
+                    {passQuotaMissing && (
+                      <p className="text-[11px] text-red-600">
+                        Wajib diisi untuk pass punch-card.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            ) : null}
             {kind === "single" ? (
               <div className="space-y-1.5">
                 <Label>Varian</Label>
@@ -265,7 +357,9 @@ export function TicketsPage() {
                 placeholder={
                   kind === "bundle"
                     ? "mis. Paket Keluarga (2 Dewasa + 2 Anak)"
-                    : "mis. Tiket Masuk Reguler"
+                    : isPass
+                      ? "mis. Annual Pass Reguler"
+                      : "mis. Tiket Masuk Reguler"
                 }
                 value={name}
                 onChange={(e) => setName(e.target.value)}
@@ -292,9 +386,11 @@ export function TicketsPage() {
             <p className="text-xs text-gray-500">
               {kind === "bundle"
                 ? "Paket dibuat berstatus Draft dengan satu varian “Paket” — susun komposisi & harga paket di halaman berikutnya sebelum diaktifkan."
-                : variantPreset === "umum"
-                  ? "Ticket dibuat berstatus Draft dengan satu varian “Umum” (berlaku semua umur) — lengkapi harga, kalender, dan kebijakan di halaman berikutnya."
-                  : "Ticket dibuat berstatus Draft dengan varian Adult & Child — lengkapi harga, kalender, dan kebijakan di halaman berikutnya."}
+                : isPass
+                  ? "Season Pass dibuat berstatus Draft dengan satu varian “Umum” penampung harga — lengkapi harga di halaman berikutnya, lalu aktifkan. Penjualan pass menyusul (loket & online)."
+                  : variantPreset === "umum"
+                    ? "Ticket dibuat berstatus Draft dengan satu varian “Umum” (berlaku semua umur) — lengkapi harga, kalender, dan kebijakan di halaman berikutnya."
+                    : "Ticket dibuat berstatus Draft dengan varian Adult & Child — lengkapi harga, kalender, dan kebijakan di halaman berikutnya."}
             </p>
           </div>
           <DialogFooter>
@@ -303,7 +399,9 @@ export function TicketsPage() {
             </Button>
             <Button
               onClick={handleCreate}
-              disabled={!name.trim() || createMutation.isPending}
+              disabled={
+                !name.trim() || createMutation.isPending || passQuotaMissing
+              }
             >
               {createMutation.isPending ? "Membuat…" : "Buat & Konfigurasi"}
             </Button>

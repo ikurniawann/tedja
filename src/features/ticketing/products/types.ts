@@ -2,7 +2,9 @@ import type { ReEntryPolicy } from "../masters/types";
 
 export type TicketStatus = "draft" | "active";
 export type ProductDateKind = "high-season" | "blok-online";
-export type TicketProductKind = "single" | "bundle";
+export type TicketProductKind = "single" | "bundle" | "season_pass";
+/** EPIC-028 — kebijakan masuk season pass (dipilih saat buat produk). */
+export type PassEntryPolicy = "once_per_day" | "unlimited" | "limited_visits";
 
 export interface TicketCategory {
   id: string;
@@ -100,6 +102,10 @@ export interface CreateTicketValues {
   status?: TicketStatus;
   base_price?: number;
   description?: string | null;
+  /** EPIC-028 — hanya untuk product_kind 'season_pass'. */
+  validity_months?: number;
+  entry_policy?: PassEntryPolicy;
+  visit_quota?: number | null;
 }
 
 export interface UpdateTicketValues {

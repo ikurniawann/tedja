@@ -11,7 +11,7 @@ interface ProductListRow {
   name: string;
   category_name: string | null;
   status: "draft" | "active";
-  product_kind: "single" | "bundle";
+  product_kind: "single" | "bundle" | "season_pass";
   base_price: string;
   thumbnail_url: string | null;
   variant_count: string;
@@ -68,8 +68,14 @@ export async function GET(request: NextRequest) {
 const createProductSchema = z.object({
   name: z.string().trim().min(1).max(150),
   // satuan (Adult/Child) atau paket bundling (satu varian "Paket" +
-  // komposisi diatur setelah dibuat) — Fase P
-  product_kind: z.enum(["single", "bundle"]).default("single"),
+  // komposisi diatur setelah dibuat) — Fase P; season_pass — EPIC-028
+  product_kind: z.enum(["single", "bundle", "season_pass"]).default("single"),
+  // EPIC-028 — konfigurasi season pass (hanya dipakai bila kind=season_pass)
+  validity_months: z.number().int().min(1).max(120).default(12),
+  entry_policy: z
+    .enum(["once_per_day", "unlimited", "limited_visits"])
+    .default("once_per_day"),
+  visit_quota: z.number().int().min(1).max(1000).optional().nullable(),
   // Keputusan owner 2026-07-22: tiket satuan boleh Adult/Child ATAU satu
   // varian "Umum" yang berlaku semua umur — dipilih saat pembuatan
   variant_preset: z.enum(["adult-child", "umum"]).default("adult-child"),
@@ -107,6 +113,21 @@ export async function POST(request: NextRequest) {
         {
           success: false,
           error: "Paket baru wajib berstatus Draft — lengkapi komposisi dulu",
+        },
+        { status: 400 }
+      );
+    }
+
+    // EPIC-028 — pass punch-card WAJIB kuota; policy lain kuota diabaikan
+    if (
+      body.product_kind === "season_pass" &&
+      body.entry_policy === "limited_visits" &&
+      (!body.visit_quota || body.visit_quota <= 0)
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Kuota kunjungan wajib diisi untuk pass jenis punch-card (jatah kunjungan)",
         },
         { status: 400 }
       );
@@ -193,7 +214,11 @@ export async function POST(request: NextRequest) {
            VALUES ($1, $2, $3, 'paket', 'Paket', 10)`,
           [ctx.companyId, ctx.branchId, productId]
         );
-      } else if (body.variant_preset === "umum") {
+      } else if (
+        body.variant_preset === "umum" ||
+        body.product_kind === "season_pass"
+      ) {
+        // season_pass: satu varian "Umum" penampung harga pass
         await client.query(
           `INSERT INTO ticketing.ticket_product_variants
              (company_id, branch_id, ticket_product_id, code, name, sort_order)
@@ -208,6 +233,25 @@ export async function POST(request: NextRequest) {
              ($1, $2, $3, 'adult', 'Adult', 10),
              ($1, $2, $3, 'child', 'Child', 20)`,
           [ctx.companyId, ctx.branchId, productId]
+        );
+      }
+
+      // EPIC-028 — konfigurasi season pass (1:1 dengan produk)
+      if (body.product_kind === "season_pass") {
+        await client.query(
+          `INSERT INTO ticketing.ticket_pass_configs
+             (company_id, branch_id, ticket_product_id, validity_months,
+              entry_policy, visit_quota, created_by)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [
+            ctx.companyId,
+            ctx.branchId,
+            productId,
+            body.validity_months,
+            body.entry_policy,
+            body.entry_policy === "limited_visits" ? body.visit_quota : null,
+            ctx.user.id,
+          ]
         );
       }
 
