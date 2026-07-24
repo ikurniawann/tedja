@@ -80,6 +80,8 @@ const createProductSchema = z.object({
     .enum(["once_per_day", "unlimited", "limited_visits"])
     .default("once_per_day"),
   visit_quota: z.number().int().min(1).max(1000).optional().nullable(),
+  // Benefit member: diskon POS utk pemegang pass aktif (0 = tanpa benefit)
+  member_discount_percent: z.number().min(0).max(100).default(0),
   // Keputusan owner 2026-07-22: tiket satuan boleh Adult/Child ATAU satu
   // varian "Umum" yang berlaku semua umur — dipilih saat pembuatan
   variant_preset: z.enum(["adult-child", "umum"]).default("adult-child"),
@@ -252,8 +254,8 @@ export async function POST(request: NextRequest) {
         await client.query(
           `INSERT INTO ticketing.ticket_pass_configs
              (company_id, branch_id, ticket_product_id, validity_months,
-              entry_policy, visit_quota, created_by)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+              entry_policy, visit_quota, member_discount_percent, created_by)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
           [
             ctx.companyId,
             ctx.branchId,
@@ -261,6 +263,7 @@ export async function POST(request: NextRequest) {
             body.validity_months,
             body.entry_policy,
             body.entry_policy === "limited_visits" ? body.visit_quota : null,
+            body.member_discount_percent,
             ctx.user.id,
           ]
         );

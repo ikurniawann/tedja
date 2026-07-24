@@ -47,6 +47,20 @@ export const issuePass = async (
   return ((await res.json()) as { data: IssuedPassResult }).data;
 };
 
+export const renewPass = async (
+  id: string
+): Promise<{ id: string; valid_until: string; quota_reset: boolean }> => {
+  const res = await fetch(`/api/ticketing/season-passes/${id}/renew`, {
+    method: "POST",
+  });
+  if (!res.ok) await parseError(res, "Gagal memperpanjang pass");
+  return (
+    (await res.json()) as {
+      data: { id: string; valid_until: string; quota_reset: boolean };
+    }
+  ).data;
+};
+
 export const passGateTap = async (
   code: string,
   gateLabel?: string

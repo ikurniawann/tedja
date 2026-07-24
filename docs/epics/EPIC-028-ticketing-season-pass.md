@@ -150,10 +150,21 @@ Blackout reuse `ticket_product_dates` (`date_kind='blackout'`).
   menyusul). Menu `20260724200000`. + COGS/HPP per ticket (laporan omzet kotor/bersih
   menyusul — snapshot saat sale/tap).
 
-### Fase D — Fase lanjut (di luar MVP, backlog)
-- Benefit diskon member di POS F&B/retail · perpanjangan/renewal + reminder WA ·
-  cicilan/payment plan · foto verifikasi · guest pass · portal pemegang pass ·
-  UI blackout date.
+### Fase D — Fase lanjut `[coding]`
+- D1. **Benefit member (diskon POS)** — ⏳ **FONDASI SELESAI**: `member_discount_percent`
+  per produk pass (config + input dialog buat) + endpoint POS `GET /api/pos/pass-lookup`
+  (scan QR/pass_code/NFC → diskon bila pass aktif & berlaku). **Wiring cashier DEFER ke PR**
+  (jalur uang/checkout: discountAmount mengalir ke 3 builder payload + CFD + deps — wajib
+  di-review & E2E, tak aman diubah buta).
+- D2. **Renewal + reminder** — ✅ **SELESAI**: (a) perpanjang di loket — `POST
+  /api/ticketing/season-passes/[id]/renew` (valid_until += validity_months dari MAX(hari
+  ini, valid_until); punch-card reset kuota) + tombol "Perpanjang" di daftar pass; (b)
+  reminder WA ke **pemegang** pass berlaku ≤14 hari (`maybeSendPassExpiring` di
+  notifications-watcher, kirim ke holder_phone, klaim-dulu `wa_notif_log`
+  notif_type='passExpiring', gated master WA + jam 8-21). Terverifikasi DB: renewal
+  extend+reset kuota, reminder menjaring ≤14h, claim dedup memblok kirim ganda.
+- Sisa Fase D (backlog): cicilan/payment plan · foto verifikasi · guest pass · portal
+  pemegang · UI blackout date · **wiring cashier benefit** · **laporan omzet kotor/bersih**.
 
 ## Acceptance Criteria (MVP: A–C)
 
@@ -229,3 +240,8 @@ teruji, 0 regresi booking harian → **ready-for-qa**.
   → pass_entries) + layar `/dashboard/ticketing/gate-pass` (HIJAU/MERAH, wedge reader) + menu
   `20260724210000`. Terverifikasi DB: once/day unique terblok (check-first di route), unlimited
   2× bebas, resolve token/code, limited quota habis 2/2. Build hijau, PM2 restart.
+- 2026-07-25 — **Fase D sebagian**: D2 (renewal + reminder) SELESAI, D1 (benefit) FONDASI.
+  Keputusan owner: controller gate + wiring cashier benefit + laporan omzet = digarap di PR.
+  Migrasi `20260724220000` (member_discount_percent). Renewal endpoint+tombol, reminder WA
+  holder (`maybeSendPassExpiring`, wa_notif_log 'passExpiring'), POS pass-lookup endpoint.
+  Terverifikasi DB (renewal extend+reset kuota, reminder ≤14h, claim dedup). Build hijau.

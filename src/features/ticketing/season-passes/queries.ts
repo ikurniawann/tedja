@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { fetchPassOptions, fetchPasses, issuePass } from "./api";
+import { fetchPassOptions, fetchPasses, issuePass, renewPass } from "./api";
 import type { IssuedPassResult, IssuePassValues } from "./types";
 
 export const passQueryKeys = {
@@ -22,6 +22,22 @@ export const usePasses = (q: string) =>
     queryKey: passQueryKeys.list(q),
     queryFn: () => fetchPasses(q),
   });
+
+export const useRenewPass = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => renewPass(id),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: passQueryKeys.all });
+      toast.success(`Pass diperpanjang s/d ${result.valid_until}`);
+    },
+    onError: (error: unknown) => {
+      toast.error(
+        error instanceof Error ? error.message : "Gagal memperpanjang pass"
+      );
+    },
+  });
+};
 
 export const useIssuePass = (onSuccess: (result: IssuedPassResult) => void) => {
   const queryClient = useQueryClient();

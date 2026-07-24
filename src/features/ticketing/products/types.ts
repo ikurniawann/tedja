@@ -112,6 +112,7 @@ export interface CreateTicketValues {
   validity_months?: number;
   entry_policy?: PassEntryPolicy;
   visit_quota?: number | null;
+  member_discount_percent?: number;
 }
 
 export interface UpdateTicketValues {

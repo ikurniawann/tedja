@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/select";
 import { TableRow } from "@/components/ui/table";
 import { PurchasingListSection } from "@/modules/purchasing/components/list/PurchasingListSection";
-import { useIssuePass, usePassOptions, usePasses } from "../queries";
+import { useIssuePass, usePassOptions, usePasses, useRenewPass } from "../queries";
 import { ENTRY_POLICY_LABEL, type IssuedPassResult } from "../types";
 
 const formatRp = (n: number) => `Rp${n.toLocaleString("id-ID")}`;
@@ -76,6 +76,7 @@ export function SeasonPassesPage() {
     setIssueOpen(false);
     resetForm();
   });
+  const renewMutation = useRenewPass();
 
   const canSubmit =
     productId && holderName.trim().length >= 2 && !issueMutation.isPending;
@@ -146,6 +147,7 @@ export function SeasonPassesPage() {
                   <th className="px-4 py-3 text-left font-semibold">Kebijakan</th>
                   <th className="px-4 py-3 text-left font-semibold">Berlaku s/d</th>
                   <th className="px-4 py-3 text-left font-semibold">Status</th>
+                  <th className="px-4 py-3 text-right font-semibold">Aksi</th>
                 </TableRow>
               </thead>
               <tbody>
@@ -185,6 +187,20 @@ export function SeasonPassesPage() {
                       >
                         {p.status}
                       </Badge>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={
+                          p.status === "pending" ||
+                          p.status === "cancelled" ||
+                          renewMutation.isPending
+                        }
+                        onClick={() => renewMutation.mutate(p.id)}
+                      >
+                        Perpanjang
+                      </Button>
                     </td>
                   </TableRow>
                 ))}

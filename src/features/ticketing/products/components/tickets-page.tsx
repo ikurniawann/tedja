@@ -53,6 +53,7 @@ export function TicketsPage() {
   const [entryPolicy, setEntryPolicy] =
     useState<PassEntryPolicy>("once_per_day");
   const [visitQuota, setVisitQuota] = useState("");
+  const [memberDiscount, setMemberDiscount] = useState("");
 
   const productsQuery = useProducts(q);
   const products = productsQuery.data ?? [];
@@ -69,6 +70,7 @@ export function TicketsPage() {
     setValidityMonths("12");
     setEntryPolicy("once_per_day");
     setVisitQuota("");
+    setMemberDiscount("");
     router.push(`/dashboard/ticketing/tickets/${result.id}`);
   });
 
@@ -93,6 +95,7 @@ export function TicketsPage() {
             entry_policy: entryPolicy,
             visit_quota:
               entryPolicy === "limited_visits" ? Number(visitQuota) : null,
+            member_discount_percent: Number(memberDiscount) || 0,
           }
         : {}),
     });
@@ -337,6 +340,22 @@ export function TicketsPage() {
                     )}
                   </div>
                 )}
+                <div className="space-y-1.5">
+                  <Label htmlFor="pass_discount">Diskon member di POS (%)</Label>
+                  <Input
+                    id="pass_discount"
+                    type="number"
+                    min={0}
+                    max={100}
+                    placeholder="0"
+                    value={memberDiscount}
+                    onChange={(e) => setMemberDiscount(e.target.value)}
+                  />
+                  <p className="text-[11px] text-gray-500">
+                    Benefit: pemegang pass aktif dapat diskon ini di kasir POS
+                    (0 = tanpa benefit).
+                  </p>
+                </div>
               </div>
             ) : null}
             {kind === "single" ? (
