@@ -1,4 +1,4 @@
-# EPIC-026: Items & POS — Master Bersih, Stok Akurat, Satu Sumber Kebenaran Katalog
+# EPIC-027: Items & POS — Master Bersih, Stok Akurat, Satu Sumber Kebenaran Katalog
 
 status: backlog
 environment: local

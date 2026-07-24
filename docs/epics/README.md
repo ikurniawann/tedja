@@ -32,7 +32,7 @@ deploying-dev · ready-for-qa · blocked · done).
 | [EPIC-024](./EPIC-024-pos-customer-display.md) | POS Customer Display — Layar Customer + QRIS Dinamis | ready-for-qa | 2026-07-23 |
 | [EPIC-025](./EPIC-025-finance-ar-invoice.md) | Finance — Invoice & Pembayaran (AR) | ready-for-qa | 2026-07-23 |
 | [EPIC-026](./EPIC-026-purchasing-barang-operasional.md) | Purchasing Barang Operasional (Non-F&B, Non-Jual) | ready-for-qa | 2026-07-24 |
-| [EPIC-026](./EPIC-026-items-pos-master-stock.md) | Items & POS — Master Bersih, Stok Akurat, Satu Sumber Kebenaran Katalog | backlog | 2026-07-23 |
+| [EPIC-027](./EPIC-027-items-pos-master-stock.md) | Items & POS — Master Bersih, Stok Akurat, Satu Sumber Kebenaran Katalog | backlog | 2026-07-23 |
 
 Aturan:
 - Epic + registry ini adalah sumber kebenaran status pekerjaan (canonical).
