@@ -1460,7 +1460,19 @@ function AiAssistantWindow({
   onInitialPromptConsumed?: () => void;
   onClose: () => void;
 }) {
-  type AssistantMessage = { role: "user" | "assistant"; content: string; meta?: { status?: string; model?: string; scope?: string; fallbackReason?: string } };
+  /** Usulan aksi tulis Do yang menunggu tombol konfirmasi (EPIC-017 Fase E). */
+  type PendingAction = {
+    id: string;
+    name: string;
+    summary: string;
+    status: "pending" | "confirmed" | "cancelled" | "expired" | "failed";
+    result_note?: string;
+  };
+  type AssistantMessage = {
+    role: "user" | "assistant";
+    content: string;
+    meta?: { status?: string; model?: string; scope?: string; fallbackReason?: string; pending_action?: PendingAction };
+  };
 
   const [messages, setMessages] = useState<AssistantMessage[]>([]);
   const [input, setInput] = useState("");
@@ -1474,6 +1486,8 @@ function AiAssistantWindow({
   const messageListRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+  /** id aksi yang sedang diproses endpoint konfirmasi (disable tombol kartu). */
+  const [actionBusyId, setActionBusyId] = useState<string | null>(null);
   type Attachment = { name: string; text: string; method: string; truncated: boolean; chars: number };
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -1754,6 +1768,57 @@ function AiAssistantWindow({
       setLoading(false);
     }
   }, [attachments, input, loading, messages, refreshSessions, sessionId, settings.model, settings.scope]);
+
+  /**
+   * Keputusan user atas usulan aksi tulis. Eksekusi nyata terjadi di server
+   * (endpoint konfirmasi memverifikasi kepemilikan, status pending, dan TTL) —
+   * klik ganda atau kartu basi hanya menghasilkan pesan status, bukan aksi ganda.
+   */
+  const decideAction = useCallback(
+    async (messageIndex: number, actionId: string, decision: "confirm" | "cancel") => {
+      setActionBusyId(actionId);
+      try {
+        const res = await fetch("/api/ai/assistant/actions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action_id: actionId, decision }),
+        });
+        const json = (await res.json().catch(() => ({}))) as {
+          action?: { status?: PendingAction["status"] };
+          message?: string;
+          error?: string;
+        };
+        const status = json.action?.status ?? "failed";
+        const note = json.message ?? json.error ?? (res.ok ? "" : "Gagal memproses aksi");
+        setMessages((prev) =>
+          prev.map((m, i) => {
+            if (i !== messageIndex || !m.meta?.pending_action) return m;
+            return {
+              ...m,
+              meta: { ...m.meta, pending_action: { ...m.meta.pending_action, status, result_note: note } },
+            };
+          })
+        );
+      } catch {
+        // Jaringan putus: biarkan tetap pending supaya user bisa mencoba lagi.
+        setMessages((prev) =>
+          prev.map((m, i) => {
+            if (i !== messageIndex || !m.meta?.pending_action) return m;
+            return {
+              ...m,
+              meta: {
+                ...m.meta,
+                pending_action: { ...m.meta.pending_action, result_note: "Jaringan bermasalah, coba lagi." },
+              },
+            };
+          })
+        );
+      } finally {
+        setActionBusyId(null);
+      }
+    },
+    []
+  );
 
   // Tinggi textarea mengikuti jumlah baris; direset dulu agar bisa mengecil lagi
   // saat teks dihapus.
@@ -2037,6 +2102,53 @@ function AiAssistantWindow({
                       <div className={`max-w-[85%] whitespace-pre-line rounded-2xl px-4 py-3 text-sm font-normal leading-6 ${message.role === "user" ? "bg-pink-600 text-white" : "bg-white/10 text-white/78"}`}>
                         {formatPlainChatText(message.content)}
                       </div>
+                      {isAssistant && message.meta?.pending_action && (
+                        <div className="mt-2 max-w-[85%] rounded-2xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm">
+                          <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-amber-200/90">
+                            <ShieldCheck className="size-3.5" /> Konfirmasi aksi
+                          </div>
+                          <p className="mt-1.5 leading-6 text-white/80">{message.meta.pending_action.summary}</p>
+                          {message.meta.pending_action.status === "pending" ? (
+                            <div className="mt-2.5 flex flex-wrap items-center gap-2">
+                              <button
+                                type="button"
+                                disabled={actionBusyId === message.meta.pending_action.id}
+                                onClick={() => decideAction(index, message.meta!.pending_action!.id, "confirm")}
+                                className="inline-flex items-center gap-1.5 rounded-xl bg-pink-600 px-3 py-1.5 text-[12px] font-semibold text-white transition hover:bg-pink-500 disabled:opacity-50"
+                              >
+                                {actionBusyId === message.meta.pending_action.id ? (
+                                  <Loader2 className="size-3.5 animate-spin" />
+                                ) : (
+                                  <Check className="size-3.5" />
+                                )}
+                                Jalankan aksi
+                              </button>
+                              <button
+                                type="button"
+                                disabled={actionBusyId === message.meta.pending_action.id}
+                                onClick={() => decideAction(index, message.meta!.pending_action!.id, "cancel")}
+                                className="inline-flex items-center gap-1.5 rounded-xl bg-white/10 px-3 py-1.5 text-[12px] text-white/70 transition hover:bg-white/15 disabled:opacity-50"
+                              >
+                                <X className="size-3.5" /> Batalkan
+                              </button>
+                              {message.meta.pending_action.result_note && (
+                                <span className="text-[11px] text-amber-200/80">{message.meta.pending_action.result_note}</span>
+                              )}
+                            </div>
+                          ) : (
+                            <p className="mt-2 text-[12px] text-white/60">
+                              {message.meta.pending_action.result_note ||
+                                (message.meta.pending_action.status === "confirmed"
+                                  ? "Aksi sudah dijalankan."
+                                  : message.meta.pending_action.status === "cancelled"
+                                    ? "Aksi dibatalkan."
+                                    : message.meta.pending_action.status === "expired"
+                                      ? "Aksi kedaluwarsa tanpa dikonfirmasi."
+                                      : "Aksi gagal dijalankan.")}
+                            </p>
+                          )}
+                        </div>
+                      )}
                       {isAssistant && (
                         <div className="mt-1 flex items-center gap-1 opacity-0 transition group-hover:opacity-100 focus-within:opacity-100">
                           <button
