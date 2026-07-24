@@ -990,6 +990,23 @@ export function PODetailPage() {
                       </span>
                       <div className="text-xs text-gray-500">
                         {payment.payment_number} · {formatDate(payment.payment_date)}
+                        {payment.receipt_path && (
+                          <>
+                            {" · "}
+                            <a
+                              href={`/api/purchasing/receipts/${payment.receipt_path
+                                .replace(/^purchasing-receipts\//, "")
+                                .split("/")
+                                .map(encodeURIComponent)
+                                .join("/")}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="font-medium text-pink-600 hover:underline"
+                            >
+                              Lihat Nota
+                            </a>
+                          </>
+                        )}
                       </div>
                     </div>
                     <div className="font-semibold text-emerald-700">{formatAmount(payment.amount)}</div>

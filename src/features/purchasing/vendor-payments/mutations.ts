@@ -22,6 +22,9 @@ export const usePayPurchaseInvoice = () => {
         method: VendorPayment["method"];
         reference_number?: string | null;
         notes?: string | null;
+        /** Arsip nota hasil scan (EPIC-018 Fase B). */
+        receipt_path?: string | null;
+        receipt_name?: string | null;
       };
     }) => createVendorPayment(poId, payload),
     onSuccess: (_data, variables) => {
