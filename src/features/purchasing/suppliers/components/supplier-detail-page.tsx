@@ -65,7 +65,7 @@ function SupplierDetailInner() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const supplierId = params.id as string;
-  const isAdmin = user?.role === "purchasing_admin";
+  const isAdmin = user?.role === "purchasing_admin" || user?.role === "admin" || user?.role === "super_admin";
 
   const supplierQuery = useSupplier(supplierId);
   const supplier = supplierQuery.data ?? null;

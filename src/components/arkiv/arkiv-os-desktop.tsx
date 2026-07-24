@@ -62,7 +62,6 @@ import {
   Volume2,
   WalletCards,
   VolumeX,
-  UserCircle,
   UsersRound,
   Wifi,
   X,
@@ -150,15 +149,6 @@ const wallpapers = [
   { id: "glass", name: "Glass Blue", src: "linear-gradient(135deg,#082f49,#0f172a 48%,#312e81)" },
 ];
 
-const desktopLayoutVersion = "compact-v4";
-
-const defaultIconPositions: Record<string, DesktopIconPosition> = {
-  assistant: { left: 24, top: 58 },
-  drive: { left: 116, top: 58 },
-  Application: { left: 208, top: 58 },
-  userManagement: { left: 300, top: 58 },
-};
-
 const defaultWidgetVisibility: WidgetVisibility = {
   calendar: false,
   pulsa: true,
@@ -180,7 +170,6 @@ export default function ArkivOsDesktop() {
   const router = useRouter();
   const desktopRef = useRef<HTMLElement>(null);
   const [now, setNow] = useState<Date | null>(null);
-  const [selectedModule, setSelectedModule] = useState<DesktopModule | null>(null);
   const [previewModule, setPreviewModule] = useState<DesktopModule | null>(null);
   const [showCommand, setShowCommand] = useState(false);
   const [showLibrary, setShowLibrary] = useState(false);
@@ -204,12 +193,10 @@ export default function ArkivOsDesktop() {
   const [queuedAssistantPrompt, setQueuedAssistantPrompt] = useState<string | null>(null);
   const [assistantShortcutFocused, setAssistantShortcutFocused] = useState(false);
   const [wallpaper, setWallpaper] = useState(wallpapers[0]);
-  const [iconPositions, setIconPositions] = useState(defaultIconPositions);
   const [widgetVisibility, setWidgetVisibility] = useState<WidgetVisibility>(defaultWidgetVisibility);
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [assistantSettings, setAssistantSettings] = useState<AiAssistantSettings>(DEFAULT_AI_ASSISTANT_SETTINGS);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; module?: DesktopModule; desktop?: boolean } | null>(null);
-  const iconDragRef = useRef<{ id: string; offsetX: number; offsetY: number; moved: boolean } | null>(null);
   const assistantShortcutRef = useRef<HTMLFormElement>(null);
   const assistantShortcutInputRef = useRef<HTMLInputElement>(null);
 
@@ -345,16 +332,6 @@ export default function ArkivOsDesktop() {
     element.style.setProperty("--mouse-y", "50%");
   };
 
-  const persistIconPositions = (next: Record<string, DesktopIconPosition>) => {
-    setIconPositions(next);
-    window.localStorage.setItem("arkiv-desktop-icons", JSON.stringify(next));
-  };
-
-  const arrangeIcons = () => {
-    window.localStorage.setItem("arkiv-desktop-layout-version", desktopLayoutVersion);
-    persistIconPositions(defaultIconPositions);
-  };
-
   const updateWidgetVisibility = (key: keyof WidgetVisibility, value: boolean) => {
     const next = { ...widgetVisibility, [key]: value };
     setWidgetVisibility(next);
@@ -394,51 +371,13 @@ export default function ArkivOsDesktop() {
     }
   };
 
-  const startIconDrag = (event: ReactMouseEvent<HTMLButtonElement>, id: string) => {
-    const position = iconPositions[id] ?? defaultIconPositions[id] ?? { left: 24, top: 58 };
-    iconDragRef.current = { id, offsetX: event.clientX - position.left, offsetY: event.clientY - position.top, moved: false };
-    event.stopPropagation();
-  };
-
-  const moveIconDrag = (event: ReactMouseEvent<HTMLElement>) => {
-    handleMouseMove(event);
-    const drag = iconDragRef.current;
-    if (!drag) return;
-    drag.moved = true;
-    const next = {
-      ...iconPositions,
-      [drag.id]: {
-        left: Math.max(8, Math.min(window.innerWidth - 84, event.clientX - drag.offsetX)),
-        top: Math.max(48, Math.min(window.innerHeight - 120, event.clientY - drag.offsetY)),
-      },
-    };
-    setIconPositions(next);
-  };
-
-  const stopIconDrag = () => {
-    if (!iconDragRef.current) return;
-    window.localStorage.setItem("arkiv-desktop-icons", JSON.stringify(iconPositions));
-    window.setTimeout(() => {
-      iconDragRef.current = null;
-    }, 0);
-  };
-
   useEffect(() => {
     const timeout = window.setTimeout(() => {
       setNow(new Date());
-      const savedPositions = window.localStorage.getItem("arkiv-desktop-icons");
-      const savedLayoutVersion = window.localStorage.getItem("arkiv-desktop-layout-version");
       const savedWallpaper = window.localStorage.getItem("arkiv-wallpaper");
       const savedWidgets = window.localStorage.getItem("arkiv-widget-visibility");
       const savedSound = window.localStorage.getItem("arkiv-sound-enabled");
       const savedAssistantSettings = window.localStorage.getItem(AI_ASSISTANT_SETTINGS_STORAGE_KEY);
-      if (savedPositions && savedLayoutVersion === desktopLayoutVersion) {
-        setIconPositions({ ...defaultIconPositions, ...JSON.parse(savedPositions) });
-      } else {
-        window.localStorage.setItem("arkiv-desktop-layout-version", desktopLayoutVersion);
-        window.localStorage.setItem("arkiv-desktop-icons", JSON.stringify(defaultIconPositions));
-        setIconPositions(defaultIconPositions);
-      }
       if (savedWallpaper) setWallpaper(wallpapers.find((item) => item.id === savedWallpaper) ?? wallpapers[0]);
       if (savedWidgets) {
         const parsedWidgets = JSON.parse(savedWidgets);
@@ -548,12 +487,8 @@ export default function ArkivOsDesktop() {
   return (
     <main
       ref={desktopRef}
-      onMouseMove={moveIconDrag}
-      onMouseUp={stopIconDrag}
-      onMouseLeave={() => {
-        stopIconDrag();
-        resetMouseMotion();
-      }}
+      onMouseMove={handleMouseMove}
+      onMouseLeave={resetMouseMotion}
       onClick={() => setContextMenu(null)}
       onClickCapture={playClickSound}
       onContextMenu={(event) => {
@@ -575,10 +510,17 @@ export default function ArkivOsDesktop() {
 
       <header className="fixed inset-x-0 top-0 z-30 flex h-9 items-center justify-between border-b border-white/10 bg-black/22 px-3 text-[13px] text-white/90 backdrop-blur-2xl">
         <div className="flex h-full items-center gap-5">
-          <Link href="/arkiv-os" className="flex items-center gap-2 font-semibold">
-            <span className="grid size-5 place-items-center rounded-md bg-white/15 text-[10px]">A</span>
-            Arkiv
-          </Link>
+          <button
+            type="button"
+            onClick={() => setShowAccount(true)}
+            className="flex items-center gap-2 font-semibold transition hover:text-white"
+            title="Account"
+          >
+            <span className="grid size-5 place-items-center rounded-md bg-white/15 text-[10px] uppercase">
+              {userAccount?.email?.charAt(0) || "A"}
+            </span>
+            {userAccount?.email || "Guest"}
+          </button>
           <nav className="hidden items-center gap-4 text-white/72 md:flex">
             <button onClick={() => setShowLibrary(true)}>Applications</button>
             {notifHistory.length > 0 && <button onClick={() => setShowNotifications(true)}>Notifications</button>}
@@ -596,65 +538,12 @@ export default function ArkivOsDesktop() {
           </button>
           <Wifi className="size-4" />
           <Cloud className="size-4" />
-          <button
-            type="button"
-            onClick={() => setShowAccount(true)}
-            className="hidden items-center gap-1 rounded-full border border-white/10 bg-white/10 px-2.5 py-1 text-white/85 transition hover:bg-white/18 md:flex"
-            title="Account"
-          >
-            <UserCircle className="size-4" />
-            {userAccount?.email || "Guest"}
-          </button>
           <span className="hidden sm:inline">{now ? formatDate(now) : "--"}</span>
           <span>{now ? formatTime(now) : "--:--"}</span>
         </div>
       </header>
 
       <section className="relative z-10 min-h-dvh px-6 pb-28 pt-14">
-        <div className="absolute inset-0 pt-12">
-          {desktopIcons.map((item) => {
-            const Icon = item.icon;
-            const desktopModule = item.action === "module" ? item.module : undefined;
-            const isSelected = selectedModule?.name === desktopModule?.name || (item.action === "assistant" && showAssistant) || (item.action === "files" && showFiles);
-            const position = iconPositions[item.id] ?? defaultIconPositions[item.id] ?? { left: 24, top: 58 };
-            return (
-              <button
-                key={item.id}
-                type="button"
-                style={{ left: position.left, top: position.top }}
-                onMouseDown={(event) => startIconDrag(event, item.id)}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  if (iconDragRef.current?.moved) return;
-                  if (desktopModule) setSelectedModule(desktopModule);
-                }}
-                onDoubleClick={() => {
-                  if (desktopModule) openModule(desktopModule);
-                  else if (item.action === "folder") setShowApplicationFolder(true);
-                  else if (item.action === "files") setShowFiles(true);
-                  else if (item.action === "route") router.push(isLoggedIn ? item.href : item.loginHref);
-                  else setShowAssistant(true);
-                }}
-                onContextMenu={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  if (desktopModule) {
-                    setSelectedModule(desktopModule);
-                    setContextMenu({ x: event.clientX, y: event.clientY, module: desktopModule });
-                  }
-                }}
-                className={`group absolute flex w-20 cursor-default select-none flex-col items-center gap-1.5 rounded-2xl px-1.5 py-2 text-center transition hover:bg-white/10 focus:bg-white/10 focus:outline-none ${isSelected ? "bg-white/15 ring-1 ring-white/30" : ""} ${desktopModule?.disabled ? "opacity-70" : ""}`}
-              >
-                <div className="relative grid size-12 place-items-center rounded-2xl border border-white/30 bg-white/15 shadow-[0_12px_32px_rgba(0,0,0,.24)] backdrop-blur-xl">
-                  <div className={`absolute inset-1 rounded-xl bg-gradient-to-br ${pinkAccent} opacity-95`} />
-                  <Icon className="relative size-6 text-white drop-shadow" />
-                </div>
-                <div className="max-w-full truncate rounded-md px-1 text-[12px] font-medium leading-tight text-white drop-shadow-[0_1px_3px_rgba(0,0,0,.8)]">{item.name}</div>
-              </button>
-            );
-          })}
-        </div>
-
         {now && widgetVisibility.calendar && <CalendarWidget date={now} onClose={() => updateWidgetVisibility("calendar", false)} />}
         {isLoggedIn && (
           <DesktopMonitorBoard state={overview} visibility={widgetVisibility} onAskDo={askDoFromWidget} />
@@ -797,7 +686,7 @@ export default function ArkivOsDesktop() {
         />
       )}
       {contextMenu?.module && <ContextMenu x={contextMenu.x} y={contextMenu.y} module={contextMenu.module} onOpen={() => openModule(contextMenu.module!)} onInfo={() => setPreviewModule(contextMenu.module!)} />}
-      {contextMenu?.desktop && <DesktopContextMenu x={contextMenu.x} y={contextMenu.y} onArrange={arrangeIcons} onWallpaper={() => setShowWallpaperPicker(true)} onWidgets={() => setShowWidgetSettings(true)} onApps={() => setShowLibrary(true)} onSettings={() => setShowSettings(true)} onAbout={() => setShowAbout(true)} />}
+      {contextMenu?.desktop && <DesktopContextMenu x={contextMenu.x} y={contextMenu.y} onWallpaper={() => setShowWallpaperPicker(true)} onWidgets={() => setShowWidgetSettings(true)} onApps={() => setShowLibrary(true)} onSettings={() => setShowSettings(true)} onAbout={() => setShowAbout(true)} />}
     </main>
   );
 }
@@ -2302,13 +2191,13 @@ function OsAccountPopup({
   const handleLogout = async () => {
     const db = createBrowserClient();
     await db.auth.signOut();
-    window.location.reload();
+    window.location.href = "/login";
   };
 
   return (
     <div className="fixed inset-0 z-50 bg-black/25 backdrop-blur-sm" onClick={onClose}>
       <div
-        className="absolute right-3 top-12 w-[min(360px,calc(100vw-24px))] overflow-hidden rounded-3xl border border-white/18 bg-slate-950/75 text-white shadow-2xl backdrop-blur-2xl"
+        className="absolute left-1/2 top-1/2 w-[min(360px,calc(100vw-24px))] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-3xl border border-white/18 bg-slate-950/75 text-white shadow-2xl backdrop-blur-2xl"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
@@ -2327,7 +2216,7 @@ function OsAccountPopup({
               {isLoggedIn ? account?.fullName.slice(0, 1).toUpperCase() : "G"}
             </div>
             <div className="font-semibold">{isLoggedIn ? account?.fullName : "Guest"}</div>
-            <div className="mt-1 text-sm text-white/55">{isLoggedIn ? account?.email : "Belum login"}</div>
+            <div className="mt-1 text-sm text-white/55">{isLoggedIn ? account?.email : "Not logged in"}</div>
             <div className="mt-3 inline-flex rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs font-semibold capitalize text-pink-100">
               {isLoggedIn ? account?.role.replace("_", " ") : "public access"}
             </div>
@@ -2337,15 +2226,15 @@ function OsAccountPopup({
             {isLoggedIn ? (
               <>
                 <button onClick={onDashboard} className="rounded-2xl bg-pink-600 px-4 py-3 text-sm font-semibold transition hover:bg-pink-500">
-                  Masuk ke Dashboard
+                  Go to Dashboard
                 </button>
                 <button onClick={handleLogout} className="rounded-2xl border border-white/15 bg-white/8 px-4 py-3 text-sm font-semibold text-white/85 transition hover:bg-white/12">
-                  Keluar / Ganti Akun
+                  Logout
                 </button>
               </>
             ) : (
               <button onClick={onLogin} className="rounded-2xl bg-pink-600 px-4 py-3 text-sm font-semibold transition hover:bg-pink-500">
-                Login ke Arkiv OS
+                Log In to Arkiv OS
               </button>
             )}
           </div>
@@ -2592,11 +2481,10 @@ function AboutArkiv({ onClose }: { onClose: () => void }) {
   );
 }
 
-function DesktopContextMenu({ x, y, onArrange, onWallpaper, onWidgets, onApps, onSettings, onAbout }: { x: number; y: number; onArrange: () => void; onWallpaper: () => void; onWidgets: () => void; onApps: () => void; onSettings: () => void; onAbout: () => void }) {
+function DesktopContextMenu({ x, y, onWallpaper, onWidgets, onApps, onSettings, onAbout }: { x: number; y: number; onWallpaper: () => void; onWidgets: () => void; onApps: () => void; onSettings: () => void; onAbout: () => void }) {
   return (
     <div className="fixed z-50 w-52 overflow-hidden rounded-2xl border border-white/15 bg-slate-950/80 p-1 text-sm shadow-2xl backdrop-blur-xl" style={{ left: x, top: y }}>
       <button onClick={onApps} className="block w-full rounded-xl px-3 py-2 text-left hover:bg-white/10">Open Launchpad</button>
-      <button onClick={onArrange} className="block w-full rounded-xl px-3 py-2 text-left hover:bg-white/10">Arrange Icons</button>
       <button onClick={onWidgets} className="block w-full rounded-xl px-3 py-2 text-left hover:bg-white/10">Widgets</button>
       <button onClick={onSettings} className="block w-full rounded-xl px-3 py-2 text-left hover:bg-white/10">System Settings</button>
       <button onClick={onWallpaper} className="block w-full rounded-xl px-3 py-2 text-left hover:bg-white/10">Change Wallpaper</button>

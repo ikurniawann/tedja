@@ -24,7 +24,7 @@ const adjustmentSchema = z.object({
   notes: z.string().optional(),
 });
 
-const ADJUST_ROLES = ["super_admin", "warehouse_admin", "purchasing_admin"] as const;
+const ADJUST_ROLES = ["admin", "super_admin", "warehouse_admin", "purchasing_admin"] as const;
 
 // POST /api/purchasing/inventory/adjustment
 export async function POST(request: NextRequest) {

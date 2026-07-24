@@ -36,7 +36,9 @@ function buildPRPermissions(
   const canCreatePO =
     pr.status === "approved" &&
     !pr.converted_po_id &&
-    (user.role === "purchasing_manager" || user.role === "purchasing_staff");
+    ["purchasing_manager", "purchasing_staff", "purchasing_admin", "admin", "super_admin"].includes(
+      user.role
+    );
 
   return { canEdit, canApprove, canCreatePO };
 }

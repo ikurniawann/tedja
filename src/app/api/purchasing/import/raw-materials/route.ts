@@ -58,6 +58,7 @@ async function resolveCategoryCode(
   const cacheKey = `${companyId || "*"}:${normalized}`;
   if (cache.has(cacheKey)) return cache.get(cacheKey) ? normalized : null;
 
+  // Prefer company-scoped master, then fall back to global template (company_id NULL).
   const row = await queryOne<{ code: string }>(
     companyId
       ? `SELECT code
@@ -65,7 +66,8 @@ async function resolveCategoryCode(
          WHERE deleted_at IS NULL
            AND is_active = true
            AND upper(code) = upper($1)
-           AND company_id = $2
+           AND (company_id = $2 OR company_id IS NULL)
+         ORDER BY company_id NULLS LAST
          LIMIT 1`
       : `SELECT code
          FROM item.raw_material_categories
@@ -124,13 +126,15 @@ async function resolveUnitId(
   const cacheKey = `${companyId || "*"}:${normalized}`;
   if (cache.has(cacheKey)) return cache.get(cacheKey) ?? null;
 
+  // Prefer company-scoped unit, then fall back to global template.
   const row = await queryOne<{ id: string }>(
     companyId
       ? `SELECT id
          FROM item.units
          WHERE deleted_at IS NULL
            AND upper(kode) = upper($1)
-           AND company_id = $2
+           AND (company_id = $2 OR company_id IS NULL)
+         ORDER BY company_id NULLS LAST
          LIMIT 1`
       : `SELECT id
          FROM item.units
@@ -228,6 +232,7 @@ async function upsertUnitConversions(
 export async function POST(request: NextRequest) {
   try {
     const user = await requireApiRole([
+      "admin",
       "purchasing_admin",
       "purchasing_staff",
       "purchasing_manager",

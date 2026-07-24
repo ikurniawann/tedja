@@ -27,6 +27,7 @@ export const SEARCH_PATH = [
   "manufacturing",
   "pos",
   "crm",
+  "accounting",
   "auth",
 ].join(",");
 

@@ -100,12 +100,21 @@ export function clearSessionCookie(response: NextResponse) {
 
 export async function authenticateCredentials(email: string, password: string) {
   const { verifyPassword } = await import("@/lib/auth/password");
-  const row = await queryOne<{ id: string; email: string; password_hash: string }>(
-    `SELECT id, email, password_hash FROM auth.users WHERE lower(email) = lower($1)`,
+  const row = await queryOne<{
+    id: string;
+    email: string;
+    password_hash: string;
+    banned_until: string | null;
+  }>(
+    `SELECT id, email, password_hash, banned_until
+     FROM auth.users WHERE lower(email) = lower($1)`,
     [email.trim()]
   );
   if (!row) return { user: null, error: { message: "Invalid login credentials" } };
   const ok = await verifyPassword(password, row.password_hash);
   if (!ok) return { user: null, error: { message: "Invalid login credentials" } };
+  if (row.banned_until && new Date(row.banned_until) > new Date()) {
+    return { user: null, error: { message: "This account is inactive. Contact your administrator." } };
+  }
   return { user: { id: row.id, email: row.email }, error: null };
 }

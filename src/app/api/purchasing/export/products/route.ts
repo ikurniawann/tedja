@@ -28,6 +28,7 @@ type ExportRow = {
 export async function GET() {
   try {
     await requireApiRole([
+      "admin",
       "purchasing_admin",
       "purchasing_staff",
       "purchasing_manager",

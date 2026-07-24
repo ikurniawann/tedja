@@ -39,11 +39,8 @@ import { cn } from "@/lib/utils";
 
 import type { Order } from "../types";
 import { useOrderList } from "../queries";
-
-const ARK_RATE = 1000;
-
-const formatArk = (value: number) =>
-  `${(value / ARK_RATE).toLocaleString("id-ID")} ARK`;
+import { useLoyaltySettings } from "@/features/pos/loyalty-settings";
+import { formatArkAmount } from "@/lib/pos/loyalty-settings";
 
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat("id-ID", {
@@ -245,6 +242,9 @@ const STATUS_FILTERS = [
 
 export function OrdersPage() {
   const router = useRouter();
+  const { data: loyaltySettings } = useLoyaltySettings();
+  const formatArk = (value: number) =>
+    formatArkAmount(value, loyaltySettings?.ark_rate || 1000);
   const { data: orders = [], isLoading, refetch } = useOrderList({ limit: 100 });
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<(typeof STATUS_FILTERS)[number]>("all");

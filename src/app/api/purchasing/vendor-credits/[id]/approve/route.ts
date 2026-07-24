@@ -10,6 +10,7 @@ export async function PATCH(
 ) {
   try {
     const approver = await requireApiRole([
+      "admin",
       "super_admin",
       "purchasing_admin",
       "purchasing_manager",

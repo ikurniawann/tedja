@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createPgClient } from "@/lib/pg/create-client";
+import { getApiUserScope } from '@/lib/api/scope';
 import { enrichPosProductsWithPurchasingCogs } from '@/lib/pos/purchasing-sync';
+import {
+  applyStallScopeToProductIds,
+  resolvePosProductStallScope,
+} from '@/lib/pos/stall-product-scope';
 
 type ProductVariantPayload = {
   name?: string;
@@ -58,11 +63,26 @@ function normalizeStation(value?: string) {
   return 'kitchen';
 }
 
-// Initialize pg client (admin access)
-// GET /api/pos/products - List all active products
+// GET /api/pos/products - List active products scoped to login stall assignment
 export async function GET(request: NextRequest) {
   try {
     const db = createPgClient();
+    const scope = await getApiUserScope();
+    const stallScope = await resolvePosProductStallScope(scope);
+    const allowedIds = applyStallScopeToProductIds(stallScope);
+
+    if (allowedIds && allowedIds.length === 0) {
+      return NextResponse.json({
+        success: true,
+        data: [],
+        meta: {
+          stall_scoped: true,
+          warehouse_ids: stallScope.mode === "ids" ? stallScope.warehouseIds : [],
+          reason: stallScope.mode === "none" ? "no_stall_assignment" : "no_products_for_stall",
+        },
+      });
+    }
+
     const searchParams = request.nextUrl.searchParams;
     const category = searchParams.get('category');
     const search = searchParams.get('search');
@@ -82,6 +102,10 @@ export async function GET(request: NextRequest) {
         )
       `)
       .order('name');
+
+    if (allowedIds) {
+      query = query.in('id', allowedIds);
+    }
 
     if (!includeInactive) {
       query = query.eq('is_active', true).eq('is_available', true);
@@ -108,7 +132,15 @@ export async function GET(request: NextRequest) {
       normalizedProducts as Array<Record<string, unknown>>
     );
 
-    return NextResponse.json({ success: true, data: enrichedProducts });
+    return NextResponse.json({
+      success: true,
+      data: enrichedProducts,
+      meta: {
+        stall_scoped: allowedIds !== null,
+        warehouse_ids: stallScope.mode === "ids" ? stallScope.warehouseIds : [],
+        product_count: enrichedProducts.length,
+      },
+    });
   } catch (error: unknown) {
     console.error('Error fetching products:', error);
     return NextResponse.json(

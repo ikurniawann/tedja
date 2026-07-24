@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { PlusIcon, Squares2X2Icon } from "@heroicons/react/24/outline";
-import { Loader2 } from "lucide-react";
+import { ChevronsDownUp, ChevronsUpDown, Loader2, Search } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
@@ -35,6 +35,7 @@ import {
   filterMenusWithAncestors,
   flattenMenuTree,
   mergeExpandableIds,
+  sortSiblings,
 } from "../utils/menu-tree";
 
 export function MenusConfigurationPage() {
@@ -53,6 +54,7 @@ export function MenusConfigurationPage() {
 
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deletingMenu, setDeletingMenu] = useState<MenuItem | null>(null);
+  const [reorderingId, setReorderingId] = useState<string | null>(null);
 
   const { data, isLoading, isError, error, refetch } = useMenuList();
   const createMenuMutation = useCreateMenu();
@@ -171,6 +173,59 @@ export function MenusConfigurationPage() {
     }
   }
 
+  async function handleReorder(item: MenuItem, direction: "up" | "down") {
+    if (reorderingId) return;
+
+    const siblings = sortSiblings(allRows.filter((row) => row.parentId === item.parentId));
+    const index = siblings.findIndex((row) => row.id === item.id);
+    const targetIndex = direction === "up" ? index - 1 : index + 1;
+    if (index < 0 || targetIndex < 0 || targetIndex >= siblings.length) return;
+
+    const next = [...siblings];
+    [next[index], next[targetIndex]] = [next[targetIndex], next[index]];
+
+    // Normalisasi order semua sibling (1..n) agar duplikat orderNumber ikut rapi.
+    const changes = next
+      .map((row, i) => ({ id: row.id, orderNumber: i + 1, previous: row.orderNumber }))
+      .filter((change) => change.previous !== change.orderNumber);
+
+    if (changes.length === 0) return;
+
+    setReorderingId(item.id);
+    try {
+      await Promise.all(
+        changes.map(({ id, orderNumber }) =>
+          updateMenuMutation.mutateAsync({ id, orderNumber })
+        )
+      );
+      showToast("Menu order updated", "success");
+    } catch (reorderError) {
+      showToast(
+        reorderError instanceof Error ? reorderError.message : "Failed to update menu order",
+        "error"
+      );
+    } finally {
+      setReorderingId(null);
+    }
+  }
+
+  async function handleChangeOrder(item: MenuItem, orderNumber: number) {
+    if (reorderingId || orderNumber === item.orderNumber) return;
+
+    setReorderingId(item.id);
+    try {
+      await updateMenuMutation.mutateAsync({ id: item.id, orderNumber });
+      showToast("Menu order updated", "success");
+    } catch (reorderError) {
+      showToast(
+        reorderError instanceof Error ? reorderError.message : "Failed to update menu order",
+        "error"
+      );
+    } finally {
+      setReorderingId(null);
+    }
+  }
+
   function toggleExpand(id: string) {
     setExpandedIds((prev) => {
       const next = new Set(prev);
@@ -203,70 +258,79 @@ export function MenusConfigurationPage() {
             </p>
           </div>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={expandAll}
-            className="rounded-lg border border-gray-200/70 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
-          >
-            Expand all
-          </button>
-          <button
-            type="button"
-            onClick={collapseAll}
-            className="rounded-lg border border-gray-200/70 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
-          >
-            Collapse all
-          </button>
-          <Button
-            type="button"
-            onClick={handleOpenAdd}
-            className="gap-2 bg-pink-600 text-white hover:bg-pink-700"
-          >
-            <PlusIcon className="h-4 w-4" />
-            Add Menu
-          </Button>
-        </div>
+        <Button
+          type="button"
+          onClick={handleOpenAdd}
+          className="gap-2 bg-pink-600 text-white hover:bg-pink-700"
+        >
+          <PlusIcon className="h-4 w-4" />
+          Add Menu
+        </Button>
       </div>
 
-      <Card className="border-gray-200/70">
-        <CardContent className="px-4 pt-4">
-          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
-            <Input
-              placeholder="Search name, code, or route..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="max-w-sm"
-            />
-            <Select
-              value={statusFilter || "all"}
-              onValueChange={(value) => setStatusFilter(value === "all" ? "" : value)}
-            >
-              <SelectTrigger className="w-full sm:w-40">
-                <SelectValue placeholder="Status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All statuses</SelectItem>
-                <SelectItem value="active">Active</SelectItem>
-                <SelectItem value="inactive">Inactive</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select
-              value={menuTypeFilter || "all"}
-              onValueChange={(value) => setMenuTypeFilter(value === "all" ? "" : value)}
-            >
-              <SelectTrigger className="w-full sm:w-44">
-                <SelectValue placeholder="Menu type" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All types</SelectItem>
-                {menuTypes.map((type) => (
-                  <SelectItem key={type} value={type}>
-                    {type}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+      <Card className="gap-0 border-gray-200/70 py-0">
+        <CardContent className="p-0">
+          <div className="flex flex-col gap-3 border-b border-gray-200/70 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <label className="relative w-full sm:w-72">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                <Input
+                  placeholder="Search name, code, or route..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="h-9 pl-9"
+                />
+              </label>
+              <Select
+                value={statusFilter || "all"}
+                onValueChange={(value) => setStatusFilter(value === "all" ? "" : value)}
+              >
+                <SelectTrigger className="h-9 w-full sm:w-36">
+                  <SelectValue placeholder="Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All status</SelectItem>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="inactive">Inactive</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select
+                value={menuTypeFilter || "all"}
+                onValueChange={(value) => setMenuTypeFilter(value === "all" ? "" : value)}
+              >
+                <SelectTrigger className="h-9 w-full sm:w-40">
+                  <SelectValue placeholder="Menu type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All types</SelectItem>
+                  {menuTypes.map((type) => (
+                    <SelectItem key={type} value={type}>
+                      {type}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-500">{allRows.length} menus</span>
+              <button
+                type="button"
+                onClick={expandAll}
+                className="flex items-center gap-1.5 rounded-lg border border-gray-200/80 px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm transition hover:bg-gray-50"
+              >
+                <ChevronsUpDown className="h-3.5 w-3.5 text-gray-400" />
+                Expand
+              </button>
+              <button
+                type="button"
+                onClick={collapseAll}
+                className="flex items-center gap-1.5 rounded-lg border border-gray-200/80 px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm transition hover:bg-gray-50"
+              >
+                <ChevronsDownUp className="h-3.5 w-3.5 text-gray-400" />
+                Collapse
+              </button>
+            </div>
           </div>
 
           {isLoading ? (
@@ -294,10 +358,13 @@ export function MenusConfigurationPage() {
               rows={displayRows}
               expandedIds={expandedIds}
               selectedId={selectedId}
+              reorderingId={reorderingId}
               onToggleExpand={toggleExpand}
               onView={handleView}
               onEdit={handleOpenEdit}
               onDelete={handleOpenDelete}
+              onReorder={handleReorder}
+              onChangeOrder={handleChangeOrder}
             />
           )}
         </CardContent>

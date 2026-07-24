@@ -8,7 +8,7 @@ import {
   Banknote,
   Check,
   Coins,
-  CreditCard,
+  History,
   Loader2,
   Nfc,
   Printer,
@@ -26,19 +26,22 @@ import { findCustomerByCard } from '@/features/pos/nfc';
 import { saveCustomer } from '@/lib/pos-api';
 import type { CustomerWithDiscount } from '@/hooks/use-pos-customers';
 import { cn } from '@/lib/utils';
-import type { PaymentMethod, TopupCustomer, TopupResult, TopupStatus } from '../types';
-import { useTopupCustomers } from '../queries';
-import { useProcessTopup } from '../mutations';
-import { listTopupCustomers } from '../api';
+import type {
+  PaymentMethod,
+  TopupCustomer,
+  TopupHistoryItem,
+  TopupResult,
+  TopupStatus,
+} from '../types';
+import { useTopupCustomers, useTopupHistory } from '../queries';
+import { useCancelTopup, useProcessTopup } from '../mutations';
+import { buildTopupQrImageUrl, fetchTopupStatus, listTopupCustomers } from '../api';
 import { printTopupReceipt } from '../print-topup-receipt';
-
-const ARK_RATE = 1000;
-const presetValues = [50000, 100000, 200000, 500000, 1000000];
+import { useLoyaltySettings } from '@/features/pos/loyalty-settings';
+import { formatArkAmount } from '@/lib/pos/loyalty-settings';
 
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value || 0);
-
-const formatArk = (value: number) => `${((value || 0) / ARK_RATE).toLocaleString('id-ID')} ARK`;
 
 function parseAmountInput(raw: string) {
   const digits = raw.replace(/\D/g, '');
@@ -75,10 +78,27 @@ export function TopupPage() {
   const [showCreateFromNfc, setShowCreateFromNfc] = useState(false);
   const [pendingNfcUid, setPendingNfcUid] = useState<string | null>(null);
   const [createSearch, setCreateSearch] = useState('');
+  const [pendingTopupId, setPendingTopupId] = useState<string | null>(null);
+  const [actionTopupId, setActionTopupId] = useState<string | null>(null);
 
   const { data: customers = [], isLoading: loadingCustomers, error: customersError, refetch } =
     useTopupCustomers({ search: customerSearch });
+  const {
+    data: topupHistory = [],
+    isLoading: loadingHistory,
+    error: historyError,
+    refetch: refetchHistory,
+  } = useTopupHistory(customer?.id);
   const topupMutation = useProcessTopup();
+  const cancelMutation = useCancelTopup(customer?.id);
+  const { data: loyaltySettings } = useLoyaltySettings();
+
+  const arkRate = loyaltySettings?.ark_rate || 1000;
+  const presetValues = loyaltySettings?.topup_presets?.length
+    ? loyaltySettings.topup_presets
+    : [50000, 100000, 200000, 500000, 1000000];
+  const minTopup = loyaltySettings?.topup_min_amount ?? 10000;
+  const formatArk = (value: number) => formatArkAmount(value, arkRate);
 
   const filtered = useMemo(() => {
     const query = customerSearch.trim().toLowerCase();
@@ -122,6 +142,7 @@ export function TopupPage() {
     setCustomRp('');
     setResult(null);
     setError('');
+    setPendingTopupId(null);
   }
 
   async function handleCreateCustomer(payload: {
@@ -216,11 +237,126 @@ export function TopupPage() {
       setCustomer(null);
     } else if (step === 'payment') {
       setStep('enter_amount');
+    } else if (step === 'awaiting_qris') {
+      setStep('enter_amount');
     }
   }
 
+  async function handleCancelTopup(topupId: string, options?: { goToAmount?: boolean }) {
+    if (!topupId || cancelMutation.isPending) return;
+    setActionTopupId(topupId);
+    try {
+      await cancelMutation.mutateAsync(topupId);
+      toast.success('Top-up cancelled');
+      if (pendingTopupId === topupId) {
+        setPendingTopupId(null);
+        setResult(null);
+        setPayment('qris');
+        if (options?.goToAmount !== false) {
+          setStep('enter_amount');
+        }
+      }
+      await refetchHistory();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to cancel top-up';
+      toast.error(message);
+    } finally {
+      setActionTopupId(null);
+    }
+  }
+
+  async function handleShowHistoryQr(item: TopupHistoryItem) {
+    if (String(item.status || '').toLowerCase() !== 'pending') {
+      toast.error('Only pending QRIS top-ups can be shown again');
+      return;
+    }
+    if (String(item.payment_method || '').toLowerCase() !== 'qris') {
+      toast.error('This top-up has no QRIS code');
+      return;
+    }
+
+    setActionTopupId(item.id);
+    setError('');
+    try {
+      const metadataQr = item.metadata?.qr_string ? String(item.metadata.qr_string) : '';
+      let qrUrl = metadataQr ? buildTopupQrImageUrl(metadataQr) : null;
+      let qrString = metadataQr || null;
+      let balanceBefore = Number(item.balance_before) || 0;
+      let balanceAfter = Number(item.balance_after) || Number(customer?.ark_coin_balance) || 0;
+      let arkCoins = Number(item.ark_coins) || 0;
+
+      if (!qrUrl) {
+        const status = await fetchTopupStatus(item.id);
+        if (String(status.status || '').toLowerCase() === 'cancelled') {
+          toast.error('This top-up was already cancelled');
+          await refetchHistory();
+          return;
+        }
+        if (String(status.status || '').toLowerCase() === 'completed') {
+          toast.success('Payment already completed');
+          finishSuccess(status);
+          return;
+        }
+        qrUrl = status.qr_code_url || null;
+        qrString = status.qr_string || null;
+        balanceBefore = Number(status.balance_before) || balanceBefore;
+        balanceAfter = Number(status.balance_after) || balanceAfter;
+        arkCoins = Number(status.ark_coins) || arkCoins;
+      }
+
+      if (!qrUrl) {
+        toast.error('QR code is no longer available');
+        return;
+      }
+
+      const amount = Number(item.amount) || 0;
+      setTopupRp(amount);
+      setCustomRp(amount > 0 ? formatCurrency(amount) : '');
+      setPayment('qris');
+      setPendingTopupId(item.id);
+      setResult({
+        status: 'pending',
+        topup_id: item.id,
+        transaction: {
+          id: item.id,
+          payment_method: 'qris',
+          status: 'pending',
+          created_at: item.created_at || undefined,
+        },
+        balance_before: balanceBefore,
+        balance_after: balanceAfter,
+        ark_coins: arkCoins,
+        qr_code_url: qrUrl,
+        qr_string: qrString,
+        expires_at: item.metadata?.expires_at ? String(item.metadata.expires_at) : null,
+      });
+      setStep('awaiting_qris');
+      toast.message('QRIS ready — show it to the customer');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to open QRIS';
+      toast.error(message);
+    } finally {
+      setActionTopupId(null);
+    }
+  }
+
+  function finishSuccess(data: TopupResult) {
+    if (!customer) return;
+    const balanceAfter = Number(data.balance_after || projectedBalance);
+    setResult(data);
+    setCustomer({ ...customer, ark_coin_balance: balanceAfter });
+    setPendingTopupId(null);
+    setStep('success');
+    void refetchHistory();
+    toast.success(
+      data.xp_awarded
+        ? `Top-up successful. ${formatArk(topupRp)} added (+${data.xp_awarded} XP). New balance: ${formatArk(balanceAfter)}.`
+        : `Top-up successful. ${formatArk(topupRp)} added. New balance: ${formatArk(balanceAfter)}.`
+    );
+  }
+
   async function pay() {
-    if (!customer || topupRp < 10000) return;
+    if (!customer || topupRp < minTopup) return;
     setStep('processing');
     setError('');
 
@@ -228,15 +364,18 @@ export function TopupPage() {
       const data = await topupMutation.mutateAsync({
         customer_id: customer.id,
         amount: topupRp,
-        payment_method: payment === 'credit_card' ? 'credit' : payment,
+        payment_method: payment,
       });
-      const balanceAfter = Number(data.balance_after || projectedBalance);
-      setResult(data);
-      setCustomer({ ...customer, ark_coin_balance: balanceAfter });
-      setStep('success');
-      toast.success(
-        `Top-up successful. ${formatArk(topupRp)} added. New balance: ${formatArk(balanceAfter)}.`
-      );
+
+      if (payment === 'qris' && (data.status === 'pending' || data.qr_code_url)) {
+        setResult(data);
+        setPendingTopupId(data.topup_id || data.transaction?.id || null);
+        setStep('awaiting_qris');
+        toast.message('Show the QRIS code to the customer to complete payment');
+        return;
+      }
+
+      finishSuccess(data);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Top-up failed';
       setError(message);
@@ -245,10 +384,45 @@ export function TopupPage() {
     }
   }
 
+  useEffect(() => {
+    if (step !== 'awaiting_qris' || !pendingTopupId) return;
+
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const data = await fetchTopupStatus(pendingTopupId);
+        if (cancelled) return;
+        if (data.status === 'completed') {
+          finishSuccess(data);
+        } else if (data.status === 'cancelled') {
+          setPendingTopupId(null);
+          setResult(null);
+          setStep('enter_amount');
+          void refetchHistory();
+          toast.message('Top-up was cancelled');
+        }
+      } catch {
+        // keep polling; toast only on fatal cancel
+      }
+    };
+
+    void tick();
+    const timer = window.setInterval(() => {
+      void tick();
+    }, 2500);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, pendingTopupId]);
+
   function newTopup() {
     setTopupRp(0);
     setCustomRp('');
     setResult(null);
+    setPendingTopupId(null);
     setStep('enter_amount');
   }
 
@@ -289,7 +463,7 @@ export function TopupPage() {
         )}
         <div className="flex items-center gap-2">
           <Wallet className="h-5 w-5 text-primary" />
-          <h1 className="text-lg font-bold text-foreground">Topup ARK</h1>
+          <h1 className="text-lg font-bold text-foreground">Top-up ARK</h1>
         </div>
         <span className="ml-auto text-xs text-muted-foreground">1 ARK = 1.000</span>
       </div>
@@ -304,7 +478,7 @@ export function TopupPage() {
       {resolvingCard && (
         <div className="mb-3 flex items-center gap-2 rounded-xl border border-border bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" />
-          Reading member card...
+          Reading member card…
         </div>
       )}
 
@@ -347,11 +521,21 @@ export function TopupPage() {
 
         {(step === 'enter_amount' || step === 'payment') && customer && (
           <div className="grid gap-4 lg:grid-cols-12 lg:items-start">
-            <div className="lg:col-span-5">
+            <div className="space-y-4 lg:col-span-5">
               <WalletCard
                 customer={customer}
+                arkRate={arkRate}
                 highlightBalance
                 projectedBalance={topupRp > 0 ? projectedBalance : undefined}
+              />
+              <TopupHistoryCard
+                items={topupHistory}
+                loading={loadingHistory}
+                errorMessage={historyError instanceof Error ? historyError.message : ''}
+                arkRate={arkRate}
+                actionTopupId={actionTopupId}
+                onShowQr={(item) => void handleShowHistoryQr(item)}
+                onCancel={(item) => void handleCancelTopup(item.id)}
               />
             </div>
 
@@ -390,7 +574,7 @@ export function TopupPage() {
                         inputMode="numeric"
                         value={customRp}
                         onChange={(event) => handleCustom(event.target.value)}
-                        placeholder="Minimum 10.000"
+                        placeholder={`Minimum ${formatCurrency(minTopup)}`}
                         className="border-gray-200/80"
                       />
                     </div>
@@ -406,13 +590,26 @@ export function TopupPage() {
                         <span className="text-muted-foreground">Balance after top-up</span>
                         <span className="font-bold text-foreground">{formatArk(projectedBalance)}</span>
                       </div>
+                      {loyaltySettings?.topup_xp_enabled && topupRp >= minTopup && (
+                        <div className="mt-1 flex items-center justify-between text-sm">
+                          <span className="text-muted-foreground">Estimated XP</span>
+                          <span className="font-semibold text-violet-700">
+                            +
+                            {loyaltySettings.topup_xp_mode === "fixed"
+                              ? Math.floor(loyaltySettings.topup_xp_value)
+                              : Math.floor(topupRp / Math.max(1, loyaltySettings.topup_xp_amount_step)) *
+                                loyaltySettings.topup_xp_value}{" "}
+                            XP
+                          </span>
+                        </div>
+                      )}
                     </div>
                   )}
 
                   <Button
                     type="button"
-                    onClick={() => topupRp >= 10000 && setStep('payment')}
-                    disabled={topupRp < 10000}
+                    onClick={() => topupRp >= minTopup && setStep('payment')}
+                    disabled={topupRp < minTopup}
                     className="h-11 w-full bg-primary text-sm font-semibold hover:bg-primary/90 disabled:bg-muted disabled:text-muted-foreground sm:w-auto sm:min-w-56"
                   >
                     Continue to payment
@@ -430,11 +627,20 @@ export function TopupPage() {
                     <div className="mt-0.5 text-sm font-medium text-amber-600">{formatArk(topupRp)}</div>
                   </div>
 
-                  <div className="grid gap-2 sm:grid-cols-3">
+                  <div className="grid gap-2 sm:grid-cols-2">
                     {[
-                      { id: 'qris' as const, icon: QrCode, label: 'QRIS', desc: 'Recorded as QRIS top-up' },
-                      { id: 'credit_card' as const, icon: CreditCard, label: 'Card', desc: 'Recorded as card payment' },
-                      { id: 'cash' as const, icon: Banknote, label: 'Cash', desc: 'Cash received at cashier' },
+                      {
+                        id: 'qris' as const,
+                        icon: QrCode,
+                        label: 'QRIS',
+                        desc: 'Scan QRIS — ARK credited after payment',
+                      },
+                      {
+                        id: 'cash' as const,
+                        icon: Banknote,
+                        label: 'Cash',
+                        desc: 'Cash at cashier — ARK credited instantly',
+                      },
                     ].map((method) => (
                       <button
                         key={method.id}
@@ -468,8 +674,10 @@ export function TopupPage() {
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                         Processing…
                       </>
+                    ) : payment === 'cash' ? (
+                      `Confirm cash ${formatCurrency(topupRp)}`
                     ) : (
-                      `Pay ${formatCurrency(topupRp)}`
+                      `Show QRIS ${formatCurrency(topupRp)}`
                     )}
                   </Button>
                 </>
@@ -485,6 +693,71 @@ export function TopupPage() {
           </div>
         )}
 
+        {step === 'awaiting_qris' && result?.qr_code_url && (
+          <div className="grid gap-4 lg:grid-cols-12 lg:items-start">
+            <div className="space-y-4 lg:col-span-5">
+              {customer ? <WalletCard customer={customer} arkRate={arkRate} /> : null}
+              <div className="rounded-2xl border border-gray-200/70 bg-card p-4">
+                <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Waiting for payment
+                </div>
+                <div className="mt-1 text-3xl font-bold text-foreground">{formatCurrency(topupRp)}</div>
+                <div className="mt-0.5 text-sm font-medium text-amber-600">{formatArk(topupRp)}</div>
+                <p className="mt-3 text-sm text-muted-foreground">
+                  Ask the customer to scan this QRIS. ARK is credited after payment is confirmed.
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-col items-center gap-4 lg:col-span-7">
+              <div className="rounded-2xl border border-gray-200/70 bg-white p-4 shadow-sm">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={result.qr_code_url}
+                  alt="QRIS payment"
+                  className="h-72 w-72 object-contain"
+                />
+              </div>
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                Waiting for payment confirmation…
+              </div>
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="border-gray-200/80"
+                  disabled={cancelMutation.isPending}
+                  onClick={() => {
+                    if (pendingTopupId) {
+                      void handleCancelTopup(pendingTopupId);
+                    } else {
+                      goBack();
+                    }
+                  }}
+                >
+                  {cancelMutation.isPending && pendingTopupId === actionTopupId ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Cancelling…
+                    </>
+                  ) : (
+                    'Cancel'
+                  )}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="border-gray-200/80"
+                  disabled={cancelMutation.isPending}
+                  onClick={goBack}
+                >
+                  Back
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {step === 'success' && customer && result && (
           <div className="grid gap-4 lg:grid-cols-12 lg:items-start">
             <div className="space-y-4 lg:col-span-5">
@@ -497,7 +770,7 @@ export function TopupPage() {
                   <p className="text-sm text-muted-foreground">{formatArk(topupRp)} added to wallet</p>
                 </div>
               </div>
-              <WalletCard customer={customer} highlightBalance />
+              <WalletCard customer={customer} arkRate={arkRate} highlightBalance />
             </div>
 
             <div className="space-y-4 lg:col-span-7">
@@ -606,7 +879,7 @@ export function TopupPage() {
             </div>
             <Line label="Customer" value={customer?.name || customer?.phone || '-'} />
             <Line label="Amount" value={formatCurrency(topupRp)} />
-            <Line label="Method" value={payment.toUpperCase()} />
+            <Line label="Method" value={payment === 'cash' ? 'Cash' : 'QRIS'} />
             <Line label="Previous balance" value={formatArk(result?.balance_before || 0)} />
             <Line label="New balance" value={formatArk(result?.balance_after || 0)} strong />
           </div>
@@ -676,16 +949,172 @@ export function TopupPage() {
   );
 }
 
+function formatTopupDate(value?: string | null) {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  return new Intl.DateTimeFormat('en-GB', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date);
+}
+
+function paymentMethodLabel(method?: string | null) {
+  const value = String(method || '').toLowerCase();
+  if (value === 'cash') return 'Cash';
+  if (value === 'qris') return 'QRIS';
+  if (value === 'credit' || value === 'credit_card') return 'Card';
+  if (!value) return '—';
+  return value.toUpperCase();
+}
+
+function statusLabel(status?: string | null) {
+  const value = String(status || 'completed').toLowerCase();
+  if (value === 'pending') return 'Pending';
+  if (value === 'failed') return 'Failed';
+  if (value === 'expired') return 'Expired';
+  if (value === 'cancelled') return 'Cancelled';
+  return 'Completed';
+}
+
+function statusBadgeClass(status?: string | null) {
+  const value = String(status || 'completed').toLowerCase();
+  if (value === 'pending') return 'bg-amber-50 text-amber-700 ring-1 ring-amber-200/80';
+  if (value === 'failed' || value === 'expired' || value === 'cancelled') {
+    return 'bg-red-50 text-red-700 ring-1 ring-red-200/80';
+  }
+  return 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200/80';
+}
+
+function canResumeQris(item: TopupHistoryItem) {
+  return (
+    String(item.status || '').toLowerCase() === 'pending' &&
+    String(item.payment_method || '').toLowerCase() === 'qris'
+  );
+}
+
+function TopupHistoryCard({
+  items,
+  loading,
+  errorMessage,
+  arkRate,
+  actionTopupId,
+  onShowQr,
+  onCancel,
+}: {
+  items: TopupHistoryItem[];
+  loading: boolean;
+  errorMessage: string;
+  arkRate: number;
+  actionTopupId?: string | null;
+  onShowQr: (item: TopupHistoryItem) => void;
+  onCancel: (item: TopupHistoryItem) => void;
+}) {
+  return (
+    <div className="rounded-2xl border border-gray-200/70 bg-card">
+      <div className="flex items-center gap-2 border-b border-gray-200/70 px-4 py-3">
+        <History className="h-4 w-4 text-muted-foreground" />
+        <div className="text-sm font-semibold text-foreground">Top-up history</div>
+        <span className="ml-auto text-xs text-muted-foreground">
+          {loading ? '…' : `${items.length} recent`}
+        </span>
+      </div>
+
+      <div className="px-4 py-2">
+        {loading ? (
+          <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Loading history…
+          </div>
+        ) : errorMessage ? (
+          <div className="py-4 text-sm text-red-600">{errorMessage}</div>
+        ) : items.length === 0 ? (
+          <div className="py-6 text-sm text-muted-foreground">No top-up history yet.</div>
+        ) : (
+          <div className="divide-y divide-gray-200/70">
+            {items.map((item) => {
+              const pendingQris = canResumeQris(item);
+              const busy = actionTopupId === item.id;
+              return (
+                <div key={item.id} className="space-y-2 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold text-foreground">
+                        {formatCurrency(Number(item.amount) || 0)}
+                      </div>
+                      <div className="mt-0.5 text-xs text-muted-foreground">
+                        {formatArkAmount(Number(item.amount) || 0, arkRate)} ·{' '}
+                        {paymentMethodLabel(item.payment_method)}
+                      </div>
+                      <div className="mt-0.5 text-xs text-muted-foreground">
+                        {formatTopupDate(item.created_at)}
+                      </div>
+                    </div>
+                    <span
+                      className={cn(
+                        'shrink-0 rounded-md px-2 py-0.5 text-[11px] font-semibold capitalize',
+                        statusBadgeClass(item.status)
+                      )}
+                    >
+                      {statusLabel(item.status)}
+                    </span>
+                  </div>
+
+                  {pendingQris ? (
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-8 border-gray-200/80 text-xs"
+                        disabled={Boolean(actionTopupId)}
+                        onClick={() => onShowQr(item)}
+                      >
+                        {busy ? (
+                          <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <QrCode className="mr-1.5 h-3.5 w-3.5" />
+                        )}
+                        Show QR
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-8 border-red-200/80 text-xs text-red-600 hover:bg-red-50 hover:text-red-700"
+                        disabled={Boolean(actionTopupId)}
+                        onClick={() => onCancel(item)}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function WalletCard({
   customer,
+  arkRate,
   highlightBalance = false,
   projectedBalance,
 }: {
   customer: TopupCustomer;
+  arkRate: number;
   highlightBalance?: boolean;
   projectedBalance?: number;
 }) {
   const balance = Number(customer.ark_coin_balance || 0);
+  const formatArk = (value: number) => formatArkAmount(value, arkRate);
 
   return (
     <div className="relative overflow-hidden rounded-2xl border border-primary/20 bg-gradient-to-br from-primary via-primary to-amber-600 p-5 text-primary-foreground shadow-sm">

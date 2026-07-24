@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  ArrowRightEndOnRectangleIcon,
   BuildingOfficeIcon,
   CalendarDaysIcon,
   EnvelopeIcon,
@@ -33,6 +34,9 @@ interface UsersTableProps {
   onResetPassword?: (row: UserEmployeeItem) => void;
   /** Shortcut buat akun login utk karyawan yang belum punya (Super Admin/Admin/HRD). */
   onCreateAccount?: (row: UserEmployeeItem) => void;
+  /** Login As (impersonation) — hanya super_admin, target harus punya akun login. */
+  onLoginAs?: (row: UserEmployeeItem) => void;
+  loginAsEmployeeId?: string | null;
   showAppActions?: boolean;
   resettingEmployeeId?: string | null;
 }
@@ -43,6 +47,8 @@ export function UsersTable({
   onEdit,
   onResetPassword,
   onCreateAccount,
+  onLoginAs,
+  loginAsEmployeeId = null,
   showAppActions = false,
   resettingEmployeeId = null,
 }: UsersTableProps) {
@@ -196,6 +202,23 @@ export function UsersTable({
                   >
                     <PencilIcon className="h-4 w-4" />
                   </Button>
+                  {onLoginAs && emp.isAccessApp && emp.userId && emp.appAccount?.role !== "super_admin" ? (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-8 w-8 p-0 text-blue-600 hover:bg-blue-50 hover:text-blue-700"
+                      onClick={() => onLoginAs(emp)}
+                      disabled={loginAsEmployeeId !== null}
+                      aria-label={`Login as ${emp.fullName}`}
+                      title={`Login as ${emp.fullName}`}
+                    >
+                      {loginAsEmployeeId === emp.id ? (
+                        <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-blue-500" />
+                      ) : (
+                        <ArrowRightEndOnRectangleIcon className="h-4 w-4" />
+                      )}
+                    </Button>
+                  ) : null}
                   {!emp.userId && onCreateAccount ? (
                     <Button
                       size="sm"

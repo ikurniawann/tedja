@@ -40,7 +40,10 @@ export default function PurchasingGuard({
 
     let denied = true;
 
-    if (allowedRoles && allowedRoles.length > 0) {
+    // Platform admin can access all purchasing screens.
+    if (role === "admin" || role === "super_admin") {
+      denied = false;
+    } else if (allowedRoles && allowedRoles.length > 0) {
       denied = !allowedRoles.includes(role);
     } else if (minRole) {
       // ROLE_HIERARCHY: [viewer, warehouse_staff, qc_staff, purchasing_staff, purchasing_manager, purchasing_admin, super_admin]
@@ -95,6 +98,10 @@ export function usePurchasingAccess(
   }
 
   const role = user.role;
+
+  if (role === "admin" || role === "super_admin") {
+    return { allowed: true, loading: false };
+  }
 
   if (allowedRoles && allowedRoles.length > 0) {
     return { allowed: allowedRoles.includes(role), loading: false };

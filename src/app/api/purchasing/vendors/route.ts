@@ -53,6 +53,7 @@ const queryParamsSchema = z.object({
 export async function GET(request: NextRequest) {
   try {
     await requireApiRole([
+      "admin",
       "purchasing_admin",
       "purchasing_staff",
       "purchasing_manager",
@@ -123,6 +124,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     await requireApiRole([
+      "admin",
       "purchasing_admin",
       "purchasing_staff",
       "purchasing_manager",

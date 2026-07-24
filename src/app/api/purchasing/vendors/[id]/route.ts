@@ -47,6 +47,7 @@ export async function GET(
 ) {
   try {
     await requireApiRole([
+      "admin",
       "purchasing_admin",
       "purchasing_staff",
       "purchasing_manager",
@@ -81,6 +82,7 @@ export async function PUT(
 ) {
   try {
     await requireApiRole([
+      "admin",
       "purchasing_admin",
       "purchasing_staff",
       "purchasing_manager",
@@ -134,6 +136,7 @@ export async function DELETE(
 ) {
   try {
     await requireApiRole([
+      "admin",
       "purchasing_admin",
       "purchasing_manager",
       "super_admin",

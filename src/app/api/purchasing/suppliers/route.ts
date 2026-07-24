@@ -77,7 +77,7 @@ async function generateSupplierCode(
 // ========================
 export async function GET(request: NextRequest) {
   try {
-    await requireApiRole(["purchasing_admin", "purchasing_staff", "purchasing_manager", "super_admin"]);
+    await requireApiRole(["admin", "purchasing_admin", "purchasing_staff", "purchasing_manager", "super_admin"]);
 
     const url = new URL(request.url);
     const rawParams = Object.fromEntries(url.searchParams);
@@ -170,7 +170,7 @@ export async function GET(request: NextRequest) {
 // ========================
 export async function POST(request: NextRequest) {
   try {
-    const user = await requireApiRole(["purchasing_admin", "purchasing_staff", "purchasing_manager", "super_admin"]);
+    const user = await requireApiRole(["admin", "purchasing_admin", "purchasing_staff", "purchasing_manager", "super_admin"]);
     const body = await request.json();
     const validated = createSupplierSchema.parse(body);
 

@@ -1,5 +1,6 @@
 import { cache } from "react";
 import type { UserRole } from "@/types";
+import { isEssOnlyRole, isFullAccessRole } from "./access";
 import { iamDbQuery, isIamDbConfigured } from "./pg-client";
 import type { MenuRow, NavIconName, NavItem } from "./types";
 import { isNavVisibleMenuType } from "./types";
@@ -236,6 +237,48 @@ export const getUserMenus = cache(async (userId: string, role: UserRole): Promis
     return [];
   }
 });
+
+/**
+ * Kebijakan akses berbasis IAM: user dianggap full-access bila role IAM-nya
+ * punya permission aktif pada menu di luar Area Karyawan (kode `ess`/`ess.*`).
+ *
+ * Fallback ke kebijakan kode (`isEssOnlyRole`) bila IAM tidak tersedia atau
+ * user belum punya role/permission sama sekali — mencegah lockout saat data
+ * IAM belum ter-seed. Role di FULL_ACCESS_ROLES selalu full-access.
+ */
+export const isEssOnlyUser = cache(
+  async (userId: string, role: UserRole): Promise<boolean> => {
+    if (isFullAccessRole(role)) return false;
+    if (!isIamDbConfigured()) return isEssOnlyRole(role);
+
+    try {
+      const roleIds = await resolveRoleIds(userId, role);
+      if (roleIds.length === 0) return isEssOnlyRole(role);
+
+      const rows = await iamDbQuery<{ has_access: boolean }>(
+        `SELECT EXISTS (
+           SELECT 1
+           FROM iam.role_menu_permissions rmp
+           JOIN iam.menus m ON m.id = rmp.menu_id
+           WHERE rmp.role_id = ANY($1::uuid[])
+             AND rmp.is_active = true
+             AND m.deleted_at IS NULL
+             AND m.is_active = true
+             AND m.code <> 'ess'
+             AND m.code NOT LIKE 'ess.%'
+         ) AS has_access`,
+        [roleIds]
+      );
+
+      return !rows[0]?.has_access;
+    } catch (error) {
+      if (!isIamUnavailable(error)) {
+        console.error("[iam] isEssOnlyUser failed:", error);
+      }
+      return isEssOnlyRole(role);
+    }
+  }
+);
 
 /**
  * Saring pohon nav → hanya item Area Karyawan (ESS, di bawah /dashboard/me).
