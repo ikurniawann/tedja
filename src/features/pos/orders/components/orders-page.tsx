@@ -520,6 +520,9 @@ export function OrdersPage() {
 }
 
 function OrderDetail({ order }: { order: Order }) {
+  const { data: loyaltySettings } = useLoyaltySettings();
+  const formatArk = (value: number) =>
+    formatArkAmount(value, loyaltySettings?.ark_rate || 1000);
   return (
     <div className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

@@ -2,12 +2,15 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { Toaster } from "sonner";
 import { requireUser } from "@/lib/auth/require-user";
-import { getUserMenus, filterNavByPrefixes } from "@/lib/iam/get-user-menus";
+import {
+  getUserMenus,
+  filterNavByPrefixes,
+  isEssOnlyUser,
+} from "@/lib/iam/get-user-menus";
 import {
   allowedModulePaths,
   canAccessPath,
   ESS_HOME_PATH,
-  isEssOnlyRole,
 } from "@/lib/iam/access";
 import { AppSidebar } from "@/components/shared";
 

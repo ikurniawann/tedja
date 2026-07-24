@@ -39,6 +39,7 @@ type PosCustomerLoyaltyRow = {
   phone?: string | null;
   membership_tier?: string | null;
   total_xp?: number | string | null;
+  current_xp?: number | string | null;
   total_spent?: number | string | null;
   visit_count?: number | string | null;
 };
