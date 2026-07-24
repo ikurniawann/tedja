@@ -13,6 +13,8 @@ interface ProductListRow {
   status: "draft" | "active";
   product_kind: "single" | "bundle" | "season_pass";
   base_price: string;
+  cogs: string;
+  has_gate: boolean;
   thumbnail_url: string | null;
   variant_count: string;
   distributed_channels: string[] | null;
@@ -35,7 +37,8 @@ export async function GET(request: NextRequest) {
 
     const rows = await query<ProductListRow>(
       `SELECT tp.id, tp.code, tp.name, c.name AS category_name, tp.status,
-              tp.product_kind, tp.base_price, tp.thumbnail_url, tp.updated_at,
+              tp.product_kind, tp.base_price, tp.cogs, tp.has_gate,
+              tp.thumbnail_url, tp.updated_at,
               (SELECT COUNT(*) FROM ticketing.ticket_product_variants pv
                WHERE pv.ticket_product_id = tp.id AND pv.is_active) AS variant_count,
               (SELECT array_agg(ch.code) FROM ticketing.ticket_product_channels pc
@@ -52,6 +55,7 @@ export async function GET(request: NextRequest) {
       rows.map((row) => ({
         ...row,
         base_price: Number(row.base_price),
+        cogs: Number(row.cogs),
         variant_count: Number(row.variant_count),
         distributed_channels: row.distributed_channels ?? [],
       }))
@@ -84,6 +88,10 @@ const createProductSchema = z.object({
   category_name: z.string().trim().max(100).optional().nullable(),
   status: z.enum(["draft", "active"]).default("draft"),
   base_price: z.number().min(0).max(1_000_000_000).default(0),
+  // HPP per ticket → laporan omzet kotor vs bersih
+  cogs: z.number().min(0).max(1_000_000_000).default(0),
+  // Ticket ber-gate divalidasi di gate; tanpa gate = reader NFC keliling
+  has_gate: z.boolean().default(true),
   description: z.string().trim().max(2000).optional().nullable(),
   re_entry_policy: z.enum(RE_ENTRY_POLICIES).optional(),
 });
@@ -185,8 +193,9 @@ export async function POST(request: NextRequest) {
       const productResult = await client.query<{ id: string }>(
         `INSERT INTO ticketing.ticket_products
            (company_id, branch_id, code, name, category_id, status,
-            product_kind, base_price, description, re_entry_policy, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            product_kind, base_price, cogs, has_gate, description,
+            re_entry_policy, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
          RETURNING id`,
         [
           ctx.companyId,
@@ -197,6 +206,8 @@ export async function POST(request: NextRequest) {
           body.status,
           body.product_kind,
           body.base_price,
+          body.cogs,
+          body.has_gate,
           body.description || null,
           reEntry,
           ctx.user.id,

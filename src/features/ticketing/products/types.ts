@@ -19,6 +19,8 @@ export interface TicketProductListItem {
   status: TicketStatus;
   product_kind: TicketProductKind;
   base_price: number;
+  cogs: number;
+  has_gate: boolean;
   thumbnail_url: string | null;
   variant_count: number;
   distributed_channels: string[];
@@ -78,6 +80,8 @@ export interface TicketProductDetail {
     status: TicketStatus;
     product_kind: TicketProductKind;
     base_price: number;
+    cogs: number;
+    has_gate: boolean;
     thumbnail_url: string | null;
     description: string | null;
     re_entry_policy: ReEntryPolicy;
@@ -101,6 +105,8 @@ export interface CreateTicketValues {
   category_name?: string | null;
   status?: TicketStatus;
   base_price?: number;
+  cogs?: number;
+  has_gate?: boolean;
   description?: string | null;
   /** EPIC-028 — hanya untuk product_kind 'season_pass'. */
   validity_months?: number;
@@ -114,6 +120,8 @@ export interface UpdateTicketValues {
   category_name?: string | null;
   status?: TicketStatus;
   base_price?: number;
+  cogs?: number;
+  has_gate?: boolean;
   description?: string | null;
   re_entry_policy?: ReEntryPolicy;
   variants?: {

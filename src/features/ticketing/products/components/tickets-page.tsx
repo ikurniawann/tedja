@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -45,6 +46,8 @@ export function TicketsPage() {
     useState<TicketVariantPreset>("adult-child");
   const [categoryName, setCategoryName] = useState("");
   const [basePrice, setBasePrice] = useState("");
+  const [cogs, setCogs] = useState("");
+  const [hasGate, setHasGate] = useState(true);
   // EPIC-028 — konfigurasi season pass
   const [validityMonths, setValidityMonths] = useState("12");
   const [entryPolicy, setEntryPolicy] =
@@ -61,6 +64,8 @@ export function TicketsPage() {
     setVariantPreset("adult-child");
     setCategoryName("");
     setBasePrice("");
+    setCogs("");
+    setHasGate(true);
     setValidityMonths("12");
     setEntryPolicy("once_per_day");
     setVisitQuota("");
@@ -79,6 +84,8 @@ export function TicketsPage() {
       variant_preset: variantPreset,
       category_name: categoryName.trim() || null,
       base_price: Number(basePrice) || 0,
+      cogs: Number(cogs) || 0,
+      has_gate: hasGate,
       status: "draft",
       ...(isPass
         ? {
@@ -167,6 +174,11 @@ export function TicketsPage() {
                                 Season Pass
                               </Badge>
                             ) : null}
+                            {!product.has_gate && (
+                              <Badge className="ml-2 border-0 bg-sky-100 font-normal text-sky-700">
+                                Tanpa Gate
+                              </Badge>
+                            )}
                           </p>
                           <p className="font-mono text-xs text-gray-500">
                             {product.code}
@@ -372,15 +384,48 @@ export function TicketsPage() {
                 Ketik nama baru → kategori otomatis ditambahkan
               </p>
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="ticket_base_price">Base Price (Rp)</Label>
-              <Input
-                id="ticket_base_price"
-                type="number"
-                min={0}
-                step={5000}
-                value={basePrice}
-                onChange={(e) => setBasePrice(e.target.value)}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="ticket_base_price">Base Price (Rp)</Label>
+                <Input
+                  id="ticket_base_price"
+                  type="number"
+                  min={0}
+                  step={5000}
+                  value={basePrice}
+                  onChange={(e) => setBasePrice(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="ticket_cogs">COGS / HPP (Rp)</Label>
+                <Input
+                  id="ticket_cogs"
+                  type="number"
+                  min={0}
+                  step={1000}
+                  value={cogs}
+                  onChange={(e) => setCogs(e.target.value)}
+                />
+                <p className="text-[11px] text-gray-500">
+                  Harga pokok → laporan omzet kotor vs bersih.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-start justify-between gap-3 rounded-xl border border-gray-200 p-3">
+              <div>
+                <Label htmlFor="ticket_has_gate" className="cursor-pointer">
+                  Punya gate?
+                </Label>
+                <p className="mt-0.5 text-[11px] text-gray-500">
+                  {hasGate
+                    ? "Divalidasi di gate/turnstile."
+                    : "Tanpa gate — penjaga keliling cek dengan reader NFC."}
+                </p>
+              </div>
+              <Switch
+                id="ticket_has_gate"
+                checked={hasGate}
+                onCheckedChange={setHasGate}
               />
             </div>
             <p className="text-xs text-gray-500">
