@@ -2,6 +2,7 @@ import type {
   IssuePassValues,
   IssuedPassResult,
   IssuedPassRow,
+  PassGateResult,
   PassOption,
 } from "./types";
 
@@ -44,4 +45,17 @@ export const issuePass = async (
   });
   if (!res.ok) await parseError(res, "Gagal menerbitkan pass");
   return ((await res.json()) as { data: IssuedPassResult }).data;
+};
+
+export const passGateTap = async (
+  code: string,
+  gateLabel?: string
+): Promise<PassGateResult> => {
+  const res = await fetch("/api/ticketing/gate/pass-tap", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code, gate_label: gateLabel }),
+  });
+  if (!res.ok) await parseError(res, "Gagal memproses scan pass");
+  return ((await res.json()) as { data: PassGateResult }).data;
 };

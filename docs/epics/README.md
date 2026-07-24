@@ -33,7 +33,7 @@ deploying-dev · ready-for-qa · blocked · done).
 | [EPIC-025](./EPIC-025-finance-ar-invoice.md) | Finance — Invoice & Pembayaran (AR) | ready-for-qa | 2026-07-23 |
 | [EPIC-026](./EPIC-026-purchasing-barang-operasional.md) | Purchasing Barang Operasional (Non-F&B, Non-Jual) | ready-for-qa | 2026-07-24 |
 | [EPIC-027](./EPIC-027-items-pos-master-stock.md) | Items & POS — Master Bersih, Stok Akurat, Satu Sumber Kebenaran Katalog | backlog | 2026-07-23 |
-| [EPIC-028](./EPIC-028-ticketing-season-pass.md) | Ticketing — Season Pass & Membership (Pass Masuk Berlaku) | on-progress | 2026-07-24 |
+| [EPIC-028](./EPIC-028-ticketing-season-pass.md) | Ticketing — Season Pass & Membership (Pass Masuk Berlaku) | ready-for-qa | 2026-07-24 |
 
 Aturan:
 - Epic + registry ini adalah sumber kebenaran status pekerjaan (canonical).

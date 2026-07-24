@@ -1,6 +1,6 @@
 # EPIC-028: Ticketing — Season Pass & Membership (Pass Masuk Berlaku)
 
-status: on-progress
+status: ready-for-qa
 environment: dev
 retries: 0
 
@@ -129,15 +129,26 @@ Blackout reuse `ticket_product_dates` (`date_kind='blackout'`).
 - **Exit**: ✅ pass bisa dijual dari loket & online; status pending→active setelah bayar;
   QR tampil di halaman status + terkirim WA. **Fase B TUNTAS.**
 
-### Fase C — Validasi masuk di gate `[backlog]`
-- C1. Perluas `gate/tap`: deteksi input = pass (`pass_code`/`access_token`/`band_uid`
-  tertaut) → validasi berlapis: status active · dalam `valid_from..valid_until` ·
-  blackout · entry_policy (`once_per_day` via unique index, `unlimited` lolos,
-  `limited_visits` cek+kurangi quota transaksional) → tulis `ticket_pass_entries` →
-  respons granted/denied + alasan.
-- C2. UI gate menampilkan hasil (nama pemegang, sisa kuota/masa berlaku, alasan tolak).
-- **Exit**: pass valid → masuk & tercatat; kadaluarsa/duplikat/kuota habis → ditolak
-  dgn alasan; sekali/hari benar-benar 1×/hari.
+### Fase C — Validasi masuk di gate `[testing]` (SELESAI)
+- C1. ✅ **SELESAI** — Endpoint TERSENDIRI `POST /api/ticketing/gate/pass-tap` (bukan
+  entangle `gate/tap` visit/tab). Input `code` = QR `access_token` (64hex) / `pass_code`
+  (SP-…) / UID gelang NFC → resolve pass (FOR UPDATE) → validasi berlapis: status active ·
+  `valid_from..valid_until` · blackout (reuse `ticket_product_dates` date_kind='blackout') ·
+  entry_policy (`once_per_day` **check-first + unique index backstop**, `unlimited` lolos,
+  `limited_visits` cek+increment quota transaksional) → tulis `ticket_pass_entries` →
+  granted/denied + alasan. (Catatan: check-first dipakai karena 23505 meracuni transaksi.)
+- C2. ✅ **SELESAI** — Layar gate `/dashboard/ticketing/gate-pass` (fullscreen HIJAU/MERAH,
+  wedge auto-focus utk reader QR/NFC + input manual; tampil nama pemegang, sisa kuota/masa
+  berlaku, alasan tolak). Menu `20260724210000` (grant operator).
+- **Exit**: ✅ pass valid → MASUK & tercatat; kadaluarsa/duplikat/kuota habis/nonaktif/
+  blackout → DITOLAK dgn alasan; 1×/hari benar-benar 1×/hari (unique index teruji).
+  Terverifikasi DB: once/day terblok, unlimited 2× bebas, resolve token/code, quota habis 2/2.
+
+### Fase (tambahan) — Gate flag & mapping `[SELESAI]`
+- Flag `has_gate` per ticket + halaman **Gate Mapping** (`/dashboard/ticketing/mapping`,
+  super_admin) — SCAFFOLD: list ticket gate=yes + slot pemetaan controller (koneksi riil
+  menyusul). Menu `20260724200000`. + COGS/HPP per ticket (laporan omzet kotor/bersih
+  menyusul — snapshot saat sale/tap).
 
 ### Fase D — Fase lanjut (di luar MVP, backlog)
 - Benefit diskon member di POS F&B/retail · perpanjangan/renewal + reminder WA ·
@@ -209,4 +220,12 @@ teruji, 0 regresi booking harian → **ready-for-qa**.
   rolling valid_from/until + WA via `pass-wa.ts`; EXPIRED→cancelled); lib pass-wa.
   **Fix**: allowlist middleware `/pass`. Terverifikasi DB rollback (katalog online→beli
   pending→webhook aktivasi) + `/pass/sulu` 200. Xendit MOCK aktif dev. Build hijau.
-  Berikutnya **Fase C** (validasi masuk di gate).
+- 2026-07-24 — **Tambahan owner**: (a) flag `has_gate` per ticket + halaman **Gate Mapping**
+  scaffold (list gate=yes, slot controller) menu `20260724200000`; (b) **COGS/HPP** per
+  ticket (fondasi laporan omzet kotor/bersih). Keputusan: non-gate ticket TETAP di Ticketing
+  (perlu validasi NFC), bukan dipindah POS.
+- 2026-07-24 — **Fase C SELESAI (MVP A–C TUNTAS → ready-for-qa)**: validasi gate pass.
+  Endpoint `gate/pass-tap` (QR/pass_code/NFC → validasi status/validity/blackout/entry_policy
+  → pass_entries) + layar `/dashboard/ticketing/gate-pass` (HIJAU/MERAH, wedge reader) + menu
+  `20260724210000`. Terverifikasi DB: once/day unique terblok (check-first di route), unlimited
+  2× bebas, resolve token/code, limited quota habis 2/2. Build hijau, PM2 restart.

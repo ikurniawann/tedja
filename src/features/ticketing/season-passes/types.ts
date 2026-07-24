@@ -53,6 +53,25 @@ export interface IssuedPassResult {
   band_uid: string | null;
 }
 
+export interface PassGateResult {
+  ok: boolean;
+  result:
+    | "granted"
+    | "denied_expired"
+    | "denied_duplicate"
+    | "denied_quota"
+    | "denied_inactive"
+    | "denied_blackout"
+    | "bukan-pass";
+  reason?: string;
+  holder_name?: string;
+  pass_code?: string;
+  ticket_type_name?: string;
+  valid_until?: string | null;
+  entry_policy?: PassEntryPolicy;
+  remaining_quota?: number;
+}
+
 export const ENTRY_POLICY_LABEL: Record<PassEntryPolicy, string> = {
   once_per_day: "1× per hari",
   unlimited: "Tak terbatas",
