@@ -155,7 +155,7 @@ Buka jalur member sebelum menambah jenis aset baru.
 - Laporan "jatah menganggur" agar kebutuhan artwork baru terlihat lebih dini.
 
 **Exit:** sisa jatah member benar tanpa proses migrasi, dan tetap benar setelah
-`interval_xp` diubah.
+`interval_xp` diubah. — **SELESAI 25 Jul 2026**
 
 ### 3. Redeem oleh member + upload artwork
 
@@ -237,6 +237,15 @@ dua sumber angka berarti dua jumlah jatah yang berbeda.
 **Harus diputuskan sebelum Task 2:** satu kolom ditetapkan kanonik dan yang
 lain disinkronkan atau dihapus.
 
+**DIPUTUSKAN 25 Jul 2026: `pos.pos_customers.total_xp` kanonik** (konsisten
+EPIC-011 — portal, rewards, reports, dan collectibles semua membacanya).
+`lifetime_xp` profil = mirror internal engine: di-backfill dari total_xp
+(migrasi `20260725120000`; penyimpangan dev = data seed manual, bukan bug
+engine), diberi COMMENT "jangan dibaca untuk logika baru", dan
+`syncTierAfterEarn` kini membaca total_xp. Bonus ditemukan: referensi hantu
+`pos_customers.current_xp` (sudah di-drop EPIC-011 Fase B) masih ditulis
+`syncPosCustomerAfterEarn` — dibersihkan.
+
 ### Katalog kosong saat fitur dibangun
 
 DB dev berisi 0 artwork dan 0 baris inventory — bukti bahwa modul Avatars
@@ -245,6 +254,40 @@ untuk verifikasi dan dapat dihapus kapan saja.
 
 ## Automation Log
 
+- **25 Jul 2026** — **Blocker XP kanonik TUNTAS + Task 2 (mesin jatah tukar)
+  SELESAI sisi server.**
+  - Kanonik = `pos_customers.total_xp` (lihat Temuan Implementasi). Backfill +
+    COMMENT + `syncTierAfterEarn` baca kanonik + bersih-bersih `current_xp`
+    hantu di `syncPosCustomerAfterEarn` (loyalty-engine).
+  - Migrasi `20260725120000` (applied): kolom `crm_collectible_avatars.
+    min_lifetime_xp` (ambang per artwork), tabel ledger
+    `crm.crm_member_entitlements` (customer_id NOT NULL + UNIQUE per artwork,
+    member_id nullable — pola Fase F EPIC-011), seed `crm_settings.
+    collectible_interval_xp = 5000`.
+  - **Modul bersama `src/lib/crm/collectibles.ts` lahir (cicilan Task 4)**:
+    `entitlementQuota`, `remainingEntitlements` (jepit max(0,…) — koreksi XP
+    turun aman), `evaluateCollectibleGate` (aktif/jendela/stok/min XP/tier),
+    `blockerMessage`, `parseIntervalXp`. 12 unit test menutup kelipatan tepat,
+    interval turun langsung menambah jatah, koreksi XP turun, arah pemakaian
+    ke bawah.
+  - `collectibles-server.ts`: `evaluateCollectible` kini memanggil modul
+    bersama (syarat efektif = max(ambang tier, ambang artwork));
+    `getEntitlementSummary` (interval/quota/used/remaining, dihitung saat
+    dibaca — tanpa backfill); `checkAvatarEligibility` untuk jalur non-portal.
+  - **`required_tier_id` + `min_lifetime_xp` kini DITEGAKKAN di grant admin**
+    (`avatar-inventory` POST → 403 + alasan; dulu dekoratif — temuan audit
+    epic ini).
+  - Portal `GET /api/member-portal/collectibles` mengembalikan `entitlement`
+    (sisa jatah member).
+  - **Laporan jatah menganggur**: `GET /api/crm/collectibles/idle-report`
+    (guard role laporan CRM): per-member idle = greatest(0, floor(total_xp/
+    interval) − used), total idle, jumlah artwork aktif — sinyal kapan katalog
+    perlu diisi.
+  - Gate: 899 unit test hijau (+12), build sukses (route idle-report
+    ter-generate), tsc 481 baseline (0 baru), migrasi applied (profil
+    menyimpang = 0 pasca-backfill), PM2 restart, smoke 401 tanpa sesi.
+  - Sisa: Task 3 (redeem member ber-lock + upload artwork), Task 5 wallpaper,
+    Task 6 badge; UI sisa jatah di portal ikut Task 3 (saat tombol Tukar ada).
 - **20 Jul 2026** — Epic dibuat. Audit menemukan fondasi koleksi sudah ada di
   skema `crm`, tetapi tanpa jalur member sama sekali; `xp_cost` dan
   `required_tier_id` tidak pernah dieksekusi di

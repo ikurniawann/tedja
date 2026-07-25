@@ -1,4 +1,11 @@
 import type { Pool, PoolClient } from "pg";
+import {
+  blockerMessage,
+  entitlementQuota,
+  evaluateCollectibleGate,
+  parseIntervalXp,
+  remainingEntitlements,
+} from "./collectibles";
 
 /**
  * EPIC-014 — logika koleksi (artwork) member.
@@ -64,6 +71,7 @@ type CatalogRow = {
   thumbnail_url: string | null;
   required_tier_name: string | null;
   required_tier_min_xp: number | null;
+  min_lifetime_xp: number | null;
   stock_total: number | null;
   stock_redeemed: number | null;
   is_active: boolean;
@@ -96,6 +104,7 @@ export async function listCollectiblesForMember(
   const { rows } = await db.query(
     `SELECT a.id, a.code, a.name, a.rarity, a.image_url, a.thumbnail_url,
             a.stock_total, a.stock_redeemed, a.is_active, a.starts_at, a.ends_at,
+            a.min_lifetime_xp::int AS min_lifetime_xp,
             t.name AS required_tier_name,
             t.min_lifetime_xp::int AS required_tier_min_xp,
             inv.id AS inventory_id, inv.is_equipped, inv.acquired_at
@@ -124,17 +133,26 @@ export function evaluateCollectible(row: CatalogRow, totalXp: number): MemberCol
   const stockTotal = row.stock_total == null ? null : Number(row.stock_total);
   const stockRedeemed = Number(row.stock_redeemed ?? 0);
   const remainingStock = stockTotal == null ? null : Math.max(0, stockTotal - stockRedeemed);
-  const requiredXp = row.required_tier_min_xp == null ? 0 : Number(row.required_tier_min_xp);
+  // Syarat efektif = ambang tier ATAU ambang artwork (Task 2), yang tertinggi.
+  const tierXp = row.required_tier_min_xp == null ? 0 : Number(row.required_tier_min_xp);
+  const artXp = row.min_lifetime_xp == null ? 0 : Number(row.min_lifetime_xp);
+  const requiredXp = Math.max(tierXp, artXp);
   const xpNeeded = Math.max(0, requiredXp - totalXp);
 
+  // Aturan unlock dari modul bersama (Task 4) — jangan menyalin logikanya.
   let lockedReason: string | null = null;
   if (!owned) {
-    if (xpNeeded > 0) {
-      lockedReason = row.required_tier_name
-        ? `Perlu tier ${row.required_tier_name}`
-        : "XP belum mencukupi";
-    } else if (remainingStock === 0) {
-      lockedReason = "Stok habis";
+    const gate = evaluateCollectibleGate(totalXp, {
+      isActive: true, // baris tak aktif/di luar jendela sudah tersaring query
+      minLifetimeXp: requiredXp,
+      stockRemaining: remainingStock,
+    });
+    if (!gate.allowed && gate.blocker) {
+      // Ambang yang menghalangi berasal dari tier → sebut nama tiernya.
+      lockedReason =
+        gate.blocker === "below_min_xp" && tierXp >= artXp && row.required_tier_name
+          ? `Perlu tier ${row.required_tier_name}`
+          : blockerMessage(gate.blocker, { totalXp, minXp: requiredXp, tierName: row.required_tier_name });
     } else {
       lockedReason = "Belum kamu miliki";
     }
@@ -154,6 +172,96 @@ export function evaluateCollectible(row: CatalogRow, totalXp: number): MemberCol
     acquired_at: toIso(row.acquired_at),
     locked_reason: lockedReason,
     xp_needed: xpNeeded,
+  };
+}
+
+export interface EntitlementSummary {
+  interval_xp: number;
+  quota: number;
+  used: number;
+  remaining: number;
+}
+
+/**
+ * Ringkasan jatah tukar member (EPIC-014 Task 2). Dihitung saat dibaca —
+ * tanpa backfill: `floor(total_xp / interval) − terpakai`, dijepit ke 0.
+ */
+export async function getEntitlementSummary(
+  db: Pool | PoolClient,
+  customerId: string,
+  totalXp: number
+): Promise<EntitlementSummary> {
+  const [settingRes, usedRes] = await Promise.all([
+    db.query(`SELECT value FROM crm.crm_settings WHERE key = 'collectible_interval_xp'`),
+    db.query(`SELECT count(*)::int AS used FROM crm.crm_member_entitlements WHERE customer_id = $1`, [
+      customerId,
+    ]),
+  ]);
+  const intervalXp = parseIntervalXp(settingRes.rows[0]?.value);
+  const used = Number(usedRes.rows[0]?.used ?? 0);
+  return {
+    interval_xp: intervalXp,
+    quota: entitlementQuota(totalXp, intervalXp),
+    used,
+    remaining: remainingEntitlements(totalXp, intervalXp, used),
+  };
+}
+
+/**
+ * Kelayakan grant/redeem satu avatar untuk satu customer — dipakai jalur
+ * admin grant (dan redeem member di Task 3) supaya `required_tier_id` +
+ * `min_lifetime_xp` ditegakkan di SEMUA jalur perolehan, bukan hanya portal.
+ */
+export async function checkAvatarEligibility(
+  db: Pool | PoolClient,
+  avatarId: string,
+  customerId: string
+): Promise<{ allowed: boolean; reason: string | null }> {
+  const { rows } = await db.query(
+    `SELECT a.is_active, a.starts_at, a.ends_at, a.stock_total, a.stock_redeemed,
+            a.min_lifetime_xp::int AS min_lifetime_xp,
+            t.name AS required_tier_name,
+            t.min_lifetime_xp::int AS required_tier_min_xp,
+            c.total_xp::int AS total_xp
+       FROM crm.crm_collectible_avatars a
+       LEFT JOIN crm.crm_membership_tiers t ON t.id = a.required_tier_id
+       CROSS JOIN pos.pos_customers c
+      WHERE a.id = $1 AND c.id = $2`,
+    [avatarId, customerId]
+  );
+  const row = rows[0] as
+    | {
+        is_active: boolean;
+        starts_at: Date | null;
+        ends_at: Date | null;
+        stock_total: number | null;
+        stock_redeemed: number | null;
+        min_lifetime_xp: number | null;
+        required_tier_name: string | null;
+        required_tier_min_xp: number | null;
+        total_xp: number;
+      }
+    | undefined;
+  if (!row) return { allowed: false, reason: "Artwork atau member tidak ditemukan" };
+
+  const totalXp = Number(row.total_xp ?? 0);
+  const requiredXp = Math.max(Number(row.required_tier_min_xp ?? 0), Number(row.min_lifetime_xp ?? 0));
+  const stockTotal = row.stock_total == null ? null : Number(row.stock_total);
+  const gate = evaluateCollectibleGate(totalXp, {
+    isActive: row.is_active,
+    minLifetimeXp: requiredXp,
+    stockRemaining: stockTotal == null ? null : Math.max(0, stockTotal - Number(row.stock_redeemed ?? 0)),
+    startsAt: row.starts_at ? new Date(row.starts_at).toISOString() : null,
+    endsAt: row.ends_at ? new Date(row.ends_at).toISOString() : null,
+  });
+  if (gate.allowed || !gate.blocker) return { allowed: true, reason: null };
+  return {
+    allowed: false,
+    reason: blockerMessage(gate.blocker, {
+      totalXp,
+      minXp: requiredXp,
+      tierName: row.required_tier_name,
+    }),
   };
 }
 
