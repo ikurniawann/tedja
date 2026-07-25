@@ -196,6 +196,92 @@ C setelah B1; D setelah B stabil. Rilis bisa bertahap: A+B saja sudah menutup
    lewat loket/booking. Kalau taman sering penuh oleh pass holder, perlu
    fase lanjut hitung `ticket_pass_entries` granted.
 
+## Halaman & Endpoint Baru (Fase A–D)
+
+Halaman (dev: `sulu.within.ventures` / `127.0.0.1:3459`; slug booking = `sulu`):
+
+| Link | Baru/berubah | Fase |
+|---|---|---|
+| `/dashboard/ticketing/settings` | Seksi BARU **Kapasitas Harian** + **Slot Waktu (Timed-Entry)** | A3, D |
+| `/dashboard/ticketing/booking` | Panel BARU **Okupansi Harian** (kalender bulanan, klik = filter) | C1 |
+| `/dashboard/ticketing/reports` | Kartu BARU **Okupansi Kuota Harian** (muncul bila ada kuota) | C2 |
+| `/booking/sulu` | Kalender mencoret tanggal penuh/tutup + langkah BARU **Jam kunjungan** (bila venue ber-slot) | B4, D |
+
+Endpoint API baru:
+
+| Endpoint | Akses | Fase |
+|---|---|---|
+| `GET/POST /api/ticketing/capacity-dates` · `PATCH/DELETE .../[id]` | super_admin | A3 |
+| `GET /api/public/booking/[slug]/availability?from&to` | publik | B3 |
+| `GET /api/ticketing/occupancy?from&to` | operator | C |
+| `GET/POST /api/ticketing/time-slots` · `PATCH/DELETE .../[id]` | super_admin | D |
+| `GET /api/public/booking/[slug]/slots?date=` | publik | D |
+| `PUT /api/ticketing/settings` | +field `daily_capacity`, `slot_grace_minutes` | A3, D |
+
+## QA Checklist (step-by-step)
+
+Prasyarat: login **super_admin** venue SULU di dev; mulai dari keadaan
+kuota MATI (Kapasitas Default kosong, tanpa override, tanpa slot).
+
+**A. Pengaturan kapasitas** (`/dashboard/ticketing/settings`)
+1. Seksi Kapasitas Harian tampil; default kosong = teks "Kuota BELUM aktif".
+2. Isi default (mis. 5) → Simpan → teks berubah "Maksimum 5 orang/hari".
+3. Tambah override rentang tanggal (label + tanggal + kapasitas) → muncul
+   di daftar ber-badge angka; kapasitas **0** → badge merah **Tutup**.
+4. Validasi: tanggal akhir < mulai → pesan merah, tombol mati.
+5. Toggle nonaktif & hapus override → hilang dari perhitungan.
+
+**B. Sold-out booking online** (`/booking/sulu`)
+6. Set kapasitas kecil (mis. 2). Booking 2 orang → bayar (Xendit MOCK).
+7. Buka ulang wizard → tanggal tsb **dicoret** di kalender + legend
+   "Tanggal dicoret sudah penuh"; memilihnya → notice merah, **Lanjut mati**.
+8. Race: 2 tab, isi form sama-sama saat sisa 1 kursi → submit hampir
+   bersamaan → tepat 1 sukses, 1 dapat pesan "Kuota tanggal ini sudah
+   penuh" (bukan error 500).
+9. Batalkan booking di `/dashboard/ticketing/booking` → tanggal tersedia
+   lagi (kuota lepas otomatis; juga berlaku bila invoice kedaluwarsa).
+10. Override kapasitas 0 → tanggal dicoret; paksa POST → "Tanggal ini
+    ditutup untuk kunjungan".
+
+**C. Walk-in loket ikut kuota** (`/dashboard/ticketing/loket`)
+11. Sisa kuota 1 → registrasi visit 2 gelang → DITOLAK "kuota penuh";
+    1 gelang → sukses; setelah itu booking online tanggal ini penuh.
+12. Redeem booking terbayar jadi visit → angka okupansi TIDAK bertambah
+    (anti dobel-hitung — cek panel Okupansi sebelum/sesudah).
+13. Void visit → kuota lepas lagi.
+
+**D. Visibilitas ops**
+14. `/dashboard/ticketing/booking` panel Okupansi: angka `terpakai/kap`,
+    warna hijau→amber(≥70%)→merah(penuh)/abu(tutup); klik tanggal →
+    daftar booking terfilter; navigasi bulan jalan.
+15. `/dashboard/ticketing/reports`: kartu Okupansi muncul (avg %, hari
+    penuh/tutup); venue tanpa kuota → kartu TIDAK muncul.
+16. Pengaturan: ketik kapasitas default DI BAWAH okupansi tertinggi 90
+    hari ke depan → warning amber menyebut tanggal & jumlah orang.
+
+**E. Timed-entry slot** (`/dashboard/ticketing/settings` + `/booking/sulu`)
+17. Tambah 2 slot (mis. "Sesi Pagi" 08:00–12:00 kuota 2; "Sesi Sore"
+    13:00–17:00 tanpa kuota); validasi jam selesai ≤ mulai ditolak.
+18. Wizard kini menampilkan langkah **Jam kunjungan**; tanpa memilih →
+    Lanjut mati; pilih slot → ringkasan menampilkan jam.
+19. Habiskan kuota Sesi Pagi (2 orang) → pill-nya dicoret "Penuh";
+    booking ketiga ke slot itu (paksa via tab lama) → 409 "Slot ... sudah
+    penuh"; Sesi Sore tetap bisa.
+20. **Redeem jam**: set grace 0 → redeem booking ber-slot DI LUAR jam
+    slot → ditolak dengan pesan jam & toleransi; dalam jam → sukses.
+    Kembalikan grace 30 setelah uji.
+21. Nonaktifkan semua slot → wizard kembali tanpa langkah jam; booking
+    lama ber-slot tetap menyimpan jamnya (snapshot).
+
+**F. Regresi (paling penting)**
+22. Matikan semua: kapasitas default kosong + tanpa override + tanpa slot
+    → seluruh alur (booking online, loket, redeem, gate, laporan) harus
+    berperilaku PERSIS seperti sebelum epic ini.
+
+**Known limitation (bukan bug):** halaman status publik `/booking/status/
+[token]` & pesan WA belum menampilkan jam slot — pengunjung melihat jamnya
+di ringkasan saat memesan. Kandidat polish bila owner minta.
+
 ## Automation Log
 
 - 2026-07-25 — Epic dibuat dari gap benchmark #2 (accesso timed-entry &
