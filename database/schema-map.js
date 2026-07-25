@@ -33,6 +33,8 @@ const DOMAINS = {
   manufacturing: { order: 55, schema: "public", realSchema: "manufacturing" },
   pos: { order: 60, schema: "public", realSchema: "pos" },
   ticketing: { order: 65, schema: "public", realSchema: "ticketing" },
+  // EPIC-032 — engine promosi lintas modul (ticketing + pos)
+  promo: { order: 68, schema: "public", realSchema: "promo" },
   crm: { order: 70, schema: "public", realSchema: "crm" },
   accounting: { order: 75, schema: "public", realSchema: "accounting" },
   core: { order: 90, schema: "public", realSchema: "public" },

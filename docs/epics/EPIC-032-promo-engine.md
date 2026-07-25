@@ -1,6 +1,6 @@
 # EPIC-032: Engine Promosi — Promo Code, Voucher Tiket, Diskon & Gifting
 
-status: backlog
+status: on-progress
 environment: local
 retries: 0
 
@@ -97,7 +97,8 @@ review + test ekstra (preseden: jalur uang di-PR-kan, EPIC-028 D1).
 |---|---|
 | A1 | Skema `promo` 3 tabel + lib murni validasi/kalkulasi (TDD) |
 | A2 | Helper server klaim/capture/release transaksional + unit/SQL smoke |
-| A3 | Halaman admin `/dashboard/promo` (super_admin): CRUD campaign, buat kode publik, **generate batch voucher** (N kode unik, export CSV), lihat pemakaian |
+| A3 | Halaman admin `/dashboard/promo` (super_admin + marketing): CRUD campaign, buat kode publik, **generate batch voucher** (N kode unik, export CSV), lihat pemakaian |
+| A4 | Role baru `marketing`: UserRole type + grant menu promo + akses dashboard (per keputusan owner #6; role belum ada di sistem — wajib security review krn menyentuh access gate) |
 
 ### Fase B — Ticketing booking online (konsumen pertama)
 | Task | Scope |
@@ -152,20 +153,19 @@ independen dari engine (bisa maju duluan bila owner mau).
       penerima; pemesan tetap terlihat sebagai pembayar.
 - [ ] Tanpa kode → semua alur berperilaku persis seperti sekarang.
 
-## Open Questions (jawab sebelum Fase A)
+## Open Questions (SEMUA TERJAWAB owner 2026-07-26)
 
-1. **Urutan konsumen**: Ticketing online dulu (usulan, gap paling
-   nyata) baru POS — setuju?
-2. **Diskon level transaksi saja di MVP** (bukan per produk/varian) —
-   cukup? Targeting per produk = Fase E.
-3. **Gifting MVP = kirim e-tiket ke WA penerima** (tanpa halaman klaim /
-   saldo gift card) — cukup?
-4. **Voucher batch nominal** (fixed/percent, dipakai sekali) — atau perlu
-   juga "voucher 1 tiket gratis produk X"? (yang kedua butuh targeting
-   produk → menyeret Fase E maju.)
-5. Loyalty CRM (tukar XP → kode) ikut engine sekarang atau Fase E?
-   (Usulan: Fase E — jangan sentuh dua sistem uang sekaligus.)
-6. Siapa boleh kelola promo: super_admin saja, atau perlu role marketing?
+1. ~~Urutan konsumen~~ → **Ticketing online dulu**, baru POS.
+2. ~~Level diskon~~ → **Per transaksi** di MVP; per produk = Fase E.
+3. ~~Gifting~~ → **Kirim e-tiket ke WA penerima, tanpa halaman klaim.**
+4. ~~Voucher batch~~ → **Nominal saja** (fixed/percent sekali pakai);
+   "1 tiket gratis produk X" = Fase E (butuh targeting produk).
+5. ~~Loyalty CRM~~ → **Fase E.**
+6. ~~Pengelola~~ → **super_admin + marketing**. TEMUAN: role `marketing`
+   BELUM ada (tak di UserRole type maupun DB; role non-super_admin/hrd =
+   ESS-only via `FULL_ACCESS_ROLES` access.ts) → Fase A ketambahan task
+   **A4: role marketing** (UserRole type + akses dashboard menu promo +
+   grant IAM; menyentuh permukaan auth → wajib security review).
 
 ## Automation Log
 
@@ -176,3 +176,21 @@ independen dari engine (bisa maju duluan bila owner mau).
   CRM loyalty menyusul Fase E. Risiko dicatat: asersi net-0 redeem wajib
   baris ledger `diskon`. Status **backlog** — menunggu jawaban 6 open
   questions owner.
+- 2026-07-26 — Owner menjawab SEMUA open questions (lihat seksi OQ):
+  ticketing online dulu, diskon per transaksi, gifting WA-only, voucher
+  nominal saja, CRM Fase E, pengelola super_admin+marketing. Temuan: role
+  `marketing` belum ada → task A4 ditambahkan. Status → **on-progress**;
+  mulai Fase A1.
+- 2026-07-26 — **A1 SELESAI**: migrasi `20260726100000_promo_engine.sql`
+  applied di dev — schema `promo` + 3 tabel (campaigns/codes/redemptions)
+  sesuai arsitektur; kunci DB: CHECK percent≤100, XOR-ish limit kode vs
+  campaign lewat kolom nullable, **unique partial
+  `uq_promo_redemptions_context` (1 kode hidup per transaksi)**, index
+  per-phone & per-code ber-WHERE status<>released. `database/schema-map.js`
+  + domain `promo` (order 68, search_path). Lib murni `src/lib/promo/
+  promo.ts` (TDD 14 test hijau): `computeDiscount` (percent 2dp ber-cap,
+  fixed ≤ subtotal), `evaluatePromo` (urutan cek deterministik: aktif →
+  window inklusif → scope → min-pembelian [subtotal 0 ditolak] → kuota
+  [limit KODE menang atas campaign] → limit-nomor) +
+  `PROMO_REJECT_MESSAGES`. Smoke DB rollback: CHECK & unique context
+  terbukti menolak.
