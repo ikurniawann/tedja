@@ -166,7 +166,8 @@ Buka jalur member sebelum menambah jenis aset baru.
 - Ganti field "Image URL" jadi upload berkas + generate thumbnail.
 
 **Exit:** member memilih sendiri artwork yang ditukar; admin mengunggah artwork
-tanpa hosting eksternal.
+tanpa hosting eksternal. — **SELESAI 25 Jul 2026** (thumbnail otomatis belum —
+gambar penuh dipakai sebagai preview; generate thumbnail menyusul bila perlu)
 
 ### 4. Modul bersama `collectibles.ts`
 
@@ -254,6 +255,27 @@ untuk verifikasi dan dapat dihapus kapan saja.
 
 ## Automation Log
 
+- **25 Jul 2026 (2)** — **Task 3 SELESAI: redeem oleh member + upload artwork.**
+  - `POST /api/member-portal/collectibles/redeem`: SATU transaksi
+    (`withTransaction`) — kunci baris customer `FOR UPDATE` (serialisasi
+    per member) + kunci baris artwork, cek dobel-milik, cek sisa jatah
+    (`getEntitlementSummary`), evaluasi ulang kelayakan DI DALAM transaksi
+    (`checkAvatarEligibility` — modul bersama), guard stok di SQL
+    (`UPDATE … WHERE stock_redeemed < stock_total`), tulis ledger
+    entitlements + inventory. Balapan yang lolos ke INSERT tertangkap UNIQUE
+    (customer, asset) → 409, bukan artwork dobel. Member tanpa profil CRM →
+    409 dengan pesan ramah.
+  - Portal: banner "Jatah tukar: N · +1 tiap X XP", tombol **"Tukar dengan 1
+    jatah"** hanya pada artwork yang syaratnya terpenuhi; jatah habis → pesan
+    "kumpulkan XP lagi"; sukses → reload katalog.
+  - Upload artwork: `POST /api/crm/avatars/upload` (guard super_admin
+    `requireCrmConfigRole`, ≤5 MB, magic-bytes JPG/PNG/WebP, bucket publik
+    `crm-avatars` via `uploadFile`) + tombol "Unggah Gambar Artwork" di form
+    admin mengisi `image_url` otomatis — tanpa hosting eksternal.
+  - Gate: 899 unit test hijau, build sukses (2 route baru), tsc 481 baseline,
+    PM2 restart, smoke redeem & upload 401 tanpa sesi.
+  - Sisa epic: Task 5 wallpaper, Task 6 badge (+ integrasi laporan idle ke UI
+    admin bila diminta).
 - **25 Jul 2026** — **Blocker XP kanonik TUNTAS + Task 2 (mesin jatah tukar)
   SELESAI sisi server.**
   - Kanonik = `pos_customers.total_xp` (lihat Temuan Implementasi). Backfill +

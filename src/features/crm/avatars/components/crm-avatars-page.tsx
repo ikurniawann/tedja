@@ -240,6 +240,29 @@ export function CrmAvatarsPage() {
                   <ImageIcon className="size-8" />
                 </div>
               )}
+              {/* Upload langsung (Task 3) — admin tidak perlu hosting sendiri. */}
+              <label className="flex cursor-pointer items-center justify-center gap-2 rounded-md border border-dashed border-slate-300 bg-slate-50 px-3 py-2.5 text-xs font-semibold text-slate-600 transition hover:border-slate-400 hover:bg-slate-100">
+                <input
+                  type="file"
+                  className="sr-only"
+                  accept="image/jpeg,image/png,image/webp"
+                  onChange={async (event) => {
+                    const file = event.target.files?.[0];
+                    event.target.value = "";
+                    if (!file) return;
+                    const data = new FormData();
+                    data.append("file", file);
+                    const res = await fetch("/api/crm/avatars/upload", { method: "POST", body: data });
+                    const json = await res.json().catch(() => ({}));
+                    if (res.ok && json.success) {
+                      setForm((current) => ({ ...current, image_url: json.data.url }));
+                    } else {
+                      alert(json.error || "Upload gagal");
+                    }
+                  }}
+                />
+                <ImageIcon className="size-4" /> Unggah Gambar Artwork (JPG/PNG/WebP, maks 5 MB)
+              </label>
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
                 <TextField label="Code" value={form.code} onChange={(value) => setForm((current) => ({ ...current, code: value }))} placeholder="avatar-bronze-01" />
                 <TextField label="Name" value={form.name} onChange={(value) => setForm((current) => ({ ...current, name: value }))} placeholder="Bronze Explorer" />

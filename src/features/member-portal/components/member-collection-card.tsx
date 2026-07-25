@@ -51,6 +51,8 @@ export function MemberCollectionCard({ onEquipped }: { onEquipped?: () => void }
   const [items, setItems] = useState<Collectible[]>([]);
   const [ownedCount, setOwnedCount] = useState(0);
   const [equippingId, setEquippingId] = useState<string | null>(null);
+  const [redeemingId, setRedeemingId] = useState<string | null>(null);
+  const [entitlement, setEntitlement] = useState<{ remaining: number; interval_xp: number } | null>(null);
   const [feedback, setFeedback] = useState<{ message?: string; error?: string }>({});
 
   const load = useCallback(async () => {
@@ -63,6 +65,7 @@ export function MemberCollectionCard({ onEquipped }: { onEquipped?: () => void }
       }
       setItems(json.data.items);
       setOwnedCount(json.data.owned_count);
+      setEntitlement(json.data.entitlement ?? null);
     } catch {
       setFeedback({ error: "Gagal memuat koleksi" });
     } finally {
@@ -98,6 +101,30 @@ export function MemberCollectionCard({ onEquipped }: { onEquipped?: () => void }
     }
   }
 
+  /** Tukar artwork memakai satu jatah — server yang menegakkan semuanya. */
+  async function redeem(item: Collectible) {
+    setRedeemingId(item.id);
+    setFeedback({});
+    try {
+      const res = await fetch("/api/member-portal/collectibles/redeem", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ avatar_id: item.id }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        setFeedback({ error: json.error ?? "Penukaran gagal" });
+        return;
+      }
+      setFeedback({ message: `"${item.name}" berhasil ditukar!` });
+      await load();
+    } catch {
+      setFeedback({ error: "Penukaran gagal" });
+    } finally {
+      setRedeemingId(null);
+    }
+  }
+
   if (loading) {
     return (
       <Card className="rounded-2xl border-0 bg-white/85 shadow-sm ring-1 ring-black/5 backdrop-blur">
@@ -127,6 +154,15 @@ export function MemberCollectionCard({ onEquipped }: { onEquipped?: () => void }
           XP kamu <span className="font-semibold">tidak berkurang</span> — XP hanya menentukan
           artwork apa yang bisa kamu kejar.
         </p>
+        {entitlement && (
+          <p className="mt-1 inline-flex w-fit items-center gap-1.5 rounded-full bg-[color:var(--brand-primary)]/10 px-3 py-1 text-xs font-semibold text-[color:var(--brand-primary)]">
+            <Sparkles className="h-3.5 w-3.5" />
+            Jatah tukar: {entitlement.remaining}
+            <span className="font-normal text-gray-500">
+              · +1 tiap {angka(entitlement.interval_xp)} XP
+            </span>
+          </p>
+        )}
       </CardHeader>
 
       <CardContent className="space-y-3">
@@ -192,7 +228,7 @@ export function MemberCollectionCard({ onEquipped }: { onEquipped?: () => void }
                     {RARITY_LABELS[item.rarity]}
                   </span>
 
-                  {!item.owned && item.locked_reason && (
+                  {!item.owned && item.locked_reason && item.locked_reason !== "Belum kamu miliki" && (
                     <p className="flex items-start gap-1 text-[11px] text-gray-500">
                       <Lock className="mt-0.5 h-3 w-3 shrink-0" />
                       <span>
@@ -200,6 +236,28 @@ export function MemberCollectionCard({ onEquipped }: { onEquipped?: () => void }
                         {item.xp_needed > 0 && ` — kurang ${angka(item.xp_needed)} XP`}
                       </span>
                     </p>
+                  )}
+
+                  {/* Layak ditukar: syarat terpenuhi, tinggal pakai jatah. */}
+                  {!item.owned && item.locked_reason === "Belum kamu miliki" && (
+                    (entitlement?.remaining ?? 0) > 0 ? (
+                      <Button
+                        size="sm"
+                        className="h-7 w-full text-xs"
+                        disabled={redeemingId === item.id}
+                        onClick={() => void redeem(item)}
+                      >
+                        {redeemingId === item.id ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : (
+                          "Tukar dengan 1 jatah"
+                        )}
+                      </Button>
+                    ) : (
+                      <p className="text-[11px] text-gray-500">
+                        Syarat terpenuhi — jatah tukar habis, kumpulkan XP lagi.
+                      </p>
+                    )
                   )}
 
                   {item.owned && !item.equipped && (
