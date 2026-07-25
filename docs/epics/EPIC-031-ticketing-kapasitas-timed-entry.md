@@ -267,4 +267,24 @@ C setelah B1; D setelah B stabil. Rilis bisa bertahap: A+B saja sudah menutup
   tambah-gelang mid-visit (registrasi one-shot) — guard cukup di POST;
   redeem booking insert visit sendiri di route redeem (line ~268) → bebas
   guard sesuai desain. Verifikasi: tsc bersih, build OK → pm2 restart,
-  smoke 401/200 normal.
+  smoke 401/200 normal. Commit f7847cd1.
+- 2026-07-25 — **B3+B4 SELESAI (Fase B TUNTAS), live dev**:
+  - B3 `buildAvailability` di capacity-server (read-only tanpa lock,
+    indikatif — kebenaran final tetap guard create): fast path {} bila
+    kuota non-aktif; 2 query agregat GROUP BY tanggal (bukan N+1); HANYA
+    tanggal bermasalah dikembalikan `{date: sold_out|closed}` — angka
+    sisa/kapasitas TIDAK pernah bocor (keputusan owner #7). Route publik
+    `GET /api/public/booking/[slug]/availability?from&to` (≤92 hari,
+    rate-limit 30/mnt pola catalog, 404 generik anti-enumerasi slug).
+  - B4 `booking-calendar.tsx` prop `unavailable` — tanggal penuh/tutup
+    DICORET (beda dari abu luar-rentang) + aria-label (penuh/tutup) +
+    legend; `booking-wizard.tsx` fetch availability sekali utk jendela
+    90 hari (gagal fetch = diam, guard server tetap jaga), notice merah di
+    bawah picker bila tanggal terpilih penuh/tutup + tombol Lanjut
+    disabled; 409 saat submit → pesan server + refresh peta availability.
+  - Verifikasi live dev (bukan cuma unit): availability {} saat kuota
+    non-aktif; override cap 0 → `closed`, cap 1 + 1 guest → `sold_out`;
+    **E2E POST booking publik**: tanggal sold_out → 409 "Kuota tanggal ini
+    sudah penuh", tanggal closed → 409 "Tanggal ini ditutup" (guard
+    sebelum insert — tidak ada booking yatim); cleanup 0 sisa; rentang
+    invalid 400, slug asing 404. tsc bersih, 87 test, build OK.

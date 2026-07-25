@@ -26,16 +26,20 @@ const monthIndexOf = (iso: string) => {
   return y * 12 + (m - 1);
 };
 
+/** EPIC-031 B4: tanggal bermasalah dari availability API (omit = tersedia). */
+export type UnavailableMap = Record<string, "sold_out" | "closed">;
+
 interface MonthGridProps {
   year: number;
   month: number; // 0-11
   value: string;
   minDate: string;
   maxDate: string;
+  unavailable: UnavailableMap;
   onSelect: (iso: string) => void;
 }
 
-function MonthGrid({ year, month, value, minDate, maxDate, onSelect }: MonthGridProps) {
+function MonthGrid({ year, month, value, minDate, maxDate, unavailable, onSelect }: MonthGridProps) {
   const cells = useMemo(() => {
     const firstDow = new Date(Date.UTC(year, month, 1)).getUTCDay(); // 0=Min
     const leading = (firstDow + 6) % 7; // geser agar Senin = 0
@@ -62,7 +66,10 @@ function MonthGrid({ year, month, value, minDate, maxDate, onSelect }: MonthGrid
         {cells.map((day, index) => {
           if (day === null) return <span key={`x-${index}`} />;
           const iso = toIso(year, month, day);
-          const disabled = iso < minDate || iso > maxDate;
+          const outOfRange = iso < minDate || iso > maxDate;
+          // Penuh/tutup (EPIC-031): dicoret — beda dari abu di-luar-rentang
+          const full = !outOfRange && unavailable[iso] !== undefined;
+          const disabled = outOfRange || full;
           const selected = iso === value;
           return (
             <button
@@ -70,14 +77,20 @@ function MonthGrid({ year, month, value, minDate, maxDate, onSelect }: MonthGrid
               type="button"
               onClick={() => !disabled && onSelect(iso)}
               disabled={disabled}
-              aria-label={iso}
+              aria-label={
+                full
+                  ? `${iso} (${unavailable[iso] === "closed" ? "tutup" : "penuh"})`
+                  : iso
+              }
               aria-pressed={selected}
               className={`mx-auto flex h-10 w-10 items-center justify-center rounded-full text-sm tabular-nums transition-colors ${
                 selected
                   ? "bg-gray-900 font-semibold text-white"
-                  : disabled
-                    ? "cursor-default text-gray-300"
-                    : "font-medium text-gray-800 hover:ring-1 hover:ring-inset hover:ring-gray-900"
+                  : full
+                    ? "cursor-default text-gray-300 line-through decoration-gray-400"
+                    : disabled
+                      ? "cursor-default text-gray-300"
+                      : "font-medium text-gray-800 hover:ring-1 hover:ring-inset hover:ring-gray-900"
               }`}
             >
               {day}
@@ -93,10 +106,18 @@ interface BookingCalendarProps {
   value: string; // ISO atau ""
   minDate: string;
   maxDate: string;
+  /** Tanggal penuh/tutup — dicoret & tidak bisa dipilih. Default kosong. */
+  unavailable?: UnavailableMap;
   onChange: (iso: string) => void;
 }
 
-export function BookingCalendar({ value, minDate, maxDate, onChange }: BookingCalendarProps) {
+export function BookingCalendar({
+  value,
+  minDate,
+  maxDate,
+  unavailable = {},
+  onChange,
+}: BookingCalendarProps) {
   // Mulai dari bulan tanggal terpilih (atau bulan minDate)
   const [viewIndex, setViewIndex] = useState(() =>
     monthIndexOf(value || minDate)
@@ -135,6 +156,7 @@ export function BookingCalendar({ value, minDate, maxDate, onChange }: BookingCa
           value={value}
           minDate={minDate}
           maxDate={maxDate}
+          unavailable={unavailable}
           onSelect={onChange}
         />
         {secondIndex <= maxIndex ? (
@@ -144,11 +166,17 @@ export function BookingCalendar({ value, minDate, maxDate, onChange }: BookingCa
               value={value}
               minDate={minDate}
               maxDate={maxDate}
+              unavailable={unavailable}
               onSelect={onChange}
             />
           </div>
         ) : null}
       </div>
+      {Object.keys(unavailable).length > 0 && (
+        <p className="mt-3 text-center text-[11px] text-gray-400">
+          Tanggal dicoret sudah penuh / tidak menerima kunjungan
+        </p>
+      )}
     </div>
   );
 }

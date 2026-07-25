@@ -26,7 +26,7 @@ import {
   Sparkles,
   Zap,
 } from "lucide-react";
-import { BookingCalendar } from "./booking-calendar";
+import { BookingCalendar, type UnavailableMap } from "./booking-calendar";
 
 const MAX_QTY_PER_BOOKING = 20;
 const MAX_DAYS_AHEAD = 90;
@@ -148,6 +148,9 @@ export function BookingWizard({ slug }: BookingWizardProps) {
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // EPIC-031 B4 — tanggal penuh/tutup dari availability API (indikatif;
+  // kebenaran final tetap 409 dari create). Gagal fetch = biarkan kosong.
+  const [unavailable, setUnavailable] = useState<UnavailableMap>({});
 
   const minDate = todayIso();
   const maxDate = addDaysIso(minDate, MAX_DAYS_AHEAD);
@@ -280,6 +283,24 @@ export function BookingWizard({ slug }: BookingWizardProps) {
     loadCatalog(visitDate);
   }, [visitDate, loadCatalog]);
 
+  const loadAvailability = useCallback(async () => {
+    try {
+      const res = await fetch(
+        `/api/public/booking/${slug}/availability?from=${minDate}&to=${maxDate}`
+      );
+      const body = await res.json();
+      if (res.ok && body.success) setUnavailable(body.data.dates ?? {});
+    } catch {
+      // indikatif — biarkan peta lama; guard server tetap menolak saat penuh
+    }
+  }, [slug, minDate, maxDate]);
+
+  useEffect(() => {
+    loadAvailability();
+  }, [loadAvailability]);
+
+  const dateUnavailable = unavailable[visitDate] !== undefined;
+
   const selectedProduct =
     catalog.find((p) => p.ticket_product_id === selectedProductId) ?? null;
 
@@ -348,6 +369,9 @@ export function BookingWizard({ slug }: BookingWizardProps) {
       const body = await res.json();
       if (!res.ok || !body.success) {
         setError(body.error ?? "Gagal membuat booking — coba lagi");
+        // Keburu penuh (409 EPIC-031) → segarkan peta supaya tanggal ini
+        // langsung dicoret saat pengunjung kembali memilih tanggal
+        if (res.status === 409) loadAvailability();
         setSubmitting(false);
         return;
       }
@@ -468,12 +492,20 @@ export function BookingWizard({ slug }: BookingWizardProps) {
                     value={visitDate}
                     minDate={minDate}
                     maxDate={maxDate}
+                    unavailable={unavailable}
                     onChange={(iso) => {
                       setVisitDate(iso);
                       setCalendarOpen(false);
                     }}
                   />
                 </div>
+              )}
+              {dateUnavailable && (
+                <p className="mt-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {unavailable[visitDate] === "closed"
+                    ? "Tanggal ini tidak menerima kunjungan — pilih tanggal lain."
+                    : "Tanggal ini sudah penuh — pilih tanggal lain."}
+                </p>
               )}
               <p className="mt-2 px-1 text-xs text-gray-400">
                 Harga bisa berbeda per tanggal · bisa dipesan sampai{" "}
@@ -736,7 +768,7 @@ export function BookingWizard({ slug }: BookingWizardProps) {
             <button
               type="button"
               onClick={() => setStep("pemesan")}
-              disabled={totalQty === 0}
+              disabled={totalQty === 0 || dateUnavailable}
               className="shrink-0 rounded-xl bg-rose-500 px-8 py-3.5 text-[15px] font-semibold text-white transition-colors hover:bg-rose-600 disabled:opacity-40 disabled:hover:bg-rose-500"
             >
               Lanjut
