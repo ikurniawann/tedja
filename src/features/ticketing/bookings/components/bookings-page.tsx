@@ -23,6 +23,7 @@ import {
   type BookingStatus,
 } from "../types";
 import { BookingDetailDialog } from "./booking-detail-dialog";
+import { OccupancyCalendar } from "./occupancy-calendar";
 
 const formatRp = (n: number) => `Rp${n.toLocaleString("id-ID")}`;
 const formatTime = (iso: string) =>
@@ -65,6 +66,14 @@ export function BookingsPage({ canManage = false }: { canManage?: boolean }) {
           batalkan, catat refund manual, dan kirim ulang WA kode booking.
         </p>
       </div>
+
+      <OccupancyCalendar
+        selectedDate={date}
+        onSelectDate={(iso) => {
+          setDate(iso);
+          setPage(1);
+        }}
+      />
 
       <PurchasingListSection
         icon={GlobeAltIcon}

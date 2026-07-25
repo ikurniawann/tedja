@@ -83,3 +83,36 @@ export const useTicketingReport = (from: string, to: string) =>
     queryFn: () => fetchReport(from, to),
     enabled: !!from && !!to && from <= to,
   });
+
+// EPIC-031 Fase C2 — okupansi kuota harian (endpoint /api/ticketing/occupancy)
+export interface ReportOccupancyDay {
+  date: string;
+  online: number;
+  walk_in: number;
+  capacity: number | null;
+}
+
+async function fetchOccupancy(
+  from: string,
+  to: string
+): Promise<ReportOccupancyDay[]> {
+  const res = await fetch(
+    `/api/ticketing/occupancy?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
+  );
+  const body = (await res.json()) as {
+    success?: boolean;
+    data?: { days: ReportOccupancyDay[] };
+    error?: string;
+  };
+  if (!res.ok || !body.success || !body.data) {
+    throw new Error(body.error ?? "Gagal memuat okupansi");
+  }
+  return body.data.days;
+}
+
+export const useReportOccupancy = (from: string, to: string) =>
+  useQuery({
+    queryKey: ["ticketing", "occupancy", from, to] as const,
+    queryFn: () => fetchOccupancy(from, to),
+    enabled: !!from && !!to && from <= to,
+  });

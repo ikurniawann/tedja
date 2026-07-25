@@ -104,3 +104,12 @@ export interface RedeemBand {
   nfc_uid: string;
   guest_id: string;
 }
+
+/** EPIC-031 Fase C — okupansi harian (dashboard boleh lihat angka). */
+export interface OccupancyDay {
+  date: string;
+  online: number;
+  walk_in: number;
+  /** null = unlimited (kuota tidak aktif untuk tanggal ini). */
+  capacity: number | null;
+}

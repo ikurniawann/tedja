@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import {
   createCapacityDate,
   deleteCapacityDate,
+  fetchOccupancyRange,
   fetchBands,
   fetchCapacityDates,
   fetchChannels,
@@ -111,6 +112,12 @@ export const useUpdateBand = (onSuccess?: () => void) =>
   );
 
 // ── Kapasitas harian (EPIC-031) ──
+export const useOccupancyRange = (from: string, to: string) =>
+  useQuery({
+    queryKey: ["ticketing", "occupancy", from, to] as const,
+    queryFn: () => fetchOccupancyRange(from, to),
+  });
+
 export const useCapacityDates = () =>
   useQuery({
     queryKey: ticketingQueryKeys.capacityDates,

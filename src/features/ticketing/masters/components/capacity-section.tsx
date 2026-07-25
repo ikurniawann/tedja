@@ -13,6 +13,7 @@ import {
   useCapacityDates,
   useCreateCapacityDate,
   useDeleteCapacityDate,
+  useOccupancyRange,
   useTicketingSettings,
   useUpdateCapacityDate,
   useUpdateSettings,
@@ -44,6 +45,16 @@ const formatDateId = (iso: string) =>
     year: "numeric",
   });
 
+const todayIso = () =>
+  new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jakarta" }).format(
+    new Date()
+  );
+
+const addDaysIso = (iso: string, days: number) => {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+};
+
 export function CapacitySection() {
   const settingsQuery = useTicketingSettings();
   const capacityQuery = useCapacityDates();
@@ -60,6 +71,23 @@ export function CapacitySection() {
     (settings?.daily_capacity === null || settings?.daily_capacity === undefined
       ? ""
       : String(settings.daily_capacity));
+
+  // Peringatan LIVE (utang A3, keputusan tunda ke Fase C): bila kapasitas
+  // baru < okupansi tertinggi 90 hari ke depan → transaksi existing aman,
+  // tapi ada tanggal yang langsung berstatus penuh
+  const occupancyQuery = useOccupancyRange(todayIso(), addDaysIso(todayIso(), 90));
+  const worstUpcoming = (() => {
+    const days = occupancyQuery.data ?? [];
+    let worst: { date: string; used: number } | null = null;
+    for (const d of days) {
+      const used = d.online + d.walk_in;
+      if (used > 0 && (!worst || used > worst.used)) worst = { date: d.date, used };
+    }
+    return worst;
+  })();
+  const capacityNum = capacityValue.trim() === "" ? null : Number(capacityValue);
+  const capacityBelowOccupancy =
+    capacityNum !== null && worstUpcoming !== null && capacityNum < worstUpcoming.used;
 
   const [draft, setDraft] = useState<OverrideForm>(EMPTY_OVERRIDE);
   const draftCapacityNum = draft.capacity.trim() === "" ? null : Number(draft.capacity);
@@ -145,10 +173,20 @@ export function CapacitySection() {
                 )}
               </p>
             </div>
-            <p className="text-xs text-gray-500">
-              Menurunkan kapasitas di bawah jumlah yang sudah ter-booking tidak
-              membatalkan booking yang ada — hanya transaksi baru yang ditolak.
-            </p>
+            {capacityBelowOccupancy && worstUpcoming ? (
+              <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+                Perhatian: okupansi {formatDateId(worstUpcoming.date)} sudah{" "}
+                {worstUpcoming.used.toLocaleString("id-ID")} orang — di atas
+                kapasitas yang akan disimpan. Booking existing tidak
+                dibatalkan, tapi tanggal tersebut langsung berstatus penuh.
+              </p>
+            ) : (
+              <p className="text-xs text-gray-500">
+                Menurunkan kapasitas di bawah jumlah yang sudah ter-booking
+                tidak membatalkan booking yang ada — hanya transaksi baru yang
+                ditolak.
+              </p>
+            )}
           </div>
 
           <div className="space-y-3">

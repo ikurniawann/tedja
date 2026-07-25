@@ -1,7 +1,7 @@
 # EPIC-031: Ticketing — Kuota Harian, Kapasitas & Timed-Entry
 
-status: on-progress
-environment: local
+status: ready-for-qa
+environment: dev
 retries: 0
 
 ## Goal
@@ -288,3 +288,27 @@ C setelah B1; D setelah B stabil. Rilis bisa bertahap: A+B saja sudah menutup
     sudah penuh", tanggal closed → 409 "Tanggal ini ditutup" (guard
     sebelum insert — tidak ada booking yatim); cleanup 0 sisa; rentang
     invalid 400, slug asing 404. tsc bersih, 87 test, build OK.
+    Commit c3645bab.
+- 2026-07-25 — **Fase C SELESAI (C1+C2+utang A3) → epic READY-FOR-QA,
+  live dev**:
+  - Refactor capacity-server: `loadCapacityConfig` + `loadUsedByDate`
+    di-share; BARU `buildOccupancy` (angka SELALU dihitung walau kuota
+    non-aktif — dashboard tetap perlu lihat jumlah) — buildAvailability
+    kini turunan (fast path {} dipertahankan; diverifikasi ulang live).
+  - Endpoint `GET /api/ticketing/occupancy?from&to` (≤92 hari,
+    TICKETING_OPERATOR_ROLES — selaras akses baca loket ke Booking).
+  - C1 `occupancy-calendar.tsx` di dashboard Booking: grid bulanan
+    (booking+walk-in)/kapasitas per tanggal, warna hijau/amber(≥70%)/
+    merah(penuh)/abu(tutup)/biru(terisi tanpa kuota) + legend; klik
+    tanggal → set filter daftar booking existing.
+  - C2 kartu "Okupansi Kuota Harian" di Laporan (avg %, total orang,
+    hari penuh, hari tutup) — HANYA tampil bila ada tanggal ber-kuota
+    dalam rentang (venue tanpa kuota = nol perubahan tampilan).
+  - Utang A3 LUNAS: peringatan LIVE di seksi Kapasitas — okupansi
+    tertinggi 90 hari ke depan vs kapasitas yang akan disimpan (amber,
+    menyebut tanggal + jumlah orang).
+  - Verifikasi: tsc bersih, 87 test hijau, build OK → pm2 restart, smoke
+    401/307 normal; fungsional availability pasca-refactor diuji ulang
+    live (closed terdeteksi, tanggal berkapasitas-kosong diomit),
+    cleanup bersih. **Fase D (slot jam) = satu-satunya sisa — menunggu
+    keputusan owner (Open Question #5, #6).**

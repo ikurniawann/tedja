@@ -92,6 +92,20 @@ export async function deleteCapacityDate(id: string): Promise<{ id: string }> {
   return body.data;
 }
 
+// EPIC-031 C — okupansi 90 hari ke depan utk peringatan pengaturan kapasitas
+export interface OccupancyDayLite {
+  date: string;
+  online: number;
+  walk_in: number;
+  capacity: number | null;
+}
+
+export const fetchOccupancyRange = (from: string, to: string) =>
+  getJson<{ days: OccupancyDayLite[] }>(
+    `/api/ticketing/occupancy?from=${from}&to=${to}`,
+    "Gagal memuat okupansi"
+  ).then((data) => data.days);
+
 // ── Kanal ──
 export const fetchChannels = () =>
   getJson<TicketChannel[]>("/api/ticketing/channels", "Gagal memuat kanal");

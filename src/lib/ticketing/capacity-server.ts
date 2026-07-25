@@ -119,17 +119,7 @@ const addDaysIso = (iso: string, days: number) => {
   return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
 };
 
-/**
- * Peta tanggal tidak-tersedia dalam rentang [from..to] (inklusif) —
- * read-only tanpa lock (kalender indikatif; kebenaran final tetap guard
- * transaksi create). Fast path: kuota venue non-aktif & tanpa override →
- * langsung {} tanpa query okupansi.
- */
-export async function buildAvailability(
-  scope: VenueScope,
-  from: string,
-  to: string
-): Promise<Record<string, UnavailableKind>> {
+async function loadCapacityConfig(scope: VenueScope, from: string, to: string) {
   const [settingsRows, overrideRows] = await Promise.all([
     query<{ daily_capacity: number | null }>(
       `SELECT daily_capacity FROM ticketing.ticket_settings
@@ -145,9 +135,14 @@ export async function buildAvailability(
       [scope.branchId, scope.companyId, from, to]
     ),
   ]);
-  const venueDefault = settingsRows[0]?.daily_capacity ?? null;
-  if (venueDefault === null && overrideRows.length === 0) return {};
+  return {
+    venueDefault: settingsRows[0]?.daily_capacity ?? null,
+    overrides: overrideRows,
+  };
+}
 
+/** Okupansi per tanggal (online & walk-in terpisah) dalam rentang. */
+async function loadUsedByDate(scope: VenueScope, from: string, to: string) {
   const [onlineRows, walkInRows] = await Promise.all([
     query<{ d: string; n: string }>(
       `SELECT b.visit_date::text AS d, COUNT(*) AS n
@@ -175,17 +170,76 @@ export async function buildAvailability(
       [scope.branchId, scope.companyId, from, to]
     ),
   ]);
-  const usedByDate = new Map<string, number>();
-  for (const r of [...onlineRows, ...walkInRows]) {
-    usedByDate.set(r.d, (usedByDate.get(r.d) ?? 0) + Number(r.n));
+  const map = new Map<string, { online: number; walkIn: number }>();
+  for (const r of onlineRows) {
+    map.set(r.d, { online: Number(r.n), walkIn: 0 });
   }
+  for (const r of walkInRows) {
+    const prev = map.get(r.d) ?? { online: 0, walkIn: 0 };
+    map.set(r.d, { ...prev, walkIn: Number(r.n) });
+  }
+  return map;
+}
 
+/** Baris okupansi harian utk dashboard ops (Fase C) — angka boleh tampil. */
+export interface OccupancyDay {
+  date: string;
+  online: number;
+  walk_in: number;
+  /** null = unlimited (kuota tidak aktif utk tanggal ini). */
+  capacity: number | null;
+}
+
+/**
+ * Okupansi per tanggal dalam rentang [from..to] — read-only, utk kalender
+ * okupansi dashboard Booking, kartu laporan, dan peringatan pengaturan.
+ * Berbeda dari buildAvailability: angka SELALU dihitung walau kuota
+ * non-aktif (dashboard tetap perlu lihat jumlah pengunjung).
+ */
+export async function buildOccupancy(
+  scope: VenueScope,
+  from: string,
+  to: string
+): Promise<OccupancyDay[]> {
+  const [{ venueDefault, overrides }, usedByDate] = await Promise.all([
+    loadCapacityConfig(scope, from, to),
+    loadUsedByDate(scope, from, to),
+  ]);
+  const days: OccupancyDay[] = [];
+  for (let date = from; date <= to; date = addDaysIso(date, 1)) {
+    const used = usedByDate.get(date) ?? { online: 0, walkIn: 0 };
+    days.push({
+      date,
+      online: used.online,
+      walk_in: used.walkIn,
+      capacity: resolveDailyCapacity(date, venueDefault, overrides),
+    });
+  }
+  return days;
+}
+
+/**
+ * Peta tanggal tidak-tersedia dalam rentang [from..to] (inklusif) —
+ * read-only tanpa lock (kalender indikatif; kebenaran final tetap guard
+ * transaksi create). Fast path: kuota venue non-aktif & tanpa override →
+ * langsung {} tanpa query okupansi.
+ */
+export async function buildAvailability(
+  scope: VenueScope,
+  from: string,
+  to: string
+): Promise<Record<string, UnavailableKind>> {
+  const { venueDefault, overrides } = await loadCapacityConfig(scope, from, to);
+  if (venueDefault === null && overrides.length === 0) return {};
+
+  const usedByDate = await loadUsedByDate(scope, from, to);
   const result: Record<string, UnavailableKind> = {};
   for (let date = from; date <= to; date = addDaysIso(date, 1)) {
-    const capacity = resolveDailyCapacity(date, venueDefault, overrideRows);
+    const capacity = resolveDailyCapacity(date, venueDefault, overrides);
     if (capacity === null) continue;
+    const used = usedByDate.get(date) ?? { online: 0, walkIn: 0 };
     if (capacity === 0) result[date] = "closed";
-    else if ((usedByDate.get(date) ?? 0) >= capacity) result[date] = "sold_out";
+    else if (used.online + used.walkIn >= capacity) result[date] = "sold_out";
   }
   return result;
 }

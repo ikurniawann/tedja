@@ -3,6 +3,7 @@ import type {
   BookingFilters,
   BookingListResponse,
   BookingLookup,
+  OccupancyDay,
   RedeemBand,
 } from "./types";
 
@@ -103,3 +104,9 @@ export const resendBookingWa = (id: string) =>
     {},
     "Gagal mengirim ulang WA"
   );
+
+export const fetchOccupancy = (from: string, to: string) =>
+  getJson<{ days: OccupancyDay[] }>(
+    `/api/ticketing/occupancy?from=${from}&to=${to}`,
+    "Gagal memuat okupansi"
+  ).then((data) => data.days);
