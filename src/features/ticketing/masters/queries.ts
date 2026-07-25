@@ -16,8 +16,12 @@ import {
   revokeStaffPass,
   searchEmployees,
   updateBand,
+  createTimeSlot,
+  deleteTimeSlot,
+  fetchTimeSlots,
   updateCapacityDate,
   updateChannel,
+  updateTimeSlot,
   updateSettings,
 } from "./api";
 import type {
@@ -25,6 +29,7 @@ import type {
   CapacityDateFormValues,
   SettingsFormValues,
   TicketBand,
+  TimeSlotFormValues,
 } from "./types";
 
 export const ticketingQueryKeys = {
@@ -37,6 +42,7 @@ export const ticketingQueryKeys = {
   staffPassesAll: ["ticketing", "staff-passes"] as const,
   employeeOptions: (q: string) => ["ticketing", "employee-options", q] as const,
   capacityDates: ["ticketing", "capacity-dates"] as const,
+  timeSlots: ["ticketing", "time-slots"] as const,
 };
 
 // Settings dipanggil pertama — GET-nya sekaligus bootstrap kanal default
@@ -150,6 +156,41 @@ export const useDeleteCapacityDate = () =>
     (id: string) => deleteCapacityDate(id),
     "Override kapasitas dihapus",
     [ticketingQueryKeys.capacityDates]
+  );
+
+// ── Slot waktu timed-entry (EPIC-031 D) ──
+export const useTimeSlots = () =>
+  useQuery({
+    queryKey: ticketingQueryKeys.timeSlots,
+    queryFn: fetchTimeSlots,
+  });
+
+export const useCreateTimeSlot = (onSuccess?: () => void) =>
+  useInvalidatingMutation(
+    (values: TimeSlotFormValues) => createTimeSlot(values),
+    "Slot waktu ditambahkan",
+    [ticketingQueryKeys.timeSlots],
+    onSuccess
+  );
+
+export const useUpdateTimeSlot = () =>
+  useInvalidatingMutation(
+    ({
+      id,
+      values,
+    }: {
+      id: string;
+      values: Partial<TimeSlotFormValues> & { is_active?: boolean };
+    }) => updateTimeSlot(id, values),
+    "Slot waktu diperbarui",
+    [ticketingQueryKeys.timeSlots]
+  );
+
+export const useDeleteTimeSlot = () =>
+  useInvalidatingMutation(
+    (id: string) => deleteTimeSlot(id),
+    "Slot waktu dihapus",
+    [ticketingQueryKeys.timeSlots]
   );
 
 // ── Gelang karyawan (Fase E) ──

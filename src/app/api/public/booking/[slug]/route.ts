@@ -18,7 +18,12 @@ import {
   buildPublicCatalog,
   resolvePublicVenue,
 } from "@/lib/ticketing/booking-server";
-import { assertCapacityAvailable } from "@/lib/ticketing/capacity-server";
+import {
+  assertCapacityAvailable,
+  assertSlotCapacity,
+  loadActiveSlot,
+  loadActiveSlots,
+} from "@/lib/ticketing/capacity-server";
 import {
   createInvoice,
   getInvoiceExpiryHours,
@@ -36,6 +41,9 @@ const createSchema = z.object({
   visit_date: z.string(),
   customer_name: z.string().trim().min(2).max(120),
   customer_phone: z.string().trim().min(8).max(25),
+  // EPIC-031 D — slot waktu: WAJIB bila venue punya slot aktif (dicek
+  // server-side), dilarang bila tidak punya
+  slot_id: z.string().uuid().optional(),
   items: z
     .array(
       z.object({
@@ -110,6 +118,18 @@ export async function POST(
 
     const venue = await resolvePublicVenue(slug);
     if (!venue) return notFound();
+
+    // EPIC-031 D — venue ber-slot: slot wajib dipilih; venue tanpa slot:
+    // slot_id ditolak (jangan percaya klien). Validasi detail slot di
+    // dalam transaksi (loadActiveSlot via client).
+    const venueScope = { companyId: venue.companyId, branchId: venue.branchId };
+    const activeSlots = await loadActiveSlots(venueScope);
+    if (activeSlots.length > 0 && !body.slot_id) {
+      return badRequest("Pilih slot waktu kunjungan dulu");
+    }
+    if (activeSlots.length === 0 && body.slot_id) {
+      return badRequest("Venue ini tidak memakai slot waktu — muat ulang halaman");
+    }
 
     // Harga & kelayakan dihitung ulang server-side dari katalog tanggal itu
     const catalog = await buildPublicCatalog(venue, body.visit_date);
@@ -221,15 +241,36 @@ export async function POST(
           // No-op tanpa lock bila kuota venue tidak aktif (unlimited).
           await assertCapacityAvailable(
             client,
-            { companyId: venue.companyId, branchId: venue.branchId },
+            venueScope,
             body.visit_date,
             totalQty
           );
+          // EPIC-031 D — slot: validasi ulang via client (bisa berubah di
+          // antara pre-check dan transaksi) + guard kuota per (tanggal,slot)
+          const slot = body.slot_id
+            ? await loadActiveSlot(client, venueScope, body.slot_id)
+            : null;
+          if (body.slot_id && !slot) {
+            throw Object.assign(
+              new Error("Slot waktu tidak tersedia lagi — muat ulang halaman"),
+              { statusCode: 400 }
+            );
+          }
+          if (slot) {
+            await assertSlotCapacity(
+              client,
+              venueScope,
+              body.visit_date,
+              slot,
+              totalQty
+            );
+          }
           const inserted = await client.query<{ id: string }>(
             `INSERT INTO ticketing.ticket_bookings
                (company_id, branch_id, booking_code, access_token, visit_date,
-                customer_name, customer_phone, status, total, expires_at)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,'menunggu-bayar',$8,$9)
+                customer_name, customer_phone, status, total, expires_at,
+                slot_id, slot_label, slot_start_time, slot_end_time)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,'menunggu-bayar',$8,$9,$10,$11,$12,$13)
              RETURNING id`,
             [
               venue.companyId,
@@ -241,6 +282,10 @@ export async function POST(
               phone,
               total,
               expiresAt.toISOString(),
+              slot?.id ?? null,
+              slot?.label ?? null,
+              slot?.start_time ?? null,
+              slot?.end_time ?? null,
             ]
           );
           const id = inserted.rows[0].id;

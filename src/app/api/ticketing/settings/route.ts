@@ -16,12 +16,13 @@ interface SettingsRow {
   booking_slug: string | null;
   booking_forfeit_days: number | null;
   daily_capacity: number | null;
+  slot_grace_minutes: number;
   updated_at: string;
 }
 
 const SETTINGS_COLUMNS = `id, re_entry_policy, default_credit_limit,
   default_payment_mode, booking_slug, booking_forfeit_days, daily_capacity,
-  updated_at`;
+  slot_grace_minutes, updated_at`;
 
 /**
  * Bootstrap sekali jalan saat venue pertama kali membuka Ticketing:
@@ -96,6 +97,8 @@ const updateSettingsSchema = z.object({
   // UNLIMITED (perilaku sebelum EPIC-031). Tanggal tutup (0) bukan di sini —
   // pakai override ticket_capacity_dates capacity 0.
   daily_capacity: z.number().int().min(1).max(1_000_000).nullable().optional(),
+  // EPIC-031 D: toleransi jam masuk slot saat redeem (menit)
+  slot_grace_minutes: z.number().int().min(0).max(240).optional(),
 });
 
 export async function PUT(request: NextRequest) {
@@ -131,6 +134,9 @@ export async function PUT(request: NextRequest) {
     }
     if (body.daily_capacity !== undefined) {
       add("daily_capacity", body.daily_capacity);
+    }
+    if (body.slot_grace_minutes !== undefined) {
+      add("slot_grace_minutes", body.slot_grace_minutes);
     }
 
     params.push(ctx.branchId, ctx.companyId);

@@ -68,6 +68,8 @@ export interface TicketingSettings {
   booking_forfeit_days: number | null;
   /** EPIC-031: kuota harian venue (per orang); null = unlimited. */
   daily_capacity: number | null;
+  /** EPIC-031 D: toleransi jam masuk slot saat redeem (menit). */
+  slot_grace_minutes: number;
   updated_at: string;
 }
 
@@ -78,6 +80,7 @@ export interface SettingsFormValues {
   booking_slug?: string | null;
   booking_forfeit_days?: number | null;
   daily_capacity?: number | null;
+  slot_grace_minutes?: number;
 }
 
 /** EPIC-031: override kapasitas per rentang tanggal (0 = tanggal tutup). */
@@ -97,4 +100,25 @@ export interface CapacityDateFormValues {
   start_date: string;
   end_date: string;
   capacity: number;
+}
+
+/** EPIC-031 D: template slot waktu timed-entry (level venue). */
+export interface TimeSlot {
+  id: string;
+  label: string;
+  start_time: string;
+  end_time: string;
+  /** null = tanpa batas per-slot (jendela jam saja). */
+  capacity: number | null;
+  sort_order: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TimeSlotFormValues {
+  label: string;
+  start_time: string;
+  end_time: string;
+  capacity: number | null;
 }

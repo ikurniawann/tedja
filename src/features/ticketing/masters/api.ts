@@ -7,6 +7,8 @@ import type {
   SettingsFormValues,
   StaffPass,
   TicketBand,
+  TimeSlot,
+  TimeSlotFormValues,
   TicketChannel,
   TicketingSettings,
 } from "./types";
@@ -105,6 +107,38 @@ export const fetchOccupancyRange = (from: string, to: string) =>
     `/api/ticketing/occupancy?from=${from}&to=${to}`,
     "Gagal memuat okupansi"
   ).then((data) => data.days);
+
+// ── Slot waktu timed-entry (EPIC-031 D) ──
+export const fetchTimeSlots = () =>
+  getJson<TimeSlot[]>("/api/ticketing/time-slots", "Gagal memuat slot waktu");
+
+export const createTimeSlot = (values: TimeSlotFormValues) =>
+  sendJson<TimeSlot>(
+    "/api/ticketing/time-slots",
+    "POST",
+    values,
+    "Gagal menambah slot waktu"
+  );
+
+export const updateTimeSlot = (
+  id: string,
+  values: Partial<TimeSlotFormValues> & { is_active?: boolean }
+) =>
+  sendJson<TimeSlot>(
+    `/api/ticketing/time-slots/${id}`,
+    "PATCH",
+    values,
+    "Gagal memperbarui slot waktu"
+  );
+
+export async function deleteTimeSlot(id: string): Promise<{ id: string }> {
+  const res = await fetch(`/api/ticketing/time-slots/${id}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) await parseError(res, "Gagal menghapus slot waktu");
+  const body = (await res.json()) as { data: { id: string } };
+  return body.data;
+}
 
 // ── Kanal ──
 export const fetchChannels = () =>

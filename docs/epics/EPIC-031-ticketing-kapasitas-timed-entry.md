@@ -189,8 +189,8 @@ C setelah B1; D setelah B stabil. Rilis bisa bertahap: A+B saja sudah menutup
 3. ~~Angka sisa ke publik?~~ → **Cukup penuh/tersedia**, tanpa angka; dan
    harus support venue/stok **unlimited** (daily_capacity NULL) (owner).
 4. ~~Ambang "limited"~~ → gugur (tidak ada badge angka/limited di publik).
-5. **MASIH TERBUKA**: Fase D (slot jam) langsung setelah A–C, atau tunggu
-   kebutuhan riil venue (mis. sesi pertunjukan)?
+5. ~~Fase D langsung atau tunggu?~~ → **Langsung digarap** (owner 25 Jul,
+   "push dulu langsung fase D") — SELESAI hari yang sama.
 6. **MASIH TERBUKA** (muncul dari keputusan #2): entry **season pass**
    (EPIC-028) ikut dihitung ke kuota harian? MVP: tidak — pass holder tak
    lewat loket/booking. Kalau taman sering penuh oleh pass holder, perlu
@@ -310,5 +310,36 @@ C setelah B1; D setelah B stabil. Rilis bisa bertahap: A+B saja sudah menutup
   - Verifikasi: tsc bersih, 87 test hijau, build OK → pm2 restart, smoke
     401/307 normal; fungsional availability pasca-refactor diuji ulang
     live (closed terdeteksi, tanggal berkapasitas-kosong diomit),
-    cleanup bersih. **Fase D (slot jam) = satu-satunya sisa — menunggu
-    keputusan owner (Open Question #5, #6).**
+    cleanup bersih. Commit 3bc1f32c; A–C di-PUSH 25 Jul
+    (36f5b877..3bc1f32c).
+- 2026-07-25 — **Fase D SELESAI (EPIC TUNTAS A–D), live dev** — owner
+  jawab OQ#5: "langsung fase D". Keputusan desain: slot = template level
+  VENUE; booking tanpa slot tetap sah (NULL = sepanjang hari, venue tanpa
+  slot nol perubahan); kuota slot ⊂ kuota harian (slot.capacity NULL =
+  jendela jam saja); walk-in loket TIDAK ber-slot; jam ditegakkan saat
+  REDEEM (gelang baru ada setelah redeem) HANYA pada hari-H (redeem H+N
+  kebijakan hangus bebas jam — slot sudah lewat total); grace configurable
+  `ticket_settings.slot_grace_minutes` (default 30, 0–240).
+  - D1 migrasi `20260725190000`: `ticket_time_slots` (label unik per venue,
+    start<end, capacity NULL/>0, sort_order) + `ticket_bookings.slot_id`
+    (FK SET NULL) + **SNAPSHOT slot_label/start/end** (edit template ≠ ubah
+    booking lama) + index partial (branch,visit_date,slot_id) + grace.
+  - Lib: `slotWindowStatus` murni (± grace inklusif, HH:MM/HH:MM:SS; 5 test
+    baru → 21 capacity, total lib 92). capacity-server: `loadActiveSlots`/
+    `loadActiveSlot`/`countSlotUsedByDate`/`assertSlotCapacity` (advisory
+    lock re-entrant dgn guard harian) + `nowJakartaTime`.
+  - API: publik `GET /[slug]/slots?date` (available|sold_out TANPA angka);
+    create booking terima `slot_id` — venue ber-slot WAJIB slot (400),
+    venue tanpa slot menolak slot_id, validasi ulang slot via client di
+    dalam transaksi + guard kuota slot; redeem menolak di luar jendela ±
+    grace (pesan sebut jam & toleransi); CRUD admin
+    `/api/ticketing/time-slots` (+/[id]) super_admin.
+  - UI: seksi "Slot Waktu (Timed-Entry)" di Pengaturan (grace + CRUD slot);
+    wizard: picker jam muncul hanya bila venue ber-slot (pill, sold_out
+    dicoret "Penuh", ganti tanggal reset pilihan, Lanjut ter-gate), slot
+    tampil di ringkasan, 409 → refresh slot+availability.
+  - Verifikasi: tsc bersih, 92 test, build OK → pm2 restart. **E2E live**:
+    slots kosong utk venue tanpa slot; slot cap 1 → tanpa slot_id 400
+    "Pilih slot waktu"; dengan slot → booking sukses + slots jadi
+    sold_out; booking kedua → 409 "Slot ... sudah penuh"; snapshot
+    label/jam terisi di booking; cleanup 0 sisa.

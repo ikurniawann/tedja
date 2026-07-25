@@ -60,3 +60,31 @@ export function isCapacityExceeded(
   if (capacity === null) return false;
   return used + additional > capacity;
 }
+
+// ── Timed-entry slot (Fase D) ─────────────────────────────────────────
+
+export type SlotWindowStatus = "ok" | "terlalu-awal" | "terlambat";
+
+/** "HH:MM" / "HH:MM:SS" → menit sejak 00:00 (detik diabaikan). */
+const minutesOfDay = (time: string): number => {
+  const [h, m] = time.split(":").map(Number);
+  return h * 60 + m;
+};
+
+/**
+ * Validasi jam masuk terhadap jendela slot ± grace (inklusif di kedua
+ * ujung): boleh masuk dari `start - grace` s/d `end + grace`. Dipakai saat
+ * REDEEM loket (gelang baru ada setelah redeem — titik kontrol masuk utk
+ * booking ber-slot).
+ */
+export function slotWindowStatus(
+  now: string,
+  slotStart: string,
+  slotEnd: string,
+  graceMinutes: number
+): SlotWindowStatus {
+  const nowMin = minutesOfDay(now);
+  if (nowMin < minutesOfDay(slotStart) - graceMinutes) return "terlalu-awal";
+  if (nowMin > minutesOfDay(slotEnd) + graceMinutes) return "terlambat";
+  return "ok";
+}

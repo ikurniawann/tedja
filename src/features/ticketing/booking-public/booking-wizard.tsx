@@ -151,6 +151,12 @@ export function BookingWizard({ slug }: BookingWizardProps) {
   // EPIC-031 B4 — tanggal penuh/tutup dari availability API (indikatif;
   // kebenaran final tetap 409 dari create). Gagal fetch = biarkan kosong.
   const [unavailable, setUnavailable] = useState<UnavailableMap>({});
+  // EPIC-031 D — slot waktu: kosong = venue tanpa timed-entry (tanpa
+  // langkah pilih jam); ada isi = wajib pilih sebelum lanjut
+  const [slots, setSlots] = useState<
+    { slot_id: string; label: string; start_time: string; end_time: string; status: "available" | "sold_out" }[]
+  >([]);
+  const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null);
 
   const minDate = todayIso();
   const maxDate = addDaysIso(minDate, MAX_DAYS_AHEAD);
@@ -299,7 +305,32 @@ export function BookingWizard({ slug }: BookingWizardProps) {
     loadAvailability();
   }, [loadAvailability]);
 
+  const loadSlots = useCallback(
+    async (date: string) => {
+      try {
+        const res = await fetch(`/api/public/booking/${slug}/slots?date=${date}`);
+        const body = await res.json();
+        if (res.ok && body.success) {
+          setSlots(body.data.slots ?? []);
+        }
+      } catch {
+        // biarkan daftar lama — guard server tetap menolak slot invalid
+      }
+    },
+    [slug]
+  );
+
+  // Ganti tanggal → muat ulang slot & buang pilihan (kuota per tanggal)
+  useEffect(() => {
+    setSelectedSlotId(null);
+    loadSlots(visitDate);
+  }, [visitDate, loadSlots]);
+
   const dateUnavailable = unavailable[visitDate] !== undefined;
+  const selectedSlot = slots.find((s) => s.slot_id === selectedSlotId) ?? null;
+  // Venue ber-slot: wajib pilih slot yang masih tersedia sebelum lanjut
+  const slotRequirementUnmet =
+    slots.length > 0 && (!selectedSlot || selectedSlot.status === "sold_out");
 
   const selectedProduct =
     catalog.find((p) => p.ticket_product_id === selectedProductId) ?? null;
@@ -352,6 +383,7 @@ export function BookingWizard({ slug }: BookingWizardProps) {
           visit_date: visitDate,
           customer_name: customerName.trim(),
           customer_phone: customerPhone.trim(),
+          ...(selectedSlotId ? { slot_id: selectedSlotId } : {}),
           items: cart.map((c) => ({
             variant_id: c.variant.variant_id,
             qty: c.qty,
@@ -369,9 +401,12 @@ export function BookingWizard({ slug }: BookingWizardProps) {
       const body = await res.json();
       if (!res.ok || !body.success) {
         setError(body.error ?? "Gagal membuat booking — coba lagi");
-        // Keburu penuh (409 EPIC-031) → segarkan peta supaya tanggal ini
-        // langsung dicoret saat pengunjung kembali memilih tanggal
-        if (res.status === 409) loadAvailability();
+        // Keburu penuh (409 EPIC-031) → segarkan peta & slot supaya yang
+        // penuh langsung tercoret saat pengunjung memilih ulang
+        if (res.status === 409) {
+          loadAvailability();
+          loadSlots(visitDate);
+        }
         setSubmitting(false);
         return;
       }
@@ -512,6 +547,50 @@ export function BookingWizard({ slug }: BookingWizardProps) {
                 {MAX_DAYS_AHEAD} hari ke depan.
               </p>
             </section>
+
+            {/* EPIC-031 D — pilih slot jam (hanya venue ber-timed-entry) */}
+            {slots.length > 0 && !dateUnavailable && (
+              <section className="mt-6 px-5">
+                <h2 className="text-base font-semibold text-gray-900">
+                  Jam kunjungan
+                </h2>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {slots.map((slot) => {
+                    const soldOut = slot.status === "sold_out";
+                    const active = slot.slot_id === selectedSlotId;
+                    return (
+                      <button
+                        key={slot.slot_id}
+                        type="button"
+                        disabled={soldOut}
+                        onClick={() => setSelectedSlotId(slot.slot_id)}
+                        aria-pressed={active}
+                        className={`rounded-2xl border px-4 py-2.5 text-left text-sm transition-colors ${
+                          active
+                            ? "border-gray-900 bg-gray-900 text-white"
+                            : soldOut
+                              ? "cursor-default border-gray-200 text-gray-300 line-through"
+                              : "border-gray-200 text-gray-800 hover:border-gray-400"
+                        }`}
+                      >
+                        <span className="font-medium">{slot.label}</span>
+                        <span
+                          className={`ml-2 tabular-nums ${active ? "text-gray-300" : "text-gray-500"}`}
+                        >
+                          {slot.start_time}–{slot.end_time}
+                        </span>
+                        {soldOut ? <span className="ml-2 text-xs">Penuh</span> : null}
+                      </button>
+                    );
+                  })}
+                </div>
+                {slotRequirementUnmet && (
+                  <p className="mt-2 px-1 text-xs text-gray-400">
+                    Pilih jam kunjungan untuk lanjut.
+                  </p>
+                )}
+              </section>
+            )}
 
             {/* Daftar paket */}
             <section className="mt-6 px-5">
@@ -674,6 +753,14 @@ export function BookingWizard({ slug }: BookingWizardProps) {
                     {formatDateLong(visitDate)}
                   </dd>
                 </div>
+                {selectedSlot && (
+                  <div className="flex items-center justify-between">
+                    <dt className="text-gray-500">Jam kunjungan</dt>
+                    <dd className="font-medium tabular-nums text-gray-900">
+                      {selectedSlot.label} · {selectedSlot.start_time}–{selectedSlot.end_time}
+                    </dd>
+                  </div>
+                )}
                 <div className="flex items-center justify-between">
                   <dt className="text-gray-500">Pemesan</dt>
                   <dd className="font-medium text-gray-900">
@@ -768,7 +855,7 @@ export function BookingWizard({ slug }: BookingWizardProps) {
             <button
               type="button"
               onClick={() => setStep("pemesan")}
-              disabled={totalQty === 0 || dateUnavailable}
+              disabled={totalQty === 0 || dateUnavailable || slotRequirementUnmet}
               className="shrink-0 rounded-xl bg-rose-500 px-8 py-3.5 text-[15px] font-semibold text-white transition-colors hover:bg-rose-600 disabled:opacity-40 disabled:hover:bg-rose-500"
             >
               Lanjut

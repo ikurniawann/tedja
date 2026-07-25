@@ -244,6 +244,104 @@ export async function buildAvailability(
   return result;
 }
 
+// ── Timed-entry slot (Fase D) ─────────────────────────────────────────
+
+export interface BookingSlot {
+  id: string;
+  label: string;
+  start_time: string; // "HH:MM:SS"
+  end_time: string;
+  /** null = tanpa batas per-slot (jendela jam saja). */
+  capacity: number | null;
+}
+
+const SLOT_COLUMNS = `id, label, start_time::text AS start_time,
+  end_time::text AS end_time, capacity`;
+
+/** Jam WIB sekarang "HH:MM" — pasangan todayJakartaDate. */
+export function nowJakartaTime(): string {
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Jakarta",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date());
+}
+
+/** Semua slot aktif venue (urut sort_order, jam mulai) — pool, read-only. */
+export async function loadActiveSlots(scope: VenueScope): Promise<BookingSlot[]> {
+  return query<BookingSlot>(
+    `SELECT ${SLOT_COLUMNS} FROM ticketing.ticket_time_slots
+     WHERE branch_id = $1 AND company_id = $2 AND is_active = true
+     ORDER BY sort_order, start_time`,
+    [scope.branchId, scope.companyId]
+  );
+}
+
+/** Satu slot aktif via client transaksi — utk validasi create booking. */
+export async function loadActiveSlot(
+  client: PoolClient,
+  scope: VenueScope,
+  slotId: string
+): Promise<BookingSlot | null> {
+  const result = await client.query<BookingSlot>(
+    `SELECT ${SLOT_COLUMNS} FROM ticketing.ticket_time_slots
+     WHERE id = $1 AND branch_id = $2 AND company_id = $3 AND is_active = true`,
+    [slotId, scope.branchId, scope.companyId]
+  );
+  return result.rows[0] ?? null;
+}
+
+/** Orang terpakai per slot utk satu tanggal (booking pemegang kuota). */
+export async function countSlotUsedByDate(
+  scope: VenueScope,
+  date: string
+): Promise<Map<string, number>> {
+  const rows = await query<{ slot_id: string; n: string }>(
+    `SELECT b.slot_id, COUNT(*) AS n
+     FROM ticketing.ticket_booking_guests g
+     JOIN ticketing.ticket_bookings b ON b.id = g.booking_id
+     WHERE b.branch_id = $1 AND b.company_id = $2
+       AND b.visit_date = $3::date AND b.slot_id IS NOT NULL
+       AND b.status = ANY($4)
+     GROUP BY b.slot_id`,
+    [scope.branchId, scope.companyId, date, [...CAPACITY_HOLDING_BOOKING_STATUSES]]
+  );
+  return new Map(rows.map((r) => [r.slot_id, Number(r.n)]));
+}
+
+/**
+ * Guard kuota per (tanggal, slot) — pola sama assertCapacityAvailable:
+ * slot tanpa batas = no-op; advisory lock (venue, tanggal) re-entrant
+ * dengan guard harian (kunci sama dalam transaksi sama = aman) → hitung
+ * live → 409. Panggil SETELAH guard harian dalam transaksi create.
+ */
+export async function assertSlotCapacity(
+  client: PoolClient,
+  scope: VenueScope,
+  date: string,
+  slot: BookingSlot,
+  additional: number
+): Promise<void> {
+  if (slot.capacity === null) return;
+
+  await acquireCapacityLock(client, scope, date);
+  const result = await client.query<{ n: string }>(
+    `SELECT COUNT(*) AS n
+     FROM ticketing.ticket_booking_guests g
+     JOIN ticketing.ticket_bookings b ON b.id = g.booking_id
+     WHERE b.branch_id = $1 AND b.company_id = $2
+       AND b.visit_date = $3::date AND b.slot_id = $4
+       AND b.status = ANY($5)`,
+    [scope.branchId, scope.companyId, date, slot.id, [...CAPACITY_HOLDING_BOOKING_STATUSES]]
+  );
+  if (isCapacityExceeded(slot.capacity, Number(result.rows[0].n), additional)) {
+    throw new CapacityFullError(
+      `Slot ${slot.label} pada tanggal ini sudah penuh — pilih slot lain`
+    );
+  }
+}
+
 /** Error ber-statusCode 409 — pola staff-passes (route menerjemahkan). */
 export class CapacityFullError extends Error {
   statusCode = 409 as const;

@@ -3,6 +3,7 @@ import {
   CAPACITY_HOLDING_BOOKING_STATUSES,
   isCapacityExceeded,
   resolveDailyCapacity,
+  slotWindowStatus,
   type CapacityDateRange,
 } from "./capacity";
 
@@ -103,5 +104,34 @@ describe("CAPACITY_HOLDING_BOOKING_STATUSES", () => {
     expect([...CAPACITY_HOLDING_BOOKING_STATUSES].sort()).toEqual(
       ["digunakan", "menunggu-bayar", "terbayar"].sort()
     );
+  });
+});
+
+describe("slotWindowStatus (EPIC-031 Fase D)", () => {
+  const slot = { start: "10:00:00", end: "12:00:00" };
+
+  test("dalam jendela slot → ok", () => {
+    expect(slotWindowStatus("10:30", slot.start, slot.end, 30)).toBe("ok");
+  });
+
+  test("grace SEBELUM mulai: start-grace inklusif → ok", () => {
+    expect(slotWindowStatus("09:30", slot.start, slot.end, 30)).toBe("ok");
+    expect(slotWindowStatus("09:29", slot.start, slot.end, 30)).toBe("terlalu-awal");
+  });
+
+  test("grace SETELAH selesai: end+grace inklusif → ok", () => {
+    expect(slotWindowStatus("12:30", slot.start, slot.end, 30)).toBe("ok");
+    expect(slotWindowStatus("12:31", slot.start, slot.end, 30)).toBe("terlambat");
+  });
+
+  test("grace 0 = jendela persis", () => {
+    expect(slotWindowStatus("09:59", slot.start, slot.end, 0)).toBe("terlalu-awal");
+    expect(slotWindowStatus("10:00", slot.start, slot.end, 0)).toBe("ok");
+    expect(slotWindowStatus("12:00", slot.start, slot.end, 0)).toBe("ok");
+    expect(slotWindowStatus("12:01", slot.start, slot.end, 0)).toBe("terlambat");
+  });
+
+  test("format HH:MM dan HH:MM:SS sama-sama diterima", () => {
+    expect(slotWindowStatus("11:00:00", "10:00", "12:00", 0)).toBe("ok");
   });
 });
