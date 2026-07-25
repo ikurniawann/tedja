@@ -1,6 +1,6 @@
 # EPIC-013: Omnichannel — Google Review & Instagram DM
 
-status: coding
+status: ready-for-qa
 environment: dev
 retries: 0
 
@@ -298,3 +298,45 @@ ulang** tanpa ditulis ulang.
     bertanda tangan App Secret dari UI tersimpan (`stored:1`). Data uji
     dibersihkan.
   - Gate: 619 test hijau, build sukses, migrasi applied.
+- 2026-07-25 — **Tiga sisa Fase A ditutup → ready-for-qa.**
+  1. **Approval supervisor balasan bintang rendah.** Balasan untuk ulasan
+     ber-rating ≤2 dari pos_supervisor TIDAK langsung terkirim — tersimpan
+     sebagai draft `pending_approval`; approver (`CRM_REVIEW_APPROVER_ROLES`
+     = super_admin/admin, subset inbox) menekan **Setujui & Kirim** (kirim ke
+     Google dulu, catat setelah diterima — pola lama dipertahankan) atau
+     **Tolak** (teks draft dipertahankan agar bisa direvisi). Approver sendiri
+     tetap kirim-langsung. `status` lama tetap 'baru' selama menunggu — publik
+     memang belum terbalas, SLA terus berjalan. Migrasi
+     `20260725150000_reviews_reply_approval.sql` (applied): kolom
+     `pending_reply_comment/user_id/at`, `reply_approval_status`
+     (pending_approval|approved|rejected), `reply_approved_by_user_id/at` +
+     partial index antrean. Aturan murni `needsReplyApproval()`; alur di
+     `submitReply/approvePendingReply/rejectPendingReply`
+     (google-reviews-server.ts); aksi API `approve_reply`/`reject_reply`
+     (403 untuk non-approver); UI blok amber "Menunggu persetujuan" + blok
+     merah "ditolak", label tombol berubah "Ajukan untuk Persetujuan" bagi
+     non-approver pada ulasan ≤2★.
+  2. **Metrik ulasan masuk laporan CS.** `/api/crm/reports/cs` dapat blok
+     `reviews` (jumlah ulasan periode, rata-rata rating, jumlah dibalas,
+     jumlah ≤2★ — periode memakai waktu terbit menurut Google, konsisten SLA);
+     panel "Ulasan Google" di `cs-report-section.tsx` mengikuti pola panel
+     existing.
+  3. **Multi-lokasi Google Business.** Setting `google_bp_location_id` kini
+     menerima daftar lokasi dipisah koma (`parseLocationIds()` — nilai lama
+     satu lokasi tetap sah, tanpa migrasi setting); sync menarik per lokasi
+     (gagal satu lokasi tidak menggagalkan lokasi lain); migrasi
+     `20260725160000_google_reviews_multi_location.sql` (applied) menambah
+     `location_id` per ulasan + backfill dari review_name; UI reviews dapat
+     filter lokasi (muncul hanya bila >1 lokasi) + badge lokasi per kartu;
+     `googleBusinessStatus()` kini mengembalikan `locationIds[]`.
+  - Gate: 913 unit test hijau (+19 baru: needsReplyApproval, extractLocationId,
+    parseLocationIds, normalizeReview.locationId); `tsc --noEmit` 0 error baru
+    dari perubahan ini (2 error tambahan di working tree berasal dari
+    penghapusan `src/app/api/interviews/route.ts` oleh sesi lain — referensi
+    stale `.next` validator). Sesuai instruksi: TANPA build/pm2/commit.
+  - **Batas yang disengaja**: approval hanya menjaga jalur dashboard (balasan
+    langsung dari aplikasi Google tetap terbaca sync sebagai 'dibalas');
+    filter lokasi memakai id numerik Google, belum ada label nama toko
+    (butuh panggilan API locations.get — menunggu kredensial); kredensial
+    Google (dan Meta untuk IG) tetap PRASYARAT QA — tanpa itu kirim balasan
+    riil belum bisa diuji.

@@ -45,6 +45,12 @@ export const CRM_READ_ROLES: UserRole[] = [...CRM_OPERATOR_ROLES, "direksi"];
 // sensitif di CRM; kasir biasa (pos) sengaja TIDAK termasuk, hanya supervisor.
 export const CRM_INBOX_ROLES: UserRole[] = ["super_admin", "admin", "pos_supervisor"];
 
+// EPIC-013 — approver balasan ulasan bintang rendah. Subset dari
+// CRM_INBOX_ROLES: pos_supervisor (agent CS harian) mengajukan draft,
+// admin/super_admin yang menyetujui/menolak — balasan pada ulasan buruk
+// tampil publik dan paling berisiko bagi citra bisnis.
+export const CRM_REVIEW_APPROVER_ROLES: UserRole[] = ["super_admin", "admin"];
+
 async function requireCrmRoles(allowed: UserRole[]): Promise<
   { error: NextResponse; user: null } | { error: null; user: { id: string; role: UserRole } }
 > {

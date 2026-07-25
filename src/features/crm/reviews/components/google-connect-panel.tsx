@@ -175,7 +175,7 @@ export function GoogleConnectPanel({ onSaved }: { onSaved: () => void }) {
             label="Location ID"
             value={form.location_id}
             onChange={(value) => setForm({ ...form, location_id: value })}
-            placeholder="locations/987..."
+            placeholder="locations/987, locations/654 (multi-lokasi pisahkan koma)"
           />
         </div>
       </div>
@@ -183,6 +183,8 @@ export function GoogleConnectPanel({ onSaved }: { onSaved: () => void }) {
       <p className="mt-3 text-xs text-slate-500">
         Boleh diisi angka saja — awalan <code className="rounded bg-slate-100 px-1">accounts/</code>{" "}
         dan <code className="rounded bg-slate-100 px-1">locations/</code> ditambahkan otomatis.
+        Location ID boleh lebih dari satu, dipisah koma — ulasan seluruh lokasi
+        ditarik dan bisa difilter per lokasi.
         Akun yang dipakai harus punya akses pengelola pada lokasi. Langkah lengkap ada di{" "}
         <span className="font-mono">docs/crm/RUNBOOK-GOOGLE-REVIEW.md</span>.
       </p>

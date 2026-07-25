@@ -6,7 +6,7 @@ deploying-dev · ready-for-qa · blocked · done).
 
 | Epic | Judul | Status | Update terakhir |
 |------|-------|--------|-----------------|
-| [EPIC-001](./EPIC-001-recruitment-pipeline-revamp.md) | Recruitment Pipeline Revamp | on-progress | 2026-07-16 |
+| [EPIC-001](./EPIC-001-recruitment-pipeline-revamp.md) | Recruitment Pipeline Revamp | ready-for-qa | 2026-07-25 |
 | [EPIC-002](./EPIC-002-psikotes-online.md) | Psikotes Online | ready-for-qa | 2026-07-15 |
 | [EPIC-003](./EPIC-003-interview-ai.md) | Interview AI | ready-for-qa | 2026-07-15 |
 | [EPIC-004](./EPIC-004-offer.md) | Offer (Penawaran + Portal Respons) | ready-for-qa | 2026-07-15 |
@@ -18,8 +18,8 @@ deploying-dev · ready-for-qa · blocked · done).
 | [EPIC-010](./EPIC-010-kpi-scorecard.md) | KPI Scorecard | ready-for-qa | 2026-07-19 |
 | [EPIC-011](./EPIC-011-crm-revamp.md) | CRM Revamp — Member Global, XP Lifetime, ARK Coin & Portal Member | ready-for-qa | 2026-07-19 |
 | [EPIC-012](./EPIC-012-wa-customer-service.md) | WhatsApp Customer Service — Riwayat Pesan, Inbox & Komplain | ready-for-qa | 2026-07-20 |
-| [EPIC-013](./EPIC-013-omnichannel-ig-google-review.md) | Omnichannel — Google Review & Instagram DM | coding | 2026-07-20 |
-| [EPIC-014](./EPIC-014-crm-collectibles.md) | CRM Collectibles — Artwork, Wallpaper & Badge | on-progress | 2026-07-20 |
+| [EPIC-013](./EPIC-013-omnichannel-ig-google-review.md) | Omnichannel — Google Review & Instagram DM | ready-for-qa | 2026-07-25 |
+| [EPIC-014](./EPIC-014-crm-collectibles.md) | CRM Collectibles — Artwork, Wallpaper & Badge | ready-for-qa | 2026-07-25 |
 | [EPIC-015](./EPIC-015-pensiun-modul-jadwal-lama.md) | Pensiun Modul Jadwal Lama (Schedules & Sections berbasis `staff`) | ready-for-qa | 2026-07-21 |
 | [EPIC-016](./EPIC-016-suara-ai-tts.md) | Suara AI — Provider TTS Bisa Dipilih + Preview | ready-for-qa | 2026-07-20 |
 | [EPIC-017](./EPIC-017-do-assistant-powerful.md) | Do — Asisten yang Benar-Benar Berguna | ready-for-qa | 2026-07-25 |

@@ -6,14 +6,17 @@ import {
   AlertTriangle,
   ArrowLeft,
   CheckCircle2,
+  Clock3,
   EyeOff,
   Link2,
   Loader2,
+  MapPin,
   MessageSquareReply,
   RefreshCw,
   Send,
   ShieldAlert,
   Star,
+  XCircle,
 } from "lucide-react";
 import { RATING_LABELS, formatReviewWait } from "../helpers";
 import { GoogleConnectPanel } from "./google-connect-panel";
@@ -41,14 +44,24 @@ interface GoogleReview {
   replied_by_name: string | null;
   sla_breached: boolean;
   waiting_seconds: number;
+  location_id: string | null;
+  pending_reply_comment: string | null;
+  reply_approval_status: "pending_approval" | "approved" | "rejected" | null;
+  pending_by_name: string | null;
 }
 
 interface Summary {
   total: number;
   belum_dibalas: number;
   komplain_terbuka: number;
+  menunggu_persetujuan: number;
   rata_rating: string | null;
   rata_waktu_balas: string | null;
+}
+
+interface LocationOption {
+  location_id: string;
+  total: number;
 }
 
 const tanggal = (iso: string) =>
@@ -58,8 +71,11 @@ export function CrmReviewsPage() {
   const [reviews, setReviews] = useState<GoogleReview[]>([]);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [integration, setIntegration] = useState<{ configured: boolean } | null>(null);
+  const [locations, setLocations] = useState<LocationOption[]>([]);
+  const [canApprove, setCanApprove] = useState(false);
   const [statusFilter, setStatusFilter] = useState("baru");
   const [ratingFilter, setRatingFilter] = useState("all");
+  const [locationFilter, setLocationFilter] = useState("all");
   const [loading, setLoading] = useState(true);
   const [showConnect, setShowConnect] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -74,6 +90,7 @@ export function CrmReviewsPage() {
     const sp = new URLSearchParams();
     if (statusFilter !== "all") sp.set("status", statusFilter);
     if (ratingFilter !== "all") sp.set("rating", ratingFilter);
+    if (locationFilter !== "all") sp.set("location", locationFilter);
 
     try {
       const response = await fetch(`/api/crm/reviews?${sp.toString()}`, { cache: "no-store" });
@@ -82,6 +99,8 @@ export function CrmReviewsPage() {
       setReviews(json.data.reviews ?? []);
       setSummary(json.data.summary ?? null);
       setIntegration(json.data.integration ?? null);
+      setLocations(json.data.locations ?? []);
+      setCanApprove(Boolean(json.data.viewer?.canApprove));
       setFeedback((current) => ({ ...current, error: null }));
     } catch (error) {
       setFeedback({
@@ -91,7 +110,7 @@ export function CrmReviewsPage() {
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, ratingFilter]);
+  }, [statusFilter, ratingFilter, locationFilter]);
 
   useEffect(() => {
     setLoading(true);
@@ -140,7 +159,29 @@ export function CrmReviewsPage() {
     const result = await act({ action: "reply", id: review.id, comment: draft.text }, review.id);
     if (result) {
       setDraft(null);
-      setFeedback({ error: null, message: "Balasan terkirim ke Google." });
+      setFeedback({
+        error: null,
+        message:
+          typeof result === "object" && result.pending
+            ? "Balasan disimpan — menunggu persetujuan admin/super admin sebelum dikirim ke Google."
+            : "Balasan terkirim ke Google.",
+      });
+      await load();
+    }
+  }
+
+  async function approveReply(review: GoogleReview) {
+    const result = await act({ action: "approve_reply", id: review.id }, review.id);
+    if (result) {
+      setFeedback({ error: null, message: "Balasan disetujui & terkirim ke Google." });
+      await load();
+    }
+  }
+
+  async function rejectReply(review: GoogleReview) {
+    const result = await act({ action: "reject_reply", id: review.id }, review.id);
+    if (result) {
+      setFeedback({ error: null, message: "Balasan ditolak — agent bisa merevisi." });
       await load();
     }
   }
@@ -237,7 +278,11 @@ export function CrmReviewsPage() {
         )}
 
         <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
-          <div className="grid gap-3 border-b border-slate-200 p-4 sm:grid-cols-2">
+          <div
+            className={`grid gap-3 border-b border-slate-200 p-4 ${
+              locations.length > 1 ? "sm:grid-cols-3" : "sm:grid-cols-2"
+            }`}
+          >
             <select
               value={statusFilter}
               onChange={(event) => setStatusFilter(event.target.value)}
@@ -258,6 +303,20 @@ export function CrmReviewsPage() {
                 <option key={star} value={star}>{star} bintang</option>
               ))}
             </select>
+            {locations.length > 1 && (
+              <select
+                value={locationFilter}
+                onChange={(event) => setLocationFilter(event.target.value)}
+                className="h-10 rounded-md border border-slate-300 bg-white px-3 text-sm outline-none"
+              >
+                <option value="all">Semua lokasi</option>
+                {locations.map((loc) => (
+                  <option key={loc.location_id} value={loc.location_id}>
+                    Lokasi {loc.location_id} ({loc.total})
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
 
           {loading ? (
@@ -291,6 +350,13 @@ export function CrmReviewsPage() {
                       <p className="mt-0.5 text-xs text-slate-400">
                         {tanggal(review.review_created_at)}
                         {review.status === "baru" && ` · menunggu ${formatReviewWait(review.waiting_seconds)}`}
+                        {locations.length > 1 && review.location_id && (
+                          <>
+                            {" · "}
+                            <MapPin className="inline size-3 align-[-1px]" /> Lokasi{" "}
+                            {review.location_id}
+                          </>
+                        )}
                       </p>
                     </div>
 
@@ -333,7 +399,65 @@ export function CrmReviewsPage() {
                     </div>
                   ) : null}
 
-                  {draft?.id === review.id ? (
+                  {review.reply_approval_status === "pending_approval" &&
+                    review.pending_reply_comment && (
+                      <div className="rounded-lg border-l-2 border-amber-400 bg-amber-50/70 px-3 py-2">
+                        <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-amber-700">
+                          <Clock3 className="size-3" /> Menunggu persetujuan
+                          {review.pending_by_name && ` · diajukan ${review.pending_by_name}`}
+                        </p>
+                        <p className="mt-1 whitespace-pre-wrap text-sm text-slate-700">
+                          {review.pending_reply_comment}
+                        </p>
+                        {canApprove ? (
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              onClick={() => void approveReply(review)}
+                              disabled={busyId === review.id}
+                              className="inline-flex h-8 items-center gap-1.5 rounded-md bg-emerald-600 px-3 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                            >
+                              {busyId === review.id ? (
+                                <Loader2 className="size-3.5 animate-spin" />
+                              ) : (
+                                <CheckCircle2 className="size-3.5" />
+                              )}
+                              Setujui & Kirim
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void rejectReply(review)}
+                              disabled={busyId === review.id}
+                              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-red-200 bg-white px-3 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+                            >
+                              <XCircle className="size-3.5" /> Tolak
+                            </button>
+                          </div>
+                        ) : (
+                          <p className="mt-1.5 text-[11px] text-amber-700">
+                            Balasan baru dikirim ke Google setelah disetujui admin/super admin.
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                  {review.reply_approval_status === "rejected" &&
+                    review.pending_reply_comment && (
+                      <div className="rounded-lg border-l-2 border-red-300 bg-red-50/60 px-3 py-2">
+                        <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-red-700">
+                          <XCircle className="size-3" /> Balasan ditolak — belum terkirim
+                        </p>
+                        <p className="mt-1 whitespace-pre-wrap text-sm text-slate-600 line-through decoration-red-300">
+                          {review.pending_reply_comment}
+                        </p>
+                        <p className="mt-1 text-[11px] text-red-700">
+                          Tulis balasan baru lewat tombol Balas untuk diajukan ulang.
+                        </p>
+                      </div>
+                    )}
+
+                  {review.reply_approval_status === "pending_approval" ? null : draft?.id ===
+                    review.id ? (
                     <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50/70 p-3">
                       <textarea
                         rows={3}
@@ -347,6 +471,12 @@ export function CrmReviewsPage() {
                         Google hanya menyimpan <strong>satu balasan</strong> per ulasan — mengirim
                         lagi akan mengganti balasan sebelumnya, bukan menambah.
                       </p>
+                      {!canApprove && review.star_rating <= 2 && (
+                        <p className="text-[11px] font-medium text-amber-700">
+                          Ulasan bintang {review.star_rating}: balasan menunggu persetujuan
+                          admin/super admin sebelum terkirim ke Google.
+                        </p>
+                      )}
                       <div className="flex justify-end gap-2">
                         <button
                           type="button"
@@ -366,7 +496,9 @@ export function CrmReviewsPage() {
                           ) : (
                             <Send className="size-3.5" />
                           )}
-                          Kirim ke Google
+                          {!canApprove && review.star_rating <= 2
+                            ? "Ajukan untuk Persetujuan"
+                            : "Kirim ke Google"}
                         </button>
                       </div>
                     </div>

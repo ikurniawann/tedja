@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
   try {
     const periodParams = [period.fromIso, period.toIso];
 
-    const [summaryRow, dailyRows, categoryRows, csatRows, agentRows, channelRows] =
+    const [summaryRow, dailyRows, categoryRows, csatRows, agentRows, channelRows, reviewRow] =
       await Promise.all([
       queryOne(
         `SELECT
@@ -107,6 +107,18 @@ export async function GET(request: NextRequest) {
           ORDER BY conversations DESC`,
         periodParams
       ),
+      // Ringkasan Google Review (EPIC-013) — ulasan ikut beban kerja CS,
+      // jadi angkanya tampil berdampingan dengan chat. Periode memakai waktu
+      // ulasan terbit menurut Google, konsisten dengan SLA balasnya.
+      queryOne(
+        `SELECT COUNT(*)::int AS total_reviews,
+                AVG(star_rating)::numeric(3,2) AS avg_rating,
+                COUNT(*) FILTER (WHERE reply_comment IS NOT NULL)::int AS replied,
+                COUNT(*) FILTER (WHERE star_rating <= 2)::int AS low_rating
+           FROM crm.google_reviews
+          WHERE review_created_at >= $1 AND review_created_at < $2`,
+        periodParams
+      ),
     ]);
 
     const toNum = (value: unknown) =>
@@ -151,6 +163,12 @@ export async function GET(request: NextRequest) {
           avg_first_response_seconds: toNum(row.avg_first_response_seconds),
           avg_csat: toNum(row.avg_csat),
         })),
+        reviews: {
+          total: reviewRow?.total_reviews ?? 0,
+          avg_rating: toNum(reviewRow?.avg_rating),
+          replied: reviewRow?.replied ?? 0,
+          low_rating: reviewRow?.low_rating ?? 0,
+        },
         agents: agentRows.map((row) => ({
           agent_name: row.agent_name,
           handled: row.handled,

@@ -11,7 +11,7 @@
  */
 
 import { SETTING_KEYS, getSettings } from "@/lib/settings/app-settings";
-import type { GoogleReviewResource } from "./google-reviews";
+import { parseLocationIds, type GoogleReviewResource } from "./google-reviews";
 
 const OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token";
 const REVIEWS_API_BASE = "https://mybusiness.googleapis.com/v4";
@@ -22,8 +22,11 @@ export interface GoogleBusinessConfig {
   refreshToken: string;
   /** accounts/{accountId} */
   accountId: string;
-  /** locations/{locationId} */
-  locationId: string;
+  /**
+   * locations/{locationId} — bisa lebih dari satu (multi-lokasi). Setting
+   * `google_bp_location_id` menerima daftar dipisah koma.
+   */
+  locationIds: string[];
 }
 
 /**
@@ -47,12 +50,14 @@ export async function readGoogleBusinessConfig(): Promise<GoogleBusinessConfig |
   const clientSecret = pick(SETTING_KEYS.GOOGLE_BP_CLIENT_SECRET, process.env.GOOGLE_BP_CLIENT_SECRET);
   const refreshToken = pick(SETTING_KEYS.GOOGLE_BP_REFRESH_TOKEN, process.env.GOOGLE_BP_REFRESH_TOKEN);
   const accountId = pick(SETTING_KEYS.GOOGLE_BP_ACCOUNT_ID, process.env.GOOGLE_BP_ACCOUNT_ID);
-  const locationId = pick(SETTING_KEYS.GOOGLE_BP_LOCATION_ID, process.env.GOOGLE_BP_LOCATION_ID);
+  const locationIds = parseLocationIds(
+    pick(SETTING_KEYS.GOOGLE_BP_LOCATION_ID, process.env.GOOGLE_BP_LOCATION_ID)
+  );
 
-  if (!clientId || !clientSecret || !refreshToken || !accountId || !locationId) {
+  if (!clientId || !clientSecret || !refreshToken || !accountId || locationIds.length === 0) {
     return null;
   }
-  return { clientId, clientSecret, refreshToken, accountId, locationId };
+  return { clientId, clientSecret, refreshToken, accountId, locationIds };
 }
 
 /** Access token di-cache di memori sampai mendekati kedaluwarsa. */
@@ -99,8 +104,8 @@ async function getAccessToken(config: GoogleBusinessConfig): Promise<string | nu
   }
 }
 
-function reviewsPath(config: GoogleBusinessConfig): string {
-  return `${REVIEWS_API_BASE}/${config.accountId}/${config.locationId}/reviews`;
+function reviewsPath(config: GoogleBusinessConfig, locationId: string): string {
+  return `${REVIEWS_API_BASE}/${config.accountId}/${locationId}/reviews`;
 }
 
 export type GoogleResult<T> =
@@ -108,8 +113,10 @@ export type GoogleResult<T> =
   | { ok: false; reason: string; notConfigured?: boolean };
 
 /**
- * Tarik ulasan (mengikuti halaman berikutnya sampai habis atau batas aman).
- * Batas halaman mencegah satu sinkronisasi menahan proses terlalu lama.
+ * Tarik ulasan dari SEMUA lokasi terkonfigurasi (mengikuti halaman berikutnya
+ * sampai habis atau batas aman per lokasi). Kegagalan satu lokasi tidak
+ * menggagalkan lokasi lain — sinkronisasi baru dianggap gagal bila TIDAK ADA
+ * lokasi yang berhasil ditarik sama sekali.
  */
 export async function fetchReviews(
   maxPages = 5
@@ -123,39 +130,43 @@ export async function fetchReviews(
   if (!token) return { ok: false, reason: "Gagal mendapatkan access token Google" };
 
   const collected: GoogleReviewResource[] = [];
-  let pageToken: string | undefined;
+  const failures: string[] = [];
+  let succeededLocations = 0;
 
-  try {
-    for (let page = 0; page < maxPages; page += 1) {
-      const url = new URL(reviewsPath(config));
-      url.searchParams.set("pageSize", "50");
-      if (pageToken) url.searchParams.set("pageToken", pageToken);
+  for (const locationId of config.locationIds) {
+    let pageToken: string | undefined;
+    try {
+      for (let page = 0; page < maxPages; page += 1) {
+        const url = new URL(reviewsPath(config, locationId));
+        url.searchParams.set("pageSize", "50");
+        if (pageToken) url.searchParams.set("pageToken", pageToken);
 
-      const response = await fetch(url, {
-        headers: { Authorization: `Bearer ${token}` },
-        signal: AbortSignal.timeout(20_000),
-      });
+        const response = await fetch(url, {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: AbortSignal.timeout(20_000),
+        });
 
-      const data = await response.json().catch(() => null);
-      if (!response.ok) {
-        return {
-          ok: false,
-          reason: data?.error?.message ?? `HTTP ${response.status}`,
-        };
+        const data = await response.json().catch(() => null);
+        if (!response.ok) {
+          throw new Error(data?.error?.message ?? `HTTP ${response.status}`);
+        }
+
+        collected.push(...((data?.reviews ?? []) as GoogleReviewResource[]));
+        pageToken = data?.nextPageToken;
+        if (!pageToken) break;
       }
-
-      collected.push(...((data?.reviews ?? []) as GoogleReviewResource[]));
-      pageToken = data?.nextPageToken;
-      if (!pageToken) break;
+      succeededLocations += 1;
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "Gagal menarik ulasan";
+      failures.push(`${locationId}: ${reason}`);
+      console.warn(`[google-bp] Gagal menarik ulasan ${locationId}:`, reason);
     }
-
-    return { ok: true, data: collected };
-  } catch (error) {
-    return {
-      ok: false,
-      reason: error instanceof Error ? error.message : "Gagal menarik ulasan",
-    };
   }
+
+  if (succeededLocations === 0 && failures.length > 0) {
+    return { ok: false, reason: failures.join("; ") };
+  }
+  return { ok: true, data: collected };
 }
 
 /**
@@ -202,10 +213,10 @@ export async function putReviewReply(
 /** Untuk halaman diagnosa: apakah integrasi siap dipakai. */
 export async function googleBusinessStatus(): Promise<{
   configured: boolean;
-  locationId: string | null;
+  locationIds: string[];
 }> {
   const config = await readGoogleBusinessConfig();
-  return { configured: Boolean(config), locationId: config?.locationId ?? null };
+  return { configured: Boolean(config), locationIds: config?.locationIds ?? [] };
 }
 
 /** Token di-cache per proses; wajib dibuang saat kredensial diganti dari UI. */

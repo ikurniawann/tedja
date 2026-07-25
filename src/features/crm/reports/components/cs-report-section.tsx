@@ -221,6 +221,32 @@ export function CsReportSection({ period }: { period: CrmReportPeriodInput }) {
         )}
       </Panel>
 
+      <Panel title="Ulasan Google">
+        {!data?.reviews || data.reviews.total === 0 ? (
+          <Empty>Belum ada ulasan Google pada periode ini.</Empty>
+        ) : (
+          <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-4">
+            <ReviewStat label="Ulasan masuk" value={angka.format(data.reviews.total)} />
+            <ReviewStat
+              label="Rata-rata rating"
+              value={data.reviews.avg_rating != null ? `${data.reviews.avg_rating.toFixed(1)}/5` : "-"}
+            />
+            <ReviewStat
+              label="Sudah dibalas"
+              value={`${angka.format(data.reviews.replied)} (${Math.round(
+                (data.reviews.replied / data.reviews.total) * 100
+              )}%)`}
+              tone="text-emerald-700"
+            />
+            <ReviewStat
+              label="Rating ≤ 2 bintang"
+              value={angka.format(data.reviews.low_rating)}
+              tone={data.reviews.low_rating > 0 ? "text-red-700" : undefined}
+            />
+          </div>
+        )}
+      </Panel>
+
       <Panel title="Kinerja Agent">
         {(data?.agents ?? []).length === 0 ? (
           <Empty>Belum ada percakapan yang ditangani agent.</Empty>
@@ -293,6 +319,23 @@ function MetricCard({
       <div className="text-xl font-semibold text-slate-950">{value}</div>
       <div className="mt-0.5 text-sm text-slate-600">{label}</div>
       <div className="mt-0.5 text-xs text-slate-400">{hint}</div>
+    </div>
+  );
+}
+
+function ReviewStat({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone?: string;
+}) {
+  return (
+    <div className="rounded-md border border-slate-200 bg-slate-50/60 p-3">
+      <div className={`text-lg font-semibold ${tone ?? "text-slate-950"}`}>{value}</div>
+      <div className="mt-0.5 text-xs text-slate-500">{label}</div>
     </div>
   );
 }
