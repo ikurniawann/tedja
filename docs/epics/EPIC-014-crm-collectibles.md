@@ -1,6 +1,6 @@
 # EPIC-014: CRM Collectibles — Artwork, Wallpaper & Badge
 
-status: on-progress
+status: ready-for-qa
 environment: dev
 retries: 0
 
@@ -255,6 +255,18 @@ untuk verifikasi dan dapat dihapus kapan saja.
 
 ## Automation Log
 
+- **25 Jul 2026 (4)** — **Halaman admin wallpaper & badge SELESAI** — sisa
+  epic tertutup, status → ready-for-qa. Feature baru meniru pola
+  `src/features/crm/avatars/`: `src/features/crm/wallpapers/` +
+  `src/features/crm/badges/` (types/query-keys/api/queries/mutations +
+  komponen halaman), route `/dashboard/crm/wallpapers` (form lengkap: code,
+  nama, rarity, gambar + unggah via `/api/crm/avatars/upload`, thumbnail,
+  ambang XP, tier minimal, stok, jendela mulai/berakhir, aktif) dan
+  `/dashboard/crm/badges` (code, nama, ambang XP wajib, gambar opsional +
+  unggah, aktif; daftar menampilkan `awarded_count`). Menu sidebar via
+  migrasi `20260725140000_crm_collectibles_menu.sql` (applied): item
+  `crm.wallpapers` + `crm.badges` level 2 di grup CRM, grant hanya
+  super_admin. Gate: tsc 481 baseline (0 error baru).
 - **25 Jul 2026 (3)** — **Task 5 (wallpaper) + Task 6 (badge) SELESAI sisi
   server + portal member.** Migrasi `20260725130000` (applied): tabel
   `crm_collectible_wallpapers` + `crm_member_wallpaper_inventory` (UNIQUE per
