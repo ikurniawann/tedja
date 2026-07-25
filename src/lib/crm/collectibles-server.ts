@@ -265,6 +265,108 @@ export async function checkAvatarEligibility(
   };
 }
 
+/**
+ * Katalog wallpaper dari sudut pandang member (Task 5) — bentuk baris sama
+ * dengan avatar sehingga `evaluateCollectible` dipakai apa adanya.
+ */
+export async function listWallpapersForMember(
+  db: Pool | PoolClient,
+  memberProfileId: string | null
+): Promise<CatalogRow[]> {
+  const { rows } = await db.query(
+    `SELECT w.id, w.code, w.name, w.rarity, w.image_url, w.thumbnail_url,
+            w.stock_total, w.stock_redeemed, w.is_active, w.starts_at, w.ends_at,
+            w.min_lifetime_xp::int AS min_lifetime_xp,
+            t.name AS required_tier_name,
+            t.min_lifetime_xp::int AS required_tier_min_xp,
+            inv.id AS inventory_id, NULL::boolean AS is_equipped, inv.acquired_at
+       FROM crm.crm_collectible_wallpapers w
+       LEFT JOIN crm.crm_membership_tiers t ON t.id = w.required_tier_id
+       LEFT JOIN crm.crm_member_wallpaper_inventory inv
+              ON inv.wallpaper_id = w.id AND inv.member_id = $1
+      WHERE inv.id IS NOT NULL
+         OR (w.is_active
+             AND (w.starts_at IS NULL OR w.starts_at <= now())
+             AND (w.ends_at IS NULL OR w.ends_at >= now()))`,
+    [memberProfileId]
+  );
+  return rows as CatalogRow[];
+}
+
+/** Kelayakan wallpaper — aturan sama persis dengan avatar (modul bersama). */
+export async function checkWallpaperEligibility(
+  db: Pool | PoolClient,
+  wallpaperId: string,
+  customerId: string
+): Promise<{ allowed: boolean; reason: string | null }> {
+  const { rows } = await db.query(
+    `SELECT w.is_active, w.starts_at, w.ends_at, w.stock_total, w.stock_redeemed,
+            w.min_lifetime_xp::int AS min_lifetime_xp,
+            t.name AS required_tier_name,
+            t.min_lifetime_xp::int AS required_tier_min_xp,
+            c.total_xp::int AS total_xp
+       FROM crm.crm_collectible_wallpapers w
+       LEFT JOIN crm.crm_membership_tiers t ON t.id = w.required_tier_id
+       CROSS JOIN pos.pos_customers c
+      WHERE w.id = $1 AND c.id = $2`,
+    [wallpaperId, customerId]
+  );
+  const row = rows[0];
+  if (!row) return { allowed: false, reason: "Wallpaper atau member tidak ditemukan" };
+  const totalXp = Number(row.total_xp ?? 0);
+  const requiredXp = Math.max(Number(row.required_tier_min_xp ?? 0), Number(row.min_lifetime_xp ?? 0));
+  const stockTotal = row.stock_total == null ? null : Number(row.stock_total);
+  const gate = evaluateCollectibleGate(totalXp, {
+    isActive: Boolean(row.is_active),
+    minLifetimeXp: requiredXp,
+    stockRemaining: stockTotal == null ? null : Math.max(0, stockTotal - Number(row.stock_redeemed ?? 0)),
+    startsAt: row.starts_at ? new Date(row.starts_at).toISOString() : null,
+    endsAt: row.ends_at ? new Date(row.ends_at).toISOString() : null,
+  });
+  if (gate.allowed || !gate.blocker) return { allowed: true, reason: null };
+  return {
+    allowed: false,
+    reason: blockerMessage(gate.blocker, { totalXp, minXp: requiredXp, tierName: row.required_tier_name }),
+  };
+}
+
+export interface AwardedBadge {
+  badge_id: string;
+  code: string;
+  name: string;
+}
+
+/**
+ * Badge by XP (Task 6): berikan semua badge aktif yang ambangnya sudah
+ * terlampaui tapi belum dimiliki. Idempotent lewat UNIQUE (customer, badge) +
+ * ON CONFLICT DO NOTHING — dipanggil lazily saat portal dibaca; tanpa jatah.
+ */
+export async function awardEligibleBadges(
+  db: Pool | PoolClient,
+  customerId: string,
+  memberProfileId: string | null,
+  totalXp: number
+): Promise<AwardedBadge[]> {
+  const { rows } = await db.query(
+    `INSERT INTO crm.crm_member_badges (customer_id, member_id, badge_id)
+     SELECT $1, $2, b.id
+       FROM crm.crm_badges b
+      WHERE b.is_active AND b.min_lifetime_xp <= $3
+        AND NOT EXISTS (
+          SELECT 1 FROM crm.crm_member_badges mb
+           WHERE mb.customer_id = $1 AND mb.badge_id = b.id)
+     ON CONFLICT (customer_id, badge_id) DO NOTHING
+     RETURNING badge_id`,
+    [customerId, memberProfileId, totalXp]
+  );
+  if (rows.length === 0) return [];
+  const { rows: detail } = await db.query(
+    `SELECT id AS badge_id, code, name FROM crm.crm_badges WHERE id = ANY($1::uuid[])`,
+    [rows.map((r) => r.badge_id)]
+  );
+  return detail as AwardedBadge[];
+}
+
 /** Dimiliki lebih dulu, lalu yang paling langka, lalu abjad. */
 export function sortCollectibles(items: MemberCollectible[]): MemberCollectible[] {
   return [...items].sort((a, b) => {

@@ -255,6 +255,33 @@ untuk verifikasi dan dapat dihapus kapan saja.
 
 ## Automation Log
 
+- **25 Jul 2026 (3)** — **Task 5 (wallpaper) + Task 6 (badge) SELESAI sisi
+  server + portal member.** Migrasi `20260725130000` (applied): tabel
+  `crm_collectible_wallpapers` + `crm_member_wallpaper_inventory` (UNIQUE per
+  member), `crm_badges` (definisi, ambang XP murni) + `crm_member_badges`
+  (UNIQUE customer+badge, `is_showcased`).
+  - **Wallpaper ikut alur jatah yang sama**: `listWallpapersForMember`
+    menghasilkan bentuk baris yang sama dengan avatar sehingga
+    `evaluateCollectible` + `sortCollectibles` dipakai apa adanya (mitigasi
+    duplikasi bekerja seperti dirancang); redeem
+    `POST /api/member-portal/wallpapers/redeem` = pola transaksi avatar
+    (FOR UPDATE, re-eval dalam tx, guard stok SQL, UNIQUE anti balapan);
+    unduh resolusi penuh = tautan `image_url` (bucket publik).
+  - **Badge otomatis tanpa jatah**: `awardEligibleBadges` (INSERT..SELECT
+    ambang terlampaui + ON CONFLICT DO NOTHING, idempotent), dievaluasi
+    lazily saat portal membaca `GET /api/member-portal/badges`; badge baru →
+    notifikasi WA best-effort via `sendWhatsAppText` (provider gateway);
+    pamerkan maks 3 (`POST` toggle, dihitung server).
+  - Admin: CRUD `GET/POST/DELETE /api/crm/wallpapers` & `/api/crm/badges`
+    (guard super_admin; hapus yang sudah dimiliki/diraih member → nonaktif,
+    bukan delete). Portal: kartu Wallpaper (Tukar/Unduh) + Badge Pencapaian
+    (grid + tombol Pamerkan) di tab Koleksi.
+  - Gate: 899 unit test hijau, build sukses (5 route baru), tsc 481 baseline,
+    migrasi applied, PM2 restart, smoke 4 endpoint 401 tanpa sesi.
+  - **Sisa epic (kecil)**: halaman dashboard admin untuk wallpaper & badge
+    builder (backend CRUD sudah siap; sementara kelola via API), thumbnail
+    otomatis, dan notifikasi badge saat earn XP real-time (sekarang lazy saat
+    portal dibuka). E2E + dark mode = QA manual.
 - **25 Jul 2026 (2)** — **Task 3 SELESAI: redeem oleh member + upload artwork.**
   - `POST /api/member-portal/collectibles/redeem`: SATU transaksi
     (`withTransaction`) — kunci baris customer `FOR UPDATE` (serialisasi
