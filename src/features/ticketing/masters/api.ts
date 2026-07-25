@@ -1,6 +1,8 @@
 import type {
   BandFilters,
   BandListResponse,
+  CapacityDate,
+  CapacityDateFormValues,
   EmployeeOption,
   SettingsFormValues,
   StaffPass,
@@ -54,6 +56,41 @@ export const updateSettings = (values: SettingsFormValues) =>
     values,
     "Gagal menyimpan pengaturan"
   );
+
+// ── Kapasitas harian (EPIC-031) ──
+export const fetchCapacityDates = () =>
+  getJson<CapacityDate[]>(
+    "/api/ticketing/capacity-dates",
+    "Gagal memuat override kapasitas"
+  );
+
+export const createCapacityDate = (values: CapacityDateFormValues) =>
+  sendJson<CapacityDate>(
+    "/api/ticketing/capacity-dates",
+    "POST",
+    values,
+    "Gagal menambah override kapasitas"
+  );
+
+export const updateCapacityDate = (
+  id: string,
+  values: Partial<CapacityDateFormValues> & { is_active?: boolean }
+) =>
+  sendJson<CapacityDate>(
+    `/api/ticketing/capacity-dates/${id}`,
+    "PATCH",
+    values,
+    "Gagal memperbarui override kapasitas"
+  );
+
+export async function deleteCapacityDate(id: string): Promise<{ id: string }> {
+  const res = await fetch(`/api/ticketing/capacity-dates/${id}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) await parseError(res, "Gagal menghapus override kapasitas");
+  const body = (await res.json()) as { data: { id: string } };
+  return body.data;
+}
 
 // ── Kanal ──
 export const fetchChannels = () =>

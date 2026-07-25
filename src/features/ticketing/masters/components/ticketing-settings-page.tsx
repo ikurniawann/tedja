@@ -1,6 +1,7 @@
 "use client";
 
 import { BandsSection } from "./bands-section";
+import { CapacitySection } from "./capacity-section";
 import { GeneralSettingsSection } from "./general-settings-section";
 import { StaffPassesSection } from "./staff-passes-section";
 
@@ -20,6 +21,7 @@ export function TicketingSettingsPage() {
       </div>
 
       <GeneralSettingsSection />
+      <CapacitySection />
       <BandsSection />
       <StaffPassesSection />
     </div>

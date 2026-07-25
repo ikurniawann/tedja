@@ -3,7 +3,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
+  createCapacityDate,
+  deleteCapacityDate,
   fetchBands,
+  fetchCapacityDates,
   fetchChannels,
   fetchSettings,
   fetchStaffPasses,
@@ -12,10 +15,16 @@ import {
   revokeStaffPass,
   searchEmployees,
   updateBand,
+  updateCapacityDate,
   updateChannel,
   updateSettings,
 } from "./api";
-import type { BandFilters, SettingsFormValues, TicketBand } from "./types";
+import type {
+  BandFilters,
+  CapacityDateFormValues,
+  SettingsFormValues,
+  TicketBand,
+} from "./types";
 
 export const ticketingQueryKeys = {
   all: ["ticketing"] as const,
@@ -26,6 +35,7 @@ export const ticketingQueryKeys = {
   staffPasses: (q: string) => ["ticketing", "staff-passes", q] as const,
   staffPassesAll: ["ticketing", "staff-passes"] as const,
   employeeOptions: (q: string) => ["ticketing", "employee-options", q] as const,
+  capacityDates: ["ticketing", "capacity-dates"] as const,
 };
 
 // Settings dipanggil pertama — GET-nya sekaligus bootstrap kanal default
@@ -98,6 +108,41 @@ export const useUpdateBand = (onSuccess?: () => void) =>
     "Gelang diperbarui",
     [ticketingQueryKeys.bandsAll],
     onSuccess
+  );
+
+// ── Kapasitas harian (EPIC-031) ──
+export const useCapacityDates = () =>
+  useQuery({
+    queryKey: ticketingQueryKeys.capacityDates,
+    queryFn: fetchCapacityDates,
+  });
+
+export const useCreateCapacityDate = (onSuccess?: () => void) =>
+  useInvalidatingMutation(
+    (values: CapacityDateFormValues) => createCapacityDate(values),
+    "Override kapasitas ditambahkan",
+    [ticketingQueryKeys.capacityDates],
+    onSuccess
+  );
+
+export const useUpdateCapacityDate = () =>
+  useInvalidatingMutation(
+    ({
+      id,
+      values,
+    }: {
+      id: string;
+      values: Partial<CapacityDateFormValues> & { is_active?: boolean };
+    }) => updateCapacityDate(id, values),
+    "Override kapasitas diperbarui",
+    [ticketingQueryKeys.capacityDates]
+  );
+
+export const useDeleteCapacityDate = () =>
+  useInvalidatingMutation(
+    (id: string) => deleteCapacityDate(id),
+    "Override kapasitas dihapus",
+    [ticketingQueryKeys.capacityDates]
   );
 
 // ── Gelang karyawan (Fase E) ──

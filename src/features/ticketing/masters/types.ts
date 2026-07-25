@@ -66,6 +66,8 @@ export interface TicketingSettings {
   booking_slug: string | null;
   /** Masa berlaku redeem booking (H+N hari); null = kebijakan belum diisi. */
   booking_forfeit_days: number | null;
+  /** EPIC-031: kuota harian venue (per orang); null = unlimited. */
+  daily_capacity: number | null;
   updated_at: string;
 }
 
@@ -75,4 +77,24 @@ export interface SettingsFormValues {
   default_payment_mode?: PaymentMode;
   booking_slug?: string | null;
   booking_forfeit_days?: number | null;
+  daily_capacity?: number | null;
+}
+
+/** EPIC-031: override kapasitas per rentang tanggal (0 = tanggal tutup). */
+export interface CapacityDate {
+  id: string;
+  label: string;
+  start_date: string;
+  end_date: string;
+  capacity: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CapacityDateFormValues {
+  label: string;
+  start_date: string;
+  end_date: string;
+  capacity: number;
 }
