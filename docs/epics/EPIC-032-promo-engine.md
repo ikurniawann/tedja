@@ -193,4 +193,18 @@ independen dari engine (bisa maju duluan bila owner mau).
   window inklusif → scope → min-pembelian [subtotal 0 ditolak] → kuota
   [limit KODE menang atas campaign] → limit-nomor) +
   `PROMO_REJECT_MESSAGES`. Smoke DB rollback: CHECK & unique context
-  terbukti menolak.
+  terbukti menolak. Commit d88e68c2 (pushed).
+- 2026-07-26 — **A2 SELESAI**: `src/lib/promo/promo-server.ts` —
+  `previewPromoCode` (read-only tanpa lock utk endpoint validasi; kode tak
+  dikenal = pesan sama dgn nonaktif, anti-enumerasi), `holdPromoRedemption`
+  (DI DALAM transaksi pemanggil: **advisory lock per CAMPAIGN** — bukan per
+  kode, karena limit campaign melintasi batch voucher — → muat ulang di
+  bawah lock → hitung hidup (1 query FILTER campaign+phone) → evaluatePromo
+  → usage_count+1 + insert `held`; throw `PromoRejectedError` 422),
+  `capturePromoRedemption` (held→captured, idempoten),
+  `releasePromoRedemption` (→released + usage_count-1 GREATEST 0,
+  idempoten). Lookup kode case-insensitive per venue. Smoke SQL 10 asersi
+  OK: hitungan campaign/phone, release mengembalikan jatah + nomor bisa
+  pakai lagi, capture idempoten, **race klaim voucher 1× → tepat 1 LOLOS**
+  (advisory lock terbukti), cleanup 0 sisa. tsc bersih. Belum ada konsumen
+  runtime (wiring = B1) — build tidak diperlukan.
