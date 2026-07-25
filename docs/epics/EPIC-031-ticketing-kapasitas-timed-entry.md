@@ -237,3 +237,24 @@ C setelah B1; D setelah B stabil. Rilis bisa bertahap: A+B saja sudah menutup
   konsekuensi. Verifikasi: tsc bersih di file tersentuh, 87 test hijau,
   build OK (BUILD_ID ada) → pm2 restart, smoke 307/401 normal, kedua route
   muncul di manifest build.
+- 2026-07-25 — **Fase A di-commit** (69210aec feat; fac1bd10 docs EPIC-030+
+  benchmark+registry). Baris registry EPIC-029 sengaja TIDAK ikut
+  (kode EPIC-029 milik sesi lain masih uncommitted — patch parsial README).
+- 2026-07-25 — **B1 SELESAI, live dev**: `src/lib/ticketing/capacity-server.ts`
+  — `acquireCapacityLock` (pg_advisory_xact_lock hashtext(branch)+
+  hashtext(date)), `loadEffectiveCapacity` (settings + override aktif →
+  resolver murni), `countCapacityUsed` (1 query 2 subcount: guest booking
+  status memegang-kuota + gelang visit non-void hari itu WIB dengan NOT
+  EXISTS bookings.visit_id = anti dobel-hitung redeem),
+  `assertCapacityAvailable` (cek murah tanpa lock bila unlimited → lock →
+  resolve ULANG → hitung → `CapacityFullError` 409; pesan beda utk
+  capacity 0 "tanggal ditutup"). Wiring `POST /api/public/booking/[slug]`:
+  guard di AWAL withTransaction (sebelum insert, kompatibel retry 23505);
+  catch route kini menerjemahkan statusCode → 409 (pola staff-passes).
+  Verifikasi: tsc bersih; smoke SQL rollback 7 asersi OK (pending memegang
+  kuota, walk-in terhitung, redeem TIDAK dobel, kedaluwarsa/void melepas,
+  override terkecil menang); RACE test riil 2 transaksi paralel kapasitas 1
+  → tepat 1 LOLOS 1 PENUH (advisory lock terbukti serialisasi), cleanup 0
+  sisa. Build OK → pm2 restart, /booking/sulu 200. CATATAN penemuan: dev DB
+  ternyata TIDAK punya ticket_types & registry gelang kosong — visit_bands
+  kini ber-`variant_id` (revisi R1), smoke pakai gelang temp in-txn.

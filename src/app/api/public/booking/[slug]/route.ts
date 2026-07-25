@@ -18,6 +18,7 @@ import {
   buildPublicCatalog,
   resolvePublicVenue,
 } from "@/lib/ticketing/booking-server";
+import { assertCapacityAvailable } from "@/lib/ticketing/capacity-server";
 import {
   createInvoice,
   getInvoiceExpiryHours,
@@ -214,6 +215,16 @@ export async function POST(
       bookingCode = generateBookingCode();
       try {
         bookingId = await withTransaction(async (client) => {
+          // EPIC-031 B1 — guard kuota harian DI DALAM transaksi: advisory
+          // lock (venue, tanggal) → hitung okupansi live (booking pemegang
+          // kuota + walk-in) → 409 bila totalQty menembus kapasitas.
+          // No-op tanpa lock bila kuota venue tidak aktif (unlimited).
+          await assertCapacityAvailable(
+            client,
+            { companyId: venue.companyId, branchId: venue.branchId },
+            body.visit_date,
+            totalQty
+          );
           const inserted = await client.query<{ id: string }>(
             `INSERT INTO ticketing.ticket_bookings
                (company_id, branch_id, booking_code, access_token, visit_date,
@@ -377,6 +388,14 @@ export async function POST(
       );
     }
   } catch (err) {
+    // Error ber-statusCode (mis. CapacityFullError 409) → pesan apa adanya
+    const statusCode = (err as { statusCode?: number }).statusCode;
+    if (statusCode) {
+      return NextResponse.json(
+        { success: false, error: (err as Error).message },
+        { status: statusCode }
+      );
+    }
     console.error("[booking] create error:", err);
     return NextResponse.json(
       { success: false, error: "Gagal membuat booking" },
