@@ -207,4 +207,24 @@ independen dari engine (bisa maju duluan bila owner mau).
   OK: hitungan campaign/phone, release mengembalikan jatah + nomor bisa
   pakai lagi, capture idempoten, **race klaim voucher 1× → tepat 1 LOLOS**
   (advisory lock terbukti), cleanup 0 sisa. tsc bersih. Belum ada konsumen
-  runtime (wiring = B1) — build tidak diperlukan.
+  runtime (wiring = B1) — build tidak diperlukan. Commit 992f5cec (pushed).
+- 2026-07-26 — **A3 SELESAI, live dev**: halaman admin `/dashboard/promo`
+  (feature `src/features/promo/*`: promo-page + campaign-detail-dialog) —
+  CRUD campaign (dialog lengkap: jenis/nilai/cap/min/window/kuota/limit
+  WA/kanal + kode publik opsional), toggle aktif, tabel ber-statistik
+  (kode, terpakai/kuota, held menunggu bayar, total diskon captured);
+  dialog detail: tambah kode publik, **generate batch voucher sekali-pakai**
+  (prefix+jumlah ≤1000, kode `PREFIX-XXXXXX` charset anti-ambigu, ON
+  CONFLICT skip+isi ulang maks 6 ronde), **export CSV di klien**, toggle
+  kode (nonaktif — TANPA hard delete, jejak voucher tersebar harus awet),
+  riwayat pemakaian 100 terbaru ber-status. API: `/api/promo/campaigns`
+  (GET+stats subquery, POST + kode publik atomik), `[id]` PATCH (validasi
+  nilai FINAL gabungan), `[id]/codes` GET/POST (single|batch discriminated
+  union), `codes/[id]` PATCH toggle, `[id]/redemptions` GET. Guard:
+  `requirePromoContext` (`lib/promo/server.ts`, PROMO_MANAGER_ROLES =
+  super_admin+marketing; reuse resolver venue ticketing). GROUNDWORK A4:
+  `"marketing"` ditambahkan ke UserRole type (belum ada user/menu grant —
+  efektif masih super_admin only). Menu delta `20260726110000` (level-1
+  'promo' + 'promo.campaigns', grant super_admin; marketing menyusul A4).
+  Verifikasi: tsc bersih, 14 test, build OK (6 route promo di manifest) →
+  pm2 restart, smoke 307/401 normal.
