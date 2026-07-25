@@ -2,6 +2,7 @@
 // marketing (keputusan owner 26 Jul; role marketing di-provision penuh di
 // Task A4 — sebelum itu hanya super_admin yang efektif punya akses).
 
+import { randomInt } from "crypto";
 import { NextResponse } from "next/server";
 import { getApiUser } from "@/lib/api/auth";
 import { getApiUserScope } from "@/lib/api/scope";
@@ -61,11 +62,15 @@ export async function requirePromoContext(
 // Charset anti-ambigu (tanpa 0/O/1/I) — pola booking code EPIC-023
 const CODE_CHARSET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
-/** Satu kode acak `PREFIX-XXXXXX` utk batch voucher. */
+/**
+ * Satu kode acak `PREFIX-XXXXXX` utk batch voucher. CSPRNG (crypto), bukan
+ * Math.random — kode voucher bersifat bearer (siapa pegang bisa pakai),
+ * tidak boleh bisa ditebak (temuan LOW security review A4).
+ */
 export function generateVoucherCode(prefix: string): string {
   let suffix = "";
   for (let i = 0; i < 6; i++) {
-    suffix += CODE_CHARSET[Math.floor(Math.random() * CODE_CHARSET.length)];
+    suffix += CODE_CHARSET[randomInt(CODE_CHARSET.length)];
   }
   return `${prefix}-${suffix}`;
 }

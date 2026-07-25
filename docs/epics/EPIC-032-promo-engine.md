@@ -227,4 +227,31 @@ independen dari engine (bisa maju duluan bila owner mau).
   efektif masih super_admin only). Menu delta `20260726110000` (level-1
   'promo' + 'promo.campaigns', grant super_admin; marketing menyusul A4).
   Verifikasi: tsc bersih, 14 test, build OK (6 route promo di manifest) →
-  pm2 restart, smoke 307/401 normal.
+  pm2 restart, smoke 307/401 normal. Commit 52b1076e (pushed).
+- 2026-07-26 — **A4 SELESAI (Fase A TUNTAS), live dev** + **SECURITY REVIEW
+  dijalankan (agent security-reviewer)**:
+  - Role `marketing`: migrasi `20260726120000` (iam.roles + grant HANYA
+    promo/promo.campaigns + menu ESS — diverifikasi DB: non-ESS cuma 2
+    menu itu); `ROLE_MODULE_PATHS.marketing = ["/dashboard/promo"]` (pola
+    sales/finance_staff); masuk ADMIN_USER_ROLES (dropdown+zod otomatis) +
+    ROLE_LABELS. Pembuatan user marketing tetap super_admin-only
+    (diverifikasi reviewer: requireApiRole admin users).
+  - **Temuan HIGH H1 (pre-existing, DIPERBAIKI)**: layout `(dashboard)`
+    hanya menjalankan `canAccessPath` saat essOnly — role ber-grant menu
+    non-ESS (sales/finance_staff, dan marketing kalau dibiarkan) bisa
+    membuka URL modul lain (shell render; data tetap 403 di API). Fix:
+    guard jalan utk SEMUA role non-full-access; path sah = ESS ∪
+    ROLE_MODULE_PATHS ∪ **href menu IAM ber-grant** (`collectNavHrefs` +
+    `isPathAllowedByMenus`; root `/dashboard` EXACT-only karena banyak
+    role punya menu Beranda dan prefix-nya meloloskan semua). Redirect:
+    essOnly → ESS home, selainnya → modul pertama role. CATATAN: fix
+    berbasis menu-grant (BUKAN saran reviewer yang statis ROLE_MODULE_PATHS
+    saja — itu bakal mengunci pos/purchasing dkk yang tidak terdaftar di
+    map). `/dashboard/pos/*` layout terpisah — kasir tak tersentuh.
+    Fix ini sekaligus menutup celah utk sales & finance_staff.
+  - **Temuan LOW diperbaiki**: `generateVoucherCode` kini `crypto.randomInt`
+    (kode voucher = bearer, tak boleh tertebak). Temuan LOW kedua (params
+    id non-UUID → 500 kosmetik) diterima apa adanya.
+  - Verdict reviewer: permukaan API promo sendiri solid (guard, tenant
+    scoping, parameterized, zod). Verifikasi pasca-fix: tsc bersih, build
+    OK → pm2 restart, smoke 307/401/200 normal.
