@@ -52,6 +52,9 @@ belum punya — ini kekuatan yang sudah dimiliki.
 
 6. **Engine promosi**: promo code, voucher tiket, diskon, gifting ("kirim
    sebagai hadiah"). Tak ada di ticketing (POS punya voucher sendiri, terpisah).
+   **→ Direncanakan di [EPIC-032](./EPIC-032-promo-engine.md) (backlog,
+   25 Jul). Koreksi audit: `pos_vouchers` ternyata legacy MATI — rencana =
+   satu engine bersama, bukan jembatan.**
 7. **Upsell/cross-sell + keranjang multi-produk** saat checkout (tambah parkir,
    F&B, merch, loker, add-on). Sengaja 1 produk/transaksi saat ini.
 8. **Gift card / stored value / e-gift**. Belum ada.
