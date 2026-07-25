@@ -258,3 +258,13 @@ C setelah B1; D setelah B stabil. Rilis bisa bertahap: A+B saja sudah menutup
   sisa. Build OK → pm2 restart, /booking/sulu 200. CATATAN penemuan: dev DB
   ternyata TIDAK punya ticket_types & registry gelang kosong — visit_bands
   kini ber-`variant_id` (revisi R1), smoke pakai gelang temp in-txn.
+- 2026-07-25 — **B2 SELESAI, live dev**: guard kuota di `POST
+  /api/ticketing/visits` — `assertCapacityAvailable` di AWAL withTransaction
+  (sebelum lock gelang FOR UPDATE; urutan lock konsisten dgn jalur booking →
+  bebas deadlock antar-jalur), tanggal = `todayJakartaDate()`, additional =
+  `uids.length` (satuan + anggota paket, 1 gelang = 1 orang). Catch route
+  sudah ber-pola statusCode → 409 otomatis. Scope temuan: TIDAK ada endpoint
+  tambah-gelang mid-visit (registrasi one-shot) — guard cukup di POST;
+  redeem booking insert visit sendiri di route redeem (line ~268) → bebas
+  guard sesuai desain. Verifikasi: tsc bersih, build OK → pm2 restart,
+  smoke 401/200 normal.
