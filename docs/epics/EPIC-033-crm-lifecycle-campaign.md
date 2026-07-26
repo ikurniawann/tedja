@@ -1,6 +1,6 @@
 # EPIC-033: CRM Lifecycle Campaign — Win-back & Kampanye WA Member
 
-status: backlog
+status: on-progress
 environment: local
 retries: 0
 
@@ -88,17 +88,20 @@ crm_campaign_recipients — ledger per member: phone, kode voucher personal
 - [ ] Gagal kirim per penerima tercatat (failed + alasan) tanpa
       menghentikan kampanye.
 
-## Open Questions (jawab sebelum Fase A)
+## Open Questions (TERJAWAB owner 2026-07-26)
 
-1. **Nomor pengirim**: pakai gateway existing (+6285880974659, juga dipakai
-   OTP & e-tiket — kalau kena ban, OTP portal ikut mati!) atau siapkan
-   NOMOR KEDUA khusus marketing (disarankan)?
-2. Plafon aman per hari berapa? (usulan konservatif MVP: 100–200
-   pesan/hari, dinaikkan bertahap.)
-3. Segmen MVP cukup: terakhir-order ≥ N hari + tier + min XP? Ada segmen
-   lain yang kamu butuhkan segera?
-4. Opt-out: cukup daftar manual dulu (petugas menandai dari inbox), atau
-   perlu otomatis keyword "STOP" sejak MVP?
+1. ~~Nomor pengirim~~ → **Bangun fiturnya sekarang, JANGAN testing kirim
+   riil** (risiko ban) — owner sedang menyiapkan WA official. Konsekuensi
+   desain: master switch `enabled` default **MATI** (pola EPIC-020); semua
+   verifikasi dev berhenti sebelum `sendGatewayText`; abstraksi gateway
+   dipertahankan agar swap ke WA official = penggantian satu lapis.
+2. ~~Plafon harian~~ → **Configurable** dari UI (global + per kampanye).
+3. ~~Segmen MVP~~ → **Cukup**: terakhir kunjungan ≥ N hari + tier + min XP.
+4. ~~Opt-out~~ → Owner minta best practice → **diterapkan dari MVP**:
+   tabel opt-out marketing TERPISAH dari `wa_consent` portal (jangan
+   overload semantik — mematikan wa_consent bisa merusak OTP login),
+   footer pesan "Balas STOP untuk berhenti", daftar kelola manual di UI;
+   deteksi keyword otomatis dari inbox = Fase D.
 
 ## Automation Log
 
@@ -107,3 +110,7 @@ crm_campaign_recipients — ledger per member: phone, kode voucher personal
   engine promo semua siap; risiko utama = reputasi nomor WA → desain
   antrian pelan + plafon + jam operasional. Status **backlog** — menunggu
   jawaban open questions (terutama #1 nomor pengirim).
+- 2026-07-26 — Owner menjawab semua OQ (lihat seksi OQ): bangun sekarang
+  TANPA testing kirim riil (WA official disiapkan owner), plafon
+  configurable, segmen MVP cukup, opt-out ikut best practice (tabel
+  terpisah + footer STOP + kelola manual). Status → **on-progress**.

@@ -25,5 +25,10 @@ export async function register() {
       "@/lib/ticketing/booking-forfeit-watcher"
     );
     startBookingForfeitWatcher();
+
+    // EPIC-033 — pengirim kampanye WA (master switch default MATI di
+    // crm_campaign_config; aman terdaftar walau belum dipakai)
+    const { startCampaignWatcher } = await import("@/lib/crm/campaign-watcher");
+    startCampaignWatcher();
   }
 }
