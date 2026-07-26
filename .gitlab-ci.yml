@@ -3,6 +3,7 @@ stages:
 
 deploy_production:
   stage: deploy
+  resource_group: arkiv_deploy
   variables:
     DOCKER_IMAGE: arkiv-production
     CONTAINER_NAME: arkiv
@@ -17,6 +18,7 @@ deploy_production:
 
 deploy_development:
   stage: deploy
+  resource_group: arkiv_deploy
   variables:
     DOCKER_IMAGE: arkiv-development
     CONTAINER_NAME: arkiv-development
