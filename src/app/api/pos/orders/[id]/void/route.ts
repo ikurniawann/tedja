@@ -1,6 +1,8 @@
 import { NextRequest } from 'next/server';
 import { createPgClient } from "@/lib/pg/create-client";
 import { getPosSession } from '@/lib/api/auth';
+import { withTransaction } from '@/lib/db';
+import { releasePromoRedemption } from '@/lib/promo/promo-server';
 import { buildVoidBesarMessage, voidDedupKey } from '@/lib/wa/notifications-messages';
 import { fireOwnerNotification, getWaNotifConfig } from '@/lib/wa/notifications-sender';
 
@@ -70,6 +72,12 @@ export async function POST(
       .eq('id', orderId);
 
     if (updErr) throw updErr;
+
+    // EPIC-032 C1 — void melepas pemakaian kode promo (captured → released,
+    // jatah kembali). Best-effort idempoten: gagal release ≠ gagal void.
+    await withTransaction((client) =>
+      releasePromoRedemption(client, 'pos_order', orderId)
+    ).catch((err) => console.error('[pos] release promo error:', err));
 
     // 4. Cancel any pending splits
     await db

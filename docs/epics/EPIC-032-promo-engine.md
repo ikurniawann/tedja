@@ -311,3 +311,31 @@ independen dari engine (bisa maju duluan bila owner mau).
   Fase B TUNTAS: booking online ber-promo end-to-end (validasi → hold →
   bayar net → capture → redeem net-0 ber-baris diskon → laporan).
   Sisa epic: Fase C (kasir POS) + Fase D (voucher QA-path + gifting).
+  Commit 7221af9d (pushed).
+- 2026-07-26 — **FASE C SELESAI (C1+C2), live dev** — kasir POS:
+  - C1 server: `POST /api/pos/promo-check` (sesi kasir, rate-limit,
+    channel 'pos'); `/api/pos/orders` terima `promo_code` — **hold DI AWAL
+    dgn id order yang di-generate route sendiri** (insert pakai id
+    eksplisit; kuota terkunci sebelum uang diterima, 422 rapi sebelum ada
+    baris order); diskon = TURUNAN SERVER (membership dari
+    `membership_discount_pct` + promo dari engine, dicap ≤ subtotal),
+    klien diverifikasi ±1 rupiah (selisih = state basi → release + 400);
+    order ber-promo total WAJIB turunan server (client total diabaikan);
+    release di SEMUA jalur kompensasi (insert gagal, NFC-tab gagal charge,
+    ARK gagal debit) + `pos/orders/[id]/void` → released (jatah kembali);
+    capture sebelum respons sukses final (mencakup jalur normal/ARK/NFC).
+    Split bill + promo → 400 (belum didukung MVP).
+  - C2 UI: pola integrasi teraman ditemukan — financials kasir dihitung di
+    SATU titik (membership → discountAmount → total), promo disisipkan di
+    situ sehingga SEMUA payload builder + CFD + kembalian ikut otomatis
+    tanpa menyentuh 6 builder satu-satu. `CartPanel` + input "Kode promo"
+    di blok totals (baris Discount membership & Promo terpisah, hapus per
+    baris); rumus klien = rumus hook checkout = rumus server (identik,
+    selisih ditolak). Guard fail-closed: **offline / open-bill / split
+    bill dgn promo terpasang → ditolak dgn pesan jelas**; promo auto-lepas
+    saat subtotal berubah; promo ikut sah utk pembayaran NFC-tab.
+  - Verifikasi: nol error TS baru (validator void & merge = baseline
+    lama), build OK → pm2 restart, smoke 401/307 normal. CATATAN QA:
+    E2E checkout kasir butuh sesi POS riil — masuk daftar QA owner
+    (buat campaign scope 'pos'/'semua' → kasir pakai kode → cek order
+    discount_reason "PROMO ..." + redemption captured → void → released).

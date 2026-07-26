@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { createPgClient } from "@/lib/pg/create-client";
 import { getPosSession } from '@/lib/api/auth';
@@ -5,6 +6,14 @@ import { awardCrmXpForPosOrder, syncPosCustomerOrderStats } from '@/lib/crm/loya
 import { getCrmDefaultVenue } from '@/lib/crm/server';
 import { checkProductPrivileges } from '@/lib/crm/product-privilege';
 import { buildCostSnapshot, loadPosProductCostMap } from '@/lib/pos/purchasing-sync';
+import { withTransaction } from '@/lib/db';
+import {
+  PromoRejectedError,
+  capturePromoRedemption,
+  holdPromoRedemption,
+  releasePromoRedemption,
+  type PromoHold,
+} from '@/lib/promo/promo-server';
 import { checkRateLimit } from '@/lib/rate-limit';
 import { isValidNfcUid, normalizeNfcUid } from '@/lib/ticketing/server';
 import { chargeFnbOrderToTab } from '@/lib/ticketing/tab-server';
@@ -32,6 +41,9 @@ type PosOrderBody = {
   subtotal?: number | string;
   discount_amount?: number | string;
   discount_reason?: string;
+  /** EPIC-032 C1 — kode promo (server evaluasi & override diskon). */
+  promo_code?: string;
+  membership_discount_pct?: number | string;
   tax_amount?: number | string;
   service_charge_amount?: number | string;
   total_amount?: number | string;
@@ -202,6 +214,13 @@ export async function POST(request: NextRequest) {
 
     // Split bill mode
     if (splits && splits.length > 0) {
+      // EPIC-032 C1 — promo belum didukung utk split bill (MVP)
+      if (String(body.promo_code || '').trim()) {
+        return NextResponse.json(
+          { success: false, error: 'Kode promo belum didukung untuk split bill' },
+          { status: 400 }
+        );
+      }
       const rpcPayload = {
         p_order_type: order_type,
         p_customer_id: customer_id || null,
@@ -268,16 +287,89 @@ export async function POST(request: NextRequest) {
       const modifierAdj = Number(item.modifier_price_adjustment) || 0;
       return sum + ((unit + variantAdj + modifierAdj) * qty);
     }, 0);
-    const serverDiscount = Number(discount_amount) || 0;
+    let serverDiscount = Number(discount_amount) || 0;
+    let discountReasonFinal: string | null = discount_reason || null;
     const serverTax = include_tax ? Number(tax_amount) || 0 : 0;
     const serverServiceCharge = Number(service_charge_amount) || 0;
+
+    // ── EPIC-032 C1 — kode promo kasir ─────────────────────────────
+    // Hold DI AWAL dgn id order yang di-generate sendiri (insert pakai id
+    // eksplisit) supaya kuota terkunci sebelum uang diterima; diskon =
+    // turunan SERVER (membership dari pct + promo dari engine), klien
+    // hanya diverifikasi. Gagal lolos → 422 sebelum ada baris order.
+    const promoCode = String(body.promo_code || '').trim();
+    let promoHold: PromoHold | null = null;
+    let promoOrderId: string | null = null;
+    const venue = await getCrmDefaultVenue(db);
+    if (promoCode) {
+      const promoCompanyId = venue.companyId;
+      const promoBranchId = body.branch_id || venue.branchId;
+      if (!promoCompanyId || !promoBranchId) {
+        return NextResponse.json(
+          { success: false, error: 'Venue belum dikonfigurasi — kode promo tidak bisa dipakai' },
+          { status: 400 }
+        );
+      }
+      const promoScope = { companyId: promoCompanyId, branchId: promoBranchId };
+      promoOrderId = randomUUID();
+      try {
+        promoHold = await withTransaction((client) =>
+          holdPromoRedemption(client, {
+            scope: promoScope,
+            code: promoCode,
+            channel: 'pos',
+            contextType: 'pos_order',
+            contextId: promoOrderId!,
+            subtotal: serverSubtotal,
+            phone: null,
+            customerId: customer_id || null,
+          })
+        );
+      } catch (promoErr) {
+        if (promoErr instanceof PromoRejectedError) {
+          return NextResponse.json(
+            { success: false, error: promoErr.message },
+            { status: 422 }
+          );
+        }
+        throw promoErr;
+      }
+      const membershipPct = Number(body.membership_discount_pct) || 0;
+      const membershipAmt =
+        membershipPct > 0 ? Math.floor((serverSubtotal * membershipPct) / 100) : 0;
+      const authoritativeDiscount = Math.min(
+        serverSubtotal,
+        membershipAmt + promoHold.discount
+      );
+      // Klien wajib menghitung angka yang sama — selisih > 1 rupiah =
+      // state basi (mis. cart berubah setelah kode dipakai) → tolak rapi
+      if (Math.abs(serverDiscount - authoritativeDiscount) > 1) {
+        await withTransaction((client) =>
+          releasePromoRedemption(client, 'pos_order', promoOrderId!)
+        ).catch(() => {});
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              'Total diskon tidak cocok dengan kode promo — muat ulang dan coba lagi',
+          },
+          { status: 400 }
+        );
+      }
+      serverDiscount = authoritativeDiscount;
+      discountReasonFinal = [discount_reason, `PROMO ${promoCode.toUpperCase()}`]
+        .filter(Boolean)
+        .join(' + ');
+    }
+
     const serverDerivedTotal =
       serverSubtotal - serverDiscount + serverTax + serverServiceCharge;
     // NFC Tab (EPIC-023 Fase C): order lunas secara kasir, tagihannya pindah
     // ke tab visit ticketing — tidak ada uang diterima di sini. Nominal yang
     // masuk ledger tab WAJIB turunan server, bukan total_amount kiriman klien.
+    // Order ber-promo juga WAJIB turunan server (klien tak dipercaya).
     const isNfcTab = payment_method === 'nfc_tab';
-    const serverTotal = isNfcTab
+    const serverTotal = isNfcTab || promoHold
       ? serverDerivedTotal
       : Number(total_amount) || serverDerivedTotal;
     const paidAmount = Number(amount_paid) || 0;
@@ -336,7 +428,6 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const venue = await getCrmDefaultVenue(db);
     const payWithArk = arkUsed > 0 && Boolean(customer_id);
     // Order ARK/NFC Tab dibuat pending dulu; paid setelah debit/charge sukses
     const deferPaid = payWithArk || isNfcTab;
@@ -344,6 +435,7 @@ export async function POST(request: NextRequest) {
     const { data: orderData, error: orderErr } = await db
       .from('pos_orders')
       .insert({
+        ...(promoOrderId ? { id: promoOrderId } : {}),
         order_number: orderNumber,
         order_type,
         status: deferPaid ? 'pending' : 'completed',
@@ -357,7 +449,7 @@ export async function POST(request: NextRequest) {
         shift_id: body.shift_id || null,
         subtotal: serverSubtotal,
         discount_amount: serverDiscount,
-        discount_reason: discount_reason || null,
+        discount_reason: discountReasonFinal,
         tax_amount: serverTax,
         service_charge_amount: serverServiceCharge,
         total_amount: serverTotal,
@@ -375,6 +467,11 @@ export async function POST(request: NextRequest) {
 
     if (orderErr || !orderData) {
       console.error('Order insert error:', orderErr);
+      if (promoOrderId) {
+        await withTransaction((client) =>
+          releasePromoRedemption(client, 'pos_order', promoOrderId!)
+        ).catch(() => {});
+      }
       return NextResponse.json({ success: false, error: orderErr?.message || 'Failed to create order' }, { status: 500 });
     }
 
@@ -416,6 +513,11 @@ export async function POST(request: NextRequest) {
             .update({ status: 'cancelled', updated_at: new Date().toISOString() })
             .eq('id', orderData.id);
         }
+        if (promoOrderId) {
+          await withTransaction((client) =>
+            releasePromoRedemption(client, 'pos_order', promoOrderId!)
+          ).catch(() => {});
+        }
         return NextResponse.json(
           { success: false, error: tabResult.reason },
           { status: tabResult.status === 402 ? 400 : tabResult.status }
@@ -436,6 +538,11 @@ export async function POST(request: NextRequest) {
 
       if (coinError) {
         await db.from('pos_orders').delete().eq('id', orderData.id);
+        if (promoOrderId) {
+          await withTransaction((client) =>
+            releasePromoRedemption(client, 'pos_order', promoOrderId!)
+          ).catch(() => {});
+        }
         const insufficient = coinError.message?.includes('Insufficient');
         return NextResponse.json(
           { success: false, error: insufficient ? 'Saldo ARK Coin tidak cukup' : 'Gagal memproses ARK Coin' },
@@ -535,6 +642,14 @@ export async function POST(request: NextRequest) {
       outletId: body.branch_id || venue.branchId,
       paymentMethod: payment_method,
     });
+
+    // EPIC-032 C1 — order lunas → pemakaian kode FINAL (held → captured).
+    // Void order melepasnya kembali (route void).
+    if (promoOrderId) {
+      await withTransaction((client) =>
+        capturePromoRedemption(client, 'pos_order', promoOrderId!)
+      ).catch((err) => console.error('[pos] capture promo error:', err));
+    }
 
     const { data: completeOrder } = await db
       .from('pos_orders')

@@ -34,6 +34,7 @@ export function usePosCheckout() {
       arkToUse,
       shiftId,
       nfcTabUid,
+      promo,
     }: {
       cart: PosCartItem[];
       orderType: string;
@@ -47,6 +48,8 @@ export function usePosCheckout() {
       shiftId?: string | null;
       /** UID gelang ticketing — wajib saat paymentMethod 'nfc_tab' */
       nfcTabUid?: string;
+      /** EPIC-032 C2 — kode promo ter-apply (diskon preview dari server). */
+      promo?: { code: string; discount: number } | null;
     }): Promise<PaymentResult> => {
       const snap = {
         snapshotCart: [...cart],
@@ -79,7 +82,13 @@ export function usePosCheckout() {
         // Client-side pre-calc for reference (server recalculates)
         const subtotal = cart.reduce((sum, i) => sum + i.price * i.quantity, 0);
         const discountPct = selectedCustomer?.discount || 0;
-        const discountAmount = discountPct > 0 ? Math.floor((subtotal * discountPct) / 100) : 0;
+        const membershipAmt = discountPct > 0 ? Math.floor((subtotal * discountPct) / 100) : 0;
+        // EPIC-032 C2 — promo menumpuk di atas membership, dicap agar total ≥ 0.
+        // Rumus WAJIB identik dgn server (orders route) — selisih > 1 ditolak.
+        const promoAmt = promo
+          ? Math.min(promo.discount, Math.max(0, subtotal - membershipAmt))
+          : 0;
+        const discountAmount = membershipAmt + promoAmt;
         const afterDiscount = subtotal - discountAmount;
         const tax = includeTax ? Math.round(afterDiscount * 0.1) : 0;
         const total = afterDiscount + tax;
@@ -105,6 +114,7 @@ export function usePosCheckout() {
           amount_paid: paidAmount,
           include_tax: includeTax,
           membership_discount_pct: discountPct,
+          promo_code: promo?.code,
           notes,
           ark_coins_used: paymentMethod === "ark_coin" ? arkToUse : 0,
           shift_id: shiftId || undefined,

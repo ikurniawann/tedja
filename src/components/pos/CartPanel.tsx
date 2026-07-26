@@ -28,6 +28,17 @@ interface CartPanelProps {
   onOpenShift?: () => void;
   updateQuantity: (id: string, delta: number) => void;
   removeFromCart: (id: string) => void;
+  /** EPIC-032 C2 — kode promo kasir (opsional; tanpa props = tanpa UI promo) */
+  membershipDiscountAmount?: number;
+  promoApplied?: { code: string; discount: number } | null;
+  promoDiscount?: number;
+  promoInput?: string;
+  promoBusy?: boolean;
+  promoError?: string | null;
+  promoDisabled?: boolean;
+  onPromoInputChange?: (value: string) => void;
+  onApplyPromo?: () => void;
+  onClearPromo?: () => void;
 }
 
 export function CartPanel({
@@ -53,7 +64,19 @@ export function CartPanel({
   onOpenShift,
   updateQuantity,
   removeFromCart,
+  membershipDiscountAmount,
+  promoApplied = null,
+  promoDiscount = 0,
+  promoInput = '',
+  promoBusy = false,
+  promoError = null,
+  promoDisabled = false,
+  onPromoInputChange,
+  onApplyPromo,
+  onClearPromo,
 }: CartPanelProps) {
+  const membershipAmt = membershipDiscountAmount ?? discountAmount;
+  const showPromoUi = typeof onApplyPromo === 'function';
   return (
     <div className="flex w-full max-h-[60vh] flex-col rounded-xl border border-gray-200/70 bg-white shadow-xs lg:max-h-none lg:w-96">
       <div className="border-b border-gray-200/70 p-4">
@@ -164,10 +187,54 @@ export function CartPanel({
             <div className="text-xs font-medium text-amber-600">{formatArk(subtotal)}</div>
           </div>
         </div>
-        {discountAmount > 0 && selectedCustomer && (
+        {membershipAmt > 0 && selectedCustomer && (
           <div className="flex justify-between text-sm">
             <span className="text-green-600">Discount ({selectedCustomer.discount}%)</span>
-            <span className="font-medium text-green-600">-{formatCurrency(discountAmount)}</span>
+            <span className="font-medium text-green-600">-{formatCurrency(membershipAmt)}</span>
+          </div>
+        )}
+        {promoApplied && promoDiscount > 0 && (
+          <div className="flex justify-between text-sm">
+            <span className="text-green-600">
+              Promo {promoApplied.code}
+              {onClearPromo && (
+                <button
+                  type="button"
+                  onClick={onClearPromo}
+                  className="ml-2 text-xs text-red-500 underline"
+                >
+                  hapus
+                </button>
+              )}
+            </span>
+            <span className="font-medium text-green-600">-{formatCurrency(promoDiscount)}</span>
+          </div>
+        )}
+        {showPromoUi && !promoApplied && (
+          <div>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={promoInput}
+                onChange={(e) => onPromoInputChange?.(e.target.value)}
+                placeholder={promoDisabled ? 'Promo butuh koneksi' : 'Kode promo'}
+                disabled={promoDisabled}
+                className="h-8 w-full rounded-lg border border-gray-300 px-2.5 text-sm text-gray-900 placeholder:text-gray-400 focus:border-gray-900 focus:outline-none disabled:bg-gray-50"
+              />
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-8 shrink-0 px-3"
+                disabled={promoDisabled || promoBusy || promoInput.trim().length < 3}
+                onClick={onApplyPromo}
+              >
+                {promoBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Pakai'}
+              </Button>
+            </div>
+            {promoError && (
+              <p className="mt-1 text-xs text-red-600">{promoError}</p>
+            )}
           </div>
         )}
         <div className="flex items-center justify-between text-sm">
