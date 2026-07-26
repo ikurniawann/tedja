@@ -521,3 +521,18 @@ Hasil diskusi desain — SEMUA sudah diputuskan owner:
   - Portal member kini bisa di-UAT penuh dengan nomor WhatsApp asli — ganti
     nomor member uji ke nomor asli (SQL di runbook) lalu jalankan skenario
     UAT Fase F.
+- 2026-07-25 — **Verifikasi infra portal: TIDAK ADA pekerjaan tersisa.**
+  Catatan lama "ingress `member.suluindwounderland.com` belum dibuat" sudah
+  BASI — keputusan berjalan memakai domain dev `within.ventures`:
+  - Portal member LIVE di `https://member.within.ventures` (200, judul
+    "Portal Member — Sulu in Wounderland") via tunnel `within-ventures`
+    → :3459; app utama di `https://sulu.within.ventures` (307 → login, normal).
+  - `proxy.ts` me-rewrite semua host `member.*` ke `/member`, jadi domain
+    produksi apa pun (mis. `member.suluinwounderland.com` — perhatikan ejaan
+    zona Cloudflare yang benar TANPA "d") tinggal ditambah di ingress nanti
+    bila owner minta; tidak diperlukan untuk QA.
+  - Portal = single page `/member` (login OTP inline) — `/login` 404 itu
+    by design, bukan bug.
+  - wa-gateway sehat: connected sebagai 6285880974659, uptime 4 hari.
+  - Kesimpulan: EPIC-011 murni tinggal **UAT owner** (skenario Fase F di
+    runbook + Fase B/laporan).

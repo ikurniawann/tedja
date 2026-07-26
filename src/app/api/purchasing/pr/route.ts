@@ -8,6 +8,7 @@ import {
   normalizePrWriteItems,
   parsePrWriteBody,
   sumPrTotalAmount,
+  type PrWriteItem,
 } from "@/lib/purchasing/pr-schemas";
 import { requireUser } from "@/lib/auth/require-user";
 import {
@@ -62,7 +63,11 @@ export async function GET(request: NextRequest) {
       query = query.eq("department_id", department_id);
     }
 
-    if (module_type === "raw_material" || module_type === "product") {
+    if (
+      module_type === "raw_material" ||
+      module_type === "product" ||
+      module_type === "general"
+    ) {
       query = query.eq("module_type", module_type);
     }
 
@@ -153,7 +158,11 @@ export async function POST(request: NextRequest) {
     
     const body = await request.json();
     const moduleType =
-      body?.module_type === "product" ? ("product" as const) : ("raw_material" as const);
+      body?.module_type === "product"
+        ? ("product" as const)
+        : body?.module_type === "general"
+          ? ("general" as const)
+          : ("raw_material" as const);
     const validated = parsePrWriteBody(body, moduleType);
     const scope = await getApiUserScope();
     const companyId = effectiveCompanyId(scope);
@@ -162,11 +171,11 @@ export async function POST(request: NextRequest) {
     // Generate PR number
     const prNumber = await generatePRNumber(db);
     
-    const normalizedItems = normalizePrWriteItems(validated.items);
+    const normalizedItems = normalizePrWriteItems(validated.items as PrWriteItem[]);
     const totalAmount = sumPrTotalAmount(normalizedItems);
 
     const nextStatus = validated.action === "submit" ? "pending_head" : "draft";
-    
+
     // Start transaction
     const { data: pr, error: prError } = await db
       .from("purchase_requests")
@@ -203,6 +212,7 @@ export async function POST(request: NextRequest) {
       pr_id: pr.id,
       product_id: "product_id" in item ? item.product_id : null,
       raw_material_id: "raw_material_id" in item ? item.raw_material_id : null,
+      supply_item_id: "supply_item_id" in item ? item.supply_item_id : null,
       satuan_id: item.satuan_id || null,
       description: item.description,
       qty: item.qty,

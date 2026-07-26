@@ -9,6 +9,7 @@ import {
 const COMPANY_SCOPED_TABLES = new Set([
   "raw_material_categories",
   "product_categories",
+  "supply_categories",
 ]);
 
 function getErrorMessage(error: unknown, fallback: string) {

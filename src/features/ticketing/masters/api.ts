@@ -1,10 +1,14 @@
 import type {
   BandFilters,
   BandListResponse,
+  CapacityDate,
+  CapacityDateFormValues,
   EmployeeOption,
   SettingsFormValues,
   StaffPass,
   TicketBand,
+  TimeSlot,
+  TimeSlotFormValues,
   TicketChannel,
   TicketingSettings,
 } from "./types";
@@ -54,6 +58,87 @@ export const updateSettings = (values: SettingsFormValues) =>
     values,
     "Gagal menyimpan pengaturan"
   );
+
+// ── Kapasitas harian (EPIC-031) ──
+export const fetchCapacityDates = () =>
+  getJson<CapacityDate[]>(
+    "/api/ticketing/capacity-dates",
+    "Gagal memuat override kapasitas"
+  );
+
+export const createCapacityDate = (values: CapacityDateFormValues) =>
+  sendJson<CapacityDate>(
+    "/api/ticketing/capacity-dates",
+    "POST",
+    values,
+    "Gagal menambah override kapasitas"
+  );
+
+export const updateCapacityDate = (
+  id: string,
+  values: Partial<CapacityDateFormValues> & { is_active?: boolean }
+) =>
+  sendJson<CapacityDate>(
+    `/api/ticketing/capacity-dates/${id}`,
+    "PATCH",
+    values,
+    "Gagal memperbarui override kapasitas"
+  );
+
+export async function deleteCapacityDate(id: string): Promise<{ id: string }> {
+  const res = await fetch(`/api/ticketing/capacity-dates/${id}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) await parseError(res, "Gagal menghapus override kapasitas");
+  const body = (await res.json()) as { data: { id: string } };
+  return body.data;
+}
+
+// EPIC-031 C — okupansi 90 hari ke depan utk peringatan pengaturan kapasitas
+export interface OccupancyDayLite {
+  date: string;
+  online: number;
+  walk_in: number;
+  capacity: number | null;
+}
+
+export const fetchOccupancyRange = (from: string, to: string) =>
+  getJson<{ days: OccupancyDayLite[] }>(
+    `/api/ticketing/occupancy?from=${from}&to=${to}`,
+    "Gagal memuat okupansi"
+  ).then((data) => data.days);
+
+// ── Slot waktu timed-entry (EPIC-031 D) ──
+export const fetchTimeSlots = () =>
+  getJson<TimeSlot[]>("/api/ticketing/time-slots", "Gagal memuat slot waktu");
+
+export const createTimeSlot = (values: TimeSlotFormValues) =>
+  sendJson<TimeSlot>(
+    "/api/ticketing/time-slots",
+    "POST",
+    values,
+    "Gagal menambah slot waktu"
+  );
+
+export const updateTimeSlot = (
+  id: string,
+  values: Partial<TimeSlotFormValues> & { is_active?: boolean }
+) =>
+  sendJson<TimeSlot>(
+    `/api/ticketing/time-slots/${id}`,
+    "PATCH",
+    values,
+    "Gagal memperbarui slot waktu"
+  );
+
+export async function deleteTimeSlot(id: string): Promise<{ id: string }> {
+  const res = await fetch(`/api/ticketing/time-slots/${id}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) await parseError(res, "Gagal menghapus slot waktu");
+  const body = (await res.json()) as { data: { id: string } };
+  return body.data;
+}
 
 // ── Kanal ──
 export const fetchChannels = () =>

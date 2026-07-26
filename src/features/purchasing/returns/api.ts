@@ -64,7 +64,7 @@ export interface ReturnGrnOption {
 }
 
 export async function listReturnGrnOptions(
-  moduleType: "raw_material" | "product" = "raw_material"
+  moduleType: "raw_material" | "product" | "general" = "raw_material"
 ): Promise<ReturnGrnOption[]> {
   const sp = new URLSearchParams();
   if (moduleType === "product") sp.set("module_type", "product");

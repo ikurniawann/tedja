@@ -1,6 +1,6 @@
 # EPIC-014: CRM Collectibles — Artwork, Wallpaper & Badge
 
-status: on-progress
+status: ready-for-qa
 environment: dev
 retries: 0
 
@@ -155,7 +155,7 @@ Buka jalur member sebelum menambah jenis aset baru.
 - Laporan "jatah menganggur" agar kebutuhan artwork baru terlihat lebih dini.
 
 **Exit:** sisa jatah member benar tanpa proses migrasi, dan tetap benar setelah
-`interval_xp` diubah.
+`interval_xp` diubah. — **SELESAI 25 Jul 2026**
 
 ### 3. Redeem oleh member + upload artwork
 
@@ -166,7 +166,8 @@ Buka jalur member sebelum menambah jenis aset baru.
 - Ganti field "Image URL" jadi upload berkas + generate thumbnail.
 
 **Exit:** member memilih sendiri artwork yang ditukar; admin mengunggah artwork
-tanpa hosting eksternal.
+tanpa hosting eksternal. — **SELESAI 25 Jul 2026** (thumbnail otomatis belum —
+gambar penuh dipakai sebagai preview; generate thumbnail menyusul bila perlu)
 
 ### 4. Modul bersama `collectibles.ts`
 
@@ -237,6 +238,15 @@ dua sumber angka berarti dua jumlah jatah yang berbeda.
 **Harus diputuskan sebelum Task 2:** satu kolom ditetapkan kanonik dan yang
 lain disinkronkan atau dihapus.
 
+**DIPUTUSKAN 25 Jul 2026: `pos.pos_customers.total_xp` kanonik** (konsisten
+EPIC-011 — portal, rewards, reports, dan collectibles semua membacanya).
+`lifetime_xp` profil = mirror internal engine: di-backfill dari total_xp
+(migrasi `20260725120000`; penyimpangan dev = data seed manual, bukan bug
+engine), diberi COMMENT "jangan dibaca untuk logika baru", dan
+`syncTierAfterEarn` kini membaca total_xp. Bonus ditemukan: referensi hantu
+`pos_customers.current_xp` (sudah di-drop EPIC-011 Fase B) masih ditulis
+`syncPosCustomerAfterEarn` — dibersihkan.
+
 ### Katalog kosong saat fitur dibangun
 
 DB dev berisi 0 artwork dan 0 baris inventory — bukti bahwa modul Avatars
@@ -245,6 +255,100 @@ untuk verifikasi dan dapat dihapus kapan saja.
 
 ## Automation Log
 
+- **25 Jul 2026 (4)** — **Halaman admin wallpaper & badge SELESAI** — sisa
+  epic tertutup, status → ready-for-qa. Feature baru meniru pola
+  `src/features/crm/avatars/`: `src/features/crm/wallpapers/` +
+  `src/features/crm/badges/` (types/query-keys/api/queries/mutations +
+  komponen halaman), route `/dashboard/crm/wallpapers` (form lengkap: code,
+  nama, rarity, gambar + unggah via `/api/crm/avatars/upload`, thumbnail,
+  ambang XP, tier minimal, stok, jendela mulai/berakhir, aktif) dan
+  `/dashboard/crm/badges` (code, nama, ambang XP wajib, gambar opsional +
+  unggah, aktif; daftar menampilkan `awarded_count`). Menu sidebar via
+  migrasi `20260725140000_crm_collectibles_menu.sql` (applied): item
+  `crm.wallpapers` + `crm.badges` level 2 di grup CRM, grant hanya
+  super_admin. Gate: tsc 481 baseline (0 error baru).
+- **25 Jul 2026 (3)** — **Task 5 (wallpaper) + Task 6 (badge) SELESAI sisi
+  server + portal member.** Migrasi `20260725130000` (applied): tabel
+  `crm_collectible_wallpapers` + `crm_member_wallpaper_inventory` (UNIQUE per
+  member), `crm_badges` (definisi, ambang XP murni) + `crm_member_badges`
+  (UNIQUE customer+badge, `is_showcased`).
+  - **Wallpaper ikut alur jatah yang sama**: `listWallpapersForMember`
+    menghasilkan bentuk baris yang sama dengan avatar sehingga
+    `evaluateCollectible` + `sortCollectibles` dipakai apa adanya (mitigasi
+    duplikasi bekerja seperti dirancang); redeem
+    `POST /api/member-portal/wallpapers/redeem` = pola transaksi avatar
+    (FOR UPDATE, re-eval dalam tx, guard stok SQL, UNIQUE anti balapan);
+    unduh resolusi penuh = tautan `image_url` (bucket publik).
+  - **Badge otomatis tanpa jatah**: `awardEligibleBadges` (INSERT..SELECT
+    ambang terlampaui + ON CONFLICT DO NOTHING, idempotent), dievaluasi
+    lazily saat portal membaca `GET /api/member-portal/badges`; badge baru →
+    notifikasi WA best-effort via `sendWhatsAppText` (provider gateway);
+    pamerkan maks 3 (`POST` toggle, dihitung server).
+  - Admin: CRUD `GET/POST/DELETE /api/crm/wallpapers` & `/api/crm/badges`
+    (guard super_admin; hapus yang sudah dimiliki/diraih member → nonaktif,
+    bukan delete). Portal: kartu Wallpaper (Tukar/Unduh) + Badge Pencapaian
+    (grid + tombol Pamerkan) di tab Koleksi.
+  - Gate: 899 unit test hijau, build sukses (5 route baru), tsc 481 baseline,
+    migrasi applied, PM2 restart, smoke 4 endpoint 401 tanpa sesi.
+  - **Sisa epic (kecil)**: halaman dashboard admin untuk wallpaper & badge
+    builder (backend CRUD sudah siap; sementara kelola via API), thumbnail
+    otomatis, dan notifikasi badge saat earn XP real-time (sekarang lazy saat
+    portal dibuka). E2E + dark mode = QA manual.
+- **25 Jul 2026 (2)** — **Task 3 SELESAI: redeem oleh member + upload artwork.**
+  - `POST /api/member-portal/collectibles/redeem`: SATU transaksi
+    (`withTransaction`) — kunci baris customer `FOR UPDATE` (serialisasi
+    per member) + kunci baris artwork, cek dobel-milik, cek sisa jatah
+    (`getEntitlementSummary`), evaluasi ulang kelayakan DI DALAM transaksi
+    (`checkAvatarEligibility` — modul bersama), guard stok di SQL
+    (`UPDATE … WHERE stock_redeemed < stock_total`), tulis ledger
+    entitlements + inventory. Balapan yang lolos ke INSERT tertangkap UNIQUE
+    (customer, asset) → 409, bukan artwork dobel. Member tanpa profil CRM →
+    409 dengan pesan ramah.
+  - Portal: banner "Jatah tukar: N · +1 tiap X XP", tombol **"Tukar dengan 1
+    jatah"** hanya pada artwork yang syaratnya terpenuhi; jatah habis → pesan
+    "kumpulkan XP lagi"; sukses → reload katalog.
+  - Upload artwork: `POST /api/crm/avatars/upload` (guard super_admin
+    `requireCrmConfigRole`, ≤5 MB, magic-bytes JPG/PNG/WebP, bucket publik
+    `crm-avatars` via `uploadFile`) + tombol "Unggah Gambar Artwork" di form
+    admin mengisi `image_url` otomatis — tanpa hosting eksternal.
+  - Gate: 899 unit test hijau, build sukses (2 route baru), tsc 481 baseline,
+    PM2 restart, smoke redeem & upload 401 tanpa sesi.
+  - Sisa epic: Task 5 wallpaper, Task 6 badge (+ integrasi laporan idle ke UI
+    admin bila diminta).
+- **25 Jul 2026** — **Blocker XP kanonik TUNTAS + Task 2 (mesin jatah tukar)
+  SELESAI sisi server.**
+  - Kanonik = `pos_customers.total_xp` (lihat Temuan Implementasi). Backfill +
+    COMMENT + `syncTierAfterEarn` baca kanonik + bersih-bersih `current_xp`
+    hantu di `syncPosCustomerAfterEarn` (loyalty-engine).
+  - Migrasi `20260725120000` (applied): kolom `crm_collectible_avatars.
+    min_lifetime_xp` (ambang per artwork), tabel ledger
+    `crm.crm_member_entitlements` (customer_id NOT NULL + UNIQUE per artwork,
+    member_id nullable — pola Fase F EPIC-011), seed `crm_settings.
+    collectible_interval_xp = 5000`.
+  - **Modul bersama `src/lib/crm/collectibles.ts` lahir (cicilan Task 4)**:
+    `entitlementQuota`, `remainingEntitlements` (jepit max(0,…) — koreksi XP
+    turun aman), `evaluateCollectibleGate` (aktif/jendela/stok/min XP/tier),
+    `blockerMessage`, `parseIntervalXp`. 12 unit test menutup kelipatan tepat,
+    interval turun langsung menambah jatah, koreksi XP turun, arah pemakaian
+    ke bawah.
+  - `collectibles-server.ts`: `evaluateCollectible` kini memanggil modul
+    bersama (syarat efektif = max(ambang tier, ambang artwork));
+    `getEntitlementSummary` (interval/quota/used/remaining, dihitung saat
+    dibaca — tanpa backfill); `checkAvatarEligibility` untuk jalur non-portal.
+  - **`required_tier_id` + `min_lifetime_xp` kini DITEGAKKAN di grant admin**
+    (`avatar-inventory` POST → 403 + alasan; dulu dekoratif — temuan audit
+    epic ini).
+  - Portal `GET /api/member-portal/collectibles` mengembalikan `entitlement`
+    (sisa jatah member).
+  - **Laporan jatah menganggur**: `GET /api/crm/collectibles/idle-report`
+    (guard role laporan CRM): per-member idle = greatest(0, floor(total_xp/
+    interval) − used), total idle, jumlah artwork aktif — sinyal kapan katalog
+    perlu diisi.
+  - Gate: 899 unit test hijau (+12), build sukses (route idle-report
+    ter-generate), tsc 481 baseline (0 baru), migrasi applied (profil
+    menyimpang = 0 pasca-backfill), PM2 restart, smoke 401 tanpa sesi.
+  - Sisa: Task 3 (redeem member ber-lock + upload artwork), Task 5 wallpaper,
+    Task 6 badge; UI sisa jatah di portal ikut Task 3 (saat tombol Tukar ada).
 - **20 Jul 2026** — Epic dibuat. Audit menemukan fondasi koleksi sudah ada di
   skema `crm`, tetapi tanpa jalur member sama sekali; `xp_cost` dan
   `required_tier_id` tidak pernah dieksekusi di

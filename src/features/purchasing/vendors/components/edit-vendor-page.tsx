@@ -16,7 +16,13 @@ import { PRODUCT_ROUTES } from "@/modules/purchasing/constants/item-routes";
 import { toast } from "sonner";
 import { useVendor } from "../queries";
 import { useUpdateVendor } from "../mutations";
-import { VENDOR_CATEGORY_OPTIONS, type VendorFormData, type VendorCategory } from "../types";
+import {
+  VENDOR_CATEGORY_OPTIONS,
+  VENDOR_USAGE_OPTIONS,
+  type VendorFormData,
+  type VendorCategory,
+  type VendorUsageScope,
+} from "../types";
 
 function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
@@ -39,6 +45,7 @@ export function EditVendorPage() {
     email: "",
     address: "",
     category: "other",
+    usage_scope: "keduanya",
     npwp: "",
     bank_name: "",
     bank_account: "",
@@ -56,6 +63,7 @@ export function EditVendorPage() {
       email: vendor.email,
       address: vendor.address,
       category: vendor.category,
+      usage_scope: vendor.usage_scope ?? "keduanya",
       npwp: vendor.npwp || "",
       bank_name: vendor.bank_name || "",
       bank_account: vendor.bank_account || "",
@@ -149,6 +157,23 @@ export function EditVendorPage() {
                   placeholder="Select category..."
                   className="h-9 text-sm"
                 />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">
+                  Peruntukan <span className="text-red-500">*</span>
+                </Label>
+                <Combobox
+                  options={VENDOR_USAGE_OPTIONS}
+                  value={formData.usage_scope}
+                  onChange={(value) =>
+                    setFormData({ ...formData, usage_scope: (value || "keduanya") as VendorUsageScope })
+                  }
+                  placeholder="Pilih peruntukan..."
+                  className="h-9 text-sm"
+                />
+                <p className="text-[11px] text-gray-500">
+                  Menentukan vendor muncul di PO produk/F&amp;B, barang operasional, atau keduanya.
+                </p>
               </div>
             </div>
             <div className="space-y-1.5">

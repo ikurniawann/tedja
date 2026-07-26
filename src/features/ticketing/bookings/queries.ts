@@ -7,6 +7,7 @@ import {
   clearWebhookAlert,
   fetchBookingDetail,
   fetchBookings,
+  fetchOccupancy,
   redeemBooking,
   resendBookingWa,
   saveRefundNote,
@@ -17,12 +18,20 @@ export const bookingQueryKeys = {
   all: ["ticketing", "bookings"] as const,
   list: (filters: BookingFilters) => ["ticketing", "bookings", filters] as const,
   detail: (id: string) => ["ticketing", "bookings", "detail", id] as const,
+  occupancy: (from: string, to: string) =>
+    ["ticketing", "occupancy", from, to] as const,
 };
 
 export const useBookings = (filters: BookingFilters) =>
   useQuery({
     queryKey: bookingQueryKeys.list(filters),
     queryFn: () => fetchBookings(filters),
+  });
+
+export const useOccupancy = (from: string, to: string) =>
+  useQuery({
+    queryKey: bookingQueryKeys.occupancy(from, to),
+    queryFn: () => fetchOccupancy(from, to),
   });
 
 export const useBookingDetail = (id: string | null) =>

@@ -23,7 +23,7 @@ import {
 import { toast } from "sonner";
 import { useVendor } from "../queries";
 import { useDeactivateVendor } from "../mutations";
-import { getVendorCategoryLabel } from "../types";
+import { getVendorCategoryLabel, getVendorUsageLabel } from "../types";
 
 function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
@@ -104,6 +104,8 @@ export function VendorDetailPage({ id: idProp }: { id?: string }) {
             </span>
             <span className="text-gray-300">•</span>
             <span>{getVendorCategoryLabel(vendor.category)}</span>
+            <span className="text-gray-300">•</span>
+            <span>{getVendorUsageLabel(vendor.usage_scope)}</span>
             <span className="ml-1">
               {vendor.is_active ? (
                 <Badge className="border-emerald-200 bg-emerald-50 text-emerald-700">Active</Badge>
@@ -144,6 +146,7 @@ export function VendorDetailPage({ id: idProp }: { id?: string }) {
           <CardContent className="grid gap-4 p-4 sm:grid-cols-2">
             <InfoRow label="Vendor Code" value={vendor.code} />
             <InfoRow label="Category" value={getVendorCategoryLabel(vendor.category)} />
+            <InfoRow label="Peruntukan" value={getVendorUsageLabel(vendor.usage_scope)} />
             <InfoRow label="Created At" value={formatDate(vendor.created_at)} />
             <div className="sm:col-span-2">
               <p className="text-xs font-medium text-gray-500">Address</p>

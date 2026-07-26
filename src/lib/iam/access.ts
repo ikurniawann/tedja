@@ -43,6 +43,8 @@ export const ROLE_MODULE_PATHS: Record<string, readonly string[]> = {
   sales: ["/dashboard/sales-funnel"],
   // EPIC-025: finance memproses invoice & pembayaran AR
   finance_staff: ["/dashboard/finance"],
+  // EPIC-032: marketing mengelola campaign promo, kode & voucher
+  marketing: ["/dashboard/promo"],
 };
 
 /** Prefix modul tambahan yang boleh diakses sebuah role (di luar ESS). */
@@ -61,5 +63,22 @@ export function canAccessPath(
   if (isEssPath(pathname)) return true;
   return allowedModulePaths(role).some(
     (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)
+  );
+}
+
+/**
+ * True bila pathname tercakup salah satu href menu IAM yang di-grant ke
+ * user (prefix match). Root "/dashboard" sengaja EXACT-only — banyak role
+ * punya menu Beranda, dan prefix "/dashboard" akan meloloskan semua modul
+ * (fix H1 security review EPIC-032 A4).
+ */
+export function isPathAllowedByMenus(
+  pathname: string,
+  menuHrefs: readonly string[]
+): boolean {
+  return menuHrefs.some((href) =>
+    href === "/dashboard"
+      ? pathname === "/dashboard"
+      : pathname === href || pathname.startsWith(`${href}/`)
   );
 }

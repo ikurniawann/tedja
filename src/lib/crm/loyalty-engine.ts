@@ -39,6 +39,7 @@ type PosCustomerLoyaltyRow = {
   phone?: string | null;
   membership_tier?: string | null;
   total_xp?: number | string | null;
+  current_xp?: number | string | null;
   total_spent?: number | string | null;
   visit_count?: number | string | null;
 };
@@ -646,19 +647,19 @@ async function getTierMultiplierForRule(db: DbClient, ruleId: string, member: Cr
 async function syncPosCustomerAfterEarn(db: DbClient, customerId: string, xpAwarded: number) {
   const { data: customer, error } = await db
     .from("pos_customers")
-    .select("total_xp, current_xp")
+    .select("total_xp")
     .eq("id", customerId)
     .maybeSingle();
 
   if (error || !customer) return;
 
   // Visit/spend stats live in syncPosCustomerOrderStats (CRM revamp) —
-  // this helper only mirrors XP onto pos_customers.
+  // this helper only mirrors XP onto pos_customers. current_xp sudah di-DROP
+  // pada EPIC-011 Fase B; referensinya dibersihkan (EPIC-014, 25 Jul 2026).
   await db
     .from("pos_customers")
     .update({
       total_xp: toNumber((customer as PosCustomerLoyaltyRow).total_xp) + xpAwarded,
-      current_xp: toNumber((customer as PosCustomerLoyaltyRow).current_xp) + xpAwarded,
       updated_at: new Date().toISOString(),
     })
     .eq("id", customerId);
@@ -714,10 +715,20 @@ export async function syncTierAfterEarn(db: DbClient, customerId: string) {
 
   if (tiersError || !tiers?.length) return;
 
-  // Tier ditentukan MURNI dari lifetime XP (keputusan owner EPIC-011):
-  // tier tertinggi yang ambang min_lifetime_xp-nya sudah terlampaui.
+  // Tier ditentukan MURNI dari lifetime XP (keputusan owner EPIC-011), dan
+  // sumber XP kanonik = pos_customers.total_xp (keputusan EPIC-014 25 Jul —
+  // lifetime_xp profil hanya mirror; bila keduanya sempat menyimpang, angka
+  // customer yang menang). Fallback ke mirror bila baris customer tak terbaca.
   const profileRow = profile as Pick<CrmMemberProfile, "id" | "tier_id" | "lifetime_xp">;
-  const lifetimeXp = toNumber(profileRow.lifetime_xp);
+  const { data: customer } = await db
+    .from("pos_customers")
+    .select("total_xp")
+    .eq("id", customerId)
+    .maybeSingle();
+  const lifetimeXp =
+    customer != null
+      ? toNumber((customer as PosCustomerLoyaltyRow).total_xp)
+      : toNumber(profileRow.lifetime_xp);
   const nextTier = (tiers as CrmTier[]).find(
     (tier) => lifetimeXp >= toNumber(tier.min_lifetime_xp)
   );

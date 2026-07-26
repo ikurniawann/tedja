@@ -16,8 +16,10 @@ interface ProductRow {
   category_id: string | null;
   category_name: string | null;
   status: "draft" | "active";
-  product_kind: "single" | "bundle";
+  product_kind: "single" | "bundle" | "season_pass";
   base_price: string;
+  cogs: string;
+  has_gate: boolean;
   thumbnail_url: string | null;
   description: string | null;
   re_entry_policy: string;
@@ -37,7 +39,8 @@ export async function GET(
     const { id } = await params;
     const product = await queryOne<ProductRow>(
       `SELECT tp.id, tp.code, tp.name, tp.category_id, c.name AS category_name,
-              tp.status, tp.product_kind, tp.base_price, tp.thumbnail_url,
+              tp.status, tp.product_kind, tp.base_price, tp.cogs, tp.has_gate,
+              tp.thumbnail_url,
               tp.description, tp.re_entry_policy, tp.created_at, tp.updated_at
        FROM ticketing.ticket_products tp
        LEFT JOIN ticketing.ticket_categories c ON c.id = tp.category_id
@@ -100,7 +103,11 @@ export async function GET(
     ]);
 
     return successResponse({
-      product: { ...product, base_price: Number(product.base_price) },
+      product: {
+        ...product,
+        base_price: Number(product.base_price),
+        cogs: Number(product.cogs),
+      },
       variants: variants.map((v) => ({
         ...v,
         price_regular: v.price_regular === null ? null : Number(v.price_regular),
@@ -132,6 +139,8 @@ const updateProductSchema = z.object({
   category_name: z.string().trim().max(100).optional().nullable(),
   status: z.enum(["draft", "active"]).optional(),
   base_price: z.number().min(0).max(1_000_000_000).optional(),
+  cogs: z.number().min(0).max(1_000_000_000).optional(),
+  has_gate: z.boolean().optional(),
   description: z.string().trim().max(2000).optional().nullable(),
   re_entry_policy: z.enum(RE_ENTRY_POLICIES).optional(),
   variants: z
@@ -235,6 +244,8 @@ export async function PATCH(
       if (categoryId !== undefined) add("category_id", categoryId);
       if (body.status !== undefined) add("status", body.status);
       if (body.base_price !== undefined) add("base_price", body.base_price);
+      if (body.cogs !== undefined) add("cogs", body.cogs);
+      if (body.has_gate !== undefined) add("has_gate", body.has_gate);
       if (body.description !== undefined) add("description", body.description || null);
       if (body.re_entry_policy !== undefined) {
         add("re_entry_policy", body.re_entry_policy);

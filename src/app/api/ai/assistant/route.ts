@@ -13,6 +13,12 @@ import { SETTING_KEYS, getSettings } from "@/lib/settings/app-settings";
 import { extractSseData, readOpenAiDelta, splitSseEvents } from "@/lib/assistant/sse";
 import { contextSizeChars, selectContextForIntent, type AssistantIntent } from "@/lib/assistant/context";
 import { parseToolArguments, runTool, toolDefinitions } from "@/lib/assistant/tools";
+import {
+  isWriteActionName,
+  proposeWriteAction,
+  writeToolDefinitions,
+  type PendingActionMeta,
+} from "@/lib/assistant/write-tools";
 import { appendFile, mkdir } from "fs/promises";
 import path from "path";
 
@@ -46,6 +52,8 @@ type LlmResult = {
   provider?: "openai" | "internal";
   fallbackReason?: string;
   error?: string;
+  /** Usulan aksi tulis yang menunggu konfirmasi user (EPIC-017 Fase E). */
+  pendingAction?: PendingActionMeta | null;
 };
 type Summary = {
   generatedAt: string;
@@ -208,6 +216,14 @@ export async function POST(request: NextRequest) {
       .eq("id", user.id)
       .single();
 
+    // Gate yang selama ini hanya ada di UI ("Only super_admin can use this
+    // assistant") ditegakkan juga di server — temuan review Fase E: tanpa ini,
+    // user login role lain bisa memakai Do (termasuk tool pencari kandidat/
+    // karyawan) langsung lewat API.
+    if (profile?.role !== "super_admin") {
+      return NextResponse.json({ error: "Do hanya untuk super_admin" }, { status: 403 });
+    }
+
     const admin = createPgClient();
 
     intent = includeProjectData ? detectIntent(prompt) : "all";
@@ -265,6 +281,8 @@ export async function POST(request: NextRequest) {
         status: llmResult.status,
         fallbackReason: llmResult.fallbackReason,
         user: user.email,
+        // Kartu konfirmasi aksi tulis dirender UI dari sini (Fase E).
+        pending_action: llmResult.pendingAction ?? undefined,
       };
     };
 
@@ -285,6 +303,7 @@ export async function POST(request: NextRequest) {
               scope,
               model,
               attachments,
+              actionCtx: { userId: user.id, userName, sessionId },
               onDelta: (text) => send({ type: "delta", text }),
             });
             // Penyimpanan dilakukan SETELAH stream selesai, memakai teks utuh
@@ -322,6 +341,7 @@ export async function POST(request: NextRequest) {
       scope,
       model,
       attachments,
+      actionCtx: { userId: user.id, userName, sessionId },
     });
 
     // Persist messages
@@ -406,7 +426,16 @@ async function persistAndAudit({
         session_id: sessionId,
         role: "assistant",
         content: llmResult.answer,
-        meta: { mode: llmResult.mode, model: llmResult.model, status: llmResult.status, intent, scope },
+        meta: {
+          mode: llmResult.mode,
+          model: llmResult.model,
+          status: llmResult.status,
+          intent,
+          scope,
+          // Ikut disimpan supaya kartu konfirmasi tetap tampil saat sesi dibuka
+          // ulang (statusnya diverifikasi lagi oleh endpoint konfirmasi).
+          ...(llmResult.pendingAction ? { pending_action: llmResult.pendingAction } : {}),
+        },
       },
     ]);
   }
@@ -749,11 +778,13 @@ type ChatMsg = { role: string; content: string | null; tool_calls?: unknown; too
 async function runToolRounds(
   model: string,
   messages: ChatMsg[],
+  actionCtx: { userId: string; userName: string; sessionId?: string },
   maxRounds = 3
-): Promise<{ messages: ChatMsg[]; toolsUsed: string[] }> {
+): Promise<{ messages: ChatMsg[]; toolsUsed: string[]; pendingAction: PendingActionMeta | null }> {
   const { apiKey, baseUrl, timeoutMs } = await resolveOpenAiCall();
   const working = [...messages];
   const toolsUsed: string[] = [];
+  let pendingAction: PendingActionMeta | null = null;
 
   for (let round = 0; round < maxRounds; round++) {
     const response = await fetch(`${baseUrl}/chat/completions`, {
@@ -762,7 +793,7 @@ async function runToolRounds(
       body: JSON.stringify({
         model: stripOpenAiPrefix(model),
         ...(modelSupportsTemperature(model) ? { temperature: 0.7 } : {}),
-        tools: toolDefinitions(),
+        tools: [...toolDefinitions(), ...writeToolDefinitions()],
         messages: working,
       }),
       signal: AbortSignal.timeout(timeoutMs),
@@ -781,7 +812,7 @@ async function runToolRounds(
     };
     const choice = json.choices?.[0]?.message;
     const calls = choice?.tool_calls ?? [];
-    if (!calls.length) return { messages: working, toolsUsed };
+    if (!calls.length) return { messages: working, toolsUsed, pendingAction };
 
     // Pesan asisten yang memuat tool_calls WAJIB ikut disertakan sebelum hasil
     // tool-nya; OpenAI menolak tool message yang tidak punya panggilan induk.
@@ -790,7 +821,31 @@ async function runToolRounds(
     for (const call of calls) {
       const name = call.function?.name ?? "";
       const args = parseToolArguments(call.function?.arguments);
-      const result = await runTool(name, args);
+      let result: unknown;
+      if (isWriteActionName(name)) {
+        // Aksi tulis TIDAK dieksekusi di sini — hanya jadi usulan pending yang
+        // menunggu tombol konfirmasi user di UI (EPIC-017 Fase E). Satu usulan
+        // per giliran supaya kartu konfirmasi tidak menumpuk.
+        if (pendingAction) {
+          result = { error: "Sudah ada aksi lain yang menunggu konfirmasi user pada giliran ini." };
+        } else {
+          const proposal = await proposeWriteAction(name, args, actionCtx);
+          if ("pending" in proposal) {
+            pendingAction = proposal.pending;
+            result = {
+              status: "menunggu_konfirmasi_user",
+              ringkasan: proposal.pending.summary,
+              instruksi:
+                "Aksi BELUM dijalankan. User harus menekan tombol konfirmasi pada kartu yang muncul di layar. " +
+                "Sampaikan ke user untuk memeriksa kartu konfirmasi, dan JANGAN mengklaim aksi sudah dijalankan.",
+            };
+          } else {
+            result = { error: proposal.error };
+          }
+        }
+      } else {
+        result = await runTool(name, args);
+      }
       toolsUsed.push(name);
       console.info(`[do:tool] ${name} ${JSON.stringify(args)}`);
       working.push({
@@ -805,7 +860,7 @@ async function runToolRounds(
   // Batas putaran tercapai: lanjutkan dengan data yang sudah terkumpul daripada
   // membiarkan model memanggil tool tanpa henti.
   console.warn("[do:tool] batas putaran tool tercapai");
-  return { messages: working, toolsUsed };
+  return { messages: working, toolsUsed, pendingAction };
 }
 
 async function callOpenAiChat(model: string, messages: ChatMsg[]): Promise<string> {
@@ -886,6 +941,7 @@ async function generateAnswer({
   scope,
   model,
   attachments,
+  actionCtx,
   onDelta,
 }: {
   message: string;
@@ -897,6 +953,8 @@ async function generateAnswer({
   scope: AiAssistantScope;
   model: AiAssistantModel;
   attachments?: SafeAttachment[];
+  /** Identitas pemilik giliran ini — dipakai usulan aksi tulis (Fase E). */
+  actionCtx: { userId: string; userName: string; sessionId?: string };
   /** Bila diisi, jawaban dialirkan potong demi potong lewat callback ini. */
   onDelta?: (text: string) => void;
 }): Promise<LlmResult> {
@@ -912,6 +970,7 @@ async function generateAnswer({
     "Jangan menyebut JSON, API, query, schema, database, payload, object, array, model, prompt, system, atau istilah teknis internal kecuali user secara eksplisit meminta penjelasan teknis.",
     "Jika user bertanya data bisnis Arkiv OS, gunakan data internal yang tersedia dan jangan mengarang angka.",
     "Kamu punya alat untuk mengambil data terkini (karyawan, absensi, stok, penjualan, kandidat). Pakai alat itu bila pertanyaannya spesifik, jangan menebak dari ringkasan.",
+    "Kamu juga bisa MENYIAPKAN aksi tertentu (membuat draft pengumuman, mencatat catatan kandidat). Aksi itu tidak pernah berjalan otomatis: sistem menampilkan kartu konfirmasi dan user harus menekan tombolnya sendiri. Setelah menyiapkan aksi, minta user memeriksa kartu konfirmasi di bawah jawabanmu, dan jangan pernah mengklaim aksinya sudah dijalankan.",
     "Jika data yang diperlukan tidak tersedia, cukup katakan data tersebut belum tersedia di sistem dan sarankan module atau filter yang perlu dibuka.",
     "Jika menjawab angka atau ringkasan, jelaskan artinya dalam konteks bisnis secara singkat.",
     "Ingat konteks percakapan dari history yang diberikan.",
@@ -949,11 +1008,13 @@ async function generateAnswer({
   // sengaja tidak diberi akses data operasional.
   let working: ChatMsg[] = messages;
   let toolsUsed: string[] = [];
+  let pendingAction: PendingActionMeta | null = null;
   if (includeProjectData) {
     try {
-      const rounds = await runToolRounds(model, messages);
+      const rounds = await runToolRounds(model, messages, actionCtx);
       working = rounds.messages;
       toolsUsed = rounds.toolsUsed;
+      pendingAction = rounds.pendingAction;
     } catch (error) {
       // Gagal di tahap tool bukan alasan gagal menjawab: lanjutkan tanpa data
       // tambahan, memakai konteks ringkasan seperti sebelumnya.
@@ -966,7 +1027,7 @@ async function generateAnswer({
   if (onDelta) {
     try {
       const answer = await callOpenAiChatStream(model, working, onDelta);
-      return { answer, mode: `openai_stream_live${modeSuffix}`, model, provider: "openai", status: "live" };
+      return { answer, mode: `openai_stream_live${modeSuffix}`, model, provider: "openai", status: "live", pendingAction };
     } catch (error) {
       // Streaming gagal (mis. proxy memotong koneksi) bukan alasan menyerah:
       // coba sekali lagi tanpa stream sebelum jatuh ke ringkasan internal.
@@ -976,7 +1037,7 @@ async function generateAnswer({
 
   try {
     const answer = await callOpenAiChat(model, working);
-    return { answer, mode: `openai_chat_completions_live${modeSuffix}`, model, provider: "openai", status: "live" };
+    return { answer, mode: `openai_chat_completions_live${modeSuffix}`, model, provider: "openai", status: "live", pendingAction };
   } catch (error) {
     const detail = formatProviderError(error, "openai");
     console.warn("AI assistant OpenAI fallback:", detail);

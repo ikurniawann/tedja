@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getApiUser } from "@/lib/api/auth";
 import { SETTING_KEYS, getSettings, maskSecret, setSetting } from "@/lib/settings/app-settings";
 import { resetGoogleTokenCache } from "@/lib/crm/google-business-client";
+import { parseLocationIds } from "@/lib/crm/google-reviews";
 
 /**
  * EPIC-013 Fase A — kredensial Google Business Profile, diisi dari UI.
@@ -22,7 +23,8 @@ const updateSchema = z.object({
   client_secret: z.string().trim().max(300).optional(),
   refresh_token: z.string().trim().max(600).optional(),
   account_id: z.string().trim().max(200).optional(),
-  location_id: z.string().trim().max(200).optional(),
+  // Bisa memuat BANYAK lokasi dipisah koma (multi-lokasi EPIC-013).
+  location_id: z.string().trim().max(1000).optional(),
 });
 
 async function requireSuperAdmin() {
@@ -105,9 +107,11 @@ export async function PUT(request: NextRequest) {
       updates.push([SETTING_KEYS.GOOGLE_BP_ACCOUNT_ID, withPrefix(payload.account_id, "accounts")]);
     }
     if (payload.location_id !== undefined) {
+      // Multi-lokasi: tiap entri dinormalkan ke `locations/{id}` lalu
+      // disimpan sebagai daftar dipisah koma — nilai lama satu lokasi tetap sah.
       updates.push([
         SETTING_KEYS.GOOGLE_BP_LOCATION_ID,
-        withPrefix(payload.location_id, "locations"),
+        parseLocationIds(payload.location_id).join(","),
       ]);
     }
     // Rahasia hanya ditulis bila benar-benar diisi — field kosong berarti

@@ -60,8 +60,9 @@ export async function GET(request: NextRequest) {
     if (branchOr) query = query.or(branchOr);
 
     if (search) {
+      // product & general REUSE vendors (vendor_name); raw_material = nama_supplier.
       const searchField =
-        moduleType === "product"
+        moduleType !== "raw_material"
           ? `nomor_po.ilike.%${search}%,vendor_name.ilike.%${search}%`
           : `nomor_po.ilike.%${search}%,nama_supplier.ilike.%${search}%`;
       query = query.or(searchField);
@@ -93,7 +94,7 @@ export async function GET(request: NextRequest) {
         nomor_po: row.nomor_po,
         tanggal_po: row.tanggal_po,
         nama_supplier:
-          moduleType === "product"
+          moduleType !== "raw_material"
             ? row.vendor_name || row.nama_supplier
             : row.nama_supplier,
         po_status: row.status,

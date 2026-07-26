@@ -3,7 +3,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
+  createCapacityDate,
+  deleteCapacityDate,
+  fetchOccupancyRange,
   fetchBands,
+  fetchCapacityDates,
   fetchChannels,
   fetchSettings,
   fetchStaffPasses,
@@ -12,10 +16,21 @@ import {
   revokeStaffPass,
   searchEmployees,
   updateBand,
+  createTimeSlot,
+  deleteTimeSlot,
+  fetchTimeSlots,
+  updateCapacityDate,
   updateChannel,
+  updateTimeSlot,
   updateSettings,
 } from "./api";
-import type { BandFilters, SettingsFormValues, TicketBand } from "./types";
+import type {
+  BandFilters,
+  CapacityDateFormValues,
+  SettingsFormValues,
+  TicketBand,
+  TimeSlotFormValues,
+} from "./types";
 
 export const ticketingQueryKeys = {
   all: ["ticketing"] as const,
@@ -26,6 +41,8 @@ export const ticketingQueryKeys = {
   staffPasses: (q: string) => ["ticketing", "staff-passes", q] as const,
   staffPassesAll: ["ticketing", "staff-passes"] as const,
   employeeOptions: (q: string) => ["ticketing", "employee-options", q] as const,
+  capacityDates: ["ticketing", "capacity-dates"] as const,
+  timeSlots: ["ticketing", "time-slots"] as const,
 };
 
 // Settings dipanggil pertama — GET-nya sekaligus bootstrap kanal default
@@ -98,6 +115,82 @@ export const useUpdateBand = (onSuccess?: () => void) =>
     "Gelang diperbarui",
     [ticketingQueryKeys.bandsAll],
     onSuccess
+  );
+
+// ── Kapasitas harian (EPIC-031) ──
+export const useOccupancyRange = (from: string, to: string) =>
+  useQuery({
+    queryKey: ["ticketing", "occupancy", from, to] as const,
+    queryFn: () => fetchOccupancyRange(from, to),
+  });
+
+export const useCapacityDates = () =>
+  useQuery({
+    queryKey: ticketingQueryKeys.capacityDates,
+    queryFn: fetchCapacityDates,
+  });
+
+export const useCreateCapacityDate = (onSuccess?: () => void) =>
+  useInvalidatingMutation(
+    (values: CapacityDateFormValues) => createCapacityDate(values),
+    "Override kapasitas ditambahkan",
+    [ticketingQueryKeys.capacityDates],
+    onSuccess
+  );
+
+export const useUpdateCapacityDate = () =>
+  useInvalidatingMutation(
+    ({
+      id,
+      values,
+    }: {
+      id: string;
+      values: Partial<CapacityDateFormValues> & { is_active?: boolean };
+    }) => updateCapacityDate(id, values),
+    "Override kapasitas diperbarui",
+    [ticketingQueryKeys.capacityDates]
+  );
+
+export const useDeleteCapacityDate = () =>
+  useInvalidatingMutation(
+    (id: string) => deleteCapacityDate(id),
+    "Override kapasitas dihapus",
+    [ticketingQueryKeys.capacityDates]
+  );
+
+// ── Slot waktu timed-entry (EPIC-031 D) ──
+export const useTimeSlots = () =>
+  useQuery({
+    queryKey: ticketingQueryKeys.timeSlots,
+    queryFn: fetchTimeSlots,
+  });
+
+export const useCreateTimeSlot = (onSuccess?: () => void) =>
+  useInvalidatingMutation(
+    (values: TimeSlotFormValues) => createTimeSlot(values),
+    "Slot waktu ditambahkan",
+    [ticketingQueryKeys.timeSlots],
+    onSuccess
+  );
+
+export const useUpdateTimeSlot = () =>
+  useInvalidatingMutation(
+    ({
+      id,
+      values,
+    }: {
+      id: string;
+      values: Partial<TimeSlotFormValues> & { is_active?: boolean };
+    }) => updateTimeSlot(id, values),
+    "Slot waktu diperbarui",
+    [ticketingQueryKeys.timeSlots]
+  );
+
+export const useDeleteTimeSlot = () =>
+  useInvalidatingMutation(
+    (id: string) => deleteTimeSlot(id),
+    "Slot waktu dihapus",
+    [ticketingQueryKeys.timeSlots]
   );
 
 // ── Gelang karyawan (Fase E) ──

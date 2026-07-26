@@ -8,6 +8,8 @@ import {
   matchRedeemGuests,
   redeemWindowStatus,
 } from "@/lib/ticketing/booking";
+import { slotWindowStatus } from "@/lib/ticketing/capacity";
+import { nowJakartaTime } from "@/lib/ticketing/capacity-server";
 import { todayJakartaDate } from "@/lib/ticketing/pricing-server";
 import {
   TICKETING_OPERATOR_ROLES,
@@ -45,6 +47,11 @@ interface LockedBookingRow {
   customer_phone: string;
   status: string;
   total: string;
+  slot_label: string | null;
+  slot_start_time: string | null;
+  slot_end_time: string | null;
+  discount_amount: string | null;
+  promo_code: string | null;
 }
 
 export async function POST(
@@ -97,7 +104,10 @@ export async function POST(
       // Kunci booking — serialisasi dgn redeem ganda & webhook
       const bookingResult = await client.query<LockedBookingRow>(
         `SELECT id, booking_code, visit_date::text AS visit_date,
-                customer_name, customer_phone, status, total
+                customer_name, customer_phone, status, total,
+                slot_label, slot_start_time::text AS slot_start_time,
+                slot_end_time::text AS slot_end_time,
+                discount_amount, promo_code
          FROM ticketing.ticket_bookings
          WHERE id = $1 AND branch_id = $2 AND company_id = $3
          FOR UPDATE`,
@@ -128,12 +138,15 @@ export async function POST(
       // hanya hari-H seperti semula.
       const settingsResult = await client.query<{
         booking_forfeit_days: number | null;
+        slot_grace_minutes: number;
       }>(
-        `SELECT booking_forfeit_days FROM ticketing.ticket_settings
+        `SELECT booking_forfeit_days, slot_grace_minutes
+         FROM ticketing.ticket_settings
          WHERE branch_id = $1 AND company_id = $2`,
         [ctx.branchId, ctx.companyId]
       );
       const forfeitDays = settingsResult.rows[0]?.booking_forfeit_days ?? null;
+      const slotGrace = settingsResult.rows[0]?.slot_grace_minutes ?? 30;
       const today = todayJakartaDate();
       const window = redeemWindowStatus(booking.visit_date, today, forfeitDays);
       if (window === "belum-mulai") {
@@ -163,6 +176,35 @@ export async function POST(
           ),
           { statusCode: 409 }
         );
+      }
+
+      // EPIC-031 D — booking ber-slot HANYA bisa masuk pada jam slot ±
+      // grace venue (fail-closed, tanpa override — konsisten gate). Jam
+      // dicek pada HARI kunjungan saja: redeem H+N (kebijakan hangus) di
+      // hari berikutnya bebas jam (slotnya sudah lewat total).
+      if (
+        booking.slot_start_time &&
+        booking.slot_end_time &&
+        today === booking.visit_date
+      ) {
+        const nowTime = nowJakartaTime();
+        const slotStatus = slotWindowStatus(
+          nowTime,
+          booking.slot_start_time,
+          booking.slot_end_time,
+          slotGrace
+        );
+        if (slotStatus !== "ok") {
+          const window = `${booking.slot_start_time.slice(0, 5)}–${booking.slot_end_time.slice(0, 5)}`;
+          throw Object.assign(
+            new Error(
+              slotStatus === "terlalu-awal"
+                ? `Belum masuk jam slot ${booking.slot_label ?? ""} (${window}, toleransi ${slotGrace} mnt) — sekarang ${nowTime}`
+                : `Jam slot ${booking.slot_label ?? ""} (${window}) sudah lewat (toleransi ${slotGrace} mnt) — sekarang ${nowTime}`
+            ),
+            { statusCode: 409 }
+          );
+        }
       }
 
       // Anggota rombongan + snapshot harga dari item masing-masing
@@ -374,8 +416,13 @@ export async function POST(
         }
       }
 
-      // Baris pembayaran senilai total booking → tab net 0
-      if (total > 0) {
+      // EPIC-032 B1 — visit tetap net-0 dgn promo: Σ debit tiket = total
+      // GROSS; sisi kredit = pembayaran (uang riil = total − diskon) +
+      // baris `diskon` (potongan promo, kredit non-uang). Tanpa promo,
+      // perilaku identik lama (pembayaran = total).
+      const discount = Number(booking.discount_amount ?? 0);
+      const paidAmount = Math.round((total - discount) * 100) / 100;
+      if (paidAmount > 0) {
         await client.query(
           `INSERT INTO ticketing.ticket_visit_charges
              (company_id, branch_id, visit_id, charge_type, direction,
@@ -386,7 +433,23 @@ export async function POST(
             ctx.branchId,
             visitId,
             `Pembayaran booking ${booking.booking_code} (Xendit, prepaid online)`,
-            total,
+            paidAmount,
+            ctx.user.id,
+          ]
+        );
+      }
+      if (discount > 0) {
+        await client.query(
+          `INSERT INTO ticketing.ticket_visit_charges
+             (company_id, branch_id, visit_id, charge_type, direction,
+              description, amount, created_by)
+           VALUES ($1, $2, $3, 'diskon', 'kredit', $4, $5, $6)`,
+          [
+            ctx.companyId,
+            ctx.branchId,
+            visitId,
+            `Potongan promo ${booking.promo_code ?? ""} — booking ${booking.booking_code}`,
+            discount,
             ctx.user.id,
           ]
         );

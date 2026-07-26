@@ -352,6 +352,9 @@ export async function GET(request: NextRequest) {
         denda_net: round2(netByType.get("denda") ?? 0),
         uang_masuk: round2(uangMasuk),
         refund_keluar: round2(netByType.get("refund-deposit") ?? 0),
+        // EPIC-032 B3 — potongan promo terpakai saat redeem (kredit
+        // non-uang; net-void aware karena lewat jalur eff_type yang sama)
+        diskon_promo: round2(-(netByType.get("diskon") ?? 0)),
       },
       methods: methods.map((m) => ({
         charge_type: m.charge_type,

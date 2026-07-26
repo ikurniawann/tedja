@@ -1,59 +1,32 @@
 stages:
-  - build
   - deploy
 
-variables:
-  DOCKER_IMAGE: arkiv
-  CONTAINER_NAME: arkiv
-  HOST_PORT: 3004
-  CONTAINER_PORT: 3000
-  DB_HOST: host.docker.internal
-  DB_PORT: 5435
-  DB_NAME: arkiv
-  DB_USER: arkiv
-  DB_PASS: 301010**
-  NODE_ENV: production
-  NEXT_PUBLIC_APP_URL: https://sulu.within.ventures
-  NEXT_PUBLIC_BASE_URL: https://sulu.within.ventures
-
-before_script:
-  - cd /mnt/hdd1tb/arkiv
-
-build:
-  stage: build
-  script:
-    - git fetch origin development && git reset --hard origin/development
-    # Jangan biarkan .next host menempel di context (page baru bisa 404 di prod).
-    - rm -rf .next node_modules/.cache
-    # Runner sering IPv4-only; Docker Hub CDN (CloudFront) bisa resolve AAAA
-    # lalu gagal: dial tcp [2600:...]:443 network is unreachable.
-    # Prefer IPv4 + legacy builder (BuildKit sering lebih agresif ke IPv6).
-    - |
-      if [ -w /etc/gai.conf ] && ! grep -q 'precedence :ffff:0:0/96' /etc/gai.conf; then
-        echo 'precedence :ffff:0:0/96  100' >> /etc/gai.conf
-      fi
-    - DOCKER_BUILDKIT=0 docker pull node:22-alpine
-    - DOCKER_BUILDKIT=0 docker build --network=host -t $DOCKER_IMAGE:latest .
-  only:
-    - development
-
-deploy:
+deploy_production:
   stage: deploy
+  resource_group: arkiv_deploy
+  variables:
+    DOCKER_IMAGE: arkiv-production
+    CONTAINER_NAME: arkiv
+    HOST_PORT: "3004"
+    DATABASE_NAME: db-production-arkiv
+    NEXT_PUBLIC_APP_URL: https://sulu.within.ventures
+    NEXT_PUBLIC_BASE_URL: https://sulu.within.ventures
   script:
-    - docker stop $CONTAINER_NAME || true
-    - docker rm $CONTAINER_NAME || true
-    - |
-      docker run -d \
-        --name $CONTAINER_NAME \
-        --restart unless-stopped \
-        -p 127.0.0.1:$HOST_PORT:$CONTAINER_PORT \
-        --add-host host.docker.internal:host-gateway \
-        -e DATABASE_URL="postgresql://$DB_USER:$DB_PASS@$DB_HOST:$DB_PORT/$DB_NAME" \
-        -e MIGRATE_DATABASE_URL="postgresql://$DB_USER:$DB_PASS@$DB_HOST:$DB_PORT/$DB_NAME" \
-        -e NODE_ENV=$NODE_ENV \
-        -e NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL \
-        -e NEXT_PUBLIC_BASE_URL=$NEXT_PUBLIC_BASE_URL \
-        $DOCKER_IMAGE:latest
-    - docker system prune -f
+    - bash .gitlab/deploy-docker.sh
+  only:
+    - production
+
+deploy_development:
+  stage: deploy
+  resource_group: arkiv_deploy
+  variables:
+    DOCKER_IMAGE: arkiv-development
+    CONTAINER_NAME: arkiv-development
+    HOST_PORT: "3460"
+    DATABASE_NAME: db-dev-arkiv
+    NEXT_PUBLIC_APP_URL: https://dev-sulu.within.ventures
+    NEXT_PUBLIC_BASE_URL: https://dev-sulu.within.ventures
+  script:
+    - bash .gitlab/deploy-docker.sh
   only:
     - development

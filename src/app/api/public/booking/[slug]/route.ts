@@ -19,6 +19,16 @@ import {
   resolvePublicVenue,
 } from "@/lib/ticketing/booking-server";
 import {
+  assertCapacityAvailable,
+  assertSlotCapacity,
+  loadActiveSlot,
+  loadActiveSlots,
+} from "@/lib/ticketing/capacity-server";
+import {
+  holdPromoRedemption,
+  releasePromoRedemption,
+} from "@/lib/promo/promo-server";
+import {
   createInvoice,
   getInvoiceExpiryHours,
   isXenditConfigured,
@@ -35,6 +45,16 @@ const createSchema = z.object({
   visit_date: z.string(),
   customer_name: z.string().trim().min(2).max(120),
   customer_phone: z.string().trim().min(8).max(25),
+  // EPIC-031 D — slot waktu: WAJIB bila venue punya slot aktif (dicek
+  // server-side), dilarang bila tidak punya
+  slot_id: z.string().uuid().optional(),
+  // EPIC-032 B1 — kode promo (opsional): dievaluasi & di-hold server-side
+  // di dalam transaksi; potongan TIDAK pernah dipercaya dari klien
+  promo_code: z.string().trim().min(3).max(40).optional(),
+  // EPIC-032 D2 — hadiah: e-tiket dikirim ke WA penerima saat PAID
+  // (pemesan tetap pembayar & menerima bukti). Wajib berpasangan.
+  gift_recipient_name: z.string().trim().min(2).max(120).optional(),
+  gift_recipient_phone: z.string().trim().min(8).max(25).optional(),
   items: z
     .array(
       z.object({
@@ -95,6 +115,17 @@ export async function POST(
     const phone = normalizePhoneDigits(body.customer_phone);
     if (!phone) return badRequest("Nomor WhatsApp tidak valid");
 
+    // EPIC-032 D2 — hadiah: nama & WA penerima wajib berpasangan
+    const isGift = Boolean(body.gift_recipient_name || body.gift_recipient_phone);
+    let giftPhone: string | null = null;
+    if (isGift) {
+      if (!body.gift_recipient_name || !body.gift_recipient_phone) {
+        return badRequest("Nama dan nomor WA penerima hadiah wajib diisi");
+      }
+      giftPhone = normalizePhoneDigits(body.gift_recipient_phone);
+      if (!giftPhone) return badRequest("Nomor WA penerima hadiah tidak valid");
+    }
+
     const variantIds = body.items.map((i) => i.variant_id);
     if (new Set(variantIds).size !== variantIds.length) {
       return badRequest("Varian duplikat dalam pesanan");
@@ -109,6 +140,18 @@ export async function POST(
 
     const venue = await resolvePublicVenue(slug);
     if (!venue) return notFound();
+
+    // EPIC-031 D — venue ber-slot: slot wajib dipilih; venue tanpa slot:
+    // slot_id ditolak (jangan percaya klien). Validasi detail slot di
+    // dalam transaksi (loadActiveSlot via client).
+    const venueScope = { companyId: venue.companyId, branchId: venue.branchId };
+    const activeSlots = await loadActiveSlots(venueScope);
+    if (activeSlots.length > 0 && !body.slot_id) {
+      return badRequest("Pilih slot waktu kunjungan dulu");
+    }
+    if (activeSlots.length === 0 && body.slot_id) {
+      return badRequest("Venue ini tidak memakai slot waktu — muat ulang halaman");
+    }
 
     // Harga & kelayakan dihitung ulang server-side dari katalog tanggal itu
     const catalog = await buildPublicCatalog(venue, body.visit_date);
@@ -199,26 +242,59 @@ export async function POST(
 
     const total =
       Math.round(items.reduce((sum, i) => sum + i.subtotal, 0) * 100) / 100;
-    // Invoice Xendit IDR wajib rupiah bulat; simpanan DB tetap total 2dp
-    const invoiceAmount = Math.round(total);
 
     const accessToken = generateAccessToken();
     const expiresAt = new Date(
       Date.now() + getInvoiceExpiryHours() * 60 * 60 * 1000
     );
 
-    // Insert dgn retry tabrakan booking_code (23505) — pola kode TKT R1
+    // Insert dgn retry tabrakan booking_code (23505) — pola kode TKT R1.
+    // discount diketahui DI DALAM transaksi (hold promo) — dibawa keluar
+    // utk invoice net.
     let bookingId: string | null = null;
+    let discountAmount = 0;
     let bookingCode = "";
     for (let attempt = 0; attempt < 3 && !bookingId; attempt++) {
       bookingCode = generateBookingCode();
       try {
         bookingId = await withTransaction(async (client) => {
+          // EPIC-031 B1 — guard kuota harian DI DALAM transaksi: advisory
+          // lock (venue, tanggal) → hitung okupansi live (booking pemegang
+          // kuota + walk-in) → 409 bila totalQty menembus kapasitas.
+          // No-op tanpa lock bila kuota venue tidak aktif (unlimited).
+          await assertCapacityAvailable(
+            client,
+            venueScope,
+            body.visit_date,
+            totalQty
+          );
+          // EPIC-031 D — slot: validasi ulang via client (bisa berubah di
+          // antara pre-check dan transaksi) + guard kuota per (tanggal,slot)
+          const slot = body.slot_id
+            ? await loadActiveSlot(client, venueScope, body.slot_id)
+            : null;
+          if (body.slot_id && !slot) {
+            throw Object.assign(
+              new Error("Slot waktu tidak tersedia lagi — muat ulang halaman"),
+              { statusCode: 400 }
+            );
+          }
+          if (slot) {
+            await assertSlotCapacity(
+              client,
+              venueScope,
+              body.visit_date,
+              slot,
+              totalQty
+            );
+          }
           const inserted = await client.query<{ id: string }>(
             `INSERT INTO ticketing.ticket_bookings
                (company_id, branch_id, booking_code, access_token, visit_date,
-                customer_name, customer_phone, status, total, expires_at)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,'menunggu-bayar',$8,$9)
+                customer_name, customer_phone, status, total, expires_at,
+                slot_id, slot_label, slot_start_time, slot_end_time,
+                gift_recipient_name, gift_recipient_phone)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,'menunggu-bayar',$8,$9,$10,$11,$12,$13,$14,$15)
              RETURNING id`,
             [
               venue.companyId,
@@ -230,9 +306,38 @@ export async function POST(
               phone,
               total,
               expiresAt.toISOString(),
+              slot?.id ?? null,
+              slot?.label ?? null,
+              slot?.start_time ?? null,
+              slot?.end_time ?? null,
+              isGift ? body.gift_recipient_name : null,
+              giftPhone,
             ]
           );
           const id = inserted.rows[0].id;
+
+          // EPIC-032 B1 — hold kode promo DI transaksi yang sama (advisory
+          // lock per campaign; 422 PromoRejectedError bila tak lolos).
+          // `total` booking TETAP GROSS; potongan di-snapshot terpisah dan
+          // yang ditagih Xendit = total - discount.
+          if (body.promo_code) {
+            const hold = await holdPromoRedemption(client, {
+              scope: venueScope,
+              code: body.promo_code,
+              channel: "ticketing_online",
+              contextType: "ticket_booking",
+              contextId: id,
+              subtotal: total,
+              phone,
+            });
+            await client.query(
+              `UPDATE ticketing.ticket_bookings
+               SET discount_amount = $2, promo_code = $3, updated_at = now()
+               WHERE id = $1`,
+              [id, hold.discount, body.promo_code.toUpperCase()]
+            );
+            discountAmount = hold.discount;
+          }
           let position = 0;
           let bundleUnitNo = 0;
           for (const item of items) {
@@ -331,9 +436,11 @@ export async function POST(
     const statusUrl = `${baseUrl}/booking/status/${accessToken}`;
 
     try {
+      // Yang ditagih = total GROSS − potongan promo; Xendit IDR rupiah bulat
+      const payable = Math.round(total - discountAmount);
       const invoice = await createInvoice({
         externalId: `tkt-booking-${bookingId}`,
-        amount: invoiceAmount,
+        amount: payable,
         payerName: body.customer_name,
         description: `Tiket ${bookingCode} — kunjungan ${body.visit_date}`,
         redirectUrl: statusUrl,
@@ -357,6 +464,8 @@ export async function POST(
           status_url: statusUrl,
           invoice_url: invoice.invoiceUrl,
           total,
+          discount_amount: discountAmount,
+          payable: Math.round((total - discountAmount) * 100) / 100,
           expires_at: invoice.expiresAt.toISOString(),
         },
         "Booking dibuat — selesaikan pembayaran"
@@ -371,12 +480,29 @@ export async function POST(
          WHERE id = $1 AND status = 'menunggu-bayar'`,
         [bookingId]
       );
+      // Lepas hold promo (idempoten; jatah kode kembali)
+      if (discountAmount > 0) {
+        const releasedId = bookingId;
+        await withTransaction((client) =>
+          releasePromoRedemption(client, "ticket_booking", releasedId)
+        ).catch((releaseErr) =>
+          console.error("[booking] release promo error:", releaseErr)
+        );
+      }
       return NextResponse.json(
         { success: false, error: "Pembayaran sedang gangguan — coba lagi" },
         { status: 502 }
       );
     }
   } catch (err) {
+    // Error ber-statusCode (mis. CapacityFullError 409) → pesan apa adanya
+    const statusCode = (err as { statusCode?: number }).statusCode;
+    if (statusCode) {
+      return NextResponse.json(
+        { success: false, error: (err as Error).message },
+        { status: statusCode }
+      );
+    }
     console.error("[booking] create error:", err);
     return NextResponse.json(
       { success: false, error: "Gagal membuat booking" },

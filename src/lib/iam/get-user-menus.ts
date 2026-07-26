@@ -179,6 +179,20 @@ function isNavigableHref(href: string | undefined): href is string {
   return Boolean(href && href !== "#");
 }
 
+/**
+ * Semua href navigable di pohon nav — TERMASUK parent ber-href (beda dari
+ * flattenModuleNavLinks yang hanya daun). Dipakai guard path layout
+ * (fix H1 EPIC-032 A4): pathname harus tercakup salah satu href grant.
+ */
+export function collectNavHrefs(items: NavItem[]): string[] {
+  const result: string[] = [];
+  for (const item of items) {
+    if (isNavigableHref(item.href)) result.push(item.href);
+    if (item.children?.length) result.push(...collectNavHrefs(item.children));
+  }
+  return result;
+}
+
 /** Flatten module menu groups into leaf sidebar links for top-nav bars (POS, etc.). */
 export function flattenModuleNavLinks(items: NavItem[]): NavItem[] {
   const result: NavItem[] = [];

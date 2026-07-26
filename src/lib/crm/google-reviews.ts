@@ -28,6 +28,8 @@ export interface NormalizedReview {
   /** Id ulasan (segmen terakhir) — stabil walau akun Google diganti. */
   reviewId: string;
   reviewName: string;
+  /** Id lokasi (segmen setelah locations/) — dasar filter multi-lokasi. */
+  locationId: string | null;
   reviewerName: string;
   reviewerPhotoUrl: string | null;
   starRating: number;
@@ -46,6 +48,60 @@ export function extractReviewId(reviewName: string): string {
   const afterReviews = reviewName.split("/reviews/").pop() ?? "";
   const id = afterReviews.trim() || reviewName.trim();
   return id;
+}
+
+/**
+ * Ambil id lokasi dari resource name
+ * (accounts/{a}/locations/{l}/reviews/{r}). Null bila nama tidak memuat
+ * segmen lokasi (mis. id ulasan telanjang).
+ */
+export function extractLocationId(reviewName: string): string | null {
+  const match = /locations\/([^/]+)/.exec(reviewName);
+  return match?.[1] ?? null;
+}
+
+/**
+ * Setting `google_bp_location_id` kini menerima BANYAK lokasi dalam satu
+ * nilai, dipisah koma/titik-koma/spasi. Tiap entri dinormalkan ke bentuk
+ * `locations/{id}` dan digandakan dibuang — nilai lama satu lokasi tetap sah.
+ */
+export function parseLocationIds(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const part of raw.split(/[\s,;]+/)) {
+    const cleaned = part.trim().replace(/^\/+|\/+$/g, "");
+    if (!cleaned) continue;
+    const normalized = cleaned.startsWith("locations/") ? cleaned : `locations/${cleaned}`;
+    if (normalized === "locations/") continue;
+    if (!seen.has(normalized)) {
+      seen.add(normalized);
+      result.push(normalized);
+    }
+  }
+  return result;
+}
+
+/**
+ * Balasan untuk ulasan ber-rating <= nilai ini wajib disetujui approver
+ * sebelum dikirim ke Google — balasan publik pada ulasan buruk paling
+ * berisiko bagi citra bisnis.
+ */
+export const REPLY_APPROVAL_MAX_RATING = 2;
+
+/**
+ * Apakah balasan harus lewat antrean persetujuan. Approver (super_admin/
+ * admin) mengirim langsung — menyetujui draft sendiri hanya menambah klik
+ * tanpa menambah kontrol.
+ */
+export function needsReplyApproval(
+  starRating: number,
+  canApprove: boolean,
+  maxRating: number = REPLY_APPROVAL_MAX_RATING
+): boolean {
+  if (canApprove) return false;
+  return starRating <= maxRating;
 }
 
 export function parseStarRating(value: string | number | undefined): number | null {
@@ -88,6 +144,7 @@ export function normalizeReview(resource: GoogleReviewResource): NormalizedRevie
   return {
     reviewId: extractReviewId(reviewName),
     reviewName,
+    locationId: extractLocationId(reviewName),
     // Ulasan anonim tetap disimpan — hanya namanya yang disamarkan.
     reviewerName: resource.reviewer?.isAnonymous
       ? "Pengguna Google"

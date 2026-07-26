@@ -66,6 +66,35 @@ describe("buildDesktopOverview", () => {
     expect(Number.isNaN(overview.pulsaBisnis?.hariIni.rataRata)).toBe(false);
   });
 
+  it("minggu lalu = omzet hari yang sama H-7, terpisah dari sparkline", async () => {
+    const today = todayJakarta();
+    const h7 = new Date(new Date(`${today}T00:00:00Z`).getTime() - 7 * 86_400_000)
+      .toISOString()
+      .slice(0, 10);
+    const kemarin = new Date(new Date(`${today}T00:00:00Z`).getTime() - 86_400_000)
+      .toISOString()
+      .slice(0, 10);
+    queryMock.mockImplementation(async (sql: string) => {
+      if (typeof sql === "string" && sql.includes("pos.pos_orders")) {
+        return [
+          { tanggal: h7, omzet: 750_000, pesanan: 5 },
+          { tanggal: kemarin, omzet: 400_000, pesanan: 4 },
+          { tanggal: today, omzet: 900_000, pesanan: 6 },
+        ];
+      }
+      return [];
+    });
+    queryOneMock.mockResolvedValue({});
+
+    const overview = await buildDesktopOverview();
+    expect(overview.pulsaBisnis?.mingguLalu).toEqual({ omzet: 750_000, pesanan: 5 });
+    expect(overview.pulsaBisnis?.kemarin).toEqual({ omzet: 400_000, pesanan: 4 });
+    // H-7 bukan bagian sparkline: 7 titik terakhir dimulai H-6.
+    const hari = overview.pulsaBisnis!.tujuhHari;
+    expect(hari).toHaveLength(7);
+    expect(hari.some((h) => h.tanggal === h7)).toBe(false);
+  });
+
   it("sparkline selalu 7 titik berurutan dan diakhiri hari ini", async () => {
     queryMock.mockResolvedValue([]);
     queryOneMock.mockResolvedValue({});

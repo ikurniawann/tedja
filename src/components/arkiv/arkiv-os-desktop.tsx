@@ -8,6 +8,7 @@ import {
   DesktopMonitorBoard,
   MONITOR_WIDGETS,
   NotificationPopups,
+  normalizeWidgetOrder,
   useDesktopOverview,
   type MonitorWidgetKey,
 } from "./desktop-monitor";
@@ -33,6 +34,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
   Cloud,
   Command,
   Copy,
@@ -194,6 +196,7 @@ export default function ArkivOsDesktop() {
   const [assistantShortcutFocused, setAssistantShortcutFocused] = useState(false);
   const [wallpaper, setWallpaper] = useState(wallpapers[0]);
   const [widgetVisibility, setWidgetVisibility] = useState<WidgetVisibility>(defaultWidgetVisibility);
+  const [widgetOrder, setWidgetOrder] = useState<MonitorWidgetKey[]>(() => normalizeWidgetOrder(null));
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [assistantSettings, setAssistantSettings] = useState<AiAssistantSettings>(DEFAULT_AI_ASSISTANT_SETTINGS);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; module?: DesktopModule; desktop?: boolean } | null>(null);
@@ -338,6 +341,17 @@ export default function ArkivOsDesktop() {
     window.localStorage.setItem("arkiv-widget-visibility", JSON.stringify(next));
   };
 
+  /** Geser widget monitoring satu langkah ke atas/bawah (Fase C). */
+  const moveWidget = (key: MonitorWidgetKey, direction: -1 | 1) => {
+    const index = widgetOrder.indexOf(key);
+    const target = index + direction;
+    if (index < 0 || target < 0 || target >= widgetOrder.length) return;
+    const next = [...widgetOrder];
+    [next[index], next[target]] = [next[target], next[index]];
+    setWidgetOrder(next);
+    window.localStorage.setItem("arkiv-widget-order", JSON.stringify(next));
+  };
+
   const updateSoundEnabled = (value: boolean) => {
     setSoundEnabled(value);
     window.localStorage.setItem("arkiv-sound-enabled", String(value));
@@ -376,6 +390,14 @@ export default function ArkivOsDesktop() {
       setNow(new Date());
       const savedWallpaper = window.localStorage.getItem("arkiv-wallpaper");
       const savedWidgets = window.localStorage.getItem("arkiv-widget-visibility");
+      const savedOrder = window.localStorage.getItem("arkiv-widget-order");
+      if (savedOrder) {
+        try {
+          setWidgetOrder(normalizeWidgetOrder(JSON.parse(savedOrder)));
+        } catch {
+          window.localStorage.removeItem("arkiv-widget-order");
+        }
+      }
       const savedSound = window.localStorage.getItem("arkiv-sound-enabled");
       const savedAssistantSettings = window.localStorage.getItem(AI_ASSISTANT_SETTINGS_STORAGE_KEY);
       if (savedWallpaper) setWallpaper(wallpapers.find((item) => item.id === savedWallpaper) ?? wallpapers[0]);
@@ -546,7 +568,7 @@ export default function ArkivOsDesktop() {
       <section className="relative z-10 min-h-dvh px-6 pb-28 pt-14">
         {now && widgetVisibility.calendar && <CalendarWidget date={now} onClose={() => updateWidgetVisibility("calendar", false)} />}
         {isLoggedIn && (
-          <DesktopMonitorBoard state={overview} visibility={widgetVisibility} onAskDo={askDoFromWidget} />
+          <DesktopMonitorBoard state={overview} visibility={widgetVisibility} order={widgetOrder} onAskDo={askDoFromWidget} />
         )}
       </section>
 
@@ -644,7 +666,7 @@ export default function ArkivOsDesktop() {
       <NotificationPopups popups={notifPopups} onDismiss={dismissPopup} onOpen={openNotification} />
       {showFiles && <FileExplorer onClose={() => setShowFiles(false)} isLoggedIn={isLoggedIn} />}
       {showWallpaperPicker && <WallpaperPicker selected={wallpaper.id} onSelect={(item) => { setWallpaper(item); window.localStorage.setItem("arkiv-wallpaper", item.id); }} onClose={() => setShowWallpaperPicker(false)} />}
-      {showWidgetSettings && <WidgetSettings visibility={widgetVisibility} onChange={updateWidgetVisibility} onClose={() => setShowWidgetSettings(false)} />}
+      {showWidgetSettings && <WidgetSettings visibility={widgetVisibility} order={widgetOrder} onChange={updateWidgetVisibility} onMove={moveWidget} onClose={() => setShowWidgetSettings(false)} />}
       {showSettings && (
         <SystemSettings
           onOpenWaNotif={() => { setShowSettings(false); setShowWaNotif(true); }}
@@ -1460,7 +1482,19 @@ function AiAssistantWindow({
   onInitialPromptConsumed?: () => void;
   onClose: () => void;
 }) {
-  type AssistantMessage = { role: "user" | "assistant"; content: string; meta?: { status?: string; model?: string; scope?: string; fallbackReason?: string } };
+  /** Usulan aksi tulis Do yang menunggu tombol konfirmasi (EPIC-017 Fase E). */
+  type PendingAction = {
+    id: string;
+    name: string;
+    summary: string;
+    status: "pending" | "confirmed" | "cancelled" | "expired" | "failed";
+    result_note?: string;
+  };
+  type AssistantMessage = {
+    role: "user" | "assistant";
+    content: string;
+    meta?: { status?: string; model?: string; scope?: string; fallbackReason?: string; pending_action?: PendingAction };
+  };
 
   const [messages, setMessages] = useState<AssistantMessage[]>([]);
   const [input, setInput] = useState("");
@@ -1474,6 +1508,8 @@ function AiAssistantWindow({
   const messageListRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+  /** id aksi yang sedang diproses endpoint konfirmasi (disable tombol kartu). */
+  const [actionBusyId, setActionBusyId] = useState<string | null>(null);
   type Attachment = { name: string; text: string; method: string; truncated: boolean; chars: number };
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -1754,6 +1790,57 @@ function AiAssistantWindow({
       setLoading(false);
     }
   }, [attachments, input, loading, messages, refreshSessions, sessionId, settings.model, settings.scope]);
+
+  /**
+   * Keputusan user atas usulan aksi tulis. Eksekusi nyata terjadi di server
+   * (endpoint konfirmasi memverifikasi kepemilikan, status pending, dan TTL) —
+   * klik ganda atau kartu basi hanya menghasilkan pesan status, bukan aksi ganda.
+   */
+  const decideAction = useCallback(
+    async (messageIndex: number, actionId: string, decision: "confirm" | "cancel") => {
+      setActionBusyId(actionId);
+      try {
+        const res = await fetch("/api/ai/assistant/actions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action_id: actionId, decision }),
+        });
+        const json = (await res.json().catch(() => ({}))) as {
+          action?: { status?: PendingAction["status"] };
+          message?: string;
+          error?: string;
+        };
+        const status = json.action?.status ?? "failed";
+        const note = json.message ?? json.error ?? (res.ok ? "" : "Gagal memproses aksi");
+        setMessages((prev) =>
+          prev.map((m, i) => {
+            if (i !== messageIndex || !m.meta?.pending_action) return m;
+            return {
+              ...m,
+              meta: { ...m.meta, pending_action: { ...m.meta.pending_action, status, result_note: note } },
+            };
+          })
+        );
+      } catch {
+        // Jaringan putus: biarkan tetap pending supaya user bisa mencoba lagi.
+        setMessages((prev) =>
+          prev.map((m, i) => {
+            if (i !== messageIndex || !m.meta?.pending_action) return m;
+            return {
+              ...m,
+              meta: {
+                ...m.meta,
+                pending_action: { ...m.meta.pending_action, result_note: "Jaringan bermasalah, coba lagi." },
+              },
+            };
+          })
+        );
+      } finally {
+        setActionBusyId(null);
+      }
+    },
+    []
+  );
 
   // Tinggi textarea mengikuti jumlah baris; direset dulu agar bisa mengecil lagi
   // saat teks dihapus.
@@ -2037,6 +2124,53 @@ function AiAssistantWindow({
                       <div className={`max-w-[85%] whitespace-pre-line rounded-2xl px-4 py-3 text-sm font-normal leading-6 ${message.role === "user" ? "bg-pink-600 text-white" : "bg-white/10 text-white/78"}`}>
                         {formatPlainChatText(message.content)}
                       </div>
+                      {isAssistant && message.meta?.pending_action && (
+                        <div className="mt-2 max-w-[85%] rounded-2xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm">
+                          <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-amber-200/90">
+                            <ShieldCheck className="size-3.5" /> Konfirmasi aksi
+                          </div>
+                          <p className="mt-1.5 leading-6 text-white/80">{message.meta.pending_action.summary}</p>
+                          {message.meta.pending_action.status === "pending" ? (
+                            <div className="mt-2.5 flex flex-wrap items-center gap-2">
+                              <button
+                                type="button"
+                                disabled={actionBusyId === message.meta.pending_action.id}
+                                onClick={() => decideAction(index, message.meta!.pending_action!.id, "confirm")}
+                                className="inline-flex items-center gap-1.5 rounded-xl bg-pink-600 px-3 py-1.5 text-[12px] font-semibold text-white transition hover:bg-pink-500 disabled:opacity-50"
+                              >
+                                {actionBusyId === message.meta.pending_action.id ? (
+                                  <Loader2 className="size-3.5 animate-spin" />
+                                ) : (
+                                  <Check className="size-3.5" />
+                                )}
+                                Jalankan aksi
+                              </button>
+                              <button
+                                type="button"
+                                disabled={actionBusyId === message.meta.pending_action.id}
+                                onClick={() => decideAction(index, message.meta!.pending_action!.id, "cancel")}
+                                className="inline-flex items-center gap-1.5 rounded-xl bg-white/10 px-3 py-1.5 text-[12px] text-white/70 transition hover:bg-white/15 disabled:opacity-50"
+                              >
+                                <X className="size-3.5" /> Batalkan
+                              </button>
+                              {message.meta.pending_action.result_note && (
+                                <span className="text-[11px] text-amber-200/80">{message.meta.pending_action.result_note}</span>
+                              )}
+                            </div>
+                          ) : (
+                            <p className="mt-2 text-[12px] text-white/60">
+                              {message.meta.pending_action.result_note ||
+                                (message.meta.pending_action.status === "confirmed"
+                                  ? "Aksi sudah dijalankan."
+                                  : message.meta.pending_action.status === "cancelled"
+                                    ? "Aksi dibatalkan."
+                                    : message.meta.pending_action.status === "expired"
+                                      ? "Aksi kedaluwarsa tanpa dikonfirmasi."
+                                      : "Aksi gagal dijalankan.")}
+                            </p>
+                          )}
+                        </div>
+                      )}
                       {isAssistant && (
                         <div className="mt-1 flex items-center gap-1 opacity-0 transition group-hover:opacity-100 focus-within:opacity-100">
                           <button
@@ -2431,38 +2565,71 @@ function SystemSettings({
   );
 }
 
-function WidgetSettings({ visibility, onChange, onClose }: { visibility: WidgetVisibility; onChange: (key: keyof WidgetVisibility, value: boolean) => void; onClose: () => void }) {
-  const items: Array<{ key: keyof WidgetVisibility; title: string; description: string; icon: ComponentType<{ className?: string }> }> = [
-    { key: "calendar", title: "Calendar Widget", description: "Kalender bulanan yang bisa dipindahkan dan di-resize.", icon: CalendarDays },
-    ...MONITOR_WIDGETS.map((w) => ({
-      key: w.key as keyof WidgetVisibility,
-      title: w.title,
-      description: w.description,
-      icon: Activity,
-    })),
-  ];
+function WidgetSettings({
+  visibility,
+  order,
+  onChange,
+  onMove,
+  onClose,
+}: {
+  visibility: WidgetVisibility;
+  order: MonitorWidgetKey[];
+  onChange: (key: keyof WidgetVisibility, value: boolean) => void;
+  onMove: (key: MonitorWidgetKey, direction: -1 | 1) => void;
+  onClose: () => void;
+}) {
+  // Baris widget monitoring mengikuti urutan pilihan user (Fase C); Calendar
+  // adalah window mengambang, bukan bagian papan, jadi tanpa kontrol urutan.
+  const monitorItems = order
+    .map((key) => MONITOR_WIDGETS.find((w) => w.key === key))
+    .filter((w): w is (typeof MONITOR_WIDGETS)[number] => Boolean(w));
+  const calendar = { key: "calendar" as const, title: "Calendar Widget", description: "Kalender bulanan yang bisa dipindahkan dan di-resize." };
 
   return (
     <WindowShell title="Widgets" onClose={onClose} className="left-1/2 top-24 w-[min(460px,calc(100vw-32px))] -translate-x-1/2">
       <div className="space-y-3 p-5">
         <div className="rounded-3xl border border-white/10 bg-white/8 p-4">
           <div className="text-sm font-semibold">Desktop Widgets</div>
-          <div className="mt-1 text-xs leading-5 text-white/50">Calendar Widget aktif secara default. System Widget bisa diaktifkan sesuai kebutuhan, lalu drag window widget dari title bar.</div>
+          <div className="mt-1 text-xs leading-5 text-white/50">Calendar Widget aktif secara default. Widget monitoring bisa diaktifkan dan diatur urutannya dengan tombol panah — urutan tersimpan di perangkat ini.</div>
         </div>
-        {items.map((item) => {
-          const Icon = item.icon;
-          const enabled = visibility[item.key];
-          return (
-            <div key={item.key} className="flex items-center gap-3 rounded-3xl border border-white/10 bg-white/8 p-4">
-              <div className={`grid size-11 place-items-center rounded-2xl bg-gradient-to-br ${pinkAccent}`}><Icon className="size-5" /></div>
-              <div className="min-w-0 flex-1">
-                <div className="text-sm font-semibold">{item.title}</div>
-                <div className="text-xs leading-5 text-white/45">{item.description}</div>
-              </div>
-              <ToggleSwitch enabled={enabled} onChange={(value) => onChange(item.key, value)} label={`Toggle ${item.title}`} />
+        <div className="flex items-center gap-3 rounded-3xl border border-white/10 bg-white/8 p-4">
+          <div className={`grid size-11 place-items-center rounded-2xl bg-gradient-to-br ${pinkAccent}`}><CalendarDays className="size-5" /></div>
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-semibold">{calendar.title}</div>
+            <div className="text-xs leading-5 text-white/45">{calendar.description}</div>
+          </div>
+          <ToggleSwitch enabled={visibility.calendar} onChange={(value) => onChange("calendar", value)} label={`Toggle ${calendar.title}`} />
+        </div>
+        {monitorItems.map((item, index) => (
+          <div key={item.key} className="flex items-center gap-3 rounded-3xl border border-white/10 bg-white/8 p-4">
+            <div className="flex shrink-0 flex-col gap-0.5">
+              <button
+                type="button"
+                disabled={index === 0}
+                onClick={() => onMove(item.key, -1)}
+                aria-label={`Naikkan urutan ${item.title}`}
+                className="rounded-lg p-1 text-white/50 transition hover:bg-white/10 hover:text-white disabled:opacity-25"
+              >
+                <ChevronUp className="size-4" />
+              </button>
+              <button
+                type="button"
+                disabled={index === monitorItems.length - 1}
+                onClick={() => onMove(item.key, 1)}
+                aria-label={`Turunkan urutan ${item.title}`}
+                className="rounded-lg p-1 text-white/50 transition hover:bg-white/10 hover:text-white disabled:opacity-25"
+              >
+                <ChevronDown className="size-4" />
+              </button>
             </div>
-          );
-        })}
+            <div className={`grid size-11 shrink-0 place-items-center rounded-2xl bg-gradient-to-br ${pinkAccent}`}><Activity className="size-5" /></div>
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-semibold">{item.title}</div>
+              <div className="text-xs leading-5 text-white/45">{item.description}</div>
+            </div>
+            <ToggleSwitch enabled={visibility[item.key]} onChange={(value) => onChange(item.key, value)} label={`Toggle ${item.title}`} />
+          </div>
+        ))}
       </div>
     </WindowShell>
   );

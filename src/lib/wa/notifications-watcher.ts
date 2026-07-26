@@ -12,6 +12,7 @@
  */
 
 import { query } from "@/lib/db";
+import { readGatewayConfig, sendGatewayText } from "@/lib/whatsapp/gateway";
 import { buildDesktopOverview } from "@/lib/desktop/overview";
 import {
   SALES_TARGET_SETTING_KEY,
@@ -89,10 +90,12 @@ async function maybeSendStokHabis(): Promise<void> {
   if (!config.enabled || !config.types.stokHabis) return;
 
   // Definisi mengikuti fetchLowStock desktop, dipersempit ke NOL persis.
+  // Kolom "satuan" tidak ada di item.raw_materials — JOIN ke item.units.
   const rows = await query<{ id: string; nama: string; satuan: string | null }>(
-    `SELECT rm.id, rm.nama, rm.satuan
+    `SELECT rm.id, rm.nama, u.nama AS satuan
        FROM inventory.inventory i
        JOIN item.raw_materials rm ON rm.id = i.raw_material_id
+       LEFT JOIN item.units u ON u.id = rm.satuan_besar_id
       WHERE i.is_active
         AND rm.deleted_at IS NULL
         AND i.qty_available <= 0
@@ -344,10 +347,82 @@ async function maybeSendKontrakHabis(config: WaNotifConfig): Promise<void> {
   console.log(`[wa-notif] kontrak habis terkirim (${items.length} kontrak)`);
 }
 
+/**
+ * EPIC-028 Fase D — reminder ke PEMEGANG Season Pass yang berlaku ≤14 hari lagi
+ * (dorong renewal). Kirim langsung ke holder_phone (bukan recipients owner);
+ * klaim-dulu via wa_notif_log (notif_type='passExpiring', dedup pass+valid_until)
+ * → sekali per (pass, tanggal-berakhir). Gagal kirim → lepas klaim utk retry.
+ */
+const PASS_EXPIRY_REMINDER_DAYS = 14;
+
+async function maybeSendPassExpiring(): Promise<void> {
+  const gw = readGatewayConfig();
+  if (!gw) return;
+
+  const rows = await query<{
+    id: string;
+    pass_code: string;
+    holder_name: string;
+    holder_phone: string;
+    valid_until: string;
+    access_token: string;
+  }>(
+    `SELECT id, pass_code, holder_name, holder_phone,
+            valid_until::text AS valid_until, access_token
+       FROM ticketing.ticket_season_passes
+      WHERE status = 'active' AND holder_phone IS NOT NULL
+        AND valid_until IS NOT NULL
+        AND valid_until BETWEEN current_date AND current_date + $1`,
+    [PASS_EXPIRY_REMINDER_DAYS]
+  );
+  if (rows.length === 0) return;
+
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
+  let sent = 0;
+  for (const r of rows) {
+    const dedupKey = `${r.id}:${r.valid_until}`;
+    const statusUrl = `${baseUrl}/pass/status/${r.access_token}`;
+    const message =
+      `*Season Pass akan berakhir* ⏰\n\n` +
+      `Halo ${r.holder_name}, pass *${r.pass_code}* berlaku sampai ` +
+      `${r.valid_until}. Perpanjang agar tetap bisa masuk.\n\n` +
+      `Cek status pass: ${statusUrl}`;
+
+    // Klaim-dulu: baris baru = belum pernah dikirim untuk tanggal berakhir ini
+    const claim = await query<{ id: string }>(
+      `INSERT INTO configuration.wa_notif_log (notif_type, dedup_key, message, recipients)
+       VALUES ('passExpiring', $1, $2, $3::jsonb)
+       ON CONFLICT (notif_type, dedup_key) DO NOTHING
+       RETURNING id`,
+      [dedupKey, message, JSON.stringify([r.holder_phone])]
+    );
+    if (claim.length === 0) continue;
+
+    const res = await sendGatewayText(gw, { target: r.holder_phone, message });
+    if (!res.success) {
+      // Lepas klaim supaya dicoba lagi tick berikutnya
+      await query(
+        `DELETE FROM configuration.wa_notif_log
+         WHERE notif_type = 'passExpiring' AND dedup_key = $1`,
+        [dedupKey]
+      );
+      continue;
+    }
+    sent += 1;
+  }
+  if (sent > 0) {
+    console.log(`[wa-notif] reminder pass berakhir terkirim (${sent} pass)`);
+  }
+}
+
 async function runAmbangChecks(): Promise<void> {
   if (!inAmbangWindow()) return;
   const config = await getWaNotifConfig();
   if (!config.enabled) return;
+
+  await maybeSendPassExpiring().catch((error) => {
+    console.error("[wa-notif] reminder pass berakhir gagal:", error);
+  });
 
   await maybeSendOmzetAnjlok(config).catch((error) => {
     console.error("[wa-notif] cek omzet anjlok gagal:", error);

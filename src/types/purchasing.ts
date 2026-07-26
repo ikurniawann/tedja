@@ -666,6 +666,9 @@ export interface VendorPayment {
   method: "cash" | "bank_transfer" | "giro" | "qris" | "other";
   reference_number?: string | null;
   notes?: string | null;
+  /** Arsip nota hasil scan (EPIC-018 Fase B): path di storage/private + nama asli. */
+  receipt_path?: string | null;
+  receipt_name?: string | null;
   status: "draft" | "posted" | "void";
   created_at: string;
   updated_at: string;
@@ -776,7 +779,7 @@ export interface PurchaseReturnFormData {
   grn_id: string;
   supplier_id?: string;
   vendor_id?: string;
-  module_type?: "raw_material" | "product";
+  module_type?: "raw_material" | "product" | "general";
   return_date: string;
   reason_type: ReturnReasonType;
   reason_notes: string;
@@ -798,7 +801,7 @@ export interface ReturnListParams {
   limit?: number;
   supplier_id?: string;
   vendor_id?: string;
-  module_type?: "raw_material" | "product";
+  module_type?: "raw_material" | "product" | "general";
   status?: ReturnStatus | 'all';
   reason_type?: ReturnReasonType | 'all';
   date_from?: string;

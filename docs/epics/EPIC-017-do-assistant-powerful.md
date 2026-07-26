@@ -1,6 +1,6 @@
 # EPIC-017: Do — Asisten yang Benar-Benar Berguna
 
-status: on-progress
+status: ready-for-qa
 environment: dev
 retries: 0
 
@@ -69,7 +69,7 @@ Anchor: `src/app/api/ai/assistant/route.ts` (828 baris, monolitik),
 - [x] Fase B: jawaban muncul bertahap; kegagalan streaming jatuh ke mode lama tanpa error ke user.
 - [x] Fase C: prompt hanya memuat modul relevan; penghematan token tercatat.
 - [x] Fase D: pertanyaan spesifik dijawab dari query langsung, bukan tebakan ringkasan.
-- [ ] Fase E: tidak ada aksi menulis yang jalan tanpa konfirmasi user.
+- [x] Fase E: tidak ada aksi menulis yang jalan tanpa konfirmasi user.
 - [ ] Semua fase: build hijau, test hijau, tidak ada nama vendor bocor ke UI (EPIC-016 lanjutan).
 
 ## Test Plan
@@ -87,6 +87,57 @@ Anchor: `src/app/api/ai/assistant/route.ts` (828 baris, monolitik),
 
 ## Automation Log
 
+- 2026-07-25 — **Fase E selesai** (tool calling aksi menulis, wajib konfirmasi).
+  Prinsip: model TIDAK PERNAH mengeksekusi — tool tulis hanya membuat USULAN.
+  - Whitelist sempit 2 aksi di `src/lib/assistant/write-tools.ts` (terpisah
+    dari tool baca; `runTool` menolak nama aksi tulis — dijaga unit test):
+    `usulkan_pengumuman_draft` (insert `hris.announcements` selalu status
+    `draft`, teks polos di-escape → HTML paragraf, HRD yang publish dari CMS)
+    dan `usulkan_catatan_kandidat` (append-only `recruitment.candidate_notes`;
+    kandidat di-resolve saat USULAN — ambigu/tidak ketemu = ditolak, kartu
+    konfirmasi selalu menampilkan orang yang pasti).
+  - Alur: model memanggil tool tulis → `proposeWriteAction` memvalidasi +
+    menyimpan baris `pending` di tabel baru `public.ai_assistant_actions`
+    (migrasi `20260725100000`, applied+tracked) → hasil tool ke model =
+    "menunggu_konfirmasi_user" + instruksi jangan mengklaim sudah jalan →
+    `pending_action` ikut meta pesan (stream `done`, non-stream, dan pesan
+    tersimpan — kartu tetap tampil saat sesi dibuka ulang). Satu usulan per
+    giliran supaya kartu tidak menumpuk.
+  - Eksekusi HANYA lewat `POST /api/ai/assistant/actions` (route baru):
+    gate super_admin (selaras gate Do; POST utama cuma cek login), hanya
+    pemilik usulan, klaim atomik `UPDATE … WHERE status='pending'` (klik
+    ganda konkuren tidak dobel eksekusi), TTL 10 menit (basi → `expired`),
+    gagal eksekusi → `failed` + pesan generik (detail hanya di log server).
+  - Audit "siapa & kapan" di tabel actions: user_id+created_at (usulan),
+    decided_by+decided_at (keputusan), executed_at+result (eksekusi).
+  - UI `arkiv-os-desktop.tsx`: kartu konfirmasi amber di bawah jawaban Do
+    (ringkasan aksi + tombol "Jalankan aksi"/"Batalkan", status chip untuk
+    confirmed/cancelled/expired/failed, disable saat diproses, jaringan putus
+    tetap pending agar bisa dicoba lagi).
+  - Gate: 860 unit test hijau (101 file, +17 test write-tools: escape HTML,
+    validasi batas, whitelist, ambiguitas kandidat, TTL, pemisahan baca/tulis),
+    `next build` sukses (route `/api/ai/assistant/actions` ter-generate),
+    tsc 481 = baseline (0 error baru), migrasi applied, PM2 restart, smoke:
+    kedua API 401 tanpa sesi, tabel 13 kolom terverifikasi di DB dev.
+  - Catatan: status kartu di sesi lama tidak di-refresh otomatis saat reload —
+    klik tombol memverifikasi status asli di server (409 + status terkini).
+    Sisa manual: uji browser alur konfirmasi/batal (masuk skenario UAT).
+- 2026-07-25 — **Gate review keamanan Fase E dijalankan; 1 temuan HIGH ditutup.**
+  Reviewer memverifikasi: tidak ada jalur eksekusi tanpa konfirmasi (`execute`
+  hanya dipanggil endpoint konfirmasi), tidak ada IDOR (semua mutasi difilter
+  `user_id`), SQL parameterized penuh, XSS aman berlapis (escape server +
+  DOMPurify di `SafeHtml`), klaim `UPDATE … WHERE status='pending'` atomik.
+  - **HIGH (ditutup): gate super_admin hilang di `POST /api/ai/assistant`.**
+    Selama ini "Do khusus super_admin" hanya ditegakkan client; user login role
+    lain bisa memanggil API langsung — dan sejak Fase D/E ikut mengakses tool
+    pencari kandidat/karyawan (bocor data HR ke role tanpa izin rekrutmen).
+    Fix: cek `profile.role === 'super_admin'` → 403 di server, menyamakan gate
+    dengan UI sekaligus menutup usulan-aksi oleh non-super-admin. (Eksekusi
+    aksi memang sudah digate terpisah di endpoint konfirmasi.)
+  - LOW (diterima): `error.message` mentah tersimpan di kolom audit
+    `ai_assistant_actions.error` (tidak pernah dikirim ke client); di-scrub
+    nanti bila whitelist bertambah aksi yang menyentuh API eksternal.
+  - Gate ulang: 860 test hijau, build sukses, PM2 restart, smoke 401 tanpa sesi.
 - 2026-07-21 — **Fase D selesai** (tool calling read-only). Lima tool di
   `src/lib/assistant/tools.ts`: `cari_karyawan`, `absensi_hari_ini`,
   `stok_menipis`, `penjualan_periode`, `status_kandidat`. Model hanya memilih

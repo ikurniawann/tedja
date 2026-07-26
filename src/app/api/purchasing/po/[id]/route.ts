@@ -94,6 +94,31 @@ export async function GET(
       }
     }
 
+    // EPIC-026 B3 — resolusi item barang operasional (scope 'general').
+    // Manual lookup (bukan embed) mengikuti pola PR general (B2a).
+    const supplyItemIds = Array.from(
+      new Set(
+        (items || [])
+          .map((item: { supply_item_id?: string | null }) => item.supply_item_id)
+          .filter(Boolean)
+      )
+    ) as string[];
+    if (supplyItemIds.length > 0) {
+      const { data: supplyRows } = await db
+        .from("supply_items")
+        .select("id, kode, nama, satuan_id, stockable")
+        .in("id", supplyItemIds);
+      const supplyMap = new Map(
+        (supplyRows || []).map((s: { id: string }) => [s.id, s] as const)
+      );
+      for (const item of items || []) {
+        const supplyItemId = (item as { supply_item_id?: string | null }).supply_item_id;
+        (item as { supply_item?: unknown }).supply_item = supplyItemId
+          ? supplyMap.get(supplyItemId) ?? null
+          : null;
+      }
+    }
+
     const { data: activeDelivery, error: deliveryError } = await db
       .from("deliveries")
       .select("id, nomor_resi, no_surat_jalan, status")

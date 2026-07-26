@@ -8,6 +8,7 @@ import {
   normalizePrWriteItems,
   parsePrWriteBody,
   sumPrTotalAmount,
+  type PrWriteItem,
 } from "@/lib/purchasing/pr-schemas";
 
 type RouteParams = {
@@ -86,9 +87,25 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       : { data: [] as Array<{ id: string; kode: string; nama: string }> };
 
     const productById = new Map((products || []).map((product) => [product.id, product]));
+
+    // EPIC-026 B2 — resolusi item barang operasional (scope 'general').
+    const supplyItemIds = [
+      ...new Set(
+        (items || [])
+          .map((item) => item.supply_item_id as string | null | undefined)
+          .filter(Boolean)
+      ),
+    ] as string[];
+
+    const { data: supplyItems } = supplyItemIds.length
+      ? await db.from("supply_items").select("id, kode, nama").in("id", supplyItemIds)
+      : { data: [] as Array<{ id: string; kode: string; nama: string }> };
+
+    const supplyById = new Map((supplyItems || []).map((s) => [s.id, s]));
     const enrichedItems = (items || []).map((item) => ({
       ...item,
       product: item.product_id ? productById.get(item.product_id) ?? null : null,
+      supply_item: item.supply_item_id ? supplyById.get(item.supply_item_id) ?? null : null,
     }));
 
     const relatedUserIds = [
@@ -148,7 +165,11 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     }
 
     const moduleType =
-      existingPR.module_type === "product" ? ("product" as const) : ("raw_material" as const);
+      existingPR.module_type === "product"
+        ? ("product" as const)
+        : existingPR.module_type === "general"
+          ? ("general" as const)
+          : ("raw_material" as const);
     const validated = parsePrWriteBody(await request.json(), moduleType);
 
     const canEdit =
@@ -163,7 +184,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Hanya PR draft yang bisa diedit" }, { status: 400 });
     }
 
-    const normalizedItems = normalizePrWriteItems(validated.items);
+    const normalizedItems = normalizePrWriteItems(validated.items as PrWriteItem[]);
     const totalAmount = sumPrTotalAmount(normalizedItems);
 
     const nextStatus = validated.action === "submit" ? "pending_head" : "draft";
@@ -179,6 +200,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       pr_id: id,
       product_id: "product_id" in item ? item.product_id : null,
       raw_material_id: "raw_material_id" in item ? item.raw_material_id : null,
+      supply_item_id: "supply_item_id" in item ? item.supply_item_id : null,
       satuan_id: item.satuan_id || null,
       description: item.description,
       qty: item.qty,

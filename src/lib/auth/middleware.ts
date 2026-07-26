@@ -50,6 +50,10 @@ export async function updateSession(request: NextRequest) {
     // x-callback-token di dalam route; semua endpoint ber-rate-limit.
     "/booking",
     "/api/public/booking",
+    // EPIC-028 B2 — halaman publik beli/status Season Pass. API pass ada di
+    // bawah /api/public/booking (sudah publik); ini untuk halaman /pass/*.
+    // Status pass = capability token 64-hex; pembelian ber-rate-limit + Xendit.
+    "/pass",
   ];
   const isPublicRoute =
     pathname === "/" ||

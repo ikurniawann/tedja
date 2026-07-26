@@ -11,7 +11,11 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { TableRow } from "@/components/ui/table";
-import { useTicketingReport, type ReportAggRow } from "../queries";
+import {
+  useReportOccupancy,
+  useTicketingReport,
+  type ReportAggRow,
+} from "../queries";
 
 const formatRp = (n: number) => `Rp${n.toLocaleString("id-ID")}`;
 
@@ -111,6 +115,35 @@ export function TicketingReportsPage() {
   const reportQuery = useTicketingReport(from, to);
   const report = reportQuery.data;
 
+  // EPIC-031 C2 — okupansi kuota harian; kartu hanya tampil bila ada
+  // tanggal ber-kuota dalam rentang (venue tanpa kuota = tanpa kartu)
+  const occupancyQuery = useReportOccupancy(from, to);
+  const occupancy = (() => {
+    const days = occupancyQuery.data ?? [];
+    const withCap = days.filter((d) => d.capacity !== null);
+    if (withCap.length === 0) return null;
+    const open = withCap.filter((d) => (d.capacity ?? 0) > 0);
+    const avgPct =
+      open.length === 0
+        ? 0
+        : Math.round(
+            (open.reduce(
+              (sum, d) => sum + (d.online + d.walk_in) / (d.capacity as number),
+              0
+            ) /
+              open.length) *
+              100
+          );
+    return {
+      avgPct,
+      fullDays: open.filter(
+        (d) => d.online + d.walk_in >= (d.capacity as number)
+      ).length,
+      closedDays: withCap.filter((d) => d.capacity === 0).length,
+      totalOrang: days.reduce((sum, d) => sum + d.online + d.walk_in, 0),
+    };
+  })();
+
   return (
     <div className="space-y-6">
       <div className="border-b border-gray-200/70 pb-4">
@@ -169,6 +202,17 @@ export function TicketingReportsPage() {
       ) : report ? (
         <>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {occupancy ? (
+              <StatCard
+                label="Okupansi Kuota Harian"
+                value={`${occupancy.avgPct}%`}
+                hint={`${occupancy.totalOrang} orang · ${occupancy.fullDays} hari penuh${
+                  occupancy.closedDays > 0
+                    ? ` · ${occupancy.closedDays} hari tutup`
+                    : ""
+                }`}
+              />
+            ) : null}
             <StatCard
               label="Kunjungan Terdaftar"
               value={String(report.summary.visits_opened)}
@@ -183,6 +227,13 @@ export function TicketingReportsPage() {
                   : undefined
               }
             />
+            {report.summary.diskon_promo > 0 && (
+              <StatCard
+                label="Potongan Promo"
+                value={`−${formatRp(report.summary.diskon_promo)}`}
+                hint="Diskon kode promo terpakai saat redeem — bukan uang keluar; revenue tiket di atas masih gross"
+              />
+            )}
             <StatCard
               label="Revenue F&B on-Tab (net)"
               value={formatRp(report.summary.fnb_net)}

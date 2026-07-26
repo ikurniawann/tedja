@@ -4,6 +4,7 @@ import { getMemberSession } from "@/lib/member-portal/session";
 import { getMemberContext } from "@/lib/crm/rewards-server";
 import {
   evaluateCollectible,
+  getEntitlementSummary,
   listCollectiblesForMember,
   sortCollectibles,
 } from "@/lib/crm/collectibles-server";
@@ -34,7 +35,11 @@ export async function GET() {
 
     // Member tanpa profil CRM belum punya inventory; katalog tetap tampil
     // sebagai etalase supaya ia tahu apa yang bisa dikejar.
-    const rows = await listCollectiblesForMember(pool, member.memberProfileId);
+    const [rows, entitlement] = await Promise.all([
+      listCollectiblesForMember(pool, member.memberProfileId),
+      // Jatah tukar (Task 2): dihitung saat dibaca dari total_xp kanonik.
+      getEntitlementSummary(pool, session.customerId, member.totalXp),
+    ]);
     const items = sortCollectibles(
       rows.map((row) => evaluateCollectible(row, member.totalXp))
     );
@@ -47,6 +52,7 @@ export async function GET() {
           total_xp: member.totalXp,
           tier_name: member.tierName,
         },
+        entitlement,
         owned_count: items.filter((item) => item.owned).length,
         total_count: items.length,
         items,

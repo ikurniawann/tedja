@@ -1,23 +1,10 @@
-# Keep Docker build context clean — a stale host `.next` copied into the
-# image can make `next build` skip/miss new App Router pages & API routes
-# (seen in prod: /dashboard/pos/reports/profit OK, /transactions 404).
-.next
 node_modules
-out
-build
-coverage
 .git
-.gitlab
-**/.DS_Store
-*.log
+.next
+.env.local
 .env
-.env.*
-!.env.example
-storage/uploads
-storage/private
-tools/pos-nfc-bridge/node_modules
-docs
-Panduan
-.aider*
-assistant-memory
-*.traineddata
+*.md
+Dockerfile
+.dockerignore
+database/
+seeders/

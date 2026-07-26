@@ -98,6 +98,13 @@ export interface CsReportData {
     avg_first_response_seconds: number | null;
     avg_csat: number | null;
   }[];
+  /** EPIC-013 — ringkasan Google Review periode berjalan. */
+  reviews: {
+    total: number;
+    avg_rating: number | null;
+    replied: number;
+    low_rating: number;
+  };
   agents: {
     agent_name: string;
     handled: number;

@@ -2,12 +2,18 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { Toaster } from "sonner";
 import { requireUser } from "@/lib/auth/require-user";
-import { getUserMenus, filterNavByPrefixes } from "@/lib/iam/get-user-menus";
+import {
+  collectNavHrefs,
+  getUserMenus,
+  filterNavByPrefixes,
+  isEssOnlyUser,
+} from "@/lib/iam/get-user-menus";
 import {
   allowedModulePaths,
   canAccessPath,
+  isFullAccessRole,
+  isPathAllowedByMenus,
   ESS_HOME_PATH,
-  isEssOnlyRole,
 } from "@/lib/iam/access";
 import { AppSidebar } from "@/components/shared";
 
@@ -19,17 +25,28 @@ export default async function DashboardGroupLayout({
   const user = await requireUser();
   // Kebijakan ESS-only ditentukan IAM (permission menu non-ESS), bukan daftar role di kode.
   const essOnly = await isEssOnlyUser(user.id, user.role);
+  const allNavItems = await getUserMenus(user.id, user.role);
 
-  // Role ESS-only dikunci ke Area Karyawan + modul tambahannya (mis. sales →
-  // Sales Funneling): URL di luar itu → balik ke beranda ESS.
-  if (essOnly) {
+  // Guard path utk SEMUA role non-full-access (fix H1 security review
+  // EPIC-032 A4 — sebelumnya hanya essOnly, sehingga role ber-grant menu
+  // non-ESS seperti sales/finance_staff/marketing bisa membuka URL modul
+  // lain langsung). Path sah = ESS / ROLE_MODULE_PATHS / href menu IAM
+  // ber-grant (root "/dashboard" exact-only). POS punya layout sendiri di
+  // luar group ini — tidak tersentuh.
+  if (!isFullAccessRole(user.role)) {
     const pathname = (await headers()).get("x-pathname") ?? "";
-    if (pathname && !canAccessPath(user.role, pathname)) {
-      redirect(ESS_HOME_PATH);
+    const allowed =
+      !pathname ||
+      canAccessPath(user.role, pathname) ||
+      isPathAllowedByMenus(pathname, collectNavHrefs(allNavItems));
+    if (!allowed) {
+      redirect(
+        essOnly
+          ? ESS_HOME_PATH
+          : (allowedModulePaths(user.role)[0] ?? ESS_HOME_PATH)
+      );
     }
   }
-
-  const allNavItems = await getUserMenus(user.id, user.role);
   // ESS-only: menu Area Karyawan + modul tambahan role. Full-access: buang
   // "Beranda" ESS (/dashboard/me) agar tak ganda dengan Beranda utama.
   const navItems = essOnly

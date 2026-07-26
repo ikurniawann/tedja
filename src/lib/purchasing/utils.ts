@@ -120,6 +120,21 @@ export function formatRupiah(amount: number): string {
 }
 
 /**
+ * Format nominal lengkap dengan simbol mata uang, mis. "Rp 1.500.000".
+ * Nilai negatif ditulis "-Rp 1.500.000".
+ */
+export function formatRp(
+  amount: number | null | undefined,
+  options?: { minimumFractionDigits?: number; maximumFractionDigits?: number }
+): string {
+  const parsed = Number(amount);
+  const value = Number.isFinite(parsed) ? parsed : 0;
+  const sign = value < 0 ? "-" : "";
+
+  return `${sign}Rp ${formatAmount(Math.abs(value), options)}`;
+}
+
+/**
  * Format date to Indonesian format
  */
 export function formatDate(date: string | Date | null | undefined): string {

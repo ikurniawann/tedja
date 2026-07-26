@@ -1,6 +1,6 @@
 # EPIC-019: Desktop Arkiv OS — Pusat Monitoring Owner
 
-status: on-progress
+status: ready-for-qa
 environment: dev
 retries: 0
 
@@ -110,7 +110,7 @@ dua tampilan; string statis dihapus.
 - [x] Setiap kartu & notifikasi punya deep link yang benar.
 - [x] Kegagalan satu sumber data hanya menandai kartunya, kartu lain tetap terisi.
 - [x] Pulsa Bisnis menampilkan pembanding vs kemarin.
-- [x] Widget bisa disembunyikan (toggle per widget, tersimpan localStorage); pengurutan menyusul di Fase C.
+- [x] Widget bisa disembunyikan (toggle per widget, tersimpan localStorage) DAN diurutkan (tombol panah di WidgetSettings, tersimpan `arkiv-widget-order`).
 - [x] Build hijau, test hijau; unit test menutup query overview & pemilihan role.
 
 ## Test Plan
@@ -182,6 +182,36 @@ Semua Acceptance Criteria tercentang + Automation Log terisi + status
   riwayat tidak kosong, dengan penghitung. 9 unit test untuk diff.
   Gates: 691 test hijau (85 file), build sukses.
 
+- 2026-07-25 — **Fase C + D selesai — semua fase tuntas, status → ready-for-qa.**
+  - **Fase C (kustomisasi & kenyamanan):**
+    (1) *Pengurutan widget* — tombol panah naik/turun per widget monitoring di
+    WidgetSettings, tersimpan localStorage `arkiv-widget-order`;
+    `normalizeWidgetOrder` membuang key basi & menyisipkan widget baru di
+    belakang supaya urutan lama tidak menghilangkan widget rilis berikutnya.
+    Kartu dirender dari `cardNodes` map mengikuti urutan (berlaku juga di panel
+    mobile). Dipilih panah, bukan drag-and-drop — sederhana, accessible, dan
+    menghindari jebakan dnd `<button>` (pelajaran EPIC-022).
+    (2) *Responsif laptop kecil* — papan `lg` kini satu kolom 340px (ikon
+    desktop tidak tertutup), dua kolom 560px baru mulai `xl`.
+    (3) *Pembanding periode Pulsa Bisnis* — `SalesPulse.mingguLalu` (hari yang
+    sama H-7; rentang query diperlebar ke -7 hari, sparkline tetap 7 titik
+    terakhir) + stat "Minggu lalu" ber-`MiniDelta` persen di samping "Kemarin".
+    Fixture `SalesPulse` di test notifications & WA ikut disesuaikan.
+  - **Fase D (jembatan ke Do):** prompt "Tanya Do" kini dibentuk dari ANGKA
+    yang tampil, bukan template statis — `src/lib/desktop/ask-do.ts`
+    (`buildAskDoPrompt`, 11 unit test): omzet turun → "turun N% dibanding
+    kemarin… kenapa turun?", naik → "apa pendorongnya?" (+ pembanding minggu
+    lalu), tim → sebut jumlah belum-absen / fokus telat, stok → jumlah + bahan
+    paling kritis + "sudah dipesan belum", keputusan & member (baru diberi
+    tombol Tanya Do) → rincian item pending / angka 7 hari. Tetap lewat
+    mekanisme `queuedAssistantPrompt` + tool calling EPIC-017.
+  - Gate: 872 unit test hijau (+12: mingguLalu & ask-do), `next build` sukses,
+    tsc 481 = baseline (0 baru), PM2 restart, smoke `/api/desktop/overview`
+    401 tanpa sesi.
+  - Sisa QA manual (di luar kode): browser — urutan widget berubah & bertahan
+    setelah reload, badge Minggu lalu, klik Tanya Do di kelima kartu
+    menghasilkan pertanyaan sesuai angka; HP sungguhan — safe-area & gulir
+    momentum iOS panel mobile.
 - 2026-07-21 — **Fase A + B selesai satu sesi** (owner meminta langsung tampil di
   /arkiv-os, bukan hanya mockup). Fase A: `src/lib/desktop/overview.ts` (5 seksi,
   gagal-aman per seksi, 6 unit test — termasuk tanggal WIB, `belum` tak pernah

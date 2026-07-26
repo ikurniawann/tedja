@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
 import "./globals.css";
 import "quill/dist/quill.snow.css";
 import QueryProvider from "@/components/providers/query-provider";
@@ -8,8 +7,6 @@ import { ThemeScript } from "@/components/providers/theme-script";
 import { ToastProvider } from "@/components/providers/toast-provider";
 import { ActivityLogProvider } from "@/contexts/ActivityLogContext";
 import { ErrorBoundary } from "@/components/error-boundary";
-
-const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: "Arkiv",
@@ -31,7 +28,7 @@ export default function RootLayout({
       <head>
         <ThemeScript />
       </head>
-      <body className={inter.className} suppressHydrationWarning>
+      <body suppressHydrationWarning>
         <ErrorBoundary>
           <ThemeProvider>
             <QueryProvider>

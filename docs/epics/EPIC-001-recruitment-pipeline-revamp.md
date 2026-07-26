@@ -1,6 +1,6 @@
 # EPIC-001: Recruitment Pipeline Revamp
 
-status: on-progress
+status: ready-for-qa
 environment: dev
 retries: 0
 
@@ -124,10 +124,10 @@ psikotes online penuh (6 instrumen dikerjakan kandidat via link token,
 proctoring webcam, manajemen bank soal). Scope terlalu besar untuk satu task
 group — diangkat jadi epic tersendiri **EPIC-002: Psikotes Online**.
 
-### 8b. Panel Interview — `backlog`
+### 8b. Panel Interview — `done` (scope revisi → EPIC-003)
 - Integrasi tabel `interviews` + scorecard existing di panel action.
 
-### 8c. Panel Offer — `backlog`
+### 8c. Panel Offer — `done` (delegated → EPIC-004)
 - Nominal penawaran, tanggal kirim, keputusan kandidat (terima/tolak).
 
 ## Acceptance Criteria (epic)
@@ -147,6 +147,26 @@ group — diangkat jadi epic tersendiri **EPIC-002: Psikotes Online**.
 - Visual: screenshot headless halaman detail (scratchpad `shot.mjs`).
 
 ## Automation Log
+
+- 2026-07-25 · Audit penutupan task 8b & 8c. 8c (Panel Offer) TERPENUHI oleh
+  EPIC-004: `OfferActionPanel` + `OfferSendDialog` dirender identik di detail
+  kandidat & drawer pipeline — nominal (`base_salary`), tanggal kirim
+  (`sent_at`) + mulai/kedaluwarsa, keputusan kandidat (accepted/negotiating/
+  declined + responded_at/response_ip/response_source), offer berversi,
+  referensi gaji, portal `/offer/[token]`. Status 8c → done.
+- 2026-07-25 · Task 8b (Panel Interview) — scope DIREVISI: rencana "integrasi
+  tabel `interviews` + scorecard existing" DIBATALKAN, digantikan interview AI
+  asinkron (EPIC-003): `InterviewActionPanel` di kedua permukaan (sesi,
+  kesimpulan AI, transkrip+rekaman, proctoring, template WA, gate Lolos→Offer
+  min. 1 sesi selesai). Status 8b → done (scope revisi).
+- 2026-07-25 · Dead code legacy DIHAPUS (temuan audit, prioritas keamanan
+  ringan): `src/app/api/interviews/route.ts` (tanpa guard auth/zod, menulis
+  `candidates.status` langsung — membypass `/api/candidates/[id]/stage` tanpa
+  jejak audit) dan `src/components/scorecard-dialog.tsx` (tidak di-import di
+  mana pun). Keputusan tersisa utk owner (bukan blocker): nasib tabel yatim
+  `recruitment.interviews` (drop vs arsip) dan perlu-tidaknya task 8d
+  "interview tatap muka + scorecard manual HRD". Semua task selesai → status
+  epic ready-for-qa (QA manual mengikuti EPIC-003/004).
 
 - 2026-07-16 · Laporan pipeline kandidat PDF (commit `d1103fc`): GET
   /api/candidates/[id]/report — profil, analisis AI CV, screening, psikotes

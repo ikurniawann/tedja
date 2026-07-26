@@ -23,6 +23,7 @@ interface BookingLookupRow {
   booking_code: string;
   visit_date: string;
   customer_name: string;
+  gift_recipient_name: string | null;
   customer_phone: string;
   status: string;
   total: string;
@@ -55,7 +56,8 @@ export async function GET(request: NextRequest) {
     const booking = await queryOne<BookingLookupRow>(
       `SELECT id, booking_code, visit_date::text AS visit_date, customer_name,
               customer_phone, status, total, paid_at::text AS paid_at,
-              used_at::text AS used_at, visit_id
+              used_at::text AS used_at, visit_id,
+              gift_recipient_name
        FROM ticketing.ticket_bookings
        WHERE branch_id = $1 AND company_id = $2 AND booking_code = $3`,
       [ctx.branchId, ctx.companyId, code]
@@ -138,6 +140,8 @@ export async function GET(request: NextRequest) {
       visit_date: booking.visit_date,
       customer_name: booking.customer_name,
       customer_phone: booking.customer_phone,
+      // EPIC-032 D2 — loket melihat booking hadiah + nama penerimanya
+      gift_recipient_name: booking.gift_recipient_name,
       status,
       total: Number(booking.total),
       paid_at: booking.paid_at,

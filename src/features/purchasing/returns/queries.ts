@@ -33,7 +33,7 @@ export const useReturnFormData = (
     enabled: Boolean(grnId),
   });
 
-export const useReturnGrnOptions = (moduleType: "raw_material" | "product" = "raw_material") =>
+export const useReturnGrnOptions = (moduleType: "raw_material" | "product" | "general" = "raw_material") =>
   useQuery({
     queryKey: returnsQueryKeys.grnOptions(moduleType),
     queryFn: () => listReturnGrnOptions(moduleType),

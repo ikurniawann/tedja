@@ -4,7 +4,8 @@
 // pernah mengembalikan id internal venue ke klien; ctx hanya dipakai
 // untuk query berikutnya di server.
 
-import { query, queryOne } from "@/lib/db";
+import { query, queryOne, withTransaction } from "@/lib/db";
+import { releasePromoRedemption } from "@/lib/promo/promo-server";
 import { expandBundleMembers, type BundleMember } from "./bundle";
 import {
   isDateBlockedOnline,
@@ -19,6 +20,8 @@ export interface PublicVenueCtx {
   companyId: string;
   branchId: string;
   websiteChannelId: string;
+  /** Nama tampilan venue (dari branch) — dipakai header booking publik. */
+  venueName: string;
 }
 
 const SLUG_PATTERN = /^[a-z0-9-]{2,50}$/;
@@ -33,9 +36,15 @@ export async function resolvePublicVenue(
 ): Promise<PublicVenueCtx | null> {
   if (!SLUG_PATTERN.test(slug)) return null;
 
-  const settings = await queryOne<{ company_id: string; branch_id: string }>(
-    `SELECT company_id, branch_id FROM ticketing.ticket_settings
-     WHERE booking_slug = $1`,
+  const settings = await queryOne<{
+    company_id: string;
+    branch_id: string;
+    venue_name: string | null;
+  }>(
+    `SELECT s.company_id, s.branch_id, b.name AS venue_name
+     FROM ticketing.ticket_settings s
+     LEFT JOIN configuration.branches b ON b.id = s.branch_id
+     WHERE s.booking_slug = $1`,
     [slug]
   );
   if (!settings) return null;
@@ -53,6 +62,7 @@ export async function resolvePublicVenue(
     companyId: settings.company_id,
     branchId: settings.branch_id,
     websiteChannelId: channel.id,
+    venueName: settings.venue_name?.trim() || "Tiket Wisata",
   };
 }
 
@@ -312,5 +322,12 @@ export async function expireBookingIfDue(bookingId: string): Promise<boolean> {
      RETURNING id`,
     [bookingId]
   );
+  // EPIC-032 B1 — kedaluwarsa melepas hold promo (jatah kode kembali);
+  // best-effort idempoten: gagal release ≠ gagal expiry
+  if (updated.length > 0) {
+    await withTransaction((client) =>
+      releasePromoRedemption(client, "ticket_booking", bookingId)
+    ).catch((err) => console.error("[booking] release promo error:", err));
+  }
   return updated.length > 0;
 }

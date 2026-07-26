@@ -3,6 +3,8 @@ import { z } from "zod";
 import { getPosSession } from "@/lib/api/auth";
 import { createPgClient } from "@/lib/pg/create-client";
 import { apiErrorResponse, isMissingCrmSchema, toNumber, validationErrorResponse } from "@/lib/crm/server";
+import { checkAvatarEligibility } from "@/lib/crm/collectibles-server";
+import { getPool } from "@/lib/db";
 
 const grantAvatarSchema = z.object({
   action: z.literal("grant"),
@@ -196,6 +198,18 @@ async function grantAvatar(body: unknown) {
   }
   if (stockTotal !== null && stockRedeemed >= stockTotal) {
     return NextResponse.json({ success: false, error: "Stok avatar sudah habis" }, { status: 400 });
+  }
+
+  // EPIC-014 Task 2: required_tier_id + min_lifetime_xp kini DITEGAKKAN di
+  // jalur grant admin juga (dulu dekoratif) — satu aturan dari modul bersama.
+  if (member.customer_id) {
+    const eligibility = await checkAvatarEligibility(getPool(), avatar.id, member.customer_id);
+    if (!eligibility.allowed) {
+      return NextResponse.json(
+        { success: false, error: `Member belum memenuhi syarat: ${eligibility.reason}` },
+        { status: 403 }
+      );
+    }
   }
 
   const shouldEquip = payload.equip || !member.active_avatar_id;

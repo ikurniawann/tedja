@@ -2,7 +2,9 @@ import type { ReEntryPolicy } from "../masters/types";
 
 export type TicketStatus = "draft" | "active";
 export type ProductDateKind = "high-season" | "blok-online";
-export type TicketProductKind = "single" | "bundle";
+export type TicketProductKind = "single" | "bundle" | "season_pass";
+/** EPIC-028 — kebijakan masuk season pass (dipilih saat buat produk). */
+export type PassEntryPolicy = "once_per_day" | "unlimited" | "limited_visits";
 
 export interface TicketCategory {
   id: string;
@@ -17,6 +19,8 @@ export interface TicketProductListItem {
   status: TicketStatus;
   product_kind: TicketProductKind;
   base_price: number;
+  cogs: number;
+  has_gate: boolean;
   thumbnail_url: string | null;
   variant_count: number;
   distributed_channels: string[];
@@ -76,6 +80,8 @@ export interface TicketProductDetail {
     status: TicketStatus;
     product_kind: TicketProductKind;
     base_price: number;
+    cogs: number;
+    has_gate: boolean;
     thumbnail_url: string | null;
     description: string | null;
     re_entry_policy: ReEntryPolicy;
@@ -99,7 +105,14 @@ export interface CreateTicketValues {
   category_name?: string | null;
   status?: TicketStatus;
   base_price?: number;
+  cogs?: number;
+  has_gate?: boolean;
   description?: string | null;
+  /** EPIC-028 — hanya untuk product_kind 'season_pass'. */
+  validity_months?: number;
+  entry_policy?: PassEntryPolicy;
+  visit_quota?: number | null;
+  member_discount_percent?: number;
 }
 
 export interface UpdateTicketValues {
@@ -108,6 +121,8 @@ export interface UpdateTicketValues {
   category_name?: string | null;
   status?: TicketStatus;
   base_price?: number;
+  cogs?: number;
+  has_gate?: boolean;
   description?: string | null;
   re_entry_policy?: ReEntryPolicy;
   variants?: {

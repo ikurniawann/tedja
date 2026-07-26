@@ -13,6 +13,7 @@ import {
   loadBundleComposition,
   toBundleComponents,
 } from "@/lib/ticketing/bundle-server";
+import { assertCapacityAvailable } from "@/lib/ticketing/capacity-server";
 import {
   resolveVariantPriceOnDate,
   todayJakartaDate,
@@ -220,6 +221,16 @@ export async function POST(request: NextRequest) {
     }
 
     const result = await withTransaction(async (client) => {
+      // EPIC-031 B2 — kuota harian juga mengikat walk-in (keputusan owner
+      // 25 Jul): 1 gelang = 1 orang, tanggal = hari ini WIB. Redeem booking
+      // TIDAK lewat sini (kuotanya sudah dipegang bookingnya). Fail-closed
+      // tanpa override supervisor; unlimited = no-op tanpa lock.
+      await assertCapacityAvailable(
+        client,
+        { companyId: ctx.companyId, branchId: ctx.branchId },
+        todayJakartaDate(),
+        uids.length
+      );
       // Default plafon dari pengaturan venue (postpaid)
       const settingsResult = await client.query<{
         default_credit_limit: string;

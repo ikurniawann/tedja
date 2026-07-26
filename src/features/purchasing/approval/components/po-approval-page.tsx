@@ -30,8 +30,11 @@ import { usePurchaseOrderList } from "../../po/queries";
 import { useApprovePurchaseOrder } from "../../po/mutations";
 import { useProductPurchaseOrderList } from "../../product-po/queries";
 import { useApproveProductPurchaseOrder } from "../../product-po/mutations";
+import { useGeneralPurchaseOrderList } from "../../general-po/queries";
+import { useApproveGeneralPurchaseOrder } from "../../general-po/mutations";
 import type { PurchaseOrder } from "@/types/purchasing";
 import type { ProductPOListItem } from "../../product-po/types";
+import type { GeneralPOListItem } from "../../general-po/types";
 
 const DRAFT_STATUS_STYLE = "border-gray-200 bg-gray-50 text-gray-700";
 
@@ -39,12 +42,14 @@ type POApprovalPageProps = {
   moduleType?: PurchasingModuleType;
 };
 
-type ApprovalPO = PurchaseOrder | ProductPOListItem;
+type ApprovalPO = PurchaseOrder | ProductPOListItem | GeneralPOListItem;
 
 export function POApprovalPage({ moduleType = "raw_material" }: POApprovalPageProps) {
   const router = useRouter();
   const config = getApprovalModuleConfig(moduleType);
   const isProduct = config.isProduct;
+  const isGeneral = config.isGeneral;
+  const usesVendor = isProduct || isGeneral;
   const [confirmingPO, setConfirmingPO] = useState<ApprovalPO | null>(null);
   const [processingId, setProcessingId] = useState<string | null>(null);
 
@@ -54,13 +59,23 @@ export function POApprovalPage({ moduleType = "raw_material" }: POApprovalPagePr
     page: 1,
     limit: 50,
   });
-  const listQuery = isProduct ? productListQuery : rmListQuery;
+  const generalListQuery = useGeneralPurchaseOrderList({
+    status: "draft",
+    page: 1,
+    limit: 50,
+  });
+  const listQuery = isGeneral ? generalListQuery : isProduct ? productListQuery : rmListQuery;
   const pos = (listQuery.data?.data ?? []) as ApprovalPO[];
   const loading = listQuery.isLoading;
 
   const rmApproveMutation = useApprovePurchaseOrder();
   const productApproveMutation = useApproveProductPurchaseOrder();
-  const approveMutation = isProduct ? productApproveMutation : rmApproveMutation;
+  const generalApproveMutation = useApproveGeneralPurchaseOrder();
+  const approveMutation = isGeneral
+    ? generalApproveMutation
+    : isProduct
+      ? productApproveMutation
+      : rmApproveMutation;
   const isProcessing = Boolean(processingId);
 
   useEffect(() => {
@@ -102,7 +117,7 @@ export function POApprovalPage({ moduleType = "raw_material" }: POApprovalPagePr
       <PurchasingPageHeader
         title="Purchase Order Approval"
         description={
-          isProduct
+          usesVendor
             ? "Review vendor, pricing, tax, and final totals before the order is sent."
             : "Review supplier, pricing, tax, and final totals before the order is sent."
         }
@@ -119,7 +134,7 @@ export function POApprovalPage({ moduleType = "raw_material" }: POApprovalPagePr
         icon={ShoppingCart}
         title="Pending Approvals"
         description={
-          isProduct
+          usesVendor
             ? "Draft purchase orders waiting for approval before vendor dispatch."
             : "Draft purchase orders waiting for approval before supplier dispatch."
         }

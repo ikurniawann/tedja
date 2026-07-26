@@ -394,6 +394,8 @@ export interface CreateOrderRequest {
   include_tax?: boolean;
   /** Membership discount percentage sent for server validation */
   membership_discount_pct?: number;
+  /** EPIC-032 C1 — kode promo; server evaluasi & override diskon */
+  promo_code?: string;
   /** Link order to active cashier shift */
   shift_id?: string;
 }

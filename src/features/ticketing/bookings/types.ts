@@ -50,6 +50,8 @@ export interface BookingLookup {
   booking_code: string;
   visit_date: string;
   customer_name: string;
+  /** EPIC-032 D2 — hadiah: nama penerima (null = bukan hadiah). */
+  gift_recipient_name: string | null;
   customer_phone: string;
   status: BookingStatus;
   total: number;
@@ -103,4 +105,13 @@ export interface BookingDetail extends BookingListItem {
 export interface RedeemBand {
   nfc_uid: string;
   guest_id: string;
+}
+
+/** EPIC-031 Fase C — okupansi harian (dashboard boleh lihat angka). */
+export interface OccupancyDay {
+  date: string;
+  online: number;
+  walk_in: number;
+  /** null = unlimited (kuota tidak aktif untuk tanggal ini). */
+  capacity: number | null;
 }

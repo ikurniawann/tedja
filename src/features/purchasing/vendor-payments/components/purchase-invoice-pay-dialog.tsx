@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { Camera, FileText, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -34,6 +35,10 @@ export function PurchaseInvoicePayDialog({ row, open, onOpenChange }: PayDialogP
   const [method, setMethod] = useState<VendorPayment["method"]>("bank_transfer");
   const [referenceNumber, setReferenceNumber] = useState("");
   const [notes, setNotes] = useState("");
+  /** Arsip nota hasil scan (EPIC-018 Fase B) — ikut tersimpan di pembayaran. */
+  const [receipt, setReceipt] = useState<{ path: string; name: string } | null>(null);
+  const [scanning, setScanning] = useState(false);
+  const [scanNote, setScanNote] = useState<{ tone: "ok" | "warn"; text: string } | null>(null);
 
   const outstanding = row?.outstanding_amount ?? 0;
   const paymentPreviewType = useMemo(() => {
@@ -49,7 +54,84 @@ export function PurchaseInvoicePayDialog({ row, open, onOpenChange }: PayDialogP
     setMethod("bank_transfer");
     setReferenceNumber("");
     setNotes("");
+    setReceipt(null);
+    setScanning(false);
+    setScanNote(null);
   }, [open, row]);
+
+  /**
+   * Unggah nota → server mengarsipkan file + membaca isinya (OCR), lalu field
+   * tanggal/nomor/jumlah terisi otomatis. Hasil baca HANYA prefill — user awam
+   * cukup memeriksa, bukan mengetik ulang; salah baca tinggal dikoreksi.
+   */
+  const handleScanFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      setScanNote({ tone: "warn", text: "File terlalu besar (maksimal 10 MB). Coba foto ulang atau kecilkan filenya." });
+      return;
+    }
+
+    setScanning(true);
+    setScanNote(null);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch("/api/purchasing/receipt-scan", { method: "POST", body: form });
+      const json = (await res.json().catch(() => ({}))) as {
+        success?: boolean;
+        message?: string;
+        data?: {
+          receipt_path: string;
+          receipt_name: string;
+          fields: { nomor: string | null; tanggal: string | null; total: number | null };
+        };
+      };
+      if (!res.ok || !json.success || !json.data) {
+        setScanNote({ tone: "warn", text: json.message || "Nota tidak bisa diunggah. Periksa koneksi lalu coba lagi." });
+        return;
+      }
+
+      setReceipt({ path: json.data.receipt_path, name: json.data.receipt_name });
+      const fields = json.data.fields;
+      const terisi: string[] = [];
+      if (fields.tanggal) {
+        setPaymentDate(fields.tanggal);
+        terisi.push("tanggal");
+      }
+      if (fields.nomor) {
+        setReferenceNumber(fields.nomor);
+        terisi.push("nomor nota");
+      }
+      let catatanJumlah = "";
+      if (fields.total && fields.total > 0) {
+        if (fields.total > outstanding + 0.01 && outstanding > 0) {
+          setAmount(outstanding);
+          catatanJumlah = ` Total di nota (${formatAmount(fields.total)}) lebih besar dari sisa tagihan, jadi jumlah diisi sebesar sisa tagihan.`;
+        } else {
+          setAmount(fields.total);
+        }
+        terisi.push("jumlah");
+      }
+
+      if (terisi.length > 0) {
+        setScanNote({
+          tone: "ok",
+          text: `Nota terbaca — ${terisi.join(", ")} sudah terisi otomatis.${catatanJumlah} Periksa sekali lagi sebelum menyimpan, ya.`,
+        });
+      } else {
+        setScanNote({
+          tone: "warn",
+          text: "Nota tersimpan sebagai lampiran, tapi tulisannya belum terbaca jelas. Silakan isi kolom di bawah secara manual — atau coba foto ulang lebih dekat dengan cahaya terang.",
+        });
+      }
+    } catch {
+      setScanNote({ tone: "warn", text: "Nota tidak bisa diunggah. Periksa koneksi lalu coba lagi." });
+    } finally {
+      setScanning(false);
+    }
+  };
 
   const handleSubmit = async () => {
     if (!row) return;
@@ -72,6 +154,8 @@ export function PurchaseInvoicePayDialog({ row, open, onOpenChange }: PayDialogP
           method,
           reference_number: referenceNumber.trim() || null,
           notes: notes.trim() || null,
+          receipt_path: receipt?.path ?? null,
+          receipt_name: receipt?.name ?? null,
         },
       });
       toast.success(
@@ -109,6 +193,74 @@ export function PurchaseInvoicePayDialog({ row, open, onOpenChange }: PayDialogP
                 )}
                 {" · "}Paid {formatAmount(row.paid_amount)}
               </div>
+            </div>
+
+            {/* Scan nota (EPIC-018 Fase B): satu tombol besar, bahasa polos,
+                hasil baca otomatis selalu bisa dikoreksi manual. */}
+            <div>
+              {scanning ? (
+                <div className="flex items-center gap-3 rounded-xl border border-pink-200 bg-pink-50 px-4 py-3.5">
+                  <Loader2 className="size-5 shrink-0 animate-spin text-pink-600" />
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold text-gray-800">Sedang membaca nota…</div>
+                    <div className="text-xs text-gray-500">Biasanya 5–15 detik. Jangan tutup jendela ini dulu.</div>
+                  </div>
+                </div>
+              ) : receipt ? (
+                <div className="flex items-center gap-2.5 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5">
+                  <FileText className="size-4 shrink-0 text-gray-500" />
+                  <span className="min-w-0 flex-1 truncate text-xs font-medium text-gray-700">{receipt.name}</span>
+                  <a
+                    href={`/api/purchasing/receipts/${receipt.path
+                      .replace(/^purchasing-receipts\//, "")
+                      .split("/")
+                      .map(encodeURIComponent)
+                      .join("/")}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="shrink-0 text-xs font-semibold text-pink-600 hover:underline"
+                  >
+                    Lihat
+                  </a>
+                  <label className="shrink-0 cursor-pointer text-xs font-semibold text-pink-600 hover:underline">
+                    Ganti
+                    <input
+                      type="file"
+                      className="sr-only"
+                      accept="image/jpeg,image/png,image/webp,application/pdf"
+                      onChange={handleScanFile}
+                    />
+                  </label>
+                </div>
+              ) : (
+                <label className="flex cursor-pointer flex-col items-center gap-1.5 rounded-xl border-2 border-dashed border-pink-300 bg-pink-50/60 px-4 py-5 text-center transition hover:border-pink-400 hover:bg-pink-50">
+                  <input
+                    type="file"
+                    className="sr-only"
+                    accept="image/jpeg,image/png,image/webp,application/pdf"
+                    onChange={handleScanFile}
+                  />
+                  <span className="grid size-10 place-items-center rounded-full bg-pink-100">
+                    <Camera className="size-5 text-pink-600" />
+                  </span>
+                  <span className="text-sm font-semibold text-gray-800">Foto / Unggah Nota</span>
+                  <span className="max-w-[340px] text-xs leading-5 text-gray-500">
+                    Tanggal, nomor, dan jumlah akan terisi otomatis dari nota. Tidak punya notanya? Isi
+                    kolom di bawah seperti biasa.
+                  </span>
+                </label>
+              )}
+              {scanNote && (
+                <div
+                  className={`mt-2 rounded-xl border px-3 py-2 text-xs leading-5 ${
+                    scanNote.tone === "ok"
+                      ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                      : "border-amber-200 bg-amber-50 text-amber-800"
+                  }`}
+                >
+                  {scanNote.text}
+                </div>
+              )}
             </div>
 
             {paymentPreviewType && (
@@ -202,14 +354,14 @@ export function PurchaseInvoicePayDialog({ row, open, onOpenChange }: PayDialogP
           <Button
             variant="outline"
             onClick={() => onOpenChange(false)}
-            disabled={payMutation.isPending}
+            disabled={payMutation.isPending || scanning}
             className="purchasing-secondary-button"
           >
             Cancel
           </Button>
           <Button
             onClick={handleSubmit}
-            disabled={payMutation.isPending || !row?.can_pay}
+            disabled={payMutation.isPending || scanning || !row?.can_pay}
             className="purchasing-main-button"
           >
             {payMutation.isPending ? "Processing..." : "Submit Payment"}

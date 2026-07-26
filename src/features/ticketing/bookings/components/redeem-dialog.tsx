@@ -170,6 +170,11 @@ export function RedeemDialog({ open, onOpenChange }: RedeemDialogProps) {
                   </p>
                   <p className="text-sm text-gray-700">
                     {booking.customer_name} · {booking.customer_phone}
+                    {booking.gift_recipient_name ? (
+                      <span className="ml-1 font-medium text-rose-600">
+                        · 🎁 hadiah utk {booking.gift_recipient_name}
+                      </span>
+                    ) : null}
                   </p>
                   <p className="text-xs text-gray-500">
                     Kunjungan {booking.visit_date} · {guests.length} orang ·

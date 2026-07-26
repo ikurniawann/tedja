@@ -19,8 +19,10 @@ import {
   GrnStatus,
 } from "@/lib/purchasing/grn";
 import { toQty } from "@/lib/purchasing/utils";
+import { addSupplyStockFromGrn } from "@/lib/purchasing/supply-inventory";
 import { syncReceiveRejectCredits } from "@/lib/purchasing/vendor-credit-service";
 import { parsePurchasingModuleType } from "@/lib/purchasing/module-scope";
+import { validatePOCanDelivery } from "@/lib/purchasing/delivery";
 import {
   getApiUserScope,
   companyScopeOr,
@@ -39,28 +41,40 @@ const grnItemSchema = z.object({
   purchase_order_item_id: z.string().uuid().optional(),
   raw_material_id: z.string().uuid().optional(),
   product_id: z.string().uuid().optional(),
+  supply_item_id: z.string().uuid().optional(),
   qty_diterima: z.number().min(0, "Qty diterima minimal 0"),
   qty_ditolak: z.number().min(0, "Qty ditolak minimal 0"),
   satuan_id: z.string().uuid().optional(),
   kondisi: z.enum(["baik", "rusak", "cacat"]).default("baik"),
   catatan: z.string().optional().nullable(),
 }).superRefine((item, ctx) => {
-  if (!item.raw_material_id && !item.product_id) {
+  if (!item.raw_material_id && !item.product_id && !item.supply_item_id) {
     ctx.addIssue({
       code: "custom",
-      message: "Item wajib memiliki raw material atau product",
-      path: ["product_id"],
+      message: "Item wajib memiliki raw material, product, atau barang operasional",
+      path: ["supply_item_id"],
     });
   }
 });
 
 const createGrnSchema = z.object({
-  delivery_id: z.string().uuid("Delivery wajib dipilih"),
-  module_type: z.enum(["raw_material", "product"]).optional(),
+  // Untuk scope raw_material/product user memilih delivery yang sudah ada.
+  // Untuk scope general, delivery dibuat otomatis dari po_id (tanpa langkah delivery).
+  delivery_id: z.string().uuid().optional(),
+  po_id: z.string().uuid().optional(),
+  module_type: z.enum(["raw_material", "product", "general"]).optional(),
   tanggal_penerimaan: z.string().optional(),
   catatan: z.string().optional(),
   warehouse_id: z.string().uuid("Gudang wajib dipilih"),
   items: z.array(grnItemSchema).min(1, "Minimal 1 item wajib diisi"),
+}).superRefine((data, ctx) => {
+  if (!data.delivery_id && !data.po_id) {
+    ctx.addIssue({
+      code: "custom",
+      message: "Delivery atau purchase order wajib dipilih",
+      path: ["delivery_id"],
+    });
+  }
 });
 
 const queryParamsSchema = z.object({
@@ -86,8 +100,10 @@ type POQtyValidationItem = {
   id: string;
   raw_material_id?: string | null;
   product_id?: string | null;
+  supply_item_id?: string | null;
   qty_ordered?: number | null;
   qty_received?: number | null;
+  harga_satuan?: number | null;
   raw_material?: {
     nama?: string | null;
     nama_bahan?: string | null;
@@ -260,11 +276,68 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const validated = createGrnSchema.parse(body);
     const moduleType = parsePurchasingModuleType(validated.module_type);
+    // Scope general/product menerima lewat vendor; raw_material lewat supplier.
+    const usesVendor = moduleType !== "raw_material";
+
+    // Scope general: TANPA langkah delivery manual. Delivery dibuat otomatis dari
+    // PO saat penerimaan, lalu dipakai untuk membuat GRN pada jalur yang sama.
+    let deliveryId = validated.delivery_id ?? null;
+    if (!deliveryId) {
+      if (moduleType !== "general" || !validated.po_id) {
+        throw ApiError.badRequest("Delivery wajib dipilih untuk penerimaan ini");
+      }
+
+      const poCanDeliver = await validatePOCanDelivery(adminDb, validated.po_id);
+      if (!poCanDeliver.valid) {
+        throw ApiError.badRequest(poCanDeliver.errors.join(" ") || "Purchase order belum bisa diterima");
+      }
+
+      const { data: poForDelivery, error: poForDeliveryError } = await adminDb
+        .from("purchase_orders")
+        .select("id, vendor_id, company_id, branch_id, module_type")
+        .eq("id", validated.po_id)
+        .maybeSingle();
+
+      if (poForDeliveryError || !poForDelivery) {
+        throw ApiError.badRequest("Purchase order tidak ditemukan");
+      }
+      if (poForDelivery.module_type !== "general") {
+        throw ApiError.badRequest("Penerimaan otomatis hanya untuk purchase order barang operasional");
+      }
+
+      const today = new Date().toISOString().split("T")[0];
+      const { data: autoDelivery, error: autoDeliveryError } = await adminDb
+        .from("deliveries")
+        .insert({
+          purchase_order_id: validated.po_id,
+          supplier_id: null,
+          vendor_id: poForDelivery.vendor_id,
+          tanggal_kirim: today,
+          no_surat_jalan: `AUTO-${today}`,
+          tanggal_estimasi_tiba: today,
+          status: "pending",
+          company_id: poForDelivery.company_id ?? null,
+          branch_id: poForDelivery.branch_id ?? null,
+          created_by: user.id,
+        })
+        .select("id")
+        .single();
+
+      if (autoDeliveryError || !autoDelivery) {
+        console.error("Auto delivery insert error:", autoDeliveryError);
+        throw ApiError.server("Gagal menyiapkan penerimaan barang operasional");
+      }
+      deliveryId = autoDelivery.id as string;
+    }
+
+    if (!deliveryId) {
+      throw ApiError.badRequest("Delivery wajib dipilih untuk penerimaan ini");
+    }
 
     // Validate delivery can be received — use adminDb to bypass RLS
     const { valid, errors, delivery, items: poItems } = await validateDeliveryCanReceive(
       adminDb,
-      validated.delivery_id
+      deliveryId
     );
 
     if (!delivery?.purchase_order_id) {
@@ -310,7 +383,7 @@ export async function POST(request: NextRequest) {
           company_id: businessScope.company_id,
           branch_id: businessScope.branch_id,
         })
-        .eq("id", validated.delivery_id);
+        .eq("id", deliveryId);
 
       if (deliveryScopeError) {
         console.error("Failed to backfill delivery business scope:", deliveryScopeError);
@@ -324,6 +397,7 @@ export async function POST(request: NextRequest) {
         id,
         raw_material_id,
         product_id,
+        supply_item_id,
         qty_ordered,
         qty_received,
         harga_satuan
@@ -346,7 +420,8 @@ export async function POST(request: NextRequest) {
 
     const processedQtyByItem = new Map<string, number>();
     for (const item of validated.items) {
-      const key = item.purchase_order_item_id || item.raw_material_id || item.product_id;
+      const key =
+        item.purchase_order_item_id || item.raw_material_id || item.product_id || item.supply_item_id;
       processedQtyByItem.set(
         key!,
         (processedQtyByItem.get(key!) || 0) + item.qty_diterima + item.qty_ditolak
@@ -354,13 +429,16 @@ export async function POST(request: NextRequest) {
     }
 
     for (const item of validated.items) {
-      const key = item.purchase_order_item_id || item.raw_material_id || item.product_id;
+      const key =
+        item.purchase_order_item_id || item.raw_material_id || item.product_id || item.supply_item_id;
       const poItem = effectivePoItems.find((p) =>
         item.purchase_order_item_id
           ? p.id === item.purchase_order_item_id
           : item.product_id
             ? p.product_id === item.product_id
-            : p.raw_material_id === item.raw_material_id
+            : item.supply_item_id
+              ? p.supply_item_id === item.supply_item_id
+              : p.raw_material_id === item.raw_material_id
       );
 
       if (!poItem) {
@@ -368,7 +446,7 @@ export async function POST(request: NextRequest) {
       }
 
       const remainingQty = Math.max(0, Number(poItem.qty_ordered || 0) - Number(poItem.qty_received || 0));
-      const processedQty = processedQtyByItem.get(key) || 0;
+      const processedQty = processedQtyByItem.get(key!) || 0;
       if (processedQty > remainingQty + QTY_EPSILON) {
         throw ApiError.badRequest(
           `Qty ${getMaterialLabel(poItem)} melebihi sisa PO. Maksimal ${formatQty(remainingQty)}, tetapi diinput ${formatQty(processedQty)} (diterima + ditolak).`
@@ -388,7 +466,7 @@ export async function POST(request: NextRequest) {
     const { count: previousGrnCount, error: countError } = await adminDb
       .from("grn")
       .select("*", { count: "exact", head: true })
-      .eq("delivery_id", validated.delivery_id)
+      .eq("delivery_id", deliveryId)
       .eq("is_active", true);
     
     if (countError) {
@@ -396,10 +474,12 @@ export async function POST(request: NextRequest) {
     }
     
     const receiveCount = (previousGrnCount || 0) + 1; // This is the Nth receive
-    console.log(`GRN receive_count: ${receiveCount} (previous: ${previousGrnCount}, delivery: ${validated.delivery_id})`);
+    console.log(`GRN receive_count: ${receiveCount} (previous: ${previousGrnCount}, delivery: ${deliveryId})`);
 
-    // Goods are physically received; stock posts after QC. Status stays pending until QC completes.
-    let grnStatus: GrnStatus = "pending";
+    // Barang diterima fisik. Untuk raw_material/product, stok diposting setelah QC
+    // (status tetap pending). Untuk scope general (barang operasional) TIDAK ada QC
+    // maupun pergerakan stok di v1 — cukup ditandai diterima (EPIC-026 B4).
+    let grnStatus: GrnStatus = moduleType === "general" ? "received" : "pending";
 
     if (totals.total_diterima === 0 && totals.total_ditolak > 0) {
       grnStatus = "rejected";
@@ -408,10 +488,10 @@ export async function POST(request: NextRequest) {
     // Scope mengikuti gudang penerimaan (mis. Company Sulu / Cabang Sulu Bandung)
     const insertData: Record<string, unknown> = {
       nomor_grn: grnNumber,
-      delivery_id: validated.delivery_id,
+      delivery_id: deliveryId,
       purchase_order_id: delivery.purchase_order_id,
-      supplier_id: moduleType === "product" ? null : delivery.supplier_id,
-      vendor_id: moduleType === "product" ? delivery.vendor_id : null,
+      supplier_id: usesVendor ? null : delivery.supplier_id,
+      vendor_id: usesVendor ? delivery.vendor_id : null,
       company_id: businessScope?.company_id ?? null,
       branch_id: businessScope?.branch_id ?? null,
       tanggal_penerimaan: validated.tanggal_penerimaan || new Date().toISOString().split("T")[0],
@@ -441,10 +521,11 @@ export async function POST(request: NextRequest) {
     // Create GRN items
     const grnItems = validated.items.map((item) => ({
       grn_id: grn.id,
-      delivery_id: validated.delivery_id,
+      delivery_id: deliveryId,
       purchase_order_item_id: item.purchase_order_item_id,
       raw_material_id: item.raw_material_id || null,
       product_id: item.product_id || null,
+      supply_item_id: item.supply_item_id || null,
       qty_diterima: item.qty_diterima,
       qty_ditolak: item.qty_ditolak,
       satuan_id: item.satuan_id,
@@ -489,14 +570,67 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // EPIC-026 C1 — Posting stok riil barang operasional. Hanya untuk scope
+    // general + item stockable=true; item stockable=false di-expense (tak ada stok).
+    // Non-fatal: kegagalan inventory tidak membatalkan penerimaan.
+    if (moduleType === "general" && grnStatus !== "rejected") {
+      try {
+        const supplyIds = Array.from(
+          new Set(
+            validated.items
+              .filter((it) => it.supply_item_id && toQty(it.qty_diterima) > 0)
+              .map((it) => it.supply_item_id as string)
+          )
+        );
+
+        if (supplyIds.length > 0) {
+          const { data: supplyRows } = await adminDb
+            .from("supply_items")
+            .select("id, stockable")
+            .in("id", supplyIds);
+          const stockableSet = new Set(
+            (supplyRows ?? [])
+              .filter((r: { stockable?: boolean }) => r.stockable === true)
+              .map((r: { id: string }) => r.id)
+          );
+
+          for (const item of validated.items) {
+            const supplyItemId = item.supply_item_id;
+            const qty = toQty(item.qty_diterima);
+            if (!supplyItemId || qty <= 0 || !stockableSet.has(supplyItemId)) continue;
+
+            const poItem = effectivePoItems.find(
+              (p) =>
+                (item.purchase_order_item_id && p.id === item.purchase_order_item_id) ||
+                p.supply_item_id === supplyItemId
+            );
+
+            await addSupplyStockFromGrn(adminDb, {
+              supplyItemId,
+              warehouseId: validated.warehouse_id,
+              qtyReceived: qty,
+              unitCost: toQty(poItem?.harga_satuan),
+              grnId: grn.id,
+              grnNumber,
+              companyId: businessScope?.company_id ?? null,
+              branchId: businessScope?.branch_id ?? null,
+              userId: user.id,
+            });
+          }
+        }
+      } catch (stockErr) {
+        console.error("[GRN] Supply stock posting error (non-fatal):", stockErr);
+      }
+    }
+
     // Physical receipt recorded — mark delivery arrived; stock posts after QC.
     if (grnStatus !== "rejected") {
       await adminDb
         .from("deliveries")
         .update({ status: "delivered", updated_at: new Date().toISOString() })
-        .eq("id", validated.delivery_id);
+        .eq("id", deliveryId);
     } else {
-      await updateDeliveryStatusAfterGrn(adminDb, validated.delivery_id, grnStatus);
+      await updateDeliveryStatusAfterGrn(adminDb, deliveryId, grnStatus);
     }
 
     if (delivery?.purchase_order_id) {

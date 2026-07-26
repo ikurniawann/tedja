@@ -104,8 +104,8 @@ export function Combobox({
           <ChevronsUpDown className="h-4 w-4 shrink-0 opacity-50" />
         </div>
       </PopoverTrigger>
-      <PopoverContent 
-        className="z-[9999] w-[--radix-popover-trigger-width] min-w-[--radix-popover-trigger-width] border border-gray-200/80 bg-white p-0 shadow-xl ring-1 ring-gray-200/60" 
+      <PopoverContent
+        className="z-[9999] w-(--anchor-width) min-w-(--anchor-width) border border-gray-200/80 bg-white p-0 shadow-xl ring-1 ring-gray-200/60"
         align="start"
         sideOffset={4}
       >

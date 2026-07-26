@@ -1,8 +1,10 @@
 "use client";
 
 import { BandsSection } from "./bands-section";
+import { CapacitySection } from "./capacity-section";
 import { GeneralSettingsSection } from "./general-settings-section";
 import { StaffPassesSection } from "./staff-passes-section";
+import { TimeSlotsSection } from "./time-slots-section";
 
 // Revisi Manage Ticket (2026-07-21): kalender musim & harga pindah ke
 // masing-masing ticket di Master Ticket — halaman ini menyusut jadi
@@ -20,6 +22,8 @@ export function TicketingSettingsPage() {
       </div>
 
       <GeneralSettingsSection />
+      <CapacitySection />
+      <TimeSlotsSection />
       <BandsSection />
       <StaffPassesSection />
     </div>

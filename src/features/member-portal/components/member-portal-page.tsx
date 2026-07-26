@@ -21,6 +21,7 @@ import {
 import { MemberLoginCard } from "./member-login-card";
 import { MemberProfileCard } from "./member-profile-card";
 import { MemberCollectionCard } from "./member-collection-card";
+import { MemberExtrasCard } from "./member-extras-card";
 import { MemberRewardsCard } from "./member-rewards-card";
 import { MemberWalletCard } from "./member-wallet-card";
 
@@ -226,7 +227,12 @@ export function MemberPortalPage() {
       <div className="mp-rise mp-rise-3">
         {tab === "beranda" && <BerandaTab me={me} />}
         {tab === "rewards" && <MemberRewardsCard onRedeemed={loadMe} />}
-        {tab === "koleksi" && <MemberCollectionCard onEquipped={loadMe} />}
+        {tab === "koleksi" && (
+          <div className="space-y-4">
+            <MemberCollectionCard onEquipped={loadMe} />
+            <MemberExtrasCard />
+          </div>
+        )}
         {tab === "profil" && <MemberProfileCard me={me} onSaved={loadMe} />}
         {tab === "riwayat" && <RiwayatTab transactions={transactions} />}
       </div>

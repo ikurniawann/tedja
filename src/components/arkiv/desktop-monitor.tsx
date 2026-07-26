@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { DesktopOverview } from "@/lib/desktop/overview";
 import type { ActivityNotification } from "@/lib/desktop/notifications";
+import { buildAskDoPrompt } from "@/lib/desktop/ask-do";
 
 /**
  * Papan widget monitoring owner di desktop Arkiv OS (EPIC-019 Fase B).
@@ -27,6 +28,21 @@ export const MONITOR_WIDGETS: Array<{ key: MonitorWidgetKey; title: string; desc
   { key: "stok", title: "Stok Menipis", description: "Bahan baku di bawah batas minimum." },
   { key: "member", title: "Member & Loyalty", description: "Member baru, XP, dan penukaran reward 7 hari." },
 ];
+
+const MONITOR_KEYS = MONITOR_WIDGETS.map((w) => w.key);
+
+/**
+ * Urutan tersimpan bisa basi (widget dihapus/ditambah antar-versi): buang key
+ * asing, lalu sisipkan key baru di belakang sesuai urutan default — widget baru
+ * tidak boleh hilang hanya karena user pernah menyimpan urutan lama.
+ */
+export function normalizeWidgetOrder(saved: unknown): MonitorWidgetKey[] {
+  const valid = Array.isArray(saved)
+    ? (saved.filter((k): k is MonitorWidgetKey => MONITOR_KEYS.includes(k as MonitorWidgetKey)) as MonitorWidgetKey[])
+    : [];
+  const unik = [...new Set(valid)];
+  return [...unik, ...MONITOR_KEYS.filter((k) => !unik.includes(k))];
+}
 
 export interface OverviewState {
   status: "loading" | "ready" | "forbidden" | "error";
@@ -100,6 +116,18 @@ function formatRupiah(value: number): string {
 function deltaPct(today: number, yesterday: number): number | null {
   if (yesterday <= 0) return null;
   return Math.round(((today - yesterday) / yesterday) * 100);
+}
+
+/** Persen kecil di samping angka pembanding (kemarin / minggu lalu). */
+function MiniDelta({ today, base }: { today: number; base: number }) {
+  const pct = deltaPct(today, base);
+  if (pct === null) return null;
+  const up = pct >= 0;
+  return (
+    <span className={`ml-1 text-[10px] font-bold ${up ? "text-emerald-300" : "text-rose-300"}`}>
+      {up ? "▲" : "▼"}{Math.abs(pct)}%
+    </span>
+  );
 }
 
 const DAY_SHORT = ["Min", "Sen", "Sel", "Rab", "Kam", "Jum", "Sab"];
@@ -229,10 +257,13 @@ export function NotificationPopups({
 export function DesktopMonitorBoard({
   state,
   visibility,
+  order,
   onAskDo,
 }: {
   state: OverviewState;
   visibility: Record<MonitorWidgetKey, boolean>;
+  /** Urutan render widget pilihan user; key hilang jatuh ke urutan default. */
+  order?: MonitorWidgetKey[];
   onAskDo: (prompt: string) => void;
 }) {
   const router = useRouter();
@@ -246,23 +277,9 @@ export function DesktopMonitorBoard({
   const d = state.data;
   const failedSet = new Set(d?.gagal ?? []);
 
-  const cards = (
-    <>
-      {state.status === "loading" && (
-        <>
-          <Skeleton wide />
-          <Skeleton />
-          <Skeleton />
-        </>
-      )}
-
-      {state.status === "error" && (
-        <div className={`${CARD} col-span-2 p-4 text-xs text-white/60`}>
-          Ringkasan monitoring belum bisa dimuat — dicoba lagi otomatis.
-        </div>
-      )}
-
-      {d && visibility.pulsa && (
+  /** Kartu per widget — urutan render mengikuti preferensi user (Fase C). */
+  const cardNodes: Record<MonitorWidgetKey, React.ReactNode> = {
+    pulsa: d && visibility.pulsa && (
         <Card
           wide
           title="Pulsa Bisnis"
@@ -270,7 +287,7 @@ export function DesktopMonitorBoard({
           href="/dashboard/pos"
           onGo={go}
           onAskDo={onAskDo}
-          askDoPrompt="Bagaimana penjualan hari ini dibanding kemarin? Apa yang menonjol?"
+          askDoPrompt={buildAskDoPrompt("pulsa", d)}
           failed={failedSet.has("pulsaBisnis")}
         >
           {d.pulsaBisnis && (
@@ -292,7 +309,7 @@ export function DesktopMonitorBoard({
                     );
                   })()}
                 </div>
-                <div className="mt-2.5 flex gap-5 text-[11px]">
+                <div className="mt-2.5 flex flex-wrap gap-x-5 gap-y-2 text-[11px]">
                   <div>
                     <div className="text-white/40">Pesanan</div>
                     <div className="mt-0.5 text-sm font-bold">{d.pulsaBisnis.hariIni.pesanan}</div>
@@ -303,7 +320,18 @@ export function DesktopMonitorBoard({
                   </div>
                   <div>
                     <div className="text-white/40">Kemarin</div>
-                    <div className="mt-0.5 text-sm font-bold text-white/60">{formatRupiah(d.pulsaBisnis.kemarin.omzet)}</div>
+                    <div className="mt-0.5 text-sm font-bold text-white/60">
+                      {formatRupiah(d.pulsaBisnis.kemarin.omzet)}
+                      <MiniDelta today={d.pulsaBisnis.hariIni.omzet} base={d.pulsaBisnis.kemarin.omzet} />
+                    </div>
+                  </div>
+                  <div>
+                    {/* Pembanding pola mingguan (Fase C): hari yang sama pekan lalu. */}
+                    <div className="text-white/40">Minggu lalu</div>
+                    <div className="mt-0.5 text-sm font-bold text-white/60">
+                      {formatRupiah(d.pulsaBisnis.mingguLalu.omzet)}
+                      <MiniDelta today={d.pulsaBisnis.hariIni.omzet} base={d.pulsaBisnis.mingguLalu.omzet} />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -332,16 +360,15 @@ export function DesktopMonitorBoard({
             </div>
           )}
         </Card>
-      )}
-
-      {d && visibility.tim && (
+    ),
+    tim: d && visibility.tim && (
         <Card
           title="Tim Hari Ini"
           subtitle={`${d.timHariIni?.aktif ?? "–"} karyawan aktif`}
           href="/dashboard/hris/attendance"
           onGo={go}
           onAskDo={onAskDo}
-          askDoPrompt="Siapa saja yang belum absen hari ini?"
+          askDoPrompt={buildAskDoPrompt("tim", d)}
           failed={failedSet.has("timHariIni")}
         >
           {d.timHariIni && (
@@ -372,14 +399,15 @@ export function DesktopMonitorBoard({
             </>
           )}
         </Card>
-      )}
-
-      {d && visibility.keputusan && (
+    ),
+    keputusan: d && visibility.keputusan && (
         <Card
           title="Perlu Keputusan"
           subtitle={`${d.perluKeputusan?.total ?? "–"} item menunggu`}
           href="/dashboard/hris/leaves"
           onGo={go}
+          onAskDo={onAskDo}
+          askDoPrompt={buildAskDoPrompt("keputusan", d)}
           failed={failedSet.has("perluKeputusan")}
         >
           {d.perluKeputusan && (
@@ -410,9 +438,8 @@ export function DesktopMonitorBoard({
             </div>
           )}
         </Card>
-      )}
-
-      {d && visibility.stok && (
+    ),
+    stok: d && visibility.stok && (
         <Card
           title="Stok Menipis"
           subtitle={
@@ -425,7 +452,7 @@ export function DesktopMonitorBoard({
           href="/dashboard/inventory/low-stock"
           onGo={go}
           onAskDo={onAskDo}
-          askDoPrompt="Bahan apa saja yang stoknya menipis dan mana yang paling mendesak dipesan?"
+          askDoPrompt={buildAskDoPrompt("stok", d)}
           failed={failedSet.has("stokMenipis")}
         >
           {d.stokMenipis &&
@@ -454,14 +481,15 @@ export function DesktopMonitorBoard({
               </div>
             ))}
         </Card>
-      )}
-
-      {d && visibility.member && (
+    ),
+    member: d && visibility.member && (
         <Card
           title="Member & Loyalty"
           subtitle="7 hari terakhir"
           href="/dashboard/crm/members"
           onGo={go}
+          onAskDo={onAskDo}
+          askDoPrompt={buildAskDoPrompt("member", d)}
           failed={failedSet.has("member")}
         >
           {d.member && (
@@ -481,16 +509,39 @@ export function DesktopMonitorBoard({
             </div>
           )}
         </Card>
+    ),
+  };
+
+  const cards = (
+    <>
+      {state.status === "loading" && (
+        <>
+          <Skeleton wide />
+          <Skeleton />
+          <Skeleton />
+        </>
       )}
+
+      {state.status === "error" && (
+        <div className={`${CARD} col-span-2 p-4 text-xs text-white/60`}>
+          Ringkasan monitoring belum bisa dimuat — dicoba lagi otomatis.
+        </div>
+      )}
+
+      {normalizeWidgetOrder(order).map((key) => (
+        <Fragment key={key}>{cardNodes[key]}</Fragment>
+      ))}
     </>
   );
 
   return (
     <>
-      {/* Laptop: papan tetap menempel di kanan seperti widget macOS. */}
+      {/* Laptop: papan tetap menempel di kanan seperti widget macOS.
+          Laptop kecil (lg) memakai satu kolom sempit supaya ikon desktop tidak
+          tertutup; dua kolom lebar baru mulai xl (Fase C). */}
       <section
         aria-label="Papan monitoring bisnis"
-        className="pointer-events-auto fixed right-5 top-12 z-20 hidden max-h-[calc(100vh-140px)] w-[560px] grid-cols-2 content-start gap-3 overflow-y-auto pr-1 lg:grid"
+        className="pointer-events-auto fixed right-5 top-12 z-20 hidden max-h-[calc(100vh-140px)] w-[340px] grid-cols-1 content-start gap-3 overflow-y-auto pr-1 lg:grid xl:w-[560px] xl:grid-cols-2"
       >
         {cards}
       </section>

@@ -18,6 +18,7 @@ function snapshot(over: Partial<{
     pulsaBisnis: {
       hariIni: { omzet: 0, pesanan: over.pesanan ?? 0, rataRata: 0 },
       kemarin: { omzet: 0, pesanan: 0 },
+      mingguLalu: { omzet: 0, pesanan: 0 },
       tujuhHari: [],
     },
     timHariIni: { aktif: 10, hadir: 5, terlambat: 0, cuti: 0, belum: 5 },

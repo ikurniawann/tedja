@@ -19,9 +19,12 @@ import { useVendorList } from "../queries";
 import { useDeactivateVendor, useUpdateVendor } from "../mutations";
 import {
   VENDOR_CATEGORY_OPTIONS,
+  VENDOR_USAGE_OPTIONS,
   getVendorCategoryLabel,
+  getVendorUsageLabel,
   type Vendor,
   type VendorCategory,
+  type VendorUsageScope,
 } from "../types";
 
 function getErrorMessage(error: unknown, fallback: string) {
@@ -39,12 +42,18 @@ const CATEGORY_FILTER_OPTIONS = [
   ...VENDOR_CATEGORY_OPTIONS,
 ];
 
+const USAGE_FILTER_OPTIONS = [
+  { value: "all", label: "Semua Peruntukan" },
+  ...VENDOR_USAGE_OPTIONS,
+];
+
 export function VendorsListPage() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState("");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
   const [categoryFilter, setCategoryFilter] = useState<VendorCategory | "all">("all");
+  const [usageFilter, setUsageFilter] = useState<VendorUsageScope | "all">("all");
   const [filterOpen, setFilterOpen] = useState(false);
   const [page, setPage] = useState(1);
   const limit = 10;
@@ -67,6 +76,7 @@ export function VendorsListPage() {
     search: search || undefined,
     status: statusFilter,
     category: categoryFilter,
+    usage_scope: usageFilter,
     page,
     limit,
   });
@@ -95,13 +105,15 @@ export function VendorsListPage() {
     return () => window.clearTimeout(timeout);
   }, [searchQuery]);
 
-  const isFilterActive = statusFilter !== "all" || categoryFilter !== "all";
+  const isFilterActive =
+    statusFilter !== "all" || categoryFilter !== "all" || usageFilter !== "all";
 
   const handleResetFilters = () => {
     setSearchQuery("");
     setSearch("");
     setStatusFilter("all");
     setCategoryFilter("all");
+    setUsageFilter("all");
     setPage(1);
   };
 
@@ -198,7 +210,7 @@ export function VendorsListPage() {
         <div>
           {filterOpen && (
             <div className="border-b border-gray-100 bg-gray-50/70 px-5 py-4">
-              <div className="grid gap-3 md:grid-cols-2">
+              <div className="grid gap-3 md:grid-cols-3">
                 <div className="space-y-1.5">
                   <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
                     Status
@@ -226,6 +238,21 @@ export function VendorsListPage() {
                       setPage(1);
                     }}
                     placeholder="Filter by category..."
+                    className="!w-full h-9 text-sm"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    Peruntukan
+                  </div>
+                  <Combobox
+                    options={USAGE_FILTER_OPTIONS}
+                    value={usageFilter}
+                    onChange={(value) => {
+                      setUsageFilter(value as VendorUsageScope | "all");
+                      setPage(1);
+                    }}
+                    placeholder="Filter peruntukan..."
                     className="!w-full h-9 text-sm"
                   />
                 </div>
@@ -261,6 +288,7 @@ export function VendorsListPage() {
                       <th className="px-4 py-3 text-left font-semibold">Code</th>
                       <th className="px-4 py-3 text-left font-semibold">Vendor Name</th>
                       <th className="px-4 py-3 text-left font-semibold">Category</th>
+                      <th className="px-4 py-3 text-left font-semibold">Peruntukan</th>
                       <th className="px-4 py-3 text-left font-semibold">Contact Person</th>
                       <th className="px-4 py-3 text-left font-semibold">Phone</th>
                       <th className="px-4 py-3 text-center font-semibold">Active</th>
@@ -286,6 +314,19 @@ export function VendorsListPage() {
                         </td>
                         <td className="px-4 py-3">
                           <Badge variant="outline">{getVendorCategoryLabel(vendor.category)}</Badge>
+                        </td>
+                        <td className="px-4 py-3">
+                          <Badge
+                            className={
+                              vendor.usage_scope === "fnb"
+                                ? "border-0 bg-amber-100 text-amber-700"
+                                : vendor.usage_scope === "operasional"
+                                  ? "border-0 bg-blue-100 text-blue-700"
+                                  : "border-0 bg-emerald-100 text-emerald-700"
+                            }
+                          >
+                            {getVendorUsageLabel(vendor.usage_scope)}
+                          </Badge>
                         </td>
                         <td className="px-4 py-3 text-gray-700">{vendor.contact_person}</td>
                         <td className="px-4 py-3 text-gray-600">{vendor.phone}</td>

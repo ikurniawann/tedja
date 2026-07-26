@@ -4,6 +4,7 @@ import { ApiError, requireApiRole } from "@/lib/api/auth";
 import {
   getPoPayableContext,
   resolvePaymentTermId,
+  resolvePoPaymentParty,
 } from "@/lib/purchasing/po-payments";
 import { z } from "zod";
 
@@ -16,6 +17,15 @@ const paymentSchema = z.object({
   method: z.enum(["cash", "bank_transfer", "giro", "qris", "other"]).default("bank_transfer"),
   reference_number: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),
+  // Arsip nota hasil scan (EPIC-018 Fase B) — path dikunci ke folder nota
+  // supaya record tidak bisa menunjuk file private lain.
+  receipt_path: z
+    .string()
+    .max(300)
+    .regex(/^purchasing-receipts\/[A-Za-z0-9/_.-]+$/)
+    .optional()
+    .nullable(),
+  receipt_name: z.string().max(160).optional().nullable(),
 });
 
 function getErrorMessage(error: unknown, fallback: string) {
@@ -107,10 +117,11 @@ export async function POST(
       );
     }
 
+    const party = resolvePoPaymentParty(ctx);
+
     const termId = await resolvePaymentTermId(
       db,
       id,
-      ctx.supplierId,
       validated.amount,
       paymentDate,
       validated.payment_term_id
@@ -123,12 +134,15 @@ export async function POST(
         payment_number: paymentNumber,
         purchase_order_id: id,
         payment_term_id: termId,
-        supplier_id: ctx.supplierId,
+        supplier_id: party.supplier_id,
+        vendor_id: party.vendor_id,
         payment_date: paymentDate,
         amount: validated.amount,
         method: validated.method,
         reference_number: validated.reference_number || null,
         notes: validated.notes || null,
+        receipt_path: validated.receipt_path || null,
+        receipt_name: validated.receipt_name || null,
         status: "posted",
       })
       .select()

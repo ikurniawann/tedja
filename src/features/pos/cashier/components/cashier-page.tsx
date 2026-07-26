@@ -387,15 +387,67 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     router.push(returnToRestaurantPath);
   }, [cart.items.length, returnToRestaurantPath, router]);
 
+  /* EPIC-032 C2 — kode promo kasir (preview server; final di-hold saat order) */
+  const [promoApplied, setPromoApplied] = useState<{ code: string; discount: number } | null>(null);
+  const [promoInput, setPromoInput] = useState('');
+  const [promoBusy, setPromoBusy] = useState(false);
+  const [promoError, setPromoError] = useState<string | null>(null);
+
   /* Financials */
   const membershipDiscount = selectedCustomer ? selectedCustomer.discount : 0;
-  const discountAmount = membershipDiscount > 0 ? Math.floor(cart.subtotal * membershipDiscount / 100) : 0;
+  const membershipDiscountAmount =
+    membershipDiscount > 0 ? Math.floor(cart.subtotal * membershipDiscount / 100) : 0;
+  // EPIC-032 C2 — promo kasir: menumpuk di atas membership, dicap ≥ 0.
+  // Rumus identik dgn server & use-pos-checkout — selisih ditolak server.
+  const promoDiscount = promoApplied
+    ? Math.min(promoApplied.discount, Math.max(0, cart.subtotal - membershipDiscountAmount))
+    : 0;
+  const discountAmount = membershipDiscountAmount + promoDiscount;
   const afterDiscount = cart.subtotal - discountAmount;
   const taxAmount = cart.includeTax ? Math.round(afterDiscount * 0.1) : 0;
   const total = afterDiscount + taxAmount;
   const maxArkUsable = selectedCustomer ? Math.min(selectedCustomer.ark_coin_balance, total) : 0;
   const arkToUseCapped = Math.min(currentArkToUse, maxArkUsable);
   const totalAfterArk = total - arkToUseCapped;
+
+  /* Promo basi saat cart berubah (nilai preview terikat subtotal) */
+  useEffect(() => {
+    setPromoApplied(null);
+    setPromoError(null);
+  }, [cart.subtotal]);
+
+  const applyPromo = useCallback(async () => {
+    const code = promoInput.trim();
+    if (!code || promoBusy) return;
+    if (!isOnline) {
+      setPromoError('Kode promo membutuhkan koneksi internet');
+      return;
+    }
+    setPromoBusy(true);
+    setPromoError(null);
+    try {
+      const res = await fetch('/api/pos/promo-check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code, subtotal: cart.subtotal }),
+      });
+      const body = await res.json();
+      if (!res.ok || !body.success) {
+        setPromoError(body.error || 'Gagal memeriksa kode');
+        return;
+      }
+      if (!body.data.ok) {
+        setPromoError(body.data.message || 'Kode tidak berlaku');
+        return;
+      }
+      setPromoApplied({ code: code.toUpperCase(), discount: body.data.discount });
+      setPromoInput('');
+    } catch {
+      setPromoError('Jaringan bermasalah — coba lagi');
+    } finally {
+      setPromoBusy(false);
+    }
+  }, [promoInput, promoBusy, isOnline, cart.subtotal]);
 
   /* EPIC-024 — pancarkan state cart/pembayaran ke customer display
      (BroadcastChannel, satu arah). Publish adalah sinkronisasi ke sistem
@@ -639,6 +691,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
             arkToUse: 0,
             shiftId: shift?.id || null,
             nfcTabUid,
+            promo: promoApplied,
           });
           if (!res.success) {
             toast.error(res.error || 'Charge ke tab gagal');
@@ -690,6 +743,11 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     setProcessingPayment(true);
 
     if (paymentOrderId) {
+      if (promoApplied) {
+        toast.error('Kode promo belum didukung untuk pembayaran open bill — hapus kode dulu');
+        setProcessingPayment(false);
+        return;
+      }
       const paymentMethodForApi = paymentMethod === 'credit_card' ? 'credit' : paymentMethod;
       const paidAmount = paymentMethod === 'cash' ? (parseFloat(cashReceived) || totalAfterArk) : totalAfterArk;
       try {
@@ -741,6 +799,11 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     }
 
     if (!isOnline) {
+      if (promoApplied) {
+        toast.error('Kode promo membutuhkan koneksi — hapus kode atau tunggu online');
+        setProcessingPayment(false);
+        return;
+      }
       const cSubtotal = cart.subtotal;
       const cTotal = cart.total;
       const payload = {
@@ -808,6 +871,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       notes: cart.notes,
       arkToUse: paymentMethod === 'ark_coin' ? arkToUseCapped : 0,
       shiftId: shift?.id || null,
+      promo: promoApplied,
     });
 
     if (res.success) {
@@ -839,11 +903,17 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       toast.error(res.error || 'Payment failed');
     }
     setProcessingPayment(false);
-  }, [cart, paymentMethod, selectedCustomer, cashReceived, totalAfterArk, checkout, discountAmount, taxAmount, arkToUseCapped, isOnline, enqueue, membershipDiscount, shift, refreshCount, paymentOrderId, payingOrderNumber, router, processingPayment, selectedTableDisplay, effectiveTableId, requireActiveShift, payOpenOrderMutation, deferReturnToRestaurant, storeResultPayload, refetchCustomers]);
+  }, [cart, paymentMethod, selectedCustomer, cashReceived, totalAfterArk, checkout, discountAmount, taxAmount, arkToUseCapped, isOnline, enqueue, membershipDiscount, shift, refreshCount, paymentOrderId, payingOrderNumber, router, processingPayment, selectedTableDisplay, effectiveTableId, requireActiveShift, payOpenOrderMutation, deferReturnToRestaurant, storeResultPayload, refetchCustomers, promoApplied]);
 
   /* Split Bill */
   const handleConfirmSplit = useCallback(async (config: SplitConfig) => {
     if (cart.items.length === 0) return;
+    // EPIC-032 C2 — promo belum didukung split bill: totals split tidak
+    // melewati validasi promo server, jangan biarkan diskon promo bocor
+    if (promoApplied) {
+      toast.error('Kode promo belum didukung untuk split bill — hapus kode dulu');
+      return;
+    }
     if (!requireActiveShift()) return;
     setShowSplitModal(false);
 
@@ -948,7 +1018,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     } catch (e: any) {
       toast.error(e.message || 'Failed to create split order');
     }
-  }, [cart, selectedCustomer, discountAmount, taxAmount, total, membershipDiscount, isOnline, enqueue, paymentMethod, shift, refreshCount, selectedTableDisplay, effectiveTableId, requireActiveShift, storeResultPayload]);
+  }, [cart, selectedCustomer, discountAmount, taxAmount, total, membershipDiscount, isOnline, enqueue, paymentMethod, shift, refreshCount, selectedTableDisplay, effectiveTableId, requireActiveShift, storeResultPayload, promoApplied]);
 
   const handleSplitComplete = useCallback(() => {
     setShowSplitPayment(false);
@@ -1451,6 +1521,22 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         selectedTable={selectedTableDisplay}
         subtotal={cart.subtotal}
         discountAmount={discountAmount}
+        membershipDiscountAmount={membershipDiscountAmount}
+        promoApplied={promoApplied}
+        promoDiscount={promoDiscount}
+        promoInput={promoInput}
+        promoBusy={promoBusy}
+        promoError={promoError}
+        promoDisabled={!isOnline}
+        onPromoInputChange={(value) => {
+          setPromoInput(value.toUpperCase());
+          setPromoError(null);
+        }}
+        onApplyPromo={applyPromo}
+        onClearPromo={() => {
+          setPromoApplied(null);
+          setPromoError(null);
+        }}
         selectedCustomer={selectedCustomer}
         includeTax={cart.includeTax}
         tax={taxAmount}

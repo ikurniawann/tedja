@@ -11,8 +11,10 @@ interface ProductListRow {
   name: string;
   category_name: string | null;
   status: "draft" | "active";
-  product_kind: "single" | "bundle";
+  product_kind: "single" | "bundle" | "season_pass";
   base_price: string;
+  cogs: string;
+  has_gate: boolean;
   thumbnail_url: string | null;
   variant_count: string;
   distributed_channels: string[] | null;
@@ -35,7 +37,8 @@ export async function GET(request: NextRequest) {
 
     const rows = await query<ProductListRow>(
       `SELECT tp.id, tp.code, tp.name, c.name AS category_name, tp.status,
-              tp.product_kind, tp.base_price, tp.thumbnail_url, tp.updated_at,
+              tp.product_kind, tp.base_price, tp.cogs, tp.has_gate,
+              tp.thumbnail_url, tp.updated_at,
               (SELECT COUNT(*) FROM ticketing.ticket_product_variants pv
                WHERE pv.ticket_product_id = tp.id AND pv.is_active) AS variant_count,
               (SELECT array_agg(ch.code) FROM ticketing.ticket_product_channels pc
@@ -52,6 +55,7 @@ export async function GET(request: NextRequest) {
       rows.map((row) => ({
         ...row,
         base_price: Number(row.base_price),
+        cogs: Number(row.cogs),
         variant_count: Number(row.variant_count),
         distributed_channels: row.distributed_channels ?? [],
       }))
@@ -68,8 +72,16 @@ export async function GET(request: NextRequest) {
 const createProductSchema = z.object({
   name: z.string().trim().min(1).max(150),
   // satuan (Adult/Child) atau paket bundling (satu varian "Paket" +
-  // komposisi diatur setelah dibuat) — Fase P
-  product_kind: z.enum(["single", "bundle"]).default("single"),
+  // komposisi diatur setelah dibuat) — Fase P; season_pass — EPIC-028
+  product_kind: z.enum(["single", "bundle", "season_pass"]).default("single"),
+  // EPIC-028 — konfigurasi season pass (hanya dipakai bila kind=season_pass)
+  validity_months: z.number().int().min(1).max(120).default(12),
+  entry_policy: z
+    .enum(["once_per_day", "unlimited", "limited_visits"])
+    .default("once_per_day"),
+  visit_quota: z.number().int().min(1).max(1000).optional().nullable(),
+  // Benefit member: diskon POS utk pemegang pass aktif (0 = tanpa benefit)
+  member_discount_percent: z.number().min(0).max(100).default(0),
   // Keputusan owner 2026-07-22: tiket satuan boleh Adult/Child ATAU satu
   // varian "Umum" yang berlaku semua umur — dipilih saat pembuatan
   variant_preset: z.enum(["adult-child", "umum"]).default("adult-child"),
@@ -78,6 +90,10 @@ const createProductSchema = z.object({
   category_name: z.string().trim().max(100).optional().nullable(),
   status: z.enum(["draft", "active"]).default("draft"),
   base_price: z.number().min(0).max(1_000_000_000).default(0),
+  // HPP per ticket → laporan omzet kotor vs bersih
+  cogs: z.number().min(0).max(1_000_000_000).default(0),
+  // Ticket ber-gate divalidasi di gate; tanpa gate = reader NFC keliling
+  has_gate: z.boolean().default(true),
   description: z.string().trim().max(2000).optional().nullable(),
   re_entry_policy: z.enum(RE_ENTRY_POLICIES).optional(),
 });
@@ -107,6 +123,21 @@ export async function POST(request: NextRequest) {
         {
           success: false,
           error: "Paket baru wajib berstatus Draft — lengkapi komposisi dulu",
+        },
+        { status: 400 }
+      );
+    }
+
+    // EPIC-028 — pass punch-card WAJIB kuota; policy lain kuota diabaikan
+    if (
+      body.product_kind === "season_pass" &&
+      body.entry_policy === "limited_visits" &&
+      (!body.visit_quota || body.visit_quota <= 0)
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Kuota kunjungan wajib diisi untuk pass jenis punch-card (jatah kunjungan)",
         },
         { status: 400 }
       );
@@ -164,8 +195,9 @@ export async function POST(request: NextRequest) {
       const productResult = await client.query<{ id: string }>(
         `INSERT INTO ticketing.ticket_products
            (company_id, branch_id, code, name, category_id, status,
-            product_kind, base_price, description, re_entry_policy, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            product_kind, base_price, cogs, has_gate, description,
+            re_entry_policy, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
          RETURNING id`,
         [
           ctx.companyId,
@@ -176,6 +208,8 @@ export async function POST(request: NextRequest) {
           body.status,
           body.product_kind,
           body.base_price,
+          body.cogs,
+          body.has_gate,
           body.description || null,
           reEntry,
           ctx.user.id,
@@ -193,7 +227,11 @@ export async function POST(request: NextRequest) {
            VALUES ($1, $2, $3, 'paket', 'Paket', 10)`,
           [ctx.companyId, ctx.branchId, productId]
         );
-      } else if (body.variant_preset === "umum") {
+      } else if (
+        body.variant_preset === "umum" ||
+        body.product_kind === "season_pass"
+      ) {
+        // season_pass: satu varian "Umum" penampung harga pass
         await client.query(
           `INSERT INTO ticketing.ticket_product_variants
              (company_id, branch_id, ticket_product_id, code, name, sort_order)
@@ -208,6 +246,26 @@ export async function POST(request: NextRequest) {
              ($1, $2, $3, 'adult', 'Adult', 10),
              ($1, $2, $3, 'child', 'Child', 20)`,
           [ctx.companyId, ctx.branchId, productId]
+        );
+      }
+
+      // EPIC-028 — konfigurasi season pass (1:1 dengan produk)
+      if (body.product_kind === "season_pass") {
+        await client.query(
+          `INSERT INTO ticketing.ticket_pass_configs
+             (company_id, branch_id, ticket_product_id, validity_months,
+              entry_policy, visit_quota, member_discount_percent, created_by)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+          [
+            ctx.companyId,
+            ctx.branchId,
+            productId,
+            body.validity_months,
+            body.entry_policy,
+            body.entry_policy === "limited_visits" ? body.visit_quota : null,
+            body.member_discount_percent,
+            ctx.user.id,
+          ]
         );
       }
 

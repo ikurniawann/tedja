@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   evaluateReviewSla,
+  extractLocationId,
   extractReviewId,
   isComplaintRating,
+  needsReplyApproval,
   normalizeReview,
+  parseLocationIds,
   parseStarRating,
   validateReply,
 } from "@/lib/crm/google-reviews";
@@ -167,5 +170,98 @@ describe("extractReviewId — kunci tahan ganti akun Google", () => {
       createTime: "2026-07-19T10:00:00Z",
     });
     expect(result?.reviewId).toBe("rev-9");
+  });
+});
+
+describe("needsReplyApproval — balasan bintang rendah wajib disetujui", () => {
+  it("rating <= 2 dari non-approver harus lewat persetujuan", () => {
+    // Arrange & Act & Assert
+    expect(needsReplyApproval(1, false)).toBe(true);
+    expect(needsReplyApproval(2, false)).toBe(true);
+  });
+
+  it("rating >= 3 dikirim langsung walau bukan approver", () => {
+    expect(needsReplyApproval(3, false)).toBe(false);
+    expect(needsReplyApproval(5, false)).toBe(false);
+  });
+
+  it("approver selalu kirim langsung — menyetujui draft sendiri tidak menambah kontrol", () => {
+    expect(needsReplyApproval(1, true)).toBe(false);
+    expect(needsReplyApproval(2, true)).toBe(false);
+  });
+
+  it("ambang bisa diubah lewat parameter", () => {
+    expect(needsReplyApproval(3, false, 3)).toBe(true);
+    expect(needsReplyApproval(2, false, 1)).toBe(false);
+  });
+});
+
+describe("extractLocationId — dasar filter multi-lokasi", () => {
+  it("mengambil segmen setelah locations/", () => {
+    // Arrange
+    const name = "accounts/111/locations/222/reviews/ABC";
+
+    // Act
+    const result = extractLocationId(name);
+
+    // Assert
+    expect(result).toBe("222");
+  });
+
+  it("nama tanpa segmen lokasi → null", () => {
+    expect(extractLocationId("hanya-id")).toBeNull();
+  });
+
+  it("normalizeReview ikut mengisi locationId", () => {
+    const result = normalizeReview({
+      name: "accounts/1/locations/77/reviews/rev-9",
+      starRating: "FIVE",
+      createTime: "2026-07-19T10:00:00Z",
+    });
+    expect(result?.locationId).toBe("77");
+  });
+
+  it("id telanjang (tanpa resource path) → locationId null, ulasan tetap sah", () => {
+    const result = normalizeReview({
+      reviewId: "rev-tanpa-lokasi",
+      starRating: "FOUR",
+      createTime: "2026-07-19T10:00:00Z",
+    });
+    expect(result?.locationId).toBeNull();
+    expect(result?.reviewId).toBe("rev-tanpa-lokasi");
+  });
+});
+
+describe("parseLocationIds — setting satu nilai memuat banyak lokasi", () => {
+  it("nilai lama satu lokasi tetap sah", () => {
+    expect(parseLocationIds("locations/123")).toEqual(["locations/123"]);
+  });
+
+  it("angka telanjang dinormalkan ke locations/{id}", () => {
+    expect(parseLocationIds("123")).toEqual(["locations/123"]);
+  });
+
+  it("daftar dipisah koma/spasi/titik-koma diurai semua", () => {
+    expect(parseLocationIds("locations/1, 2;locations/3  4")).toEqual([
+      "locations/1",
+      "locations/2",
+      "locations/3",
+      "locations/4",
+    ]);
+  });
+
+  it("duplikat (termasuk beda format) dibuang", () => {
+    expect(parseLocationIds("locations/9,9,locations/9")).toEqual(["locations/9"]);
+  });
+
+  it("kosong / null / hanya pemisah → daftar kosong", () => {
+    expect(parseLocationIds("")).toEqual([]);
+    expect(parseLocationIds(null)).toEqual([]);
+    expect(parseLocationIds(undefined)).toEqual([]);
+    expect(parseLocationIds(" , ; ")).toEqual([]);
+  });
+
+  it("garis miring pinggiran dibersihkan", () => {
+    expect(parseLocationIds("/locations/5/")).toEqual(["locations/5"]);
   });
 });
