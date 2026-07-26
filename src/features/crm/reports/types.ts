@@ -113,3 +113,36 @@ export interface CsReportData {
     avg_csat: number | null;
   }[];
 }
+
+/**
+ * EPIC-029 — laporan analitik percakapan (ringkasan AI + kata kunci).
+ * Bebas PII: tidak ada isi chat, ringkasan per percakapan, nomor, maupun nama.
+ */
+export interface ConversationInsightReportData {
+  period: { from: string; to: string };
+  summary: {
+    total_conversations: number;
+    analyzed: number;
+    not_analyzed: number;
+    complaints: number;
+    sentiment: { positif: number; netral: number; negatif: number };
+  };
+  keywords: { keyword: string; count: number; conversations: number }[];
+  topics: { topic: string; count: number }[];
+}
+
+/** Hasil batch "Analisa percakapan baru". */
+export interface AnalyzeBatchResult {
+  summary: {
+    requested: number;
+    analyzed: number;
+    cached: number;
+    empty: number;
+    failed: number;
+  };
+  results: {
+    conversation_id: string;
+    status: "cache" | "analyzed" | "empty" | "failed";
+    error?: string;
+  }[];
+}
