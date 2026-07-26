@@ -43,5 +43,4 @@ docker run -d \
   -e NEXT_PUBLIC_BASE_URL="$NEXT_PUBLIC_BASE_URL" \
   "$DOCKER_IMAGE:latest"
 
-docker system prune -f
 curl -fsSL "http://127.0.0.1:${HOST_PORT}/login" >/dev/null
