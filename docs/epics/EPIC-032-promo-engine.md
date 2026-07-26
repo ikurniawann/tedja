@@ -287,4 +287,16 @@ independen dari engine (bisa maju duluan bila owner mau).
     sisa. Build sempat 2× gagal fetch font Google (DNS flaky — retry
     sukses, isu known).
   - Sisa utk B2: input kode di wizard + tampilan potongan di halaman
-    status publik (API-nya sudah siap).
+    status publik (API-nya sudah siap). Commit 98096adb (pushed).
+- 2026-07-26 — **B2 SELESAI, live dev**: wizard booking langkah ringkasan
+  — input "Punya kode promo?" + tombol Pakai (preview via /promo-check,
+  pesan penolakan ramah), kode terpasang tampil ber-baris hijau
+  −potongan + tombol Hapus; rincian Subtotal/Potongan/Total Bayar; tombol
+  "Bayar Sekarang" pakai payable; **ganti tiket/tanggal otomatis melepas
+  kode** (subtotal berubah = preview basi); submit 422 → kode dilepas dari
+  ringkasan + pesan server (pengunjung bisa lanjut tanpa kode). Halaman
+  status publik: baris Subtotal/Potongan (kode)/Total Bayar + tombol bayar
+  pakai payable + **jam slot tampil** (utang known-limitation EPIC-031
+  lunas penuh di UI). tsc bersih, build OK → pm2 restart, /booking/sulu
+  200. Fase B sisa: B3 kartu diskon di laporan ticketing (ledger sudah
+  jalan sejak B1).

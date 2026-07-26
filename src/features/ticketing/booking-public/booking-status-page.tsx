@@ -52,6 +52,14 @@ interface BookingStatusData {
   customer_name: string;
   status: string;
   total: number;
+  /** EPIC-032 B2 — potongan promo (0 = tanpa promo) & jumlah dibayar. */
+  discount_amount: number;
+  promo_code: string | null;
+  payable: number;
+  /** EPIC-031 D — jam slot (null = sepanjang hari). */
+  slot_label: string | null;
+  slot_start_time: string | null;
+  slot_end_time: string | null;
   invoice_url: string | null;
   expires_at: string | null;
   paid_at: string | null;
@@ -239,7 +247,7 @@ export function BookingStatusPage({ token }: BookingStatusPageProps) {
                 href={booking.invoice_url}
                 className="mt-4 block w-full rounded-xl bg-rose-500 py-3.5 text-center text-[15px] font-semibold text-white transition-colors hover:bg-rose-600"
               >
-                Bayar Sekarang — {formatRp(booking.total)}
+                Bayar Sekarang — {formatRp(booking.payable ?? booking.total)}
               </a>
             )}
             <p className="mt-3 text-center text-xs text-gray-400">
@@ -265,6 +273,15 @@ export function BookingStatusPage({ token }: BookingStatusPageProps) {
                 {formatDateLong(booking.visit_date)}
               </dd>
             </div>
+            {booking.slot_start_time && (
+              <div className="flex items-center justify-between">
+                <dt className="text-gray-500">Jam kunjungan</dt>
+                <dd className="font-medium tabular-nums text-gray-900">
+                  {booking.slot_label ? `${booking.slot_label} · ` : ""}
+                  {booking.slot_start_time}–{booking.slot_end_time}
+                </dd>
+              </div>
+            )}
             <div className="flex items-center justify-between">
               <dt className="text-gray-500">Atas nama</dt>
               <dd className="font-medium text-gray-900">
@@ -313,11 +330,36 @@ export function BookingStatusPage({ token }: BookingStatusPageProps) {
               </ol>
             </>
           )}
-          <div className="mt-4 flex justify-between border-t border-gray-200 pt-4">
-            <span className="text-base font-semibold text-gray-900">Total</span>
-            <span className="text-base font-semibold tabular-nums text-gray-900">
-              {formatRp(booking.total)}
-            </span>
+          <div className="mt-4 space-y-1.5 border-t border-gray-200 pt-4">
+            {booking.discount_amount > 0 && (
+              <>
+                <div className="flex justify-between text-sm text-gray-500">
+                  <span>Subtotal</span>
+                  <span className="tabular-nums">{formatRp(booking.total)}</span>
+                </div>
+                <div className="flex justify-between text-sm text-emerald-600">
+                  <span>
+                    Potongan promo
+                    {booking.promo_code ? ` (${booking.promo_code})` : ""}
+                  </span>
+                  <span className="tabular-nums">
+                    −{formatRp(booking.discount_amount)}
+                  </span>
+                </div>
+              </>
+            )}
+            <div className="flex justify-between">
+              <span className="text-base font-semibold text-gray-900">
+                {booking.discount_amount > 0 ? "Total Bayar" : "Total"}
+              </span>
+              <span className="text-base font-semibold tabular-nums text-gray-900">
+                {formatRp(
+                  booking.discount_amount > 0
+                    ? (booking.payable ?? booking.total)
+                    : booking.total
+                )}
+              </span>
+            </div>
           </div>
         </section>
       </main>

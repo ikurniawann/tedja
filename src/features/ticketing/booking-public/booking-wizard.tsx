@@ -157,6 +157,16 @@ export function BookingWizard({ slug }: BookingWizardProps) {
     { slot_id: string; label: string; start_time: string; end_time: string; status: "available" | "sold_out" }[]
   >([]);
   const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null);
+  // EPIC-032 B2 — kode promo: preview indikatif via /promo-check;
+  // kebenaran final tetap hold server saat create (422 bila keburu habis)
+  const [promoInput, setPromoInput] = useState("");
+  const [promoChecking, setPromoChecking] = useState(false);
+  const [promoApplied, setPromoApplied] = useState<{
+    code: string;
+    discount: number;
+    campaign_name: string;
+  } | null>(null);
+  const [promoError, setPromoError] = useState<string | null>(null);
 
   const minDate = todayIso();
   const maxDate = addDaysIso(minDate, MAX_DAYS_AHEAD);
@@ -191,6 +201,55 @@ export function BookingWizard({ slug }: BookingWizardProps) {
     0
   );
   const totalAmount = cart.reduce((sum, c) => sum + c.qty * c.variant.price, 0);
+  // Yang harus dibayar = total − potongan promo (preview; server hitung ulang)
+  const payableAmount = Math.max(
+    0,
+    Math.round((totalAmount - (promoApplied?.discount ?? 0)) * 100) / 100
+  );
+
+  // Subtotal berubah (ganti tiket/tanggal) → potongan lama tidak valid lagi
+  useEffect(() => {
+    setPromoApplied(null);
+    setPromoError(null);
+  }, [totalAmount, visitDate]);
+
+  const applyPromo = async () => {
+    const code = promoInput.trim();
+    if (!code || promoChecking) return;
+    setPromoChecking(true);
+    setPromoError(null);
+    try {
+      const res = await fetch(`/api/public/booking/${slug}/promo-check`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          code,
+          subtotal: totalAmount,
+          phone: customerPhone.trim() || undefined,
+        }),
+      });
+      const body = await res.json();
+      if (!res.ok || !body.success) {
+        setPromoError(body.error ?? "Gagal memeriksa kode — coba lagi");
+        return;
+      }
+      if (!body.data.ok) {
+        setPromoApplied(null);
+        setPromoError(body.data.message ?? "Kode tidak berlaku");
+        return;
+      }
+      setPromoApplied({
+        code: code.toUpperCase(),
+        discount: body.data.discount,
+        campaign_name: body.data.campaign_name,
+      });
+      setPromoInput("");
+    } catch {
+      setPromoError("Jaringan bermasalah — coba lagi");
+    } finally {
+      setPromoChecking(false);
+    }
+  };
 
   // Unit ORANG ter-flatten urut keranjang (paket meledak per anggota) —
   // posisi global 1..N utk penomoran default nama anggota (1 = pemesan);
@@ -384,6 +443,7 @@ export function BookingWizard({ slug }: BookingWizardProps) {
           customer_name: customerName.trim(),
           customer_phone: customerPhone.trim(),
           ...(selectedSlotId ? { slot_id: selectedSlotId } : {}),
+          ...(promoApplied ? { promo_code: promoApplied.code } : {}),
           items: cart.map((c) => ({
             variant_id: c.variant.variant_id,
             qty: c.qty,
@@ -406,6 +466,12 @@ export function BookingWizard({ slug }: BookingWizardProps) {
         if (res.status === 409) {
           loadAvailability();
           loadSlots(visitDate);
+        }
+        // Kode promo ditolak server (422 EPIC-032) → lepas dari ringkasan
+        // supaya pengunjung bisa lanjut tanpa kode / coba kode lain
+        if (res.status === 422) {
+          setPromoApplied(null);
+          setPromoError(body.error ?? "Kode promo tidak berlaku");
         }
         setSubmitting(false);
         return;
@@ -813,13 +879,76 @@ export function BookingWizard({ slug }: BookingWizardProps) {
                   </ol>
                 </>
               )}
-              <div className="mt-4 flex justify-between border-t border-gray-200 pt-4">
-                <span className="text-base font-semibold text-gray-900">
-                  Total
-                </span>
-                <span className="text-base font-semibold tabular-nums text-gray-900">
-                  {formatRp(totalAmount)}
-                </span>
+              {/* EPIC-032 B2 — kode promo */}
+              <div className="my-4 border-t border-gray-100" />
+              {promoApplied ? (
+                <div className="flex items-center justify-between gap-3 text-sm">
+                  <span className="text-gray-700">
+                    Kode <b>{promoApplied.code}</b> dipakai
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPromoApplied(null);
+                        setPromoError(null);
+                      }}
+                      className="ml-2 text-xs font-medium text-rose-500 underline"
+                    >
+                      Hapus
+                    </button>
+                  </span>
+                  <span className="font-medium tabular-nums text-emerald-600">
+                    −{formatRp(promoApplied.discount)}
+                  </span>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={promoInput}
+                    onChange={(e) => {
+                      setPromoInput(e.target.value.toUpperCase());
+                      setPromoError(null);
+                    }}
+                    placeholder="Punya kode promo?"
+                    className="w-full rounded-xl border border-gray-300 px-4 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900"
+                  />
+                  <button
+                    type="button"
+                    onClick={applyPromo}
+                    disabled={promoChecking || promoInput.trim().length < 3}
+                    className="shrink-0 rounded-xl border border-gray-900 px-4 py-2.5 text-sm font-semibold text-gray-900 disabled:opacity-40"
+                  >
+                    {promoChecking ? "…" : "Pakai"}
+                  </button>
+                </div>
+              )}
+              {promoError && (
+                <p className="mt-2 text-xs text-red-600">{promoError}</p>
+              )}
+
+              <div className="mt-4 space-y-1.5 border-t border-gray-200 pt-4">
+                {promoApplied && (
+                  <>
+                    <div className="flex justify-between text-sm text-gray-500">
+                      <span>Subtotal</span>
+                      <span className="tabular-nums">{formatRp(totalAmount)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm text-emerald-600">
+                      <span>Potongan promo</span>
+                      <span className="tabular-nums">
+                        −{formatRp(promoApplied.discount)}
+                      </span>
+                    </div>
+                  </>
+                )}
+                <div className="flex justify-between">
+                  <span className="text-base font-semibold text-gray-900">
+                    {promoApplied ? "Total Bayar" : "Total"}
+                  </span>
+                  <span className="text-base font-semibold tabular-nums text-gray-900">
+                    {formatRp(payableAmount)}
+                  </span>
+                </div>
               </div>
             </div>
             <p className="flex items-start gap-2 px-1 text-xs leading-relaxed text-gray-500">
@@ -884,7 +1013,7 @@ export function BookingWizard({ slug }: BookingWizardProps) {
                 <Loader2 className="h-5 w-5 animate-spin" /> Memproses…
               </>
             ) : (
-              <>Bayar Sekarang — {formatRp(totalAmount)}</>
+              <>Bayar Sekarang — {formatRp(payableAmount)}</>
             )}
           </button>
         )}
