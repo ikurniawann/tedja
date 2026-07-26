@@ -43,4 +43,13 @@ docker run -d \
   -e NEXT_PUBLIC_BASE_URL="$NEXT_PUBLIC_BASE_URL" \
   "$DOCKER_IMAGE:latest"
 
-curl -fsSL "http://127.0.0.1:${HOST_PORT}/login" >/dev/null
+for attempt in $(seq 1 30); do
+  if curl -fsSL "http://127.0.0.1:${HOST_PORT}/login" >/dev/null; then
+    exit 0
+  fi
+  sleep 2
+done
+
+echo "Application did not become ready on port ${HOST_PORT}" >&2
+docker logs --tail 100 "$CONTAINER_NAME" >&2 || true
+exit 1
