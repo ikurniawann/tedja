@@ -37,6 +37,8 @@ deploying-dev · ready-for-qa · blocked · done).
 | [EPIC-030](./EPIC-030-arkiv-os-native-desktop-app.md) | Arkiv OS Native Desktop App (Ide) | backlog | 2026-07-25 |
 | [EPIC-031](./EPIC-031-ticketing-kapasitas-timed-entry.md) | Ticketing — Kuota Harian, Kapasitas & Timed-Entry | ready-for-qa | 2026-07-25 |
 | [EPIC-032](./EPIC-032-promo-engine.md) | Engine Promosi — Promo Code, Voucher, Diskon & Gifting | ready-for-qa | 2026-07-26 |
+| [EPIC-033](./EPIC-033-crm-lifecycle-campaign.md) | CRM Lifecycle Campaign — Win-back & Kampanye WA Member | backlog | 2026-07-26 |
+| [EPIC-034](./EPIC-034-gift-card-stored-value.md) | Gift Card / Stored Value — Saldo Prepaid Lintas Kanal | backlog | 2026-07-26 |
 
 Aturan:
 - Epic + registry ini adalah sumber kebenaran status pekerjaan (canonical).
