@@ -26,7 +26,7 @@ deploying-dev · ready-for-qa · blocked · done).
 | [EPIC-018](./EPIC-018-lampiran-ocr.md) | Lampiran & OCR — Do Bisa Membaca Dokumen | ready-for-qa | 2026-07-25 |
 | [EPIC-019](./EPIC-019-desktop-owner-monitoring.md) | Desktop Arkiv OS — Pusat Monitoring Owner | ready-for-qa | 2026-07-25 |
 | [EPIC-020](./EPIC-020-notifikasi-wa-owner.md) | Notifikasi WhatsApp untuk Owner | ready-for-qa | 2026-07-23 |
-| [EPIC-021](./EPIC-021-dashboard-eksekutif.md) | /dashboard — Ringkasan Eksekutif Lintas Modul | coding | 2026-07-21 |
+| [EPIC-021](./EPIC-021-dashboard-eksekutif.md) | /dashboard — Ringkasan Eksekutif Lintas Modul | ready-for-qa | 2026-07-26 |
 | [EPIC-022](./EPIC-022-sales-crm-funnel.md) | Sales Funneling — Leads B2B (Corporate, Sekolah & Acara Privat) | ready-for-qa | 2026-07-22 |
 | [EPIC-023](./EPIC-023-ticketing-theme-park.md) | Ticketing Theme Park — NFC Postpaid, Harga Musiman & Channel Manager | ready-for-qa | 2026-07-23 |
 | [EPIC-024](./EPIC-024-pos-customer-display.md) | POS Customer Display — Layar Customer + QRIS Dinamis | ready-for-qa | 2026-07-23 |
