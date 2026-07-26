@@ -36,7 +36,7 @@ deploying-dev · ready-for-qa · blocked · done).
 | [EPIC-028](./EPIC-028-ticketing-season-pass.md) | Ticketing — Season Pass & Membership (Pass Masuk Berlaku) | ready-for-qa | 2026-07-24 |
 | [EPIC-030](./EPIC-030-arkiv-os-native-desktop-app.md) | Arkiv OS Native Desktop App (Ide) | backlog | 2026-07-25 |
 | [EPIC-031](./EPIC-031-ticketing-kapasitas-timed-entry.md) | Ticketing — Kuota Harian, Kapasitas & Timed-Entry | ready-for-qa | 2026-07-25 |
-| [EPIC-032](./EPIC-032-promo-engine.md) | Engine Promosi — Promo Code, Voucher, Diskon & Gifting | on-progress | 2026-07-26 |
+| [EPIC-032](./EPIC-032-promo-engine.md) | Engine Promosi — Promo Code, Voucher, Diskon & Gifting | ready-for-qa | 2026-07-26 |
 
 Aturan:
 - Epic + registry ini adalah sumber kebenaran status pekerjaan (canonical).

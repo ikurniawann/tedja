@@ -51,6 +51,10 @@ const createSchema = z.object({
   // EPIC-032 B1 — kode promo (opsional): dievaluasi & di-hold server-side
   // di dalam transaksi; potongan TIDAK pernah dipercaya dari klien
   promo_code: z.string().trim().min(3).max(40).optional(),
+  // EPIC-032 D2 — hadiah: e-tiket dikirim ke WA penerima saat PAID
+  // (pemesan tetap pembayar & menerima bukti). Wajib berpasangan.
+  gift_recipient_name: z.string().trim().min(2).max(120).optional(),
+  gift_recipient_phone: z.string().trim().min(8).max(25).optional(),
   items: z
     .array(
       z.object({
@@ -110,6 +114,17 @@ export async function POST(
 
     const phone = normalizePhoneDigits(body.customer_phone);
     if (!phone) return badRequest("Nomor WhatsApp tidak valid");
+
+    // EPIC-032 D2 — hadiah: nama & WA penerima wajib berpasangan
+    const isGift = Boolean(body.gift_recipient_name || body.gift_recipient_phone);
+    let giftPhone: string | null = null;
+    if (isGift) {
+      if (!body.gift_recipient_name || !body.gift_recipient_phone) {
+        return badRequest("Nama dan nomor WA penerima hadiah wajib diisi");
+      }
+      giftPhone = normalizePhoneDigits(body.gift_recipient_phone);
+      if (!giftPhone) return badRequest("Nomor WA penerima hadiah tidak valid");
+    }
 
     const variantIds = body.items.map((i) => i.variant_id);
     if (new Set(variantIds).size !== variantIds.length) {
@@ -277,8 +292,9 @@ export async function POST(
             `INSERT INTO ticketing.ticket_bookings
                (company_id, branch_id, booking_code, access_token, visit_date,
                 customer_name, customer_phone, status, total, expires_at,
-                slot_id, slot_label, slot_start_time, slot_end_time)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,'menunggu-bayar',$8,$9,$10,$11,$12,$13)
+                slot_id, slot_label, slot_start_time, slot_end_time,
+                gift_recipient_name, gift_recipient_phone)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,'menunggu-bayar',$8,$9,$10,$11,$12,$13,$14,$15)
              RETURNING id`,
             [
               venue.companyId,
@@ -294,6 +310,8 @@ export async function POST(
               slot?.label ?? null,
               slot?.start_time ?? null,
               slot?.end_time ?? null,
+              isGift ? body.gift_recipient_name : null,
+              giftPhone,
             ]
           );
           const id = inserted.rows[0].id;

@@ -1,7 +1,7 @@
 # EPIC-032: Engine Promosi — Promo Code, Voucher Tiket, Diskon & Gifting
 
-status: on-progress
-environment: local
+status: ready-for-qa
+environment: dev
 retries: 0
 
 ## Goal
@@ -339,3 +339,27 @@ independen dari engine (bisa maju duluan bila owner mau).
     E2E checkout kasir butuh sesi POS riil — masuk daftar QA owner
     (buat campaign scope 'pos'/'semua' → kasir pakai kode → cek order
     discount_reason "PROMO ..." + redemption captured → void → released).
+    Commit c9ae7ee9 (pushed).
+- 2026-07-26 — **FASE D SELESAI (EPIC TUNTAS A–D → ready-for-qa), live
+  dev**:
+  - D2 Gifting (migrasi `20260726140000`): booking +
+    `gift_recipient_name/phone` (CHECK wajib berpasangan). Wizard: checkbox
+    "Kirim sebagai hadiah 🎁" di langkah pemesan + field nama/WA penerima
+    (ter-gate ke tombol lanjut) + baris "Hadiah untuk" di ringkasan. Saat
+    PAID: WA pemesan = bukti bayar + catatan hadiah; **WA penerima =
+    e-tiket link status ber-QR** (`sendBookingGiftWa`, best-effort, tanpa
+    halaman klaim sesuai keputusan owner). Resend-WA dashboard mengirim
+    ulang KEDUANYA. Status publik + baris "Hadiah untuk"; **lookup loket &
+    dialog redeem menampilkan 🎁 nama penerima**.
+  - D1 Voucher batch: TIDAK butuh kode baru — jalur A3 (generate) + B/C
+    (redeem) terbukti E2E.
+  - **E2E live dev**: booking hadiah + voucher sekali-pakai → sukses
+    (diskon 15rb, payable 60rb); gift tanpa pasangan → 400; voucher
+    dipakai orang lain → 422 "Kuota kode promo sudah habis"; webhook PAID
+    net → terbayar + captured; status publik menampilkan gift+diskon+
+    payable; kolom DB terisi (phone penerima ternormalisasi 62…);
+    cleanup 0 sisa.
+  - Sisa di luar epic (fase lanjut, lihat Fase E): loyalty CRM masuk
+    engine, targeting per produk, scope `ticketing_loket` (enum sudah
+    siap, konsumen belum), stacking multi-kode, pensiun tabel legacy
+    pos_vouchers. QA owner: lihat catatan QA kasir POS di log Fase C.

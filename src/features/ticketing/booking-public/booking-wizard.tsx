@@ -167,6 +167,11 @@ export function BookingWizard({ slug }: BookingWizardProps) {
     campaign_name: string;
   } | null>(null);
   const [promoError, setPromoError] = useState<string | null>(null);
+  // EPIC-032 D2 — hadiah: e-tiket dikirim ke WA penerima (pemesan tetap
+  // pembayar & mendapat salinan bukti)
+  const [isGift, setIsGift] = useState(false);
+  const [giftName, setGiftName] = useState("");
+  const [giftPhone, setGiftPhone] = useState("");
 
   const minDate = todayIso();
   const maxDate = addDaysIso(minDate, MAX_DAYS_AHEAD);
@@ -428,7 +433,11 @@ export function BookingWizard({ slug }: BookingWizardProps) {
   };
 
   const phoneDigits = customerPhone.replace(/\D/g, "");
-  const pemesanValid = customerName.trim().length >= 2 && phoneDigits.length >= 8;
+  const giftValid =
+    !isGift ||
+    (giftName.trim().length >= 2 && giftPhone.replace(/\D/g, "").length >= 8);
+  const pemesanValid =
+    customerName.trim().length >= 2 && phoneDigits.length >= 8 && giftValid;
 
   const submitBooking = async () => {
     if (submitting) return;
@@ -444,6 +453,12 @@ export function BookingWizard({ slug }: BookingWizardProps) {
           customer_phone: customerPhone.trim(),
           ...(selectedSlotId ? { slot_id: selectedSlotId } : {}),
           ...(promoApplied ? { promo_code: promoApplied.code } : {}),
+          ...(isGift
+            ? {
+                gift_recipient_name: giftName.trim(),
+                gift_recipient_phone: giftPhone.trim(),
+              }
+            : {}),
           items: cart.map((c) => ({
             variant_id: c.variant.variant_id,
             qty: c.qty,
@@ -749,6 +764,60 @@ export function BookingWizard({ slug }: BookingWizardProps) {
                 Kode booking & QR tiket dikirim ke nomor WhatsApp ini setelah
                 pembayaran berhasil.
               </p>
+
+              {/* EPIC-032 D2 — kirim sebagai hadiah */}
+              <label className="flex cursor-pointer items-center gap-3 rounded-2xl border border-gray-200 px-4 py-3.5">
+                <input
+                  type="checkbox"
+                  checked={isGift}
+                  onChange={(e) => {
+                    setIsGift(e.target.checked);
+                    if (!e.target.checked) {
+                      setGiftName("");
+                      setGiftPhone("");
+                    }
+                  }}
+                  className="h-4 w-4 rounded border-gray-300 text-rose-500 focus:ring-rose-400"
+                />
+                <span className="text-sm font-medium text-gray-900">
+                  Kirim sebagai hadiah 🎁
+                </span>
+              </label>
+              {isGift && (
+                <div className="space-y-4 rounded-3xl border border-gray-200 p-5">
+                  <label className="block">
+                    <span className="text-sm font-medium text-gray-900">
+                      Nama penerima
+                    </span>
+                    <input
+                      type="text"
+                      value={giftName}
+                      onChange={(e) => setGiftName(e.target.value)}
+                      maxLength={120}
+                      placeholder="Nama penerima hadiah"
+                      className="mt-1.5 w-full rounded-xl border border-gray-300 px-4 py-3 text-base text-gray-900 placeholder:text-gray-400 focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-sm font-medium text-gray-900">
+                      Nomor WhatsApp penerima
+                    </span>
+                    <input
+                      type="tel"
+                      inputMode="tel"
+                      value={giftPhone}
+                      onChange={(e) => setGiftPhone(e.target.value)}
+                      maxLength={25}
+                      placeholder="08xxxxxxxxxx"
+                      className="mt-1.5 w-full rounded-xl border border-gray-300 px-4 py-3 text-base text-gray-900 placeholder:text-gray-400 focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900"
+                    />
+                  </label>
+                  <p className="text-xs leading-relaxed text-gray-500">
+                    E-tiket (QR) dikirim ke WhatsApp penerima setelah
+                    pembayaran berhasil. Kamu tetap menerima bukti pembayaran.
+                  </p>
+                </div>
+              )}
             </div>
 
             {totalQty > 1 && (
@@ -824,6 +893,14 @@ export function BookingWizard({ slug }: BookingWizardProps) {
                     <dt className="text-gray-500">Jam kunjungan</dt>
                     <dd className="font-medium tabular-nums text-gray-900">
                       {selectedSlot.label} · {selectedSlot.start_time}–{selectedSlot.end_time}
+                    </dd>
+                  </div>
+                )}
+                {isGift && giftName.trim() && (
+                  <div className="flex items-center justify-between">
+                    <dt className="text-gray-500">Hadiah untuk</dt>
+                    <dd className="font-medium text-gray-900">
+                      🎁 {giftName.trim()}
                     </dd>
                   </div>
                 )}

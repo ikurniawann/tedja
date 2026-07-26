@@ -50,6 +50,8 @@ export interface BookingLookup {
   booking_code: string;
   visit_date: string;
   customer_name: string;
+  /** EPIC-032 D2 — hadiah: nama penerima (null = bukan hadiah). */
+  gift_recipient_name: string | null;
   customer_phone: string;
   status: BookingStatus;
   total: number;

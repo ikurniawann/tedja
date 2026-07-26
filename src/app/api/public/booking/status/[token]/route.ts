@@ -23,6 +23,7 @@ interface BookingRow {
   total: string;
   discount_amount: string | null;
   promo_code: string | null;
+  gift_recipient_name: string | null;
   slot_label: string | null;
   slot_start_time: string | null;
   slot_end_time: string | null;
@@ -51,6 +52,7 @@ export async function GET(
     const booking = await queryOne<BookingRow>(
       `SELECT id, booking_code, visit_date::text AS visit_date, customer_name,
               status, total, discount_amount, promo_code, xendit_invoice_url,
+              gift_recipient_name,
               slot_label, slot_start_time::text AS slot_start_time,
               slot_end_time::text AS slot_end_time,
               expires_at::text AS expires_at, paid_at::text AS paid_at,
@@ -100,6 +102,7 @@ export async function GET(
       // EPIC-032 B1 — potongan promo (0 = tanpa promo) + jumlah dibayar
       discount_amount: Number(booking.discount_amount ?? 0),
       promo_code: booking.promo_code,
+      gift_recipient_name: booking.gift_recipient_name,
       payable:
         Math.round(
           (Number(booking.total) - Number(booking.discount_amount ?? 0)) * 100

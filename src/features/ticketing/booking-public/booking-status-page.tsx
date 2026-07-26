@@ -56,6 +56,8 @@ interface BookingStatusData {
   discount_amount: number;
   promo_code: string | null;
   payable: number;
+  /** EPIC-032 D2 — hadiah: nama penerima (null = bukan hadiah). */
+  gift_recipient_name: string | null;
   /** EPIC-031 D — jam slot (null = sepanjang hari). */
   slot_label: string | null;
   slot_start_time: string | null;
@@ -273,6 +275,14 @@ export function BookingStatusPage({ token }: BookingStatusPageProps) {
                 {formatDateLong(booking.visit_date)}
               </dd>
             </div>
+            {booking.gift_recipient_name && (
+              <div className="flex items-center justify-between">
+                <dt className="text-gray-500">Hadiah untuk</dt>
+                <dd className="font-medium text-gray-900">
+                  🎁 {booking.gift_recipient_name}
+                </dd>
+              </div>
+            )}
             {booking.slot_start_time && (
               <div className="flex items-center justify-between">
                 <dt className="text-gray-500">Jam kunjungan</dt>

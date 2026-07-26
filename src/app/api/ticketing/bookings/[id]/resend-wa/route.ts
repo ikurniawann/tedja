@@ -3,7 +3,7 @@ import { z } from "zod";
 import { successResponse } from "@/lib/api/auth";
 import { queryOne } from "@/lib/db";
 import { checkRateLimit } from "@/lib/rate-limit";
-import { sendBookingPaidWa } from "@/lib/ticketing/booking-wa";
+import { sendBookingGiftWa, sendBookingPaidWa } from "@/lib/ticketing/booking-wa";
 import {
   TICKETING_OPERATOR_ROLES,
   requireTicketingContext,
@@ -48,9 +48,13 @@ export async function POST(
       customer_phone: string;
       status: string;
       total: string;
+      discount_amount: string | null;
+      gift_recipient_name: string | null;
+      gift_recipient_phone: string | null;
     }>(
       `SELECT booking_code, access_token, visit_date::text AS visit_date,
-              customer_name, customer_phone, status, total
+              customer_name, customer_phone, status, total, discount_amount,
+              gift_recipient_name, gift_recipient_phone
        FROM ticketing.ticket_bookings
        WHERE id = $1 AND branch_id = $2 AND company_id = $3`,
       [id, ctx.branchId, ctx.companyId]
@@ -72,6 +76,10 @@ export async function POST(
     }
 
     const sent = await sendBookingPaidWa(booking);
+    // EPIC-032 D2 — booking hadiah: kirim ulang e-tiket ke penerima juga
+    if (booking.gift_recipient_phone) {
+      await sendBookingGiftWa(booking);
+    }
     if (!sent.success) {
       return NextResponse.json(
         {

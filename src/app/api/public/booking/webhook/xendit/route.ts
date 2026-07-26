@@ -6,7 +6,7 @@ import {
   releasePromoRedemption,
 } from "@/lib/promo/promo-server";
 import { checkRateLimit, clientIpFrom } from "@/lib/public/rate-limit";
-import { sendBookingPaidWa } from "@/lib/ticketing/booking-wa";
+import { sendBookingGiftWa, sendBookingPaidWa } from "@/lib/ticketing/booking-wa";
 import { sendPassPaidWa } from "@/lib/ticketing/pass-wa";
 import { todayInJakarta } from "@/lib/ticketing/booking";
 import { addMonthsIso } from "@/lib/ticketing/season-pass";
@@ -41,6 +41,8 @@ interface PaidBookingRow {
   customer_phone: string;
   total: string;
   discount_amount: string | null;
+  gift_recipient_name: string | null;
+  gift_recipient_phone: string | null;
 }
 
 export async function POST(request: NextRequest) {
@@ -193,7 +195,8 @@ export async function POST(request: NextRequest) {
              updated_at = now()
          WHERE id = $1::uuid AND status IN ('menunggu-bayar', 'kedaluwarsa')
          RETURNING id, booking_code, access_token, visit_date::text AS visit_date,
-                   customer_name, customer_phone, total, discount_amount`,
+                   customer_name, customer_phone, total, discount_amount,
+                   gift_recipient_name, gift_recipient_phone`,
         [bookingId, callback.paid_at ?? null, callback.id]
       );
       if (paid) {
@@ -205,6 +208,10 @@ export async function POST(request: NextRequest) {
           console.error("[booking] capture promo error:", err)
         );
         await sendBookingPaidWa(paid);
+        // EPIC-032 D2 — e-tiket hadiah ke penerima (best-effort)
+        if (paid.gift_recipient_phone) {
+          await sendBookingGiftWa(paid);
+        }
       } else {
         // 0 baris = callback ulang yang sah (terbayar/digunakan) ATAU
         // pembayaran masuk utk booking dibatalkan — bedakan di log supaya
