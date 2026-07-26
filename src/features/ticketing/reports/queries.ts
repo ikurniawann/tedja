@@ -24,6 +24,8 @@ export interface TicketingReport {
     denda_net: number;
     uang_masuk: number;
     refund_keluar: number;
+    /** EPIC-032 B3 — potongan promo terpakai (redeem) dalam rentang. */
+    diskon_promo: number;
   };
   methods: { charge_type: string; method: string; total: number }[];
   daily: {

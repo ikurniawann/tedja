@@ -227,6 +227,13 @@ export function TicketingReportsPage() {
                   : undefined
               }
             />
+            {report.summary.diskon_promo > 0 && (
+              <StatCard
+                label="Potongan Promo"
+                value={`−${formatRp(report.summary.diskon_promo)}`}
+                hint="Diskon kode promo terpakai saat redeem — bukan uang keluar; revenue tiket di atas masih gross"
+              />
+            )}
             <StatCard
               label="Revenue F&B on-Tab (net)"
               value={formatRp(report.summary.fnb_net)}

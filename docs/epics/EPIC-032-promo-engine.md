@@ -299,4 +299,15 @@ independen dari engine (bisa maju duluan bila owner mau).
   pakai payable + **jam slot tampil** (utang known-limitation EPIC-031
   lunas penuh di UI). tsc bersih, build OK → pm2 restart, /booking/sulu
   200. Fase B sisa: B3 kartu diskon di laporan ticketing (ledger sudah
-  jalan sejak B1).
+  jalan sejak B1). Commit 13e51b33 (pushed).
+- 2026-07-26 — **B3 SELESAI (Fase B TUNTAS), live dev**: laporan ticketing
+  + `summary.diskon_promo` (dari netByType `diskon`, otomatis net-void
+  aware karena lewat jalur eff_type sama) + kartu "Potongan Promo" (tampil
+  hanya bila > 0; hint menjelaskan bukan uang keluar & revenue tiket tetap
+  gross). AUDIT PENTING yang membuat B3 kecil: agregasi existing SUDAH
+  benar — `uang_masuk` & rekonsiliasi metode hanya menjumlah
+  deposit+pembayaran, jadi kredit `diskon` tak pernah tercampur uang riil.
+  tsc bersih (error hris/reports = baseline lama), build OK → live.
+  Fase B TUNTAS: booking online ber-promo end-to-end (validasi → hold →
+  bayar net → capture → redeem net-0 ber-baris diskon → laporan).
+  Sisa epic: Fase C (kasir POS) + Fase D (voucher QA-path + gifting).
