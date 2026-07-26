@@ -5,6 +5,10 @@ import { awardCrmXpForPosOrder, syncPosCustomerOrderStats } from '@/lib/crm/loya
 import { checkRateLimit } from '@/lib/rate-limit';
 import { isValidNfcUid, normalizeNfcUid } from '@/lib/ticketing/server';
 import { chargeFnbOrderToTab } from '@/lib/ticketing/tab-server';
+import {
+  redeemGiftCardForPosOrder,
+  refundGiftCardForPosOrder,
+} from '@/lib/giftcard/giftcard-server';
 
 type OrderPatchBody = {
   status?: string;
@@ -17,6 +21,8 @@ type OrderPatchBody = {
   status_notes?: string;
   /** UID gelang ticketing — wajib saat bayar open bill via 'nfc_tab' */
   nfc_tab_uid?: string;
+  /** Kode gift card — wajib saat bayar open bill via 'gift_card' (EPIC-034) */
+  gift_card_code?: string;
 };
 
 function getErrorMessage(error: unknown) {
@@ -155,6 +161,69 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       updateData.amount_paid = 0;
     }
 
+    // EPIC-034 Fase C — bayar open bill dengan saldo gift card. Pola persis
+    // NFC Tab di atas: debit ber-lock dulu (idempoten per order), baru order
+    // ditandai lunas oleh update generik di bawah. Full-cover only —
+    // saldo kurang ditolak, kasir minta metode lain.
+    const paysWithGiftCard =
+      effectiveMethod === 'gift_card' &&
+      (updateData.payment_status === 'paid' || payment_status === 'paid') &&
+      existing.payment_status !== 'paid';
+    if (paysWithGiftCard) {
+      const rate = checkRateLimit(`pos-gift-card:${sessionUserId}`, 30);
+      if (!rate.allowed) {
+        return NextResponse.json(
+          { success: false, error: 'Terlalu banyak percobaan gift card — tunggu sebentar' },
+          { status: 429 }
+        );
+      }
+      // Order partial sudah menerima uang sebagian — debit full total bakal
+      // menagih dobel (alasan sama dgn NFC Tab).
+      if (existing.payment_status === 'partial') {
+        return NextResponse.json(
+          { success: false, error: 'Order sudah terbayar sebagian — gift card hanya untuk order yang belum terbayar' },
+          { status: 400 }
+        );
+      }
+      const giftCardCode = String(body.gift_card_code || '').trim().toUpperCase();
+      if (!giftCardCode) {
+        return NextResponse.json(
+          { success: false, error: 'Pembayaran gift card membutuhkan kode kartu' },
+          { status: 400 }
+        );
+      }
+      if (numericArkUsed > 0) {
+        return NextResponse.json(
+          { success: false, error: 'Gift card tidak bisa dicampur ARK Coin — 1 transaksi 1 metode' },
+          { status: 400 }
+        );
+      }
+      if (!existing.company_id || !existing.branch_id) {
+        return NextResponse.json(
+          { success: false, error: 'Order tanpa venue — gift card tidak bisa dipakai' },
+          { status: 400 }
+        );
+      }
+      const redeem = await redeemGiftCardForPosOrder({
+        scope: { companyId: existing.company_id, branchId: existing.branch_id },
+        code: giftCardCode,
+        amount: orderTotal,
+        orderId,
+        createdBy: sessionUserId,
+      });
+      if (!redeem.ok) {
+        console.error(
+          `[pos] gift_card debit rejected: order=${orderId} user=${sessionUserId} reason=${redeem.reason}`
+        );
+        return NextResponse.json(
+          { success: false, error: redeem.reason },
+          { status: redeem.status }
+        );
+      }
+      // Uang masuk lewat saldo kartu, bukan laci kasir
+      updateData.amount_paid = 0;
+    }
+
     // Deduct ARK coins atomically BEFORE marking the order paid. The RPC locks
     // the customer row and rejects an insufficient balance in-transaction, so a
     // failed/insufficient deduction never leaves a paid order without the
@@ -185,7 +254,21 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) {
+      // EPIC-034 Fase C — saldo sudah terpotong tapi order gagal ditandai
+      // lunas → kembalikan saldo tamu (kompensasi otomatis, idempoten).
+      if (paysWithGiftCard) {
+        await refundGiftCardForPosOrder({
+          scope: { companyId: existing.company_id, branchId: existing.branch_id },
+          orderId,
+          createdBy: sessionUserId,
+          note: 'Pengembalian saldo — order gagal ditandai lunas',
+        }).catch((refundErr) =>
+          console.error(`[pos] gift_card refund failed: order=${orderId}:`, refundErr)
+        );
+      }
+      throw error;
+    }
 
     // Log status change
     if (status) {

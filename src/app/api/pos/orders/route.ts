@@ -17,6 +17,14 @@ import {
 import { checkRateLimit } from '@/lib/rate-limit';
 import { isValidNfcUid, normalizeNfcUid } from '@/lib/ticketing/server';
 import { chargeFnbOrderToTab } from '@/lib/ticketing/tab-server';
+import {
+  issueGiftCardsForPosOrder,
+  prepareGiftCardSale,
+  redeemGiftCardForPosOrder,
+  refundGiftCardForPosOrder,
+  type IssuedGiftCard,
+} from '@/lib/giftcard/giftcard-server';
+import { sendGiftCardSoldWa } from '@/lib/giftcard/gift-card-wa';
 
 type PosOrderItemRequest = {
   product_id?: string;
@@ -58,6 +66,11 @@ type PosOrderBody = {
   shift_id?: string;
   /** UID gelang ticketing — wajib saat payment_method 'nfc_tab' (EPIC-023 Fase C) */
   nfc_tab_uid?: string;
+  /** Kode gift card — wajib saat payment_method 'gift_card' (EPIC-034 Fase C) */
+  gift_card_code?: string;
+  /** Data pembeli saat MENJUAL gift card — nomor dipakai kirim kode via WA (Fase B) */
+  gift_card_buyer_name?: string;
+  gift_card_buyer_phone?: string;
 };
 
 type PosOrderRow = {
@@ -212,8 +225,30 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // ── EPIC-034 Fase B — penjualan gift card ──────────────────────────
+    // Nominal gift card DIKETIK kasir, jadi tidak dipercaya mentah: server
+    // memuat ulang product_kind dari katalog dan memvalidasi tiap nominal ke
+    // konfigurasi. Kartu baru terbit SETELAH order lunas (di bawah).
+    const giftCardSale = await prepareGiftCardSale(items);
+    if (!giftCardSale.ok) {
+      return NextResponse.json(
+        { success: false, error: giftCardSale.reason },
+        { status: 400 }
+      );
+    }
+    const giftCardNominals = giftCardSale.nominals;
+    const sellsGiftCard = giftCardNominals.length > 0;
+
     // Split bill mode
     if (splits && splits.length > 0) {
+      // EPIC-034 Fase B — penjualan gift card belum didukung utk split bill:
+      // satu kartu tidak bisa dibagi ke beberapa pembayar (MVP, pola promo).
+      if (sellsGiftCard) {
+        return NextResponse.json(
+          { success: false, error: 'Gift card belum didukung untuk split bill' },
+          { status: 400 }
+        );
+      }
       // EPIC-032 C1 — promo belum didukung utk split bill (MVP)
       if (String(body.promo_code || '').trim()) {
         return NextResponse.json(
@@ -369,12 +404,16 @@ export async function POST(request: NextRequest) {
     // masuk ledger tab WAJIB turunan server, bukan total_amount kiriman klien.
     // Order ber-promo juga WAJIB turunan server (klien tak dipercaya).
     const isNfcTab = payment_method === 'nfc_tab';
-    const serverTotal = isNfcTab || promoHold
+    // EPIC-034 Fase C — bayar dgn saldo gift card: nominal debit WAJIB
+    // turunan server (uang titipan tamu), persis alasan yang sama dgn NFC Tab.
+    const payWithGiftCard = payment_method === 'gift_card';
+    const serverTotal = isNfcTab || payWithGiftCard || promoHold
       ? serverDerivedTotal
       : Number(total_amount) || serverDerivedTotal;
     const paidAmount = Number(amount_paid) || 0;
     const arkUsed = Number(ark_coins_used) || 0;
     const nfcTabUid = String(body.nfc_tab_uid || '').trim();
+    const giftCardCode = String(body.gift_card_code || '').trim().toUpperCase();
 
     if (isNfcTab) {
       const rate = checkRateLimit(`pos-nfc-tab:${sessionUserId}`, 30);
@@ -404,7 +443,47 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!isNfcTab && paidAmount + arkUsed < serverTotal) {
+    // ── EPIC-034 Fase C — guard pembayaran gift card ───────────────────
+    if (payWithGiftCard) {
+      const rate = checkRateLimit(`pos-gift-card:${sessionUserId}`, 30);
+      if (!rate.allowed) {
+        return NextResponse.json(
+          { success: false, error: 'Terlalu banyak percobaan gift card — tunggu sebentar' },
+          { status: 429 }
+        );
+      }
+      if (!giftCardCode) {
+        return NextResponse.json(
+          { success: false, error: 'Pembayaran gift card membutuhkan kode kartu' },
+          { status: 400 }
+        );
+      }
+      if (arkUsed > 0) {
+        return NextResponse.json(
+          { success: false, error: 'Gift card tidak bisa dicampur ARK Coin — 1 transaksi 1 metode' },
+          { status: 400 }
+        );
+      }
+      if (!venue.companyId || !venue.branchId) {
+        return NextResponse.json(
+          { success: false, error: 'Venue belum dikonfigurasi — gift card tidak bisa dipakai' },
+          { status: 400 }
+        );
+      }
+    }
+    // Saldo titipan/loyalitas tidak boleh dipakai MEMBELI saldo titipan baru
+    // (gift card beli gift card = uang berputar tanpa kas masuk).
+    if (sellsGiftCard && (payWithGiftCard || isNfcTab || payment_method === 'ark_coin')) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Gift card harus dibeli dengan pembayaran tunai/kartu/QRIS, bukan saldo',
+        },
+        { status: 400 }
+      );
+    }
+
+    if (!isNfcTab && !payWithGiftCard && paidAmount + arkUsed < serverTotal) {
       return NextResponse.json({ success: false, error: 'Payment insufficient' }, { status: 400 });
     }
 
@@ -429,8 +508,9 @@ export async function POST(request: NextRequest) {
     }
 
     const payWithArk = arkUsed > 0 && Boolean(customer_id);
-    // Order ARK/NFC Tab dibuat pending dulu; paid setelah debit/charge sukses
-    const deferPaid = payWithArk || isNfcTab;
+    // Order ARK/NFC Tab/Gift Card dibuat pending dulu; paid setelah
+    // debit/charge sukses
+    const deferPaid = payWithArk || isNfcTab || payWithGiftCard;
 
     const { data: orderData, error: orderErr } = await db
       .from('pos_orders')
@@ -528,6 +608,77 @@ export async function POST(request: NextRequest) {
       orderData.payment_status = 'paid';
     }
 
+    // EPIC-034 Fase C — debit saldo gift card. Kartu dikunci FOR UPDATE di
+    // dalam transaksinya sendiri (dua kasir memakai kartu yang sama tidak
+    // bisa membuat saldo minus). Gagal debit → order dikompensasi, bukan paid.
+    const giftCardScope = {
+      companyId: venue.companyId as string,
+      branchId: (body.branch_id || venue.branchId) as string,
+    };
+    if (payWithGiftCard) {
+      const redeem = await redeemGiftCardForPosOrder({
+        scope: giftCardScope,
+        code: giftCardCode,
+        amount: serverTotal,
+        orderId: orderData.id,
+        createdBy: sessionUserId,
+      });
+
+      if (!redeem.ok) {
+        // Jejak audit sebelum order kompensasi dihapus
+        console.error(
+          `[pos] gift_card debit rejected: order=${orderData.id} user=${sessionUserId} reason=${redeem.reason}`
+        );
+        const { error: delErr } = await db
+          .from('pos_orders')
+          .delete()
+          .eq('id', orderData.id);
+        if (delErr) {
+          console.error(
+            `[pos] gift_card compensation delete failed: order=${orderData.id}:`,
+            delErr
+          );
+          await db
+            .from('pos_orders')
+            .update({ status: 'cancelled', updated_at: new Date().toISOString() })
+            .eq('id', orderData.id);
+        }
+        if (promoOrderId) {
+          await withTransaction((client) =>
+            releasePromoRedemption(client, 'pos_order', promoOrderId!)
+          ).catch(() => {});
+        }
+        return NextResponse.json(
+          { success: false, error: redeem.reason },
+          { status: redeem.status === 409 ? 409 : redeem.status === 404 ? 404 : 400 }
+        );
+      }
+
+      const { error: markPaidErr } = await db
+        .from('pos_orders')
+        .update({
+          status: 'completed',
+          payment_status: 'paid',
+          completed_at: new Date().toISOString(),
+        })
+        .eq('id', orderData.id);
+      if (markPaidErr) {
+        // Saldo sudah terpotong tapi order tak bisa ditandai lunas →
+        // kembalikan saldo (keputusan owner 27 Jul: kompensasi otomatis).
+        await refundGiftCardForPosOrder({
+          scope: giftCardScope,
+          orderId: orderData.id,
+          createdBy: sessionUserId,
+          note: 'Pengembalian saldo — order gagal ditandai lunas',
+        }).catch((err) =>
+          console.error(`[pos] gift_card refund failed: order=${orderData.id}:`, err)
+        );
+        throw markPaidErr;
+      }
+      orderData.status = 'completed';
+      orderData.payment_status = 'paid';
+    }
+
     if (payWithArk) {
       const { error: coinError } = await db.rpc('update_ark_coin_balance', {
         p_customer_id: customer_id,
@@ -618,6 +769,18 @@ export async function POST(request: NextRequest) {
     }
     if (itemsErr) {
       console.error('Order items insert error:', itemsErr);
+      // EPIC-034 Fase C — saldo sudah terpotong tapi order tak lengkap →
+      // kembalikan saldo tamu (kompensasi otomatis, idempoten).
+      if (payWithGiftCard) {
+        await refundGiftCardForPosOrder({
+          scope: giftCardScope,
+          orderId: orderData.id,
+          createdBy: sessionUserId,
+          note: 'Pengembalian saldo — baris order gagal disimpan',
+        }).catch((err) =>
+          console.error(`[pos] gift_card refund failed: order=${orderData.id}:`, err)
+        );
+      }
       return NextResponse.json({ success: false, error: itemsErr.message }, { status: 500 });
     }
 
@@ -651,13 +814,62 @@ export async function POST(request: NextRequest) {
       ).catch((err) => console.error('[pos] capture promo error:', err));
     }
 
+    // ── EPIC-034 Fase B — kartu terbit setelah order LUNAS ─────────────
+    // Idempoten per order (retry tidak menggandakan kartu). Gagal terbit
+    // TIDAK membatalkan order yang sudah dibayar — kasir diberi peringatan
+    // keras supaya kasusnya ditangani admin, bukan hilang diam-diam.
+    let giftCardsIssued: IssuedGiftCard[] = [];
+    let giftCardIssueError: string | null = null;
+    if (sellsGiftCard) {
+      const buyerName = String(body.gift_card_buyer_name || '').trim() || null;
+      const buyerPhone = String(body.gift_card_buyer_phone || '').trim() || null;
+      try {
+        giftCardsIssued = await issueGiftCardsForPosOrder({
+          scope: giftCardScope,
+          orderId: orderData.id,
+          nominals: giftCardNominals,
+          buyerName,
+          buyerPhone,
+          createdBy: sessionUserId,
+        });
+      } catch (giftErr) {
+        console.error(
+          `[pos] gift card issue failed: order=${orderData.id}:`,
+          giftErr
+        );
+        giftCardIssueError =
+          'Order LUNAS tapi kartu gagal terbit — catat nomor order dan hubungi admin';
+      }
+
+      // WA hanya tambahan; kode tetap tercetak di struk (keputusan owner).
+      if (giftCardsIssued.length > 0 && buyerPhone) {
+        void sendGiftCardSoldWa({
+          buyerName,
+          buyerPhone,
+          cards: giftCardsIssued,
+        }).catch((waErr) =>
+          console.error(`[pos] gift card WA failed: order=${orderData.id}:`, waErr)
+        );
+      }
+    }
+
     const { data: completeOrder } = await db
       .from('pos_orders')
       .select(`*, customer:pos_customers(name, phone), items:pos_order_items(*)`)
       .eq('id', orderData.id)
       .single();
 
-    return NextResponse.json({ success: true, data: completeOrder || orderData, crm_xp: crmXp }, { status: 201 });
+    return NextResponse.json(
+      {
+        success: true,
+        data: completeOrder || orderData,
+        crm_xp: crmXp,
+        ...(sellsGiftCard
+          ? { gift_cards: giftCardsIssued, gift_card_error: giftCardIssueError }
+          : {}),
+      },
+      { status: 201 }
+    );
   } catch (error: unknown) {
     console.error('Error creating order:', error);
     return NextResponse.json({ success: false, error: getErrorMessage(error) }, { status: 500 });

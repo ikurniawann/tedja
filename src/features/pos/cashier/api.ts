@@ -42,6 +42,8 @@ export interface PayOpenOrderPayload {
   ark_coins_used?: number;
   /** UID gelang ticketing — wajib saat payment_method 'nfc_tab' */
   nfc_tab_uid?: string;
+  /** Kode kartu — wajib saat payment_method 'gift_card' (EPIC-034 Fase C) */
+  gift_card_code?: string;
 }
 
 export async function listCashierTables(): Promise<PosTable[]> {

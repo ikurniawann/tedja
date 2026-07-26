@@ -26,6 +26,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TableRow } from "@/components/ui/table";
 import { PurchasingListSection } from "@/modules/purchasing/components/list/PurchasingListSection";
 import { useCampaigns, useCreateCampaign, useUpdateCampaign } from "../queries";
@@ -36,6 +37,7 @@ import {
   type PromoScope,
 } from "../types";
 import { CampaignDetailDialog } from "./campaign-detail-dialog";
+import { GiftCardPage } from "./gift-card-page";
 
 const formatRp = (n: number) => `Rp${n.toLocaleString("id-ID")}`;
 
@@ -78,6 +80,7 @@ const EMPTY_FORM: CampaignForm = {
 };
 
 export function PromoPage() {
+  const [tab, setTab] = useState<"campaigns" | "gift-cards">("campaigns");
   const campaignsQuery = useCampaigns();
   const updateMutation = useUpdateCampaign();
   const [createOpen, setCreateOpen] = useState(false);
@@ -137,6 +140,13 @@ export function PromoPage() {
         </p>
       </div>
 
+      <Tabs value={tab} onValueChange={(v) => setTab(v as "campaigns" | "gift-cards")}>
+        <TabsList className="grid w-full max-w-md grid-cols-2">
+          <TabsTrigger value="campaigns">Campaign & Voucher</TabsTrigger>
+          <TabsTrigger value="gift-cards">Gift Card</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="campaigns" className="mt-4">
       <PurchasingListSection
         icon={TicketIcon}
         title="Campaign Promo"
@@ -238,6 +248,12 @@ export function PromoPage() {
           </div>
         )}
       </PurchasingListSection>
+        </TabsContent>
+
+        <TabsContent value="gift-cards" className="mt-4">
+          <GiftCardPage />
+        </TabsContent>
+      </Tabs>
 
       {/* Dialog buat campaign */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>

@@ -15,6 +15,12 @@ export interface ReceiptPayload {
   customerName?: string;
   discountAmount: number;
   taxAmount: number;
+  /**
+   * EPIC-034 Fase B — kartu yang terbit dari transaksi ini. Kode dicetak di
+   * struk pelanggan (keputusan owner: struk adalah jalur utama, WA tambahan).
+   * Tidak pernah dicetak di copy dapur/bar — kode = uang.
+   */
+  giftCards?: Array<{ code: string; initial_value: number; expires_at: string | null }>;
 }
 
 export type ThermalPrintLabel = "KITCHEN" | "BAR" | "CUSTOMER" | "PREVIEW_BILL";
@@ -33,6 +39,7 @@ export function printThermalReceipt(payload: ReceiptPayload, label: ThermalPrint
     customerName,
     discountAmount,
     taxAmount,
+    giftCards,
   } = payload;
 
   // Wider popup so the browser print dialog has room for settings + preview.
@@ -140,6 +147,28 @@ export function printThermalReceipt(payload: ReceiptPayload, label: ThermalPrint
     ` : `
       <table>${itemsHtml}</table>
     `}
+
+    ${
+      // Kode gift card hanya di struk pelanggan — bukan copy dapur/bar.
+      !isKitchen && !isBar && !isPreviewBill && giftCards && giftCards.length > 0
+        ? `<div class="divider"></div>
+    <div class="center"><strong>GIFT CARD</strong></div>
+    ${giftCards
+      .map(
+        (card) => `<div class="center" style="margin:4px 0">
+      <div style="font-size:15px;font-weight:700;letter-spacing:2px">${card.code}</div>
+      <div>Saldo ${formatCurrency(card.initial_value)}</div>
+      <div style="font-size:11px">${
+        card.expires_at
+          ? `Berlaku s/d ${new Date(card.expires_at).toLocaleDateString("id-ID")}`
+          : "Tanpa batas waktu"
+      }</div>
+    </div>`
+      )
+      .join("")}
+    <div class="center" style="font-size:11px">Simpan struk ini — kode berlaku sebagai saldo.</div>`
+        : ""
+    }
 
     ${notes ? `<div class="divider"></div>
     <div><strong>Catatan:</strong> ${notes}</div>` : ""}

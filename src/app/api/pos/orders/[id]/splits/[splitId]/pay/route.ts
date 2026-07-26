@@ -62,6 +62,17 @@ export async function POST(
     const changeAmount = amountPaid - splitTotal;
     const arkUsed = Number(ark_coins_used || 0);
 
+    // EPIC-034 Fase C — gift card belum didukung utk split bill (MVP):
+    // keputusan owner "1 transaksi 1 metode, full-cover" mengacu ke SATU
+    // transaksi utuh, sementara split memecah tagihan ke beberapa pembayar.
+    // Ditolak rapi supaya tidak ada jalur debit setengah-setengah.
+    if (payment_method === 'gift_card') {
+      return NextResponse.json(
+        { success: false, error: 'Gift card belum didukung untuk split bill' },
+        { status: 400 }
+      );
+    }
+
     // 1 pembayaran = 1 metode (EPIC-011): ARK Coin tidak dicampur metode lain,
     // dan harus menutup seluruh total split.
     if (arkUsed > 0 && payment_method !== 'ark_coin') {

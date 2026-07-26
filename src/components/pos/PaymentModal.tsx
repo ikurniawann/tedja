@@ -5,6 +5,7 @@ import {
   Banknote,
   CreditCard,
   Coins,
+  Gift,
   Loader2,
   QrCode,
   Ticket,
@@ -27,7 +28,13 @@ import { cn } from "@/lib/utils";
 import { formatIdrInput, parseIdrDigits } from "./idr-input";
 import type { CfdPayment } from "@/lib/pos/cfd";
 
-export type PaymentMethod = "cash" | "qris" | "credit_card" | "ark_coin" | "nfc_tab";
+export type PaymentMethod =
+  | "cash"
+  | "qris"
+  | "credit_card"
+  | "ark_coin"
+  | "nfc_tab"
+  | "gift_card";
 
 /** Hasil pratinjau tab ticketing (EPIC-023 Fase C) utk metode NFC Tab. */
 export interface NfcTabCheckResult {
@@ -36,6 +43,19 @@ export interface NfcTabCheckResult {
   contactName?: string;
   paymentMode?: "postpaid" | "prepaid";
   available?: number | null;
+}
+
+/**
+ * Hasil pratinjau gift card (EPIC-034 Fase C). INDIKATIF — saldo final tetap
+ * ditegakkan server saat debit ber-lock.
+ */
+export interface GiftCardCheckResult {
+  ok: boolean;
+  reason?: string;
+  balance?: number;
+  /** Saldo menutup SELURUH total (keputusan owner: full-cover only). */
+  covers?: boolean;
+  expiresAt?: string | null;
 }
 
 const PAYMENT_OPTIONS: Array<{
@@ -49,6 +69,7 @@ const PAYMENT_OPTIONS: Array<{
   { key: "credit_card", title: "Credit Card", desc: "Visa / Mastercard", icon: CreditCard },
   { key: "ark_coin", title: "ARK Coin", desc: "Member balance", icon: Coins },
   { key: "nfc_tab", title: "NFC Tab", desc: "Gelang ticketing", icon: Ticket },
+  { key: "gift_card", title: "Gift Card", desc: "Saldo kartu hadiah", icon: Gift },
 ];
 
 interface Props {
@@ -67,6 +88,8 @@ interface Props {
     arkToUse: number;
     /** UID gelang ticketing — terisi saat method 'nfc_tab' */
     nfcTabUid?: string;
+    /** Kode gift card — terisi saat method 'gift_card' (EPIC-034 Fase C) */
+    giftCardCode?: string;
   }) => void | Promise<void>;
   submitting?: boolean;
   formatCurrency: (v: number) => string;
@@ -77,6 +100,11 @@ interface Props {
    * opsi NFC Tab disembunyikan, mis. dipakai di luar kasir venue ticketing).
    */
   onCheckNfcTab?: (uid: string) => Promise<NfcTabCheckResult>;
+  /**
+   * EPIC-034 Fase C — pratinjau saldo gift card (opsional; tanpa prop ini
+   * opsi Gift Card disembunyikan, pola yang sama dgn NFC Tab).
+   */
+  onCheckGiftCard?: (code: string) => Promise<GiftCardCheckResult>;
   /**
    * EPIC-024 — sinkron state pembayaran ke customer display (opsional).
    * Bila diberikan: perubahan metode/tunai/QR dipancarkan; metode QRIS
@@ -97,6 +125,7 @@ export function PaymentModal({
   formatArk,
   onTapNFC,
   onCheckNfcTab,
+  onCheckGiftCard,
   onCfdPayment,
 }: Props) {
   const [method, setMethod] = useState<PaymentMethod>("cash");
@@ -113,6 +142,31 @@ export function PaymentModal({
   );
   const [qrisLoading, setQrisLoading] = useState(false);
   const [qrisError, setQrisError] = useState<string | null>(null);
+
+  // EPIC-034 Fase C — kode gift card diketik/di-scan kasir
+  const [giftCodeInput, setGiftCodeInput] = useState("");
+  const [giftChecking, setGiftChecking] = useState(false);
+  const [giftResult, setGiftResult] = useState<
+    (GiftCardCheckResult & { code: string }) | null
+  >(null);
+
+  const checkGiftCode = async (rawCode: string) => {
+    const code = rawCode.trim().toUpperCase();
+    if (!code || !onCheckGiftCard || giftChecking) return;
+    setGiftChecking(true);
+    try {
+      const result = await onCheckGiftCard(code);
+      setGiftResult({ ...result, code });
+    } catch (err) {
+      setGiftResult({
+        ok: false,
+        reason: err instanceof Error ? err.message : "Gagal memeriksa gift card",
+        code,
+      });
+    } finally {
+      setGiftChecking(false);
+    }
+  };
 
   const checkTabUid = async (rawUid: string) => {
     const uid = rawUid.trim();
@@ -151,10 +205,18 @@ export function PaymentModal({
       setArkToUse(0);
       setTabUidInput("");
       setTabResult(null);
+      setGiftCodeInput("");
+      setGiftResult(null);
       setQris(null);
       setQrisError(null);
     }
   }, [open]);
+
+  // Total berubah (item ditambah/dihapus) → hasil cek lama basi: saldo yang
+  // tadinya menutup bisa jadi kurang. Paksa kasir cek ulang.
+  useEffect(() => {
+    setGiftResult(null);
+  }, [total]);
 
   // Buat QR dinamis saat QRIS dipilih (sekali per nominal) — gagal bukan
   // penghalang bayar: kasir bisa lanjut dgn QRIS statis di meja.
@@ -220,12 +282,19 @@ export function PaymentModal({
     if (method === "nfc_tab") {
       return tabResult?.ok === true;
     }
+    if (method === "gift_card") {
+      // Full-cover only (keputusan owner): saldo kurang → kasir minta metode
+      // lain, tidak ada bayar sebagian.
+      return giftResult?.ok === true && giftResult.covers === true;
+    }
     return true;
   })();
 
-  const paymentOptions = PAYMENT_OPTIONS.filter(
-    (option) => option.key !== "nfc_tab" || Boolean(onCheckNfcTab)
-  );
+  const paymentOptions = PAYMENT_OPTIONS.filter((option) => {
+    if (option.key === "nfc_tab") return Boolean(onCheckNfcTab);
+    if (option.key === "gift_card") return Boolean(onCheckGiftCard);
+    return true;
+  });
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && !submitting && onClose()}>
@@ -393,6 +462,80 @@ export function PaymentModal({
             </div>
           )}
 
+          {method === "gift_card" && (
+            <div className="space-y-3 rounded-xl border border-violet-200/80 bg-violet-50 p-4">
+              <div className="flex items-center gap-2 text-sm font-semibold text-violet-800">
+                <Gift className="h-4 w-4" />
+                Masukkan kode gift card
+              </div>
+              <div className="flex gap-2">
+                <Input
+                  autoFocus
+                  placeholder="Contoh: ABCD2345EFGH"
+                  value={giftCodeInput}
+                  onChange={(e) => {
+                    setGiftCodeInput(e.target.value.toUpperCase());
+                    // Kode diubah → hasil cek sebelumnya tidak berlaku lagi
+                    if (giftResult) setGiftResult(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      void checkGiftCode(giftCodeInput);
+                    }
+                  }}
+                  disabled={submitting || giftChecking}
+                  className="h-11 border-violet-200/80 bg-white font-mono text-sm tracking-wider"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => void checkGiftCode(giftCodeInput)}
+                  disabled={submitting || giftChecking || !giftCodeInput.trim()}
+                  className="h-11 border-violet-200/80"
+                >
+                  Cek
+                </Button>
+              </div>
+              {giftChecking && (
+                <p className="text-xs text-violet-700/80">Memeriksa kartu…</p>
+              )}
+              {giftResult && !giftChecking && (
+                giftResult.ok ? (
+                  <div className="space-y-1 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Saldo kartu</span>
+                      <span className="font-semibold text-violet-700">
+                        {formatCurrency(giftResult.balance ?? 0)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Total tagihan</span>
+                      <span className="font-semibold text-foreground">
+                        {formatCurrency(total)}
+                      </span>
+                    </div>
+                    {giftResult.covers ? (
+                      <p className="text-sm font-medium text-emerald-600">
+                        Saldo menutup seluruh tagihan — sisa{" "}
+                        {formatCurrency(Math.max(0, (giftResult.balance ?? 0) - total))}
+                      </p>
+                    ) : (
+                      <p className="text-sm font-medium text-red-600">
+                        Saldo kurang {formatCurrency(total - (giftResult.balance ?? 0))} —
+                        gift card harus menutup seluruh tagihan, minta metode lain
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-sm font-medium text-red-600">
+                    {giftResult.reason || "Gift card tidak bisa dipakai"}
+                  </p>
+                )
+              )}
+            </div>
+          )}
+
           {method === "ark_coin" && !selectedCustomer && (
             <div className="space-y-3 rounded-xl border border-amber-200/80 bg-amber-50 p-4 text-center">
               <Wifi className="mx-auto h-8 w-8 text-amber-500" />
@@ -472,6 +615,10 @@ export function PaymentModal({
                 nfcTabUid:
                   method === "nfc_tab" && tabResult?.ok
                     ? tabResult.uid
+                    : undefined,
+                giftCardCode:
+                  method === "gift_card" && giftResult?.ok
+                    ? giftResult.code
                     : undefined,
               })
             }
