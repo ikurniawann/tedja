@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { successResponse } from "@/lib/api/auth";
-import { queryOne } from "@/lib/db";
+import { queryOne, withTransaction } from "@/lib/db";
+import { releasePromoRedemption } from "@/lib/promo/promo-server";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { requireTicketingContext } from "@/lib/ticketing/server";
 
@@ -90,6 +91,11 @@ export async function POST(
         { status: 409 }
       );
     }
+    // EPIC-032 B1 — batal melepas pemakaian promo (held ATAU captured);
+    // best-effort idempoten
+    await withTransaction((client) =>
+      releasePromoRedemption(client, "ticket_booking", id)
+    ).catch((err) => console.error("[ticketing] release promo error:", err));
     return successResponse(
       { id: cancelled.id },
       `Booking ${current.booking_code} dibatalkan`

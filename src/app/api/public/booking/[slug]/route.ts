@@ -25,6 +25,10 @@ import {
   loadActiveSlots,
 } from "@/lib/ticketing/capacity-server";
 import {
+  holdPromoRedemption,
+  releasePromoRedemption,
+} from "@/lib/promo/promo-server";
+import {
   createInvoice,
   getInvoiceExpiryHours,
   isXenditConfigured,
@@ -44,6 +48,9 @@ const createSchema = z.object({
   // EPIC-031 D — slot waktu: WAJIB bila venue punya slot aktif (dicek
   // server-side), dilarang bila tidak punya
   slot_id: z.string().uuid().optional(),
+  // EPIC-032 B1 — kode promo (opsional): dievaluasi & di-hold server-side
+  // di dalam transaksi; potongan TIDAK pernah dipercaya dari klien
+  promo_code: z.string().trim().min(3).max(40).optional(),
   items: z
     .array(
       z.object({
@@ -220,16 +227,17 @@ export async function POST(
 
     const total =
       Math.round(items.reduce((sum, i) => sum + i.subtotal, 0) * 100) / 100;
-    // Invoice Xendit IDR wajib rupiah bulat; simpanan DB tetap total 2dp
-    const invoiceAmount = Math.round(total);
 
     const accessToken = generateAccessToken();
     const expiresAt = new Date(
       Date.now() + getInvoiceExpiryHours() * 60 * 60 * 1000
     );
 
-    // Insert dgn retry tabrakan booking_code (23505) — pola kode TKT R1
+    // Insert dgn retry tabrakan booking_code (23505) — pola kode TKT R1.
+    // discount diketahui DI DALAM transaksi (hold promo) — dibawa keluar
+    // utk invoice net.
     let bookingId: string | null = null;
+    let discountAmount = 0;
     let bookingCode = "";
     for (let attempt = 0; attempt < 3 && !bookingId; attempt++) {
       bookingCode = generateBookingCode();
@@ -289,6 +297,29 @@ export async function POST(
             ]
           );
           const id = inserted.rows[0].id;
+
+          // EPIC-032 B1 — hold kode promo DI transaksi yang sama (advisory
+          // lock per campaign; 422 PromoRejectedError bila tak lolos).
+          // `total` booking TETAP GROSS; potongan di-snapshot terpisah dan
+          // yang ditagih Xendit = total - discount.
+          if (body.promo_code) {
+            const hold = await holdPromoRedemption(client, {
+              scope: venueScope,
+              code: body.promo_code,
+              channel: "ticketing_online",
+              contextType: "ticket_booking",
+              contextId: id,
+              subtotal: total,
+              phone,
+            });
+            await client.query(
+              `UPDATE ticketing.ticket_bookings
+               SET discount_amount = $2, promo_code = $3, updated_at = now()
+               WHERE id = $1`,
+              [id, hold.discount, body.promo_code.toUpperCase()]
+            );
+            discountAmount = hold.discount;
+          }
           let position = 0;
           let bundleUnitNo = 0;
           for (const item of items) {
@@ -387,9 +418,11 @@ export async function POST(
     const statusUrl = `${baseUrl}/booking/status/${accessToken}`;
 
     try {
+      // Yang ditagih = total GROSS − potongan promo; Xendit IDR rupiah bulat
+      const payable = Math.round(total - discountAmount);
       const invoice = await createInvoice({
         externalId: `tkt-booking-${bookingId}`,
-        amount: invoiceAmount,
+        amount: payable,
         payerName: body.customer_name,
         description: `Tiket ${bookingCode} — kunjungan ${body.visit_date}`,
         redirectUrl: statusUrl,
@@ -413,6 +446,8 @@ export async function POST(
           status_url: statusUrl,
           invoice_url: invoice.invoiceUrl,
           total,
+          discount_amount: discountAmount,
+          payable: Math.round((total - discountAmount) * 100) / 100,
           expires_at: invoice.expiresAt.toISOString(),
         },
         "Booking dibuat — selesaikan pembayaran"
@@ -427,6 +462,15 @@ export async function POST(
          WHERE id = $1 AND status = 'menunggu-bayar'`,
         [bookingId]
       );
+      // Lepas hold promo (idempoten; jatah kode kembali)
+      if (discountAmount > 0) {
+        const releasedId = bookingId;
+        await withTransaction((client) =>
+          releasePromoRedemption(client, "ticket_booking", releasedId)
+        ).catch((releaseErr) =>
+          console.error("[booking] release promo error:", releaseErr)
+        );
+      }
       return NextResponse.json(
         { success: false, error: "Pembayaran sedang gangguan — coba lagi" },
         { status: 502 }

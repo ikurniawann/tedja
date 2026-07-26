@@ -12,6 +12,23 @@ export interface PaidBookingWaInput {
   customer_name: string;
   customer_phone: string;
   total: string | number;
+  /** EPIC-032 B1 — potongan promo (opsional; 0/undefined = tanpa promo). */
+  discount_amount?: string | number | null;
+}
+
+/** Baris total: tanpa promo = 1 baris; dgn promo = rincian potongan. */
+function buildTotalLines(booking: PaidBookingWaInput): string {
+  const total = Number(booking.total);
+  const discount = Number(booking.discount_amount ?? 0);
+  if (discount <= 0) {
+    return `Total: Rp${total.toLocaleString("id-ID")}\n\n`;
+  }
+  const paid = Math.round((total - discount) * 100) / 100;
+  return (
+    `Total: Rp${total.toLocaleString("id-ID")}\n` +
+    `Potongan promo: -Rp${discount.toLocaleString("id-ID")}\n` +
+    `Dibayar: Rp${paid.toLocaleString("id-ID")}\n\n`
+  );
 }
 
 export async function sendBookingPaidWa(
@@ -31,7 +48,7 @@ export async function sendBookingPaidWa(
     `Kode booking: *${booking.booking_code}*\n` +
     `Tanggal kunjungan: ${booking.visit_date}\n` +
     `Atas nama: ${booking.customer_name}\n` +
-    `Total: Rp${Number(booking.total).toLocaleString("id-ID")}\n\n` +
+    buildTotalLines(booking) +
     `Tunjukkan QR di halaman ini ke petugas loket:\n${statusUrl}`;
 
   const result = await sendGatewayText(config, {

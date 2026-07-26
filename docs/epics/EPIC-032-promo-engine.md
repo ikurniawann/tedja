@@ -254,4 +254,37 @@ independen dari engine (bisa maju duluan bila owner mau).
     id non-UUID → 500 kosmetik) diterima apa adanya.
   - Verdict reviewer: permukaan API promo sendiri solid (guard, tenant
     scoping, parameterized, zod). Verifikasi pasca-fix: tsc bersih, build
-    OK → pm2 restart, smoke 307/401/200 normal.
+    OK → pm2 restart, smoke 307/401/200 normal. Commit 7f081709 (pushed).
+- 2026-07-26 — **B1 SELESAI (termasuk inti ledger B3 yang DITARIK MAJU),
+  live dev**:
+  - Migrasi `20260726130000`: bookings + `discount_amount` (CHECK 0..total)
+    + `promo_code`; **`total` TETAP GROSS** (semantik lama utuh — asersi
+    net-0 redeem tak berubah); jenis ledger BARU `diskon` (kredit) di
+    chk_charge_direction + tab.ts CHARGE_TYPES (840 test lib tetap hijau).
+  - Endpoint publik `POST /[slug]/promo-check` (rate-limit 15/mnt,
+    indikatif, anti-enumerasi).
+  - Create booking: terima `promo_code` → hold DI transaksi (advisory lock
+    campaign) setelah insert booking → snapshot discount/promo_code;
+    **invoice Xendit = total − diskon**; gagal-invoice → release. 422
+    pesan ramah bila kode tak lolos.
+  - Webhook: cek-silang PAID pakai **tagihan NET** (total − diskon; bug
+    kalau tidak: PAID net selalu dianggap kurang bayar); PAID → capture;
+    EXPIRED → release. Lazy expiry (`expireBookingIfDue`) & cancel
+    dashboard → release. **KEPUTUSAN AKUNTANSI: `hangus` TIDAK release**
+    — uang sudah dibayar ber-diskon, pemakaian kode final (beda dari
+    kedaluwarsa yang tak pernah dibayar).
+  - Ledger redeem (inti B3): kredit `pembayaran` = NET (uang riil) +
+    kredit `diskon` = potongan → Σkredit = gross = Σdebit tiket, net-0
+    dipertahankan TANPA melonggarkan asersi.
+  - Status publik expose discount/payable (+ slot jam — utang known
+    limitation EPIC-031 ikut lunas di API); WA terbayar menampilkan
+    Total/Potongan/Dibayar.
+  - **E2E live dev penuh**: promo-check valid & kode ngawur (pesan sama);
+    booking promo lowercase `zsmokeb1` → total 75rb, diskon 10rb, payable
+    65rb, redemption `held`, usage 1; kode salah → 422; **webhook PAID
+    amount NET 65rb → terbayar TANPA alert + `captured`**; booking kedua →
+    usage 2 → webhook EXPIRED → `released` + usage turun ke 1; cleanup 0
+    sisa. Build sempat 2× gagal fetch font Google (DNS flaky — retry
+    sukses, isu known).
+  - Sisa utk B2: input kode di wizard + tampilan potongan di halaman
+    status publik (API-nya sudah siap).

@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { query, queryOne } from "@/lib/db";
+import { query, queryOne, withTransaction } from "@/lib/db";
+import {
+  capturePromoRedemption,
+  releasePromoRedemption,
+} from "@/lib/promo/promo-server";
 import { checkRateLimit, clientIpFrom } from "@/lib/public/rate-limit";
 import { sendBookingPaidWa } from "@/lib/ticketing/booking-wa";
 import { sendPassPaidWa } from "@/lib/ticketing/pass-wa";
@@ -36,6 +40,7 @@ interface PaidBookingRow {
   customer_name: string;
   customer_phone: string;
   total: string;
+  discount_amount: string | null;
 }
 
 export async function POST(request: NextRequest) {
@@ -141,15 +146,27 @@ export async function POST(request: NextRequest) {
       // → JANGAN tandai lunas; log utk investigasi manual. ACK 200 supaya
       // Xendit tidak retry callback yang memang kami tolak.
       if (callback.amount !== undefined) {
-        const expected = await queryOne<{ total: string }>(
-          `SELECT total FROM ticketing.ticket_bookings WHERE id = $1::uuid`,
+        const expected = await queryOne<{
+          total: string;
+          discount_amount: string;
+        }>(
+          `SELECT total, discount_amount
+           FROM ticketing.ticket_bookings WHERE id = $1::uuid`,
           [bookingId]
         );
+        // EPIC-032 B1: yang ditagih = total GROSS − potongan promo.
         // Toleransi pembulatan 1 rupiah (invoice Xendit = rupiah bulat)
-        if (expected && callback.amount < Math.floor(Number(expected.total))) {
+        const expectedPayable = expected
+          ? Number(expected.total) - Number(expected.discount_amount)
+          : null;
+        if (
+          expected &&
+          expectedPayable !== null &&
+          callback.amount < Math.floor(expectedPayable)
+        ) {
           console.error(
             `[booking] webhook PAID nominal janggal: booking ${bookingId} ` +
-              `total ${expected.total}, callback amount ${callback.amount} — diabaikan`
+              `tagihan ${expectedPayable}, callback amount ${callback.amount} — diabaikan`
           );
           // Simpan sebagai alert — tampil di dashboard Booking sampai
           // petugas menandainya selesai (bukan cuma jejak di log server)
@@ -159,7 +176,7 @@ export async function POST(request: NextRequest) {
              WHERE id = $1::uuid`,
             [
               bookingId,
-              `Xendit melapor PAID dengan nominal Rp${callback.amount.toLocaleString("id-ID")} — kurang dari total booking Rp${Number(expected.total).toLocaleString("id-ID")}. Pembayaran TIDAK ditandai lunas; periksa dashboard Xendit.`,
+              `Xendit melapor PAID dengan nominal Rp${callback.amount.toLocaleString("id-ID")} — kurang dari tagihan booking Rp${expectedPayable.toLocaleString("id-ID")}. Pembayaran TIDAK ditandai lunas; periksa dashboard Xendit.`,
             ]
           );
           return NextResponse.json({ success: true, ignored: true });
@@ -176,10 +193,17 @@ export async function POST(request: NextRequest) {
              updated_at = now()
          WHERE id = $1::uuid AND status IN ('menunggu-bayar', 'kedaluwarsa')
          RETURNING id, booking_code, access_token, visit_date::text AS visit_date,
-                   customer_name, customer_phone, total`,
+                   customer_name, customer_phone, total, discount_amount`,
         [bookingId, callback.paid_at ?? null, callback.id]
       );
       if (paid) {
+        // EPIC-032 B1 — pemakaian promo jadi FINAL (held → captured);
+        // idempoten, callback ulang tak menggandakan
+        await withTransaction((client) =>
+          capturePromoRedemption(client, "ticket_booking", bookingId)
+        ).catch((err) =>
+          console.error("[booking] capture promo error:", err)
+        );
         await sendBookingPaidWa(paid);
       } else {
         // 0 baris = callback ulang yang sah (terbayar/digunakan) ATAU
@@ -209,12 +233,21 @@ export async function POST(request: NextRequest) {
     }
 
     if (callback.status === "EXPIRED") {
-      await query(
+      const expired = await query<{ id: string }>(
         `UPDATE ticketing.ticket_bookings
          SET status = 'kedaluwarsa', updated_at = now()
-         WHERE id = $1::uuid AND status = 'menunggu-bayar'`,
+         WHERE id = $1::uuid AND status = 'menunggu-bayar'
+         RETURNING id`,
         [bookingId]
       );
+      // EPIC-032 B1 — lepas hold promo (jatah kode kembali); idempoten
+      if (expired.length > 0) {
+        await withTransaction((client) =>
+          releasePromoRedemption(client, "ticket_booking", bookingId)
+        ).catch((err) =>
+          console.error("[booking] release promo error:", err)
+        );
+      }
       return NextResponse.json({ success: true });
     }
 

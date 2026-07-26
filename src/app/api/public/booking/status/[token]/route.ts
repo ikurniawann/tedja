@@ -21,6 +21,11 @@ interface BookingRow {
   customer_name: string;
   status: string;
   total: string;
+  discount_amount: string | null;
+  promo_code: string | null;
+  slot_label: string | null;
+  slot_start_time: string | null;
+  slot_end_time: string | null;
   xendit_invoice_url: string | null;
   expires_at: string | null;
   paid_at: string | null;
@@ -45,7 +50,9 @@ export async function GET(
 
     const booking = await queryOne<BookingRow>(
       `SELECT id, booking_code, visit_date::text AS visit_date, customer_name,
-              status, total, xendit_invoice_url,
+              status, total, discount_amount, promo_code, xendit_invoice_url,
+              slot_label, slot_start_time::text AS slot_start_time,
+              slot_end_time::text AS slot_end_time,
               expires_at::text AS expires_at, paid_at::text AS paid_at,
               used_at::text AS used_at
        FROM ticketing.ticket_bookings
@@ -90,6 +97,17 @@ export async function GET(
       customer_name: booking.customer_name,
       status,
       total: Number(booking.total),
+      // EPIC-032 B1 — potongan promo (0 = tanpa promo) + jumlah dibayar
+      discount_amount: Number(booking.discount_amount ?? 0),
+      promo_code: booking.promo_code,
+      payable:
+        Math.round(
+          (Number(booking.total) - Number(booking.discount_amount ?? 0)) * 100
+        ) / 100,
+      // EPIC-031 D — jam slot (null = sepanjang hari)
+      slot_label: booking.slot_label,
+      slot_start_time: booking.slot_start_time?.slice(0, 5) ?? null,
+      slot_end_time: booking.slot_end_time?.slice(0, 5) ?? null,
       // Link bayar hanya relevan selama masih menunggu
       invoice_url: status === "menunggu-bayar" ? booking.xendit_invoice_url : null,
       expires_at: booking.expires_at,

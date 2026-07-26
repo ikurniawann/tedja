@@ -50,6 +50,8 @@ interface LockedBookingRow {
   slot_label: string | null;
   slot_start_time: string | null;
   slot_end_time: string | null;
+  discount_amount: string | null;
+  promo_code: string | null;
 }
 
 export async function POST(
@@ -104,7 +106,8 @@ export async function POST(
         `SELECT id, booking_code, visit_date::text AS visit_date,
                 customer_name, customer_phone, status, total,
                 slot_label, slot_start_time::text AS slot_start_time,
-                slot_end_time::text AS slot_end_time
+                slot_end_time::text AS slot_end_time,
+                discount_amount, promo_code
          FROM ticketing.ticket_bookings
          WHERE id = $1 AND branch_id = $2 AND company_id = $3
          FOR UPDATE`,
@@ -413,8 +416,13 @@ export async function POST(
         }
       }
 
-      // Baris pembayaran senilai total booking → tab net 0
-      if (total > 0) {
+      // EPIC-032 B1 — visit tetap net-0 dgn promo: Σ debit tiket = total
+      // GROSS; sisi kredit = pembayaran (uang riil = total − diskon) +
+      // baris `diskon` (potongan promo, kredit non-uang). Tanpa promo,
+      // perilaku identik lama (pembayaran = total).
+      const discount = Number(booking.discount_amount ?? 0);
+      const paidAmount = Math.round((total - discount) * 100) / 100;
+      if (paidAmount > 0) {
         await client.query(
           `INSERT INTO ticketing.ticket_visit_charges
              (company_id, branch_id, visit_id, charge_type, direction,
@@ -425,7 +433,23 @@ export async function POST(
             ctx.branchId,
             visitId,
             `Pembayaran booking ${booking.booking_code} (Xendit, prepaid online)`,
-            total,
+            paidAmount,
+            ctx.user.id,
+          ]
+        );
+      }
+      if (discount > 0) {
+        await client.query(
+          `INSERT INTO ticketing.ticket_visit_charges
+             (company_id, branch_id, visit_id, charge_type, direction,
+              description, amount, created_by)
+           VALUES ($1, $2, $3, 'diskon', 'kredit', $4, $5, $6)`,
+          [
+            ctx.companyId,
+            ctx.branchId,
+            visitId,
+            `Potongan promo ${booking.promo_code ?? ""} — booking ${booking.booking_code}`,
+            discount,
             ctx.user.id,
           ]
         );

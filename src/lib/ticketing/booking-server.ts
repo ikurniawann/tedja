@@ -4,7 +4,8 @@
 // pernah mengembalikan id internal venue ke klien; ctx hanya dipakai
 // untuk query berikutnya di server.
 
-import { query, queryOne } from "@/lib/db";
+import { query, queryOne, withTransaction } from "@/lib/db";
+import { releasePromoRedemption } from "@/lib/promo/promo-server";
 import { expandBundleMembers, type BundleMember } from "./bundle";
 import {
   isDateBlockedOnline,
@@ -321,5 +322,12 @@ export async function expireBookingIfDue(bookingId: string): Promise<boolean> {
      RETURNING id`,
     [bookingId]
   );
+  // EPIC-032 B1 — kedaluwarsa melepas hold promo (jatah kode kembali);
+  // best-effort idempoten: gagal release ≠ gagal expiry
+  if (updated.length > 0) {
+    await withTransaction((client) =>
+      releasePromoRedemption(client, "ticket_booking", bookingId)
+    ).catch((err) => console.error("[booking] release promo error:", err));
+  }
   return updated.length > 0;
 }

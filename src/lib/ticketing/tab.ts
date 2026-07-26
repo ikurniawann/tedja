@@ -1,7 +1,8 @@
 // Matematika ledger tab dua arah (EPIC-023 Fase B). Fungsi murni tanpa DB:
 // debit = tagihan (tiket/fnb/denda/koreksi/refund-deposit), kredit = uang
-// masuk (deposit/pembayaran). Amount di ledger selalu positif; arah dari
-// direction. Semua nominal dibulatkan 2dp agar bebas drift float.
+// masuk (deposit/pembayaran) + potongan promo (diskon, EPIC-032 B1).
+// Amount di ledger selalu positif; arah dari direction. Semua nominal
+// dibulatkan 2dp agar bebas drift float.
 
 export const CHARGE_TYPES = [
   "tiket",
@@ -11,14 +12,19 @@ export const CHARGE_TYPES = [
   "refund-deposit",
   "deposit",
   "pembayaran",
+  // EPIC-032: potongan promo — kredit non-uang agar visit ber-diskon tetap
+  // net-0 (debit gross = pembayaran net + diskon)
+  "diskon",
 ] as const;
 export type ChargeType = (typeof CHARGE_TYPES)[number];
 
 export type ChargeDirection = "debit" | "kredit";
 
-/** Arah baku per jenis charge — uang masuk kredit, selain itu debit. */
+/** Arah baku per jenis charge — uang masuk/potongan kredit, selain itu debit. */
 export function directionForChargeType(type: ChargeType): ChargeDirection {
-  return type === "deposit" || type === "pembayaran" ? "kredit" : "debit";
+  return type === "deposit" || type === "pembayaran" || type === "diskon"
+    ? "kredit"
+    : "debit";
 }
 
 export interface TabEntry {
