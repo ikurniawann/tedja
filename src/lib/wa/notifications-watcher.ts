@@ -90,10 +90,12 @@ async function maybeSendStokHabis(): Promise<void> {
   if (!config.enabled || !config.types.stokHabis) return;
 
   // Definisi mengikuti fetchLowStock desktop, dipersempit ke NOL persis.
+  // Kolom "satuan" tidak ada di item.raw_materials — JOIN ke item.units.
   const rows = await query<{ id: string; nama: string; satuan: string | null }>(
-    `SELECT rm.id, rm.nama, rm.satuan
+    `SELECT rm.id, rm.nama, u.nama AS satuan
        FROM inventory.inventory i
        JOIN item.raw_materials rm ON rm.id = i.raw_material_id
+       LEFT JOIN item.units u ON u.id = rm.satuan_besar_id
       WHERE i.is_active
         AND rm.deleted_at IS NULL
         AND i.qty_available <= 0
