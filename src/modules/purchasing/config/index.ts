@@ -124,6 +124,7 @@ const ROUTE_ROLE_MAP: Record<string, Role[]> = {
   "reports/po-summary": ["purchasing_staff", "purchasing_manager", "purchasing_admin", "super_admin", "viewer"],
   "reports/po-detail": ["purchasing_staff", "purchasing_manager", "purchasing_admin", "super_admin", "viewer"],
   "reports/supplier-performance": ["purchasing_manager", "purchasing_admin", "super_admin", "viewer"],
+  "reports/production-in-house": ["purchasing_staff", "purchasing_manager", "purchasing_admin", "super_admin", "warehouse_admin", "warehouse_staff", "viewer"],
   "reports/hpp-breakdown": ["purchasing_staff", "purchasing_manager", "purchasing_admin", "super_admin"],
 };
 

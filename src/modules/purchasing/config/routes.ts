@@ -68,6 +68,7 @@ export type PurchasingRoute =
   | "reports.po-summary"
   | "reports.po-detail"
   | "reports.supplier-performance"
+  | "reports.production-in-house"
   | "reports.hpp-breakdown";
 
 export interface RouteDefinition {
@@ -279,6 +280,11 @@ export const ROUTES: RouteDefinition[] = [
     meta: { label: "Supplier Performance", icon: "UserGroupIcon" },
   },
   {
+    route: "reports.production-in-house",
+    path: "/dashboard/purchasing/reports/production-in-house",
+    meta: { label: "Production In-House", icon: "CubeIcon" },
+  },
+  {
     route: "reports.hpp-breakdown",
     path: "/dashboard/purchasing/reports/hpp-breakdown",
     meta: { label: "HPP Produk", icon: "CalculatorIcon" },
@@ -353,6 +359,6 @@ export const SIDEBAR_SECTIONS: { label: string; routes: PurchasingRoute[] }[] = 
   },
   {
     label: "Reports",
-    routes: ["reports.stock-card", "reports.inventory-valuation", "reports.po-summary", "reports.po-detail", "reports.supplier-performance", "reports.hpp-breakdown"],
+    routes: ["reports.stock-card", "reports.inventory-valuation", "reports.po-summary", "reports.po-detail", "reports.supplier-performance", "reports.production-in-house", "reports.hpp-breakdown"],
   },
 ];

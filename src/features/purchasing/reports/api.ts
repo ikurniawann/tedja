@@ -10,6 +10,8 @@ import type {
   StockCardParams,
   StockCardResponse,
   SupplierPerfRow,
+  ProductionInHouseParams,
+  ProductionInHouseResult,
 } from "./types";
 
 export type * from "./types";
@@ -150,4 +152,39 @@ export async function getPoDetailReport(
     throw new Error(result?.message || result?.error || "Gagal memuat laporan Detail PO");
   }
   return result.data.summary || [];
+}
+
+export async function getProductionInHouseReport(
+  params: ProductionInHouseParams
+): Promise<ProductionInHouseResult> {
+  const sp = buildParams({ ...params });
+  const response = await fetch(`${BASE}/production-in-house?${sp.toString()}`);
+  const result = await response.json().catch(() => null);
+  if (!response.ok || !result?.success) {
+    throw new Error(
+      result?.message || result?.error || "Gagal memuat laporan Production In-House"
+    );
+  }
+  return {
+    orders: result.data.orders || [],
+    byStatus: result.data.by_status || [],
+    summary: result.data.summary || {
+      total_orders: 0,
+      total_planned_qty: 0,
+      total_actual_qty: 0,
+      total_hpp_value: 0,
+      completed_orders: 0,
+    },
+  };
+}
+
+export async function exportProductionInHouseReport(
+  params: ProductionInHouseParams
+): Promise<Blob> {
+  const sp = buildParams({ ...params, export: "csv" });
+  const response = await fetch(`${BASE}/production-in-house?${sp.toString()}`);
+  if (!response.ok) {
+    throw new Error("Gagal export laporan Production In-House");
+  }
+  return response.blob();
 }

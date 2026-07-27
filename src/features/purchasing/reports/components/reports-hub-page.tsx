@@ -10,6 +10,7 @@ import {
   BuildingOfficeIcon,
   ArrowRightIcon,
   ClipboardDocumentListIcon,
+  CubeIcon,
 } from "@heroicons/react/24/outline";
 
 const REPORT_CARDS = [
@@ -52,6 +53,14 @@ const REPORT_CARDS = [
     description: "Evaluasi supplier berdasarkan ketepatan pengiriman, reject rate, lead time, dan total transaksi.",
     accent: "text-green-600",
     bg: "bg-green-50",
+  },
+  {
+    href: "/dashboard/purchasing/reports/production-in-house",
+    icon: CubeIcon,
+    title: "Production In-House",
+    description: "Rekap order produksi produk per periode, status, output type, qty, dan nilai HPP.",
+    accent: "text-indigo-600",
+    bg: "bg-indigo-50",
   },
 ];
 
