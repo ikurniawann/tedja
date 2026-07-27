@@ -38,6 +38,7 @@ const METHOD_LABELS: Record<string, string> = {
   credit_card: "Kartu",
   ark_coin: "ARK Coin",
   nfc_tab: "NFC Tab",
+  gift_card: "Gift Card",
 };
 
 interface CustomerDisplayPageProps {

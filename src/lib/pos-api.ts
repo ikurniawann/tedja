@@ -40,6 +40,11 @@ export interface Product {
   image_url?: string;
   xp?: number;
   station?: string;
+  /**
+   * EPIC-034 Fase B — 'gift_card' = penjualan saldo titipan: nominal diketik
+   * kasir (bukan harga katalog) dan kartu terbit saat order lunas.
+   */
+  product_kind?: 'regular' | 'gift_card';
   variants?: ProductVariant[];
   modifiers?: ProductModifier[];
 };
@@ -383,13 +388,18 @@ export interface CreateOrderRequest {
   tax_amount?: number;
   service_charge_amount?: number;
   total_amount: number;
-  payment_method?: 'cash' | 'qris' | 'debit' | 'credit' | 'ark_coin' | 'nfc_tab';
+  payment_method?: 'cash' | 'qris' | 'debit' | 'credit' | 'ark_coin' | 'nfc_tab' | 'gift_card';
   amount_paid?: number;
   notes?: string;
   special_requests?: string;
   ark_coins_used?: number;
   /** UID gelang ticketing — wajib saat payment_method 'nfc_tab' (EPIC-023) */
   nfc_tab_uid?: string;
+  /** Kode kartu — wajib saat payment_method 'gift_card' (EPIC-034 Fase C) */
+  gift_card_code?: string;
+  /** Pembeli gift card — nomor dipakai kirim kode via WA (EPIC-034 Fase B) */
+  gift_card_buyer_name?: string;
+  gift_card_buyer_phone?: string;
   /** Server-side recalculation flag (client sends for audit only) */
   include_tax?: boolean;
   /** Membership discount percentage sent for server validation */
@@ -400,8 +410,21 @@ export interface CreateOrderRequest {
   shift_id?: string;
 }
 
+export interface IssuedGiftCardResponse {
+  code: string;
+  initial_value: number;
+  expires_at: string | null;
+}
+
 export async function createOrder(order: CreateOrderRequest) {
-  return fetchAPI<{ success: boolean; data: any; error?: string }>('/orders', {
+  return fetchAPI<{
+    success: boolean;
+    data: any;
+    error?: string;
+    /** EPIC-034 Fase B — kartu yang terbit dari penjualan gift card. */
+    gift_cards?: IssuedGiftCardResponse[];
+    gift_card_error?: string | null;
+  }>('/orders', {
     method: 'POST',
     body: JSON.stringify(order),
   });

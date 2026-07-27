@@ -51,6 +51,11 @@ export const CRM_INBOX_ROLES: UserRole[] = ["super_admin", "admin", "pos_supervi
 // tampil publik dan paling berisiko bagi citra bisnis.
 export const CRM_REVIEW_APPROVER_ROLES: UserRole[] = ["super_admin", "admin"];
 
+// EPIC-033 — kampanye marketing WA: pengelola = super_admin + marketing
+// (role EPIC-032 A4). Master switch pengiriman TIDAK di sini (lihat
+// campaign-config: PUT-nya super_admin only).
+export const CRM_CAMPAIGN_ROLES: UserRole[] = ["super_admin", "marketing"];
+
 async function requireCrmRoles(allowed: UserRole[]): Promise<
   { error: NextResponse; user: null } | { error: null; user: { id: string; role: UserRole } }
 > {
@@ -80,6 +85,10 @@ async function requireCrmRoles(allowed: UserRole[]): Promise<
  * Guard role untuk operasi redeem reward (klaim/approve). Mengembalikan
  * NextResponse (401/403) bila tidak berwenang, atau user yang lolos.
  */
+export function requireCrmCampaign() {
+  return requireCrmRoles(CRM_CAMPAIGN_ROLES);
+}
+
 export function requireCrmOperator() {
   return requireCrmRoles(CRM_OPERATOR_ROLES);
 }

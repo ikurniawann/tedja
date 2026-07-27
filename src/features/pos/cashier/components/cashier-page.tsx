@@ -48,6 +48,10 @@ import { CartPanel } from '@/components/pos/CartPanel';
 import { CustomizationModal, type SelectedCustomization } from '@/components/pos/CustomizationModal';
 import { PaymentModal, type PaymentMethod } from '@/components/pos/PaymentModal';
 import {
+  GiftCardSaleDialog,
+  type GiftCardSaleValues,
+} from '@/components/pos/GiftCardSaleDialog';
+import {
   firstNameOnly,
   idleCfdState,
   publishCfdState,
@@ -214,6 +218,14 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
 
   /* EPIC-024 — state pembayaran dari PaymentModal utk customer display */
   const [cfdPayment, setCfdPayment] = useState<CfdPayment | null>(null);
+
+  /* EPIC-034 Fase B — jual gift card: produk yang sedang dijual + data
+     pembeli (nomor WA dipakai mengirim kode setelah lunas). */
+  const [giftCardProduct, setGiftCardProduct] = useState<Product | null>(null);
+  const [giftCardBuyer, setGiftCardBuyer] = useState<{
+    name: string | null;
+    phone: string | null;
+  } | null>(null);
 
   /* Offline */
   const { isOnline } = usePosOnline();
@@ -509,6 +521,13 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
   const openCustomization = useCallback((product: Product) => {
     if (!requireActiveShift()) return;
 
+    // EPIC-034 Fase B — gift card bukan produk biasa: harganya TIDAK dari
+    // katalog, kasir memilih nominal dulu di dialog khusus.
+    if (product.product_kind === 'gift_card') {
+      setGiftCardProduct(product);
+      return;
+    }
+
     if ((product.variants && product.variants.length > 0) || (product.modifiers && product.modifiers.length > 0)) {
       const firstVariant = product.variants?.[0]?.id ?? null;
       const defaultModifiers: Record<string, string[]> = {};
@@ -537,6 +556,30 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       });
     }
   }, [cart, requireActiveShift]);
+
+  /* EPIC-034 Fase B — nominal gift card dikonfirmasi → masuk keranjang.
+     Harga baris = nominal yang dipilih; server memvalidasi ulang. */
+  const handleConfirmGiftCardSale = useCallback((values: GiftCardSaleValues) => {
+    const product = giftCardProduct;
+    if (!product) return;
+    cart.addItem({
+      // id unik per nominal supaya dua nominal berbeda tidak digabung jadi
+      // satu baris keranjang (kartu berbeda, saldo berbeda)
+      id: `${product.id}-${values.nominal}`,
+      productId: product.id,
+      name: `${product.name} ${formatCurrency(values.nominal)}`,
+      price: values.nominal,
+      quantity: values.quantity,
+      imageUrl: product.image_url,
+      station: product.station,
+    });
+    setGiftCardBuyer(
+      values.buyerName || values.buyerPhone
+        ? { name: values.buyerName, phone: values.buyerPhone }
+        : null
+    );
+    setGiftCardProduct(null);
+  }, [cart, giftCardProduct]);
 
   const selectProductFromSearch = useCallback((product: Product) => {
     openCustomization(product);
@@ -643,10 +686,102 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
   const handleCreateOrder = useCallback(async (overrides?: {
     method?: PaymentMethod;
     nfcTabUid?: string;
+    giftCardCode?: string;
   }) => {
     if (processingPayment) return;
     if (cart.items.length === 0) return;
     if (!requireActiveShift()) return;
+
+    // EPIC-034 Fase C — bayar dgn saldo gift card. Kode dioper eksplisit dari
+    // PaymentModal (state paymentMethod belum ter-flush di tick yang sama),
+    // alasan yang sama dgn NFC Tab di bawah. Debit-nya server-authoritative:
+    // saldo kurang / kartu mati ditolak di sana, bukan di klien.
+    if (overrides?.method === 'gift_card') {
+      const giftCardCode = overrides.giftCardCode?.trim().toUpperCase() || '';
+      if (!giftCardCode) { toast.error('Masukkan kode gift card dulu'); return; }
+      if (!isOnline) {
+        toast.error('Pembayaran gift card membutuhkan koneksi — gunakan metode lain saat offline');
+        return;
+      }
+
+      setProcessingPayment(true);
+      try {
+        let orderId: string;
+        let orderNumber: string;
+        const cTotal = cart.total;
+
+        if (paymentOrderId) {
+          const data = await payOpenOrderMutation.mutateAsync({
+            orderId: paymentOrderId,
+            payload: {
+              status: 'completed',
+              payment_status: 'paid',
+              payment_method: 'gift_card',
+              amount_paid: 0,
+              ark_coins_used: 0,
+              gift_card_code: giftCardCode,
+            },
+          });
+          orderId = paymentOrderId;
+          orderNumber = payingOrderNumber || data.data?.order_number || paymentOrderId;
+        } else {
+          const res = await checkout({
+            cart: cart.items,
+            orderType: cart.orderType,
+            selectedTable: effectiveTableId,
+            selectedCustomer,
+            paymentMethod: 'gift_card',
+            cashReceived: '',
+            includeTax: cart.includeTax,
+            notes: cart.notes,
+            arkToUse: 0,
+            shiftId: shift?.id || null,
+            giftCardCode,
+            promo: promoApplied,
+          });
+          if (!res.success) {
+            toast.error(res.error || 'Pembayaran gift card gagal');
+            setProcessingPayment(false);
+            return;
+          }
+          orderId = res.orderId || '';
+          orderNumber = res.orderNumber || '';
+        }
+
+        const receipt: ReceiptPayload = {
+          orderId,
+          orderNumber,
+          orderType: cart.orderType,
+          table: selectedTableDisplay,
+          items: [...cart.items],
+          notes: cart.notes,
+          total: cTotal,
+          change: 0,
+          paymentMethod: 'gift_card',
+          customerName: selectedCustomer?.name,
+          discountAmount,
+          taxAmount,
+        };
+        storeResultPayload(receipt);
+        setShowPayment(false);
+        setLastResultType('standard');
+        cart.clearCart();
+        setCashReceived('');
+        setPaymentMethod('cash');
+        setCurrentArkToUse(0);
+        loadedPaymentOrderRef.current = null;
+        if (paymentOrderId && !deferReturnToRestaurant()) {
+          router.replace(homeRoute);
+        } else if (!paymentOrderId) {
+          deferReturnToRestaurant();
+        }
+      } catch (e: unknown) {
+        toast.error(e instanceof Error ? e.message : 'Pembayaran gift card gagal');
+      } finally {
+        setProcessingPayment(false);
+      }
+      return;
+    }
 
     // NFC Tab (EPIC-023 Fase C): nilai dioper eksplisit dari PaymentModal —
     // state paymentMethod belum ter-flush di tick yang sama (stale closure).
@@ -871,10 +1006,16 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       notes: cart.notes,
       arkToUse: paymentMethod === 'ark_coin' ? arkToUseCapped : 0,
       shiftId: shift?.id || null,
+      giftCardBuyer,
       promo: promoApplied,
     });
 
     if (res.success) {
+      // EPIC-034 Fase B — order lunas tapi kartu gagal terbit: uang sudah
+      // diterima, jadi jangan diam — kasir wajib melihat peringatannya.
+      if (res.giftCardError) {
+        toast.error(res.giftCardError, { duration: 15000 });
+      }
       const receipt: ReceiptPayload = {
         orderId: res.orderId,
         orderNumber: res.orderNumber,
@@ -888,8 +1029,10 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         customerName: selectedCustomer?.name,
         discountAmount,
         taxAmount,
+        giftCards: res.giftCards,
       };
       storeResultPayload(receipt);
+      setGiftCardBuyer(null);
       // Saldo ARK/XP customer berubah di server — segarkan cache kasir
       if (selectedCustomer) void refetchCustomers();
       setShowPayment(false);
@@ -903,7 +1046,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       toast.error(res.error || 'Payment failed');
     }
     setProcessingPayment(false);
-  }, [cart, paymentMethod, selectedCustomer, cashReceived, totalAfterArk, checkout, discountAmount, taxAmount, arkToUseCapped, isOnline, enqueue, membershipDiscount, shift, refreshCount, paymentOrderId, payingOrderNumber, router, processingPayment, selectedTableDisplay, effectiveTableId, requireActiveShift, payOpenOrderMutation, deferReturnToRestaurant, storeResultPayload, refetchCustomers, promoApplied]);
+  }, [cart, paymentMethod, selectedCustomer, cashReceived, totalAfterArk, checkout, discountAmount, taxAmount, arkToUseCapped, isOnline, enqueue, membershipDiscount, shift, refreshCount, paymentOrderId, payingOrderNumber, router, processingPayment, selectedTableDisplay, effectiveTableId, requireActiveShift, payOpenOrderMutation, deferReturnToRestaurant, storeResultPayload, refetchCustomers, promoApplied, giftCardBuyer]);
 
   /* Split Bill */
   const handleConfirmSplit = useCallback(async (config: SplitConfig) => {
@@ -1735,18 +1878,41 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         selectedCustomer={selectedCustomer}
         onClose={() => setShowPayment(false)}
         submitting={processingPayment || submitting}
-        onConfirm={async ({ method, cashReceived, arkToUse, nfcTabUid }) => {
+        onConfirm={async ({ method, cashReceived, arkToUse, nfcTabUid, giftCardCode }) => {
           setPaymentMethod(method);
           setCashReceived(cashReceived);
           setCurrentArkToUse(arkToUse);
           await handleCreateOrder(
-            method === 'nfc_tab' ? { method, nfcTabUid } : undefined
+            method === 'nfc_tab'
+              ? { method, nfcTabUid }
+              : method === 'gift_card'
+                ? { method, giftCardCode }
+                : undefined
           );
         }}
         formatCurrency={formatCurrency}
         formatArk={formatArk}
         onTapNFC={() => setShowNFC(true)}
         onCfdPayment={setCfdPayment}
+        onCheckGiftCard={async (code) => {
+          const res = await fetch('/api/pos/gift-card-check', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code, total }),
+          });
+          const body = await res.json();
+          if (!res.ok) {
+            return { ok: false, reason: body.error || 'Gagal memeriksa gift card' };
+          }
+          const data = body.data || {};
+          return {
+            ok: Boolean(data.ok),
+            reason: data.reason,
+            balance: data.balance,
+            covers: data.covers,
+            expiresAt: data.expires_at,
+          };
+        }}
         onCheckNfcTab={async (uid) => {
           const res = await fetch('/api/ticketing/tab/check', {
             method: 'POST',
@@ -1767,6 +1933,17 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
           };
         }}
       />
+
+      {/* ── EPIC-034 Fase B — jual gift card (nominal diketik kasir) ── */}
+      {giftCardProduct && (
+        <GiftCardSaleDialog
+          open
+          productName={giftCardProduct.name}
+          onClose={() => setGiftCardProduct(null)}
+          onConfirm={handleConfirmGiftCardSale}
+          formatCurrency={formatCurrency}
+        />
+      )}
 
       {/* ── NFC Modal ── */}
       <NFCModal

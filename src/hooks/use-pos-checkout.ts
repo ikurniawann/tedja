@@ -16,6 +16,10 @@ export interface PaymentResult {
   snapshotTable: string | null;
   snapshotNotes: string;
   xpEarned?: number;
+  /** EPIC-034 Fase B — kartu yang terbit dari order ini (kode dicetak struk). */
+  giftCards?: Array<{ code: string; initial_value: number; expires_at: string | null }>;
+  /** Terisi bila order LUNAS tapi kartu gagal terbit — wajib ditampilkan. */
+  giftCardError?: string | null;
 }
 
 export function usePosCheckout() {
@@ -34,6 +38,8 @@ export function usePosCheckout() {
       arkToUse,
       shiftId,
       nfcTabUid,
+      giftCardCode,
+      giftCardBuyer,
       promo,
     }: {
       cart: PosCartItem[];
@@ -48,6 +54,10 @@ export function usePosCheckout() {
       shiftId?: string | null;
       /** UID gelang ticketing — wajib saat paymentMethod 'nfc_tab' */
       nfcTabUid?: string;
+      /** EPIC-034 Fase C — kode kartu, wajib saat paymentMethod 'gift_card' */
+      giftCardCode?: string;
+      /** EPIC-034 Fase B — pembeli gift card; nomor dipakai kirim kode via WA */
+      giftCardBuyer?: { name?: string | null; phone?: string | null } | null;
       /** EPIC-032 C2 — kode promo ter-apply (diskon preview dari server). */
       promo?: { code: string; discount: number } | null;
     }): Promise<PaymentResult> => {
@@ -97,7 +107,9 @@ export function usePosCheckout() {
             ? Number(parseFloat(cashReceived) || total)
             : paymentMethod === "nfc_tab"
               ? 0 // tagihan pindah ke tab ticketing — kasir tidak menerima uang
-              : total;
+              : paymentMethod === "gift_card"
+                ? 0 // dibayar dari saldo kartu — laci kasir tidak menerima uang
+                : total;
 
         const payload: CreateOrderRequest = {
           order_type: orderType as any,
@@ -110,7 +122,7 @@ export function usePosCheckout() {
           tax_amount: tax,
           service_charge_amount: 0,
           total_amount: total,
-          payment_method: paymentMethod === "qris" ? "qris" : paymentMethod === "credit_card" ? "credit" : paymentMethod === "ark_coin" ? "ark_coin" : paymentMethod === "nfc_tab" ? "nfc_tab" : "cash",
+          payment_method: paymentMethod === "qris" ? "qris" : paymentMethod === "credit_card" ? "credit" : paymentMethod === "ark_coin" ? "ark_coin" : paymentMethod === "nfc_tab" ? "nfc_tab" : paymentMethod === "gift_card" ? "gift_card" : "cash",
           amount_paid: paidAmount,
           include_tax: includeTax,
           membership_discount_pct: discountPct,
@@ -119,6 +131,9 @@ export function usePosCheckout() {
           ark_coins_used: paymentMethod === "ark_coin" ? arkToUse : 0,
           shift_id: shiftId || undefined,
           nfc_tab_uid: paymentMethod === "nfc_tab" ? nfcTabUid : undefined,
+          gift_card_code: paymentMethod === "gift_card" ? giftCardCode : undefined,
+          gift_card_buyer_name: giftCardBuyer?.name || undefined,
+          gift_card_buyer_phone: giftCardBuyer?.phone || undefined,
         };
 
         const response = await createOrder(payload);
@@ -136,6 +151,8 @@ export function usePosCheckout() {
           total,
           change,
           xpEarned: response.data?.xp_earned,
+          giftCards: response.gift_cards,
+          giftCardError: response.gift_card_error ?? null,
           ...snap,
         };
       } catch (err: any) {
