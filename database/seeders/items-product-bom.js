@@ -81,7 +81,7 @@ const DEMO_MENUS = [
     components: [
       ["BB-DAGING-010", 0.35, "KG"],
       ["BB-SAUS-005", 25, "ML"],
-      ["BB-SAUS-007", 15, "ML"], // Madu
+      ["BB-SAUS-007", 15, "GR"], // Madu (master: GR/KG)
       ["BB-SAYUR-003", 10, "GR"],
       ["BB-OIL-001", 20, "ML"],
       ["BB-BUMBU-003", 5, "GR"], // Garam Refina
@@ -101,7 +101,7 @@ const DEMO_MENUS = [
     components: [
       ["BB-DAGING-011", 0.25, "KG"], // Sayap Ayam
       ["BB-OIL-001", 50, "ML"],
-      ["BB-SAUS-008", 20, "ML"], // Chili sauce
+      ["BB-SAUS-008", 20, "GR"], // Chili sauce (master: GR/KG)
       ["BB-BUMBU-003", 3, "GR"],
     ],
   },
