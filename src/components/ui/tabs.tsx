@@ -14,6 +14,14 @@ function Tabs({
     <TabsPrimitive.Root
       data-slot="tabs"
       data-orientation={orientation}
+      // Seluruh utility layout di bawah (root, list, trigger, garis bawah)
+      // memakai varian boolean `data-horizontal:` / `data-vertical:` yang di
+      // CSS jadi selector `[data-horizontal]`. Base UI cuma merender
+      // `data-orientation`, jadi atribut boolean ini WAJIB ikut ditulis —
+      // tanpanya root tetap flex-row dan daftar tab tampil di samping panel.
+      {...(orientation === "vertical"
+        ? { "data-vertical": "" }
+        : { "data-horizontal": "" })}
       className={cn(
         "group/tabs flex gap-2 data-horizontal:flex-col",
         className
