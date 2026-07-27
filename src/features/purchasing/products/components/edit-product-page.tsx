@@ -124,8 +124,12 @@ export function EditProductPage() {
       satuan_id: productData.satuan_id || productData.unit_id || "",
       warehouse_id: productData.warehouse_id || "",
       deskripsi: productData.deskripsi || "",
-      harga_jual: productData.harga_jual || 0,
-      markup_persen: productData.markup_persen ?? 30,
+      // pg numeric often arrives as string — coerce before submit/Zod
+      harga_jual: Number(productData.harga_jual) || 0,
+      markup_persen:
+        productData.markup_persen == null || productData.markup_persen === ""
+          ? 30
+          : Number(productData.markup_persen),
       is_active: productData.is_active ?? true,
       production_output_type:
         productData.production_output_type === "WIP" ? "WIP" : "FINISHED_GOOD",
@@ -193,7 +197,9 @@ export function EditProductPage() {
         id: productId,
         payload: {
           ...formData,
-          harga_modal: totalCost,
+          harga_jual: Number(formData.harga_jual) || 0,
+          markup_persen: Number(formData.markup_persen) || 0,
+          harga_modal: Number(totalCost) || 0,
         },
       });
       toast.success("Product updated successfully");

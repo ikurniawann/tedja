@@ -19,9 +19,9 @@ const productSchema = z.object({
   kategori: z.string().optional(),
   satuan_id: z.string().uuid().optional(),
   warehouse_id: z.string().uuid("Stall wajib dipilih"),
-  harga_jual: z.number().min(0).default(0),
-  harga_modal: z.number().min(0).optional(),
-  markup_persen: z.number().optional(),
+  harga_jual: z.coerce.number().min(0).default(0),
+  harga_modal: z.coerce.number().min(0).optional(),
+  markup_persen: z.coerce.number().optional(),
   production_output_type: z.enum(["FINISHED_GOOD", "WIP"]).default("FINISHED_GOOD").optional(),
 });
 

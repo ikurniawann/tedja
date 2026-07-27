@@ -1,65 +1,142 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
+import { ArrowPathIcon, DocumentArrowDownIcon } from "@heroicons/react/24/outline";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Combobox } from "@/components/ui/combobox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { DatePicker } from "@/components/ui/datepicker";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
-import { Download, Filter, Package, DollarSign, TrendingUp, Calendar } from "lucide-react";
-import { toast } from "sonner";
+import { formatRupiah } from "@/lib/purchasing/utils";
+import { useSupplierList } from "@/features/purchasing/suppliers/queries";
 import { usePoSummary } from "../queries";
 import { exportPoSummary } from "../api";
 
+const STATUS_OPTIONS = [
+  { value: "all", label: "Semua Status" },
+  { value: "draft", label: "Draft" },
+  { value: "pending_approval", label: "Pending Approval" },
+  { value: "approved", label: "Approved" },
+  { value: "sent", label: "Sent" },
+  { value: "partial", label: "Partially Received" },
+  { value: "partially_received", label: "Partially Received" },
+  { value: "received", label: "Fully Received" },
+  { value: "rejected", label: "Rejected" },
+  { value: "cancelled", label: "Cancelled" },
+];
+
+const STATUS_STYLES: Record<string, string> = {
+  draft: "border-gray-200/80 bg-gray-50 text-gray-700",
+  pending_approval: "border-amber-200/80 bg-amber-50 text-amber-700",
+  approved: "border-blue-200/80 bg-blue-50 text-blue-700",
+  sent: "border-violet-200/80 bg-violet-50 text-violet-700",
+  partial: "border-amber-200/80 bg-amber-50 text-amber-700",
+  partially_received: "border-amber-200/80 bg-amber-50 text-amber-700",
+  received: "border-emerald-200/80 bg-emerald-50 text-emerald-700",
+  rejected: "border-red-200/80 bg-red-50 text-red-700",
+  cancelled: "border-red-200/80 bg-red-50 text-red-700",
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  draft: "Draft",
+  pending_approval: "Pending Approval",
+  approved: "Approved",
+  sent: "Sent",
+  partial: "Partially Received",
+  partially_received: "Partially Received",
+  received: "Fully Received",
+  rejected: "Rejected",
+  cancelled: "Cancelled",
+};
+
+function formatDate(dateStr?: string | null) {
+  if (!dateStr) return "-";
+  return new Intl.DateTimeFormat("id-ID", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }).format(new Date(dateStr));
+}
+
+function StatusBadge({ status }: { status: string }) {
+  const key = status.toLowerCase();
+  return (
+    <Badge
+      variant="outline"
+      className={STATUS_STYLES[key] || "border-border bg-muted/50 text-muted-foreground"}
+    >
+      {STATUS_LABELS[key] || status}
+    </Badge>
+  );
+}
+
 export function POSummaryReport() {
-  // Filters
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
-  const [statusFilter, setStatusFilter] = useState("");
-  const [vendorId, setVendorId] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [vendorId, setVendorId] = useState("all");
+  const [exporting, setExporting] = useState<"csv" | "json" | null>(null);
+
+  const suppliersQuery = useSupplierList({ is_active: true, limit: 100 });
+  const supplierOptions = useMemo(
+    () => [
+      { value: "all", label: "Semua Supplier" },
+      ...(suppliersQuery.data?.data ?? []).map((s) => ({
+        value: s.id,
+        label: `${s.kode || s.kode_supplier || "-"} — ${s.nama_supplier}`,
+      })),
+    ],
+    [suppliersQuery.data?.data]
+  );
 
   const summaryQuery = usePoSummary({
     date_from: dateFrom || undefined,
     date_to: dateTo || undefined,
-    status: statusFilter || undefined,
-    vendor_id: vendorId || undefined,
+    status: statusFilter === "all" ? undefined : statusFilter,
+    vendor_id: vendorId === "all" ? undefined : vendorId,
   });
+
   const data = summaryQuery.data?.summary ?? [];
   const statusSummary = summaryQuery.data?.byStatus ?? [];
   const grandTotal = summaryQuery.data?.grandTotal ?? 0;
-  const loading = summaryQuery.isLoading;
+  const loading = summaryQuery.isLoading || summaryQuery.isFetching;
 
   useEffect(() => {
     if (summaryQuery.isError) {
       console.error("Error loading report:", summaryQuery.error);
-      toast.error("Gagal memuat laporan PO Summary");
+      toast.error(
+        summaryQuery.error instanceof Error
+          ? summaryQuery.error.message
+          : "Gagal memuat laporan PO Summary"
+      );
     }
   }, [summaryQuery.isError, summaryQuery.error]);
 
+  const approved = statusSummary.find((s) => s.status === "approved");
+  const received = statusSummary.find(
+    (s) => s.status === "received" || s.status === "partially_received" || s.status === "partial"
+  );
+  const receivedCount = statusSummary
+    .filter((s) => ["received", "partially_received", "partial"].includes(s.status))
+    .reduce((sum, s) => sum + s.count, 0);
+  const receivedTotal = statusSummary
+    .filter((s) => ["received", "partially_received", "partial"].includes(s.status))
+    .reduce((sum, s) => sum + s.total, 0);
+
+  const maxStatusTotal =
+    statusSummary.length > 0 ? Math.max(...statusSummary.map((s) => s.total), 1) : 1;
+
   const handleExport = async (format: "csv" | "json") => {
+    setExporting(format);
     try {
       const { blob, extension } = await exportPoSummary(
         {
           date_from: dateFrom || undefined,
           date_to: dateTo || undefined,
-          status: statusFilter || undefined,
-          vendor_id: vendorId || undefined,
+          status: statusFilter === "all" ? undefined : statusFilter,
+          vendor_id: vendorId === "all" ? undefined : vendorId,
         },
         format
       );
@@ -71,259 +148,267 @@ export function POSummaryReport() {
       a.click();
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
-      toast.success(`${extension.toUpperCase()} exported successfully`);
+      toast.success(`${extension.toUpperCase()} berhasil diexport`);
     } catch (error) {
       console.error("Error exporting:", error);
-      toast.error("Gagal export laporan");
+      toast.error(error instanceof Error ? error.message : "Gagal export laporan");
+    } finally {
+      setExporting(null);
     }
   };
 
-  const getStatusBadge = (status: string) => {
-    const styles: Record<string, string> = {
-      DRAFT: "bg-gray-100 text-gray-800",
-      APPROVED: "bg-blue-100 text-blue-800",
-      SENT: "bg-purple-100 text-purple-800",
-      PARTIAL: "bg-yellow-100 text-yellow-800",
-      RECEIVED: "bg-green-100 text-green-800",
-      CANCELLED: "bg-red-100 text-red-800",
-    };
-    return <Badge className={styles[status] || "bg-gray-100 text-gray-600"}>{status}</Badge>;
-  };
-
-  const formatDate = (dateStr?: string) => {
-    if (!dateStr) return "-";
-    return new Date(dateStr).toLocaleDateString("id-ID", {
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-    });
-  };
-
-  const formatCurrency = (amount: number) => {
-    return `Rp ${amount.toLocaleString("id-ID")}`;
-  };
-
   return (
-    <div className="container mx-auto py-6 space-y-6">
-      {/* Header */}
-      <div className="flex justify-between items-center">
+    <div className="space-y-6 p-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold">PO Summary Report</h1>
-          <p className="text-muted-foreground">Ringkasan Purchase Order</p>
+          <h1 className="text-2xl font-bold text-foreground">PO Summary</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Rekapitulasi PO per periode, supplier, dan status beserta nilai total.
+          </p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => handleExport("csv")}>
-            <Download className="w-4 h-4 mr-2" />
-            Export CSV
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => summaryQuery.refetch()}
+            disabled={loading}
+          >
+            <ArrowPathIcon className={`mr-1 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+            Refresh
           </Button>
-          <Button variant="outline" onClick={() => handleExport("json")}>
-            <Download className="w-4 h-4 mr-2" />
-            Export JSON
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => handleExport("csv")}
+            disabled={!!exporting || data.length === 0}
+          >
+            <DocumentArrowDownIcon className="mr-1 h-4 w-4" />
+            {exporting === "csv" ? "Exporting..." : "Export CSV"}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => handleExport("json")}
+            disabled={!!exporting || data.length === 0}
+          >
+            <DocumentArrowDownIcon className="mr-1 h-4 w-4" />
+            {exporting === "json" ? "Exporting..." : "Export JSON"}
           </Button>
         </div>
       </div>
 
-      {/* Filters */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Filter className="w-5 h-5" />
-            Filters
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="space-y-2">
-              <Label>Dari Tanggal</Label>
+      <Card className="border-border shadow-xs">
+        <CardContent className="pt-4">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Dari Tanggal</Label>
               <Input
                 type="date"
                 value={dateFrom}
                 onChange={(e) => setDateFrom(e.target.value)}
+                className="h-10"
               />
             </div>
-            <div className="space-y-2">
-              <Label>Sampai Tanggal</Label>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Sampai Tanggal</Label>
               <Input
                 type="date"
                 value={dateTo}
                 onChange={(e) => setDateTo(e.target.value)}
+                className="h-10"
               />
             </div>
-            <div className="space-y-2">
-              <Label>Status</Label>
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Semua Status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="">Semua Status</SelectItem>
-                  <SelectItem value="DRAFT">Draft</SelectItem>
-                  <SelectItem value="APPROVED">Approved</SelectItem>
-                  <SelectItem value="SENT">Sent</SelectItem>
-                  <SelectItem value="PARTIAL">Partial</SelectItem>
-                  <SelectItem value="RECEIVED">Received</SelectItem>
-                  <SelectItem value="CANCELLED">Cancelled</SelectItem>
-                </SelectContent>
-              </Select>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Status</Label>
+              <Combobox
+                options={STATUS_OPTIONS}
+                value={statusFilter}
+                onChange={setStatusFilter}
+                placeholder="Semua Status"
+                searchPlaceholder="Cari status..."
+                emptyMessage="Status tidak ditemukan"
+                className="h-10"
+              />
             </div>
-            <div className="space-y-2">
-              <Label>Vendor</Label>
-              <Input
-                placeholder="Search vendor..."
+            <div className="space-y-1.5">
+              <Label className="text-xs">Supplier</Label>
+              <Combobox
+                options={supplierOptions}
                 value={vendorId}
-                onChange={(e) => setVendorId(e.target.value)}
+                onChange={setVendorId}
+                placeholder="Semua Supplier"
+                searchPlaceholder="Cari supplier..."
+                emptyMessage="Supplier tidak ditemukan"
+                className="h-10"
               />
             </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total PO</CardTitle>
-            <Package className="w-4 h-4 text-muted-foreground" />
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <Card className="border-border shadow-xs">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Total PO</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{data.length}</div>
-            <p className="text-xs text-muted-foreground">Purchase Orders</p>
+            <p className="text-2xl font-bold text-foreground">{data.length}</p>
+            <p className="mt-1 text-xs text-muted-foreground">Purchase Order ditampilkan</p>
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Grand Total</CardTitle>
-            <DollarSign className="w-4 h-4 text-muted-foreground" />
+        <Card className="border-border shadow-xs">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Grand Total</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(grandTotal)}</div>
-            <p className="text-xs text-muted-foreground">Total Value</p>
+            <p className="text-2xl font-bold text-primary">{formatRupiah(grandTotal)}</p>
+            <p className="mt-1 text-xs text-muted-foreground">Nilai keseluruhan</p>
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Approved</CardTitle>
-            <TrendingUp className="w-4 h-4 text-muted-foreground" />
+        <Card className="border-border shadow-xs">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Approved</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              {statusSummary.find(s => s.status === "APPROVED")?.count || 0}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {formatCurrency(statusSummary.find(s => s.status === "APPROVED")?.total || 0)}
+            <p className="text-2xl font-bold text-blue-600">{approved?.count || 0}</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {formatRupiah(approved?.total || 0)}
             </p>
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Received</CardTitle>
-            <Calendar className="w-4 h-4 text-muted-foreground" />
+        <Card className="border-border shadow-xs">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Received</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              {statusSummary.find(s => s.status === "RECEIVED")?.count || 0}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {formatCurrency(statusSummary.find(s => s.status === "RECEIVED")?.total || 0)}
+            <p className="text-2xl font-bold text-emerald-600">
+              {receivedCount || received?.count || 0}
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {formatRupiah(receivedTotal || received?.total || 0)}
             </p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Status Breakdown */}
-      {statusSummary.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Status Breakdown</CardTitle>
+      <div className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
+        <Card className="border-border shadow-xs">
+          <CardHeader className="border-b border-gray-200/70 pb-3">
+            <CardTitle className="text-base">Breakdown Status</CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-              {statusSummary.map((item) => (
-                <div key={item.status} className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <Badge className={
-                      item.status === "DRAFT" ? "bg-gray-100 text-gray-800" :
-                      item.status === "APPROVED" ? "bg-blue-100 text-blue-800" :
-                      item.status === "SENT" ? "bg-purple-100 text-purple-800" :
-                      item.status === "PARTIAL" ? "bg-yellow-100 text-yellow-800" :
-                      item.status === "RECEIVED" ? "bg-green-100 text-green-800" :
-                      "bg-red-100 text-red-800"
-                    }>
-                      {item.status}
-                    </Badge>
+          <CardContent className="space-y-4 p-4">
+            {loading ? (
+              <p className="py-8 text-center text-sm text-muted-foreground">Memuat...</p>
+            ) : statusSummary.length === 0 ? (
+              <p className="py-8 text-center text-sm text-muted-foreground">Tidak ada data</p>
+            ) : (
+              statusSummary.map((item) => {
+                const pct = grandTotal > 0 ? (item.total / grandTotal) * 100 : 0;
+                const barPct = maxStatusTotal > 0 ? (item.total / maxStatusTotal) * 100 : 0;
+                return (
+                  <div key={item.status} className="space-y-1.5">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <p className="text-sm font-medium text-foreground">
+                          {STATUS_LABELS[item.status] || item.status}
+                        </p>
+                        <p className="text-xs text-muted-foreground">{item.count} PO</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-semibold text-foreground">
+                          {formatRupiah(item.total)}
+                        </p>
+                        <p className="text-xs text-muted-foreground">{pct.toFixed(1)}%</p>
+                      </div>
+                    </div>
+                    <div className="h-2 overflow-hidden rounded-full bg-muted">
+                      <div
+                        className="h-2 rounded-full bg-primary/70 transition-all"
+                        style={{ width: `${barPct}%` }}
+                      />
+                    </div>
                   </div>
-                  <div className="text-lg font-bold">{item.count}</div>
-                  <div className="text-xs text-muted-foreground">
-                    {formatCurrency(item.total)}
-                  </div>
-                </div>
-              ))}
+                );
+              })
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="border-border shadow-xs">
+          <CardHeader className="flex flex-row items-center justify-between border-b border-gray-200/70 pb-3">
+            <CardTitle className="text-base">Detail Purchase Orders</CardTitle>
+            <Badge
+              variant="secondary"
+              className="border-border bg-muted/50 text-muted-foreground"
+            >
+              {data.length} baris
+            </Badge>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto px-4">
+              <table className="w-full min-w-220 text-sm">
+                <thead className="bg-muted/50 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  <tr>
+                    <th className="px-3 py-3">PO Number</th>
+                    <th className="px-3 py-3">Supplier</th>
+                    <th className="px-3 py-3">Status</th>
+                    <th className="px-3 py-3">Tanggal PO</th>
+                    <th className="px-3 py-3 text-right">Items</th>
+                    <th className="px-3 py-3 text-right">Total</th>
+                    <th className="px-3 py-3">Created By</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {loading ? (
+                    <tr>
+                      <td colSpan={7} className="px-3 py-12 text-center text-muted-foreground">
+                        Memuat data...
+                      </td>
+                    </tr>
+                  ) : data.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="px-3 py-12 text-center text-muted-foreground">
+                        Tidak ada data PO untuk filter ini
+                      </td>
+                    </tr>
+                  ) : (
+                    data.map((po) => (
+                      <tr
+                        key={po.po_number}
+                        className="border-t border-gray-200/70 hover:bg-muted/30"
+                      >
+                        <td className="px-3 py-3 font-medium text-foreground">{po.po_number}</td>
+                        <td className="px-3 py-3">
+                          <div className="text-foreground">{po.vendor}</div>
+                          {po.vendor_code ? (
+                            <div className="text-xs text-muted-foreground">{po.vendor_code}</div>
+                          ) : null}
+                        </td>
+                        <td className="px-3 py-3">
+                          <StatusBadge status={po.status} />
+                        </td>
+                        <td className="px-3 py-3 text-muted-foreground">
+                          {formatDate(po.tanggal_po)}
+                        </td>
+                        <td className="px-3 py-3 text-right text-muted-foreground">
+                          {po.item_count}
+                        </td>
+                        <td className="px-3 py-3 text-right font-medium text-foreground">
+                          {po.total_amount_formatted}
+                        </td>
+                        <td className="px-3 py-3 text-muted-foreground">{po.created_by}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <div className="border-t border-gray-200/70 px-4 py-3 text-xs text-muted-foreground">
+              Total nilai: {formatRupiah(grandTotal)}
             </div>
           </CardContent>
         </Card>
-      )}
-
-      {/* Detail Table */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Detail Purchase Orders</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <div className="text-center py-12">Memuat data...</div>
-          ) : data.length === 0 ? (
-            <div className="text-center py-12 text-muted-foreground">
-              Tidak ada data PO untuk periode ini
-            </div>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>PO Number</TableHead>
-                  <TableHead>Vendor</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Tanggal PO</TableHead>
-                  <TableHead>Items</TableHead>
-                  <TableHead className="text-right">Total Amount</TableHead>
-                  <TableHead>Created By</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {data.map((po) => (
-                  <TableRow key={po.po_number}>
-                    <TableCell className="font-medium">{po.po_number}</TableCell>
-                    <TableCell>
-                      <div>{po.vendor}</div>
-                      <div className="text-xs text-muted-foreground">{po.vendor_code}</div>
-                    </TableCell>
-                    <TableCell>
-                      <StatusBadge status={po.status} />
-                    </TableCell>
-                    <TableCell>{formatDate(po.tanggal_po)}</TableCell>
-                    <TableCell>{po.item_count} items</TableCell>
-                    <TableCell className="text-right font-medium">
-                      {po.total_amount_formatted}
-                    </TableCell>
-                    <TableCell>{po.created_by}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
+      </div>
     </div>
   );
-}
-
-function StatusBadge({ status }: { status: string }) {
-  const styles: Record<string, string> = {
-    DRAFT: "bg-gray-100 text-gray-800",
-    APPROVED: "bg-blue-100 text-blue-800",
-    SENT: "bg-purple-100 text-purple-800",
-    PARTIAL: "bg-yellow-100 text-yellow-800",
-    RECEIVED: "bg-green-100 text-green-800",
-    CANCELLED: "bg-red-100 text-red-800",
-  };
-  return <Badge className={styles[status] || "bg-gray-100 text-gray-600"}>{status}</Badge>;
 }

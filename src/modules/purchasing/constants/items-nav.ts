@@ -158,11 +158,22 @@ export const ITEMS_NAV_GROUPS = [
     label: "Product",
     items: PRODUCT_NAV_GROUPS.flatMap((g) => [...g.items]),
   },
+  {
+    label: "Reports",
+    items: [
+      { href: "/dashboard/purchasing/reports/stock-card", label: "Stock Card" },
+      { href: "/dashboard/purchasing/reports/inventory-valuation", label: "Inventory Valuation" },
+      { href: "/dashboard/purchasing/reports/po-summary", label: "PO Summary" },
+      { href: "/dashboard/purchasing/reports/po-detail", label: "PO Detail" },
+      { href: "/dashboard/purchasing/reports/supplier-performance", label: "Supplier Performance" },
+    ],
+  },
 ] as const;
 
 export const ITEMS_ACTIVE_PATHS = [
   ITEMS_LANDING_PATH,
   "/dashboard/purchasing/items",
+  "/dashboard/purchasing/reports",
   ...RAW_MATERIAL_NAV_GROUPS.flatMap((g) => g.items.map((i) => i.href)),
   ...PRODUCT_NAV_GROUPS.flatMap((g) => g.items.map((i) => i.href)),
 ] as const;

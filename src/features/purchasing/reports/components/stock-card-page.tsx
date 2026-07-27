@@ -2,16 +2,22 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { ArrowPathIcon, DocumentArrowDownIcon, MagnifyingGlassIcon } from "@heroicons/react/24/outline";
+import { ArrowPathIcon, DocumentArrowDownIcon } from "@heroicons/react/24/outline";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Combobox } from "@/components/ui/combobox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { STALL_LABELS } from "@/lib/configuration/stall-labels";
 import { formatRupiah } from "@/lib/purchasing/utils";
+import { listStockWarehouses } from "@/features/inventory/stock/api";
 import { useStockCard } from "../queries";
-import type { StockMovement, StockMovementType as MovementType } from "../types";
+import type {
+  StockCardItemType,
+  StockMovement,
+  StockMovementType as MovementType,
+} from "../types";
 
 const TYPE_LABELS: Record<MovementType, string> = {
   all: "Semua Tipe",
@@ -23,16 +29,18 @@ const TYPE_LABELS: Record<MovementType, string> = {
 };
 
 const TYPE_STYLES: Record<Exclude<MovementType, "all">, string> = {
-  in: "border-emerald-200 bg-emerald-50 text-emerald-700",
-  out: "border-red-200 bg-red-50 text-red-700",
-  adjustment: "border-amber-200 bg-amber-50 text-amber-700",
-  transfer: "border-sky-200 bg-sky-50 text-sky-700",
-  return: "border-violet-200 bg-violet-50 text-violet-700",
+  in: "border-emerald-200/80 bg-emerald-50 text-emerald-700",
+  out: "border-red-200/80 bg-red-50 text-red-700",
+  adjustment: "border-amber-200/80 bg-amber-50 text-amber-700",
+  transfer: "border-sky-200/80 bg-sky-50 text-sky-700",
+  return: "border-violet-200/80 bg-violet-50 text-violet-700",
 };
 
 function formatNumber(value: unknown) {
   const numeric = Number(value);
-  return new Intl.NumberFormat("id-ID", { maximumFractionDigits: 3 }).format(Number.isFinite(numeric) ? numeric : 0);
+  return new Intl.NumberFormat("id-ID", { maximumFractionDigits: 3 }).format(
+    Number.isFinite(numeric) ? numeric : 0
+  );
 }
 
 function formatDate(value: string | null) {
@@ -53,24 +61,64 @@ function movementDelta(movement: StockMovement) {
 }
 
 export function StockCardPage() {
-  const [selectedMaterial, setSelectedMaterial] = useState("all");
-  const [materialSearch, setMaterialSearch] = useState("");
-  const [appliedSearch, setAppliedSearch] = useState("");
+  const [itemType, setItemType] = useState<StockCardItemType>("raw_material");
+  const [selectedItem, setSelectedItem] = useState("all");
+  const [warehouseId, setWarehouseId] = useState("all");
   const [movementType, setMovementType] = useState<MovementType>("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [urlFilterReady, setUrlFilterReady] = useState(false);
+  const [warehouses, setWarehouses] = useState<{ id: string; name: string; code: string }[]>([]);
+  const [loadingWarehouses, setLoadingWarehouses] = useState(true);
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
-    const materialId = new URLSearchParams(window.location.search).get("material_id");
-    if (materialId) setSelectedMaterial(materialId);
+    const params = new URLSearchParams(window.location.search);
+    const materialId = params.get("material_id");
+    const productId = params.get("product_id");
+    const type = params.get("item_type");
+    const stall = params.get("warehouse_id");
+    if (type === "product" || productId) setItemType("product");
+    if (materialId) {
+      setItemType("raw_material");
+      setSelectedItem(materialId);
+    }
+    if (productId) {
+      setItemType("product");
+      setSelectedItem(productId);
+    }
+    if (stall) setWarehouseId(stall);
     setUrlFilterReady(true);
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    setLoadingWarehouses(true);
+    listStockWarehouses()
+      .then((rows) => {
+        if (!cancelled) setWarehouses(rows);
+      })
+      .catch((error) => {
+        console.error(error);
+        if (!cancelled) toast.error("Gagal memuat daftar stall");
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingWarehouses(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    setSelectedItem("all");
+  }, [itemType]);
+
   const stockCardQuery = useStockCard(
     {
-      material_id: selectedMaterial !== "all" ? selectedMaterial : undefined,
-      search: appliedSearch || undefined,
+      item_type: itemType,
+      item_id: selectedItem !== "all" ? selectedItem : undefined,
+      warehouse_id: warehouseId !== "all" ? warehouseId : undefined,
       tipe: movementType !== "all" ? movementType : undefined,
       date_from: dateFrom || undefined,
       date_to: dateTo || undefined,
@@ -80,8 +128,6 @@ export function StockCardPage() {
   );
   const data = stockCardQuery.data ?? null;
   const loading = !urlFilterReady || stockCardQuery.isLoading || stockCardQuery.isFetching;
-
-  const loadData = () => stockCardQuery.refetch();
 
   useEffect(() => {
     if (stockCardQuery.isError) {
@@ -94,278 +140,401 @@ export function StockCardPage() {
     }
   }, [stockCardQuery.isError, stockCardQuery.error]);
 
-  const selectedMaterialData = data?.selected_material || null;
+  const selectedItemData = data?.selected_item || data?.selected_material || null;
   const movements = data?.movements || [];
-  const materials = useMemo(() => data?.materials || [], [data?.materials]);
+  const items = useMemo(
+    () => data?.items || data?.materials || [],
+    [data?.items, data?.materials]
+  );
   const summary = data?.summary;
 
-  const totalPositive = (summary?.total_in || 0) + (summary?.total_adjustment_in || 0) + (summary?.total_return || 0);
+  const totalPositive =
+    (summary?.total_in || 0) + (summary?.total_adjustment_in || 0) + (summary?.total_return || 0);
   const totalNegative = (summary?.total_out || 0) + (summary?.total_adjustment_out || 0);
+  const itemLabel = itemType === "product" ? "Produk" : "Bahan Baku";
 
-  const materialOptions = useMemo(() => {
-    return materials.slice(0, 250);
-  }, [materials]);
+  const itemOptions = useMemo(
+    () => [
+      { value: "all", label: `Semua ${itemLabel}` },
+      ...items.slice(0, 500).map((item) => ({
+        value: item.id,
+        label: `${item.kode} - ${item.nama}`,
+        description: item.kategori || undefined,
+      })),
+    ],
+    [items, itemLabel]
+  );
 
-  const applyFilters = () => {
-    const nextSearch = materialSearch.trim();
-    if (nextSearch === appliedSearch) {
-      loadData();
-      return;
-    }
-    setAppliedSearch(nextSearch);
-  };
+  const stallOptions = useMemo(
+    () => [
+      { value: "all", label: STALL_LABELS.allBranchTotal },
+      ...warehouses.map((w) => ({
+        value: w.id,
+        label: w.name,
+        description: w.code,
+      })),
+    ],
+    [warehouses]
+  );
+
+  const movementTypeOptions = useMemo(
+    () =>
+      Object.entries(TYPE_LABELS).map(([value, label]) => ({
+        value,
+        label,
+      })),
+    []
+  );
 
   const handleExportCSV = () => {
-    const headers = [
-      "Tanggal",
-      "Kode Bahan",
-      "Nama Bahan",
-      "Tipe",
-      "Ref",
-      "Alasan",
-      "Qty Before",
-      "Mutasi",
-      "Qty After",
-      "Unit Cost",
-      "Total Cost",
-      "Catatan",
-    ];
-    const rows = movements.map((movement) => [
-      formatDate(movement.created_at),
-      movement.material_kode,
-      movement.material_nama,
-      TYPE_LABELS[movement.tipe],
-      movement.reference_number,
-      movement.alasan,
-      String(movement.qty_before),
-      String(movementDelta(movement)),
-      String(movement.qty_after),
-      String(movement.unit_cost),
-      String(movement.total_cost),
-      movement.catatan,
-    ]);
+    setExporting(true);
+    try {
+      const headers = [
+        "Tanggal",
+        "Kode Item",
+        "Nama Item",
+        "Tipe",
+        "Ref",
+        "Alasan",
+        "Qty Before",
+        "Mutasi",
+        "Qty After",
+        "Unit Cost",
+        "Total Cost",
+        "Catatan",
+      ];
+      const rows = movements.map((movement) => [
+        formatDate(movement.created_at),
+        movement.item_kode || movement.material_kode,
+        movement.item_nama || movement.material_nama,
+        TYPE_LABELS[movement.tipe],
+        movement.reference_number,
+        movement.alasan,
+        String(movement.qty_before),
+        String(movementDelta(movement)),
+        String(movement.qty_after),
+        String(movement.unit_cost),
+        String(movement.total_cost),
+        movement.catatan,
+      ]);
 
-    const csv = [
-      headers.map((header) => `"${header}"`).join(","),
-      ...rows.map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(",")),
-    ].join("\n");
+      const csv = [
+        headers.map((header) => `"${header}"`).join(","),
+        ...rows.map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(",")),
+      ].join("\n");
 
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `stock-card-${selectedMaterialData?.kode || "all"}-${new Date().toISOString().slice(0, 10)}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
-    toast.success("Stock card berhasil diexport");
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `stock-card-${itemType}-${selectedItemData?.kode || "all"}-${new Date()
+        .toISOString()
+        .slice(0, 10)}.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+      toast.success("Stock card berhasil diexport");
+    } finally {
+      setExporting(false);
+    }
   };
 
   return (
-    <div className="p-6">
-      <div className="mt-4 mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+    <div className="space-y-6 p-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-950">Inventory Stock Card</h1>
-          <p className="mt-1 text-sm text-gray-500">Kartu stok per bahan baku berdasarkan mutasi barang masuk, produksi, adjustment, dan retur.</p>
+          <h1 className="text-2xl font-bold text-foreground">Stock Card</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Kartu stok bahan baku & produk — saldo awal, mutasi, dan saldo akhir.
+          </p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={loadData} disabled={loading}>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => stockCardQuery.refetch()}
+            disabled={loading}
+          >
             <ArrowPathIcon className={`mr-1 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
             Refresh
           </Button>
-          <Button variant="outline" size="sm" onClick={handleExportCSV} disabled={movements.length === 0}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExportCSV}
+            disabled={exporting || movements.length === 0}
+          >
             <DocumentArrowDownIcon className="mr-1 h-4 w-4" />
-            Export CSV
+            {exporting ? "Exporting..." : "Export CSV"}
           </Button>
         </div>
       </div>
 
-      <Card className="mb-6">
-        <CardContent className="pt-4">
-          <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr_170px_170px_170px_auto] lg:items-end">
+      <Card className="border-border shadow-xs">
+        <CardContent className="space-y-4 pt-4">
+          <div className="inline-flex rounded-lg border border-gray-200/70 bg-muted/40 p-1">
+            <Button
+              type="button"
+              size="sm"
+              variant={itemType === "raw_material" ? "default" : "ghost"}
+              className="h-8"
+              onClick={() => setItemType("raw_material")}
+            >
+              Bahan Baku
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={itemType === "product" ? "default" : "ghost"}
+              className="h-8"
+              onClick={() => setItemType("product")}
+            >
+              Produk
+            </Button>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
             <div className="space-y-1.5">
-              <Label className="text-xs">Cari Bahan</Label>
-              <div className="relative">
-                <MagnifyingGlassIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                <Input
-                  value={materialSearch}
-                  onChange={(event) => setMaterialSearch(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") applyFilters();
-                  }}
-                  placeholder="Nama atau kode bahan..."
-                  className="h-10 pl-9"
-                />
-              </div>
+              <Label className="text-xs">{STALL_LABELS.singular}</Label>
+              <Combobox
+                options={stallOptions}
+                value={warehouseId}
+                onChange={setWarehouseId}
+                placeholder={loadingWarehouses ? STALL_LABELS.loading : STALL_LABELS.allBranchTotal}
+                searchPlaceholder={STALL_LABELS.search}
+                emptyMessage={STALL_LABELS.empty}
+                className="h-10"
+              />
             </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">Material</Label>
-              <Select value={selectedMaterial} onValueChange={setSelectedMaterial}>
-                <SelectTrigger className="h-10">
-                  <span className="flex-1 truncate text-left">
-                    {selectedMaterial === "all"
-                      ? "Semua Material"
-                      : selectedMaterialData
-                        ? `${selectedMaterialData.kode} - ${selectedMaterialData.nama}`
-                        : "Pilih material"}
-                  </span>
-                </SelectTrigger>
-                <SelectContent className="max-h-80">
-                  <SelectItem value="all">Semua Material</SelectItem>
-                  {materialOptions.map((material) => (
-                    <SelectItem key={material.id} value={material.id}>
-                      {material.kode} - {material.nama}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <div className="space-y-1.5 md:col-span-1 xl:col-span-1">
+              <Label className="text-xs">{itemLabel}</Label>
+              <Combobox
+                options={itemOptions}
+                value={selectedItem}
+                onChange={setSelectedItem}
+                placeholder={`Pilih ${itemLabel.toLowerCase()}...`}
+                searchPlaceholder={`Cari ${itemLabel.toLowerCase()}...`}
+                emptyMessage={`${itemLabel} tidak ditemukan`}
+                className="h-10"
+              />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Tipe Mutasi</Label>
-              <Select value={movementType} onValueChange={(value) => setMovementType(value as MovementType)}>
-                <SelectTrigger className="h-10">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {Object.entries(TYPE_LABELS).map(([value, label]) => (
-                    <SelectItem key={value} value={value}>{label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Combobox
+                options={movementTypeOptions}
+                value={movementType}
+                onChange={(value) => setMovementType(value as MovementType)}
+                placeholder="Semua Tipe"
+                searchPlaceholder="Cari tipe..."
+                emptyMessage="Tipe tidak ditemukan"
+                className="h-10"
+              />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Dari Tanggal</Label>
-              <Input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} className="h-10" />
+              <Input
+                type="date"
+                value={dateFrom}
+                onChange={(event) => setDateFrom(event.target.value)}
+                className="h-10"
+              />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Sampai Tanggal</Label>
-              <Input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} className="h-10" />
+              <Input
+                type="date"
+                value={dateTo}
+                onChange={(event) => setDateTo(event.target.value)}
+                className="h-10"
+              />
             </div>
-            <Button type="button" onClick={applyFilters} className="h-10 bg-pink-600 hover:bg-pink-700">
-              Terapkan
-            </Button>
           </div>
         </CardContent>
       </Card>
 
-      {selectedMaterialData && (
-        <Card className="mb-6 border-pink-100 bg-pink-50/50">
-          <CardContent className="grid gap-4 pt-5 md:grid-cols-5">
-            <div className="md:col-span-2">
-              <p className="text-xs font-medium uppercase tracking-wide text-pink-600">Material Terpilih</p>
-              <h2 className="mt-1 text-lg font-semibold text-gray-950">{selectedMaterialData.nama}</h2>
-              <p className="text-sm text-gray-500">{selectedMaterialData.kode} · {selectedMaterialData.kategori}</p>
+      {selectedItemData ? (
+        <Card className="border-border shadow-xs">
+          <CardContent className="grid gap-4 p-4 md:grid-cols-4">
+            <div className="md:col-span-1">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                {itemLabel} Terpilih
+              </p>
+              <h2 className="mt-1 text-lg font-semibold text-foreground">{selectedItemData.nama}</h2>
+              <p className="text-sm text-muted-foreground">
+                {selectedItemData.kode} · {selectedItemData.kategori}
+              </p>
             </div>
             <div>
-              <p className="text-xs text-gray-500">Stok Saat Ini</p>
-              <p className="mt-1 text-xl font-bold text-gray-950">{formatNumber(selectedMaterialData.qty_onhand)} {selectedMaterialData.satuan}</p>
+              <p className="text-xs text-muted-foreground">Stok Saat Ini</p>
+              <p className="mt-1 text-xl font-bold text-foreground">
+                {formatNumber(selectedItemData.qty_onhand)}
+                {selectedItemData.satuan ? (
+                  <span className="ml-1 text-sm font-normal text-muted-foreground">
+                    {selectedItemData.satuan}
+                  </span>
+                ) : null}
+              </p>
             </div>
             <div>
-              <p className="text-xs text-gray-500">Avg Cost</p>
-              <p className="mt-1 text-xl font-bold text-gray-950">{formatRupiah(selectedMaterialData.avg_cost)}</p>
+              <p className="text-xs text-muted-foreground">Avg Cost</p>
+              <p className="mt-1 text-xl font-bold text-foreground">
+                {formatRupiah(selectedItemData.avg_cost)}
+              </p>
             </div>
             <div>
-              <p className="text-xs text-gray-500">Lokasi</p>
-              <p className="mt-1 text-sm font-semibold text-gray-950">{selectedMaterialData.lokasi_rak}</p>
-              <Badge className="mt-2 border-pink-200 bg-white text-pink-700">{selectedMaterialData.status_stok}</Badge>
+              <p className="text-xs text-muted-foreground">Lokasi / Stall</p>
+              <p className="mt-1 text-sm font-semibold text-foreground">
+                {selectedItemData.warehouse_name || selectedItemData.lokasi_rak || "-"}
+              </p>
+              <Badge className="mt-2 border-border bg-muted/50 text-muted-foreground">
+                {selectedItemData.status_stok}
+              </Badge>
             </div>
           </CardContent>
         </Card>
-      )}
+      ) : null}
 
-      <div className="mb-6 grid gap-4 md:grid-cols-5">
-        <Card>
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+        <Card className="border-border shadow-xs">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-gray-500">Saldo Awal</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">Saldo Awal</CardTitle>
           </CardHeader>
-          <CardContent><p className="text-2xl font-bold">{formatNumber(summary?.opening_balance)}</p></CardContent>
+          <CardContent>
+            <p className="text-2xl font-bold text-foreground">
+              {formatNumber(summary?.opening_balance)}
+            </p>
+          </CardContent>
         </Card>
-        <Card>
+        <Card className="border-border shadow-xs">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-emerald-600">Total Masuk</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">Total Masuk</CardTitle>
           </CardHeader>
-          <CardContent><p className="text-2xl font-bold text-emerald-600">{formatNumber(totalPositive)}</p></CardContent>
+          <CardContent>
+            <p className="text-2xl font-bold text-emerald-600">{formatNumber(totalPositive)}</p>
+          </CardContent>
         </Card>
-        <Card>
+        <Card className="border-border shadow-xs">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-red-600">Total Keluar</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">Total Keluar</CardTitle>
           </CardHeader>
-          <CardContent><p className="text-2xl font-bold text-red-600">{formatNumber(totalNegative)}</p></CardContent>
+          <CardContent>
+            <p className="text-2xl font-bold text-red-600">{formatNumber(totalNegative)}</p>
+          </CardContent>
         </Card>
-        <Card>
+        <Card className="border-border shadow-xs">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-gray-500">Saldo Akhir</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">Saldo Akhir</CardTitle>
           </CardHeader>
-          <CardContent><p className="text-2xl font-bold text-pink-600">{formatNumber(summary?.closing_balance)}</p></CardContent>
+          <CardContent>
+            <p className="text-2xl font-bold text-primary">
+              {formatNumber(summary?.closing_balance)}
+            </p>
+          </CardContent>
         </Card>
-        <Card>
+        <Card className="border-border shadow-xs">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-gray-500">Jumlah Mutasi</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">Jumlah Mutasi</CardTitle>
           </CardHeader>
-          <CardContent><p className="text-2xl font-bold">{summary?.movement_count || 0}</p></CardContent>
+          <CardContent>
+            <p className="text-2xl font-bold text-foreground">{summary?.movement_count || 0}</p>
+          </CardContent>
         </Card>
       </div>
 
-      <Card>
-        <CardHeader className="border-b border-gray-100">
-          <CardTitle className="text-lg">Riwayat Kartu Stok</CardTitle>
+      <Card className="border-border shadow-xs">
+        <CardHeader className="flex flex-row items-center justify-between border-b border-gray-200/70 pb-3">
+          <CardTitle className="text-base">Riwayat Mutasi</CardTitle>
+          <Badge variant="secondary" className="border-border bg-muted/50 text-muted-foreground">
+            {movements.length} baris
+          </Badge>
         </CardHeader>
         <CardContent className="p-0">
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto px-4">
             <table className="w-full min-w-[1100px] text-sm">
-              <thead className="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+              <thead className="bg-muted/50 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 <tr>
-                  <th className="px-4 py-3">Tanggal</th>
-                  <th className="px-4 py-3">Material</th>
-                  <th className="px-4 py-3">Tipe</th>
-                  <th className="px-4 py-3">Referensi</th>
-                  <th className="px-4 py-3">Alasan</th>
-                  <th className="px-4 py-3 text-right">Before</th>
-                  <th className="px-4 py-3 text-right">Mutasi</th>
-                  <th className="px-4 py-3 text-right">After</th>
-                  <th className="px-4 py-3 text-right">Unit Cost</th>
-                  <th className="px-4 py-3 text-right">Nilai</th>
+                  <th className="px-3 py-3">Tanggal</th>
+                  <th className="px-3 py-3">Item</th>
+                  <th className="px-3 py-3">Tipe</th>
+                  <th className="px-3 py-3">Referensi</th>
+                  <th className="px-3 py-3">Alasan</th>
+                  <th className="px-3 py-3 text-right">Before</th>
+                  <th className="px-3 py-3 text-right">Mutasi</th>
+                  <th className="px-3 py-3 text-right">After</th>
+                  <th className="px-3 py-3 text-right">Unit Cost</th>
+                  <th className="px-3 py-3 text-right">Nilai</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-gray-200/70">
                 {loading ? (
                   <tr>
-                    <td colSpan={10} className="px-4 py-12 text-center text-gray-500">Memuat stock card...</td>
+                    <td colSpan={10} className="px-3 py-12 text-center text-muted-foreground">
+                      Memuat stock card...
+                    </td>
                   </tr>
                 ) : movements.length === 0 ? (
                   <tr>
-                    <td colSpan={10} className="px-4 py-12 text-center text-gray-500">Belum ada mutasi untuk filter ini.</td>
+                    <td colSpan={10} className="px-3 py-12 text-center text-muted-foreground">
+                      {itemType === "product"
+                        ? "Belum ada mutasi produk untuk filter ini. Mutasi tercatat mulai produksi/opname/adjustment berikutnya."
+                        : "Belum ada mutasi untuk filter ini."}
+                    </td>
                   </tr>
                 ) : (
                   movements.map((movement) => {
                     const delta = movementDelta(movement);
                     return (
-                      <tr key={movement.id} className="hover:bg-pink-50/40">
-                        <td className="whitespace-nowrap px-4 py-3 text-gray-700">{formatDate(movement.created_at)}</td>
-                        <td className="px-4 py-3">
-                          <p className="font-medium text-gray-950">{movement.material_nama}</p>
-                          <p className="text-xs text-gray-500">{movement.material_kode}</p>
+                      <tr key={movement.id} className="hover:bg-muted/40">
+                        <td className="whitespace-nowrap px-3 py-3 text-foreground">
+                          {formatDate(movement.created_at)}
                         </td>
-                        <td className="px-4 py-3">
-                          <Badge className={TYPE_STYLES[movement.tipe]}>{TYPE_LABELS[movement.tipe]}</Badge>
+                        <td className="px-3 py-3">
+                          <p className="font-medium text-foreground">
+                            {movement.item_nama || movement.material_nama}
+                          </p>
+                          <p className="font-mono text-xs text-muted-foreground">
+                            {movement.item_kode || movement.material_kode}
+                          </p>
                         </td>
-                        <td className="px-4 py-3">
-                          <p className="font-medium text-gray-800">{movement.reference_number}</p>
-                          <p className="text-xs text-gray-500">{movement.reference_type}</p>
+                        <td className="px-3 py-3">
+                          <Badge className={TYPE_STYLES[movement.tipe]}>
+                            {TYPE_LABELS[movement.tipe]}
+                          </Badge>
                         </td>
-                        <td className="px-4 py-3 text-gray-600">{movement.alasan}</td>
-                        <td className="px-4 py-3 text-right">{formatNumber(movement.qty_before)}</td>
-                        <td className={`px-4 py-3 text-right font-semibold ${delta < 0 ? "text-red-600" : "text-emerald-600"}`}>
-                          {delta > 0 ? "+" : ""}{formatNumber(delta)}
+                        <td className="px-3 py-3">
+                          <p className="font-medium text-foreground">{movement.reference_number}</p>
+                          <p className="text-xs text-muted-foreground">{movement.reference_type}</p>
                         </td>
-                        <td className="px-4 py-3 text-right font-semibold text-gray-950">{formatNumber(movement.qty_after)}</td>
-                        <td className="px-4 py-3 text-right">{formatRupiah(movement.unit_cost)}</td>
-                        <td className="px-4 py-3 text-right font-semibold text-pink-700">{formatRupiah(movement.total_cost)}</td>
+                        <td className="px-3 py-3 text-muted-foreground">{movement.alasan}</td>
+                        <td className="px-3 py-3 text-right text-muted-foreground">
+                          {formatNumber(movement.qty_before)}
+                        </td>
+                        <td
+                          className={`px-3 py-3 text-right font-semibold ${
+                            delta < 0 ? "text-red-600" : "text-emerald-600"
+                          }`}
+                        >
+                          {delta > 0 ? "+" : ""}
+                          {formatNumber(delta)}
+                        </td>
+                        <td className="px-3 py-3 text-right font-semibold text-foreground">
+                          {formatNumber(movement.qty_after)}
+                        </td>
+                        <td className="px-3 py-3 text-right text-muted-foreground">
+                          {formatRupiah(movement.unit_cost)}
+                        </td>
+                        <td className="px-3 py-3 text-right font-semibold text-primary">
+                          {formatRupiah(movement.total_cost)}
+                        </td>
                       </tr>
                     );
                   })
                 )}
               </tbody>
             </table>
+          </div>
+          <div className="border-t border-gray-200/70 px-4 py-3 text-xs text-muted-foreground">
+            Menampilkan {movements.length} mutasi
+            {selectedItemData ? ` untuk ${selectedItemData.nama}` : ""}
           </div>
         </CardContent>
       </Card>

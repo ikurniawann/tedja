@@ -1,4 +1,5 @@
 import type { DbClient } from "@/lib/pg/types";
+import { recordFinishedGoodsMovement } from "@/lib/inventory/finished-goods-movements";
 import { ensureProductInventoryId } from "@/lib/inventory/product-stock-opname";
 
 const QTY_EPSILON = 0.000001;
@@ -59,4 +60,19 @@ export async function reduceProductInventoryFromPurchaseReturn(
     .eq("id", existing.id);
 
   if (updateError) throw updateError;
+
+  await recordFinishedGoodsMovement(db, {
+    inventoryId: existing.id,
+    productId: params.productId,
+    tipe: "return",
+    qtyBefore,
+    qtyAfter,
+    unitCost: toQty(existing.unit_cost) || toQty(params.unitCost),
+    referenceType: "product_purchase_return",
+    referenceId: params.returnId,
+    referenceNumber: params.returnNumber,
+    alasan: "Purchase return approved",
+    catatan: params.conditionNotes ?? null,
+    userId: params.userId,
+  });
 }

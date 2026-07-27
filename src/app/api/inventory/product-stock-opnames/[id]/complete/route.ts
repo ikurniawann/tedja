@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { ApiError, requireApiRole } from "@/lib/api/auth";
 import { withTransaction } from "@/lib/db";
+import { insertFinishedGoodsMovementSql } from "@/lib/inventory/finished-goods-movements";
 import { fetchProductStockOpnameDetail } from "@/lib/inventory/product-stock-opname";
 
 const OPNAME_ROLES = ["super_admin", "warehouse_admin", "purchasing_admin"] as const;
@@ -85,6 +86,21 @@ export async function POST(_request: NextRequest, context: RouteContext) {
            WHERE id = $3`,
           [qtyAfter, user.id, line.inventory_id]
         );
+
+        await insertFinishedGoodsMovementSql(client, {
+          inventoryId: line.inventory_id,
+          productId: line.product_id,
+          warehouseId: detail.warehouse_id,
+          tipe: "adjustment",
+          qtyBefore,
+          qtyAfter,
+          unitCost: toNumber(inv.unit_cost),
+          referenceType: "product_stock_opname",
+          referenceId: detail.id,
+          referenceNumber: detail.opname_number ?? detail.id,
+          alasan: "Stock opname completed",
+          userId: user.id,
+        });
       }
 
       await client.query(

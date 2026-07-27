@@ -4,6 +4,7 @@ import { createPgClient } from "@/lib/pg/create-client";
 import { requireApiRole, ApiError } from "@/lib/api/auth";
 import { PRODUCTION_API_ROLES } from "@/lib/manufacturing/constants";
 import { addInventoryFromProduction } from "@/lib/inventory";
+import { recordFinishedGoodsMovement } from "@/lib/inventory/finished-goods-movements";
 import { syncProductionHppToPos } from "@/lib/pos/purchasing-sync";
 
 const updateProductionSchema = z.object({
@@ -646,18 +647,24 @@ export async function PATCH(
         .eq("product_id", order.product_id)
         .maybeSingle();
 
+      let inventoryId: string;
+      let qtyBefore = 0;
+      let qtyAfter = actualQty;
+      let unitCostForMovement = hppPerUnit;
+
       if (finishedInventory) {
         const currentQty = toNumber(finishedInventory.qty_available);
-        const totalQty = currentQty + actualQty;
-        const nextUnitCost = totalQty > 0
-          ? ((currentQty * toNumber(finishedInventory.unit_cost)) + totalCost) / totalQty
+        qtyBefore = currentQty;
+        qtyAfter = currentQty + actualQty;
+        unitCostForMovement = qtyAfter > 0
+          ? ((currentQty * toNumber(finishedInventory.unit_cost)) + totalCost) / qtyAfter
           : hppPerUnit;
 
         const { error } = await db
           .from("finished_goods_inventory")
           .update({
-            qty_available: totalQty,
-            unit_cost: nextUnitCost,
+            qty_available: qtyAfter,
+            unit_cost: unitCostForMovement,
             last_movement_at: now,
             updated_by: user.id,
             updated_at: now,
@@ -665,17 +672,37 @@ export async function PATCH(
           .eq("id", finishedInventory.id);
 
         if (error) throw error;
+        inventoryId = finishedInventory.id;
       } else {
-        const { error } = await db.from("finished_goods_inventory").insert({
-          product_id: order.product_id,
-          qty_available: actualQty,
-          unit_cost: hppPerUnit,
-          last_movement_at: now,
-          created_by: user.id,
-        });
+        const { data: created, error } = await db
+          .from("finished_goods_inventory")
+          .insert({
+            product_id: order.product_id,
+            qty_available: actualQty,
+            unit_cost: hppPerUnit,
+            last_movement_at: now,
+            created_by: user.id,
+          })
+          .select("id")
+          .single();
 
-        if (error) throw error;
+        if (error || !created) throw error ?? new Error("Gagal membuat stok produk");
+        inventoryId = created.id;
       }
+
+      await recordFinishedGoodsMovement(db, {
+        inventoryId,
+        productId: order.product_id,
+        tipe: "in",
+        qtyBefore,
+        qtyAfter,
+        unitCost: unitCostForMovement,
+        referenceType: "production_order",
+        referenceId: id,
+        referenceNumber: order.nomor_produksi,
+        alasan: "Production completed",
+        userId: user.id,
+      });
     }
 
     const { data: updatedOrder, error: completeError } = await db

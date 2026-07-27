@@ -5,6 +5,7 @@
 import { NextRequest } from "next/server";
 import { createServerPgClient } from "@/lib/pg/create-client";
 import { getApiUserScope, isRowInBusinessScope, validateProductWarehouseScope } from "@/lib/api/scope";
+import { syncPurchasingProductToPos } from "@/lib/pos/purchasing-sync";
 import { z } from "zod";
 
 const productSchema = z.object({
@@ -13,9 +14,9 @@ const productSchema = z.object({
   kategori: z.string().optional().nullable(),
   satuan_id: z.string().uuid().optional().nullable(),
   warehouse_id: z.string().uuid().optional(),
-  harga_jual: z.number().min(0).optional(),
-  harga_modal: z.number().min(0).optional(),
-  markup_persen: z.number().optional(),
+  harga_jual: z.coerce.number().min(0).optional(),
+  harga_modal: z.coerce.number().min(0).optional(),
+  markup_persen: z.coerce.number().optional(),
   is_active: z.boolean().optional(),
   production_output_type: z.enum(["FINISHED_GOOD", "WIP"]).optional(),
 });
@@ -213,10 +214,35 @@ export async function PUT(
 
     if (error) throw error;
 
+    const outputType =
+      (data as { production_output_type?: string | null }).production_output_type ||
+      existingProduct.production_output_type ||
+      "FINISHED_GOOD";
+
+    let posSync = null;
+    if (outputType === "FINISHED_GOOD") {
+      const kategori = String(
+        (data as { kategori?: string | null }).kategori ||
+          existingProduct.kategori ||
+          ""
+      );
+      const station = /coffee|tea|beverage|juice|mocktail|minuman|drink|bar/i.test(kategori)
+        ? "bar"
+        : "kitchen";
+      try {
+        posSync = await syncPurchasingProductToPos(db, id, { station });
+      } catch (syncError) {
+        console.warn("POS sync after product update failed:", syncError);
+      }
+    }
+
     return Response.json({
       success: true,
       data,
-      message: "Produk berhasil diupdate",
+      pos_sync: posSync,
+      message: posSync
+        ? "Produk berhasil diupdate dan tersinkron ke POS"
+        : "Produk berhasil diupdate",
     });
   } catch (error: unknown) {
     console.error("Error updating product:", error);
