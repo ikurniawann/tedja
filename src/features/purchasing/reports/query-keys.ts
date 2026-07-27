@@ -2,6 +2,7 @@ import type {
   InventoryValuationParams,
   PODetailParams,
   POSummaryParams,
+  ProductionInHouseParams,
   StockCardParams,
 } from "./types";
 
@@ -21,4 +22,6 @@ export const reportsQueryKeys = {
     ["purchasing", "reports", "inventory-valuation", params] as const,
   poDetail: (params: PODetailParams) =>
     ["purchasing", "reports", "po-detail", params] as const,
+  productionInHouse: (params: ProductionInHouseParams) =>
+    ["purchasing", "reports", "production-in-house", params] as const,
 };

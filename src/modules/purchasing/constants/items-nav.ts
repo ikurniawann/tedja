@@ -166,6 +166,7 @@ export const ITEMS_NAV_GROUPS = [
       { href: "/dashboard/purchasing/reports/po-summary", label: "PO Summary" },
       { href: "/dashboard/purchasing/reports/po-detail", label: "PO Detail" },
       { href: "/dashboard/purchasing/reports/supplier-performance", label: "Supplier Performance" },
+      { href: "/dashboard/purchasing/reports/production-in-house", label: "Production In-House" },
     ],
   },
 ] as const;

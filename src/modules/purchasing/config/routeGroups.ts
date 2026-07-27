@@ -119,6 +119,7 @@ export const PURCHASING_ROUTES: RouteGroup = {
         { path: "reports/po-summary", label: "PO Summary" },
         { path: "reports/po-detail", label: "PO Detail" },
         { path: "reports/supplier-performance", label: "Supplier Performance" },
+        { path: "reports/production-in-house", label: "Production In-House" },
         { path: "reports/hpp-breakdown", label: "HPP Produk" },
       ],
     },

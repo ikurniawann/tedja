@@ -8,12 +8,14 @@ import {
   getStockCard,
   getInventoryValuation,
   getPoDetailReport,
+  getProductionInHouseReport,
 } from "./api";
 import { reportsQueryKeys } from "./query-keys";
 import type {
   InventoryValuationParams,
   PODetailParams,
   POSummaryParams,
+  ProductionInHouseParams,
   StockCardParams,
 } from "./types";
 
@@ -60,5 +62,12 @@ export const usePoDetailReport = (params: PODetailParams) =>
   useQuery({
     queryKey: reportsQueryKeys.poDetail(params),
     queryFn: () => getPoDetailReport(params),
+    placeholderData: keepPreviousData,
+  });
+
+export const useProductionInHouseReport = (params: ProductionInHouseParams) =>
+  useQuery({
+    queryKey: reportsQueryKeys.productionInHouse(params),
+    queryFn: () => getProductionInHouseReport(params),
     placeholderData: keepPreviousData,
   });

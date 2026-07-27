@@ -100,6 +100,7 @@ INSERT INTO iam.menus (code, menu_name, route_path, icon, menu_type, order_numbe
   ('items.reports.po-summary', 'PO Summary', '/dashboard/purchasing/reports/po-summary', 'shopping', 'sidebar', 30, '{"actions":["read"]}'::jsonb),
   ('items.reports.po-detail', 'PO Detail', '/dashboard/purchasing/reports/po-detail', 'document-text', 'sidebar', 40, '{"actions":["read"]}'::jsonb),
   ('items.reports.supplier-performance', 'Supplier Performance', '/dashboard/purchasing/reports/supplier-performance', 'building', 'sidebar', 50, '{"actions":["read"]}'::jsonb),
+  ('items.reports.production-in-house', 'Production In-House', '/dashboard/purchasing/reports/production-in-house', 'cube', 'sidebar', 60, '{"actions":["read"]}'::jsonb),
   ('items.product.approval.pr', 'Approval PR', '/dashboard/product/approval/pr', 'file-text', 'sidebar', 10, '{"actions":["read","update"]}'::jsonb),
   ('items.product.inventory.stock', 'Stock', '/dashboard/product/inventory/stock', 'circle-stack', 'sidebar', 10, '{"actions":["read"]}'::jsonb),
   ('items.product.master.units', 'Unit', '/dashboard/product/units', 'database', 'sidebar', 10, '{"actions":["read","create","update","delete"]}'::jsonb),
@@ -191,4 +192,5 @@ WHERE deleted_at IS NULL
     'pos.reports.transactions', 'pos.reports.product-sales',
     -- Items Reports (moved from purchasing.reports, 27 Jul 2026):
     'items.reports', 'items.reports.stock-card', 'items.reports.inventory-valuation',
-    'items.reports.po-summary', 'items.reports.po-detail', 'items.reports.supplier-performance');
+    'items.reports.po-summary', 'items.reports.po-detail', 'items.reports.supplier-performance',
+    'items.reports.production-in-house');

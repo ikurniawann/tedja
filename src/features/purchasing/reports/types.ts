@@ -188,3 +188,65 @@ export interface PoSummaryExportResult {
   blob: Blob;
   extension: PoSummaryExportFormat;
 }
+
+export type ProductionDateField = "completed_at" | "created_at";
+export type ProductionOutputTypeFilter = "all" | "FINISHED_GOOD" | "WIP";
+
+export interface ProductionInHouseParams {
+  date_from?: string;
+  date_to?: string;
+  date_field?: ProductionDateField;
+  status?: string;
+  output_type?: ProductionOutputTypeFilter;
+  product_id?: string;
+  warehouse_id?: string;
+}
+
+export interface ProductionInHouseOrder {
+  id: string;
+  nomor_produksi: string;
+  product_id: string | null;
+  product_kode: string;
+  product_nama: string;
+  output_type: string;
+  status: string;
+  planned_qty: number;
+  actual_qty: number;
+  hpp_per_unit: number;
+  hpp_per_unit_formatted: string;
+  actual_material_cost: number;
+  overhead_cost: number;
+  labor_cost: number;
+  packaging_cost: number;
+  waste_cost: number;
+  total_hpp_value: number;
+  total_hpp_value_formatted: string;
+  warehouse_id: string | null;
+  warehouse_name: string | null;
+  warehouse_code: string | null;
+  created_at: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+}
+
+export interface ProductionInHouseStatusRow {
+  status: string;
+  count: number;
+  actual_qty: number;
+  hpp_value: number;
+  hpp_value_formatted: string;
+}
+
+export interface ProductionInHouseSummary {
+  total_orders: number;
+  total_planned_qty: number;
+  total_actual_qty: number;
+  total_hpp_value: number;
+  completed_orders: number;
+}
+
+export interface ProductionInHouseResult {
+  orders: ProductionInHouseOrder[];
+  byStatus: ProductionInHouseStatusRow[];
+  summary: ProductionInHouseSummary;
+}
