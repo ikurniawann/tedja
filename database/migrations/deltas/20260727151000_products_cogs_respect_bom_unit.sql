@@ -7,9 +7,8 @@
 --           jika satuan kecil (atau default) → avg_cost / konversi.
 -- =============================================================================
 
-DROP VIEW IF EXISTS "public"."v_products_cogs";
-
-CREATE VIEW "public"."v_products_cogs" AS
+-- CREATE OR REPLACE preserves owner/ACLs better than DROP+CREATE.
+CREATE OR REPLACE VIEW "public"."v_products_cogs" AS
  SELECT p.id,
     p.kode,
     p.nama,
@@ -76,3 +75,14 @@ WHERE bi.raw_material_id = rm.id
   AND rm.satuan_kecil_id IS NOT NULL
   AND bi.satuan_id IS DISTINCT FROM rm.satuan_kecil_id
   AND bi.satuan_id IS DISTINCT FROM rm.satuan_besar_id;
+
+-- Ownership/grants (DROP+CREATE previously left migrate-role owner → permission denied)
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'arkiv') THEN
+    EXECUTE 'ALTER VIEW public.v_products_cogs OWNER TO arkiv';
+    EXECUTE 'GRANT SELECT ON TABLE public.v_products_cogs TO arkiv';
+  END IF;
+END $$;
+GRANT SELECT ON TABLE public.v_products_cogs TO authenticated;
+GRANT SELECT ON TABLE public.v_products_cogs TO service_role;
