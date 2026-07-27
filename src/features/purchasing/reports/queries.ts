@@ -20,6 +20,7 @@ import type {
 export const useSupplierPerformance = (params: {
   date_from?: string;
   date_to?: string;
+  supplier_id?: string;
 }) =>
   useQuery({
     queryKey: reportsQueryKeys.supplierPerformance(params),

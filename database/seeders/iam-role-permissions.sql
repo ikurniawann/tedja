@@ -88,7 +88,7 @@ WHERE r.code = 'sulu_bandung_demo' AND m.deleted_at IS NULL AND m.is_active = tr
   AND (
     m.code = 'dashboard'
     OR m.module = 'pos'
-    OR (m.module = 'items' AND m.code NOT LIKE 'purchasing.reports%')
+    OR (m.module = 'items' AND m.code NOT LIKE 'items.reports%')
   )
 ON CONFLICT (role_id, menu_id) DO UPDATE SET is_active = true, granted_actions = EXCLUDED.granted_actions, updated_at = now();
 

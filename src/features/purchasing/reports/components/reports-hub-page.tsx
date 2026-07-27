@@ -16,15 +16,15 @@ const REPORT_CARDS = [
   {
     href: "/dashboard/purchasing/reports/stock-card",
     icon: ClipboardDocumentListIcon,
-    title: "Inventory Stock Card",
-    description: "Kartu stok per bahan baku dengan saldo awal, mutasi masuk/keluar, adjustment, retur, dan saldo akhir.",
+    title: "Stock Card",
+    description: "Kartu stok bahan baku & produk dengan filter periode, stall, dan item (saldo awal, mutasi, saldo akhir).",
     accent: "text-violet-600",
     bg: "bg-violet-50",
   },
   {
     href: "/dashboard/purchasing/reports/inventory-valuation",
     icon: ArchiveBoxIcon,
-    title: "Valuasi Inventory",
+    title: "Inventory Valuation",
     description: "Nilai stok bahan baku berdasarkan harga rata-rata, lengkap dengan status dan breakdown kategori.",
     accent: "text-pink-600",
     bg: "bg-pink-50",
@@ -32,7 +32,7 @@ const REPORT_CARDS = [
   {
     href: "/dashboard/purchasing/reports/po-summary",
     icon: ShoppingCartIcon,
-    title: "Ringkasan PO",
+    title: "PO Summary",
     description: "Rekapitulasi Purchase Order per periode, supplier, dan status dengan grand total nilai.",
     accent: "text-blue-600",
     bg: "bg-blue-50",
@@ -40,7 +40,7 @@ const REPORT_CARDS = [
   {
     href: "/dashboard/purchasing/reports/po-detail",
     icon: DocumentChartBarIcon,
-    title: "Detail PO",
+    title: "PO Detail",
     description: "Rincian setiap PO beserta line item, qty diterima, harga satuan, dan subtotal per item.",
     accent: "text-amber-600",
     bg: "bg-amber-50",
@@ -48,7 +48,7 @@ const REPORT_CARDS = [
   {
     href: "/dashboard/purchasing/reports/supplier-performance",
     icon: BuildingOfficeIcon,
-    title: "Performa Supplier",
+    title: "Supplier Performance",
     description: "Evaluasi supplier berdasarkan ketepatan pengiriman, reject rate, lead time, dan total transaksi.",
     accent: "text-green-600",
     bg: "bg-green-50",
@@ -59,8 +59,8 @@ export function ReportsHubPage() {
   return (
     <div className="space-y-6">
       <div className="border-b border-gray-200/70 pb-4">
-        <h1 className="text-2xl font-bold text-gray-900">Laporan Purchasing</h1>
-        <p className="mt-1 text-sm text-gray-500">Pilih laporan yang ingin ditampilkan</p>
+        <h1 className="text-2xl font-bold text-gray-900">Items Reports</h1>
+        <p className="mt-1 text-sm text-gray-500">Pilih laporan inventori & purchasing yang ingin ditampilkan</p>
       </div>
 
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
@@ -76,8 +76,8 @@ export function ReportsHubPage() {
             </CardHeader>
             <CardContent className="flex flex-1 flex-col space-y-4">
               <p className="flex-1 text-sm text-gray-600">{card.description}</p>
-              <Link href={card.href}>
-                <Button variant="outline" size="sm" className="h-10 w-full gap-2 rounded-lg border-pink-200 bg-white px-3 text-sm font-medium text-pink-700 shadow-sm hover:!border-pink-200 hover:!bg-pink-50 hover:!text-pink-700">
+              <Link href={card.href} prefetch={false}>
+                <Button variant="outline" size="sm" className="h-10 w-full gap-2 rounded-lg border-border bg-card px-3 text-sm font-medium text-primary shadow-sm hover:bg-muted/50">
                   Lihat Laporan
                   <ArrowRightIcon className="ml-2 h-4 w-4" />
                 </Button>

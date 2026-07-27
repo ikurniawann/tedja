@@ -144,6 +144,7 @@ const TABLE_DOMAIN = {
   product_stock_opnames: "inventory",
   product_stock_opname_lines: "inventory",
   finished_goods_inventory: "inventory",
+  finished_goods_movements: "inventory",
 
   // ── manufacturing (produksi) ─────────────────────────────────────────────
   production_orders: "manufacturing",
