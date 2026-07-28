@@ -1,11 +1,7 @@
 import { createServerPgClient } from "@/lib/pg/create-client";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import {
-  requireApiRole,
-  ApiError,
-  successResponse,
-} from "@/lib/api/auth";
+import { requireApiRole, ApiError } from "@/lib/api/auth";
 import { formatRupiah } from "@/lib/purchasing/utils";
 
 // GET /api/purchasing/reports/po-summary
@@ -20,7 +16,13 @@ const querySchema = z.object({
 
 export async function GET(request: NextRequest) {
   try {
-    await requireApiRole(["admin", "purchasing_admin", "purchasing_manager", "purchasing_staff"]);
+    await requireApiRole([
+      "admin",
+      "super_admin",
+      "purchasing_admin",
+      "purchasing_manager",
+      "purchasing_staff",
+    ]);
     const db = await createServerPgClient();
 
     const { searchParams } = new URL(request.url);
@@ -39,7 +41,7 @@ export async function GET(request: NextRequest) {
     if (date_from) query = query.gte("tanggal_po", date_from);
     if (date_to) query = query.lte("tanggal_po", date_to);
     if (vendor_id) query = query.eq("supplier_id", vendor_id);
-    if (status) query = query.eq("status", status);
+    if (status) query = query.eq("status", status.toLowerCase());
 
     const { data: pos, error } = await query;
 
@@ -50,25 +52,26 @@ export async function GET(request: NextRequest) {
     let grandTotal = 0;
 
     const summary = (pos || []).map((po: any) => {
-      const amount = po.total || po.total_amount || 0;
+      const amount = Number(po.total ?? po.total_amount ?? po.payable_amount ?? 0);
       grandTotal += amount;
-      const statusKey = po.status || "unknown";
+      const statusKey = String(po.status || "unknown").toLowerCase();
       if (!byStatus[statusKey]) byStatus[statusKey] = { count: 0, total: 0 };
       byStatus[statusKey].count++;
       byStatus[statusKey].total += amount;
 
       return {
         po_number: po.nomor_po || po.po_number,
-        vendor: po.nama_supplier || po.supplier_name,
-        vendor_code: po.kode_supplier || po.supplier_code,
-        status: po.status,
+        vendor: po.nama_supplier || po.supplier_name || po.vendor_name || "-",
+        vendor_code:
+          po.supplier_kode || po.kode_supplier || po.supplier_code || po.vendor_code || "",
+        status: statusKey,
         tanggal_po: po.tanggal_po,
-        tanggal_diterima: po.tanggal_diterima,
+        tanggal_diterima: po.tanggal_diterima || null,
         total_amount: amount,
         total_amount_formatted: formatRupiah(amount),
         mata_uang: po.currency || "IDR",
-        item_count: po.item_count || 0,
-        created_by: po.created_by_name || "Unknown",
+        item_count: Number(po.item_count || po.total_items || 0),
+        created_by: po.created_by_name || po.created_by || "-",
       };
     });
 

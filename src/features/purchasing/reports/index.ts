@@ -9,3 +9,4 @@ export { PODetailReportPage } from "./components/po-detail-report-page";
 export { POSummaryReport } from "./components/po-summary-report";
 export { StockCardPage } from "./components/stock-card-page";
 export { SupplierPerformancePage } from "./components/supplier-performance-page";
+export { ProductionInHouseReportPage } from "./components/production-in-house-report-page";

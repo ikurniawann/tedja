@@ -102,9 +102,12 @@ const BREADCRUMB_TREE: Record<string, { parent?: string; labelOverride?: string 
   "inventory.adjustment": { parent: "inventory.list" },
 
   // Reports
-  "reports.inventory-valuation": { labelOverride: "Valuasi Stok" },
-  "reports.po-summary": { labelOverride: "Summary PO" },
-  "reports.supplier-performance": { labelOverride: "Performa Supplier" },
+  "reports.stock-card": { labelOverride: "Stock Card" },
+  "reports.inventory-valuation": { labelOverride: "Inventory Valuation" },
+  "reports.po-summary": { labelOverride: "PO Summary" },
+  "reports.po-detail": { labelOverride: "PO Detail" },
+  "reports.supplier-performance": { labelOverride: "Supplier Performance" },
+  "reports.production-in-house": { labelOverride: "Production In-House" },
   "reports.hpp-breakdown": { labelOverride: "HPP Produk" },
 };
 

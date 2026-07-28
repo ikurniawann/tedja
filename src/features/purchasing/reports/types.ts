@@ -1,13 +1,21 @@
 export interface SupplierPerfRow {
   id: string;
+  rank?: number;
+  supplier_code?: string;
   supplier_name?: string;
-  no_po?: string;
+  contact_person?: string;
+  telepon?: string;
+  email?: string;
   total_po?: number;
+  completed_po?: number;
   on_time_count?: number;
   late_count?: number;
+  on_time_rate?: number | null;
   reject_rate?: number;
-  avg_lead_time_days?: number;
+  avg_lead_time_days?: number | null;
   total_value?: number;
+  avg_po_value?: number;
+  quality_score?: number;
   rating?: number;
 }
 
@@ -73,6 +81,8 @@ export type StockMovementType =
   | "transfer"
   | "return";
 
+export type StockCardItemType = "raw_material" | "product";
+
 export interface StockMaterial {
   id: string;
   kode: string;
@@ -85,14 +95,20 @@ export interface StockMaterial {
   min_stock: number;
   max_stock: number | null;
   status_stok: string;
+  warehouse_id?: string | null;
+  warehouse_name?: string | null;
 }
 
 export interface StockMovement {
   id: string;
+  item_id?: string;
   raw_material_id: string;
   material_kode: string;
   material_nama: string;
   material_kategori: string;
+  item_kode?: string;
+  item_nama?: string;
+  item_kategori?: string;
   tipe: Exclude<StockMovementType, "all">;
   jumlah: number;
   qty_before: number;
@@ -104,6 +120,7 @@ export interface StockMovement {
   alasan: string;
   catatan: string;
   created_at: string | null;
+  warehouse_id?: string | null;
 }
 
 export interface StockCardSummary {
@@ -120,14 +137,21 @@ export interface StockCardSummary {
 }
 
 export interface StockCardResponse {
+  item_type?: StockCardItemType;
+  items?: StockMaterial[];
   materials: StockMaterial[];
+  selected_item?: StockMaterial | null;
   selected_material: StockMaterial | null;
   movements: StockMovement[];
   summary: StockCardSummary;
 }
 
 export interface StockCardParams {
+  item_type?: StockCardItemType;
   material_id?: string;
+  product_id?: string;
+  item_id?: string;
+  warehouse_id?: string;
   search?: string;
   tipe?: Exclude<StockMovementType, "all">;
   date_from?: string;
@@ -163,4 +187,66 @@ export type PoSummaryExportFormat = "csv" | "json";
 export interface PoSummaryExportResult {
   blob: Blob;
   extension: PoSummaryExportFormat;
+}
+
+export type ProductionDateField = "completed_at" | "created_at";
+export type ProductionOutputTypeFilter = "all" | "FINISHED_GOOD" | "WIP";
+
+export interface ProductionInHouseParams {
+  date_from?: string;
+  date_to?: string;
+  date_field?: ProductionDateField;
+  status?: string;
+  output_type?: ProductionOutputTypeFilter;
+  product_id?: string;
+  warehouse_id?: string;
+}
+
+export interface ProductionInHouseOrder {
+  id: string;
+  nomor_produksi: string;
+  product_id: string | null;
+  product_kode: string;
+  product_nama: string;
+  output_type: string;
+  status: string;
+  planned_qty: number;
+  actual_qty: number;
+  hpp_per_unit: number;
+  hpp_per_unit_formatted: string;
+  actual_material_cost: number;
+  overhead_cost: number;
+  labor_cost: number;
+  packaging_cost: number;
+  waste_cost: number;
+  total_hpp_value: number;
+  total_hpp_value_formatted: string;
+  warehouse_id: string | null;
+  warehouse_name: string | null;
+  warehouse_code: string | null;
+  created_at: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+}
+
+export interface ProductionInHouseStatusRow {
+  status: string;
+  count: number;
+  actual_qty: number;
+  hpp_value: number;
+  hpp_value_formatted: string;
+}
+
+export interface ProductionInHouseSummary {
+  total_orders: number;
+  total_planned_qty: number;
+  total_actual_qty: number;
+  total_hpp_value: number;
+  completed_orders: number;
+}
+
+export interface ProductionInHouseResult {
+  orders: ProductionInHouseOrder[];
+  byStatus: ProductionInHouseStatusRow[];
+  summary: ProductionInHouseSummary;
 }
