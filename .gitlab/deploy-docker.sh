@@ -18,6 +18,7 @@ require_var DOCKER_IMAGE
 require_var CONTAINER_NAME
 require_var HOST_PORT
 require_var DATABASE_NAME
+require_var STORAGE_DIR
 require_var NEXT_PUBLIC_APP_URL
 require_var NEXT_PUBLIC_BASE_URL
 
@@ -31,11 +32,29 @@ DOCKER_BUILDKIT=0 docker build --network=host -t "$DOCKER_IMAGE:latest" .
 docker stop "$CONTAINER_NAME" || true
 docker rm "$CONTAINER_NAME" || true
 
+# Unggahan (kontrak bertanda tangan, psikotes, CV, foto member) ditulis ke
+# /app/storage di dalam container. Tanpa volume, seluruhnya ikut terhapus setiap
+# redeploy karena container dibuat ulang dari image.
+#
+# Direktori ini disiapkan sekali oleh admin, bukan oleh CI: isinya data pribadi
+# sehingga dikunci ke uid 1001 (user nextjs) dengan mode 750 — runner yang jalan
+# sebagai user biasa memang tidak boleh menulis ke sana.
+#
+#   sudo mkdir -p <dir>/uploads <dir>/private
+#   sudo chown -R 1001:65533 <dir> && sudo chmod 750 <dir>
+if [ ! -d "$STORAGE_DIR" ]; then
+  echo "STORAGE_DIR tidak ditemukan: $STORAGE_DIR" >&2
+  echo "Siapkan dulu di host (lihat komentar di skrip ini). Deploy dihentikan agar" >&2
+  echo "docker tidak membuat direktori kosong milik root dan unggahan gagal lagi." >&2
+  exit 1
+fi
+
 docker run -d \
   --name "$CONTAINER_NAME" \
   --restart unless-stopped \
   -p "127.0.0.1:${HOST_PORT}:${CONTAINER_PORT}" \
   --add-host host.docker.internal:host-gateway \
+  -v "${STORAGE_DIR}:/app/storage" \
   -e DATABASE_URL="postgresql://${DB_USER}:${DB_PASS}@${DB_HOST}:${DB_PORT}/${DATABASE_NAME}" \
   -e MIGRATE_DATABASE_URL="postgresql://${DB_USER}:${DB_PASS}@${DB_HOST}:${DB_PORT}/${DATABASE_NAME}" \
   -e NODE_ENV=production \
