@@ -9,6 +9,7 @@ deploy_production:
     CONTAINER_NAME: arkiv
     HOST_PORT: "3004"
     DATABASE_NAME: db-production-arkiv
+    STORAGE_DIR: /srv/arkiv/storage
     NEXT_PUBLIC_APP_URL: https://sulu.within.ventures
     NEXT_PUBLIC_BASE_URL: https://sulu.within.ventures
   script:
@@ -24,6 +25,7 @@ deploy_development:
     CONTAINER_NAME: arkiv-development
     HOST_PORT: "3460"
     DATABASE_NAME: db-dev-arkiv
+    STORAGE_DIR: /srv/arkiv-dev/storage
     NEXT_PUBLIC_APP_URL: https://dev-sulu.within.ventures
     NEXT_PUBLIC_BASE_URL: https://dev-sulu.within.ventures
   script:

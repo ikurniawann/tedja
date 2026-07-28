@@ -18,6 +18,14 @@ COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/package.json ./package.json
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules ./node_modules
 
+# Aplikasi menulis unggahan ke process.cwd()/storage (lihat src/lib/storage.ts dan
+# src/lib/storage-private.ts). /app milik root sedangkan proses berjalan sebagai
+# nextjs, jadi mkdir saat runtime gagal dengan EACCES — direktorinya harus dibuat
+# di sini, selagi masih root. Isinya sendiri dipasok lewat volume saat docker run;
+# tanpa volume, unggahan hilang setiap redeploy.
+RUN mkdir -p /app/storage/uploads /app/storage/private && \
+    chown -R nextjs:nodejs /app/storage
+
 EXPOSE 3000
 ENV PORT=3000
 USER nextjs
