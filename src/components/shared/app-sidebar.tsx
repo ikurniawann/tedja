@@ -38,11 +38,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
-import {
-  RESTAURANT_PATH,
-  isRestaurantImmersive,
-} from "@/features/pos/restaurant/nav";
 import { PosNfcShell } from "@/features/pos/nfc";
+import { isPosImmersiveShell } from "@/features/pos/tablet-mode";
+import { PosTabletManifestLink } from "@/features/pos/components/pos-tablet-manifest-link";
 import type { NavItem } from "@/lib/iam/types";
 import { isEssOnlyRole } from "@/lib/iam/access";
 import AppSidebarNav from "./app-sidebar-nav";
@@ -74,9 +72,9 @@ function AppSidebarContent({
   user,
   navItems,
   children,
-  restaurantImmersive,
+  posImmersive,
   essOnly: essOnlyProp,
-}: AppSidebarProps & { restaurantImmersive: boolean }) {
+}: AppSidebarProps & { posImmersive: boolean }) {
   const pathname = usePathname();
   // ESS-only: sembunyikan seluruh jalan menuju desktop Arkiv OS.
   // Nilai dari server (IAM) diutamakan; fallback kebijakan role di kode.
@@ -88,14 +86,15 @@ function AppSidebarContent({
 
   const closeMobile = () => setMobileOpen(false);
 
-  if (restaurantImmersive) {
+  if (posImmersive) {
     return (
       <PosNfcShell>
+        <PosTabletManifestLink />
         <div
           className="arkiv-dashboard-theme min-h-screen"
           style={{ background: "var(--page-mesh)" }}
         >
-          <main className="min-h-screen overflow-auto p-0">{children}</main>
+          <main className="min-h-[100dvh] overflow-auto p-2 sm:p-3 md:p-4">{children}</main>
         </div>
       </PosNfcShell>
     );
@@ -188,18 +187,15 @@ function AppSidebarContent({
 function AppSidebarWithSearch(props: AppSidebarProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const restaurantImmersive =
-    pathname === RESTAURANT_PATH && isRestaurantImmersive(searchParams);
+  const posImmersive = isPosImmersiveShell(pathname, searchParams);
 
-  return (
-    <AppSidebarContent {...props} restaurantImmersive={restaurantImmersive} />
-  );
+  return <AppSidebarContent {...props} posImmersive={posImmersive} />;
 }
 
 export default function AppSidebar(props: AppSidebarProps) {
   return (
     <Suspense
-      fallback={<AppSidebarContent {...props} restaurantImmersive={false} />}
+      fallback={<AppSidebarContent {...props} posImmersive={false} />}
     >
       <AppSidebarWithSearch {...props} />
     </Suspense>

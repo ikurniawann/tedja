@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from "react";
 import { createOrder, type CreateOrderRequest } from "@/lib/pos-api";
+import type { BillChargesResult } from "@/lib/pos/billing-settings";
 import type { PosCartItem } from "./use-pos-cart";
 
 export interface PaymentResult {
@@ -41,6 +42,7 @@ export function usePosCheckout() {
       giftCardCode,
       giftCardBuyer,
       promo,
+      billCharges,
     }: {
       cart: PosCartItem[];
       orderType: string;
@@ -60,6 +62,8 @@ export function usePosCheckout() {
       giftCardBuyer?: { name?: string | null; phone?: string | null } | null;
       /** EPIC-032 C2 — kode promo ter-apply (diskon preview dari server). */
       promo?: { code: string; discount: number } | null;
+      /** Resolved billing totals from calculateBillCharges */
+      billCharges: BillChargesResult;
     }): Promise<PaymentResult> => {
       const snap = {
         snapshotCart: [...cart],
@@ -89,7 +93,7 @@ export function usePosCheckout() {
           total_amount: Number(item.price * item.quantity),
         }));
 
-        // Client-side pre-calc for reference (server recalculates)
+        // Client-side pre-calc for reference (server recalculates discount; charges from billing config)
         const subtotal = cart.reduce((sum, i) => sum + i.price * i.quantity, 0);
         const discountPct = selectedCustomer?.discount || 0;
         const membershipAmt = discountPct > 0 ? Math.floor((subtotal * discountPct) / 100) : 0;
@@ -99,9 +103,8 @@ export function usePosCheckout() {
           ? Math.min(promo.discount, Math.max(0, subtotal - membershipAmt))
           : 0;
         const discountAmount = membershipAmt + promoAmt;
-        const afterDiscount = subtotal - discountAmount;
-        const tax = includeTax ? Math.round(afterDiscount * 0.1) : 0;
-        const total = afterDiscount + tax;
+        const tax = billCharges.tax_amount;
+        const total = billCharges.total;
         const paidAmount =
           paymentMethod === "cash"
             ? Number(parseFloat(cashReceived) || total)
@@ -112,7 +115,7 @@ export function usePosCheckout() {
                 : total;
 
         const payload: CreateOrderRequest = {
-          order_type: orderType as any,
+          order_type: orderType as CreateOrderRequest["order_type"],
           customer_id: selectedCustomer?.id,
           cashier_id: "00000000-0000-0000-0000-000000000001",
           table_id: selectedTable || undefined,
@@ -120,7 +123,9 @@ export function usePosCheckout() {
           subtotal,
           discount_amount: discountAmount,
           tax_amount: tax,
-          service_charge_amount: 0,
+          service_charge_amount: billCharges.service_charge_amount,
+          other_charges_amount: billCharges.other_charges_amount,
+          charges_breakdown: billCharges.breakdown,
           total_amount: total,
           payment_method: paymentMethod === "qris" ? "qris" : paymentMethod === "credit_card" ? "credit" : paymentMethod === "ark_coin" ? "ark_coin" : paymentMethod === "nfc_tab" ? "nfc_tab" : paymentMethod === "gift_card" ? "gift_card" : "cash",
           amount_paid: paidAmount,
@@ -155,12 +160,12 @@ export function usePosCheckout() {
           giftCardError: response.gift_card_error ?? null,
           ...snap,
         };
-      } catch (err: any) {
+      } catch (err: unknown) {
         return {
           success: false,
           total: 0,
           change: 0,
-          error: err.message || "Network error",
+          error: err instanceof Error ? err.message : "Network error",
           ...snap,
         };
       } finally {

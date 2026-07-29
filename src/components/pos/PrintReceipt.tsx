@@ -15,6 +15,13 @@ export interface ReceiptPayload {
   customerName?: string;
   discountAmount: number;
   taxAmount: number;
+  /** Snapshot charge lines (service / fee / rounding / tax) for receipt */
+  chargesBreakdown?: Array<{
+    code: string;
+    name: string;
+    kind: string;
+    amount: number;
+  }>;
   /**
    * EPIC-034 Fase B — kartu yang terbit dari transaksi ini. Kode dicetak di
    * struk pelanggan (keputusan owner: struk adalah jalur utama, WA tambahan).
@@ -39,6 +46,7 @@ export function printThermalReceipt(payload: ReceiptPayload, label: ThermalPrint
     customerName,
     discountAmount,
     taxAmount,
+    chargesBreakdown,
     giftCards,
   } = payload;
 
@@ -83,6 +91,21 @@ export function printThermalReceipt(payload: ReceiptPayload, label: ThermalPrint
   const isPreviewBill = label === "PREVIEW_BILL";
   const heading = isPreviewBill ? "PREVIEW BILL" : label;
   const title = isPreviewBill ? "PREVIEW BILL" : label;
+
+  const chargeRowsHtml =
+    chargesBreakdown && chargesBreakdown.length > 0
+      ? chargesBreakdown
+          .map((line) => {
+            const amountLabel =
+              line.amount < 0
+                ? `-${formatCurrency(Math.abs(line.amount))}`
+                : formatCurrency(line.amount);
+            return `<div class="row"><span>${line.name}</span><span>${amountLabel}</span></div>`;
+          })
+          .join("")
+      : taxAmount > 0
+        ? `<div class="row"><span>PPN</span><span>${formatCurrency(taxAmount)}</span></div>`
+        : "";
 
   win.document.write(`<!DOCTYPE html>
 <html>
@@ -136,7 +159,7 @@ export function printThermalReceipt(payload: ReceiptPayload, label: ThermalPrint
       <table>${itemsHtml}</table>
       <div class="divider"></div>
       ${discountAmount > 0 ? `<div class="row"><span>Diskon</span><span>-${formatCurrency(discountAmount)}</span></div>` : ""}
-      ${taxAmount > 0 ? `<div class="row"><span>PPN</span><span>${formatCurrency(taxAmount)}</span></div>` : ""}
+      ${chargeRowsHtml}
       <div class="row total"><span>TOTAL</span><span>${formatCurrency(total)}</span></div>
       ${
         isPreviewBill
