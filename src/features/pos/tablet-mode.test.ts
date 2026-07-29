@@ -3,6 +3,7 @@ import {
   cashierTabletRoute,
   isPosImmersiveShell,
   isPosTabletQuery,
+  restaurantTabletRoute,
   withPosTabletParam,
 } from "./tablet-mode";
 
@@ -21,6 +22,21 @@ describe("isPosImmersiveShell", () => {
     ).toBe(true);
   });
 
+  it("is true for cashier tablet shortcut", () => {
+    expect(
+      isPosImmersiveShell("/dashboard/pos/tablet", new URLSearchParams())
+    ).toBe(true);
+  });
+
+  it("is true for restaurant-tablet route", () => {
+    expect(
+      isPosImmersiveShell(
+        "/dashboard/pos/restaurant-tablet",
+        new URLSearchParams()
+      )
+    ).toBe(true);
+  });
+
   it("is true for POS paths with tablet=1", () => {
     expect(
       isPosImmersiveShell(
@@ -30,7 +46,7 @@ describe("isPosImmersiveShell", () => {
     ).toBe(true);
   });
 
-  it("is true for restaurant immersive", () => {
+  it("is true for restaurant immersive query", () => {
     expect(
       isPosImmersiveShell(
         "/dashboard/pos/restaurant",
@@ -51,6 +67,12 @@ describe("cashierTabletRoute", () => {
     expect(cashierTabletRoute()).toBe(
       "/dashboard/pos/cashier-fullscreen?tablet=1"
     );
+  });
+});
+
+describe("restaurantTabletRoute", () => {
+  it("points at dedicated restaurant tablet path", () => {
+    expect(restaurantTabletRoute()).toBe("/dashboard/pos/restaurant-tablet");
   });
 });
 

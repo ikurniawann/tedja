@@ -1333,7 +1333,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
                 ) : null}
               </span>
             ) : isTabletMode ? (
-              'Mode tablet — layout fokus checkout tanpa sidebar'
+              'Kasir tablet'
             ) : (
               'Process orders with the dashboard sidebar available'
             )}

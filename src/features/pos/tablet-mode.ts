@@ -1,16 +1,19 @@
 /**
  * POS tablet / kiosk chrome helpers.
- * Hides dashboard sidebar + top bar so kasir fills the viewport.
+ * Hides dashboard sidebar + top bar so kasir/restaurant fills the viewport.
  */
 
-import { CASHIER_ROUTES } from "@/features/pos/cashier/constants";
+import { CASHIER_ROUTES, CASHIER_TABLET_ROUTE } from "@/features/pos/cashier/constants";
 import {
+  POS_TABLET_PARAM,
   RESTAURANT_IMMERSIVE_PARAM,
   RESTAURANT_PATH,
+  RESTAURANT_TABLET_PATH,
   isRestaurantImmersive,
+  isRestaurantTabletPath,
 } from "@/features/pos/restaurant/nav";
 
-export const POS_TABLET_PARAM = "tablet";
+export { POS_TABLET_PARAM };
 
 type SearchParamsLike = { get(name: string): string | null };
 
@@ -22,13 +25,15 @@ export function isPosTabletQuery(searchParams: SearchParamsLike): boolean {
 
 /**
  * When true, AppSidebar renders children only (no nav chrome).
- * Covers: restaurant immersive, cashier-fullscreen route, any POS ?tablet=1 / ?immersive=1.
+ * Covers dedicated tablet routes + ?tablet=1 / ?immersive=1 on POS pages.
  */
 export function isPosImmersiveShell(
   pathname: string,
   searchParams: SearchParamsLike
 ): boolean {
   if (pathname === CASHIER_ROUTES.fullscreen) return true;
+  if (pathname === CASHIER_TABLET_ROUTE) return true;
+  if (isRestaurantTabletPath(pathname)) return true;
 
   if (!pathname.startsWith("/dashboard/pos")) return false;
 
@@ -38,16 +43,14 @@ export function isPosImmersiveShell(
     return true;
   }
 
-  // Cashier handoff from restaurant immersive keeps immersive=1 on embedded route
+  // Cashier handoff from restaurant immersive keeps immersive/tablet flags
   if (searchParams.get(RESTAURANT_IMMERSIVE_PARAM) === "1") return true;
+  if (isPosTabletQuery(searchParams)) return true;
 
   return false;
 }
 
-export function withPosTabletParam(
-  href: string,
-  enabled = true
-): string {
+export function withPosTabletParam(href: string, enabled = true): string {
   if (!enabled) return href;
   const url = new URL(href, "http://local.invalid");
   url.searchParams.set(POS_TABLET_PARAM, "1");
@@ -64,4 +67,8 @@ export function cashierTabletRoute(searchParams?: URLSearchParams | string): str
   params.set(POS_TABLET_PARAM, "1");
   const query = params.toString();
   return query ? `${base}?${query}` : `${base}?${POS_TABLET_PARAM}=1`;
+}
+
+export function restaurantTabletRoute(): string {
+  return RESTAURANT_TABLET_PATH;
 }
