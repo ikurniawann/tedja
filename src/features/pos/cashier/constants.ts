@@ -5,6 +5,9 @@ export const CASHIER_ROUTES = {
   fullscreen: "/dashboard/pos/cashier-fullscreen",
 } as const;
 
+/** Bookmark / home-screen friendly entry for tablet cashiers */
+export const CASHIER_TABLET_ROUTE = "/dashboard/pos/tablet";
+
 export const RESTAURANT_ROUTE = "/dashboard/pos/restaurant";
 
 export function cashierRoute(

@@ -10,6 +10,8 @@ import {
 import { ArrowsPointingInIcon, ArrowsPointingOutIcon } from '@heroicons/react/24/outline';
 import { toast } from 'sonner';
 import { RESTAURANT_FROM, isRestaurantImmersive, restaurantPath } from '@/features/pos/restaurant/nav';
+import { cashierTabletRoute, isPosTabletQuery } from '@/features/pos/tablet-mode';
+import { PosTabletChromeControls } from '@/features/pos/components/pos-tablet-chrome-controls';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -129,7 +131,8 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
   const { data: loyaltySettings } = useLoyaltySettings();
   const formatArk = (value: number) =>
     formatArkAmount(value, loyaltySettings?.ark_rate || 1000);
-  const isFullscreen = variant === 'fullscreen';
+  const isTabletMode =
+    variant === 'fullscreen' || isPosTabletQuery(searchParams);
   const homeRoute = cashierRoute(variant, searchParams);
   const paymentOrderId = searchParams.get('orderId');
   const loadedPaymentOrderRef = useRef<string | null>(null);
@@ -1228,14 +1231,20 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
   }, [resultPayload]);
 
   /* ─── Render ───────────────────────────────────────────────────── */
-  const shellHeight = isFullscreen
-    ? 'h-[calc(100dvh-11rem)] min-h-[560px]'
+  const shellHeight = isTabletMode
+    ? 'h-[calc(100dvh-7rem)] min-h-[520px]'
     : 'h-[calc(100dvh-14rem)] min-h-[480px]';
 
   return (
     <TooltipProvider>
     <PageTransition>
-    <div className="flex flex-col gap-4">
+    <div className={`flex flex-col gap-4 ${isTabletMode ? 'touch-manipulation' : ''}`}>
+      {isTabletMode ? (
+        <div className="rounded-xl border border-primary/20 bg-primary/5 px-3 py-2 text-xs text-primary sm:text-sm">
+          Mode tablet POS aktif — tanpa sidebar. Gunakan <strong>Layar penuh</strong> atau{' '}
+          <strong>Pasang ke tablet</strong> agar address bar browser hilang.
+        </div>
+      ) : null}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
           <h1 className="text-xl font-semibold text-gray-900">POS Cashier</h1>
@@ -1273,8 +1282,8 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
                   </>
                 ) : null}
               </span>
-            ) : isFullscreen ? (
-              'Fullscreen mode — optimized for checkout'
+            ) : isTabletMode ? (
+              'Mode tablet — layout fokus checkout tanpa sidebar'
             ) : (
               'Process orders with the dashboard sidebar available'
             )}
@@ -1310,25 +1319,28 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
             <MonitorIcon className="mr-2 h-4 w-4" />
             Layar Customer
           </Button>
-          {isFullscreen ? (
-            <Button
-              type="button"
-              variant="outline"
-              className="border-gray-200/80 text-gray-700 hover:border-primary/30 hover:bg-primary/10 hover:text-primary"
-              onClick={() => router.push(cashierRoute('embedded', searchParams))}
-            >
-              <ArrowsPointingInIcon className="mr-2 h-4 w-4" />
-              Exit Fullscreen
-            </Button>
+          {isTabletMode ? (
+            <>
+              <PosTabletChromeControls />
+              <Button
+                type="button"
+                variant="outline"
+                className="border-gray-200/80 text-gray-700 hover:border-primary/30 hover:bg-primary/10 hover:text-primary"
+                onClick={() => router.push(cashierRoute('embedded', searchParams))}
+              >
+                <ArrowsPointingInIcon className="mr-2 h-4 w-4" />
+                Keluar mode tablet
+              </Button>
+            </>
           ) : (
             <Button
               type="button"
               variant="outline"
               className="border-gray-200/80 text-gray-700 hover:border-primary/30 hover:bg-primary/10 hover:text-primary"
-              onClick={() => router.push(cashierRoute('fullscreen', searchParams))}
+              onClick={() => router.push(cashierTabletRoute(searchParams))}
             >
               <ArrowsPointingOutIcon className="mr-2 h-4 w-4" />
-              Fullscreen
+              Mode tablet
             </Button>
           )}
         </div>
