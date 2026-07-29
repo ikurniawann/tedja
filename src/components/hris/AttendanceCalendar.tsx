@@ -14,12 +14,8 @@ import {
   resolveScheduleRowForDate,
   type EmployeeShiftRow,
 } from "@/lib/hris/shifts";
-import {
-  holidaysOn,
-  indexHolidays,
-  type HolidayIndex,
-  type HolidayRow,
-} from "@/lib/hris/holidays";
+import { holidaysOn, indexHolidays, type HolidayIndex } from "@/lib/hris/holidays";
+import { fetchHolidayIndex } from "@/lib/hris/holidays-client";
 
 interface AttendanceRecord {
   id: string;
@@ -139,10 +135,7 @@ export function AttendanceCalendar({
     const lastDay = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0);
     const last = localDateKey(lastDay.getFullYear(), lastDay.getMonth(), lastDay.getDate());
 
-    fetch(`/api/hris/holidays?start_date=${first}&end_date=${last}`)
-      .then((res) => (res.ok ? res.json() : null))
-      .then((json) => setHolidayIndex(indexHolidays((json?.data ?? []) as HolidayRow[])))
-      .catch(() => setHolidayIndex(indexHolidays([])));
+    void fetchHolidayIndex(first, last).then(setHolidayIndex);
   }, [currentMonth]);
 
   // pola jadwal shift — sekali per karyawan (pola mingguan, bukan per bulan)

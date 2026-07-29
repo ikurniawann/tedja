@@ -34,7 +34,9 @@ import {
 } from "@/components/ui/dialog";
 import { CalendarIcon, Upload, Loader2, X, FileText, Image as ImageIcon, CheckCircle2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { LEAVE_TYPE_LABELS, calculateLeaveDays } from "@/types/hris";
+import { LEAVE_TYPE_LABELS } from "@/types/hris";
+import { describeLeaveDays } from "@/lib/hris/holidays";
+import { fetchHolidayIndex } from "@/lib/hris/holidays-client";
 import { format } from "date-fns";
 import { id } from "date-fns/locale";
 
@@ -62,6 +64,9 @@ export function LeaveRequestForm({
 }: LeaveRequestFormProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [totalDays, setTotalDays] = useState<number>(0);
+  const [excludedHolidays, setExcludedHolidays] = useState<
+    { date: string; name: string }[]
+  >([]);
   const [leaveBalance, setLeaveBalance] = useState<number | null>(null);
   const [employees, setEmployees] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -94,13 +99,28 @@ export function LeaveRequestForm({
     fetchEmployees();
   }, []);
 
+  /**
+   * Pratinjau jumlah hari (EPIC-036 Fase D): akhir pekan DAN hari libur resmi
+   * tidak memotong jatah, cuti bersama tetap memotong. Angka yang mengikat
+   * tetap dihitung ulang server saat pengajuan disimpan — ini hanya supaya
+   * karyawan tidak kaget melihat selisihnya.
+   */
   useEffect(() => {
-    if (startDate && endDate) {
-      const days = calculateLeaveDays(startDate, endDate);
-      setTotalDays(days);
-    } else {
+    if (!startDate || !endDate || endDate < startDate) {
       setTotalDays(0);
+      setExcludedHolidays([]);
+      return;
     }
+    let cancelled = false;
+    void fetchHolidayIndex(startDate, endDate).then((index) => {
+      if (cancelled) return;
+      const breakdown = describeLeaveDays(startDate, endDate, index);
+      setTotalDays(breakdown.totalDays);
+      setExcludedHolidays(breakdown.excludedHolidays);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [startDate, endDate]);
 
   useEffect(() => {
@@ -456,11 +476,30 @@ export function LeaveRequestForm({
                     {totalDays} hari
                   </Badge>
                 </div>
+                {excludedHolidays.length > 0 && (
+                  <p className="text-xs text-gray-600 mt-2">
+                    Tidak memotong jatah:{" "}
+                    {excludedHolidays.map((h) => `${h.name} (${h.date})`).join(", ")}
+                  </p>
+                )}
                 {insufficientBalance && (
                   <p className="text-xs text-red-600 mt-2">
                     ⚠️ Saldo cuti tidak mencukupi
                   </p>
                 )}
+              </div>
+            )}
+
+            {/* Seluruh rentang jatuh di akhir pekan / tanggal merah — server
+                akan menolaknya, jadi katakan sekarang daripada setelah submit. */}
+            {startDate && endDate && endDate >= startDate && totalDays === 0 && (
+              <div className="p-3 rounded-lg border bg-amber-50 border-amber-200">
+                <p className="text-sm text-amber-800">
+                  Rentang ini sudah libur seluruhnya
+                  {excludedHolidays.length > 0 &&
+                    ` (${excludedHolidays.map((h) => h.name).join(", ")})`}
+                  {" "}— tidak perlu mengajukan cuti.
+                </p>
               </div>
             )}
 

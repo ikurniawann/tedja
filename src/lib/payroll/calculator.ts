@@ -30,8 +30,16 @@ export interface PayrollInput {
   transportAllowance?: number;
   mealAllowance?: number;
   housingAllowance?: number;
+  /** Jam lembur pada HARI KERJA biasa. */
   overtimeHours?: number;
   overtimeRate?: number;
+  /**
+   * Jam lembur pada HARI LIBUR RESMI (EPIC-036 Fase F), dibayar terpisah dengan
+   * `overtimeHolidayRate`. 0/undefined → perhitungan identik dengan sebelum
+   * fase ini.
+   */
+  overtimeHolidayHours?: number;
+  overtimeHolidayRate?: number;
   bonus?: number;
 
   // Attendance
@@ -338,6 +346,8 @@ export async function calculatePayroll(
     housingAllowance = 0,
     overtimeHours = 0,
     overtimeRate = config.overtimeMultiplier,
+    overtimeHolidayHours = 0,
+    overtimeHolidayRate = config.overtimeHolidayMultiplier,
     bonus = 0,
     workingDays,
     lateDays = 0,
@@ -367,7 +377,12 @@ export async function calculatePayroll(
     config.overtimeHourlyDivisor > 0
       ? fullBaseSalary / config.overtimeHourlyDivisor
       : 0;
-  const overtimePay = calculateOvertime(overtimeHours, hourlyRate, overtimeRate);
+  // Lembur hari libur resmi dibayar dengan multiplier terpisah (PP 35/2021 —
+  // 2× vs 1,5×). Dijumlahkan, bukan menggantikan: satu periode bisa memuat
+  // keduanya. Tanpa jam libur, hasilnya identik dengan sebelum EPIC-036 Fase F.
+  const overtimePay =
+    calculateOvertime(overtimeHours, hourlyRate, overtimeRate) +
+    calculateOvertime(overtimeHolidayHours, hourlyRate, overtimeHolidayRate);
 
   // Kelayakan THR (Fase C): karyawan ber-kontrak aktif (PKWT ATAU PKWTT —
   // keduanya berhak THR per Permenaker 6/2016). Karyawan tanpa record

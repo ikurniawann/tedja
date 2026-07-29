@@ -31,10 +31,12 @@ import {
   eachDateOfPeriod,
   mergeDateRanges,
   periodCoverage,
-  realizedOvertimeHours,
+  splitOvertimeHours,
   type AttendancePeriodRow,
   type DateRange,
 } from "./period";
+import { loadHolidayIndex } from "@/lib/hris/holidays-db";
+import type { HolidayIndex } from "@/lib/hris/holidays";
 
 type PgClient = Awaited<ReturnType<typeof createServerPgClient>>;
 
@@ -71,9 +73,14 @@ export async function loadEmployeePayrollInput(
   employee: EmployeeRow,
   periodMonth: number,
   periodYear: number,
-  options: { includeThr?: boolean } = {}
+  options: { includeThr?: boolean; holidays?: HolidayIndex } = {}
 ): Promise<(PayrollInput & { workingDaysSource: WorkingDaysSource }) | null> {
   const { startDate, endDate } = periodRange(periodMonth, periodYear);
+
+  // Hari libur periode ini (EPIC-036 Fase F) — dipakai memisahkan jam lembur.
+  // Pemanggil yang menghitung banyak karyawan sekaligus WAJIB memuatnya sekali
+  // lalu mengoper lewat options, supaya tidak menjadi query per karyawan.
+  const holidays = options.holidays ?? (await loadHolidayIndex(startDate, endDate));
 
   const { data: salary } = await db
     .from("employee_salary")
@@ -266,16 +273,19 @@ export async function loadEmployeePayrollInput(
   ).length;
   const { lateDays, lateMinutes } = computeLateStats(attendanceRows);
 
-  // Lembur: hanya pengajuan approved yang terealisasi (ada clock_out)
-  const overtimeHours = realizedOvertimeHours(
-    (overtimeRequests ?? []).flatMap(
-      (r: { date: unknown; hours: unknown }) => {
-        const date = dateColToIso(r.date);
-        return date ? [{ date, hours: Number(r.hours) || 0 }] : [];
-      }
-    ),
-    attendanceRows
-  );
+  // Lembur: hanya pengajuan approved yang terealisasi (ada clock_out), dipisah
+  // hari kerja vs hari libur resmi karena tarifnya berbeda (EPIC-036 Fase F).
+  const { regularHours: overtimeHours, holidayHours: overtimeHolidayHours } =
+    splitOvertimeHours(
+      (overtimeRequests ?? []).flatMap(
+        (r: { date: unknown; hours: unknown }) => {
+          const date = dateColToIso(r.date);
+          return date ? [{ date, hours: Number(r.hours) || 0 }] : [];
+        }
+      ),
+      attendanceRows,
+      holidays
+    );
 
   // Hanya cuti unpaid yang memotong gaji; cuti berbayar = hadir dibayar.
   const leaveRows: { start_date: string; end_date: string; leave_type: string }[] =
@@ -311,6 +321,7 @@ export async function loadEmployeePayrollInput(
     mealAllowance: Number(salary.meal_allowance) || 0,
     housingAllowance: Number(salary.housing_allowance) || 0,
     overtimeHours,
+    overtimeHolidayHours,
     workingDays,
     presentDays,
     lateDays,

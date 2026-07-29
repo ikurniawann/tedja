@@ -622,21 +622,11 @@ export const calculateTenure = (joinDate: string): string => {
   }
 };
 
-// Helper function untuk calculate leave days (exclude weekends)
-export const calculateLeaveDays = (startDate: string, endDate: string): number => {
-  const start = new Date(startDate);
-  const end = new Date(endDate);
-  let days = 0;
-  
-  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-    const dayOfWeek = d.getDay();
-    if (dayOfWeek !== 0 && dayOfWeek !== 6) { // Exclude Sunday and Saturday
-      days++;
-    }
-  }
-  
-  return Math.max(1, days);
-};
+// calculateLeaveDays() dihapus di EPIC-036 Fase D. Ia hanya mengecualikan akhir
+// pekan, sehingga cuti yang melewati tanggal merah tetap memotong jatah — bug
+// yang sama dengan calculateBusinessDays di endpoint cuti. Penggantinya
+// describeLeaveDays() di src/lib/hris/holidays.ts, yang butuh HolidayIndex
+// (ambil lewat fetchHolidayIndex di client, loadHolidayIndex di server).
 
 // Helper function untuk get GPS location
 export const getCurrentLocation = async (): Promise<AttendanceLocation | null> => {

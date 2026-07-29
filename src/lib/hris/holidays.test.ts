@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
   countLeaveDays,
+  describeLeaveDays,
   eachDateIso,
   holidaysOn,
   indexHolidays,
@@ -126,5 +127,46 @@ describe("countLeaveDays", () => {
       { holiday_date: "2026-09-02", name: "HUT Perusahaan", type: "perusahaan", deducts_leave: false },
     ]);
     expect(countLeaveDays("2026-09-02", "2026-09-02", perusahaan)).toBe(0);
+  });
+});
+
+// EPIC-036 Fase D — rincian yang dipakai endpoint cuti & pratinjau di form,
+// supaya karyawan melihat ALASAN jatahnya tidak terpotong penuh.
+describe("describeLeaveDays", () => {
+  test("menyebut libur yang tidak memotong jatah", () => {
+    const result = describeLeaveDays("2026-08-17", "2026-08-19", index);
+    expect(result.totalDays).toBe(2);
+    expect(result.excludedHolidays).toEqual([
+      { date: "2026-08-17", name: "Hari Kemerdekaan Republik Indonesia" },
+    ]);
+  });
+
+  test("cuti bersama tidak masuk daftar pengecualian karena tetap memotong", () => {
+    const result = describeLeaveDays("2026-03-20", "2026-03-20", index);
+    expect(result.totalDays).toBe(1);
+    expect(result.excludedHolidays).toEqual([]);
+  });
+
+  test("akhir pekan bukan 'libur' — tidak ikut disebut namanya", () => {
+    // Sab 15 – Sen 17 Agustus: 2 hari akhir pekan + 1 libur nasional
+    const result = describeLeaveDays("2026-08-15", "2026-08-17", index);
+    expect(result.totalDays).toBe(0);
+    expect(result.excludedHolidays).toEqual([
+      { date: "2026-08-17", name: "Hari Kemerdekaan Republik Indonesia" },
+    ]);
+  });
+
+  test("konsisten dengan countLeaveDays untuk klaster Idul Fitri", () => {
+    const result = describeLeaveDays("2026-03-20", "2026-03-24", index);
+    expect(result.totalDays).toBe(countLeaveDays("2026-03-20", "2026-03-24", index));
+    expect(result.excludedHolidays).toEqual([
+      { date: "2026-03-21", name: "Hari Raya Idul Fitri 1447 H" },
+    ]);
+  });
+
+  test("rentang terbalik menghasilkan nol tanpa melempar", () => {
+    const result = describeLeaveDays("2026-08-19", "2026-08-17", index);
+    expect(result.totalDays).toBe(0);
+    expect(result.excludedHolidays).toEqual([]);
   });
 });

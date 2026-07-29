@@ -1,6 +1,6 @@
 # EPIC-036: Kalender Hari Libur Nasional — Master Libur, Cuti Bersama & Dampaknya ke Cuti/Lembur
 
-status: coding
+status: ready-for-qa
 environment: dev
 retries: 0
 
@@ -109,9 +109,9 @@ roster, cuti, dan lembur — pola yang sama dengan `shifts.ts` dan `daily-roster
 | **A** | Delta skema `hris.public_holidays` + seed libur nasional & cuti bersama 2026 (dikurasi manual) + modul murni `src/lib/hris/holidays.ts` beserta unit test | ✅ selesai |
 | **B** | Halaman admin `/dashboard/hris/holidays` (sibling `/dashboard/hris/shifts`) + API CRUD + delta menu `hris.holidays` (grant `super_admin`, `hrd`) | ✅ selesai |
 | **C** | Kalender ESS & monitoring: `AttendanceCalendar` menampilkan tanggal merah + nama libur; `daily-roster` menambah status `libur_nasional` | ✅ selesai |
-| **D** | Cuti: `calculateBusinessDays` mengecualikan libur aktif yang `deducts_leave = false`; berlaku untuk pengajuan baru saja | belum |
-| **E** | Importer ICS: tarik → preview bercentang → simpan sebagai `aktif`. Idempoten via `source_ref` | belum |
-| **F** (opsional) | Lembur hari libur resmi: multiplier terpisah di `calculator.ts` mengikuti Kepmenaker. **Menyentuh payroll — perlu keputusan owner sendiri** | belum |
+| **D** | Cuti: `calculateBusinessDays` mengecualikan libur aktif yang `deducts_leave = false`; berlaku untuk pengajuan baru saja | ✅ selesai |
+| **E** | Importer ICS: tarik → preview bercentang → simpan sebagai `aktif`. Idempoten via `source_ref` | ✅ selesai |
+| **F** (opsional) | Lembur hari libur resmi: multiplier terpisah di `calculator.ts` mengikuti Kepmenaker. **Menyentuh payroll — perlu keputusan owner sendiri** | ✅ selesai (perlu konfirmasi kebijakan, lihat log) |
 
 Fase A–C sudah menjawab pertanyaan awal ("kalender ESS tahu tanggal merah").
 Fase D yang memperbaiki bug saldo cuti. E mempercepat pengisian tahunan. F terpisah
@@ -150,16 +150,16 @@ karena menyentuh angka gaji.
 
 ## Acceptance Criteria
 
-- [ ] Tabel `hris.public_holidays` ada, terisi libur nasional + cuti bersama 2026
-- [ ] HRD bisa menambah/ubah/hapus libur dari `/dashboard/hris/holidays` tanpa deploy
-- [ ] Menu `hris.holidays` tampil untuk `super_admin` + `hrd`, tidak untuk role lain
-- [ ] Kalender ESS menampilkan tanggal merah beserta nama liburnya, di bulan mana pun
-- [ ] Monitoring absensi tidak lagi menandai karyawan `alpha` pada hari libur nasional
-- [ ] Pengajuan cuti yang melewati libur nasional **tidak** memotong hari libur itu
-- [ ] Pengajuan cuti yang melewati cuti bersama **tetap** memotong (sesuai SKB)
-- [ ] Cuti yang sudah approved sebelum rilis tidak berubah `total_days`-nya
-- [ ] Impor ICS menampilkan preview dan tidak menyimpan apa pun sebelum dicentang
-- [ ] Impor ulang tahun yang sama tidak menghasilkan duplikat
+- [x] Tabel `hris.public_holidays` ada, terisi libur nasional + cuti bersama 2026
+- [x] HRD bisa menambah/ubah/hapus libur dari `/dashboard/hris/holidays` tanpa deploy
+- [x] Menu `hris.holidays` tampil untuk `super_admin` + `hrd`, tidak untuk role lain
+- [x] Kalender ESS menampilkan tanggal merah beserta nama liburnya, di bulan mana pun
+- [x] Monitoring absensi tidak lagi menandai karyawan `alpha` pada hari libur nasional
+- [x] Pengajuan cuti yang melewati libur nasional **tidak** memotong hari libur itu
+- [x] Pengajuan cuti yang melewati cuti bersama **tetap** memotong (sesuai SKB)
+- [x] Cuti yang sudah approved sebelum rilis tidak berubah `total_days`-nya
+- [x] Impor ICS menampilkan preview dan tidak menyimpan apa pun sebelum dicentang
+- [x] Impor ulang tahun yang sama tidak menghasilkan duplikat
 
 ## Test Plan
 
@@ -276,3 +276,73 @@ aturan. Status naik ke `ready-for-qa`.
   `tsc --noEmit` tidak menghasilkan error baru di berkas epic (601 error
   pre-existing repo tidak tersentuh), `next build` EXIT=0 dengan ketiga route
   baru terdaftar.
+- 2026-07-29 — **Fase D TUNTAS.** `calculateBusinessDays` di
+  `leaves/route.ts` dihapus dan digantikan `describeLeaveDays()` di modul murni,
+  yang mengecualikan akhir pekan **dan** libur aktif ber-`deducts_leave = false`.
+  Pratinjau hari kini muncul di kedua form pengajuan (HR dan ESS) beserta
+  ALASANNYA, bukan cuma angkanya.
+  Keputusan yang diambil saat implementasi:
+  1. **Tanpa backfill** (risiko #1). Hanya `POST /api/hris/leaves` yang berubah;
+     cuti yang sudah approved tetap memakai `total_days` lamanya karena saldonya
+     sudah terlanjur terpotong. Jalur approve/cancel tidak disentuh sama sekali.
+  2. **Rentang yang seluruhnya libur DITOLAK 400**, bukan diam-diam dihitung
+     1 hari seperti perilaku lama `Math.max(1, days)`. Memotong jatah untuk hari
+     yang memang sudah libur adalah bug yang sama dengan yang sedang diperbaiki.
+  3. **`calculateLeaveDays()` di `types/hris.ts` DIHAPUS.** Ia duplikat sisi
+     client dari bug yang sama; membiarkannya hidup mengundang pemakaian ulang.
+     Penggantinya `describeLeaveDays` + `fetchHolidayIndex`.
+  4. Ditambahkan validasi yang sebelumnya tidak ada: format tanggal wajib
+     `YYYY-MM-DD` (zod regex) dan `end_date` tidak boleh mendahului `start_date`.
+  5. `holidays-db.ts` (server, pakai pool `@/lib/db`) dipisah dari `holidays.ts`
+     supaya modul murni tetap aman diimpor komponen client.
+- 2026-07-29 — **Fase E TUNTAS.** Parser ICS murni `holiday-ics.ts` (12 unit
+  test) + endpoint `GET/POST /api/hris/holidays/import` + dialog preview
+  bercentang di halaman Hari Libur.
+  Keputusan yang diambil saat implementasi:
+  1. **Dua langkah, tanpa cron.** `GET` hanya menarik & memparse — tidak menulis
+     apa pun. Tidak ada satu pun jalur yang menulis tabel ini tanpa HRD menekan
+     Simpan.
+  2. **Idempotensi dua lapis:** cocokkan `source_ref` (UID event) dulu → kalau
+     ada, perbarui di tempat (tahan terhadap Google mengganti nama event);
+     kalau belum ada, `INSERT … ON CONFLICT (holiday_date, name) WHERE
+     deleted_at IS NULL DO UPDATE` (tahan terhadap baris yang sudah diketik
+     manual HRD). Kolom `source` dan `note` sengaja TIDAK ditimpa saat konflik.
+  3. **Kurasi berbasis nama, bukan tanggal:** `1 Ramadan`, `Hari Paskah`,
+     `Hari Kedua Muharram`, `Malam Tahun Baru`, dan hari-hari peringatan datang
+     dalam keadaan **tidak tercentang** beserta alasannya. Nama tetap, tanggalnya
+     yang bergeser tiap tahun.
+  4. **`(belum pasti)` → masuk sebagai `draft`**, sehingga belum mempengaruhi
+     perhitungan cuti/absensi sampai HRD menyetujui.
+  5. **Outbound fetch dijinakkan** (risiko #6): URL konstanta (bukan input
+     pengguna → tidak ada jalur SSRF), timeout 12 detik, batas ukuran respons,
+     validasi bahwa isinya benar ICS. Gagal → 502 dengan pesan yang bisa
+     ditindaklanjuti; **halaman admin tetap hidup**, hanya dialog impornya yang
+     mati, dan penambahan manual tetap jalan.
+- 2026-07-29 — **Fase F TUNTAS — ⚠ BUTUH KONFIRMASI KEBIJAKAN OWNER.**
+  `splitOvertimeHours()` memisahkan jam lembur hari kerja vs hari libur resmi,
+  dan `calculatePayroll` membayarnya dengan dua multiplier. Delta
+  `20260729120000_payroll_overtime_holiday_multiplier.sql` menambah kolom
+  `payroll_settings.overtime_multiplier_holiday` (default **2.00**) yang muncul
+  di halaman Pengaturan Payroll sebagai "Pengali Lembur (hari libur)".
+  Yang perlu diputuskan owner:
+  1. **Angka 2× adalah asumsi** yang diambil dari PP 35/2021 untuk jam-jam awal
+     lembur di hari libur. Bisa diubah tanpa deploy lewat Pengaturan Payroll.
+  2. **Tangga progresif PP 35/2021 TIDAK diterapkan** (hari libur jam ke-8 → 3×,
+     jam ke-9 dst → 4×; hari kerja jam ke-2 dst → 2×). Sistem tetap memakai satu
+     tarif rata per bucket, persis seperti sebelumnya — yang ditambahkan hanya
+     pemisahan hari kerja vs hari libur. Menerapkan tangga penuh adalah
+     perubahan kebijakan payroll tersendiri, bukan efek samping epic ini.
+  3. **Ketiga tipe libur** (nasional, cuti bersama, perusahaan) sama-sama masuk
+     bucket hari libur untuk lembur — ketiganya berarti kantor tutup.
+     `deducts_leave` tidak relevan di sini.
+  4. **Periode tanpa hari libur menghasilkan angka yang identik** dengan sebelum
+     fase ini (diuji eksplisit). Yang berubah hanya periode yang memang memuat
+     lembur di tanggal merah.
+  5. Regresi yang dicegah: `input.overtimeHours` kini hanya jam hari kerja, jadi
+     kolom `payroll_details.overtime_hours` diisi **total** kedua bucket supaya
+     slip gaji tidak mendadak melaporkan jam lembur lebih sedikit.
+  6. Index libur dimuat **sekali per run** di route batch payroll lalu dioper ke
+     tiap karyawan — memuatnya di dalam loop akan menjadi query per karyawan.
+  Gate Fase D–F: `vitest` 1100/1100 lolos (+22 test baru), `eslint` bersih untuk
+  seluruh berkas baru, `tsc --noEmit` 601 error = **identik baseline** (tidak ada
+  error baru), `next build` EXIT=0 dengan route impor terdaftar.

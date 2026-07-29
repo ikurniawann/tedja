@@ -111,9 +111,45 @@ export function countLeaveDays(
   endIso: string,
   index: HolidayIndex
 ): number {
-  return eachDateIso(startIso, endIso).filter((dateIso) => {
-    if (isWeekend(dateIso)) return false;
-    const holidays = holidaysOn(index, dateIso);
-    return !holidays.some((holiday) => !holiday.deducts_leave);
-  }).length;
+  return describeLeaveDays(startIso, endIso, index).totalDays;
+}
+
+export interface LeaveDaysBreakdown {
+  /** Hari yang benar-benar memotong jatah cuti tahunan. */
+  totalDays: number;
+  /**
+   * Libur di dalam rentang yang membuat jatah TIDAK terpotong — dipakai untuk
+   * menjelaskan selisihnya ke karyawan ("17 Agustus tidak dihitung"). Akhir
+   * pekan sengaja tidak masuk daftar: bukan libur bernama, dan sudah dipahami.
+   */
+  excludedHolidays: { date: string; name: string }[];
+}
+
+/**
+ * Sama seperti `countLeaveDays`, tetapi ikut mengembalikan ALASAN pengurangan.
+ * Endpoint cuti memakainya untuk pesan penolakan, form memakainya untuk
+ * pratinjau sebelum karyawan menekan kirim.
+ */
+export function describeLeaveDays(
+  startIso: string,
+  endIso: string,
+  index: HolidayIndex
+): LeaveDaysBreakdown {
+  const excludedHolidays: { date: string; name: string }[] = [];
+  let totalDays = 0;
+
+  for (const dateIso of eachDateIso(startIso, endIso)) {
+    const exempt = holidaysOn(index, dateIso).filter((holiday) => !holiday.deducts_leave);
+    if (exempt.length > 0) {
+      // Libur nasional menang atas cuti bersama pada tanggal yang sama —
+      // hari itu memang libur resmi, dan tafsir yang menguntungkan karyawan
+      // yang benar secara aturan.
+      excludedHolidays.push({ date: dateIso, name: exempt[0].name });
+      continue;
+    }
+    if (isWeekend(dateIso)) continue;
+    totalDays += 1;
+  }
+
+  return { totalDays, excludedHolidays };
 }

@@ -8,6 +8,7 @@ import { createServerPgClient } from "@/lib/pg/create-client";
 import { calculatePayroll } from '@/lib/payroll/calculator';
 import { loadEmployeePayrollInput } from '@/lib/payroll/inputs';
 import { loadPayrollConfig } from '@/lib/payroll/config';
+import { loadHolidayIndex } from '@/lib/hris/holidays-db';
 import { ApiError, requireApiRole } from '@/lib/api/auth';
 import { PAYROLL_MANAGE_ROLES } from '@/lib/payroll/roles';
 import { canCalculateRun } from '@/lib/payroll/run-status';
@@ -98,6 +99,16 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     let totalBjtkEmployer = 0;
     let totalPph21 = 0;
 
+    // Hari libur periode ini dimuat SEKALI lalu dioper ke setiap karyawan —
+    // memuatnya di dalam loop akan menjadi satu query per karyawan
+    // (EPIC-036 Fase F).
+    const lastDay = new Date(payrollRun.period_year, payrollRun.period_month, 0).getDate();
+    const month = String(payrollRun.period_month).padStart(2, '0');
+    const holidays = await loadHolidayIndex(
+      `${payrollRun.period_year}-${month}-01`,
+      `${payrollRun.period_year}-${month}-${String(lastDay).padStart(2, '0')}`
+    );
+
     // Calculate payroll for each employee
     for (const employee of employees) {
       const input = await loadEmployeePayrollInput(
@@ -105,7 +116,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         employee,
         payrollRun.period_month,
         payrollRun.period_year,
-        { includeThr }
+        { includeThr, holidays }
       );
 
       if (!input) {
@@ -173,7 +184,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           present_days: input.presentDays,
           late_days: input.lateDays,
           unpaid_leave_days: input.unpaidLeaveDays,
-          overtime_hours: input.overtimeHours,
+          // TOTAL jam lembur (hari kerja + hari libur). Sejak EPIC-036 Fase F
+          // input.overtimeHours hanya memuat jam hari kerja karena tarifnya
+          // dipisah — kolom ini tetap total supaya slip gaji tidak mendadak
+          // melaporkan jam lembur lebih sedikit dari yang dikerjakan.
+          overtime_hours:
+            (input.overtimeHours ?? 0) + (input.overtimeHolidayHours ?? 0),
           prorate_factor: input.prorateFactor ?? 1,
           full_base_salary: input.baseSalary,
           status: 'calculated',

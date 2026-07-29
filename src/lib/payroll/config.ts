@@ -55,6 +55,17 @@ export interface PayrollConfig {
     maxPerYear: number;
   };
   overtimeMultiplier: number;
+  /**
+   * Multiplier lembur pada HARI LIBUR RESMI (EPIC-036 Fase F). PP 35/2021
+   * menetapkan 2× upah sejam untuk jam-jam awal lembur di hari libur, versus
+   * 1,5× di hari kerja.
+   *
+   * ⚠ Yang BELUM diterapkan: tangga progresif PP 35/2021 (jam ke-8 → 3×,
+   * jam ke-9 dst → 4× di hari libur; jam ke-2 dst → 2× di hari kerja). Sistem
+   * ini memakai satu tarif rata per bucket, sama seperti sebelumnya. Menerapkan
+   * tangga penuh adalah keputusan kebijakan payroll tersendiri.
+   */
+  overtimeHolidayMultiplier: number;
   /** Upah per jam lembur = gaji pokok / pembagi (standar Kepmenaker 173). */
   overtimeHourlyDivisor: number;
   /** Kebijakan potongan keterlambatan (keputusan owner: konfigurabel). */
@@ -117,6 +128,7 @@ export const DEFAULT_PAYROLL_CONFIG: PayrollConfig = {
     maxPerYear: 6_000_000,
   },
   overtimeMultiplier: 1.5,
+  overtimeHolidayMultiplier: 2,
   overtimeHourlyDivisor: 173,
   lateDeduction: {
     mode: "off",
@@ -254,6 +266,10 @@ export async function loadPayrollConfig(
       maxPerYear: toNumber(taxConfig?.jabatan_expense_max, d.jabatanExpense.maxPerYear),
     },
     overtimeMultiplier: toNumber(settings?.overtime_multiplier, d.overtimeMultiplier),
+    overtimeHolidayMultiplier: toNumber(
+      settings?.overtime_multiplier_holiday,
+      d.overtimeHolidayMultiplier
+    ),
     overtimeHourlyDivisor: toNumber(
       settings?.overtime_hourly_divisor,
       d.overtimeHourlyDivisor

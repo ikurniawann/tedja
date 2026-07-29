@@ -296,6 +296,48 @@ describe("calculatePayroll (integration)", () => {
   });
 });
 
+// EPIC-036 Fase F — lembur di hari libur resmi dibayar dengan multiplier
+// terpisah (PP 35/2021: 2× vs 1,5×).
+describe("calculatePayroll — lembur hari libur (EPIC-036 Fase F)", () => {
+  // upah sejam = 10.000.000 / 173 = 57.803,47
+  const HOURLY = 10_000_000 / 173;
+
+  it("jam hari kerja tetap memakai multiplier 1,5×", async () => {
+    const result = await calculatePayroll(baseInput({ overtimeHours: 4 }));
+    expect(result.overtimePay).toBe(Math.round(4 * HOURLY * 1.5));
+  });
+
+  it("jam hari libur memakai multiplier 2×", async () => {
+    const result = await calculatePayroll(baseInput({ overtimeHolidayHours: 4 }));
+    expect(result.overtimePay).toBe(Math.round(4 * HOURLY * 2));
+  });
+
+  it("periode bercampur menjumlahkan kedua tarif", async () => {
+    const result = await calculatePayroll(
+      baseInput({ overtimeHours: 3, overtimeHolidayHours: 2 })
+    );
+    expect(result.overtimePay).toBe(
+      Math.round(3 * HOURLY * 1.5) + Math.round(2 * HOURLY * 2)
+    );
+  });
+
+  it("tanpa jam hari libur, hasilnya identik dengan sebelum fase ini", async () => {
+    const sesudah = await calculatePayroll(baseInput({ overtimeHours: 5 }));
+    const eksplisitNol = await calculatePayroll(
+      baseInput({ overtimeHours: 5, overtimeHolidayHours: 0 })
+    );
+    expect(sesudah.netSalary).toBe(eksplisitNol.netSalary);
+    expect(sesudah.overtimePay).toBe(Math.round(5 * HOURLY * 1.5));
+  });
+
+  it("multiplier hari libur bisa ditimpa per pengajuan", async () => {
+    const result = await calculatePayroll(
+      baseInput({ overtimeHolidayHours: 2, overtimeHolidayRate: 3 })
+    );
+    expect(result.overtimePay).toBe(Math.round(2 * HOURLY * 3));
+  });
+});
+
 describe("calculatePayroll — kontrak (Fase C)", () => {
   it("prorates monthly components for partial contract coverage", async () => {
     const result = await calculatePayroll(
