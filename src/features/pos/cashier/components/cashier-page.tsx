@@ -42,6 +42,13 @@ import { usePosShift } from '@/hooks/use-pos-shift';
 import { usePosOnline } from '@/hooks/use-pos-online';
 import { usePosOfflineQueue } from '@/hooks/use-pos-offline';
 import { POS_SHIFT_MANAGEMENT_ENABLED } from '@/lib/pos/feature-flags';
+import {
+  calculateBillCharges,
+  DEFAULT_BILLING_CHARGES,
+  resolveEnabledOptionalCodes,
+  taxToggleLabel,
+} from '@/lib/pos/billing-settings';
+import { useResolvedBillingProfile } from '@/features/pos/billing-settings';
 import { ShiftModal } from '@/components/pos/ShiftModal';
 import { PosProductThumbnail } from '@/components/pos/PosProductThumbnail';
 
@@ -246,6 +253,12 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
   const { shift, isActive: hasShift, loading: loadingShift, openShift, closeShift } = usePosShift(CASHIER_ID);
   const [showShiftModal, setShowShiftModal] = useState(false);
 
+  /* Billing config — resolve from session branch/stall (API falls back to cookies) */
+  const billingQuery = useResolvedBillingProfile({});
+  const billingCharges = billingQuery.data?.charges?.length
+    ? billingQuery.data.charges
+    : DEFAULT_BILLING_CHARGES;
+
   const canTransact = hasShift && !loadingShift;
 
   const requireActiveShift = useCallback(() => {
@@ -419,8 +432,31 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     : 0;
   const discountAmount = membershipDiscountAmount + promoDiscount;
   const afterDiscount = cart.subtotal - discountAmount;
-  const taxAmount = cart.includeTax ? Math.round(afterDiscount * 0.1) : 0;
-  const total = afterDiscount + taxAmount;
+  const billCharges = useMemo(
+    () =>
+      calculateBillCharges({
+        subtotalAfterDiscount: afterDiscount,
+        charges: billingCharges,
+        enabledOptionalCodes: resolveEnabledOptionalCodes(billingCharges, cart.includeTax),
+      }),
+    [afterDiscount, billingCharges, cart.includeTax]
+  );
+  const taxAmount = billCharges.tax_amount;
+  const serviceChargeAmount = billCharges.service_charge_amount;
+  const otherChargesAmount = billCharges.other_charges_amount;
+  const total = billCharges.total;
+  const taxLabel = taxToggleLabel(billingCharges);
+  const otherChargeLines = useMemo(
+    () =>
+      billCharges.breakdown
+        .filter((line) => line.kind !== "tax")
+        .map((line) => ({
+          code: line.code,
+          name: line.name,
+          amount: line.amount,
+        })),
+    [billCharges.breakdown]
+  );
   const maxArkUsable = selectedCustomer ? Math.min(selectedCustomer.ark_coin_balance, total) : 0;
   const arkToUseCapped = Math.min(currentArkToUse, maxArkUsable);
   const totalAfterArk = total - arkToUseCapped;
@@ -711,7 +747,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       try {
         let orderId: string;
         let orderNumber: string;
-        const cTotal = cart.total;
+        const cTotal = total;
 
         if (paymentOrderId) {
           const data = await payOpenOrderMutation.mutateAsync({
@@ -741,6 +777,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
             shiftId: shift?.id || null,
             giftCardCode,
             promo: promoApplied,
+            billCharges,
           });
           if (!res.success) {
             toast.error(res.error || 'Pembayaran gift card gagal');
@@ -764,6 +801,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
           customerName: selectedCustomer?.name,
           discountAmount,
           taxAmount,
+          chargesBreakdown: billCharges.breakdown,
         };
         storeResultPayload(receipt);
         setShowPayment(false);
@@ -800,7 +838,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       try {
         let orderId: string;
         let orderNumber: string;
-        const cTotal = cart.total;
+        const cTotal = total;
 
         if (paymentOrderId) {
           const data = await payOpenOrderMutation.mutateAsync({
@@ -830,6 +868,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
             shiftId: shift?.id || null,
             nfcTabUid,
             promo: promoApplied,
+            billCharges,
           });
           if (!res.success) {
             toast.error(res.error || 'Charge ke tab gagal');
@@ -853,6 +892,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
           customerName: selectedCustomer?.name,
           discountAmount,
           taxAmount,
+          chargesBreakdown: billCharges.breakdown,
         };
         storeResultPayload(receipt);
         setShowPayment(false);
@@ -943,7 +983,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         return;
       }
       const cSubtotal = cart.subtotal;
-      const cTotal = cart.total;
+      const cTotal = total;
       const payload = {
         order_type: cart.orderType,
         customer_id: selectedCustomer?.id,
@@ -961,6 +1001,9 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         subtotal: cSubtotal,
         discount_amount: discountAmount,
         tax_amount: taxAmount,
+        service_charge_amount: serviceChargeAmount,
+        other_charges_amount: otherChargesAmount,
+        charges_breakdown: billCharges.breakdown,
         total_amount: cTotal,
         payment_method: paymentMethod === 'qris' ? 'qris' : paymentMethod === 'credit_card' ? 'credit' : paymentMethod === 'ark_coin' ? 'ark_coin' : 'cash',
         amount_paid: paymentMethod === 'cash' ? (parseFloat(cashReceived) || cTotal) : cTotal,
@@ -984,6 +1027,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         customerName: selectedCustomer?.name,
         discountAmount,
         taxAmount,
+        chargesBreakdown: billCharges.breakdown,
       };
       storeResultPayload(receipt);
       setShowPayment(false);
@@ -1011,6 +1055,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       shiftId: shift?.id || null,
       giftCardBuyer,
       promo: promoApplied,
+      billCharges,
     });
 
     if (res.success) {
@@ -1032,6 +1077,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         customerName: selectedCustomer?.name,
         discountAmount,
         taxAmount,
+        chargesBreakdown: billCharges.breakdown,
         giftCards: res.giftCards,
       };
       storeResultPayload(receipt);
@@ -1049,7 +1095,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       toast.error(res.error || 'Payment failed');
     }
     setProcessingPayment(false);
-  }, [cart, paymentMethod, selectedCustomer, cashReceived, totalAfterArk, checkout, discountAmount, taxAmount, arkToUseCapped, isOnline, enqueue, membershipDiscount, shift, refreshCount, paymentOrderId, payingOrderNumber, router, processingPayment, selectedTableDisplay, effectiveTableId, requireActiveShift, payOpenOrderMutation, deferReturnToRestaurant, storeResultPayload, refetchCustomers, promoApplied, giftCardBuyer]);
+  }, [cart, paymentMethod, selectedCustomer, cashReceived, totalAfterArk, checkout, discountAmount, taxAmount, arkToUseCapped, isOnline, enqueue, membershipDiscount, shift, refreshCount, paymentOrderId, payingOrderNumber, router, processingPayment, selectedTableDisplay, effectiveTableId, requireActiveShift, payOpenOrderMutation, deferReturnToRestaurant, storeResultPayload, refetchCustomers, promoApplied, giftCardBuyer, billCharges, serviceChargeAmount, otherChargesAmount, total, homeRoute]);
 
   /* Split Bill */
   const handleConfirmSplit = useCallback(async (config: SplitConfig) => {
@@ -1083,6 +1129,9 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         subtotal: cart.subtotal,
         discount_amount: discountAmount,
         tax_amount: taxAmount,
+        service_charge_amount: serviceChargeAmount,
+        other_charges_amount: otherChargesAmount,
+        charges_breakdown: billCharges.breakdown,
         total_amount: total,
         notes: cart.notes,
         include_tax: cart.includeTax,
@@ -1111,6 +1160,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         customerName: selectedCustomer?.name,
         discountAmount,
         taxAmount,
+        chargesBreakdown: billCharges.breakdown,
       };
       storeResultPayload(receipt);
       setLastResultType('offlined');
@@ -1139,6 +1189,9 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         subtotal: cart.subtotal,
         discount_amount: discountAmount,
         tax_amount: taxAmount,
+        service_charge_amount: serviceChargeAmount,
+        other_charges_amount: otherChargesAmount,
+        charges_breakdown: billCharges.breakdown,
         total_amount: total,
         notes: cart.notes,
         include_tax: cart.includeTax,
@@ -1164,7 +1217,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     } catch (e: any) {
       toast.error(e.message || 'Failed to create split order');
     }
-  }, [cart, selectedCustomer, discountAmount, taxAmount, total, membershipDiscount, isOnline, enqueue, paymentMethod, shift, refreshCount, selectedTableDisplay, effectiveTableId, requireActiveShift, storeResultPayload, promoApplied]);
+  }, [cart, selectedCustomer, discountAmount, taxAmount, total, membershipDiscount, isOnline, enqueue, paymentMethod, shift, refreshCount, selectedTableDisplay, effectiveTableId, requireActiveShift, storeResultPayload, promoApplied, serviceChargeAmount, otherChargesAmount, billCharges]);
 
   const handleSplitComplete = useCallback(() => {
     setShowSplitPayment(false);
@@ -1205,6 +1258,9 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         subtotal: cart.subtotal,
         discount_amount: discountAmount,
         tax_amount: taxAmount,
+        service_charge_amount: serviceChargeAmount,
+        other_charges_amount: otherChargesAmount,
+        charges_breakdown: billCharges.breakdown,
         total_amount: total,
         notes: cart.notes,
         membership_discount_pct: selectedCustomer?.discount || 0,
@@ -1222,7 +1278,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     } finally {
       setSavingBill(false);
     }
-  }, [cart, selectedCustomer, discountAmount, taxAmount, total, requireActiveShift, shift, maybeReturnToRestaurant, effectiveTableId]);
+  }, [cart, selectedCustomer, discountAmount, taxAmount, total, requireActiveShift, shift, maybeReturnToRestaurant, effectiveTableId, serviceChargeAmount, otherChargesAmount, billCharges]);
 
   /* Print helpers */
   const handlePrint = useCallback((label: 'KITCHEN' | 'BAR' | 'CUSTOMER') => {
@@ -1695,6 +1751,8 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         selectedCustomer={selectedCustomer}
         includeTax={cart.includeTax}
         tax={taxAmount}
+        taxToggleLabel={taxLabel}
+        otherChargeLines={otherChargeLines}
         arkToUseCapped={arkToUseCapped}
         paymentMethod={paymentMethod}
         totalAfterArk={totalAfterArk}

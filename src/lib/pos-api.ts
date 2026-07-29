@@ -137,6 +137,13 @@ export interface SplitBillRequest {
   discount_reason?: string;
   tax_amount?: number;
   service_charge_amount?: number;
+  other_charges_amount?: number;
+  charges_breakdown?: Array<{
+    code: string;
+    name: string;
+    kind: string;
+    amount: number;
+  }>;
   total_amount: number;
   notes?: string;
   special_requests?: string;
@@ -300,6 +307,13 @@ export interface OpenBillRequest {
   discount_reason?: string;
   tax_amount?: number;
   service_charge_amount?: number;
+  other_charges_amount?: number;
+  charges_breakdown?: Array<{
+    code: string;
+    name: string;
+    kind: string;
+    amount: number;
+  }>;
   total_amount: number;
   notes?: string;
   special_requests?: string;
@@ -356,6 +370,13 @@ export interface Order {
   discount_amount?: number;
   tax_amount?: number;
   service_charge_amount?: number;
+  other_charges_amount?: number;
+  charges_breakdown?: Array<{
+    code: string;
+    name: string;
+    kind: string;
+    amount: number;
+  }> | null;
   total_amount?: number;
   amount_paid?: number;
   change_amount?: number;
@@ -387,6 +408,13 @@ export interface CreateOrderRequest {
   discount_reason?: string;
   tax_amount?: number;
   service_charge_amount?: number;
+  other_charges_amount?: number;
+  charges_breakdown?: Array<{
+    code: string;
+    name: string;
+    kind: string;
+    amount: number;
+  }>;
   total_amount: number;
   payment_method?: 'cash' | 'qris' | 'debit' | 'credit' | 'ark_coin' | 'nfc_tab' | 'gift_card';
   amount_paid?: number;
