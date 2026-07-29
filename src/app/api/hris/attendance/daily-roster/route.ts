@@ -68,7 +68,7 @@ export async function GET(req: NextRequest) {
     const today = todayWib();
     const dow = isoDayOfWeek(date);
 
-    const [rows, shifts] = await Promise.all([
+    const [rows, shifts, holidays] = await Promise.all([
       query<RosterQueryRow>(
         `WITH scheduled AS (
            SELECT DISTINCT ON (es.employee_id)
@@ -125,10 +125,18 @@ export async function GET(req: NextRequest) {
          FROM hris.shifts WHERE is_active
          ORDER BY sort_order NULLS LAST, start_time`
       ),
+      // Hari libur aktif pada tanggal ini — baris draft sengaja diabaikan.
+      query<{ name: string; type: string }>(
+        `SELECT name, type FROM hris.public_holidays
+         WHERE deleted_at IS NULL AND status = 'aktif' AND holiday_date = $1::date
+         ORDER BY name`,
+        [date]
+      ),
     ]);
 
     const now = new Date();
     const isPastDate = date < today;
+    const isPublicHoliday = holidays.length > 0;
 
     const summary: Record<RosterStatus | "scheduled", number> = {
       scheduled: 0,
@@ -137,6 +145,7 @@ export async function GET(req: NextRequest) {
       belum_absen: 0,
       absen: 0,
       cuti: 0,
+      libur_nasional: 0,
       libur: 0,
       tanpa_jadwal: 0,
     };
@@ -161,6 +170,7 @@ export async function GET(req: NextRequest) {
         hasSchedule: row.has_schedule,
         shiftId: row.scheduled_shift_id,
         isPastDate,
+        isPublicHoliday,
       });
 
       summary[status] += 1;
@@ -200,6 +210,7 @@ export async function GET(req: NextRequest) {
         is_today: date === today,
         summary,
         shifts,
+        holidays,
         employees,
       },
     });

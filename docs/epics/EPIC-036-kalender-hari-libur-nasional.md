@@ -107,8 +107,8 @@ roster, cuti, dan lembur — pola yang sama dengan `shifts.ts` dan `daily-roster
 | Fase | Scope (PR-sized) | Status |
 |---|---|---|
 | **A** | Delta skema `hris.public_holidays` + seed libur nasional & cuti bersama 2026 (dikurasi manual) + modul murni `src/lib/hris/holidays.ts` beserta unit test | ✅ selesai |
-| **B** | Halaman admin `/dashboard/hris/holidays` (sibling `/dashboard/hris/shifts`) + API CRUD + delta menu `hris.holidays` (grant `super_admin`, `hrd`) | belum |
-| **C** | Kalender ESS & monitoring: `AttendanceCalendar` menampilkan tanggal merah + nama libur; `daily-roster` menambah status `libur_nasional` | belum |
+| **B** | Halaman admin `/dashboard/hris/holidays` (sibling `/dashboard/hris/shifts`) + API CRUD + delta menu `hris.holidays` (grant `super_admin`, `hrd`) | ✅ selesai |
+| **C** | Kalender ESS & monitoring: `AttendanceCalendar` menampilkan tanggal merah + nama libur; `daily-roster` menambah status `libur_nasional` | ✅ selesai |
 | **D** | Cuti: `calculateBusinessDays` mengecualikan libur aktif yang `deducts_leave = false`; berlaku untuk pengajuan baru saja | belum |
 | **E** | Importer ICS: tarik → preview bercentang → simpan sebagai `aktif`. Idempoten via `source_ref` | belum |
 | **F** (opsional) | Lembur hari libur resmi: multiplier terpisah di `calculator.ts` mengikuti Kepmenaker. **Menyentuh payroll — perlu keputusan owner sendiri** | belum |
@@ -231,3 +231,48 @@ aturan. Status naik ke `ready-for-qa`.
   Diperbaiki dengan `GRANT CREATE, USAGE ON SCHEMA public TO arkiv_local` di
   database lokal. **Server DEV/produksi kemungkinan punya masalah yang sama** —
   perlu dicek terpisah sebelum delta itu di-deploy.
+- 2026-07-29 — **Fase B TUNTAS.** API CRUD `/api/hris/holidays` (+ `[id]`),
+  halaman `/dashboard/hris/holidays`, delta menu
+  `20260729110000_hris_holidays_menu.sql` (`hris.kepegawaian.holidays`, order 35,
+  tepat di bawah "Shift Kerja").
+  Keputusan yang diambil saat implementasi:
+  1. **Baca terbuka, tulis dipersempit.** `GET` cukup `requireApiUser` — kalender
+     ESS setiap karyawan butuh tanggal merah, dan isinya kalender publik, bukan
+     data pribadi. `POST/PATCH/DELETE` dibatasi `super_admin` + `hrd` saja
+     (bukan pola `super_admin`+`admin` seperti menu kepegawaian lain) karena isi
+     tabel ini menyetir potongan jatah cuti.
+  2. **Baris `draft` disembunyikan dari karyawan.** Hanya keluar lewat
+     `include_draft=1` untuk role HR, supaya tanggal yang belum pasti tidak
+     tampil sebagai tanggal merah di kalender ESS.
+  3. **Hapus = soft delete.** Baris dirujuk perhitungan cuti historis, dan index
+     unique-nya parsial (`WHERE deleted_at IS NULL`) sehingga tanggal+nama yang
+     sama tetap bisa ditambahkan lagi setelahnya.
+  4. `deducts_leave` ikut default tipenya baik di form maupun di `PATCH` — ubah
+     tipe ke `cuti_bersama` tanpa menyebut `deducts_leave` tidak akan
+     meninggalkan baris yang bertentangan dengan SKB.
+  5. Kolom `note` sengaja tidak memakai `COALESCE` seperti kolom lain: itu
+     membuat catatan mustahil dikosongkan. Dipisah lewat flag "dikirim atau
+     tidak".
+- 2026-07-29 — **Fase C TUNTAS.** `AttendanceCalendar` menarik libur per bulan
+  tampak dan menampilkan tanggal merah **beserta namanya** (sel + popup detail +
+  legenda); `deriveRosterStatus` menambah status `libur_nasional`; endpoint
+  `daily-roster` ikut mengembalikan `holidays`; tab monitoring menampilkan
+  banner nama libur. 7 unit test baru (total 122 lolos).
+  Keputusan yang diambil saat implementasi:
+  1. **Prioritas status:** `hadir` > `cuti` > `libur_nasional` > `libur` >
+     `absen`. Absensi menang karena karyawan yang tetap masuk di hari libur
+     memang hadir; `libur_nasional` menang atas jadwal shift sehingga karyawan
+     terjadwal **tidak lagi dihitung mangkir** saat kantor tutup — inilah yang
+     memperbaiki keluhan monitoring.
+  2. **Ketiga tipe libur sama-sama berarti kantor tutup** untuk kehadiran.
+     `deducts_leave` murni urusan potongan jatah cuti (Fase D), bukan absensi.
+  3. **Gagal memuat libur tidak memblokir kalender** — tanggal merah hilang,
+     jadwal & absensi tetap tampil. Kalender ESS tidak boleh mati karena satu
+     endpoint tambahan.
+  4. Tanggal dibawa sebagai teks `YYYY-MM-DD` dari SQL (`holiday_date::text`)
+     sehingga cocok langsung dengan kunci sel kalender — menghindari jebakan
+     geser timezone kolom `date` (risiko #4).
+  Gate: `vitest` 122/122 lolos, `eslint` bersih untuk seluruh berkas epic,
+  `tsc --noEmit` tidak menghasilkan error baru di berkas epic (601 error
+  pre-existing repo tidak tersentuh), `next build` EXIT=0 dengan ketiga route
+  baru terdaftar.

@@ -12,6 +12,7 @@ export type RosterStatus =
   | "belum_absen"
   | "absen"
   | "cuti"
+  | "libur_nasional"
   | "libur"
   | "tanpa_jadwal";
 
@@ -63,6 +64,8 @@ export interface DailyRosterData {
     is_overnight: boolean;
     sort_order: number | null;
   }[];
+  /** Hari libur aktif pada tanggal roster (EPIC-036) — kosong bila hari kerja. */
+  holidays: { name: string; type: string }[];
   employees: RosterEmployee[];
 }
 
