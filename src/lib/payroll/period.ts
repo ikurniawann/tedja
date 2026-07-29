@@ -12,6 +12,7 @@ import {
   resolveShiftForDate,
   type EmployeeShiftRow,
 } from "@/lib/hris/shifts";
+import { indexHolidays, isHoliday, type HolidayIndex } from "@/lib/hris/holidays";
 
 export interface AttendancePeriodRow {
   date: string; // YYYY-MM-DD
@@ -119,15 +120,56 @@ export function realizedOvertimeHours(
   requests: OvertimeRequestRow[],
   attendanceRows: AttendancePeriodRow[]
 ): number {
+  return splitOvertimeHours(requests, attendanceRows, EMPTY_HOLIDAYS).totalHours;
+}
+
+const EMPTY_HOLIDAYS: HolidayIndex = indexHolidays([]);
+
+export interface OvertimeSplit {
+  /** Jam lembur pada hari kerja biasa — tarif `overtimeMultiplier`. */
+  regularHours: number;
+  /** Jam lembur pada hari libur resmi — tarif `overtimeHolidayMultiplier`. */
+  holidayHours: number;
+  totalHours: number;
+}
+
+/**
+ * Realisasi jam lembur, dipisah hari kerja vs hari libur resmi
+ * (EPIC-036 Fase F). Aturan realisasinya sama persis dengan
+ * `realizedOvertimeHours` — yang ditambahkan hanya pemisahan bucket-nya.
+ *
+ * Ketiga tipe libur (nasional, cuti bersama, perusahaan) sama-sama berarti
+ * kantor tutup, jadi ketiganya masuk bucket hari libur. `deducts_leave` murni
+ * urusan potongan jatah cuti dan tidak relevan di sini.
+ *
+ * Index kosong → seluruh jam masuk `regularHours`, sehingga hasil payroll
+ * periode tanpa hari libur identik dengan sebelum fase ini.
+ */
+export function splitOvertimeHours(
+  requests: OvertimeRequestRow[],
+  attendanceRows: AttendancePeriodRow[],
+  holidays: HolidayIndex
+): OvertimeSplit {
   const byDate = new Map(attendanceRows.map((row) => [row.date, row]));
-  let total = 0;
+  let regular = 0;
+  let holiday = 0;
+
   for (const request of requests) {
     const att = byDate.get(request.date);
     if (!att || !att.clock_out) continue;
     const actual = Number(att.overtime_hours) || 0;
-    total += actual > 0 ? Math.min(Number(request.hours), actual) : Number(request.hours);
+    const hours =
+      actual > 0 ? Math.min(Number(request.hours), actual) : Number(request.hours);
+    if (isHoliday(holidays, request.date)) holiday += hours;
+    else regular += hours;
   }
-  return Math.round(total * 100) / 100;
+
+  const round = (value: number) => Math.round(value * 100) / 100;
+  return {
+    regularHours: round(regular),
+    holidayHours: round(holiday),
+    totalHours: round(regular + holiday),
+  };
 }
 
 /** Statistik keterlambatan dari baris absensi (sumber: absensi v2 shift). */

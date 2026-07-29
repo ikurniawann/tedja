@@ -1,14 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createPgClient } from "@/lib/pg/create-client";
 import { getWorkforceActor } from "@/lib/hris/workforce-auth";
+import { loadHolidayIndex } from "@/lib/hris/holidays-db";
+import { describeLeaveDays } from "@/lib/hris/holidays";
 import { z } from 'zod';
+
+const DATE_ISO = /^\d{4}-\d{2}-\d{2}$/;
 
 // Validation schema for leave request
 const leaveRequestSchema = z.object({
   employee_id: z.string().uuid().optional(),
   leave_type: z.enum(['annual', 'sick', 'maternity', 'paternity', 'unpaid', 'emergency', 'pilgrimage', 'menstrual', 'marriage', 'bereavement']),
-  start_date: z.string().min(1, 'Start date is required'),
-  end_date: z.string().min(1, 'End date is required'),
+  start_date: z.string().regex(DATE_ISO, 'Tanggal mulai harus berformat YYYY-MM-DD'),
+  end_date: z.string().regex(DATE_ISO, 'Tanggal selesai harus berformat YYYY-MM-DD'),
   reason: z.string().min(10, 'Reason must be at least 10 characters'),
   attachment_url: z.string().optional(),
 });
@@ -172,8 +176,39 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Calculate total days (business days only)
-    const totalDays = calculateBusinessDays(validated.start_date, validated.end_date);
+    if (validated.end_date < validated.start_date) {
+      return NextResponse.json(
+        { error: 'Tanggal selesai tidak boleh sebelum tanggal mulai' },
+        { status: 400 }
+      );
+    }
+
+    // Hari yang benar-benar memotong jatah: akhir pekan dan libur nasional
+    // dikecualikan, cuti bersama TETAP memotong (SKB). EPIC-036 Fase D —
+    // sebelumnya hanya akhir pekan yang dikecualikan, sehingga cuti yang
+    // melewati tanggal merah ikut memotong jatah karyawan.
+    //
+    // Sengaja TANPA backfill: cuti yang sudah disetujui memakai total_days
+    // lamanya, karena saldo yang terpotong sudah terlanjur dicatat.
+    const holidayIndex = await loadHolidayIndex(validated.start_date, validated.end_date);
+    const { totalDays, excludedHolidays } = describeLeaveDays(
+      validated.start_date,
+      validated.end_date,
+      holidayIndex
+    );
+
+    // 0 hari kerja = rentang yang seluruhnya akhir pekan/tanggal merah. Ditolak,
+    // bukan diam-diam dihitung 1 hari seperti perilaku lama (`Math.max(1, …)`):
+    // memotong jatah untuk hari yang memang sudah libur adalah bug yang sama.
+    if (totalDays === 0) {
+      const alasan = excludedHolidays.length > 0
+        ? `sudah hari libur (${excludedHolidays.map((h) => h.name).join(', ')})`
+        : 'jatuh pada akhir pekan';
+      return NextResponse.json(
+        { error: `Rentang tanggal ini ${alasan} — tidak perlu mengajukan cuti` },
+        { status: 400 }
+      );
+    }
 
     // For annual leave, check quota
     if (validated.leave_type === 'annual') {
@@ -225,6 +260,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       message: 'Leave request submitted successfully',
       data,
+      // Supaya pemanggil bisa menjelaskan kenapa total_days lebih kecil dari
+      // rentang kalendernya (EPIC-036 Fase D).
+      meta: { total_days: totalDays, excluded_holidays: excludedHolidays },
     });
   } catch (error) {
     console.error('Error in leaves POST:', error);
@@ -244,18 +282,6 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// Helper function to calculate business days (exclude weekends)
-function calculateBusinessDays(startDate: string, endDate: string): number {
-  const start = new Date(startDate);
-  const end = new Date(endDate);
-  let days = 0;
-  
-  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-    const dayOfWeek = d.getDay();
-    if (dayOfWeek !== 0 && dayOfWeek !== 6) { // Exclude Sunday (0) and Saturday (6)
-      days++;
-    }
-  }
-  
-  return Math.max(1, days);
-}
+// calculateBusinessDays() dihapus di EPIC-036 Fase D — digantikan
+// describeLeaveDays() dari src/lib/hris/holidays.ts yang juga mengecualikan
+// hari libur resmi, bukan hanya akhir pekan.

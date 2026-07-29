@@ -2,7 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { PlusIcon, PencilIcon, TrashIcon } from "@heroicons/react/24/outline";
-import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Download as DownloadIcon,
+  Loader2,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -42,6 +47,20 @@ interface HolidayRow {
   status: "draft" | "aktif";
   source: "manual" | "impor";
   note: string | null;
+}
+
+/** Satu baris preview impor ICS (EPIC-036 Fase E). */
+interface ImportRow {
+  source_ref: string;
+  holiday_date: string;
+  name: string;
+  type: HolidayType;
+  deducts_leave: boolean;
+  status: "draft" | "aktif";
+  /** Dicentang otomatis? false = kandidat yang bukan tanggal merah. */
+  suggested: boolean;
+  reason?: string;
+  already_imported: boolean;
 }
 
 const TYPE_META: Record<HolidayType, { label: string; className: string }> = {
@@ -88,6 +107,12 @@ export function HolidaysPage() {
   const [editing, setEditing] = useState<HolidayRow | null>(null);
   const [form, setForm] = useState(() => emptyForm(new Date().getFullYear()));
   const [saving, setSaving] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importLoading, setImportLoading] = useState(false);
+  const [importSaving, setImportSaving] = useState(false);
+  const [importRows, setImportRows] = useState<ImportRow[]>([]);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [checked, setChecked] = useState<Set<string>>(new Set());
 
   const load = useCallback(
     (targetYear: number) => {
@@ -121,6 +146,71 @@ export function HolidaysPage() {
     setEditing(null);
     setForm(emptyForm(year));
     setDialogOpen(true);
+  }
+
+  /**
+   * Impor kalender (EPIC-036 Fase E): tarik → preview bercentang → simpan.
+   * Tidak ada yang tersimpan sebelum HRD menekan Simpan; entri yang bukan
+   * tanggal merah datang dalam keadaan tidak tercentang beserta alasannya.
+   */
+  function openImport() {
+    setImportOpen(true);
+    setImportLoading(true);
+    setImportRows([]);
+    setImportError(null);
+    apiGet<{ data: ImportRow[] }>(`/api/hris/holidays/import?year=${year}`)
+      .then((res) => {
+        const rows = res.data ?? [];
+        setImportRows(rows);
+        setChecked(
+          new Set(
+            rows.filter((r) => r.suggested && !r.already_imported).map((r) => r.source_ref)
+          )
+        );
+      })
+      .catch((error) =>
+        setImportError(
+          error instanceof Error ? error.message : "Gagal mengambil kalender"
+        )
+      )
+      .finally(() => setImportLoading(false));
+  }
+
+  function toggleChecked(sourceRef: string) {
+    setChecked((prev) => {
+      const next = new Set(prev);
+      if (next.has(sourceRef)) next.delete(sourceRef);
+      else next.add(sourceRef);
+      return next;
+    });
+  }
+
+  async function handleImportSave() {
+    const items = importRows.filter((row) => checked.has(row.source_ref));
+    if (items.length === 0) {
+      showToast("Centang minimal satu hari libur", "error");
+      return;
+    }
+    setImportSaving(true);
+    try {
+      const res = await apiPost<{ message?: string }>("/api/hris/holidays/import", {
+        items: items.map((row) => ({
+          source_ref: row.source_ref,
+          holiday_date: row.holiday_date,
+          name: row.name,
+          type: row.type,
+          deducts_leave: row.deducts_leave,
+          status: row.status,
+        })),
+      });
+      showToast(res.message ?? "Impor selesai");
+      setImportOpen(false);
+      load(year);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Gagal menyimpan impor", "error");
+    } finally {
+      setImportSaving(false);
+    }
   }
 
   function openEdit(holiday: HolidayRow) {
@@ -217,6 +307,9 @@ export function HolidaysPage() {
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
+          <Button variant="outline" className="gap-2" onClick={openImport}>
+            <DownloadIcon className="h-4 w-4" /> Impor kalender {year}
+          </Button>
           <Button className="gap-2" onClick={openCreate}>
             <PlusIcon className="h-4 w-4" /> Tambah Libur
           </Button>
@@ -319,6 +412,110 @@ export function HolidaysPage() {
           )}
         </div>
       )}
+
+      {/* Preview impor — tidak ada yang tersimpan sampai Simpan ditekan */}
+      <Dialog open={importOpen} onOpenChange={setImportOpen}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Impor Kalender Hari Libur {year}</DialogTitle>
+          </DialogHeader>
+
+          {importLoading ? (
+            <div className="flex justify-center py-12">
+              <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+            </div>
+          ) : importError ? (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+              <p className="font-semibold">Impor tidak tersedia</p>
+              <p className="mt-1">{importError}</p>
+            </div>
+          ) : importRows.length === 0 ? (
+            <p className="py-12 text-center text-sm text-gray-400">
+              Kalender sumber tidak memuat entri untuk {year}.
+            </p>
+          ) : (
+            <>
+              <p className="text-xs text-gray-500">
+                Centang yang benar-benar tanggal merah menurut SKB 3 Menteri. Entri
+                yang bukan hari libur sudah tidak tercentang beserta alasannya, dan
+                tanggal yang ditandai belum pasti masuk sebagai draft.
+              </p>
+              <div className="max-h-[52vh] space-y-1.5 overflow-y-auto pr-1">
+                {importRows.map((row) => (
+                  <label
+                    key={row.source_ref}
+                    className={`flex items-start gap-2.5 rounded-lg border p-2.5 ${
+                      row.already_imported
+                        ? "border-gray-100 bg-gray-50/60"
+                        : "border-gray-200 hover:bg-slate-50"
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      className="mt-1"
+                      checked={checked.has(row.source_ref)}
+                      onChange={() => toggleChecked(row.source_ref)}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-gray-900">
+                        <span className="mr-2 font-mono text-xs text-gray-400">
+                          {row.holiday_date}
+                        </span>
+                        {row.name}
+                      </p>
+                      <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                        <span
+                          className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ring-1 ${
+                            TYPE_META[row.type].className
+                          }`}
+                        >
+                          {TYPE_META[row.type].label}
+                        </span>
+                        {row.deducts_leave && (
+                          <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-500">
+                            memotong jatah cuti
+                          </span>
+                        )}
+                        {row.status === "draft" && (
+                          <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+                            Draft
+                          </span>
+                        )}
+                        {row.already_imported && (
+                          <span className="rounded-full bg-sky-100 px-1.5 py-0.5 text-[10px] font-medium text-sky-700">
+                            Sudah ada
+                          </span>
+                        )}
+                      </div>
+                      {row.reason && (
+                        <p className="mt-1 text-[11px] leading-snug text-gray-400">
+                          {row.reason}
+                        </p>
+                      )}
+                    </div>
+                  </label>
+                ))}
+              </div>
+            </>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setImportOpen(false)}>
+              Batal
+            </Button>
+            <Button
+              onClick={handleImportSave}
+              disabled={importSaving || importLoading || checked.size === 0}
+            >
+              {importSaving ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                `Simpan ${checked.size} libur`
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-md">
