@@ -14,6 +14,10 @@ interface CartPanelProps {
   selectedCustomer: { discount?: number; name?: string } | null;
   includeTax: boolean;
   tax: number;
+  /** Label for optional tax toggle; null = tax not optional / hide toggle */
+  taxToggleLabel?: string | null;
+  /** Non-tax charge lines from billing breakdown (service / fee / rounding) */
+  otherChargeLines?: Array<{ code: string; name: string; amount: number }>;
   arkToUseCapped: number;
   paymentMethod: string;
   totalAfterArk: number;
@@ -50,6 +54,8 @@ export function CartPanel({
   selectedCustomer,
   includeTax,
   tax,
+  taxToggleLabel = 'Tax (10%)',
+  otherChargeLines = [],
   arkToUseCapped,
   paymentMethod,
   totalAfterArk,
@@ -237,29 +243,50 @@ export function CartPanel({
             )}
           </div>
         )}
-        <div className="flex items-center justify-between text-sm">
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => setIncludeTax(!includeTax)}
-              className="flex items-center gap-2 text-gray-600 hover:text-gray-900"
-            >
-              <div
-                className={`flex h-4 w-4 items-center justify-center rounded border ${
-                  includeTax ? 'border-primary bg-primary' : 'border-gray-300'
-                }`}
+        {taxToggleLabel ? (
+          <div className="flex items-center justify-between text-sm">
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setIncludeTax(!includeTax)}
+                className="flex items-center gap-2 text-gray-600 hover:text-gray-900"
               >
-                {includeTax && <Check className="h-3 w-3 text-white" />}
+                <div
+                  className={`flex h-4 w-4 items-center justify-center rounded border ${
+                    includeTax ? 'border-primary bg-primary' : 'border-gray-300'
+                  }`}
+                >
+                  {includeTax && <Check className="h-3 w-3 text-white" />}
+                </div>
+                <span>{taxToggleLabel}</span>
+              </button>
+              <HelpHint helpId="pos.tax-toggle" role="default" />
+            </div>
+            <div className="text-right">
+              <div className="font-medium text-gray-900">{formatCurrency(tax)}</div>
+              <div className="text-xs font-medium text-amber-600">{formatArk(tax)}</div>
+            </div>
+          </div>
+        ) : tax > 0 ? (
+          <div className="flex justify-between text-sm">
+            <span className="text-gray-600">Tax</span>
+            <div className="text-right">
+              <div className="font-medium text-gray-900">{formatCurrency(tax)}</div>
+              <div className="text-xs font-medium text-amber-600">{formatArk(tax)}</div>
+            </div>
+          </div>
+        ) : null}
+        {otherChargeLines.map((line) => (
+          <div key={line.code} className="flex justify-between text-sm">
+            <span className="text-gray-600">{line.name}</span>
+            <div className="text-right">
+              <div className="font-medium text-gray-900">
+                {line.amount < 0 ? '-' : ''}
+                {formatCurrency(Math.abs(line.amount))}
               </div>
-              <span>Tax (10%)</span>
-            </button>
-            <HelpHint helpId="pos.tax-toggle" role="default" />
+            </div>
           </div>
-          <div className="text-right">
-            <div className="font-medium text-gray-900">{formatCurrency(tax)}</div>
-            <div className="text-xs font-medium text-amber-600">{formatArk(tax)}</div>
-          </div>
-        </div>
+        ))}
         {paymentMethod === 'ark_coin' && arkToUseCapped > 0 && (
           <div className="flex justify-between text-sm">
             <span className="text-amber-600">ARK Coin</span>

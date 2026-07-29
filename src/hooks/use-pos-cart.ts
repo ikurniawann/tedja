@@ -1,6 +1,11 @@
 "use client";
 
 import { useReducer, useCallback, useEffect, useState } from "react";
+import {
+  calculateBillCharges,
+  DEFAULT_BILLING_CHARGES,
+  resolveEnabledOptionalCodes,
+} from "@/lib/pos/billing-settings";
 
 export interface PosCartItem {
   id: string;               // composite: productId + variant + modifier join
@@ -137,10 +142,15 @@ export function usePosCart() {
   const setNotes = useCallback((notes: string) => dispatch({ type: "SET_NOTES", notes }), []);
   const setIncludeTax = useCallback((include: boolean) => dispatch({ type: "SET_INCLUDE_TAX", include }), []);
 
-  // Derived values
+  // Derived values — fallback system default; cashier overrides with resolved profile
   const subtotal = state.items.reduce((sum, i) => sum + i.price * i.quantity, 0);
-  const tax = state.includeTax ? Math.round((subtotal) * 0.1) : 0;
-  const total = subtotal + tax;
+  const bill = calculateBillCharges({
+    subtotalAfterDiscount: subtotal,
+    charges: DEFAULT_BILLING_CHARGES,
+    enabledOptionalCodes: resolveEnabledOptionalCodes(DEFAULT_BILLING_CHARGES, state.includeTax),
+  });
+  const tax = bill.tax_amount;
+  const total = bill.total;
   const itemCount = state.items.reduce((sum, i) => sum + i.quantity, 0);
 
   return {
