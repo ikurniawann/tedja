@@ -1,6 +1,6 @@
 # EPIC-036: Kalender Hari Libur Nasional — Master Libur, Cuti Bersama & Dampaknya ke Cuti/Lembur
 
-status: backlog
+status: coding
 environment: dev
 retries: 0
 
@@ -106,7 +106,7 @@ roster, cuti, dan lembur — pola yang sama dengan `shifts.ts` dan `daily-roster
 
 | Fase | Scope (PR-sized) | Status |
 |---|---|---|
-| **A** | Delta skema `hris.public_holidays` + seed libur nasional & cuti bersama 2026 (dikurasi manual) + modul murni `src/lib/hris/holidays.ts` beserta unit test | belum |
+| **A** | Delta skema `hris.public_holidays` + seed libur nasional & cuti bersama 2026 (dikurasi manual) + modul murni `src/lib/hris/holidays.ts` beserta unit test | ✅ selesai |
 | **B** | Halaman admin `/dashboard/hris/holidays` (sibling `/dashboard/hris/shifts`) + API CRUD + delta menu `hris.holidays` (grant `super_admin`, `hrd`) | belum |
 | **C** | Kalender ESS & monitoring: `AttendanceCalendar` menampilkan tanggal merah + nama libur; `daily-roster` menambah status `libur_nasional` | belum |
 | **D** | Cuti: `calculateBusinessDays` mengecualikan libur aktif yang `deducts_leave = false`; berlaku untuk pengajuan baru saja | belum |
@@ -202,4 +202,32 @@ aturan. Status naik ke `ready-for-qa`.
   ICS lengkap (28 entri, melabeli cuti bersama) tapi memuat non-libur seperti
   `1 Ramadan` dan `Hari Paskah`. Keputusan: **tabel sebagai sumber kebenaran,
   impor ICS sebagai alat bantu dengan persetujuan HRD** — tidak ada auto-sync.
-  Belum ada kode yang ditulis; menunggu owner menaikkan status ke `on-progress`.
+- 2026-07-29 — **Fase A TUNTAS.** Delta
+  `20260729100000_hris_public_holidays.sql` + modul murni
+  `src/lib/hris/holidays.ts` + 18 unit test (TDD: RED → GREEN). Diterapkan ke
+  `arkiv_local`, 24 baris seed 2026 terverifikasi.
+  Keputusan yang diambil saat implementasi:
+  1. **Libur nasional menang atas cuti bersama** bila keduanya jatuh di tanggal
+     yang sama — hari itu memang libur resmi, dan tafsir yang menguntungkan
+     karyawan yang benar secara aturan.
+  2. **`countLeaveDays` boleh mengembalikan 0** (rentang yang seluruhnya libur).
+     Pemanggil yang memutuskan artinya — perilaku lama `Math.max(1, days)`
+     sengaja tidak dibawa ke modul murni supaya Fase D bisa menolak pengajuan
+     cuti di hari libur, bukan diam-diam menghitungnya 1 hari.
+  3. **Akhir pekan tetap Sabtu+Minggu**, menyamai perilaku lama. Kalau operasional
+     sebenarnya 6 hari kerja, itu keputusan kebijakan tersendiri — jangan
+     diselundupkan lewat epic ini.
+  4. Tiga tanggal diberi catatan verifikasi SKB; `2026-05-28` (Idul Adha hari
+     kedua) masuk sebagai **`draft`** sehingga belum mempengaruhi perhitungan
+     apa pun sampai HRD menyetujui. Empat entri kalender yang bukan tanggal merah
+     (`1 Ramadan`, `Hari Paskah`, `Hari Kedua Muharram`, `Malam Tahun Baru`)
+     ditinggalkan sebagai komentar di delta beserta alasannya.
+  Dua temuan lingkungan saat menerapkan migrasi, bukan bagian epic ini:
+  (a) database `arkiv_local` tertinggal 5 delta dari branch `development` —
+  ikut diterapkan sekalian; (b) delta
+  `20260727151000_products_cogs_respect_bom_unit.sql` gagal dengan
+  `permission denied for schema public` karena role `arkiv_local` tidak punya
+  hak `CREATE` di schema `public` (gejala yang sama pernah muncul di EPIC-034).
+  Diperbaiki dengan `GRANT CREATE, USAGE ON SCHEMA public TO arkiv_local` di
+  database lokal. **Server DEV/produksi kemungkinan punya masalah yang sama** —
+  perlu dicek terpisah sebelum delta itu di-deploy.

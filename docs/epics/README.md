@@ -41,7 +41,7 @@ deploying-dev · ready-for-qa · blocked · done).
 | [EPIC-033](./EPIC-033-crm-lifecycle-campaign.md) | CRM Lifecycle Campaign — Win-back & Kampanye WA Member | backlog | 2026-07-26 |
 | [EPIC-034](./EPIC-034-gift-card-stored-value.md) | Gift Card / Stored Value — Saldo Prepaid Lintas Kanal | ready-for-qa | 2026-07-27 |
 | [EPIC-035](./EPIC-035-habitat-instance-kedua.md) | Habitat — Duplikasi Instance Kedua (Fork Repo, DB Baru) | ready-for-qa | 2026-07-27 |
-| [EPIC-036](./EPIC-036-kalender-hari-libur-nasional.md) | Kalender Hari Libur Nasional — Master Libur, Cuti Bersama & Dampaknya ke Cuti/Lembur | backlog | 2026-07-29 |
+| [EPIC-036](./EPIC-036-kalender-hari-libur-nasional.md) | Kalender Hari Libur Nasional — Master Libur, Cuti Bersama & Dampaknya ke Cuti/Lembur | coding | 2026-07-29 |
 
 Aturan:
 - Epic + registry ini adalah sumber kebenaran status pekerjaan (canonical).
