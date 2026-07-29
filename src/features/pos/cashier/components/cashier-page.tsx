@@ -1295,12 +1295,6 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     <TooltipProvider>
     <PageTransition>
     <div className={`flex flex-col gap-4 ${isTabletMode ? 'touch-manipulation' : ''}`}>
-      {isTabletMode ? (
-        <div className="rounded-xl border border-primary/20 bg-primary/5 px-3 py-2 text-xs text-primary sm:text-sm">
-          Mode tablet POS aktif — tanpa sidebar. Gunakan <strong>Layar penuh</strong> atau{' '}
-          <strong>Pasang ke tablet</strong> agar address bar browser hilang.
-        </div>
-      ) : null}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
           <h1 className="text-xl font-semibold text-gray-900">POS Cashier</h1>
