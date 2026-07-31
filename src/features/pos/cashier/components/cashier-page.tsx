@@ -158,6 +158,10 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
    * String, bukan number: input kosong harus tetap bisa dibedakan dari 0.
    */
   const [guestCount, setGuestCount] = useState<string>(searchParams.get('pax') ?? '');
+  const [showGuestModal, setShowGuestModal] = useState(false);
+  /** Nilai sementara di dalam dialog — baru disimpan saat ditekan Simpan,
+   *  supaya batal tidak mengubah angka yang sudah benar. */
+  const [guestDraft, setGuestDraft] = useState('');
   const handoffOrderType = searchParams.get('orderType');
   const handoffKeyRef = useRef<string | null>(null);
   const pendingRestaurantReturnRef = useRef(false);
@@ -327,11 +331,15 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     return selected ? getTableDisplayName(selected) : effectiveTableId;
   }, [effectiveTableId, tableById]);
 
-  const guestCapacityWarning = useMemo(() => {
+  const selectedTableCapacity = useMemo(() => {
     if (!effectiveTableId) return null;
-    const meja = tableById.get(effectiveTableId);
-    return capacityWarning(normalizeGuestCount(guestCount), meja?.capacity ?? null);
-  }, [effectiveTableId, tableById, guestCount]);
+    return tableById.get(effectiveTableId)?.capacity ?? null;
+  }, [effectiveTableId, tableById]);
+
+  const guestCapacityWarning = useMemo(
+    () => capacityWarning(normalizeGuestCount(guestCount), selectedTableCapacity),
+    [guestCount, selectedTableCapacity]
+  );
 
   /* Load existing open bill when redirected from Orders */
   useEffect(() => {
@@ -1110,7 +1118,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       toast.error(res.error || 'Payment failed');
     }
     setProcessingPayment(false);
-  }, [cart, paymentMethod, selectedCustomer, cashReceived, totalAfterArk, checkout, discountAmount, taxAmount, arkToUseCapped, isOnline, enqueue, membershipDiscount, shift, refreshCount, paymentOrderId, payingOrderNumber, router, processingPayment, selectedTableDisplay, effectiveTableId, requireActiveShift, payOpenOrderMutation, deferReturnToRestaurant, storeResultPayload, refetchCustomers, promoApplied, giftCardBuyer, billCharges, serviceChargeAmount, otherChargesAmount, total, homeRoute]);
+  }, [cart, paymentMethod, selectedCustomer, cashReceived, totalAfterArk, checkout, discountAmount, taxAmount, arkToUseCapped, isOnline, enqueue, membershipDiscount, shift, refreshCount, paymentOrderId, payingOrderNumber, router, processingPayment, selectedTableDisplay, effectiveTableId, requireActiveShift, payOpenOrderMutation, deferReturnToRestaurant, storeResultPayload, refetchCustomers, promoApplied, giftCardBuyer, billCharges, serviceChargeAmount, otherChargesAmount, total, homeRoute, guestCount]);
 
   /* Split Bill */
   const handleConfirmSplit = useCallback(async (config: SplitConfig) => {
@@ -1234,7 +1242,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     } catch (e: any) {
       toast.error(e.message || 'Failed to create split order');
     }
-  }, [cart, selectedCustomer, discountAmount, taxAmount, total, membershipDiscount, isOnline, enqueue, paymentMethod, shift, refreshCount, selectedTableDisplay, effectiveTableId, requireActiveShift, storeResultPayload, promoApplied, serviceChargeAmount, otherChargesAmount, billCharges]);
+  }, [cart, selectedCustomer, discountAmount, taxAmount, total, membershipDiscount, isOnline, enqueue, paymentMethod, shift, refreshCount, selectedTableDisplay, effectiveTableId, requireActiveShift, storeResultPayload, promoApplied, serviceChargeAmount, otherChargesAmount, billCharges, guestCount]);
 
   const handleSplitComplete = useCallback(() => {
     setShowSplitPayment(false);
@@ -1296,7 +1304,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     } finally {
       setSavingBill(false);
     }
-  }, [cart, selectedCustomer, discountAmount, taxAmount, total, requireActiveShift, shift, maybeReturnToRestaurant, effectiveTableId, serviceChargeAmount, otherChargesAmount, billCharges]);
+  }, [cart, selectedCustomer, discountAmount, taxAmount, total, requireActiveShift, shift, maybeReturnToRestaurant, effectiveTableId, serviceChargeAmount, otherChargesAmount, billCharges, guestCount]);
 
   /* Print helpers */
   const handlePrint = useCallback((label: 'KITCHEN' | 'BAR' | 'CUSTOMER') => {
@@ -1345,20 +1353,19 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
                         default yang tersimpan diam-diam — field kosong memang
                         berarti 1 orang, dan itu ditegakkan di server. */}
                     <span className="text-gray-300">·</span>
-                    <label className="inline-flex items-center gap-1.5">
-                      <Users className="h-3.5 w-3.5 text-gray-500" />
-                      <input
-                        type="number"
-                        min={1}
-                        inputMode="numeric"
-                        value={guestCount}
-                        onChange={(e) => setGuestCount(e.target.value)}
-                        placeholder="1"
-                        aria-label="Jumlah tamu"
-                        className="w-14 rounded-md border border-gray-300 px-1.5 py-0.5 text-center text-sm tabular-nums focus:border-primary focus:outline-none"
-                      />
-                      <span className="text-gray-500">tamu</span>
-                    </label>
+                    {/* Tombol → dialog, bukan input kecil di header: angkanya
+                        jadi terbaca jelas dan tidak mudah terlewat kasir. */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setGuestDraft(guestCount);
+                        setShowGuestModal(true);
+                      }}
+                      className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 px-2 py-0.5 font-medium text-gray-700 hover:border-primary hover:text-primary"
+                    >
+                      <Users className="h-3.5 w-3.5" />
+                      {normalizeGuestCount(guestCount)} tamu
+                    </button>
                     {/* Peringatan, BUKAN blokir — keputusan owner. Kasir tetap
                         bisa lanjut; memblokir hanya memancing angka palsu. */}
                     {guestCapacityWarning && (
@@ -1831,6 +1838,90 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       />
 
       {/* ── Table Modal ── */}
+      {/* Jumlah tamu (EPIC-038) — tombol cepat untuk kasus umum, kotak isian
+          untuk rombongan. Peringatan kapasitas memberi tahu, tidak memblokir. */}
+      <Dialog open={showGuestModal} onOpenChange={setShowGuestModal}>
+        <DialogPanel size="sm">
+          <DialogPanelHeader>
+            <DialogPanelTitle>Jumlah Tamu</DialogPanelTitle>
+            <DialogPanelDescription>
+              {selectedTableDisplay
+                ? `Meja ${selectedTableDisplay}${selectedTableCapacity ? ` · kapasitas ${selectedTableCapacity} kursi` : ''}`
+                : 'Berapa orang untuk pesanan ini?'}
+            </DialogPanelDescription>
+          </DialogPanelHeader>
+          <DialogPanelBody>
+            <div className="flex flex-wrap gap-2">
+              {[1, 2, 4, 6].map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => setGuestDraft(String(n))}
+                  className={`min-w-11 rounded-lg border px-3 py-2 text-sm font-semibold ${
+                    normalizeGuestCount(guestDraft) === n
+                      ? 'border-primary bg-primary/10 text-primary'
+                      : 'border-gray-300 text-gray-700 hover:border-primary hover:text-primary'
+                  }`}
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
+
+            <Input
+              type="number"
+              min={1}
+              inputMode="numeric"
+              autoFocus
+              value={guestDraft}
+              onChange={(e) => setGuestDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  setGuestCount(guestDraft);
+                  setShowGuestModal(false);
+                }
+              }}
+              placeholder="Jumlah lain"
+              aria-label="Jumlah tamu"
+              className="mt-3"
+            />
+
+            {(() => {
+              const peringatan = capacityWarning(
+                normalizeGuestCount(guestDraft),
+                selectedTableCapacity
+              );
+              return peringatan ? (
+                <p className="mt-2 text-xs text-amber-700">{peringatan}</p>
+              ) : null;
+            })()}
+
+            <p className="mt-2 text-xs text-gray-500">
+              Dikosongkan berarti 1 orang.
+            </p>
+
+            <div className="mt-4 flex gap-2">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => setShowGuestModal(false)}
+              >
+                Batal
+              </Button>
+              <Button
+                className="flex-1"
+                onClick={() => {
+                  setGuestCount(guestDraft);
+                  setShowGuestModal(false);
+                }}
+              >
+                Simpan
+              </Button>
+            </div>
+          </DialogPanelBody>
+        </DialogPanel>
+      </Dialog>
+
       <Dialog open={showTableModal} onOpenChange={setShowTableModal}>
         <DialogPanel size="lg" className="max-h-[80vh]">
           <DialogPanelHeader>
