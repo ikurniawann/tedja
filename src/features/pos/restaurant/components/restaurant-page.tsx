@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   ArrowsPointingInIcon,
@@ -28,6 +28,7 @@ import {
   type PosTable,
 } from "@/lib/pos-api";
 import { cn } from "@/lib/utils";
+import { PosTabletChromeControls } from "@/features/pos/components/pos-tablet-chrome-controls";
 
 import { MoveItemsDialog, type MoveItemsSelection } from "./move-items-dialog";
 import { RestaurantActionRail } from "./restaurant-action-rail";
@@ -39,6 +40,7 @@ import {
 import { WaitingListDialog } from "./waiting-list-dialog";
 import {
   isRestaurantImmersive,
+  isRestaurantTabletPath,
   restaurantPath,
 } from "../nav";
 import {
@@ -98,9 +100,11 @@ export function RestaurantPage() {
 
 function RestaurantPageContent() {
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
-  const immersive = isRestaurantImmersive(searchParams);
+  const immersive =
+    isRestaurantTabletPath(pathname) || isRestaurantImmersive(searchParams);
   const { data: tables = [], isLoading, error } = useCashierTables();
   const { data: orders = [], refetch: refetchOrders } = useOpenBills({ limit: 200 });
   const createSplitsMutation = useCreateOrderSplits();
@@ -477,33 +481,31 @@ function RestaurantPageContent() {
     <PageTransition
       className={cn("space-y-3", immersive ? "p-3 sm:p-4" : "space-y-4")}
     >
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
           <h1 className="text-base font-semibold text-foreground">Restaurant</h1>
-          {immersive ? (
-            <p className="text-xs text-muted-foreground">
-              Immersive mode — dashboard chrome hidden
-            </p>
-          ) : null}
         </div>
-        <Button
-          type="button"
-          variant="outline"
-          className="shrink-0 border-gray-200/80 text-gray-700 hover:border-primary/30 hover:bg-primary/10 hover:text-primary"
-          onClick={toggleImmersive}
-        >
-          {immersive ? (
-            <>
-              <ArrowsPointingInIcon className="mr-2 h-4 w-4" />
-              Exit Fullscreen
-            </>
-          ) : (
-            <>
-              <ArrowsPointingOutIcon className="mr-2 h-4 w-4" />
-              Fullscreen
-            </>
-          )}
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          {immersive ? <PosTabletChromeControls /> : null}
+          <Button
+            type="button"
+            variant="outline"
+            className="shrink-0 border-gray-200/80 text-gray-700 hover:border-primary/30 hover:bg-primary/10 hover:text-primary"
+            onClick={toggleImmersive}
+          >
+            {immersive ? (
+              <>
+                <ArrowsPointingInIcon className="mr-2 h-4 w-4" />
+                Keluar mode tablet
+              </>
+            ) : (
+              <>
+                <ArrowsPointingOutIcon className="mr-2 h-4 w-4" />
+                Mode tablet
+              </>
+            )}
+          </Button>
+        </div>
       </div>
 
       {boardMode === "seat" && seatingReservation ? (

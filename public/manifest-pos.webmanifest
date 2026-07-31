@@ -1,0 +1,20 @@
+{
+  "name": "Arkiv POS Kasir",
+  "short_name": "POS Kasir",
+  "description": "Mode tablet / kiosk untuk kasir Arkiv POS",
+  "start_url": "/dashboard/pos/tablet",
+  "scope": "/dashboard/pos/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#ffffff",
+  "theme_color": "#e11d48",
+  "lang": "id",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

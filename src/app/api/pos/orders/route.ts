@@ -54,6 +54,8 @@ type PosOrderBody = {
   membership_discount_pct?: number | string;
   tax_amount?: number | string;
   service_charge_amount?: number | string;
+  other_charges_amount?: number | string;
+  charges_breakdown?: unknown;
   total_amount?: number | string;
   payment_method?: string;
   amount_paid?: number | string;
@@ -194,6 +196,8 @@ export async function POST(request: NextRequest) {
       discount_reason,
       tax_amount = 0,
       service_charge_amount = 0,
+      other_charges_amount = 0,
+      charges_breakdown = [],
       total_amount,
       payment_method = 'cash',
       amount_paid = 0,
@@ -324,8 +328,10 @@ export async function POST(request: NextRequest) {
     }, 0);
     let serverDiscount = Number(discount_amount) || 0;
     let discountReasonFinal: string | null = discount_reason || null;
-    const serverTax = include_tax ? Number(tax_amount) || 0 : 0;
+    const serverTax = Number(tax_amount) || 0;
     const serverServiceCharge = Number(service_charge_amount) || 0;
+    const serverOtherCharges = Number(other_charges_amount) || 0;
+    const serverChargesBreakdown = Array.isArray(charges_breakdown) ? charges_breakdown : [];
 
     // ── EPIC-032 C1 — kode promo kasir ─────────────────────────────
     // Hold DI AWAL dgn id order yang di-generate sendiri (insert pakai id
@@ -398,7 +404,7 @@ export async function POST(request: NextRequest) {
     }
 
     const serverDerivedTotal =
-      serverSubtotal - serverDiscount + serverTax + serverServiceCharge;
+      serverSubtotal - serverDiscount + serverTax + serverServiceCharge + serverOtherCharges;
     // NFC Tab (EPIC-023 Fase C): order lunas secara kasir, tagihannya pindah
     // ke tab visit ticketing — tidak ada uang diterima di sini. Nominal yang
     // masuk ledger tab WAJIB turunan server, bukan total_amount kiriman klien.
@@ -532,6 +538,8 @@ export async function POST(request: NextRequest) {
         discount_reason: discountReasonFinal,
         tax_amount: serverTax,
         service_charge_amount: serverServiceCharge,
+        other_charges_amount: serverOtherCharges,
+        charges_breakdown: serverChargesBreakdown,
         total_amount: serverTotal,
         amount_paid: paidAmount,
         change_amount: Math.max(0, paidAmount + arkUsed - serverTotal),

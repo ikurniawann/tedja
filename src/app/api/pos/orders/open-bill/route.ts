@@ -36,6 +36,8 @@ type OpenBillBody = {
   discount_reason?: string;
   tax_amount?: number | string;
   service_charge_amount?: number | string;
+  other_charges_amount?: number | string;
+  charges_breakdown?: unknown;
   total_amount?: number | string;
   notes?: string;
   special_requests?: string;
@@ -130,6 +132,8 @@ export async function POST(request: NextRequest) {
       discount_reason,
       tax_amount = 0,
       service_charge_amount = 0,
+      other_charges_amount = 0,
+      charges_breakdown = [],
       total_amount,
       notes,
       special_requests,
@@ -181,6 +185,8 @@ export async function POST(request: NextRequest) {
         discount_reason: discount_reason || null,
         tax_amount: Number(tax_amount) || 0,
         service_charge_amount: Number(service_charge_amount) || 0,
+        other_charges_amount: Number(other_charges_amount) || 0,
+        charges_breakdown: Array.isArray(charges_breakdown) ? charges_breakdown : [],
         total_amount: Number(total_amount) || 0,
         payment_method: null,
         amount_paid: 0,

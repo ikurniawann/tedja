@@ -10,6 +10,8 @@ import {
 import { ArrowsPointingInIcon, ArrowsPointingOutIcon } from '@heroicons/react/24/outline';
 import { toast } from 'sonner';
 import { RESTAURANT_FROM, isRestaurantImmersive, restaurantPath } from '@/features/pos/restaurant/nav';
+import { cashierTabletRoute, isPosTabletQuery } from '@/features/pos/tablet-mode';
+import { PosTabletChromeControls } from '@/features/pos/components/pos-tablet-chrome-controls';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -40,6 +42,13 @@ import { usePosShift } from '@/hooks/use-pos-shift';
 import { usePosOnline } from '@/hooks/use-pos-online';
 import { usePosOfflineQueue } from '@/hooks/use-pos-offline';
 import { POS_SHIFT_MANAGEMENT_ENABLED } from '@/lib/pos/feature-flags';
+import {
+  calculateBillCharges,
+  DEFAULT_BILLING_CHARGES,
+  resolveEnabledOptionalCodes,
+  taxToggleLabel,
+} from '@/lib/pos/billing-settings';
+import { useResolvedBillingProfile } from '@/features/pos/billing-settings';
 import { ShiftModal } from '@/components/pos/ShiftModal';
 import { PosProductThumbnail } from '@/components/pos/PosProductThumbnail';
 
@@ -129,7 +138,8 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
   const { data: loyaltySettings } = useLoyaltySettings();
   const formatArk = (value: number) =>
     formatArkAmount(value, loyaltySettings?.ark_rate || 1000);
-  const isFullscreen = variant === 'fullscreen';
+  const isTabletMode =
+    variant === 'fullscreen' || isPosTabletQuery(searchParams);
   const homeRoute = cashierRoute(variant, searchParams);
   const paymentOrderId = searchParams.get('orderId');
   const loadedPaymentOrderRef = useRef<string | null>(null);
@@ -242,6 +252,12 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
   /* Shift */
   const { shift, isActive: hasShift, loading: loadingShift, openShift, closeShift } = usePosShift(CASHIER_ID);
   const [showShiftModal, setShowShiftModal] = useState(false);
+
+  /* Billing config — resolve from session branch/stall (API falls back to cookies) */
+  const billingQuery = useResolvedBillingProfile({});
+  const billingCharges = billingQuery.data?.charges?.length
+    ? billingQuery.data.charges
+    : DEFAULT_BILLING_CHARGES;
 
   const canTransact = hasShift && !loadingShift;
 
@@ -416,8 +432,31 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     : 0;
   const discountAmount = membershipDiscountAmount + promoDiscount;
   const afterDiscount = cart.subtotal - discountAmount;
-  const taxAmount = cart.includeTax ? Math.round(afterDiscount * 0.1) : 0;
-  const total = afterDiscount + taxAmount;
+  const billCharges = useMemo(
+    () =>
+      calculateBillCharges({
+        subtotalAfterDiscount: afterDiscount,
+        charges: billingCharges,
+        enabledOptionalCodes: resolveEnabledOptionalCodes(billingCharges, cart.includeTax),
+      }),
+    [afterDiscount, billingCharges, cart.includeTax]
+  );
+  const taxAmount = billCharges.tax_amount;
+  const serviceChargeAmount = billCharges.service_charge_amount;
+  const otherChargesAmount = billCharges.other_charges_amount;
+  const total = billCharges.total;
+  const taxLabel = taxToggleLabel(billingCharges);
+  const otherChargeLines = useMemo(
+    () =>
+      billCharges.breakdown
+        .filter((line) => line.kind !== "tax")
+        .map((line) => ({
+          code: line.code,
+          name: line.name,
+          amount: line.amount,
+        })),
+    [billCharges.breakdown]
+  );
   const maxArkUsable = selectedCustomer ? Math.min(selectedCustomer.ark_coin_balance, total) : 0;
   const arkToUseCapped = Math.min(currentArkToUse, maxArkUsable);
   const totalAfterArk = total - arkToUseCapped;
@@ -708,7 +747,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       try {
         let orderId: string;
         let orderNumber: string;
-        const cTotal = cart.total;
+        const cTotal = total;
 
         if (paymentOrderId) {
           const data = await payOpenOrderMutation.mutateAsync({
@@ -738,6 +777,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
             shiftId: shift?.id || null,
             giftCardCode,
             promo: promoApplied,
+            billCharges,
           });
           if (!res.success) {
             toast.error(res.error || 'Pembayaran gift card gagal');
@@ -761,6 +801,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
           customerName: selectedCustomer?.name,
           discountAmount,
           taxAmount,
+          chargesBreakdown: billCharges.breakdown,
         };
         storeResultPayload(receipt);
         setShowPayment(false);
@@ -797,7 +838,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       try {
         let orderId: string;
         let orderNumber: string;
-        const cTotal = cart.total;
+        const cTotal = total;
 
         if (paymentOrderId) {
           const data = await payOpenOrderMutation.mutateAsync({
@@ -827,6 +868,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
             shiftId: shift?.id || null,
             nfcTabUid,
             promo: promoApplied,
+            billCharges,
           });
           if (!res.success) {
             toast.error(res.error || 'Charge ke tab gagal');
@@ -850,6 +892,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
           customerName: selectedCustomer?.name,
           discountAmount,
           taxAmount,
+          chargesBreakdown: billCharges.breakdown,
         };
         storeResultPayload(receipt);
         setShowPayment(false);
@@ -940,7 +983,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         return;
       }
       const cSubtotal = cart.subtotal;
-      const cTotal = cart.total;
+      const cTotal = total;
       const payload = {
         order_type: cart.orderType,
         customer_id: selectedCustomer?.id,
@@ -958,6 +1001,9 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         subtotal: cSubtotal,
         discount_amount: discountAmount,
         tax_amount: taxAmount,
+        service_charge_amount: serviceChargeAmount,
+        other_charges_amount: otherChargesAmount,
+        charges_breakdown: billCharges.breakdown,
         total_amount: cTotal,
         payment_method: paymentMethod === 'qris' ? 'qris' : paymentMethod === 'credit_card' ? 'credit' : paymentMethod === 'ark_coin' ? 'ark_coin' : 'cash',
         amount_paid: paymentMethod === 'cash' ? (parseFloat(cashReceived) || cTotal) : cTotal,
@@ -981,6 +1027,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         customerName: selectedCustomer?.name,
         discountAmount,
         taxAmount,
+        chargesBreakdown: billCharges.breakdown,
       };
       storeResultPayload(receipt);
       setShowPayment(false);
@@ -1008,6 +1055,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       shiftId: shift?.id || null,
       giftCardBuyer,
       promo: promoApplied,
+      billCharges,
     });
 
     if (res.success) {
@@ -1029,6 +1077,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         customerName: selectedCustomer?.name,
         discountAmount,
         taxAmount,
+        chargesBreakdown: billCharges.breakdown,
         giftCards: res.giftCards,
       };
       storeResultPayload(receipt);
@@ -1046,7 +1095,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       toast.error(res.error || 'Payment failed');
     }
     setProcessingPayment(false);
-  }, [cart, paymentMethod, selectedCustomer, cashReceived, totalAfterArk, checkout, discountAmount, taxAmount, arkToUseCapped, isOnline, enqueue, membershipDiscount, shift, refreshCount, paymentOrderId, payingOrderNumber, router, processingPayment, selectedTableDisplay, effectiveTableId, requireActiveShift, payOpenOrderMutation, deferReturnToRestaurant, storeResultPayload, refetchCustomers, promoApplied, giftCardBuyer]);
+  }, [cart, paymentMethod, selectedCustomer, cashReceived, totalAfterArk, checkout, discountAmount, taxAmount, arkToUseCapped, isOnline, enqueue, membershipDiscount, shift, refreshCount, paymentOrderId, payingOrderNumber, router, processingPayment, selectedTableDisplay, effectiveTableId, requireActiveShift, payOpenOrderMutation, deferReturnToRestaurant, storeResultPayload, refetchCustomers, promoApplied, giftCardBuyer, billCharges, serviceChargeAmount, otherChargesAmount, total, homeRoute]);
 
   /* Split Bill */
   const handleConfirmSplit = useCallback(async (config: SplitConfig) => {
@@ -1080,6 +1129,9 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         subtotal: cart.subtotal,
         discount_amount: discountAmount,
         tax_amount: taxAmount,
+        service_charge_amount: serviceChargeAmount,
+        other_charges_amount: otherChargesAmount,
+        charges_breakdown: billCharges.breakdown,
         total_amount: total,
         notes: cart.notes,
         include_tax: cart.includeTax,
@@ -1108,6 +1160,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         customerName: selectedCustomer?.name,
         discountAmount,
         taxAmount,
+        chargesBreakdown: billCharges.breakdown,
       };
       storeResultPayload(receipt);
       setLastResultType('offlined');
@@ -1136,6 +1189,9 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         subtotal: cart.subtotal,
         discount_amount: discountAmount,
         tax_amount: taxAmount,
+        service_charge_amount: serviceChargeAmount,
+        other_charges_amount: otherChargesAmount,
+        charges_breakdown: billCharges.breakdown,
         total_amount: total,
         notes: cart.notes,
         include_tax: cart.includeTax,
@@ -1161,7 +1217,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     } catch (e: any) {
       toast.error(e.message || 'Failed to create split order');
     }
-  }, [cart, selectedCustomer, discountAmount, taxAmount, total, membershipDiscount, isOnline, enqueue, paymentMethod, shift, refreshCount, selectedTableDisplay, effectiveTableId, requireActiveShift, storeResultPayload, promoApplied]);
+  }, [cart, selectedCustomer, discountAmount, taxAmount, total, membershipDiscount, isOnline, enqueue, paymentMethod, shift, refreshCount, selectedTableDisplay, effectiveTableId, requireActiveShift, storeResultPayload, promoApplied, serviceChargeAmount, otherChargesAmount, billCharges]);
 
   const handleSplitComplete = useCallback(() => {
     setShowSplitPayment(false);
@@ -1202,6 +1258,9 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         subtotal: cart.subtotal,
         discount_amount: discountAmount,
         tax_amount: taxAmount,
+        service_charge_amount: serviceChargeAmount,
+        other_charges_amount: otherChargesAmount,
+        charges_breakdown: billCharges.breakdown,
         total_amount: total,
         notes: cart.notes,
         membership_discount_pct: selectedCustomer?.discount || 0,
@@ -1219,7 +1278,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     } finally {
       setSavingBill(false);
     }
-  }, [cart, selectedCustomer, discountAmount, taxAmount, total, requireActiveShift, shift, maybeReturnToRestaurant, effectiveTableId]);
+  }, [cart, selectedCustomer, discountAmount, taxAmount, total, requireActiveShift, shift, maybeReturnToRestaurant, effectiveTableId, serviceChargeAmount, otherChargesAmount, billCharges]);
 
   /* Print helpers */
   const handlePrint = useCallback((label: 'KITCHEN' | 'BAR' | 'CUSTOMER') => {
@@ -1228,14 +1287,14 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
   }, [resultPayload]);
 
   /* ─── Render ───────────────────────────────────────────────────── */
-  const shellHeight = isFullscreen
-    ? 'h-[calc(100dvh-11rem)] min-h-[560px]'
+  const shellHeight = isTabletMode
+    ? 'h-[calc(100dvh-7rem)] min-h-[520px]'
     : 'h-[calc(100dvh-14rem)] min-h-[480px]';
 
   return (
     <TooltipProvider>
     <PageTransition>
-    <div className="flex flex-col gap-4">
+    <div className={`flex flex-col gap-4 ${isTabletMode ? 'touch-manipulation' : ''}`}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
           <h1 className="text-xl font-semibold text-gray-900">POS Cashier</h1>
@@ -1273,8 +1332,8 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
                   </>
                 ) : null}
               </span>
-            ) : isFullscreen ? (
-              'Fullscreen mode — optimized for checkout'
+            ) : isTabletMode ? (
+              'Kasir tablet'
             ) : (
               'Process orders with the dashboard sidebar available'
             )}
@@ -1310,25 +1369,28 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
             <MonitorIcon className="mr-2 h-4 w-4" />
             Layar Customer
           </Button>
-          {isFullscreen ? (
-            <Button
-              type="button"
-              variant="outline"
-              className="border-gray-200/80 text-gray-700 hover:border-primary/30 hover:bg-primary/10 hover:text-primary"
-              onClick={() => router.push(cashierRoute('embedded', searchParams))}
-            >
-              <ArrowsPointingInIcon className="mr-2 h-4 w-4" />
-              Exit Fullscreen
-            </Button>
+          {isTabletMode ? (
+            <>
+              <PosTabletChromeControls />
+              <Button
+                type="button"
+                variant="outline"
+                className="border-gray-200/80 text-gray-700 hover:border-primary/30 hover:bg-primary/10 hover:text-primary"
+                onClick={() => router.push(cashierRoute('embedded', searchParams))}
+              >
+                <ArrowsPointingInIcon className="mr-2 h-4 w-4" />
+                Keluar mode tablet
+              </Button>
+            </>
           ) : (
             <Button
               type="button"
               variant="outline"
               className="border-gray-200/80 text-gray-700 hover:border-primary/30 hover:bg-primary/10 hover:text-primary"
-              onClick={() => router.push(cashierRoute('fullscreen', searchParams))}
+              onClick={() => router.push(cashierTabletRoute(searchParams))}
             >
               <ArrowsPointingOutIcon className="mr-2 h-4 w-4" />
-              Fullscreen
+              Mode tablet
             </Button>
           )}
         </div>
@@ -1683,6 +1745,8 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         selectedCustomer={selectedCustomer}
         includeTax={cart.includeTax}
         tax={taxAmount}
+        taxToggleLabel={taxLabel}
+        otherChargeLines={otherChargeLines}
         arkToUseCapped={arkToUseCapped}
         paymentMethod={paymentMethod}
         totalAfterArk={totalAfterArk}
