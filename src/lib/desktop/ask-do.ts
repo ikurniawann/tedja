@@ -11,6 +11,7 @@ import type { DesktopOverview } from "./overview";
 export type AskDoWidgetKey =
   | "omzet"
   | "promo"
+  | "tamu"
   | "pulsa"
   | "tim"
   | "keputusan"
@@ -57,6 +58,18 @@ export function buildAskDoPrompt(key: AskDoWidgetKey, overview: DesktopOverview 
         (p.efisiensi !== null ? ` (${p.efisiensi}x lipat)` : "") +
         `. Kampanye teratas: ${p.teratas.map((k) => k.kampanye).join(", ")}. ` +
         `Apakah promo ini menguntungkan, dan mana yang sebaiknya dihentikan?`
+      );
+    }
+
+    case "tamu": {
+      const t = overview?.tamuDiMeja;
+      if (!t) return "Berapa tamu yang sedang duduk saat ini?";
+      if (t.meja === 0) return "Belum ada meja terisi saat ini. Apakah ini wajar untuk jam segini?";
+      const okupansi =
+        t.kapasitas > 0 ? ` dari ${t.kapasitas} kursi yang tersedia di meja-meja itu` : "";
+      return (
+        `Saat ini ada ${t.tamu} tamu di ${t.meja} meja${okupansi}. ` +
+        `Bagaimana dibanding jam yang sama biasanya, dan apakah kapasitas kita terpakai dengan baik?`
       );
     }
 

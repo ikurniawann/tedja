@@ -163,6 +163,7 @@ const defaultWidgetVisibility: WidgetVisibility = {
   calendar: false,
   omzet: true,
   promo: true,
+  tamu: true,
   pulsa: true,
   tim: true,
   keputusan: true,

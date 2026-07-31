@@ -6,6 +6,7 @@ import { awardCrmXpForPosOrder, syncPosCustomerOrderStats } from '@/lib/crm/loya
 import { getCrmDefaultVenue } from '@/lib/crm/server';
 import { checkProductPrivileges } from '@/lib/crm/product-privilege';
 import { buildCostSnapshot, loadPosProductCostMap } from '@/lib/pos/purchasing-sync';
+import { normalizeGuestCount } from '@/lib/pos/guest-count';
 import { withTransaction } from '@/lib/db';
 import {
   PromoRejectedError,
@@ -45,6 +46,8 @@ type PosOrderBody = {
   cashier_id?: string;
   server_id?: string;
   table_id?: string;
+  /** Jumlah tamu yang duduk (EPIC-038). Kosong/aneh → 1 orang. */
+  guest_count?: number | string;
   items?: PosOrderItemRequest[];
   subtotal?: number | string;
   discount_amount?: number | string;
@@ -297,6 +300,16 @@ export async function POST(request: NextRequest) {
         await db.from('pos_orders').update({ shift_id: body.shift_id }).eq('id', result.order_id);
       }
 
+      // Jumlah tamu di-set setelah RPC, mengikuti pola shift_id di atas —
+      // RPC `pos_create_split_order_transaction` punya signature tetap dan
+      // mengubahnya berarti migrasi function. Tanpa ini, justru split bill
+      // (yang hampir pasti banyak orang) akan tercatat 1 tamu karena DEFAULT
+      // kolomnya.
+      await db
+        .from('pos_orders')
+        .update({ guest_count: normalizeGuestCount(body.guest_count) })
+        .eq('id', result.order_id);
+
       // Fetch complete order with relations
       const { data: completeOrder } = await db
         .from('pos_orders')
@@ -532,6 +545,7 @@ export async function POST(request: NextRequest) {
         cashier_id: effectiveCashierId,
         server_id: server_id || null,
         table_id: table_id || null,
+        guest_count: normalizeGuestCount(body.guest_count),
         shift_id: body.shift_id || null,
         subtotal: serverSubtotal,
         discount_amount: serverDiscount,

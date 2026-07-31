@@ -30,6 +30,7 @@ const CARD = "rounded-3xl border border-white/18 bg-slate-950/55 shadow-2xl back
 export type MonitorWidgetKey =
   | "omzet"
   | "promo"
+  | "tamu"
   | "pulsa"
   | "tim"
   | "keputusan"
@@ -39,6 +40,7 @@ export type MonitorWidgetKey =
 export const MONITOR_WIDGETS: Array<{ key: MonitorWidgetKey; title: string; description: string }> = [
   { key: "omzet", title: "Pendapatan", description: "Total per periode, komposisi sumber & proyeksi." },
   { key: "promo", title: "Dampak Promo", description: "Diskon yang keluar vs omzet yang dibawanya." },
+  { key: "tamu", title: "Tamu di Meja", description: "Jumlah tamu yang sedang duduk saat ini." },
   { key: "pulsa", title: "Pulsa Bisnis", description: "Omzet & pesanan hari ini vs kemarin." },
   { key: "tim", title: "Tim Hari Ini", description: "Hadir, terlambat, belum absen, dan cuti." },
   { key: "keputusan", title: "Perlu Keputusan", description: "Pengajuan & dokumen yang menunggu approval." },
@@ -545,6 +547,41 @@ export function DesktopMonitorBoard({
               Belum ada promo dipakai pada periode ini.
             </div>
           ))}
+      </Card>
+    ),
+
+    tamu: d && visibility.tamu && (
+      <Card
+        title="Tamu di Meja"
+        subtitle="Sedang duduk saat ini"
+        href="/dashboard/pos/restaurant"
+        onGo={go}
+        onAskDo={onAskDo}
+        askDoPrompt={buildAskDoPrompt("tamu", d)}
+        failed={failedSet.has("tamuDiMeja")}
+      >
+        {d.tamuDiMeja && (
+          <div>
+            <div className="text-[28px] font-extrabold leading-tight tracking-tight">
+              {d.tamuDiMeja.tamu}
+              <span className="ml-1.5 align-middle text-[11px] font-bold text-white/40">
+                tamu
+              </span>
+            </div>
+            <div className="mt-1 text-[10px] leading-relaxed text-white/50">
+              {d.tamuDiMeja.meja === 0 ? (
+                "Belum ada meja terisi"
+              ) : (
+                <>
+                  di {d.tamuDiMeja.meja} meja
+                  {d.tamuDiMeja.kapasitas > 0 && (
+                    <> · kapasitas terpakai {d.tamuDiMeja.kapasitas} kursi</>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        )}
       </Card>
     ),
 

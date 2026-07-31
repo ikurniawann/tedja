@@ -3,6 +3,7 @@ import { createPgClient } from "@/lib/pg/create-client";
 import { getPosSession } from '@/lib/api/auth';
 import { buildCostSnapshot, loadPosProductCostMap } from '@/lib/pos/purchasing-sync';
 import { checkProductPrivileges } from '@/lib/crm/product-privilege';
+import { normalizeGuestCount } from '@/lib/pos/guest-count';
 
 const STATIONS = ['kitchen', 'bar', 'bakery', 'dessert', 'merchandise', 'photobooth'];
 
@@ -29,6 +30,8 @@ type OpenBillBody = {
   cashier_id?: string;
   server_id?: string;
   table_id?: string;
+  /** Jumlah tamu yang duduk (EPIC-038). Kosong/aneh → 1 orang. */
+  guest_count?: number | string;
   shift_id?: string;
   items?: OpenBillItem[];
   subtotal?: number | string;
@@ -179,6 +182,9 @@ export async function POST(request: NextRequest) {
         cashier_id: cashier_id || sessionUserId,
         server_id: server_id || null,
         table_id: table_id || null,
+        // Dinormalisasi di server, bukan dipercaya dari klien: jalur lain
+        // (seat reservation, tablet) juga menembak endpoint ini.
+        guest_count: normalizeGuestCount(body.guest_count),
         shift_id: shift_id || null,
         subtotal: Number(subtotal) || 0,
         discount_amount: Number(discount_amount) || 0,

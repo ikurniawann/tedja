@@ -107,12 +107,28 @@ export interface PromoImpact {
   adaData: boolean;
 }
 
+/**
+ * Tamu yang sedang duduk (EPIC-038).
+ *
+ * Asumsi yang dipakai: satu bill terbuka = satu rombongan. Kalau satu meja
+ * punya dua bill terpisah, tamunya dijumlahkan — itu memang dua rombongan yang
+ * kebetulan berbagi meja. `meja` menghitung meja UNIK supaya tidak ikut ganda.
+ */
+export interface GuestsSeated {
+  tamu: number;
+  meja: number;
+  /** Total kursi pada meja-meja yang sedang terisi — pembanding okupansi. */
+  kapasitas: number;
+  adaData: boolean;
+}
+
 export interface DesktopOverview {
   dibuatPada: string;
   /** Metadata periode papan — dipakai UI untuk melabeli angka & pembandingnya. */
   periode: PeriodSummary;
   omzetPeriode: RevenuePeriod | null;
   dampakPromo: PromoImpact | null;
+  tamuDiMeja: GuestsSeated | null;
   pulsaBisnis: SalesPulse | null;
   timHariIni: TeamToday | null;
   perluKeputusan: PendingDecisions | null;
@@ -256,6 +272,33 @@ async function fetchRevenuePeriod(
     // Sepanjang rentang pembanding s/d sekarang tidak ada satu pun transaksi di
     // KEDUA sumber → "belum ada data", bukan "penjualan nol".
     adaData: Number(fnb?.baris ?? 0) + Number(b2b?.baris ?? 0) > 0,
+  };
+}
+
+/**
+ * Tamu yang sedang duduk saat ini — TIDAK mengikuti periode papan, karena ini
+ * keadaan sekarang. "Tamu di meja YTD" bukan pertanyaan yang punya arti.
+ */
+async function fetchGuestsSeated(): Promise<GuestsSeated> {
+  const row = await queryOne<{ tamu: string; meja: number; kapasitas: string }>(
+    `SELECT COALESCE(sum(o.guest_count), 0)::float8 AS tamu,
+            count(DISTINCT o.table_id)::int AS meja,
+            COALESCE(sum(DISTINCT t.capacity), 0)::float8 AS kapasitas
+       FROM pos.pos_orders o
+       LEFT JOIN pos.pos_tables t ON t.id::text = o.table_id
+      WHERE o.table_id IS NOT NULL
+        AND o.voided_at IS NULL
+        AND o.status IN ('pending', 'confirmed', 'preparing', 'ready', 'served')`
+  );
+
+  const meja = Number(row?.meja ?? 0);
+  return {
+    tamu: Number(row?.tamu ?? 0),
+    meja,
+    kapasitas: Number(row?.kapasitas ?? 0),
+    // Nol meja terisi adalah FAKTA (restoran sedang kosong), bukan "belum ada
+    // data" — berbeda dari widget periode. Karena itu adaData selalu true.
+    adaData: true,
   };
 }
 
@@ -426,6 +469,7 @@ export function emptyDesktopOverview(
     periode: summarizePeriod(kind, now),
     omzetPeriode: null,
     dampakPromo: null,
+    tamuDiMeja: null,
     pulsaBisnis: null,
     timHariIni: null,
     perluKeputusan: null,
@@ -469,6 +513,7 @@ export async function buildDesktopOverview(
   const [
     omzetPeriode,
     dampakPromo,
+    tamuDiMeja,
     pulsaBisnis,
     timHariIni,
     perluKeputusan,
@@ -479,6 +524,7 @@ export async function buildDesktopOverview(
         fetchRevenuePeriod(ringkasan.periode, ringkasan.banding)
       ),
       safeSection("dampakPromo", gagal, () => fetchPromoImpact(ringkasan.periode)),
+      safeSection("tamuDiMeja", gagal, fetchGuestsSeated),
       safeSection("pulsaBisnis", gagal, fetchSalesPulse),
       safeSection("timHariIni", gagal, fetchTeamToday),
       safeSection("perluKeputusan", gagal, fetchPendingDecisions),
@@ -491,6 +537,7 @@ export async function buildDesktopOverview(
     periode: ringkasan,
     omzetPeriode,
     dampakPromo,
+    tamuDiMeja,
     pulsaBisnis,
     timHariIni,
     perluKeputusan,
