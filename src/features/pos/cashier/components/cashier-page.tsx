@@ -4,7 +4,7 @@ import { Suspense, useState, useEffect, useMemo, useCallback, useRef } from 'rea
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Search, Utensils, ShoppingBag, Table as TableIcon,
-  User, X, Sparkles, Printer, CheckCircle, AlertCircle, Loader2, ArrowLeft,
+  User, Users, X, Sparkles, Printer, CheckCircle, AlertCircle, Loader2, ArrowLeft,
   Monitor as MonitorIcon,
 } from 'lucide-react';
 import { ArrowsPointingInIcon, ArrowsPointingOutIcon } from '@heroicons/react/24/outline';
@@ -24,6 +24,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { formatAmount } from '@/lib/purchasing/utils';
+import { capacityWarning, normalizeGuestCount } from '@/lib/pos/guest-count';
 import {
   type Customer,
   type Product,
@@ -150,6 +151,13 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     immersive: isRestaurantImmersive(searchParams),
   });
   const handoffTableId = searchParams.get('tableId');
+  /**
+   * Jumlah tamu (EPIC-038). Diisi pramusaji saat mendudukkan di halaman
+   * Restaurant lalu dioper lewat ?pax=, dan MASIH bisa dikoreksi di sini —
+   * tamu sering menyusul atau pergi antara duduk dan bayar.
+   * String, bukan number: input kosong harus tetap bisa dibedakan dari 0.
+   */
+  const [guestCount, setGuestCount] = useState<string>(searchParams.get('pax') ?? '');
   const handoffOrderType = searchParams.get('orderType');
   const handoffKeyRef = useRef<string | null>(null);
   const pendingRestaurantReturnRef = useRef(false);
@@ -318,6 +326,12 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     const selected = tableById.get(effectiveTableId);
     return selected ? getTableDisplayName(selected) : effectiveTableId;
   }, [effectiveTableId, tableById]);
+
+  const guestCapacityWarning = useMemo(() => {
+    if (!effectiveTableId) return null;
+    const meja = tableById.get(effectiveTableId);
+    return capacityWarning(normalizeGuestCount(guestCount), meja?.capacity ?? null);
+  }, [effectiveTableId, tableById, guestCount]);
 
   /* Load existing open bill when redirected from Orders */
   useEffect(() => {
@@ -989,6 +1003,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         customer_id: selectedCustomer?.id,
         cashier_id: CASHIER_ID,
         table_id: effectiveTableId || undefined,
+        guest_count: normalizeGuestCount(guestCount),
         items: cart.items.map(item => ({
           product_id: item.productId,
           product_name: item.name,
@@ -1116,6 +1131,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         cashier_id: CASHIER_ID,
         server_id: undefined,
         table_id: effectiveTableId || undefined,
+        guest_count: normalizeGuestCount(guestCount),
         shift_id: shift?.id,
         items: cart.items.map(item => ({
           product_id: item.productId,
@@ -1176,6 +1192,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         cashier_id: CASHIER_ID,
         server_id: undefined,
         table_id: effectiveTableId || undefined,
+        guest_count: normalizeGuestCount(guestCount),
         shift_id: shift?.id,
         items: cart.items.map(item => ({
           product_id: item.productId,
@@ -1239,6 +1256,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         cashier_id: CASHIER_ID,
         server_id: undefined,
         table_id: effectiveTableId || undefined,
+        guest_count: normalizeGuestCount(guestCount),
         shift_id: shift?.id || undefined,
         items: cart.items.map(item => ({
           product_id: item.productId,
@@ -1323,6 +1341,32 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
                   <>
                     <span className="text-gray-300">·</span>
                     <span>Dine-in</span>
+                    {/* Jumlah tamu (EPIC-038). Placeholder "1" bukan nilai
+                        default yang tersimpan diam-diam — field kosong memang
+                        berarti 1 orang, dan itu ditegakkan di server. */}
+                    <span className="text-gray-300">·</span>
+                    <label className="inline-flex items-center gap-1.5">
+                      <Users className="h-3.5 w-3.5 text-gray-500" />
+                      <input
+                        type="number"
+                        min={1}
+                        inputMode="numeric"
+                        value={guestCount}
+                        onChange={(e) => setGuestCount(e.target.value)}
+                        placeholder="1"
+                        aria-label="Jumlah tamu"
+                        className="w-14 rounded-md border border-gray-300 px-1.5 py-0.5 text-center text-sm tabular-nums focus:border-primary focus:outline-none"
+                      />
+                      <span className="text-gray-500">tamu</span>
+                    </label>
+                    {/* Peringatan, BUKAN blokir — keputusan owner. Kasir tetap
+                        bisa lanjut; memblokir hanya memancing angka palsu. */}
+                    {guestCapacityWarning && (
+                      <span className="inline-flex items-center gap-1 text-amber-700">
+                        <AlertCircle className="h-3.5 w-3.5" />
+                        {guestCapacityWarning}
+                      </span>
+                    )}
                   </>
                 ) : null}
                 {fromRestaurant ? (

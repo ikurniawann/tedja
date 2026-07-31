@@ -130,6 +130,8 @@ export interface SplitBillRequest {
   cashier_id: string;
   server_id?: string;
   table_id?: string;
+  /** Jumlah tamu yang duduk (EPIC-038). Kosong → 1 orang, ditegakkan server. */
+  guest_count?: number;
   shift_id?: string;
   items: OrderItem[];
   subtotal: number;
@@ -300,6 +302,8 @@ export interface OpenBillRequest {
   cashier_id?: string;
   server_id?: string;
   table_id?: string;
+  /** Jumlah tamu yang duduk (EPIC-038). Kosong → 1 orang, ditegakkan server. */
+  guest_count?: number;
   shift_id?: string;
   items: OrderItem[];
   subtotal: number;
@@ -366,6 +370,8 @@ export interface Order {
   cashier_id?: string;
   server_id?: string;
   table_id?: string;
+  /** Jumlah tamu yang duduk (EPIC-038). Kosong → 1 orang, ditegakkan server. */
+  guest_count?: number;
   subtotal?: number;
   discount_amount?: number;
   tax_amount?: number;
@@ -402,6 +408,8 @@ export interface CreateOrderRequest {
   cashier_id: string;
   server_id?: string;
   table_id?: string;
+  /** Jumlah tamu yang duduk (EPIC-038). Kosong → 1 orang, ditegakkan server. */
+  guest_count?: number;
   items: OrderItem[];
   subtotal: number;
   discount_amount?: number;

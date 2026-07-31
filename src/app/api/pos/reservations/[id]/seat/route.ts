@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createPgClient } from "@/lib/pg/create-client";
 import { getPosSession } from "@/lib/api/auth";
+import { normalizeGuestCount } from "@/lib/pos/guest-count";
 
 const ACTIVE_ORDER_STATUSES = [
   "pending",
@@ -140,6 +141,10 @@ export async function POST(
         customer_id: reservation.customer_id || null,
         cashier_id: sessionUserId,
         table_id: tableId,
+        // Reservasi sudah menyimpan jumlah tamu di `pax_count` — dibawa langsung
+        // ke pesanan (EPIC-038) supaya pramusaji tidak mengetik ulang angka yang
+        // sudah diketahui sistem. Kalau kosong, normalizeGuestCount → 1.
+        guest_count: normalizeGuestCount(reservation.pax_count),
         subtotal: 0,
         discount_amount: 0,
         tax_amount: 0,

@@ -37,10 +37,15 @@ export function buildCashierHandoffUrl(opts: {
   orderType?: "dine_in" | "takeaway";
   pay?: boolean;
   immersive?: boolean;
+  /** Jumlah tamu dari halaman Restaurant (EPIC-038) — masih bisa dikoreksi di kasir. */
+  pax?: number;
 }): string {
   const params = new URLSearchParams();
   params.set("from", RESTAURANT_FROM);
   if (opts.tableId) params.set("tableId", opts.tableId);
+  // Hanya dioper bila > 1: "1" adalah default, dan URL yang bersih lebih mudah
+  // dibaca saat menelusuri masalah.
+  if (opts.pax && opts.pax > 1) params.set("pax", String(opts.pax));
   if (opts.orderId) params.set("orderId", opts.orderId);
   if (opts.orderType) params.set("orderType", opts.orderType);
   if (opts.pay) params.set("pay", "1");
