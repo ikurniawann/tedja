@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { buildAskDoPrompt } from "./ask-do";
 import type { DesktopOverview } from "./overview";
+import { summarizePeriod } from "./period";
 
 const kosong: DesktopOverview = {
   dibuatPada: "2026-07-25T02:00:00.000Z",
+  periode: summarizePeriod("today"),
+  omzetPeriode: null,
   pulsaBisnis: null,
   timHariIni: null,
   perluKeputusan: null,

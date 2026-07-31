@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DesktopOverview } from "@/lib/desktop/overview";
+import { summarizePeriod } from "@/lib/desktop/period";
 import {
   buildApprovalMenginapMessage,
   buildDigestMessage,
@@ -23,6 +24,8 @@ import {
 
 const overviewKosong: DesktopOverview = {
   dibuatPada: "2026-07-22T15:00:00.000Z",
+  periode: summarizePeriod("today"),
+  omzetPeriode: null,
   pulsaBisnis: null,
   timHariIni: null,
   perluKeputusan: null,

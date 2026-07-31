@@ -1,4 +1,14 @@
 import { query, queryOne } from "@/lib/db";
+import {
+  projectRunRate,
+  summarizePeriod,
+  type Comparison,
+  type Period,
+  type PeriodKind,
+  type PeriodSummary,
+} from "./period";
+
+export type { PeriodSummary } from "./period";
 
 /**
  * Data papan monitoring desktop Arkiv OS (EPIC-019 Fase A).
@@ -56,8 +66,27 @@ export interface CrmPulse {
   rewardDitukar7Hari: number;
 }
 
+/**
+ * Omzet sepanjang periode terpilih — dasar Revenue Overview (Fase B).
+ *
+ * `adaData` sengaja dipisah dari `omzet: 0`: tanpa itu, periode yang belum punya
+ * transaksi terbaca sebagai "penjualan nol" oleh owner, padahal artinya "belum
+ * ada yang tercatat". Dua hal berbeda dengan tindak lanjut berbeda.
+ */
+export interface RevenuePeriod {
+  omzet: number;
+  pesanan: number;
+  banding: { omzet: number; pesanan: number };
+  /** Proyeksi akhir periode dari laju berjalan. */
+  proyeksi: number;
+  adaData: boolean;
+}
+
 export interface DesktopOverview {
   dibuatPada: string;
+  /** Metadata periode papan — dipakai UI untuk melabeli angka & pembandingnya. */
+  periode: PeriodSummary;
+  omzetPeriode: RevenuePeriod | null;
   pulsaBisnis: SalesPulse | null;
   timHariIni: TeamToday | null;
   perluKeputusan: PendingDecisions | null;
@@ -118,6 +147,63 @@ async function fetchSalesPulse(): Promise<SalesPulse> {
     kemarin: { omzet: kemarin.omzet, pesanan: kemarin.pesanan },
     mingguLalu: { omzet: mingguLalu.omzet, pesanan: mingguLalu.pesanan },
     tujuhHari,
+  };
+}
+
+/**
+ * Omzet periode + jendela pembandingnya dalam satu query.
+ *
+ * Filter mengikuti definisi modul POS (batal & void tidak dihitung), sama
+ * seperti `fetchSalesPulse` dan tool Do `penjualan_periode` — selisih angka
+ * papan vs halaman modul adalah bug, bukan beda definisi.
+ *
+ * Tanggal dibandingkan sebagai tanggal WIB (`AT TIME ZONE`), bukan rentang
+ * timestamp mentah, supaya batas hari mengikuti hari operasional Jakarta.
+ *
+ * Tidak difilter tenant: papan digate ke super_admin/direksi dan memang
+ * dimaksudkan lintas-unit — konsisten dengan seluruh query di modul ini.
+ */
+async function fetchRevenuePeriod(
+  period: Period,
+  banding: Comparison
+): Promise<RevenuePeriod> {
+  const row = await queryOne<{
+    omzet: string;
+    pesanan: number;
+    banding_omzet: string;
+    banding_pesanan: number;
+    baris: number;
+  }>(
+    `WITH terpakai AS (
+       SELECT total_amount,
+              (created_at AT TIME ZONE 'Asia/Jakarta')::date AS tanggal
+         FROM pos.pos_orders
+        WHERE status <> 'cancelled'
+          AND voided_at IS NULL
+     )
+     SELECT
+       COALESCE(sum(total_amount) FILTER (WHERE tanggal BETWEEN $1::date AND $2::date), 0)::float8 AS omzet,
+       count(*) FILTER (WHERE tanggal BETWEEN $1::date AND $2::date)::int AS pesanan,
+       COALESCE(sum(total_amount) FILTER (WHERE tanggal BETWEEN $3::date AND $4::date), 0)::float8 AS banding_omzet,
+       count(*) FILTER (WHERE tanggal BETWEEN $3::date AND $4::date)::int AS banding_pesanan,
+       count(*) FILTER (WHERE tanggal BETWEEN $3::date AND $2::date)::int AS baris
+       FROM terpakai`,
+    [period.mulai, period.selesai, banding.mulai, banding.selesai]
+  );
+
+  const omzet = Number(row?.omzet ?? 0);
+  const pesanan = Number(row?.pesanan ?? 0);
+  return {
+    omzet,
+    pesanan,
+    banding: {
+      omzet: Number(row?.banding_omzet ?? 0),
+      pesanan: Number(row?.banding_pesanan ?? 0),
+    },
+    proyeksi: projectRunRate(omzet, period),
+    // Sepanjang rentang pembanding s/d sekarang tidak ada satu pun transaksi →
+    // ini "belum ada data", bukan "penjualan nol".
+    adaData: Number(row?.baris ?? 0) > 0,
   };
 }
 
@@ -241,18 +327,38 @@ async function safeSection<T>(
   }
 }
 
-export async function buildDesktopOverview(): Promise<DesktopOverview> {
+/**
+ * @param kind Periode papan (EPIC-037 Fase A). Default `today` — nilai lama,
+ *   supaya pemanggil yang belum diperbarui tidak berubah artinya.
+ *
+ * Catatan sengaja: `timHariIni`, `perluKeputusan`, dan `stokMenipis` TIDAK
+ * mengikuti periode. Ketiganya menggambarkan keadaan SEKARANG (siapa hadir hari
+ * ini, apa yang menunggu approval, stok apa yang menipis) — "stok menipis YTD"
+ * bukan pertanyaan yang punya arti. Yang mengikuti periode hanya angka yang
+ * memang berbentuk akumulasi.
+ */
+export async function buildDesktopOverview(
+  kind: PeriodKind = "today"
+): Promise<DesktopOverview> {
   const gagal: string[] = [];
-  const [pulsaBisnis, timHariIni, perluKeputusan, stokMenipis, member] = await Promise.all([
-    safeSection("pulsaBisnis", gagal, fetchSalesPulse),
-    safeSection("timHariIni", gagal, fetchTeamToday),
-    safeSection("perluKeputusan", gagal, fetchPendingDecisions),
-    safeSection("stokMenipis", gagal, fetchLowStock),
-    safeSection("member", gagal, fetchCrmPulse),
-  ]);
+  const ringkasan = summarizePeriod(kind);
+
+  const [omzetPeriode, pulsaBisnis, timHariIni, perluKeputusan, stokMenipis, member] =
+    await Promise.all([
+      safeSection("omzetPeriode", gagal, () =>
+        fetchRevenuePeriod(ringkasan.periode, ringkasan.banding)
+      ),
+      safeSection("pulsaBisnis", gagal, fetchSalesPulse),
+      safeSection("timHariIni", gagal, fetchTeamToday),
+      safeSection("perluKeputusan", gagal, fetchPendingDecisions),
+      safeSection("stokMenipis", gagal, fetchLowStock),
+      safeSection("member", gagal, fetchCrmPulse),
+    ]);
 
   return {
     dibuatPada: new Date().toISOString(),
+    periode: ringkasan,
+    omzetPeriode,
     pulsaBisnis,
     timHariIni,
     perluKeputusan,

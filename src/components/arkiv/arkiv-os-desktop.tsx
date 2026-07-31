@@ -10,6 +10,7 @@ import {
   NotificationPopups,
   normalizeWidgetOrder,
   useDesktopOverview,
+  usePeriodPreference,
   type MonitorWidgetKey,
 } from "./desktop-monitor";
 import type { DesktopOverview as DesktopOverviewData } from "@/lib/desktop/overview";
@@ -217,7 +218,8 @@ export default function ArkivOsDesktop() {
   } as CSSProperties;
 
   const isLoggedIn = Boolean(userAccount);
-  const overview = useDesktopOverview(isLoggedIn);
+  const [periode, pilihPeriode] = usePeriodPreference();
+  const overview = useDesktopOverview(isLoggedIn, periode);
   // Notifikasi aktivitas: snapshot overview dibandingkan tiap poll; kenaikan
   // melahirkan popup + masuk riwayat Notification Center.
   const [notifHistory, setNotifHistory] = useState<ActivityNotification[]>([]);
@@ -568,7 +570,14 @@ export default function ArkivOsDesktop() {
       <section className="relative z-10 min-h-dvh px-6 pb-28 pt-14">
         {now && widgetVisibility.calendar && <CalendarWidget date={now} onClose={() => updateWidgetVisibility("calendar", false)} />}
         {isLoggedIn && (
-          <DesktopMonitorBoard state={overview} visibility={widgetVisibility} order={widgetOrder} onAskDo={askDoFromWidget} />
+          <DesktopMonitorBoard
+            state={overview}
+            visibility={widgetVisibility}
+            order={widgetOrder}
+            onAskDo={askDoFromWidget}
+            periode={periode}
+            onPilihPeriode={pilihPeriode}
+          />
         )}
       </section>
 

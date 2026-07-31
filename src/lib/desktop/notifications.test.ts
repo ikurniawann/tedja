@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { diffOverviewNotifications } from "./notifications";
 import type { DesktopOverview } from "./overview";
+import { summarizePeriod } from "./period";
 
 function snapshot(over: Partial<{
   cuti: number; lembur: number; pinjaman: number; poDraft: number; kandidatBaru: number;
@@ -15,6 +16,8 @@ function snapshot(over: Partial<{
   };
   return {
     dibuatPada: "2026-07-21T02:00:00.000Z",
+    periode: summarizePeriod("today"),
+    omzetPeriode: null,
     pulsaBisnis: {
       hariIni: { omzet: 0, pesanan: over.pesanan ?? 0, rataRata: 0 },
       kemarin: { omzet: 0, pesanan: 0 },

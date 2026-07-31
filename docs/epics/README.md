@@ -43,6 +43,9 @@ deploying-dev · ready-for-qa · blocked · done).
 | [EPIC-035](./EPIC-035-habitat-instance-kedua.md) | Habitat — Duplikasi Instance Kedua (Fork Repo, DB Baru) | ready-for-qa | 2026-07-27 |
 | [EPIC-036](./EPIC-036-kalender-hari-libur-nasional.md) | Kalender Hari Libur Nasional — Master Libur, Cuti Bersama & Dampaknya ke Cuti/Lembur | coding | 2026-07-29 |
 
+| [EPIC-035](./EPIC-035-habitat-instance-kedua.md) | Habitat — Duplikasi Instance Kedua (Fork Repo, DB Baru, Deploy GitLab CI) | ready-for-qa | 2026-07-28 |
+| [EPIC-037](./EPIC-037-desktop-owner-insight.md) | Desktop Arkiv OS — Widget Report & Insight Owner | on-progress | 2026-07-29 |
+
 Aturan:
 - Epic + registry ini adalah sumber kebenaran status pekerjaan (canonical).
 - Keputusan durable dicatat di bagian **Automation Log** masing-masing epic.
