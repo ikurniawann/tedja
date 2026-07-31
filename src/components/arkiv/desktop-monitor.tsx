@@ -27,9 +27,18 @@ const REFRESH_MS = 60_000; // keputusan owner: 60 detik
 /** Permukaan kartu — identik dengan WindowShell/Calendar Widget. */
 const CARD = "rounded-3xl border border-white/18 bg-slate-950/55 shadow-2xl backdrop-blur-2xl";
 
-export type MonitorWidgetKey = "pulsa" | "tim" | "keputusan" | "stok" | "member";
+export type MonitorWidgetKey =
+  | "omzet"
+  | "promo"
+  | "pulsa"
+  | "tim"
+  | "keputusan"
+  | "stok"
+  | "member";
 
 export const MONITOR_WIDGETS: Array<{ key: MonitorWidgetKey; title: string; description: string }> = [
+  { key: "omzet", title: "Pendapatan", description: "Total per periode, komposisi sumber & proyeksi." },
+  { key: "promo", title: "Dampak Promo", description: "Diskon yang keluar vs omzet yang dibawanya." },
   { key: "pulsa", title: "Pulsa Bisnis", description: "Omzet & pesanan hari ini vs kemarin." },
   { key: "tim", title: "Tim Hari Ini", description: "Hadir, terlambat, belum absen, dan cuti." },
   { key: "keputusan", title: "Perlu Keputusan", description: "Pengajuan & dokumen yang menunggu approval." },
@@ -131,13 +140,6 @@ function PeriodSwitcher({
   state: OverviewState;
 }) {
   const meta = state.data?.periode;
-  const omzet = state.data?.omzetPeriode;
-  const banding = meta?.banding;
-
-  const delta =
-    omzet && omzet.banding.omzet > 0
-      ? Math.round(((omzet.omzet - omzet.banding.omzet) / omzet.banding.omzet) * 100)
-      : null;
 
   return (
     <div className={`${CARD} col-span-full p-3`}>
@@ -162,50 +164,20 @@ function PeriodSwitcher({
         })}
       </div>
 
-      {meta && omzet && (
-        <div className="mt-3 border-t border-white/10 pt-3">
-          {omzet.adaData ? (
-            <>
-              <div className="text-[11px] text-white/40">
-                Omzet {formatTanggalPendek(meta.periode.mulai)}–
-                {formatTanggalPendek(meta.periode.selesai)}
-              </div>
-              <div className="text-[22px] font-extrabold leading-tight tracking-tight">
-                {formatRupiah(omzet.omzet)}
-                {delta !== null && (
-                  <span
-                    className={`ml-2 align-middle text-[11px] font-bold ${
-                      delta >= 0 ? "text-emerald-300" : "text-rose-300"
-                    }`}
-                  >
-                    {delta >= 0 ? "+" : ""}
-                    {delta}%
-                  </span>
-                )}
-              </div>
-              <div className="mt-1 text-[10px] leading-relaxed text-white/40">
-                dibanding {formatTanggalPendek(banding!.mulai)}–
-                {formatTanggalPendek(banding!.selesai)}
-                {/* Jendela pembanding lebih pendek (mis. 31 Mar vs Feb) — harus
-                    dikatakan, bukan disembunyikan di balik satu angka persen. */}
-                {!banding!.penuh && (
-                  <span className="text-amber-300/80">
-                    {" "}
-                    · hanya {banding!.hariBanding} hari, periode ini{" "}
-                    {meta.periode.hariBerjalan} hari
-                  </span>
-                )}
-                {periode !== "today" && (
-                  <> · proyeksi akhir periode {formatRupiah(omzet.proyeksi)}</>
-                )}
-              </div>
-            </>
-          ) : (
-            /* Bedakan tegas dari "omzet Rp 0": belum ada transaksi tercatat
-               sama sekali di rentang ini. Dua hal berbeda bagi owner. */
-            <div className="text-[11px] text-white/40">
-              Belum ada transaksi tercatat pada periode ini.
-            </div>
+      {meta && (
+        <div className="mt-2.5 text-[10px] leading-relaxed text-white/40">
+          {formatTanggalPendek(meta.periode.mulai)}–
+          {formatTanggalPendek(meta.periode.selesai)} · dibanding{" "}
+          {formatTanggalPendek(meta.banding.mulai)}–
+          {formatTanggalPendek(meta.banding.selesai)}
+          {/* Jendela pembanding lebih pendek (mis. 31 Mar vs Feb) — harus
+              dikatakan, bukan disembunyikan di balik satu angka persen. */}
+          {!meta.banding.penuh && (
+            <span className="text-amber-300/80">
+              {" "}
+              · pembanding hanya {meta.banding.hariBanding} hari, periode ini{" "}
+              {meta.periode.hariBerjalan} hari
+            </span>
           )}
         </div>
       )}
@@ -451,6 +423,131 @@ export function DesktopMonitorBoard({
 
   /** Kartu per widget — urutan render mengikuti preferensi user (Fase C). */
   const cardNodes: Record<MonitorWidgetKey, React.ReactNode> = {
+    omzet: d && visibility.omzet && (
+      <Card
+        wide
+        title="Pendapatan"
+        subtitle={`${PERIOD_LABELS[periode]} · F&B + B2B`}
+        href="/dashboard/pos"
+        onGo={go}
+        onAskDo={onAskDo}
+        askDoPrompt={buildAskDoPrompt("omzet", d)}
+        failed={failedSet.has("omzetPeriode")}
+      >
+        {d.omzetPeriode &&
+          (d.omzetPeriode.adaData ? (
+            <div>
+              <div className="text-[28px] font-extrabold leading-tight tracking-tight">
+                {formatRupiah(d.omzetPeriode.omzet)}
+                {(() => {
+                  const pct = deltaPct(d.omzetPeriode.omzet, d.omzetPeriode.banding.omzet);
+                  if (pct === null) return null;
+                  return (
+                    <span
+                      className={`ml-2 align-middle text-[11px] font-bold ${
+                        pct >= 0 ? "text-emerald-300" : "text-rose-300"
+                      }`}
+                    >
+                      {pct >= 0 ? "+" : ""}
+                      {pct}%
+                    </span>
+                  );
+                })()}
+              </div>
+
+              {/* Komposisi sumber: batang tunggal, karena yang dicari owner
+                  adalah proporsi — bukan nilai absolut per sumber. */}
+              <div className="mt-3 flex h-1.5 overflow-hidden rounded-full bg-white/10">
+                {d.omzetPeriode.sumber.map((s) => (
+                  <div
+                    key={s.kunci}
+                    style={{ width: `${s.porsi}%` }}
+                    className={s.kunci === "fnb" ? "bg-sky-400" : "bg-violet-400"}
+                  />
+                ))}
+              </div>
+              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+                {d.omzetPeriode.sumber.map((s) => (
+                  <span key={s.kunci} className="text-[10px] text-white/50">
+                    <span
+                      className={`mr-1.5 inline-block h-2 w-2 rounded-full align-middle ${
+                        s.kunci === "fnb" ? "bg-sky-400" : "bg-violet-400"
+                      }`}
+                    />
+                    {s.label} {s.porsi}% · {formatRupiah(s.nilai)}
+                  </span>
+                ))}
+              </div>
+
+              {periode !== "today" && (
+                <div className="mt-2 text-[10px] text-white/40">
+                  Proyeksi akhir periode {formatRupiah(d.omzetPeriode.proyeksi)}
+                </div>
+              )}
+            </div>
+          ) : (
+            /* Tegas dibedakan dari "Rp 0": belum ada transaksi tercatat sama
+               sekali. Dua hal berbeda dengan tindak lanjut berbeda. */
+            <div className="text-[11px] text-white/40">
+              Belum ada transaksi tercatat pada periode ini.
+            </div>
+          ))}
+      </Card>
+    ),
+
+    promo: d && visibility.promo && (
+      <Card
+        title="Dampak Promo"
+        subtitle={PERIOD_LABELS[periode]}
+        href="/dashboard/promo"
+        onGo={go}
+        onAskDo={onAskDo}
+        askDoPrompt={buildAskDoPrompt("promo", d)}
+        failed={failedSet.has("dampakPromo")}
+      >
+        {d.dampakPromo &&
+          (d.dampakPromo.adaData ? (
+            <div>
+              <div className="text-[11px] text-white/40">Diskon diberikan</div>
+              <div className="text-[22px] font-extrabold leading-tight tracking-tight">
+                {formatRupiah(d.dampakPromo.diskon)}
+              </div>
+              <div className="mt-1 text-[10px] leading-relaxed text-white/50">
+                membawa {formatRupiah(d.dampakPromo.omzetTerbawa)} omzet dari{" "}
+                {d.dampakPromo.redemption}× pemakaian
+                {d.dampakPromo.efisiensi !== null && (
+                  <>
+                    {" "}
+                    ·{" "}
+                    <span
+                      className={
+                        d.dampakPromo.efisiensi >= 1 ? "text-emerald-300" : "text-rose-300"
+                      }
+                    >
+                      {d.dampakPromo.efisiensi}× lipat
+                    </span>
+                  </>
+                )}
+              </div>
+              {d.dampakPromo.teratas.length > 1 && (
+                <ul className="mt-2 space-y-1 border-t border-white/10 pt-2">
+                  {d.dampakPromo.teratas.slice(0, 3).map((k) => (
+                    <li key={k.kampanye} className="flex justify-between text-[10px] text-white/50">
+                      <span className="truncate pr-2">{k.kampanye}</span>
+                      <span className="shrink-0">{formatRupiah(k.diskon)}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          ) : (
+            <div className="text-[11px] text-white/40">
+              Belum ada promo dipakai pada periode ini.
+            </div>
+          ))}
+      </Card>
+    ),
+
     pulsa: d && visibility.pulsa && (
         <Card
           wide

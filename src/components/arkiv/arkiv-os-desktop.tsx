@@ -154,6 +154,8 @@ const wallpapers = [
 
 const defaultWidgetVisibility: WidgetVisibility = {
   calendar: false,
+  omzet: true,
+  promo: true,
   pulsa: true,
   tim: true,
   keputusan: true,

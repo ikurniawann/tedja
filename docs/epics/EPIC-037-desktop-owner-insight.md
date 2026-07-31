@@ -115,7 +115,7 @@ dengan konteks lengkap lewat jalur `ask-do.ts` yang sudah ada.
 | Fase | Scope (PR-sized) |
 |---|---|
 | **A** ✅ | Fondasi periode: `period.ts` (TDD dulu), switcher di header papan, `overview.ts` jadi sadar-periode, 5 widget lama menyesuaikan tanpa berubah artinya |
-| **B** | Widget 1 Revenue Overview + widget 2 Dampak Promo |
+| **B** ✅ | Widget 1 Revenue Overview + widget 2 Dampak Promo |
 | **C** | Widget 3 B2B Pipeline + widget 4 Labor vs Revenue |
 | **D** | Widget 5 AI Insight: mesin aturan + narasi + digest harian ter-cache + klik-ke-Do |
 
@@ -145,8 +145,9 @@ dengan konteks lengkap lewat jalur `ask-do.ts` yang sudah ada.
 
 ## Open Questions
 
-1. **B2B masuk Revenue Overview** saat invoice terbit, atau saat dibayar?
-   Keduanya sah; yang penting konsisten dengan cara Finance membaca angkanya.
+1. ~~**B2B masuk Revenue Overview** saat invoice terbit, atau saat dibayar?~~
+   **Terjawab 2026-07-31: saat dibayar.** Implementasinya memakai
+   `crm_sales_deal_payments.paid_on`, bukan status invoice — lihat Automation Log.
 2. **Ambang insight** — berapa persen perubahan yang layak jadi rekomendasi?
    Terlalu sensitif membuat owner banjir catatan tak berguna.
 3. **Labor vs Revenue** memakai jumlah kru hadir, atau jam kerja terakumulasi?
@@ -206,3 +207,33 @@ dengan konteks lengkap lewat jalur `ask-do.ts` yang sudah ada.
   Gate: lint bersih, typecheck tetap **475** (baseline, nol error baru — 3 error
   sempat muncul di fixture tes yang membangun `DesktopOverview` literal, sudah
   diperbaiki lewat `summarizePeriod`), **1117 tes lolos**.
+- 2026-07-31 — **Fase B TUNTAS.** Dua widget baru terdaftar di
+  `MONITOR_WIDGETS` (`omzet`, `promo`) sehingga bisa disembunyikan & diurutkan
+  seperti widget lain; prompt Tanya Do berkonteks angka ditambahkan untuk
+  keduanya. Modul murni `revenue.ts` + 9 tes ditulis lebih dulu.
+  **Keputusan owner "B2B dihitung saat dibayar" tidak bisa diterapkan harfiah:**
+  `crm_sales_invoices.status` hanya mengizinkan `diajukan|draft|terkirim|batal`
+  — **tidak ada status lunas**, dan tabelnya tidak punya kolom tanggal bayar.
+  Sumber kebenaran pembayaran adalah `crm_sales_deal_payments` (`amount`,
+  `paid_on`). Dipakai itu, dan hasilnya lebih tepat: pelunasan sebagian
+  menyumbang sebesar yang dibayar, bukan nol atau seratus persen. Pembayaran
+  tanpa `invoice_id` (level deal) tetap dihitung — di dev ada 1 dari 2
+  pembayaran seperti itu senilai Rp 5.000.000; menyaratkan invoice akan
+  menghilangkannya dari laporan.
+  **Promo hanya menghitung status `captured`** — `held` masih reservasi yang
+  bisa batal, `released` sudah batal; menjumlahkan ketiganya melebih-lebihkan
+  diskon yang benar-benar keluar. Konteks dibatasi `pos_order` karena ticketing
+  di luar scope.
+  Detail penyajian yang ditegakkan tes: porsi sumber dibulatkan lalu selisihnya
+  dititipkan ke porsi terbesar agar **berjumlah tepat 100** (33+33+33=99 membuat
+  owner mencari angka yang hilang); total ≤ 0 mengembalikan porsi 0, bukan
+  persentase negatif; efisiensi promo `null` saat diskon nol (bukan `Infinity`)
+  tapi `0` saat diskon keluar tanpa membawa omzet — yang pertama "belum ada
+  data", yang kedua kabar buruk.
+  **Perbaikan kerapuhan:** penambahan `dampakPromo` kembali memecahkan tiga
+  fixture tes, persis seperti `periode` di Fase A. Ditambahkan
+  `emptyDesktopOverview()` sebagai nilai-kosong resmi dan ketiga fixture
+  diringkas memakainya, sehingga seksi berikutnya tidak mengulang masalah ini.
+  Angka nyata dev saat implementasi: F&B Rp 1.076.600 vs B2B Rp 12.500.000 —
+  B2B dominan, jadi komposisi sumber memang layak ditampilkan.
+  Gate: lint 0 error, typecheck **475** (baseline), **1145 tes lolos**.

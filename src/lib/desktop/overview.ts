@@ -8,6 +8,12 @@ import {
   type PeriodSummary,
 } from "./period";
 
+import {
+  breakdownRevenue,
+  promoEfficiency,
+  type RevenueBreakdown,
+} from "./revenue";
+
 export type { PeriodSummary } from "./period";
 
 /**
@@ -76,9 +82,28 @@ export interface CrmPulse {
 export interface RevenuePeriod {
   omzet: number;
   pesanan: number;
+  /** Komposisi sumber pendapatan berikut porsinya (Fase B). */
+  sumber: RevenueBreakdown["sumber"];
   banding: { omzet: number; pesanan: number };
   /** Proyeksi akhir periode dari laju berjalan. */
   proyeksi: number;
+  adaData: boolean;
+}
+
+/**
+ * Dampak promo: diskon yang dikeluarkan vs omzet yang dibawanya (Fase B).
+ *
+ * Hanya redemption `captured` yang dihitung — `held` masih reservasi yang bisa
+ * batal, `released` sudah batal. Menjumlahkan ketiganya melebih-lebihkan diskon
+ * yang benar-benar keluar.
+ */
+export interface PromoImpact {
+  diskon: number;
+  omzetTerbawa: number;
+  redemption: number;
+  /** Rupiah omzet per rupiah diskon; null bila belum ada diskon sama sekali. */
+  efisiensi: number | null;
+  teratas: Array<{ kampanye: string; diskon: number; omzet: number; redemption: number }>;
   adaData: boolean;
 }
 
@@ -87,6 +112,7 @@ export interface DesktopOverview {
   /** Metadata periode papan — dipakai UI untuk melabeli angka & pembandingnya. */
   periode: PeriodSummary;
   omzetPeriode: RevenuePeriod | null;
+  dampakPromo: PromoImpact | null;
   pulsaBisnis: SalesPulse | null;
   timHariIni: TeamToday | null;
   perluKeputusan: PendingDecisions | null;
@@ -167,43 +193,115 @@ async function fetchRevenuePeriod(
   period: Period,
   banding: Comparison
 ): Promise<RevenuePeriod> {
-  const row = await queryOne<{
+  const rentang = [period.mulai, period.selesai, banding.mulai, banding.selesai];
+
+  const [fnb, b2b] = await Promise.all([
+    queryOne<{
+      omzet: string;
+      pesanan: number;
+      banding_omzet: string;
+      banding_pesanan: number;
+      baris: number;
+    }>(
+      `WITH terpakai AS (
+         SELECT total_amount,
+                (created_at AT TIME ZONE 'Asia/Jakarta')::date AS tanggal
+           FROM pos.pos_orders
+          WHERE status <> 'cancelled'
+            AND voided_at IS NULL
+       )
+       SELECT
+         COALESCE(sum(total_amount) FILTER (WHERE tanggal BETWEEN $1::date AND $2::date), 0)::float8 AS omzet,
+         count(*) FILTER (WHERE tanggal BETWEEN $1::date AND $2::date)::int AS pesanan,
+         COALESCE(sum(total_amount) FILTER (WHERE tanggal BETWEEN $3::date AND $4::date), 0)::float8 AS banding_omzet,
+         count(*) FILTER (WHERE tanggal BETWEEN $3::date AND $4::date)::int AS banding_pesanan,
+         count(*) FILTER (WHERE tanggal BETWEEN $3::date AND $2::date)::int AS baris
+         FROM terpakai`,
+      rentang
+    ),
+    // B2B diakui SAAT DIBAYAR (keputusan owner 2026-07-31), memakai `paid_on`
+    // dari pembayaran — bukan status invoice: `crm_sales_invoices.status` hanya
+    // mengenal diajukan/draft/terkirim/batal, tidak punya status lunas maupun
+    // kolom tanggal bayar. Pembayaran juga menangani pelunasan sebagian dengan
+    // benar: invoice yang baru dibayar separuh menyumbang separuhnya saja.
+    // Pembayaran tanpa `invoice_id` (pembayaran level deal) tetap dihitung —
+    // uangnya nyata masuk.
+    queryOne<{ omzet: string; banding_omzet: string; baris: number }>(
+      `SELECT
+         COALESCE(sum(amount) FILTER (WHERE paid_on BETWEEN $1::date AND $2::date), 0)::float8 AS omzet,
+         COALESCE(sum(amount) FILTER (WHERE paid_on BETWEEN $3::date AND $4::date), 0)::float8 AS banding_omzet,
+         count(*) FILTER (WHERE paid_on BETWEEN $3::date AND $2::date)::int AS baris
+         FROM crm.crm_sales_deal_payments
+        WHERE deleted_at IS NULL`,
+      rentang
+    ),
+  ]);
+
+  const fnbNilai = Number(fnb?.omzet ?? 0);
+  const b2bNilai = Number(b2b?.omzet ?? 0);
+  const rincian = breakdownRevenue([
+    { kunci: "fnb", label: "F&B", nilai: fnbNilai },
+    { kunci: "b2b", label: "B2B", nilai: b2bNilai },
+  ]);
+
+  return {
+    omzet: rincian.total,
+    pesanan: Number(fnb?.pesanan ?? 0),
+    sumber: rincian.sumber,
+    banding: {
+      omzet: Number(fnb?.banding_omzet ?? 0) + Number(b2b?.banding_omzet ?? 0),
+      pesanan: Number(fnb?.banding_pesanan ?? 0),
+    },
+    proyeksi: projectRunRate(rincian.total, period),
+    // Sepanjang rentang pembanding s/d sekarang tidak ada satu pun transaksi di
+    // KEDUA sumber → "belum ada data", bukan "penjualan nol".
+    adaData: Number(fnb?.baris ?? 0) + Number(b2b?.baris ?? 0) > 0,
+  };
+}
+
+/** Diskon yang dikeluarkan vs omzet yang dibawanya, per kampanye (Fase B). */
+async function fetchPromoImpact(period: Period): Promise<PromoImpact> {
+  const rows = await query<{
+    kampanye: string | null;
+    diskon: string;
     omzet: string;
-    pesanan: number;
-    banding_omzet: string;
-    banding_pesanan: number;
-    baris: number;
+    redemption: number;
   }>(
-    `WITH terpakai AS (
-       SELECT total_amount,
-              (created_at AT TIME ZONE 'Asia/Jakarta')::date AS tanggal
-         FROM pos.pos_orders
-        WHERE status <> 'cancelled'
-          AND voided_at IS NULL
-     )
-     SELECT
-       COALESCE(sum(total_amount) FILTER (WHERE tanggal BETWEEN $1::date AND $2::date), 0)::float8 AS omzet,
-       count(*) FILTER (WHERE tanggal BETWEEN $1::date AND $2::date)::int AS pesanan,
-       COALESCE(sum(total_amount) FILTER (WHERE tanggal BETWEEN $3::date AND $4::date), 0)::float8 AS banding_omzet,
-       count(*) FILTER (WHERE tanggal BETWEEN $3::date AND $4::date)::int AS banding_pesanan,
-       count(*) FILTER (WHERE tanggal BETWEEN $3::date AND $2::date)::int AS baris
-       FROM terpakai`,
-    [period.mulai, period.selesai, banding.mulai, banding.selesai]
+    `SELECT COALESCE(r.campaign_name, '(tanpa nama)') AS kampanye,
+            COALESCE(sum(r.discount_amount), 0)::float8 AS diskon,
+            COALESCE(sum(o.total_amount), 0)::float8 AS omzet,
+            count(*)::int AS redemption
+       FROM promo.promo_redemptions r
+       LEFT JOIN pos.pos_orders o
+              ON o.id = r.context_id
+             AND o.status <> 'cancelled'
+             AND o.voided_at IS NULL
+      WHERE r.status = 'captured'
+        AND r.context_type = 'pos_order'
+        AND (r.created_at AT TIME ZONE 'Asia/Jakarta')::date BETWEEN $1::date AND $2::date
+      GROUP BY 1
+      ORDER BY 2 DESC
+      LIMIT 5`,
+    [period.mulai, period.selesai]
   );
 
-  const omzet = Number(row?.omzet ?? 0);
-  const pesanan = Number(row?.pesanan ?? 0);
+  const teratas = rows.map((r) => ({
+    kampanye: r.kampanye ?? "(tanpa nama)",
+    diskon: Number(r.diskon),
+    omzet: Number(r.omzet),
+    redemption: Number(r.redemption),
+  }));
+
+  const diskon = teratas.reduce((acc, r) => acc + r.diskon, 0);
+  const omzetTerbawa = teratas.reduce((acc, r) => acc + r.omzet, 0);
+
   return {
-    omzet,
-    pesanan,
-    banding: {
-      omzet: Number(row?.banding_omzet ?? 0),
-      pesanan: Number(row?.banding_pesanan ?? 0),
-    },
-    proyeksi: projectRunRate(omzet, period),
-    // Sepanjang rentang pembanding s/d sekarang tidak ada satu pun transaksi →
-    // ini "belum ada data", bukan "penjualan nol".
-    adaData: Number(row?.baris ?? 0) > 0,
+    diskon,
+    omzetTerbawa,
+    redemption: teratas.reduce((acc, r) => acc + r.redemption, 0),
+    efisiensi: promoEfficiency(diskon, omzetTerbawa),
+    teratas,
+    adaData: teratas.length > 0,
   };
 }
 
@@ -312,6 +410,31 @@ async function fetchCrmPulse(): Promise<CrmPulse> {
   };
 }
 
+/**
+ * Nilai-kosong `DesktopOverview` — semua seksi null, periode wajar.
+ *
+ * Ada supaya penambahan seksi baru tidak lagi memecahkan setiap fixture tes
+ * yang membangun objek ini secara literal (sudah terjadi dua kali: `periode`
+ * lalu `dampakPromo`). Pemanggil cukup menyebar dan menimpa yang relevan.
+ */
+export function emptyDesktopOverview(
+  kind: PeriodKind = "today",
+  now = new Date()
+): DesktopOverview {
+  return {
+    dibuatPada: now.toISOString(),
+    periode: summarizePeriod(kind, now),
+    omzetPeriode: null,
+    dampakPromo: null,
+    pulsaBisnis: null,
+    timHariIni: null,
+    perluKeputusan: null,
+    stokMenipis: null,
+    member: null,
+    gagal: [],
+  };
+}
+
 /** Satu seksi gagal → null + tercatat; jangan menjatuhkan seksi lain. */
 async function safeSection<T>(
   name: string,
@@ -343,11 +466,19 @@ export async function buildDesktopOverview(
   const gagal: string[] = [];
   const ringkasan = summarizePeriod(kind);
 
-  const [omzetPeriode, pulsaBisnis, timHariIni, perluKeputusan, stokMenipis, member] =
-    await Promise.all([
+  const [
+    omzetPeriode,
+    dampakPromo,
+    pulsaBisnis,
+    timHariIni,
+    perluKeputusan,
+    stokMenipis,
+    member,
+  ] = await Promise.all([
       safeSection("omzetPeriode", gagal, () =>
         fetchRevenuePeriod(ringkasan.periode, ringkasan.banding)
       ),
+      safeSection("dampakPromo", gagal, () => fetchPromoImpact(ringkasan.periode)),
       safeSection("pulsaBisnis", gagal, fetchSalesPulse),
       safeSection("timHariIni", gagal, fetchTeamToday),
       safeSection("perluKeputusan", gagal, fetchPendingDecisions),
@@ -359,6 +490,7 @@ export async function buildDesktopOverview(
     dibuatPada: new Date().toISOString(),
     periode: ringkasan,
     omzetPeriode,
+    dampakPromo,
     pulsaBisnis,
     timHariIni,
     perluKeputusan,
