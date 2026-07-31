@@ -2621,7 +2621,12 @@ function WidgetSettings({
   const calendar = { key: "calendar" as const, title: "Calendar Widget", description: "Kalender bulanan yang bisa dipindahkan dan di-resize." };
 
   return (
-    <WindowShell title="Widgets" onClose={onClose} className="left-1/2 top-24 w-[min(460px,calc(100vw-32px))] -translate-x-1/2">
+    /* Dipusatkan lewat `inset-x-0 mx-auto`, BUKAN `left-1/2 -translate-x-1/2`.
+       @hello-pangea/dnd menghitung posisi drag relatif terhadap containing
+       block; `transform` pada leluhur membuat item yang diseret melompat atau
+       tidak mengikuti kursor sama sekali. Panel ini memuat daftar drag & drop,
+       jadi transform tidak boleh dipakai untuk memusatkannya. */
+    <WindowShell title="Widgets" onClose={onClose} className="inset-x-0 top-24 mx-auto w-[min(460px,calc(100vw-32px))]">
       <div className="space-y-3 p-5">
         <div className="rounded-3xl border border-white/10 bg-white/8 p-4">
           <div className="text-sm font-semibold">Desktop Widgets</div>
