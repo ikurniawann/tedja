@@ -6,6 +6,12 @@ import { awardCrmXpForPosOrder, syncPosCustomerOrderStats } from '@/lib/crm/loya
 import { getCrmDefaultVenue } from '@/lib/crm/server';
 import { checkProductPrivileges } from '@/lib/crm/product-privilege';
 import { buildCostSnapshot, loadPosProductCostMap } from '@/lib/pos/purchasing-sync';
+import {
+  claimMerchandiseStock,
+  hasTrackedMerchandise,
+  restoreMerchandiseStock,
+  type MerchStockClaim,
+} from '@/lib/pos/merchandise-stock';
 import { normalizeGuestCount } from '@/lib/pos/guest-count';
 import { withTransaction } from '@/lib/db';
 import {
@@ -185,6 +191,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: 'Authentication required' }, { status: 401 });
   }
 
+  // EPIC-039 Fase A — klaim stok merchandise yang harus dikembalikan bila
+  // order gagal dibuat. Kosong = tidak ada yang perlu dikompensasi.
+  let merchClaims: MerchStockClaim[] = [];
+
   try {
     const body = (await request.json()) as PosOrderBody;
     const {
@@ -260,6 +270,15 @@ export async function POST(request: NextRequest) {
       if (String(body.promo_code || '').trim()) {
         return NextResponse.json(
           { success: false, error: 'Kode promo belum didukung untuk split bill' },
+          { status: 400 }
+        );
+      }
+      // EPIC-039 Fase A — merchandise ber-stok belum didukung utk split bill:
+      // jalur split memakai RPC lama yang tidak tahu deduksi stok merchandise
+      // (MVP, pola gift card di atas).
+      if (await hasTrackedMerchandise(db, items)) {
+        return NextResponse.json(
+          { success: false, error: 'Merchandise belum didukung untuk split bill' },
           { status: 400 }
         );
       }
@@ -531,6 +550,24 @@ export async function POST(request: NextRequest) {
     // debit/charge sukses
     const deferPaid = payWithArk || isNfcTab || payWithGiftCard;
 
+    // EPIC-039 Fase A — klaim stok merchandise SEBELUM order dibuat
+    // (decrement atomik ber-guard di SQL; dua kasir memperebutkan stok
+    // terakhir → satu gagal). Produk non-merchandise dilewati fungsi SQL.
+    const merchClaimResult = await claimMerchandiseStock(db, items);
+    if (!merchClaimResult.ok) {
+      if (promoOrderId) {
+        await withTransaction((client) =>
+          releasePromoRedemption(client, 'pos_order', promoOrderId!)
+        ).catch(() => {});
+      }
+      return NextResponse.json(
+        { success: false, error: merchClaimResult.reason },
+        { status: merchClaimResult.status }
+      );
+    }
+    merchClaims = merchClaimResult.claims;
+    const merchClaimedIds = new Set(merchClaims.map((claim) => claim.productId));
+
     const { data: orderData, error: orderErr } = await db
       .from('pos_orders')
       .insert({
@@ -569,6 +606,8 @@ export async function POST(request: NextRequest) {
 
     if (orderErr || !orderData) {
       console.error('Order insert error:', orderErr);
+      await restoreMerchandiseStock(db, merchClaims);
+      merchClaims = [];
       if (promoOrderId) {
         await withTransaction((client) =>
           releasePromoRedemption(client, 'pos_order', promoOrderId!)
@@ -600,6 +639,8 @@ export async function POST(request: NextRequest) {
         console.error(
           `[pos] nfc_tab charge rejected: order=${orderData.id} user=${sessionUserId} reason=${tabResult.reason}`
         );
+        await restoreMerchandiseStock(db, merchClaims);
+        merchClaims = [];
         const { error: delErr } = await db
           .from('pos_orders')
           .delete()
@@ -651,6 +692,8 @@ export async function POST(request: NextRequest) {
         console.error(
           `[pos] gift_card debit rejected: order=${orderData.id} user=${sessionUserId} reason=${redeem.reason}`
         );
+        await restoreMerchandiseStock(db, merchClaims);
+        merchClaims = [];
         const { error: delErr } = await db
           .from('pos_orders')
           .delete()
@@ -710,6 +753,8 @@ export async function POST(request: NextRequest) {
       });
 
       if (coinError) {
+        await restoreMerchandiseStock(db, merchClaims);
+        merchClaims = [];
         await db.from('pos_orders').delete().eq('id', orderData.id);
         if (promoOrderId) {
           await withTransaction((client) =>
@@ -769,7 +814,11 @@ export async function POST(request: NextRequest) {
         xp_earned: 0,
         station: normalizeStation(item.station),
         kitchen_status: 'pending',
-        inventory_deducted: false,
+        // EPIC-039 Fase A — true untuk baris merchandise yang stoknya sudah
+        // diklaim di atas; dipakai restore saat order dibatalkan.
+        inventory_deducted: item.product_id
+          ? merchClaimedIds.has(String(item.product_id))
+          : false,
         ...costSnapshot,
       };
     });
@@ -791,6 +840,8 @@ export async function POST(request: NextRequest) {
     }
     if (itemsErr) {
       console.error('Order items insert error:', itemsErr);
+      await restoreMerchandiseStock(db, merchClaims);
+      merchClaims = [];
       // EPIC-034 Fase C — saldo sudah terpotong tapi order tak lengkap →
       // kembalikan saldo tamu (kompensasi otomatis, idempoten).
       if (payWithGiftCard) {
@@ -805,6 +856,11 @@ export async function POST(request: NextRequest) {
       }
       return NextResponse.json({ success: false, error: itemsErr.message }, { status: 500 });
     }
+
+    // Baris order tersimpan — stok merchandise resmi milik order ini.
+    // Pembatalan setelah titik ini dikembalikan lewat jalur cancel/void
+    // (restoreMerchandiseStockForOrder), bukan kompensasi catch.
+    merchClaims = [];
 
     await db.from('pos_order_status_history').insert({
       order_id: orderData.id,
@@ -894,6 +950,13 @@ export async function POST(request: NextRequest) {
     );
   } catch (error: unknown) {
     console.error('Error creating order:', error);
+    if (merchClaims.length > 0) {
+      // Error dilempar setelah stok diklaim (mis. markPaidErr) → kembalikan.
+      await restoreMerchandiseStock(createPgClient(), merchClaims).catch((restoreErr) =>
+        console.error('[pos] merch stock restore in catch failed:', restoreErr)
+      );
+      merchClaims = [];
+    }
     return NextResponse.json({ success: false, error: getErrorMessage(error) }, { status: 500 });
   }
 }

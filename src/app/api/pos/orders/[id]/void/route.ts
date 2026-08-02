@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { createPgClient } from "@/lib/pg/create-client";
 import { getPosSession } from '@/lib/api/auth';
 import { withTransaction } from '@/lib/db';
+import { restoreMerchandiseStockForOrder } from '@/lib/pos/merchandise-stock';
 import { releasePromoRedemption } from '@/lib/promo/promo-server';
 import { buildVoidBesarMessage, voidDedupKey } from '@/lib/wa/notifications-messages';
 import { fireOwnerNotification, getWaNotifConfig } from '@/lib/wa/notifications-sender';
@@ -72,6 +73,10 @@ export async function POST(
       .eq('id', orderId);
 
     if (updErr) throw updErr;
+
+    // EPIC-039 Fase A — void mengembalikan stok merchandise yang sudah
+    // terpotong. Idempoten via flag inventory_deducted per baris item.
+    await restoreMerchandiseStockForOrder(db, orderId);
 
     // EPIC-032 C1 — void melepas pemakaian kode promo (captured → released,
     // jatah kembali). Best-effort idempoten: gagal release ≠ gagal void.

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createPgClient } from "@/lib/pg/create-client";
+import { restoreMerchandiseStockForOrder } from '@/lib/pos/merchandise-stock';
 
 /** PATCH /api/pos/orders/{id}/status
  *  Body: { status: string, reason?: string }
@@ -61,6 +62,12 @@ export async function PATCH(
   if (updateError) {
     console.error('Status update error:', updateError);
     return NextResponse.json({ success: false, error: updateError.message }, { status: 500 });
+  }
+
+  // EPIC-039 Fase A — order batal → kembalikan stok merchandise yang sudah
+  // terpotong (idempoten via flag inventory_deducted per baris item).
+  if (status === 'cancelled') {
+    await restoreMerchandiseStockForOrder(db, orderId);
   }
 
   const kitchenStatusMap: Record<string, string> = {

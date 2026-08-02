@@ -71,6 +71,14 @@ export function mapApiPosProduct(product: ApiPosProduct): PosCatalogProduct {
       product.min_xp === null || product.min_xp === undefined
         ? null
         : toNumber(product.min_xp) || null,
+    productKind: product.product_kind || "regular",
+    sourceProductId: product.source_product_id || null,
+    inventoryTracking: product.inventory_tracking === true,
+    inventoryQuantity: toNumber(product.inventory_quantity),
+    weightGram:
+      product.weight_gram === null || product.weight_gram === undefined
+        ? null
+        : toNumber(product.weight_gram),
   };
 }
 

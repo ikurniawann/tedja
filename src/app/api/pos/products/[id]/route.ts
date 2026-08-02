@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getPosSession } from '@/lib/api/auth';
 import { createPgClient } from "@/lib/pg/create-client";
+import {
+  buildMerchandiseColumns,
+  type MerchandiseFieldsPayload,
+} from '@/lib/pos/merchandise-fields';
 
-type ProductUpdatePayload = {
+type ProductUpdatePayload = MerchandiseFieldsPayload & {
   xp?: number | string;
   xp_points?: number | string;
   station?: string;
@@ -66,7 +70,15 @@ export async function PATCH(
           : Math.floor(Number(rawMinXp)) || null;
     }
 
-    if (!hasXpUpdate && !hasStationUpdate && !hasActiveUpdate && !hasAvailableUpdate && !hasMinXpUpdate) {
+    // EPIC-039 Fase A — field merchandise (parsial: hanya yang dikirim)
+    const merchColumns = buildMerchandiseColumns(body);
+    if (!merchColumns.ok) {
+      return NextResponse.json({ success: false, error: merchColumns.error }, { status: 400 });
+    }
+    const hasMerchUpdate = Object.keys(merchColumns.columns).length > 0;
+    Object.assign(updatePayload, merchColumns.columns);
+
+    if (!hasXpUpdate && !hasStationUpdate && !hasActiveUpdate && !hasAvailableUpdate && !hasMinXpUpdate && !hasMerchUpdate) {
       return NextResponse.json({ success: false, error: 'No product fields to update' }, { status: 400 });
     }
 

@@ -623,6 +623,37 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // EPIC-039 Fase A — GRN jalur product menambah stok POS produk merchandise
+    // yang tertaut via pos_products.source_product_id. Mengikuti preseden
+    // general (posting saat GRN, tanpa QC; QC hanya memproses raw_material).
+    // Non-fatal: kegagalan posting stok tidak membatalkan penerimaan.
+    if (moduleType === "product" && grnStatus !== "rejected") {
+      for (const item of validated.items) {
+        const qty = toQty(item.qty_diterima);
+        if (!item.product_id || qty <= 0) continue;
+
+        try {
+          const { data: updatedCount, error: stockError } = await adminDb.rpc(
+            "pos_receive_merchandise_stock",
+            { p_source_product_id: item.product_id, p_qty: qty }
+          );
+
+          if (stockError) {
+            console.error(
+              `[GRN] Merch stock posting error for product ${item.product_id} (non-fatal):`,
+              stockError
+            );
+          } else if (Number(updatedCount) === 0) {
+            console.warn(
+              `[GRN] No linked POS merchandise product for item.products ${item.product_id} — stock not posted`
+            );
+          }
+        } catch (stockErr) {
+          console.error("[GRN] Merch stock posting error (non-fatal):", stockErr);
+        }
+      }
+    }
+
     // Physical receipt recorded — mark delivery arrived; stock posts after QC.
     if (grnStatus !== "rejected") {
       await adminDb

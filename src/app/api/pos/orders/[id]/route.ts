@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createPgClient } from "@/lib/pg/create-client";
 import { getPosSession } from '@/lib/api/auth';
 import { awardCrmXpForPosOrder, syncPosCustomerOrderStats } from '@/lib/crm/loyalty-engine';
+import { restoreMerchandiseStockForOrder } from '@/lib/pos/merchandise-stock';
 import { checkRateLimit } from '@/lib/rate-limit';
 import { isValidNfcUid, normalizeNfcUid } from '@/lib/ticketing/server';
 import { chargeFnbOrderToTab } from '@/lib/ticketing/tab-server';
@@ -268,6 +269,12 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         );
       }
       throw error;
+    }
+
+    // EPIC-039 Fase A — order batal → kembalikan stok merchandise yang
+    // sudah terpotong (idempoten via flag inventory_deducted per item).
+    if (status === 'cancelled') {
+      await restoreMerchandiseStockForOrder(db, orderId);
     }
 
     // Log status change

@@ -3,6 +3,10 @@ import { createPgClient } from "@/lib/pg/create-client";
 import { getApiUserScope } from '@/lib/api/scope';
 import { enrichPosProductsWithPurchasingCogs } from '@/lib/pos/purchasing-sync';
 import {
+  buildMerchandiseColumns,
+  type MerchandiseFieldsPayload,
+} from '@/lib/pos/merchandise-fields';
+import {
   applyStallScopeToProductIds,
   resolvePosProductStallScope,
 } from '@/lib/pos/stall-product-scope';
@@ -28,7 +32,7 @@ type ProductModifierGroupPayload = {
   modifiers?: ProductModifierPayload[];
 };
 
-type ProductCreatePayload = {
+type ProductCreatePayload = MerchandiseFieldsPayload & {
   sku?: string;
   name?: string;
   description?: string;
@@ -178,9 +182,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // EPIC-039 Fase A — field merchandise (product_kind, tautan purchasing,
+    // stok awal, berat/dimensi utk ongkir Fase C)
+    const merchColumns = buildMerchandiseColumns(body);
+    if (!merchColumns.ok) {
+      return NextResponse.json(
+        { success: false, error: merchColumns.error },
+        { status: 400 }
+      );
+    }
+
     // Insert product
     const rawMinXp = (body as { min_xp?: unknown }).min_xp;
     const productPayload = {
+      ...merchColumns.columns,
       sku,
       name,
       description,
@@ -209,6 +224,9 @@ export async function POST(request: NextRequest) {
       delete (legacyPayload as { xp_points?: number }).xp_points;
       delete (legacyPayload as { station?: string }).station;
       delete (legacyPayload as { min_xp?: number | null }).min_xp;
+      for (const key of Object.keys(merchColumns.columns)) {
+        delete (legacyPayload as Record<string, unknown>)[key];
+      }
 
       const legacyRetry = await db
         .from('pos_products')
@@ -221,6 +239,9 @@ export async function POST(request: NextRequest) {
         delete (payloadWithoutXp as { xp_points?: number }).xp_points;
         delete (payloadWithoutXp as { station?: string }).station;
         delete (payloadWithoutXp as { min_xp?: number | null }).min_xp;
+        for (const key of Object.keys(merchColumns.columns)) {
+          delete (payloadWithoutXp as Record<string, unknown>)[key];
+        }
         const plainRetry = await db
           .from('pos_products')
           .insert(payloadWithoutXp)

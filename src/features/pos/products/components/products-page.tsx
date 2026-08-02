@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Search,
   Package,
+  Boxes,
   Settings2,
   Sparkles,
   Save,
@@ -49,6 +50,19 @@ function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
 }
 
+// EPIC-039 Fase A — pilihan tautan master purchasing (item.products)
+type PurchasingProductOption = {
+  id: string;
+  kode?: string | null;
+  nama?: string | null;
+};
+
+type MerchFormState = {
+  sourceProductId: string;
+  stock: string;
+  weightGram: string;
+};
+
 function inferStation(product: PosCatalogProduct) {
   const explicit = product.station;
   if (explicit) return explicit;
@@ -85,6 +99,16 @@ export function ProductsPage() {
 
   const [modifierModalProduct, setModifierModalProduct] = useState<PosCatalogProduct | null>(null);
   const [modifierModalData, setModifierModalData] = useState<PosProductModifierGroup[]>([]);
+
+  // EPIC-039 Fase A — dialog pengaturan merchandise (tautan purchasing + stok)
+  const [merchModalProduct, setMerchModalProduct] = useState<PosCatalogProduct | null>(null);
+  const [merchForm, setMerchForm] = useState<MerchFormState>({
+    sourceProductId: '',
+    stock: '',
+    weightGram: '',
+  });
+  const [purchasingOptions, setPurchasingOptions] = useState<PurchasingProductOption[]>([]);
+  const [purchasingOptionsLoading, setPurchasingOptionsLoading] = useState(false);
   const [localEdits, setLocalEdits] = useState<
     Record<string, Partial<Pick<PosCatalogProduct, 'variants' | 'modifierGroups' | 'hasVariants' | 'hasModifiers'>>>
   >({});
@@ -288,6 +312,90 @@ export function ProductsPage() {
     }
   };
 
+  // EPIC-039 Fase A — ganti jenis produk (regular ↔ merchandise)
+  const updateProductKind = async (product: PosCatalogProduct, kind: string) => {
+    if (savingProductId) return;
+    setSavingProductId(product.id);
+    try {
+      await patchProductMutation.mutateAsync({
+        id: product.id,
+        payload: { product_kind: kind },
+      });
+      toast.success(
+        kind === 'merchandise'
+          ? 'Produk jadi merchandise — atur tautan purchasing & stok lewat tombol stok'
+          : 'Produk jadi regular'
+      );
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'Gagal mengganti jenis produk'));
+    } finally {
+      setSavingProductId(null);
+    }
+  };
+
+  const openMerchModal = async (product: PosCatalogProduct) => {
+    setMerchModalProduct(product);
+    setMerchForm({
+      sourceProductId: product.sourceProductId ?? '',
+      stock: String(product.inventoryQuantity ?? 0),
+      weightGram: product.weightGram === null ? '' : String(product.weightGram),
+    });
+    if (purchasingOptions.length === 0) {
+      setPurchasingOptionsLoading(true);
+      try {
+        const response = await fetch('/api/purchasing/products?is_active=true&limit=200', {
+          cache: 'no-store',
+        });
+        const json = await response.json();
+        const rows = Array.isArray(json?.data) ? json.data : [];
+        setPurchasingOptions(
+          rows.map((row: PurchasingProductOption) => ({
+            id: row.id,
+            kode: row.kode,
+            nama: row.nama,
+          }))
+        );
+      } catch {
+        toast.error('Gagal memuat master purchasing — tautan tetap bisa dikosongkan');
+      } finally {
+        setPurchasingOptionsLoading(false);
+      }
+    }
+  };
+
+  const saveMerchSettings = async () => {
+    if (!merchModalProduct || savingProductId) return;
+    const stockNumber = Number(merchForm.stock);
+    if (!Number.isFinite(stockNumber) || stockNumber < 0) {
+      toast.error('Stok harus angka ≥ 0');
+      return;
+    }
+    const weightNumber = merchForm.weightGram.trim() === '' ? null : Number(merchForm.weightGram);
+    if (weightNumber !== null && (!Number.isFinite(weightNumber) || weightNumber < 0)) {
+      toast.error('Berat harus angka gram ≥ 0');
+      return;
+    }
+
+    setSavingProductId(merchModalProduct.id);
+    try {
+      await patchProductMutation.mutateAsync({
+        id: merchModalProduct.id,
+        payload: {
+          source_product_id: merchForm.sourceProductId || null,
+          inventory_quantity: stockNumber,
+          inventory_tracking: true,
+          weight_gram: weightNumber,
+        },
+      });
+      toast.success('Pengaturan merchandise tersimpan');
+      setMerchModalProduct(null);
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'Gagal menyimpan pengaturan merchandise'));
+    } finally {
+      setSavingProductId(null);
+    }
+  };
+
   // Produk privilege member (EPIC-011 Fase C): syarat min XP; kosong = umum
   const updateProductMinXp = async (id: string, raw: string) => {
     if (savingProductId) return;
@@ -387,6 +495,7 @@ export function ProductsPage() {
                   <th className="px-4 py-3 text-right font-semibold">Est. COGS</th>
                   <th className="px-4 py-3 text-right font-semibold">Margin</th>
                   <th className="px-4 py-3 text-left font-semibold">Station</th>
+                  <th className="px-4 py-3 text-left font-semibold">Jenis</th>
                   <th className="px-4 py-3 text-right font-semibold">Min XP</th>
                   <th className="px-4 py-3 text-center font-semibold">Variants</th>
                   <th className="px-4 py-3 text-center font-semibold">Modifiers</th>
@@ -432,6 +541,38 @@ export function ProductsPage() {
                           </option>
                         ))}
                       </select>
+                    </td>
+                    <td className="px-4 py-3">
+                      {product.productKind === 'gift_card' ? (
+                        <span className="inline-flex h-9 items-center rounded-lg border border-amber-200 bg-amber-50 px-3 text-xs font-medium text-amber-700">
+                          Gift Card
+                        </span>
+                      ) : (
+                        <div className="flex items-center gap-1.5">
+                          <select
+                            value={product.productKind}
+                            onChange={(event) => updateProductKind(product, event.target.value)}
+                            disabled={savingProductId === product.id}
+                            className="h-9 rounded-lg border border-gray-200/80 bg-white px-2 text-xs font-medium text-gray-700 outline-none transition focus:border-pink-300 focus:ring-1 focus:ring-pink-100 disabled:opacity-50"
+                          >
+                            <option value="regular">Regular</option>
+                            <option value="merchandise">Merchandise</option>
+                          </select>
+                          {product.productKind === 'merchandise' ? (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => openMerchModal(product)}
+                              className="h-9 gap-1 border-indigo-200 text-indigo-700 hover:bg-indigo-50"
+                              title="Stok, tautan purchasing & berat"
+                            >
+                              <Boxes className="h-3.5 w-3.5" />
+                              {product.inventoryQuantity}
+                            </Button>
+                          ) : null}
+                        </div>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-right">
                       <input
@@ -502,6 +643,82 @@ export function ProductsPage() {
           Est. COGS for synced products (SKU PUR-*) is calculated from the latest BOM.
         </div>
       </PurchasingListSection>
+
+      {/* EPIC-039 Fase A — pengaturan merchandise: tautan purchasing, stok, berat */}
+      <Dialog open={merchModalProduct !== null} onOpenChange={(open) => !open && setMerchModalProduct(null)}>
+        <DialogPanel size="md">
+          <DialogPanelHeader>
+            <DialogPanelTitle>Pengaturan Merchandise</DialogPanelTitle>
+            <DialogPanelDescription>{merchModalProduct?.name}</DialogPanelDescription>
+          </DialogPanelHeader>
+          <DialogPanelBody className="space-y-4">
+            <div>
+              <label className="mb-1 block text-xs text-gray-500">
+                Tautan master purchasing (item barang jadi)
+              </label>
+              <select
+                value={merchForm.sourceProductId}
+                onChange={(event) =>
+                  setMerchForm((prev) => ({ ...prev, sourceProductId: event.target.value }))
+                }
+                disabled={purchasingOptionsLoading}
+                className="h-10 w-full rounded-lg border border-gray-200/80 bg-white px-3 text-sm text-gray-700 outline-none transition focus:border-pink-300 focus:ring-1 focus:ring-pink-100 disabled:opacity-50"
+              >
+                <option value="">— Tanpa tautan (stok diisi manual) —</option>
+                {purchasingOptions.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.kode ? `${option.kode} — ` : ''}
+                    {option.nama || option.id.slice(0, 8)}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-xs text-gray-400">
+                Bila tertaut, penerimaan barang (GRN) purchasing jalur Product otomatis
+                menambah stok produk ini.
+              </p>
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-xs text-gray-500">Stok saat ini</label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={merchForm.stock}
+                  onChange={(event) =>
+                    setMerchForm((prev) => ({ ...prev, stock: event.target.value }))
+                  }
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs text-gray-500">Berat (gram)</label>
+                <Input
+                  type="number"
+                  min={0}
+                  placeholder="utk ongkir toko online"
+                  value={merchForm.weightGram}
+                  onChange={(event) =>
+                    setMerchForm((prev) => ({ ...prev, weightGram: event.target.value }))
+                  }
+                />
+              </div>
+            </div>
+          </DialogPanelBody>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setMerchModalProduct(null)}>
+              Batal
+            </Button>
+            <Button
+              type="button"
+              onClick={saveMerchSettings}
+              disabled={savingProductId === merchModalProduct?.id}
+              className="purchasing-main-button"
+            >
+              <Save className="mr-2 h-4 w-4" />
+              Simpan
+            </Button>
+          </DialogFooter>
+        </DialogPanel>
+      </Dialog>
 
       <Dialog open={variantModalProduct !== null} onOpenChange={(open) => !open && setVariantModalProduct(null)}>
         <DialogPanel size="md">
