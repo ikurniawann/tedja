@@ -1,6 +1,6 @@
 # EPIC-039: Merchandise & E-commerce — Storefront Online, Kurir, Xendit & Omnichannel Shopee
 
-status: coding
+status: ready-for-qa
 environment: dev
 retries: 0
 
