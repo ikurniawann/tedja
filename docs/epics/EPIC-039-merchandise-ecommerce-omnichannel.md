@@ -262,6 +262,10 @@ shop.marketplace_sync_log   — audit push stok / pull order / error
 
 ## Automation Log
 
+- 2026-08-02 — Permintaan owner pasca-QA awal: menu induk sidebar di-rename
+  "Toko Online" → **"Ecommerce"** (delta `20260802233000`; kode menu tetap
+  `shop`, route/permission/anak tidak berubah).
+
 - 2026-08-02 — **Fase F diimplementasikan** (coding) — omnichannel Shopee:
   - Delta `20260802230000_shop_marketplace_shopee.sql`:
     `shop.marketplace_accounts` (token OAuth per toko — disimpan plain
