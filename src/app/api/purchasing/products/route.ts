@@ -11,6 +11,7 @@ import {
   branchScopeOr,
   validateProductWarehouseScope,
 } from "@/lib/api/scope";
+import { syncPurchasingProductToPos } from "@/lib/pos/purchasing-sync";
 
 const productSchema = z.object({
   kode: z.string().max(20).optional(),
@@ -184,8 +185,36 @@ export async function POST(request: NextRequest) {
 
     if (error) throw error;
 
+    const outputType =
+      (data as { production_output_type?: string | null }).production_output_type ||
+      "FINISHED_GOOD";
+
+    let posSync = null;
+    if (outputType === "FINISHED_GOOD") {
+      const kategori = String((data as { kategori?: string | null }).kategori || "");
+      const station = /coffee|tea|beverage|juice|mocktail|minuman|drink|bar/i.test(kategori)
+        ? "bar"
+        : "kitchen";
+      try {
+        posSync = await syncPurchasingProductToPos(
+          db,
+          (data as { id: string }).id,
+          { station }
+        );
+      } catch (syncError) {
+        console.warn("POS sync after product create failed:", syncError);
+      }
+    }
+
     return Response.json(
-      { success: true, data, message: "Produk berhasil ditambahkan" },
+      {
+        success: true,
+        data,
+        pos_sync: posSync,
+        message: posSync
+          ? "Produk berhasil ditambahkan dan tersinkron ke POS"
+          : "Produk berhasil ditambahkan",
+      },
       { status: 201 }
     );
   } catch (error: unknown) {
