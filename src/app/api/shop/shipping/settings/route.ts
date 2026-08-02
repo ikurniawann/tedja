@@ -101,7 +101,7 @@ export async function PATCH(request: NextRequest) {
     const db = createPgClient();
     const settings = await getOrCreateShippingSettings(db);
     const { data, error } = await db
-      .from('shipping_settings')
+      .from('shipping_settings', 'shop')
       .update({ ...payload, updated_by: user.id, updated_at: new Date().toISOString() })
       .eq('id', settings.id)
       .select('*')

@@ -62,6 +62,7 @@ type MerchFormState = {
   sourceProductId: string;
   stock: string;
   weightGram: string;
+  webDistributed: boolean;
 };
 
 // EPIC-039 Fase B — baris editor varian SKU (persisted bila id terisi)
@@ -128,6 +129,7 @@ export function ProductsPage() {
     sourceProductId: '',
     stock: '',
     weightGram: '',
+    webDistributed: false,
   });
   const [merchSkuRows, setMerchSkuRows] = useState<MerchSkuRow[]>([]);
   const [purchasingOptions, setPurchasingOptions] = useState<PurchasingProductOption[]>([]);
@@ -362,6 +364,7 @@ export function ProductsPage() {
       sourceProductId: product.sourceProductId ?? '',
       stock: String(product.inventoryQuantity ?? 0),
       weightGram: product.weightGram === null ? '' : String(product.weightGram),
+      webDistributed: product.webDistributed,
     });
     setMerchSkuRows(
       product.merchSkus.map((sku) => ({
@@ -488,6 +491,7 @@ export function ProductsPage() {
           inventory_quantity: stockNumber,
           inventory_tracking: true,
           weight_gram: weightNumber,
+          web_distributed: merchForm.webDistributed,
         },
       });
 
@@ -809,6 +813,19 @@ export function ProductsPage() {
                 />
               </div>
             </div>
+
+            {/* EPIC-039 Fase D — distribusi katalog toko online */}
+            <label className="flex items-center gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                checked={merchForm.webDistributed}
+                onChange={(event) =>
+                  setMerchForm((prev) => ({ ...prev, webDistributed: event.target.checked }))
+                }
+                className="h-4 w-4 rounded border-gray-300 text-pink-600"
+              />
+              Tampilkan di toko online (katalog web)
+            </label>
 
             {/* EPIC-039 Fase B — varian ber-SKU: stok/barcode/harga per varian */}
             <div className="space-y-3 border-t border-gray-100 pt-4">

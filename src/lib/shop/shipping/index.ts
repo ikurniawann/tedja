@@ -37,7 +37,7 @@ export const DEFAULT_COURIERS = "jne,jnt,sicepat";
 /** Ambil (atau buat) baris settings pengiriman global. */
 export async function getOrCreateShippingSettings(db: DbClient): Promise<ShippingSettings> {
   const { data: existing, error } = await db
-    .from("shipping_settings")
+    .from("shipping_settings", "shop")
     .select("*")
     .eq("is_active", true)
     .limit(1)
@@ -46,7 +46,7 @@ export async function getOrCreateShippingSettings(db: DbClient): Promise<Shippin
   if (existing) return existing as ShippingSettings;
 
   const { data: created, error: createError } = await db
-    .from("shipping_settings")
+    .from("shipping_settings", "shop")
     .insert({ provider: "biteship", couriers: DEFAULT_COURIERS })
     .select("*")
     .single();

@@ -79,6 +79,9 @@ export function mapApiPosProduct(product: ApiPosProduct): PosCatalogProduct {
       product.weight_gram === null || product.weight_gram === undefined
         ? null
         : toNumber(product.weight_gram),
+    webDistributed: (product.channels ?? []).some(
+      (channel) => channel.channel_code === "web" && channel.is_distributed !== false
+    ),
     merchSkus: (product.skus ?? []).map((sku) => ({
       id: sku.id,
       sku: sku.sku || "",

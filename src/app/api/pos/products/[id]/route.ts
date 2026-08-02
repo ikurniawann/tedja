@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getPosSession } from '@/lib/api/auth';
 import { createPgClient } from "@/lib/pg/create-client";
+import { query } from '@/lib/db';
 import {
   buildMerchandiseColumns,
   type MerchandiseFieldsPayload,
@@ -78,8 +79,22 @@ export async function PATCH(
     const hasMerchUpdate = Object.keys(merchColumns.columns).length > 0;
     Object.assign(updatePayload, merchColumns.columns);
 
-    if (!hasXpUpdate && !hasStationUpdate && !hasActiveUpdate && !hasAvailableUpdate && !hasMinXpUpdate && !hasMerchUpdate) {
+    // EPIC-039 Fase D — distribusi katalog toko online (channel 'web')
+    const rawWebDistributed = (body as { web_distributed?: unknown }).web_distributed;
+    const hasWebDistributedUpdate = rawWebDistributed !== undefined;
+
+    if (!hasXpUpdate && !hasStationUpdate && !hasActiveUpdate && !hasAvailableUpdate && !hasMinXpUpdate && !hasMerchUpdate && !hasWebDistributedUpdate) {
       return NextResponse.json({ success: false, error: 'No product fields to update' }, { status: 400 });
+    }
+
+    if (hasWebDistributedUpdate) {
+      await query(
+        `INSERT INTO shop.product_channels (product_id, channel_code, is_distributed)
+         VALUES ($1::uuid, 'web', $2)
+         ON CONFLICT (product_id, channel_code)
+         DO UPDATE SET is_distributed = EXCLUDED.is_distributed, updated_at = now()`,
+        [id, Boolean(rawWebDistributed)]
+      );
     }
 
     let { data, error } = await db

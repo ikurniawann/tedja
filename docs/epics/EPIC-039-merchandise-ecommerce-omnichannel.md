@@ -262,6 +262,47 @@ shop.marketplace_sync_log   — audit push stok / pull order / error
 
 ## Automation Log
 
+- 2026-08-02 — **Fase D diimplementasikan** (coding) — storefront publik +
+  checkout Xendit:
+  - Delta `20260802190000_shop_storefront_orders.sql`: `shop.storefronts`
+    (slug, venue_ids NULL=gabungan — keputusan owner satuan/gabungan,
+    seed 'toko'), `shop.channels` (kasir/web/shopee), `shop.product_channels`
+    (pola ticket_product_channels), `shop.orders` (+access_token pola
+    booking, nomor SHOP-YYMMDD-NNNNN) + `order_items` +
+    `stock_reservations` ber-TTL; fungsi `shop.release_expired_reservations()`
+    (FOR UPDATE SKIP LOCKED, restore stok via fungsi Fase A/B, order
+    pending ikut cancelled) — dipanggil opportunistik dari katalog &
+    checkout, TANPA cron.
+  - Reservasi stok = klaim-dulu (reuse fungsi stok kasir) + baris TTL =
+    masa berlaku invoice Xendit (2 jam), jadi anti-oversell lintas kanal
+    konsisten dengan kasir.
+  - API publik `/api/public/shop/[slug]/{catalog,shipping/areas,
+    shipping/rates,checkout}` + `/api/public/shop/order/[token]` +
+    webhook `/api/public/shop/webhook/xendit` — semua rate-limited;
+    harga & berat TIDAK dipercaya dari klien (dihitung ulang server);
+    ongkir otoritatif dari provider saat checkout (klien hanya memilih
+    kurir); webhook: verifikasi x-callback-token + cek silang nominal +
+    idempoten (UPDATE WHERE status='pending'), prefix `shop-order-`.
+  - Kebijakan XP: XP hanya utk pembayaran ARK Coin (EPIC-011,
+    XP_ELIGIBLE_PAYMENT_METHOD) — order Xendit MENAUTKAN member by nomor
+    WA + syncPosCustomerOrderStats (kunjungan/belanja), TANPA XP.
+    → OQ BARU utk owner: apakah belanja online Xendit harus dapat XP?
+    (butuh perubahan kebijakan CRM, bukan sekadar kode.)
+  - Storefront `(public)/shop/[slug]`: katalog grid, dialog varian,
+    keranjang localStorage, checkout (area autocomplete + ongkir live +
+    pilih kurir) → redirect invoice Xendit; halaman status
+    `(public)/shop/order/[token]` ber-polling saat pending.
+  - Master produk: checkbox "Tampilkan di toko online" (upsert
+    product_channels web) di dialog Pengaturan Merchandise; listing embed
+    channels.
+  - Fix bug Fase C: `db.from('shipping_settings')` tanpa schema jatuh ke
+    public — kini `from('shipping_settings','shop')`.
+  - Gate: typecheck 475 = baseline; migrasi applied; smoke: reservasi
+    expired → released + stok balik + order cancelled; nomor order OK.
+    QA end-to-end butuh XENDIT (mock XENDIT_MOCK=1 tersedia utk dev) +
+    key kurir; webhook Xendit perlu didaftarkan ke URL
+    `/api/public/shop/webhook/xendit` (terpisah dari webhook booking).
+
 - 2026-08-02 — **Fase C diimplementasikan** (coding) — modul kurir DUA
   provider (permintaan owner: "buatkan juga untuk RajaOngkir"):
   - `src/lib/shop/shipping/` — interface `ShippingProvider` ber-
