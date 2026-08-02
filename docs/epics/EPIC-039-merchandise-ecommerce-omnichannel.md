@@ -242,7 +242,10 @@ shop.marketplace_sync_log   — audit push stok / pull order / error
 
 ## Keputusan Owner (2026-08-02 — semua OQ terjawab)
 
-- **OQ-1 Kurir**: **Biteship**.
+- **OQ-1 Kurir**: **Biteship** + **RajaOngkir/Komerce** (tambahan owner
+  2 Agu saat Fase C): dua provider lewat pola adapter, dipilih dari
+  Settings → Pengiriman. Biteship = tarif + buat pengiriman + tracking;
+  RajaOngkir = tarif + lacak resi (tanpa buat pengiriman → resi manual).
 - **OQ-2 Storefront**: **bisa satuan per venue DAN bisa gabungan** —
   cakupan configurable per storefront (tabel `shop.storefronts`,
   `venue_ids` NULL = gabungan semua).
@@ -258,6 +261,32 @@ shop.marketplace_sync_log   — audit push stok / pull order / error
   storefront.
 
 ## Automation Log
+
+- 2026-08-02 — **Fase C diimplementasikan** (coding) — modul kurir DUA
+  provider (permintaan owner: "buatkan juga untuk RajaOngkir"):
+  - `src/lib/shop/shipping/` — interface `ShippingProvider` ber-
+    `capabilities` + adapter `biteship.ts` (api.biteship.com: maps/areas,
+    rates/couriers, orders, trackings) dan `rajaongkir.ts` (Komerce
+    rajaongkir.komerce.id: domestic-destination, calculate/domestic-cost,
+    track/waybill; `createShipment` melempar error jelas). Key via env
+    `BITESHIP_API_KEY` / `RAJAONGKIR_API_KEY` — TIDAK di DB.
+  - Delta `20260802170000_shop_shipping_settings.sql`: schema `shop` +
+    `shop.shipping_settings` (provider aktif, origin dua kolom id karena
+    sistem area beda: origin_area_id Biteship / origin_district_id
+    RajaOngkir, label+kontak+alamat, kurir csv, markup flat) + menu
+    `settings.shipping` (pola settings.billing, role super_admin/admin).
+  - API `/api/shop/shipping/{settings,areas,rates,track}` — rates memakai
+    origin+kurir+markup dari settings, filter price>0, balikan
+    total_price = tarif + markup.
+  - UI Settings → Pengiriman: pilih provider, kontak/alamat origin,
+    pencarian area (debounce, sesuai provider), toggle 8 kurir, markup,
+    panel Uji Cek Tarif.
+  - `shop.shipments` + webhook tracking Biteship DIGESER ke Fase E —
+    butuh `shop.orders` (Fase D) untuk ditautkan; keputusan dicatat agar
+    tidak dianggap terlewat.
+  - Gate: typecheck 475 = baseline; migrasi applied (baris settings
+    terbuat otomatis saat GET pertama; menu terdaftar). QA live butuh
+    API key di env (Biteship test key / RajaOngkir Komerce key).
 
 - 2026-08-02 — **Fase B diimplementasikan** (coding):
   - Delta `20260802150000_pos_merchandise_skus.sql`: tabel
