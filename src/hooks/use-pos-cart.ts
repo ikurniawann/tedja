@@ -10,6 +10,10 @@ import {
 export interface PosCartItem {
   id: string;               // composite: productId + variant + modifier join
   productId: string;
+  /** EPIC-039 Fase B — varian merchandise ber-stok (pos_product_skus.id) */
+  skuId?: string;
+  /** Kode SKU varian utk struk/product_sku */
+  skuCode?: string;
   name: string;
   price: number;
   quantity: number;

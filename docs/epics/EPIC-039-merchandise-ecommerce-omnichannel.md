@@ -259,6 +259,34 @@ shop.marketplace_sync_log   — audit push stok / pull order / error
 
 ## Automation Log
 
+- 2026-08-02 — **Fase B diimplementasikan** (coding):
+  - Delta `20260802150000_pos_merchandise_skus.sql`: tabel
+    `pos_product_skus` (kode SKU unik ci, barcode unik, options jsonb,
+    price_override, stok per varian) + `pos_product_images` (utk
+    storefront Fase D) + `pos_order_items.sku_id` (FK SET NULL);
+    fungsi `pos_sell_merchandise_sku_stock` (klaim/restore per SKU,
+    guard allow_negative dari setting PRODUK induk); fungsi product-level
+    kini menolak `variant_required` bila produk punya SKU aktif; GRN
+    receive MELEWATI produk ber-varian (stok varian masuk via koreksi
+    di master — GRN per varian = fase lanjut).
+  - Klaim kasir per (product,sku); `sku_id` mengalir kasir → order item;
+    restore cancel/void per SKU via kolom sku_id.
+  - API `/api/pos/products/[id]/skus` (+`/[skuId]`) CRUD varian; listing
+    produk menyertakan embed `skus` (FK di-cache per proses oleh
+    query-builder — restart dev server setelah migrasi).
+  - Master produk: dialog Pengaturan Merchandise memuat editor varian
+    (nama, kode SKU, barcode, stok/koreksi, harga override, aktif);
+    stok produk ber-varian tampil = SUM stok SKU, kolom stok produk
+    dinonaktifkan.
+  - Kasir: produk merchandise ber-SKU membuka dialog Pilih Varian
+    (stok per varian, badge merah stok ≤0 — server yang menolak sesuai
+    allow_negative); scan/ketik barcode atau kode SKU persis di kolom
+    cari langsung menambahkan varian ke keranjang; harga varian =
+    override ?? harga produk; id keranjang komposit per SKU.
+  - Gate: typecheck 475 = baseline (0 baru); smoke SQL lulus
+    (variant_required utk product-level, jual 3→1, blocked saat
+    allow_negative=false, restore →3, receive ber-varian 0 baris).
+
 - 2026-08-02 — **Fase A diimplementasikan** (coding):
   - Delta `20260802100000_pos_merchandise_foundation.sql`: product_kind
     += 'merchandise'; FK `source_product_id` → item.products + UNIQUE

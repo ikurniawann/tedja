@@ -43,10 +43,23 @@ export interface Product {
   /**
    * EPIC-034 Fase B — 'gift_card' = penjualan saldo titipan: nominal diketik
    * kasir (bukan harga katalog) dan kartu terbit saat order lunas.
+   * EPIC-039 — 'merchandise' = barang beli-jadi-jual ber-stok (Fase A/B).
    */
-  product_kind?: 'regular' | 'gift_card';
+  product_kind?: 'regular' | 'gift_card' | 'merchandise';
   variants?: ProductVariant[];
+  /** EPIC-039 Fase B — varian merchandise ber-stok per SKU */
+  skus?: ProductSku[];
   modifiers?: ProductModifier[];
+};
+
+export interface ProductSku {
+  id: string;
+  sku: string;
+  name: string;
+  barcode?: string | null;
+  price_override?: number | null;
+  stock_quantity?: number | null;
+  is_active?: boolean;
 };
 
 export interface ProductVariant {

@@ -98,6 +98,7 @@ export async function GET(request: NextRequest) {
         *,
         category:pos_categories(name),
         variants:pos_product_variants(*),
+        skus:pos_product_skus(*),
         modifiers:pos_product_modifiers(
           modifier_group:pos_modifier_groups(
             name,

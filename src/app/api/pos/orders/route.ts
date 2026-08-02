@@ -35,6 +35,8 @@ import { sendGiftCardSoldWa } from '@/lib/giftcard/gift-card-wa';
 
 type PosOrderItemRequest = {
   product_id?: string;
+  /** EPIC-039 Fase B — varian merchandise ber-stok; wajib utk produk ber-SKU */
+  sku_id?: string;
   product_name?: string;
   product_sku?: string;
   quantity?: number | string;
@@ -802,6 +804,7 @@ export async function POST(request: NextRequest) {
       return {
         order_id: orderData.id,
         product_id: item.product_id,
+        sku_id: item.sku_id || null,
         product_name: item.product_name || 'Unknown',
         product_sku: String(item.product_sku || item.product_id || '').slice(0, 50),
         variants: item.variants || [],
@@ -829,6 +832,7 @@ export async function POST(request: NextRequest) {
         const legacyItem = { ...item } as Partial<typeof item>;
         delete legacyItem.station;
         delete legacyItem.kitchen_status;
+        delete legacyItem.sku_id;
         delete legacyItem.cost_price;
         delete legacyItem.cost_total;
         delete legacyItem.gross_profit;

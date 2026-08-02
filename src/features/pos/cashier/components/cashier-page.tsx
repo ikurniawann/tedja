@@ -33,6 +33,8 @@ import {
   saveCustomer,
   createSplitOrder,
 } from '../api';
+import type { ProductSku } from '@/lib/pos-api';
+import { MerchSkuPickerDialog } from '@/components/pos/MerchSkuPickerDialog';
 import { useCashierOrder, useCashierTables, useCustomerFavoriteProducts } from '../queries';
 import { usePayOpenOrder } from '../mutations';
 import { usePosCart } from '@/hooks/use-pos-cart';
@@ -244,6 +246,8 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
   /* EPIC-034 Fase B — jual gift card: produk yang sedang dijual + data
      pembeli (nomor WA dipakai mengirim kode setelah lunas). */
   const [giftCardProduct, setGiftCardProduct] = useState<Product | null>(null);
+  // EPIC-039 Fase B — produk merchandise ber-varian: pilih SKU dulu
+  const [merchSkuProduct, setMerchSkuProduct] = useState<Product | null>(null);
   const [giftCardBuyer, setGiftCardBuyer] = useState<{
     name: string | null;
     phone: string | null;
@@ -589,6 +593,16 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       return;
     }
 
+    // EPIC-039 Fase B — merchandise ber-varian wajib pilih SKU (stok per
+    // varian; server menolak order tanpa sku_id utk produk ber-SKU)
+    if (
+      product.product_kind === 'merchandise' &&
+      (product.skus ?? []).some((sku) => sku.is_active !== false)
+    ) {
+      setMerchSkuProduct(product);
+      return;
+    }
+
     if ((product.variants && product.variants.length > 0) || (product.modifiers && product.modifiers.length > 0)) {
       const firstVariant = product.variants?.[0]?.id ?? null;
       const defaultModifiers: Record<string, string[]> = {};
@@ -648,6 +662,46 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     setShowProductSuggestions(false);
     setActiveProductSuggestion(0);
   }, [openCustomization]);
+
+  /* EPIC-039 Fase B — varian dipilih → masuk keranjang (id komposit per SKU
+     supaya dua varian berbeda tidak digabung; harga = override ?? produk) */
+  const handleSelectMerchSku = useCallback((product: Product, sku: ProductSku) => {
+    if (!requireActiveShift()) return;
+    cart.addItem({
+      id: `${product.id}::sku:${sku.id}`,
+      productId: product.id,
+      skuId: sku.id,
+      skuCode: sku.sku,
+      name: `${product.name} — ${sku.name}`,
+      price: sku.price_override ?? product.base_price,
+      quantity: 1,
+      imageUrl: product.image_url,
+      station: product.station,
+    });
+    setMerchSkuProduct(null);
+  }, [cart, requireActiveShift]);
+
+  /* EPIC-039 Fase B — scan barcode: input search yang persis cocok dengan
+     barcode/kode SKU varian langsung menambahkan varian itu ke keranjang
+     (scanner mengetik kode utuh; tidak mengganggu pencarian nama biasa) */
+  useEffect(() => {
+    const code = searchTerm.trim().toLowerCase();
+    if (!code || code.length < 4) return;
+    for (const product of products) {
+      const sku = (product.skus ?? []).find(
+        (candidate) =>
+          candidate.is_active !== false &&
+          ((candidate.barcode || '').toLowerCase() === code ||
+            candidate.sku.toLowerCase() === code)
+      );
+      if (sku) {
+        handleSelectMerchSku(product, sku);
+        setSearchTerm('');
+        setShowProductSuggestions(false);
+        return;
+      }
+    }
+  }, [searchTerm, products, handleSelectMerchSku]);
 
   const handleConfirmCustomization = useCallback(() => {
     if (!custom || !customizingProduct) return;
@@ -1014,8 +1068,9 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         guest_count: normalizeGuestCount(guestCount),
         items: cart.items.map(item => ({
           product_id: item.productId,
+          sku_id: item.skuId,
           product_name: item.name,
-          product_sku: item.productId,
+          product_sku: item.skuCode || item.productId,
           quantity: item.quantity,
           unit_price: item.price,
           subtotal: item.price * item.quantity,
@@ -1143,8 +1198,9 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         shift_id: shift?.id,
         items: cart.items.map(item => ({
           product_id: item.productId,
+          sku_id: item.skuId,
           product_name: item.name,
-          product_sku: item.productId,
+          product_sku: item.skuCode || item.productId,
           quantity: item.quantity,
           unit_price: item.price,
           subtotal: item.price * item.quantity,
@@ -1204,8 +1260,9 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         shift_id: shift?.id,
         items: cart.items.map(item => ({
           product_id: item.productId,
+          sku_id: item.skuId,
           product_name: item.name,
-          product_sku: item.productId,
+          product_sku: item.skuCode || item.productId,
           quantity: item.quantity,
           unit_price: item.price,
           subtotal: item.price * item.quantity,
@@ -1268,8 +1325,9 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         shift_id: shift?.id || undefined,
         items: cart.items.map(item => ({
           product_id: item.productId,
+          sku_id: item.skuId,
           product_name: item.name,
-          product_sku: item.productId,
+          product_sku: item.skuCode || item.productId,
           variants: item.variantName ? [{ name: item.variantName, group: 'Size', price: item.variantPriceAdj || 0 }] : [],
           modifiers: item.modifierNames?.map((name, idx) => ({ name, group: `Option-${idx}` })) || [],
           quantity: Number(item.quantity),
@@ -2132,6 +2190,16 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
           };
         }}
       />
+
+      {/* ── EPIC-039 Fase B — pilih varian merchandise ber-SKU ── */}
+      {merchSkuProduct && (
+        <MerchSkuPickerDialog
+          product={merchSkuProduct}
+          onSelect={handleSelectMerchSku}
+          onClose={() => setMerchSkuProduct(null)}
+          formatCurrency={formatCurrency}
+        />
+      )}
 
       {/* ── EPIC-034 Fase B — jual gift card (nominal diketik kasir) ── */}
       {giftCardProduct && (

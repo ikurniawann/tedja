@@ -34,6 +34,7 @@ import { PosProductThumbnail } from '@/components/pos/PosProductThumbnail';
 import type { PosCatalogProduct, PosProductModifier, PosProductModifierGroup, PosProductVariant } from '../types';
 import { usePosCatalogProducts } from '../queries';
 import { usePatchPosProduct } from '../mutations';
+import { createProductSku, patchProductSku, deleteProductSku } from '../api';
 
 const generateId = () => Math.random().toString(36).slice(2, 11);
 
@@ -62,6 +63,27 @@ type MerchFormState = {
   stock: string;
   weightGram: string;
 };
+
+// EPIC-039 Fase B — baris editor varian SKU (persisted bila id terisi)
+type MerchSkuRow = {
+  rowId: string;
+  id?: string;
+  sku: string;
+  name: string;
+  barcode: string;
+  stock: string;
+  price: string;
+  active: boolean;
+  deleted?: boolean;
+};
+
+function merchStockLabel(product: PosCatalogProduct) {
+  const activeSkus = product.merchSkus.filter((sku) => sku.active);
+  if (activeSkus.length > 0) {
+    return activeSkus.reduce((sum, sku) => sum + sku.stock, 0);
+  }
+  return product.inventoryQuantity;
+}
 
 function inferStation(product: PosCatalogProduct) {
   const explicit = product.station;
@@ -107,6 +129,7 @@ export function ProductsPage() {
     stock: '',
     weightGram: '',
   });
+  const [merchSkuRows, setMerchSkuRows] = useState<MerchSkuRow[]>([]);
   const [purchasingOptions, setPurchasingOptions] = useState<PurchasingProductOption[]>([]);
   const [purchasingOptionsLoading, setPurchasingOptionsLoading] = useState(false);
   const [localEdits, setLocalEdits] = useState<
@@ -340,6 +363,18 @@ export function ProductsPage() {
       stock: String(product.inventoryQuantity ?? 0),
       weightGram: product.weightGram === null ? '' : String(product.weightGram),
     });
+    setMerchSkuRows(
+      product.merchSkus.map((sku) => ({
+        rowId: sku.id,
+        id: sku.id,
+        sku: sku.sku,
+        name: sku.name,
+        barcode: sku.barcode ?? '',
+        stock: String(sku.stock),
+        price: sku.priceOverride === null ? '' : String(sku.priceOverride),
+        active: sku.active,
+      }))
+    );
     if (purchasingOptions.length === 0) {
       setPurchasingOptionsLoading(true);
       try {
@@ -363,6 +398,37 @@ export function ProductsPage() {
     }
   };
 
+  const addMerchSkuRow = () => {
+    setMerchSkuRows((prev) => [
+      ...prev,
+      {
+        rowId: generateId(),
+        sku: '',
+        name: '',
+        barcode: '',
+        stock: '0',
+        price: '',
+        active: true,
+      },
+    ]);
+  };
+
+  const updateMerchSkuRow = (rowId: string, patch: Partial<MerchSkuRow>) => {
+    setMerchSkuRows((prev) =>
+      prev.map((row) => (row.rowId === rowId ? { ...row, ...patch } : row))
+    );
+  };
+
+  const removeMerchSkuRow = (rowId: string) => {
+    setMerchSkuRows((prev) =>
+      prev
+        .map((row) =>
+          row.rowId === rowId ? (row.id ? { ...row, deleted: true } : null) : row
+        )
+        .filter((row): row is MerchSkuRow => row !== null)
+    );
+  };
+
   const saveMerchSettings = async () => {
     if (!merchModalProduct || savingProductId) return;
     const stockNumber = Number(merchForm.stock);
@@ -376,8 +442,45 @@ export function ProductsPage() {
       return;
     }
 
+    // Validasi baris varian sebelum menyentuh server
+    const liveRows = merchSkuRows.filter((row) => !row.deleted);
+    for (const row of liveRows) {
+      if (!row.sku.trim() || !row.name.trim()) {
+        toast.error('Setiap varian wajib punya kode SKU dan nama');
+        return;
+      }
+      if (!Number.isFinite(Number(row.stock))) {
+        toast.error(`Stok varian ${row.name || row.sku} harus angka`);
+        return;
+      }
+    }
+
     setSavingProductId(merchModalProduct.id);
     try {
+      // Sinkronkan varian dulu: hapus → ubah/buat (urutan aman utk kode unik)
+      for (const row of merchSkuRows) {
+        if (row.deleted && row.id) {
+          await deleteProductSku(merchModalProduct.id, row.id);
+        }
+      }
+      for (const row of liveRows) {
+        const payload = {
+          sku: row.sku.trim(),
+          name: row.name.trim(),
+          barcode: row.barcode.trim() || null,
+          price_override: row.price.trim() === '' ? null : Number(row.price),
+          stock_quantity: Number(row.stock),
+          is_active: row.active,
+        };
+        if (row.id) {
+          await patchProductSku(merchModalProduct.id, row.id, payload);
+        } else {
+          await createProductSku(merchModalProduct.id, payload);
+        }
+      }
+
+      // Patch produk terakhir — invalidasi query-nya sekaligus memuat ulang
+      // daftar SKU yang baru disinkronkan
       await patchProductMutation.mutateAsync({
         id: merchModalProduct.id,
         payload: {
@@ -387,6 +490,7 @@ export function ProductsPage() {
           weight_gram: weightNumber,
         },
       });
+
       toast.success('Pengaturan merchandise tersimpan');
       setMerchModalProduct(null);
     } catch (error) {
@@ -568,7 +672,7 @@ export function ProductsPage() {
                               title="Stok, tautan purchasing & berat"
                             >
                               <Boxes className="h-3.5 w-3.5" />
-                              {product.inventoryQuantity}
+                              {merchStockLabel(product)}
                             </Button>
                           ) : null}
                         </div>
@@ -651,7 +755,7 @@ export function ProductsPage() {
             <DialogPanelTitle>Pengaturan Merchandise</DialogPanelTitle>
             <DialogPanelDescription>{merchModalProduct?.name}</DialogPanelDescription>
           </DialogPanelHeader>
-          <DialogPanelBody className="space-y-4">
+          <DialogPanelBody className="max-h-[65vh] space-y-4 overflow-y-auto">
             <div>
               <label className="mb-1 block text-xs text-gray-500">
                 Tautan master purchasing (item barang jadi)
@@ -679,11 +783,14 @@ export function ProductsPage() {
             </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
-                <label className="mb-1 block text-xs text-gray-500">Stok saat ini</label>
+                <label className="mb-1 block text-xs text-gray-500">
+                  Stok saat ini{merchSkuRows.some((row) => !row.deleted) ? ' (diabaikan — pakai stok per varian)' : ''}
+                </label>
                 <Input
                   type="number"
                   min={0}
                   value={merchForm.stock}
+                  disabled={merchSkuRows.some((row) => !row.deleted)}
                   onChange={(event) =>
                     setMerchForm((prev) => ({ ...prev, stock: event.target.value }))
                   }
@@ -701,6 +808,109 @@ export function ProductsPage() {
                   }
                 />
               </div>
+            </div>
+
+            {/* EPIC-039 Fase B — varian ber-SKU: stok/barcode/harga per varian */}
+            <div className="space-y-3 border-t border-gray-100 pt-4">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium text-gray-700">Varian ber-SKU</p>
+                <Button type="button" variant="outline" size="sm" onClick={addMerchSkuRow}>
+                  <PlusCircle className="mr-1 h-3.5 w-3.5" />
+                  Tambah Varian
+                </Button>
+              </div>
+              {merchSkuRows.filter((row) => !row.deleted).length === 0 ? (
+                <p className="text-xs text-gray-400">
+                  Tanpa varian — stok memakai kolom &quot;Stok saat ini&quot; di atas.
+                  Tambahkan varian (mis. Merah / L) bila kaos ini punya warna/ukuran.
+                </p>
+              ) : (
+                merchSkuRows
+                  .filter((row) => !row.deleted)
+                  .map((row) => (
+                    <div
+                      key={row.rowId}
+                      className="space-y-2 rounded-lg border border-gray-200/70 bg-gray-50/80 p-3"
+                    >
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                        <div>
+                          <label className="mb-1 block text-xs text-gray-500">Nama varian</label>
+                          <Input
+                            value={row.name}
+                            placeholder="Merah / L"
+                            onChange={(event) =>
+                              updateMerchSkuRow(row.rowId, { name: event.target.value })
+                            }
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-xs text-gray-500">Kode SKU</label>
+                          <Input
+                            value={row.sku}
+                            placeholder="KAOS-MRH-L"
+                            onChange={(event) =>
+                              updateMerchSkuRow(row.rowId, { sku: event.target.value })
+                            }
+                          />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                        <div>
+                          <label className="mb-1 block text-xs text-gray-500">Barcode</label>
+                          <Input
+                            value={row.barcode}
+                            placeholder="scan/ketik"
+                            onChange={(event) =>
+                              updateMerchSkuRow(row.rowId, { barcode: event.target.value })
+                            }
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-xs text-gray-500">Stok</label>
+                          <Input
+                            type="number"
+                            value={row.stock}
+                            onChange={(event) =>
+                              updateMerchSkuRow(row.rowId, { stock: event.target.value })
+                            }
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-xs text-gray-500">Harga (opsional)</label>
+                          <Input
+                            type="number"
+                            min={0}
+                            placeholder="ikut harga produk"
+                            value={row.price}
+                            onChange={(event) =>
+                              updateMerchSkuRow(row.rowId, { price: event.target.value })
+                            }
+                          />
+                        </div>
+                        <div className="flex items-end gap-1.5 pb-0.5">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => updateMerchSkuRow(row.rowId, { active: !row.active })}
+                            className={row.active ? 'border-green-200 text-green-700' : ''}
+                          >
+                            {row.active ? 'Aktif' : 'Nonaktif'}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={() => removeMerchSkuRow(row.rowId)}
+                          >
+                            <Trash2 className="h-4 w-4 text-red-500" />
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+              )}
             </div>
           </DialogPanelBody>
           <DialogFooter>

@@ -78,8 +78,9 @@ export function usePosCheckout() {
         // Build item payload with price adjustments broken out for server validation
         const items = cart.map((item) => ({
           product_id: item.productId,
+          sku_id: item.skuId,
           product_name: item.name,
-          product_sku: `SKU-${item.productId}`,
+          product_sku: item.skuCode || `SKU-${item.productId}`,
           variants: item.variantName ? [{ name: item.variantName, group: "Size", price: item.variantPriceAdj || 0 }] : [],
           modifiers: item.modifierNames?.map((name, idx) => ({
             name,
