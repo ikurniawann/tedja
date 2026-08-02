@@ -529,3 +529,23 @@ export async function releaseOrderReservations(orderId: string): Promise<void> {
     }))
   );
 }
+
+/**
+ * Fase E — pembatalan order yang SUDAH dibayar (refund manual via dashboard
+ * Xendit, keputusan owner): reservasi committed dikembalikan juga.
+ */
+export async function restoreCommittedReservations(orderId: string): Promise<void> {
+  const rows = await query<{ id: string; product_id: string; sku_id: string | null; qty: string }>(
+    `UPDATE shop.stock_reservations SET status='released', updated_at=now()
+     WHERE order_id = $1::uuid AND status IN ('held','committed')
+     RETURNING id, product_id, sku_id, qty`,
+    [orderId]
+  );
+  await restoreClaims(
+    rows.map((row) => ({
+      productId: row.product_id,
+      skuId: row.sku_id,
+      qty: Number(row.qty) || 0,
+    }))
+  );
+}

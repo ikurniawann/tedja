@@ -262,6 +262,35 @@ shop.marketplace_sync_log   — audit push stok / pull order / error
 
 ## Automation Log
 
+- 2026-08-02 — **Fase E diimplementasikan** (coding) — back-office pesanan
+  + pengiriman:
+  - Delta `20260802210000_shop_shipments_orders_menu.sql`:
+    `shop.shipments` (provider biteship|rajaongkir|manual, provider_order_id,
+    waybill, tracking_history jsonb; UNIQUE partial satu pengiriman aktif
+    per order) + menu induk `shop` "Toko Online" + `shop.orders` "Pesanan"
+    (/dashboard/shop/orders, role super_admin/admin).
+  - API back-office: GET `/api/shop/orders` (filter status/cari, join
+    shipment aktif, release reservasi expired opportunistik), GET/PATCH
+    `/api/shop/orders/[id]` (transisi ketat paid→packing,
+    shipped→completed, cancel utk pending/paid/packing — cancel
+    mengembalikan stok held & committed + catatan "refund manual via
+    Xendit" sesuai keputusan owner), POST `/api/shop/orders/[id]/shipment`
+    dua mode: `provider` (Biteship createShipment; waybill bisa menyusul)
+    dan `manual` (input resi — jalur RajaOngkir/kurir lain).
+  - Webhook `/api/public/shop/webhook/biteship`: amankan via
+    `?token=BITESHIP_WEBHOOK_TOKEN` (tanpa env → 503, tidak pernah
+    terbuka); mapping status Biteship → shipment; resi baru → order
+    shipped + WA resi (idempoten via guard waybill IS NULL); delivered →
+    order completed.
+  - WA `sendShopOrderShippedWa` (resi + link status).
+  - UI /dashboard/shop/orders: tab status, tabel + badge MEMBER, dialog
+    detail (item, alamat, ongkir, catatan), aksi per status (Tandai
+    Dikemas / Buat Pengiriman provider / Input resi manual / Tandai
+    Selesai / Batalkan ber-konfirmasi).
+  - Gate: typecheck 475 = baseline; migrasi applied (menu terverifikasi).
+    QA pengiriman provider butuh BITESHIP_API_KEY + daftarkan webhook
+    Biteship ke URL + token.
+
 - 2026-08-02 — **Fase D diimplementasikan** (coding) — storefront publik +
   checkout Xendit:
   - Delta `20260802190000_shop_storefront_orders.sql`: `shop.storefronts`

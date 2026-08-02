@@ -15,6 +15,40 @@ function formatRp(value: number): string {
   return `Rp ${Math.round(value).toLocaleString("id-ID")}`;
 }
 
+export interface ShopOrderShippedWaInput extends ShopOrderWaInput {
+  waybill: string;
+  courierLabel: string | null;
+}
+
+/** EPIC-039 Fase E — kirim resi saat order dikirim. */
+export async function sendShopOrderShippedWa(
+  order: ShopOrderShippedWaInput
+): Promise<{ success: boolean; reason?: string }> {
+  const config = readGatewayConfig();
+  if (!config) {
+    console.error("[shop] WA gateway belum dikonfigurasi — resi tidak terkirim");
+    return { success: false, reason: "gateway-belum-dikonfigurasi" };
+  }
+
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
+  const statusUrl = `${baseUrl}/shop/order/${order.accessToken}`;
+  const message =
+    `*Pesanan dikirim* 📦\n\n` +
+    `Order: *${order.orderNumber}*\n` +
+    (order.courierLabel ? `Kurir: ${order.courierLabel}\n` : "") +
+    `Resi: *${order.waybill}*\n\n` +
+    `Lacak status pengiriman di:\n${statusUrl}`;
+
+  const result = await sendGatewayText(config, {
+    target: order.customerPhone,
+    message,
+  });
+  if (!result.success) {
+    console.error(`[shop] WA resi gagal: order=${order.orderNumber}: ${result.reason}`);
+  }
+  return result;
+}
+
 export async function sendShopOrderPaidWa(
   order: ShopOrderWaInput
 ): Promise<{ success: boolean; reason?: string }> {
