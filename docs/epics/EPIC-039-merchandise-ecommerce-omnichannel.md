@@ -262,6 +262,40 @@ shop.marketplace_sync_log   — audit push stok / pull order / error
 
 ## Automation Log
 
+- 2026-08-02 — **Fase F diimplementasikan** (coding) — omnichannel Shopee:
+  - Delta `20260802230000_shop_marketplace_shopee.sql`:
+    `shop.marketplace_accounts` (token OAuth per toko — disimpan plain
+    mengikuti preseden configuration.payment_gateways.secret_key;
+    hardening enkripsi = fase lanjut; `stock_buffer` configurable per
+    akun default 0 sesuai keputusan owner), `marketplace_links` (UNIQUE
+    dua arah: listing↔produk/SKU per akun), `marketplace_sync_log`,
+    kolom `shop.orders.source_channel` + `marketplace_order_sn` UNIQUE
+    (idempoten impor), menu Toko Online → Marketplace.
+  - Adapter `src/lib/shop/marketplace/` ber-interface generik
+    (Tokopedia/TikTok tinggal menambah adapter): `shopee.ts` = Open
+    Platform v2 (sign HMAC-SHA256 partner, auth_partner, token
+    get/refresh otomatis <10 mnt, get_item_list/base_info/model_list,
+    update_stock, get_order_list/detail). Env: SHOPEE_PARTNER_ID,
+    SHOPEE_PARTNER_KEY, SHOPEE_API_BASE (sandbox tersedia).
+  - `sync.ts`: pushAllStock (stok riil − buffer, catat last_pushed) &
+    pullMarketplaceOrders (sejak last_pull −15 mnt overlap; order
+    READY_TO_SHIP/PROCESSED/SHIPPED/COMPLETED → shop.orders source
+    'shopee' + klaim stok via fungsi Fase A/B; stok kurang/mapping
+    hilang → order TETAP diimpor + catatan rekonsiliasi + sync_log
+    error — barang sudah terjual di Shopee, kebenaran ada di sana).
+    Urutan sync: pull dulu (potong stok) baru push (stok terbaru).
+  - API `/api/shop/marketplace/{accounts,connect,callback,listings,
+    links,sync}` — sync juga bisa dipanggil cron eksternal via header
+    `x-sync-token` = env MARKETPLACE_SYNC_TOKEN (penjadwalan di deploy:
+    PM2 cron / GitLab schedule, di luar scope kode).
+  - UI /dashboard/shop/marketplace: hubungkan toko (OAuth), buffer per
+    akun, muat listing, mapping dropdown listing↔produk/SKU, tabel
+    mapping + stok terpush, tombol Sync dengan ringkasan hasil.
+  - Catatan QA: butuh akun Shopee Open Platform (partner_id + key,
+    sandbox test-stable tersedia) — tanpa env, endpoint menolak rapi
+    503. Pembayaran & kurir order Shopee diurus Shopee (tidak menyentuh
+    Xendit/modul kurir).
+
 - 2026-08-02 — **Fase E diimplementasikan** (coding) — back-office pesanan
   + pengiriman:
   - Delta `20260802210000_shop_shipments_orders_menu.sql`:
