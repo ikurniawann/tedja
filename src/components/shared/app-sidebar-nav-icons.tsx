@@ -123,8 +123,7 @@ export function AppSidebarNavIcon({
   className?: string;
   isActive: boolean;
 }) {
-  const entry = iconMap[name];
-  const Icon = isActive ? entry?.solid : entry?.outline;
-  if (!Icon) return null;
+  const entry = iconMap[name] ?? iconMap.clipboard;
+  const Icon = isActive ? entry.solid : entry.outline;
   return <Icon className={className} />;
 }

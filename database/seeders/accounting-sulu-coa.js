@@ -165,6 +165,9 @@ function parseSuluSheet(xlsxPath) {
       parent_code: resolveParent(r.code, codes),
       account_type_code: inferType(r.code),
       is_contra: /ACCUMULAT|ALLOWANCE FOR|CONTRA/i.test(r.name),
+      is_cash_bank:
+        level === 4 &&
+        (r.code.startsWith("1101") || r.code.startsWith("1102")),
       cash_flow_category: inferCashFlow(r.code, r.name, level),
     };
   });
@@ -255,8 +258,8 @@ async function main() {
         companyId
           ? `INSERT INTO accounting.chart_of_accounts (
                company_id, code, name, parent_id, account_type_id, level,
-               is_postable, is_contra, cash_flow_category, is_active
-             ) VALUES ($1,$2,$3,$4,$5,$6,true,$7,$8,true)
+               is_postable, is_contra, is_cash_bank, cash_flow_category, is_active
+             ) VALUES ($1,$2,$3,$4,$5,$6,true,$7,$8,$9,true)
              ON CONFLICT (company_id, code) WHERE deleted_at IS NULL AND company_id IS NOT NULL
              DO UPDATE SET
                name = EXCLUDED.name,
@@ -264,6 +267,7 @@ async function main() {
                account_type_id = EXCLUDED.account_type_id,
                level = EXCLUDED.level,
                is_contra = EXCLUDED.is_contra,
+               is_cash_bank = EXCLUDED.is_cash_bank,
                cash_flow_category = EXCLUDED.cash_flow_category,
                is_active = true,
                deleted_at = NULL,
@@ -271,8 +275,8 @@ async function main() {
              RETURNING id`
           : `INSERT INTO accounting.chart_of_accounts (
                company_id, code, name, parent_id, account_type_id, level,
-               is_postable, is_contra, cash_flow_category, is_active
-             ) VALUES (NULL,$1,$2,$3,$4,$5,true,$6,$7,true)
+               is_postable, is_contra, is_cash_bank, cash_flow_category, is_active
+             ) VALUES (NULL,$1,$2,$3,$4,$5,true,$6,$7,$8,true)
              ON CONFLICT (code) WHERE deleted_at IS NULL AND company_id IS NULL
              DO UPDATE SET
                name = EXCLUDED.name,
@@ -280,6 +284,7 @@ async function main() {
                account_type_id = EXCLUDED.account_type_id,
                level = EXCLUDED.level,
                is_contra = EXCLUDED.is_contra,
+               is_cash_bank = EXCLUDED.is_cash_bank,
                cash_flow_category = EXCLUDED.cash_flow_category,
                is_active = true,
                deleted_at = NULL,
@@ -294,6 +299,7 @@ async function main() {
               typeId,
               row.level,
               row.is_contra,
+              row.is_cash_bank,
               row.cash_flow_category,
             ]
           : [
@@ -303,6 +309,7 @@ async function main() {
               typeId,
               row.level,
               row.is_contra,
+              row.is_cash_bank,
               row.cash_flow_category,
             ]
       );

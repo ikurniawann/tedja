@@ -60,7 +60,7 @@ export async function recomputePostableChain(
 
 /** After bulk insert, set postable for all accounts in a company scope. */
 export async function recomputePostableForCompany(
-  companyId: string | null,
+  companyId: string,
   client?: PoolClient
 ) {
   const sql = `
@@ -73,10 +73,7 @@ export async function recomputePostableForCompany(
         ),
         updated_at = now()
     WHERE coa.deleted_at IS NULL
-      AND (
-        ($1::uuid IS NULL AND coa.company_id IS NULL)
-        OR coa.company_id = $1
-      )`;
+      AND coa.company_id = $1`;
 
   if (client) {
     await client.query(sql, [companyId]);

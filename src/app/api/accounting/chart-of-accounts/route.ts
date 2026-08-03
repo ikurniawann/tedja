@@ -3,8 +3,6 @@ import { z } from "zod";
 import { ApiError, requireApiRole } from "@/lib/api/auth";
 import { createServerPgClient } from "@/lib/pg/create-client";
 import {
-  companyScopeOr,
-  effectiveCompanyId,
   getApiUserScope,
   isRowInBusinessScope,
 } from "@/lib/api/scope";
@@ -13,6 +11,10 @@ import {
   inferAccountLevel,
   normalizeAccountCode,
 } from "@/lib/accounting/account-code";
+import {
+  accountingCompanyId,
+  requireAccountingCompanyId,
+} from "@/lib/accounting/company-scope";
 import { recomputePostableChain } from "@/lib/accounting/coa-postable";
 import {
   ACCOUNTING_API_ROLES,
@@ -21,7 +23,7 @@ import {
 
 const SELECT = `
   id, company_id, code, name, parent_id, account_type_id, level,
-  is_postable, is_contra, cash_flow_category, description, is_active,
+  is_postable, is_contra, is_cash_bank, cash_flow_category, description, is_active,
   created_at, updated_at,
   account_types ( id, code, name, normal_balance )
 `.replace(/\s+/g, " ");
@@ -32,6 +34,7 @@ const payloadSchema = z.object({
   parent_id: z.string().uuid().nullable().optional(),
   account_type_id: z.string().uuid(),
   is_contra: z.boolean().optional(),
+  is_cash_bank: z.boolean().optional(),
   cash_flow_category: z
     .enum([...CASH_FLOW_CATEGORIES])
     .nullable()
@@ -63,6 +66,7 @@ function mapRow(row: Record<string, unknown>) {
     level: row.level,
     is_postable: row.is_postable,
     is_contra: row.is_contra,
+    is_cash_bank: row.is_cash_bank,
     cash_flow_category: row.cash_flow_category,
     description: row.description,
     is_active: row.is_active,
@@ -81,6 +85,7 @@ export async function GET(request: NextRequest) {
     const typeId = searchParams.get("account_type_id");
     const postable = searchParams.get("is_postable");
     const contra = searchParams.get("is_contra");
+    const cashBank = searchParams.get("is_cash_bank");
     const cashFlow = searchParams.get("cash_flow_category");
     const active = searchParams.get("is_active");
 
@@ -90,14 +95,19 @@ export async function GET(request: NextRequest) {
       .is("deleted_at", null)
       .order("code", { ascending: true });
 
-    const scopeOr = companyScopeOr(scope);
-    if (scopeOr) q = q.or(scopeOr);
+    const companyId = accountingCompanyId(scope);
+    if (!companyId) {
+      return NextResponse.json({ data: [] });
+    }
+    q = q.eq("company_id", companyId);
 
     if (typeId) q = q.eq("account_type_id", typeId);
     if (postable === "true") q = q.eq("is_postable", true);
     if (postable === "false") q = q.eq("is_postable", false);
     if (contra === "true") q = q.eq("is_contra", true);
     if (contra === "false") q = q.eq("is_contra", false);
+    if (cashBank === "true") q = q.eq("is_cash_bank", true);
+    if (cashBank === "false") q = q.eq("is_cash_bank", false);
     if (cashFlow) q = q.eq("cash_flow_category", cashFlow);
     if (active === "true") q = q.eq("is_active", true);
     if (active === "false") q = q.eq("is_active", false);
@@ -125,7 +135,7 @@ export async function POST(request: NextRequest) {
     const body = payloadSchema.parse(await request.json());
     const db = await createServerPgClient();
     const scope = await getApiUserScope();
-    const companyId = effectiveCompanyId(scope);
+    const companyId = requireAccountingCompanyId(scope);
 
     const code = normalizeAccountCode(body.code);
     if (!code) throw ApiError.badRequest("Format kode akun tidak valid");
@@ -145,14 +155,8 @@ export async function POST(request: NextRequest) {
       if (!isRowInBusinessScope(scope, parent)) {
         throw ApiError.forbidden("Parent di luar scope");
       }
-      if (
-        (parent.company_id ?? null) !== companyId &&
-        !(scope?.isUnscoped && parent.company_id == null && companyId == null)
-      ) {
-        // Allow same company; for unscoped writing global, parent must be global
-        if ((parent.company_id ?? null) !== companyId) {
-          throw ApiError.badRequest("Parent harus dalam company yang sama");
-        }
+      if ((parent.company_id ?? null) !== companyId) {
+        throw ApiError.badRequest("Parent harus dalam company yang sama");
       }
     }
 
@@ -167,6 +171,7 @@ export async function POST(request: NextRequest) {
         level,
         is_postable: true,
         is_contra: body.is_contra ?? false,
+        is_cash_bank: body.is_cash_bank ?? false,
         cash_flow_category: body.cash_flow_category ?? null,
         description: body.description?.trim() || null,
         is_active: body.is_active ?? true,

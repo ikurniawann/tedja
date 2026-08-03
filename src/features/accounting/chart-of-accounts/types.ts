@@ -14,6 +14,7 @@ export interface CoaAccountItem {
   level: number;
   is_postable: boolean;
   is_contra: boolean;
+  is_cash_bank: boolean;
   cash_flow_category: CashFlowCategory | null;
   description: string | null;
   is_active: boolean;
@@ -27,6 +28,7 @@ export interface CoaAccountPayload {
   parent_id?: string | null;
   account_type_id: string;
   is_contra?: boolean;
+  is_cash_bank?: boolean;
   cash_flow_category?: CashFlowCategory | null;
   description?: string | null;
   is_active?: boolean;
@@ -37,6 +39,7 @@ export interface CoaListFilters {
   account_type_id?: string;
   is_postable?: string;
   is_contra?: string;
+  is_cash_bank?: string;
   cash_flow_category?: string;
   is_active?: string;
 }

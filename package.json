@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "concurrently -n next,nfc -c cyan,magenta \"npm run dev:next\" \"npm run pos:nfc-bridge\"",
+    "dev": "node scripts/dev.mjs",
     "dev:next": "next dev",
     "build": "next build",
     "start": "next start",

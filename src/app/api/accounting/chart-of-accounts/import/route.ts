@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { ApiError, requireApiRole } from "@/lib/api/auth";
 import { createServerPgClient } from "@/lib/pg/create-client";
 import {
-  effectiveCompanyId,
   getApiUserScope,
 } from "@/lib/api/scope";
 import { withTransaction } from "@/lib/db";
@@ -10,6 +9,7 @@ import {
   parseCoaSpreadsheet,
   type ParsedCoaRow,
 } from "@/lib/accounting/coa-spreadsheet";
+import { requireAccountingCompanyId } from "@/lib/accounting/company-scope";
 import { recomputePostableForCompany } from "@/lib/accounting/coa-postable";
 import { ACCOUNTING_API_ROLES } from "@/lib/accounting/coa-types";
 
@@ -42,13 +42,13 @@ async function loadTypeMap() {
   return map;
 }
 
-async function loadExistingByCode(companyId: string | null) {
+async function loadExistingByCode(companyId: string) {
   const db = await createServerPgClient();
-  let q = db
+  const q = db
     .from("chart_of_accounts", "accounting")
     .select("id, code, name, parent_id")
-    .is("deleted_at", null);
-  q = companyId ? q.eq("company_id", companyId) : q.is("company_id", null);
+    .is("deleted_at", null)
+    .eq("company_id", companyId);
   const { data } = await q;
   const map = new Map<
     string,
@@ -139,7 +139,7 @@ export async function POST(request: NextRequest) {
   try {
     const user = await requireApiRole([...ACCOUNTING_API_ROLES]);
     const scope = await getApiUserScope();
-    const companyId = effectiveCompanyId(scope);
+    const companyId = requireAccountingCompanyId(scope);
 
     const form = await request.formData();
     const file = form.get("file");
@@ -223,20 +223,22 @@ export async function POST(request: NextRequest) {
                  account_type_id = $3,
                  level = $4,
                  is_contra = $5,
-                 cash_flow_category = $6,
-                 description = $7,
+                 is_cash_bank = $6,
+                 cash_flow_category = $7,
+                 description = $8,
                  is_active = true,
                  deleted_at = NULL,
                  deleted_by = NULL,
-                 updated_by = $8,
+                 updated_by = $9,
                  updated_at = now()
-             WHERE id = $9`,
+             WHERE id = $10`,
             [
               row.name,
               parentId,
               typeId,
               row.level,
               row.is_contra,
+              row.is_cash_bank,
               row.cash_flow_category,
               row.description,
               user.id,
@@ -248,9 +250,9 @@ export async function POST(request: NextRequest) {
           const inserted = await client.query<{ id: string }>(
             `INSERT INTO accounting.chart_of_accounts (
                company_id, code, name, parent_id, account_type_id, level,
-               is_postable, is_contra, cash_flow_category, description,
+               is_postable, is_contra, is_cash_bank, cash_flow_category, description,
                is_active, created_by, updated_by
-             ) VALUES ($1,$2,$3,$4,$5,$6,true,$7,$8,$9,true,$10,$10)
+             ) VALUES ($1,$2,$3,$4,$5,$6,true,$7,$8,$9,$10,true,$11,$11)
              RETURNING id`,
             [
               companyId,
@@ -260,6 +262,7 @@ export async function POST(request: NextRequest) {
               typeId,
               row.level,
               row.is_contra,
+              row.is_cash_bank,
               row.cash_flow_category,
               row.description,
               user.id,

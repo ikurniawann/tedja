@@ -96,3 +96,27 @@ export function inferCashFlowCategory(
 export function inferIsContra(name: string): boolean {
   return /ACCUMULAT|ALLOWANCE FOR|CONTRA/i.test(name);
 }
+
+/** Heuristic: leaf kas/bank (kode 1101xxx / 1102xxx), bukan loan/bunga/AR. */
+export function inferIsCashBank(
+  name: string,
+  code?: string,
+  level?: number
+): boolean {
+  if (code && /^110[12]/.test(code)) {
+    if (level != null) return level === 4;
+    return !/000$/.test(code);
+  }
+
+  if (
+    /LOAN|INTEREST|CHARGE|MDR|RECEIVABLE|\bAR\b|TAX|PPH|COMMISION|COMMISSION/i.test(
+      name
+    )
+  ) {
+    return false;
+  }
+
+  return /\bCASH\b|\bBANK\b|PETTY\s*CASH|\bGIRO\b|\bREKENING\b|\bKAS\b/i.test(
+    name
+  );
+}

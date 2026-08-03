@@ -17,10 +17,16 @@ export function buildListUrl(base: string, params?: Record<string, QueryValue>) 
 async function parseJson<T>(res: Response): Promise<T> {
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
-    const message =
+    const raw =
       typeof json === "object" && json && "error" in json
-        ? String((json as { error?: string }).error)
-        : `Request failed (${res.status})`;
+        ? (json as { error?: unknown }).error
+        : null;
+    const message =
+      typeof raw === "string" && raw.trim()
+        ? raw
+        : raw != null && typeof raw === "object" && "message" in raw
+          ? String((raw as { message?: unknown }).message || `Request failed (${res.status})`)
+          : `Request failed (${res.status})`;
     throw new Error(message);
   }
   return json as T;

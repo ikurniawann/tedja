@@ -31,6 +31,8 @@ export interface ComboboxProps {
   emptyMessage?: string;
   disabled?: boolean;
   className?: string;
+  /** Extra classes for the dropdown panel (e.g. min-w for long labels). */
+  contentClassName?: string;
   allowClear?: boolean;
 }
 
@@ -43,6 +45,7 @@ export function Combobox({
   emptyMessage = "Tidak ditemukan.",
   disabled = false,
   className,
+  contentClassName,
   allowClear = false,
 }: ComboboxProps) {
   const [open, setOpen] = React.useState(false);
@@ -105,13 +108,16 @@ export function Combobox({
         </div>
       </PopoverTrigger>
       <PopoverContent
-        className="z-[9999] w-(--anchor-width) min-w-(--anchor-width) border border-gray-200/80 bg-white p-0 shadow-xl ring-1 ring-gray-200/60"
+        className={cn(
+          "z-[9999] w-auto min-w-(--anchor-width) max-w-[min(28rem,calc(100vw-2rem))] border border-gray-200/80 bg-white p-0 shadow-xl ring-1 ring-gray-200/60",
+          contentClassName
+        )}
         align="start"
         sideOffset={4}
       >
         <Command shouldFilter={false} className="bg-white">
           <div className="flex items-center border-b border-gray-200 px-3 py-2.5">
-            <Search className="w-4 h-4 text-gray-400 mr-2 flex-shrink-0" />
+            <Search className="mr-2 h-4 w-4 shrink-0 text-gray-400" />
             <input
               data-combobox-search="true"
               value={searchValue}
@@ -121,7 +127,7 @@ export function Combobox({
               style={{ border: 0, boxShadow: "none", outline: "none" }}
             />
           </div>
-          <CommandList className="max-h-[300px] overflow-y-auto bg-white p-1">
+          <CommandList className="max-h-75 overflow-y-auto bg-white p-1">
             <CommandEmpty>{emptyMessage}</CommandEmpty>
             <CommandGroup>
               {filteredOptions.map((option) => (
@@ -133,17 +139,19 @@ export function Combobox({
                     setOpen(false);
                     setSearchValue("");
                   }}
-                  className="hover:bg-gray-100 data-[selected=true]:bg-gray-200 cursor-pointer py-2 px-3 bg-white rounded-sm"
+                  className="hover:bg-gray-100 data-[selected=true]:bg-gray-200 cursor-pointer py-2 px-3 bg-white rounded-sm items-start"
                 >
-                  <span className="min-w-0 truncate">{option.label}</span>
+                  <span className="min-w-0 flex-1 wrap-break-word whitespace-normal leading-snug">
+                    {option.label}
+                  </span>
                   {option.description && (
-                    <span className="ml-2 shrink-0 text-xs text-muted-foreground">
+                    <span className="ml-2 shrink-0 pt-0.5 text-xs text-muted-foreground">
                       {option.description}
                     </span>
                   )}
                   <Check
                     className={cn(
-                      "ml-auto h-4 w-4",
+                      "mt-0.5 ml-auto h-4 w-4 shrink-0",
                       value === option.value ? "opacity-100" : "opacity-0"
                     )}
                   />
