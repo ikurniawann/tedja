@@ -7,3 +7,4 @@ export {
   shouldRedirectNfcScan,
 } from "./resolve-topup-path";
 export { POS_NFC_CARD_EVENT, routePosNfcCard } from "./route-card-scan";
+export { normalizeNfcUid } from "./normalize-nfc-uid";
