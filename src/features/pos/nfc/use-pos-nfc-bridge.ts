@@ -1,15 +1,10 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { parseBridgeMessage } from "./parse-bridge-message";
 
 export const POS_NFC_BRIDGE_WS_URL =
   process.env.NEXT_PUBLIC_POS_NFC_BRIDGE_WS ?? "ws://127.0.0.1:8787";
-
-type BridgeMessage =
-  | { type: "hello" }
-  | { type: "card"; uid?: string }
-  | { type: "card_removed" }
-  | { type: "error"; message?: string };
 
 /**
  * Connects to the local PC/SC bridge and invokes onCard for each insert edge.
@@ -41,13 +36,9 @@ export function usePosNfcBridge(onCard: (uid: string) => void) {
       };
 
       ws.onmessage = (event) => {
-        try {
-          const msg = JSON.parse(String(event.data)) as BridgeMessage;
-          if (msg.type === "card" && msg.uid) {
-            onCardRef.current(String(msg.uid).trim());
-          }
-        } catch {
-          // ignore malformed payloads
+        const msg = parseBridgeMessage(String(event.data));
+        if (msg.kind === "card") {
+          onCardRef.current(msg.uid);
         }
       };
 

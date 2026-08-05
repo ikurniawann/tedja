@@ -4,8 +4,10 @@ import { useCallback, useEffect, useRef } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { usePosNfc } from "./pos-nfc-context";
 import { routePosNfcCard } from "./route-card-scan";
+import { normalizeNfcUid } from "./normalize-nfc-uid";
 import { createWedgeBuffer, reduceWedgeKey } from "./wedge-buffer";
 import { usePosNfcBridge } from "./use-pos-nfc-bridge";
+import { usePosNfcWebViewIngest } from "./use-pos-nfc-webview-ingest";
 
 const DEBOUNCE_MS = 1000;
 
@@ -28,12 +30,15 @@ export function PosNfcScanListener() {
 
   const handleCard = useCallback(
     (card: string) => {
+      const normalized = normalizeNfcUid(card);
+      if (!normalized) return;
+
       const now = Date.now();
       if (now - lastCommitAtRef.current < DEBOUNCE_MS) return;
       lastCommitAtRef.current = now;
 
       routePosNfcCard({
-        card,
+        card: normalized,
         pathname: pathnameRef.current,
         paymentNfcActive: paymentNfcActiveRef.current,
         push: (href) => router.push(href),
@@ -43,6 +48,7 @@ export function PosNfcScanListener() {
   );
 
   usePosNfcBridge(handleCard);
+  usePosNfcWebViewIngest(handleCard);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
