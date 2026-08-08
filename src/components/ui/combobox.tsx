@@ -20,6 +20,7 @@ export interface ComboboxOption {
   value: string;
   label: string;
   description?: string;
+  style?: React.CSSProperties;
 }
 
 export interface ComboboxProps {
@@ -68,7 +69,13 @@ export function Combobox({
   }, [options, searchValue]);
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (!next) setSearchValue("");
+      }}
+    >
       <PopoverTrigger
         data-slot="select-trigger"
         type="button"
@@ -80,7 +87,10 @@ export function Combobox({
         )}
         disabled={disabled}
       >
-        <span className={cn("min-w-0 truncate", !selectedOption && "text-muted-foreground")}>
+        <span
+          className={cn("min-w-0 truncate", !selectedOption && "text-muted-foreground")}
+          style={selectedOption?.style}
+        >
           {selectedOption ? selectedOption.label : placeholder}
         </span>
         <div className="flex items-center gap-2">
@@ -141,7 +151,10 @@ export function Combobox({
                   }}
                   className="hover:bg-gray-100 data-[selected=true]:bg-gray-200 cursor-pointer py-2 px-3 bg-white rounded-sm items-start"
                 >
-                  <span className="min-w-0 flex-1 wrap-break-word whitespace-normal leading-snug">
+                  <span
+                    className="min-w-0 flex-1 wrap-break-word whitespace-normal leading-snug"
+                    style={option.style}
+                  >
                     {option.label}
                   </span>
                   {option.description && (

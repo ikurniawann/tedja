@@ -44,7 +44,7 @@ const HELP: Record<string, HelpEntry> = {
   },
   "appearance.custom": {
     default:
-      "Pilih warna primary & secondary; seluruh warna turunan dibuat otomatis dan tersimpan di perangkat ini.",
+      "Tema warna, sidebar, navbar, dan font disimpan per company. Preview dulu, lalu Apply.",
   },
   "pos.dashboard.aov": {
     default:

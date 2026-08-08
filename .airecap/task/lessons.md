@@ -1,5 +1,32 @@
 # Lessons
 
+## Sidebar parent icons
+- Icon parent (group) jangan solid + pill penuh: terasa pecah di samping chevron. Outline + `shrink-0` + label `truncate`.
+- Nama icon IAM yang tidak ada di `VALID_ICONS`/`iconMap` jatuh ke clipboard. Tambah mapping dulu sebelum ganti icon di DB.
+
+## Appearance / company theme
+- Preview = draft only. Apply menulis DB per company + CSS vars di `<html>`.
+- Mode light/dark tetap user preference (`arkiv-theme`); warna/font/sidebar/navbar = company (`arkiv-appearance` cache + `configuration.company_appearance`).
+- Daftar font Appearance: `FONT_STACKS` + `FONT_OPTIONS` di `appearance-tokens.ts`. ThemeScript wajib `JSON.stringify(FONT_STACKS)`, jangan hardcode.
+- Jangan edit delta yang sudah ter-apply.
+
+## Accounting sidebar tree
+- Kode menu wajib mengikuti hierarki (`accounting.master.chart-of-accounts`) karena seeder IAM men-wire `parent_id` dari prefix code.
+- Menu baru wajib masuk INSERT + whitelist `iam-menus.sql`, kalau tidak seeder akan soft-delete.
+- Item belum siap: halaman `ComingSoonPage`, jangan biarkan 404.
+- Period & Closing: Fiscal Years dulu, baru Beginning Balance (BB butuh FY).
+- Jangan edit delta yang sudah ter-apply (checksum ledger). Urutan menu → delta baru.
+- AR: Invoice B2B = funnel sales; Invoice = register customer non-B2B (belum). Jangan samakan nama menu.
+- Pindah Finance → Accounting: update ROLE_MODULE_PATHS `finance_staff` ke `/dashboard/accounting`, whitelist seeder, redirect URL lama.
+
+
+
+## POS ARK & XP menu
+- Halaman `/dashboard/pos/loyalty-settings` sudah ada; menu `pos.loyalty.settings` sempat `is_visible=false` (migrasi 20260720 kira 404).
+- Restore wajib + masukkan code ke whitelist seeder `iam-menus.sql`, kalau tidak seeder akan soft-delete lagi.
+
+
+
 ## HPP produk resep vs PO
 - Tidak semua HPP lewat PO. Trading → `harga_modal`/GRN; resep → BOM × avg cost.
 - Jangan auto-timpa HPP POS. Suggest: HPP saat ini vs HPP seharusnya, user pilih update.

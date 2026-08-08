@@ -44,6 +44,15 @@ const VALID_ICONS = new Set<string>([
   "megaphone",
   "banknotes",
   "ticket",
+  "clock",
+  "video",
+  "map",
+  "palette",
+  "plug",
+  "shopping-bag",
+  "store",
+  "package",
+  "bar-chart-3",
 ]);
 
 function toNavIcon(icon: string | null | undefined): NavIconName {

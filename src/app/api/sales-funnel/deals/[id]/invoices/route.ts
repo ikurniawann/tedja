@@ -14,7 +14,7 @@ import { isValidCalendarDate } from "@/lib/sales-funnel/server";
 // EPIC-025 (Opsi B): POST di sini = PENGAJUAN invoice (status 'diajukan')
 // dari termin quotation acuan — sales maupun super_admin sama-sama
 // mengajukan; penerbitan/kirim/batal dan pembayaran diproses finance di
-// /dashboard/finance/invoices. Status pelunasan diturunkan dari pembayaran.
+// /dashboard/accounting/receivable/invoices-b2b. Status pelunasan diturunkan dari pembayaran.
 
 const createInvoiceSchema = z.object({
   term_id: z.string().uuid().optional().nullable(),

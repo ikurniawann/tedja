@@ -115,9 +115,14 @@ function AppSidebarContent({
       )}
 
       <aside
-        className={`fixed inset-y-0 left-0 z-40 flex transform flex-col bg-linear-to-br from-pink-50 to-white shadow-xl transition-all duration-200 ease-in-out lg:relative lg:z-0 lg:flex lg:shrink-0 lg:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-40 flex transform flex-col shadow-xl transition-all duration-200 ease-in-out lg:relative lg:z-0 lg:flex lg:shrink-0 lg:translate-x-0 ${
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         } ${collapsed ? "lg:w-20" : "lg:w-64"}`}
+        style={{
+          background: "var(--sidebar-background)",
+          color: "var(--sidebar-foreground)",
+          borderRight: "1px solid var(--sidebar-border)",
+        }}
       >
         <SidebarHeader
           collapsed={collapsed}
@@ -142,7 +147,12 @@ function AppSidebarContent({
         />
 
         <div
-          className={`hidden items-center justify-between gap-4 border-b border-gray-100 bg-white/50 px-6 py-3 backdrop-blur-sm lg:flex ${DESKTOP_TOP_BAR_HEIGHT} lg:py-0`}
+          className={`hidden items-center justify-between gap-4 px-6 py-3 backdrop-blur-sm lg:flex ${DESKTOP_TOP_BAR_HEIGHT} lg:py-0`}
+          style={{
+            background: "var(--navbar-background)",
+            color: "var(--navbar-foreground)",
+            borderBottom: "1px solid var(--navbar-border)",
+          }}
         >
           <DashboardBreadcrumbs navItems={navItems} className="max-w-[55%]" />
           <div className="flex shrink-0 items-center gap-3">
@@ -152,11 +162,11 @@ function AppSidebarContent({
             <button
               type="button"
               onClick={() => setAccountOpen(true)}
-              className="inline-flex cursor-pointer items-center gap-3 rounded-xl border border-pink-100 bg-white px-3 py-2 text-left shadow-sm transition-colors hover:border-pink-200 hover:bg-pink-50"
+              className="inline-flex cursor-pointer items-center gap-3 rounded-xl border border-primary/20 bg-card px-3 py-2 text-left shadow-sm transition-colors hover:border-primary/30 hover:bg-primary/5"
               title="Klik untuk melihat akun login"
               aria-label="Buka popup akun login"
             >
-              <span className="grid h-9 w-9 place-items-center rounded-full bg-pink-600 text-sm font-bold text-white">
+              <span className="grid h-9 w-9 place-items-center rounded-full bg-primary text-sm font-bold text-primary-foreground">
                 {user.full_name?.slice(0, 1).toUpperCase() || "A"}
               </span>
               <span className="min-w-0">
@@ -221,9 +231,10 @@ function SidebarHeader({
 }) {
   return (
     <div
-      className={`group/header relative flex shrink-0 items-center border-b border-gray-100 bg-white/50 backdrop-blur-sm ${
+      className={`group/header relative flex shrink-0 items-center backdrop-blur-sm ${
         collapsed ? "justify-center px-2 py-3.5" : "px-3 py-4"
       } ${DESKTOP_TOP_BAR_HEIGHT} lg:py-0`}
+      style={{ borderBottom: "1px solid var(--sidebar-border)" }}
     >
 
       {collapsed ? (

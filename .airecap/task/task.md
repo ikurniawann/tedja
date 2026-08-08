@@ -1,18 +1,17 @@
-# Task: Suggest update HPP produk dari resep
+# Task: Appearance studio (company theme)
 
 ## Goal
-Tampilkan HPP tersimpan vs HPP resep (BOM × avg cost bahan). User pilih update atau tetap. Tidak auto-timpa.
+Page `/dashboard/settings/appearance`: live preview dashboard, Apply ke company, Reset default. Tema per company.
 
 ## Plan
-- [x] Helper `buildProductHppReview` (threshold Rp 1, hanya produk ber-BOM + HPP resep > 0)
-- [x] Enrich GET list/detail produk dengan field review
-- [x] Filter list `hpp_review=true`
-- [x] POST apply: set `harga_modal` = HPP resep; sync POS bila FINISHED_GOOD
-- [x] UI detail: bandingkan + ConfirmDialog update
-- [x] UI list: badge, filter, aksi update cepat
+- [x] Token model + parse/apply CSS vars + unit test
+- [x] Migrasi `configuration.company_appearance` + API GET/PUT
+- [x] ThemeProvider/ThemeScript load cache + fetch company theme
+- [x] Wire sidebar/navbar/font ke CSS vars
+- [x] UI studio: preview + tab Base/Sidebar/Navbar/Font + company select
+- [x] Apply migrasi + test
 
 ## Review
-- List: kolom HPP tersimpan / HPP resep, badge "Perlu update", filter, tombol refresh
-- Detail: bandingkan + CTA Update HPP / Tetap
-- Apply: `harga_modal` = HPP resep; FINISHED_GOOD sync POS `cost_price`
-- Trading tanpa BOM tidak masuk review
+- Preview live (draft), Apply persist per company, Reset = draft default
+- Mode light/dark tetap preferensi user (localStorage)
+- Mapping tema: `configuration.company_appearance.theme` jsonb per company_id

@@ -3,6 +3,7 @@
 import type { ElementType } from "react";
 import type { NavIconName } from "@/lib/iam/types";
 import {
+  ArchiveBoxIcon,
   ArrowDownOnSquareIcon,
   ArrowRightStartOnRectangleIcon,
   BanknotesIcon,
@@ -10,6 +11,7 @@ import {
   BriefcaseIcon,
   BuildingOffice2Icon,
   BuildingOfficeIcon,
+  BuildingStorefrontIcon,
   CalendarIcon,
   ChartBarIcon,
   ChartPieIcon,
@@ -17,6 +19,7 @@ import {
   CircleStackIcon,
   ClipboardDocumentCheckIcon,
   ClipboardDocumentListIcon,
+  ClockIcon,
   Cog6ToothIcon,
   CubeIcon,
   CurrencyDollarIcon,
@@ -24,22 +27,29 @@ import {
   DocumentTextIcon,
   HomeIcon,
   IdentificationIcon,
+  MapIcon,
   MegaphoneIcon,
   PaperAirplaneIcon,
   PlusIcon,
+  PuzzlePieceIcon,
+  ShoppingBagIcon,
   ShoppingCartIcon,
   StarIcon,
+  SwatchIcon,
   TicketIcon,
   TruckIcon,
   UsersIcon,
+  VideoCameraIcon,
 } from "@heroicons/react/24/outline";
 import {
+  ArchiveBoxIcon as ArchiveBoxIconSolid,
   ArrowDownOnSquareIcon as ArrowDownOnSquareIconSolid,
   BanknotesIcon as BanknotesIconSolid,
   BookOpenIcon as BookOpenIconSolid,
   BriefcaseIcon as BriefcaseIconSolid,
   BuildingOffice2Icon as BuildingOffice2IconSolid,
   BuildingOfficeIcon as BuildingOfficeIconSolid,
+  BuildingStorefrontIcon as BuildingStorefrontIconSolid,
   CalendarIcon as CalendarIconSolid,
   ChartBarIcon as ChartBarIconSolid,
   ChartPieIcon as ChartPieIconSolid,
@@ -47,6 +57,7 @@ import {
   CircleStackIcon as CircleStackIconSolid,
   ClipboardDocumentCheckIcon as ClipboardDocumentCheckIconSolid,
   ClipboardDocumentListIcon as ClipboardIconSolid,
+  ClockIcon as ClockIconSolid,
   Cog6ToothIcon as CogIconSolid,
   CubeIcon as CubeIconSolid,
   CurrencyDollarIcon as DollarIconSolid,
@@ -54,14 +65,19 @@ import {
   DocumentTextIcon as DocumentTextIconSolid,
   HomeIcon as HomeIconSolid,
   IdentificationIcon as IdentificationIconSolid,
+  MapIcon as MapIconSolid,
   MegaphoneIcon as MegaphoneIconSolid,
   PaperAirplaneIcon as PaperAirplaneIconSolid,
   PlusIcon as PlusIconSolid,
+  PuzzlePieceIcon as PuzzlePieceIconSolid,
+  ShoppingBagIcon as ShoppingBagIconSolid,
   ShoppingCartIcon as ShoppingCartIconSolid,
   StarIcon as StarIconSolid,
+  SwatchIcon as SwatchIconSolid,
   TicketIcon as TicketIconSolid,
   TruckIcon as TruckIconSolid,
   UsersIcon as UsersIconSolid,
+  VideoCameraIcon as VideoCameraIconSolid,
 } from "@heroicons/react/24/solid";
 
 type IconSet = {
@@ -112,11 +128,20 @@ const iconMap: Record<NavIconName, IconSet> = {
   megaphone: { outline: MegaphoneIcon, solid: MegaphoneIconSolid },
   banknotes: { outline: BanknotesIcon, solid: BanknotesIconSolid },
   ticket: { outline: TicketIcon, solid: TicketIconSolid },
+  clock: { outline: ClockIcon, solid: ClockIconSolid },
+  video: { outline: VideoCameraIcon, solid: VideoCameraIconSolid },
+  map: { outline: MapIcon, solid: MapIconSolid },
+  palette: { outline: SwatchIcon, solid: SwatchIconSolid },
+  plug: { outline: PuzzlePieceIcon, solid: PuzzlePieceIconSolid },
+  "shopping-bag": { outline: ShoppingBagIcon, solid: ShoppingBagIconSolid },
+  store: { outline: BuildingStorefrontIcon, solid: BuildingStorefrontIconSolid },
+  package: { outline: ArchiveBoxIcon, solid: ArchiveBoxIconSolid },
+  "bar-chart-3": { outline: ChartBarIcon, solid: ChartBarIconSolid },
 };
 
 export function AppSidebarNavIcon({
   name,
-  className = "h-5 w-5",
+  className = "h-5 w-5 shrink-0",
   isActive,
 }: {
   name: NavIconName;

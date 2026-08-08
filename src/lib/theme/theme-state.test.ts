@@ -48,11 +48,9 @@ describe("parseThemeState", () => {
 });
 
 describe("applyThemeState", () => {
-  it("sets data-theme and brand vars on the element", () => {
+  it("sets data-theme on the element", () => {
     const el = document.createElement("div");
     applyThemeState(el, { ...DEFAULT_THEME_STATE, mode: "dark" });
     expect(el.getAttribute("data-theme")).toBe("dark");
-    expect(el.style.getPropertyValue("--brand-primary")).toBe("#db2777");
-    expect(el.style.getPropertyValue("--primary-foreground")).toBe("#ffffff");
   });
 });

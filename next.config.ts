@@ -123,6 +123,16 @@ const nextConfig: NextConfig = {
   async redirects() {
     return [
       {
+        source: "/dashboard/finance/invoices",
+        destination: "/dashboard/accounting/receivable/invoices-b2b",
+        permanent: false,
+      },
+      {
+        source: "/dashboard/finance/invoices/:path*",
+        destination: "/dashboard/accounting/receivable/invoices-b2b",
+        permanent: false,
+      },
+      {
         source: "/dashboard/product/purchasing/price-list/:path*",
         destination: "/dashboard/product/purchasing/vendor",
         permanent: false,
