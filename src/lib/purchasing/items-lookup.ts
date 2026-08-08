@@ -18,8 +18,8 @@ export interface ItemsLookupConfig {
 export const ITEMS_LOOKUP_CONFIG: Record<ItemsLookupType, ItemsLookupConfig> = {
   "raw-material-categories": {
     table: "raw_material_categories",
-    title: "Raw Material Categories",
-    description: "Manage categories for raw materials",
+    title: "Kategori Bahan Baku",
+    description: "Kelola kategori bahan baku",
   },
   "product-categories": {
     table: "product_categories",

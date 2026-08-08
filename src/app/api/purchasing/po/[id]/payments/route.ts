@@ -98,7 +98,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requireApiRole([...PAYMENT_ROLES]);
+    const user = await requireApiRole([...PAYMENT_ROLES]);
     const { id } = await params;
     const db = createPgClient();
     const body = await request.json();
@@ -152,20 +152,43 @@ export async function POST(
 
     await recalculateTerm(db, termId);
 
+    const { data: poCompany } = await db
+      .from("purchase_orders")
+      .select("company_id")
+      .eq("id", id)
+      .maybeSingle();
+
+    const { postPaymentAccountingJournal } = await import(
+      "@/lib/purchasing/accounting-posting"
+    );
+    const accounting = await postPaymentAccountingJournal({
+      companyId: (poCompany?.company_id as string | null) ?? null,
+      userId: user.id,
+      paymentId: data.id,
+      paymentNumber: data.payment_number || paymentNumber,
+      paymentDate,
+      amount: validated.amount,
+    });
+
     const isFullPayment = validated.amount >= ctx.outstandingAmount - 0.01;
+    const baseMessage = isFullPayment
+      ? "Full payment recorded. Purchase order is now paid."
+      : "Payment recorded successfully";
 
     return Response.json(
       {
         success: true,
         data,
-        message: isFullPayment
-          ? "Full payment recorded. Purchase order is now paid."
-          : "Payment recorded successfully",
+        message: accounting.note ? `${baseMessage} (${accounting.note})` : baseMessage,
       },
       { status: 201 }
     );
   } catch (error: unknown) {
     if (error instanceof ApiError) return error.toResponse();
+    const { AccountingPostError } = await import("@/lib/purchasing/accounting-posting");
+    if (error instanceof AccountingPostError) {
+      return Response.json({ success: false, message: error.message }, { status: 500 });
+    }
     console.error("Error creating vendor payment:", error);
     if (error instanceof z.ZodError) {
       return Response.json(

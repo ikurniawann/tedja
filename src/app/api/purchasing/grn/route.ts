@@ -1,11 +1,10 @@
 import { createServerPgClient } from "@/lib/pg/create-client";
 import { createPgClient } from "@/lib/pg/create-client";
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { z } from "zod";
 import {
   requireApiRole,
   ApiError,
-  successResponse,
   createdResponse,
   paginatedResponse,
 } from "@/lib/api/auth";
@@ -13,7 +12,6 @@ import {
   generateGrnNumber,
   validateDeliveryCanReceive,
   calculateGrnTotals,
-  updatePOItemReceivedQty,
   updateDeliveryStatusAfterGrn,
   updatePOStatusAfterGrn,
   GrnStatus,
@@ -21,6 +19,11 @@ import {
 import { toQty } from "@/lib/purchasing/utils";
 import { addSupplyStockFromGrn } from "@/lib/purchasing/supply-inventory";
 import { syncReceiveRejectCredits } from "@/lib/purchasing/vendor-credit-service";
+import {
+  buildInlineQcItemsFromCreatedGrn,
+  resolveOverallQcStatus,
+  submitGrnQcInspection,
+} from "@/lib/purchasing/grn-qc";
 import { parsePurchasingModuleType } from "@/lib/purchasing/module-scope";
 import { validatePOCanDelivery } from "@/lib/purchasing/delivery";
 import {
@@ -36,6 +39,8 @@ import {
 // Schemas
 // ============================================================
 
+const QTY_EPSILON = 0.000001;
+
 const grnItemSchema = z.object({
   delivery_id: z.string().uuid().optional(),
   purchase_order_item_id: z.string().uuid().optional(),
@@ -44,6 +49,10 @@ const grnItemSchema = z.object({
   supply_item_id: z.string().uuid().optional(),
   qty_diterima: z.number().min(0, "Qty diterima minimal 0"),
   qty_ditolak: z.number().min(0, "Qty ditolak minimal 0"),
+  /** QC accepted qty — defaults to qty_diterima when omitted (RM/product combined receive). */
+  qty_accepted: z.number().min(0).optional(),
+  /** QC rejected qty — defaults to 0 when omitted. */
+  qty_rejected: z.number().min(0).optional(),
   satuan_id: z.string().uuid().optional(),
   kondisi: z.enum(["baik", "rusak", "cacat"]).default("baik"),
   catatan: z.string().optional().nullable(),
@@ -75,6 +84,25 @@ const createGrnSchema = z.object({
       path: ["delivery_id"],
     });
   }
+
+  const moduleType = data.module_type ?? "raw_material";
+  if (moduleType === "general") return;
+
+  data.items.forEach((item, index) => {
+    const received = toQty(item.qty_diterima);
+    if (received <= 0) return;
+
+    const accepted = item.qty_accepted != null ? toQty(item.qty_accepted) : received;
+    const rejected = item.qty_rejected != null ? toQty(item.qty_rejected) : 0;
+
+    if (Math.abs(accepted + rejected - received) > QTY_EPSILON) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Qty QC accepted + rejected harus sama dengan qty diterima",
+        path: ["items", index, "qty_accepted"],
+      });
+    }
+  });
 });
 
 const queryParamsSchema = z.object({
@@ -93,8 +121,6 @@ const updateGrnSchema = z.object({
   catatan: z.string().optional(),
   items: z.array(grnItemSchema).optional(),
 });
-
-const QTY_EPSILON = 0.000001;
 
 type POQtyValidationItem = {
   id: string;
@@ -126,6 +152,18 @@ function formatQty(value: number) {
   return new Intl.NumberFormat("id-ID", {
     maximumFractionDigits: 4,
   }).format(value);
+}
+
+function normalizeQcOnItem<T extends {
+  qty_diterima: number;
+  qty_accepted?: number;
+  qty_rejected?: number;
+}>(item: T): T & { qty_accepted: number; qty_rejected: number } {
+  const received = toQty(item.qty_diterima);
+  const accepted = item.qty_accepted != null ? toQty(item.qty_accepted) : received;
+  const rejected =
+    item.qty_rejected != null ? toQty(item.qty_rejected) : Math.max(0, received - accepted);
+  return { ...item, qty_accepted: accepted, qty_rejected: rejected };
 }
 
 // ============================================================
@@ -276,6 +314,10 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const validated = createGrnSchema.parse(body);
     const moduleType = parsePurchasingModuleType(validated.module_type);
+    const normalizedItems =
+      moduleType === "general"
+        ? validated.items
+        : validated.items.map((item) => normalizeQcOnItem(item));
     // Scope general/product menerima lewat vendor; raw_material lewat supplier.
     const usesVendor = moduleType !== "raw_material";
 
@@ -419,7 +461,7 @@ export async function POST(request: NextRequest) {
     }
 
     const processedQtyByItem = new Map<string, number>();
-    for (const item of validated.items) {
+    for (const item of normalizedItems) {
       const key =
         item.purchase_order_item_id || item.raw_material_id || item.product_id || item.supply_item_id;
       processedQtyByItem.set(
@@ -428,7 +470,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    for (const item of validated.items) {
+    for (const item of normalizedItems) {
       const key =
         item.purchase_order_item_id || item.raw_material_id || item.product_id || item.supply_item_id;
       const poItem = effectivePoItems.find((p) =>
@@ -458,7 +500,7 @@ export async function POST(request: NextRequest) {
     const grnNumber = await generateGrnNumber(adminDb);
 
     // Calculate totals
-    const totals = calculateGrnTotals(validated.items);
+    const totals = calculateGrnTotals(normalizedItems);
 
     // Count how many times this delivery has been received (receive counter)
     // IMPORTANT: Count ALL GRNs for this delivery, including the one being created
@@ -476,9 +518,9 @@ export async function POST(request: NextRequest) {
     const receiveCount = (previousGrnCount || 0) + 1; // This is the Nth receive
     console.log(`GRN receive_count: ${receiveCount} (previous: ${previousGrnCount}, delivery: ${deliveryId})`);
 
-    // Barang diterima fisik. Untuk raw_material/product, stok diposting setelah QC
-    // (status tetap pending). Untuk scope general (barang operasional) TIDAK ada QC
-    // maupun pergerakan stok di v1 — cukup ditandai diterima (EPIC-026 B4).
+    // General: received immediately (no QC).
+    // RM/product: start as pending, then auto-finalize QC+stock in the same request
+    // (unless all items rejected at the door).
     let grnStatus: GrnStatus = moduleType === "general" ? "received" : "pending";
 
     if (totals.total_diterima === 0 && totals.total_ditolak > 0) {
@@ -519,7 +561,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Create GRN items
-    const grnItems = validated.items.map((item) => ({
+    const grnItemsPayload = normalizedItems.map((item) => ({
       grn_id: grn.id,
       delivery_id: deliveryId,
       purchase_order_item_id: item.purchase_order_item_id,
@@ -535,7 +577,10 @@ export async function POST(request: NextRequest) {
       qc_status: "pending",
     }));
 
-    const { error: itemsError } = await adminDb.from("grn_items").insert(grnItems);
+    const { data: insertedGrnItems, error: itemsError } = await adminDb
+      .from("grn_items")
+      .insert(grnItemsPayload)
+      .select("id, purchase_order_item_id, raw_material_id, product_id, qty_diterima");
 
     if (itemsError) {
       console.error("GRN items insert error:", itemsError);
@@ -544,31 +589,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Update PO item received quantities (adminDb bypasses RLS)
-    for (const item of validated.items) {
-      if (item.purchase_order_item_id) {
-        const poItem = effectivePoItems.find((p: any) => p.id === item.purchase_order_item_id);
-        if (poItem) {
-          const newQty = toQty(poItem.qty_received) + toQty(item.qty_diterima);
-          await updatePOItemReceivedQty(adminDb, item.purchase_order_item_id, newQty);
-        } else {
-          // Fallback: query item langsung
-          const { data: directItem } = await adminDb
-            .from("purchase_order_items")
-            .select("id, qty_received")
-            .eq("id", item.purchase_order_item_id)
-            .single();
-          if (directItem) {
-            const newQty = toQty(directItem.qty_received) + toQty(item.qty_diterima);
-              await updatePOItemReceivedQty(adminDb, item.purchase_order_item_id, newQty);
-          } else {
-            console.warn(`[GRN] PO item ${item.purchase_order_item_id} not found even with direct query`);
-          }
-        }
-      } else {
-        console.warn(`[GRN] item missing purchase_order_item_id for raw_material ${item.raw_material_id}`);
-      }
-    }
+    // PO item qty_received is recalculated from GRN/QC after finalize
+    // (see updatePOStatusAfterGrn → recalculatePoReceivedQty).
 
     // EPIC-026 C1 — Posting stok riil barang operasional. Hanya untuk scope
     // general + item stockable=true; item stockable=false di-expense (tak ada stok).
@@ -577,7 +599,7 @@ export async function POST(request: NextRequest) {
       try {
         const supplyIds = Array.from(
           new Set(
-            validated.items
+            normalizedItems
               .filter((it) => it.supply_item_id && toQty(it.qty_diterima) > 0)
               .map((it) => it.supply_item_id as string)
           )
@@ -594,7 +616,7 @@ export async function POST(request: NextRequest) {
               .map((r: { id: string }) => r.id)
           );
 
-          for (const item of validated.items) {
+          for (const item of normalizedItems) {
             const supplyItemId = item.supply_item_id;
             const qty = toQty(item.qty_diterima);
             if (!supplyItemId || qty <= 0 || !stockableSet.has(supplyItemId)) continue;
@@ -623,49 +645,71 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // EPIC-039 Fase A — GRN jalur product menambah stok POS produk merchandise
-    // yang tertaut via pos_products.source_product_id. Mengikuti preseden
-    // general (posting saat GRN, tanpa QC; QC hanya memproses raw_material).
-    // Non-fatal: kegagalan posting stok tidak membatalkan penerimaan.
-    if (moduleType === "product" && grnStatus !== "rejected") {
-      for (const item of validated.items) {
-        const qty = toQty(item.qty_diterima);
-        if (!item.product_id || qty <= 0) continue;
+    // Combined receive + QC for raw_material / product: finalize QC and post stock
+    // (RM inventory / product merch) in the same request. Legacy pending GRNs still
+    // use POST /api/purchasing/grn/[id]/qc.
+    let finalizedStatus: GrnStatus = grnStatus;
+    let accountingNote: string | null = null;
+    if (
+      (moduleType === "raw_material" || moduleType === "product") &&
+      grnStatus === "pending"
+    ) {
+      const qcItems = buildInlineQcItemsFromCreatedGrn({
+        createdItems: insertedGrnItems || [],
+        requestItems: normalizedItems.map((item) => ({
+          purchase_order_item_id: item.purchase_order_item_id,
+          raw_material_id: item.raw_material_id,
+          product_id: item.product_id,
+          qty_diterima: item.qty_diterima,
+          qty_accepted: "qty_accepted" in item ? item.qty_accepted : undefined,
+          qty_rejected: "qty_rejected" in item ? item.qty_rejected : undefined,
+          catatan: item.catatan,
+        })),
+      });
 
+      if (qcItems.length > 0) {
         try {
-          const { data: updatedCount, error: stockError } = await adminDb.rpc(
-            "pos_receive_merchandise_stock",
-            { p_source_product_id: item.product_id, p_qty: qty }
+          const qcResult = await submitGrnQcInspection(adminDb, {
+            grnId: grn.id,
+            status: resolveOverallQcStatus(qcItems),
+            catatan: validated.catatan || null,
+            items: qcItems,
+            userId: user.id,
+          });
+          finalizedStatus = qcResult.grnStatus;
+          accountingNote = qcResult.accountingNote ?? null;
+        } catch (qcErr) {
+          console.error("[GRN] Inline QC finalize error:", qcErr);
+          throw ApiError.server(
+            qcErr instanceof Error
+              ? qcErr.message
+              : "Gagal menyelesaikan QC dan posting stok pada penerimaan"
           );
-
-          if (stockError) {
-            console.error(
-              `[GRN] Merch stock posting error for product ${item.product_id} (non-fatal):`,
-              stockError
-            );
-          } else if (Number(updatedCount) === 0) {
-            console.warn(
-              `[GRN] No linked POS merchandise product for item.products ${item.product_id} — stock not posted`
-            );
-          }
-        } catch (stockErr) {
-          console.error("[GRN] Merch stock posting error (non-fatal):", stockErr);
         }
       }
     }
 
-    // Physical receipt recorded — mark delivery arrived; stock posts after QC.
-    if (grnStatus !== "rejected") {
-      await adminDb
-        .from("deliveries")
-        .update({ status: "delivered", updated_at: new Date().toISOString() })
-        .eq("id", deliveryId);
-    } else {
-      await updateDeliveryStatusAfterGrn(adminDb, deliveryId, grnStatus);
-    }
+    // Physical receipt recorded — mark delivery arrived.
+    // After inline QC, submitGrnQcInspection already updates delivery/PO status.
+    if (finalizedStatus === "pending" || moduleType === "general") {
+      if (finalizedStatus !== "rejected") {
+        await adminDb
+          .from("deliveries")
+          .update({ status: "delivered", updated_at: new Date().toISOString() })
+          .eq("id", deliveryId);
+      } else {
+        await updateDeliveryStatusAfterGrn(adminDb, deliveryId, finalizedStatus);
+      }
 
-    if (delivery?.purchase_order_id) {
-      await updatePOStatusAfterGrn(adminDb, delivery.purchase_order_id);
+      if (delivery?.purchase_order_id) {
+        await updatePOStatusAfterGrn(adminDb, delivery.purchase_order_id);
+      }
+    } else if (finalizedStatus === "rejected" && grnStatus === "rejected") {
+      // Door-reject only (no QC path)
+      await updateDeliveryStatusAfterGrn(adminDb, deliveryId, finalizedStatus);
+      if (delivery?.purchase_order_id) {
+        await updatePOStatusAfterGrn(adminDb, delivery.purchase_order_id);
+      }
     }
 
     try {
@@ -674,11 +718,33 @@ export async function POST(request: NextRequest) {
       console.error("[GRN] Vendor credit sync error (non-fatal):", creditErr);
     }
 
+    // General: post accounting here (RM/product already via submitGrnQcInspection).
+    if (moduleType === "general" && finalizedStatus !== "rejected") {
+      const { postGrnAccountingJournals } = await import(
+        "@/lib/purchasing/accounting-posting"
+      );
+      const accounting = await postGrnAccountingJournals({
+        db: adminDb,
+        grnId: grn.id,
+        userId: user.id,
+      });
+      accountingNote = accounting.note;
+    }
+
+    const successMessage =
+      finalizedStatus === "rejected"
+        ? `GRN ${grnNumber} berhasil dibuat — semua item ditolak`
+        : moduleType === "general"
+          ? `GRN ${grnNumber} berhasil dibuat`
+          : `GRN ${grnNumber} berhasil dibuat — QC selesai dan stok sudah diperbarui`;
+
+    const messageWithAccounting = accountingNote
+      ? `${successMessage} (${accountingNote})`
+      : successMessage;
+
     return createdResponse(
-      grn,
-      grnStatus === "rejected"
-        ? `GRN ${grnNumber} created — all items rejected at receipt`
-        : `GRN ${grnNumber} created — proceed to quality control before stock is updated`
+      { ...grn, status: finalizedStatus },
+      messageWithAccounting
     );
   } catch (error) {
     if (error instanceof ApiError) return error.toResponse();

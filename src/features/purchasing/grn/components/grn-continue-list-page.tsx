@@ -42,8 +42,10 @@ export function GrnContinueListPage() {
 
   const listQuery = useGrnList({ page, limit, search: appliedSearch || undefined });
   const loading = listQuery.isLoading;
+  // Hanya GRN yang belum selesai QC/posting. Sisa PO setelah GRN partial
+  // dilanjutkan lewat Kirim Ulang + GRN baru, bukan "continue" GRN lama.
   const grns = (listQuery.data?.data ?? []).filter(
-    (g: GrnListRow) => g.status === "pending" || g.status === "partially_received"
+    (g: GrnListRow) => g.status === "pending"
   );
   const totalPages = Math.ceil((listQuery.data?.total ?? 0) / limit);
 
@@ -53,7 +55,7 @@ export function GrnContinueListPage() {
     if (listQuery.isError) {
       console.error(listQuery.error);
       toast({
-        title: "Error",
+        title: "Gagal",
         description: "Gagal memuat data GRN",
         variant: "destructive",
       });
@@ -76,7 +78,7 @@ export function GrnContinueListPage() {
       });
     } catch (error: any) {
       toast({
-        title: "❌ Error",
+        title: "❌ Gagal",
         description: error.message || "Gagal menghapus GRN",
         variant: "destructive",
       });
@@ -88,7 +90,9 @@ export function GrnContinueListPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Lanjutkan Penerimaan Barang</h1>
-          <p className="text-sm text-gray-500">GRN yang belum selesai dapat dilanjutkan dari sini</p>
+          <p className="text-sm text-gray-500">
+            GRN berstatus menunggu (belum QC). Sisa qty PO setelah penerimaan sebagian → Kirim Ulang di detail PO.
+          </p>
         </div>
         <Link href="/dashboard/purchasing/grn">
           <Button variant="outline">
@@ -164,7 +168,7 @@ export function GrnContinueListPage() {
                       <ClipboardDocumentCheckIcon className="w-12 h-12 mx-auto mb-3 opacity-30" />
                       <p>Tidak ada GRN yang perlu dilanjutkan</p>
                       <p className="text-xs mt-1">
-                        Semua GRN sudah selesai diproses atau belum ada data
+                        Sisa qty setelah penerimaan sebagian: gunakan Kirim Ulang di detail PO, lalu buat GRN baru.
                       </p>
                     </td>
                   </tr>
@@ -244,7 +248,7 @@ export function GrnContinueListPage() {
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
                 disabled={page === 1}
               >
-                Prev
+                Sebelumnya
               </Button>
               <span className="py-2 px-4 text-sm text-gray-600">
                 Halaman {page} dari {totalPages}
@@ -255,7 +259,7 @@ export function GrnContinueListPage() {
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 disabled={page === totalPages}
               >
-                Next
+                Berikutnya
               </Button>
             </div>
           )}

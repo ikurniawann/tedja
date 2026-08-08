@@ -34,12 +34,12 @@ import { toast } from "sonner";
 const EDITABLE_STATUSES: ReturnStatus[] = ["draft", "pending_approval"];
 
 const RETURN_REASON_OPTIONS: { value: ReturnReasonType; label: string }[] = [
-  { value: "damaged", label: "Damaged Goods" },
-  { value: "wrong_item", label: "Wrong Item" },
-  { value: "expired", label: "Expired" },
-  { value: "overstock", label: "Overstock" },
-  { value: "specification_mismatch", label: "Specification Mismatch" },
-  { value: "other", label: "Other" },
+  { value: "damaged", label: "Barang Rusak" },
+  { value: "wrong_item", label: "Barang Salah" },
+  { value: "expired", label: "Kedaluwarsa" },
+  { value: "overstock", label: "Kelebihan Stok" },
+  { value: "specification_mismatch", label: "Tidak Sesuai Spesifikasi" },
+  { value: "other", label: "Lainnya" },
 ];
 
 function getErrorMessage(error: unknown, fallback: string) {
@@ -47,7 +47,7 @@ function getErrorMessage(error: unknown, fallback: string) {
 }
 
 function formatQty(value: number) {
-  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 4 }).format(value);
+  return new Intl.NumberFormat("id-ID", { maximumFractionDigits: 4 }).format(value);
 }
 
 interface ReturnItem extends ReturnableItem {
@@ -134,7 +134,7 @@ export function EditReturnPage({
 
   useEffect(() => {
     if (formDataQuery.isError) {
-      toast.error("Failed to load returnable items");
+      toast.error("Gagal memuat item yang dapat diretur");
     }
   }, [formDataQuery.isError]);
 
@@ -179,11 +179,11 @@ export function EditReturnPage({
       !existingReturn?.grn_id ||
       (config.isProduct ? !existingReturn.vendor_id : !existingReturn.supplier_id)
     ) {
-      toast.error("Return data is incomplete");
+      toast.error("Data retur tidak lengkap");
       return;
     }
     if (!formData.reason_type) {
-      toast.error("Return reason is required");
+      toast.error("Alasan retur wajib diisi");
       return;
     }
 
@@ -192,14 +192,14 @@ export function EditReturnPage({
     );
 
     if (selectedItems.length === 0) {
-      toast.error("Select at least one item with a return quantity");
+      toast.error("Pilih minimal satu item dengan qty retur");
       return;
     }
 
     for (const item of selectedItems) {
       if (item.qty_return > item.qty_available_to_return) {
         const { nama } = config.itemName(item);
-        toast.error(`Return qty for ${nama} exceeds available quantity`);
+        toast.error(`Qty retur untuk ${nama} melebihi qty yang tersedia`);
         return;
       }
     }
@@ -229,10 +229,10 @@ export function EditReturnPage({
           })),
         },
       });
-      toast.success("Purchase return updated");
+      toast.success("Retur pembelian berhasil diperbarui");
       router.push(config.detailRoute(returnId));
     } catch (error: unknown) {
-      toast.error(getErrorMessage(error, "Failed to update purchase return"));
+      toast.error(getErrorMessage(error, "Gagal memperbarui retur pembelian"));
     }
   };
 
@@ -261,12 +261,12 @@ export function EditReturnPage({
         <Link href={config.listRoute}>
           <Button variant="ghost" size="sm" className="h-9 gap-2 text-pink-700">
             <ArrowLeftIcon className="h-4 w-4" />
-            Back
+            Kembali
           </Button>
         </Link>
         <Card className="border-gray-200/70 shadow-xs">
           <CardContent className="py-12 text-center text-sm text-gray-500">
-            Purchase return not found or could not be loaded.
+            Retur pembelian tidak ditemukan atau gagal dimuat.
           </CardContent>
         </Card>
       </div>
@@ -280,12 +280,12 @@ export function EditReturnPage({
         <Link href={config.detailRoute(returnId)}>
           <Button variant="ghost" size="sm" className="h-9 gap-2 text-pink-700">
             <ArrowLeftIcon className="h-4 w-4" />
-            Back
+            Kembali
           </Button>
         </Link>
         <Card className="border-gray-200/70 shadow-xs">
           <CardContent className="py-12 text-center text-sm text-gray-500">
-            This purchase return can no longer be edited after approval.
+            Retur pembelian ini tidak dapat diubah lagi setelah disetujui.
           </CardContent>
         </Card>
       </div>
@@ -299,8 +299,8 @@ export function EditReturnPage({
     <div className="space-y-6">
       <PurchasingFormHeader
         backHref={config.detailRoute(returnId)}
-        title={`Edit ${existingReturn.return_number}`}
-        description="Update return details before approval. Stock is deducted from the receipt stall on approval."
+        title={`Ubah ${existingReturn.return_number}`}
+        description="Perbarui detail retur sebelum disetujui. Stok dikurangi dari stall penerimaan saat disetujui."
       />
 
       <form id="purchase-return-edit-form" onSubmit={handleSubmit} className="space-y-6">
@@ -310,13 +310,13 @@ export function EditReturnPage({
               <CardHeader className="border-b border-gray-200/70 pb-3">
                 <CardTitle className="flex items-center gap-2 text-base">
                   <ClipboardList className="h-4 w-4 text-pink-600" />
-                  Return Information
+                  Informasi Retur
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4 pt-4">
                 <div className="grid grid-cols-1 gap-3 rounded-xl border border-gray-200/70 bg-gray-50/60 p-4 text-sm md:grid-cols-2">
                   <div>
-                    <p className="text-xs text-gray-500">Goods Receipt</p>
+                    <p className="text-xs text-gray-500">Penerimaan Barang</p>
                     <p className="font-medium text-gray-900">{grnNumber}</p>
                   </div>
                   <div>
@@ -329,18 +329,18 @@ export function EditReturnPage({
 
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                   <DsDateTimePicker
-                    label="Return Date"
+                    label="Tanggal Retur"
                     value={formData.return_date}
                     onChange={(value) =>
                       setFormData((prev) => ({ ...prev, return_date: value }))
                     }
-                    placeholder="Select return date..."
+                    placeholder="Pilih tanggal retur..."
                     dateOnly
                     required
                   />
                   <div className="min-w-0 space-y-1.5">
                     <Label className="text-xs">
-                      Return Reason <span className="text-red-500">*</span>
+                      Alasan Retur <span className="text-red-500">*</span>
                     </Label>
                     <Combobox
                       options={RETURN_REASON_OPTIONS}
@@ -351,9 +351,9 @@ export function EditReturnPage({
                           reason_type: value as ReturnReasonType,
                         }))
                       }
-                      placeholder="Select reason..."
-                      searchPlaceholder="Search reason..."
-                      emptyMessage="No reason found"
+                      placeholder="Pilih alasan..."
+                      searchPlaceholder="Cari alasan..."
+                      emptyMessage="Alasan tidak ditemukan"
                       className="w-full! h-9 text-sm"
                     />
                   </div>
@@ -361,11 +361,11 @@ export function EditReturnPage({
 
                 <div className="space-y-1.5">
                   <Label htmlFor="reason_notes" className="text-xs">
-                    Reason Notes
+                    Catatan Alasan
                   </Label>
                   <Textarea
                     id="reason_notes"
-                    placeholder="Describe the return reason in detail..."
+                    placeholder="Jelaskan alasan retur secara detail..."
                     value={formData.reason_notes}
                     onChange={(e) =>
                       setFormData((prev) => ({ ...prev, reason_notes: e.target.value }))
@@ -377,11 +377,11 @@ export function EditReturnPage({
 
                 <div className="space-y-1.5">
                   <Label htmlFor="notes" className="text-xs">
-                    Internal Notes
+                    Catatan Internal
                   </Label>
                   <Textarea
                     id="notes"
-                    placeholder="Optional internal notes..."
+                    placeholder="Catatan internal (opsional)..."
                     value={formData.notes}
                     onChange={(e) =>
                       setFormData((prev) => ({ ...prev, notes: e.target.value }))
@@ -397,7 +397,7 @@ export function EditReturnPage({
               <CardHeader className="border-b border-gray-200/70 pb-3">
                 <CardTitle className="flex items-center gap-2 text-base">
                   <Package className="h-4 w-4 text-pink-600" />
-                  Items to Return
+                  Item yang Diretur
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-0">
@@ -408,7 +408,7 @@ export function EditReturnPage({
                 ) : returnableItems.length === 0 ? (
                   <div className="flex flex-col items-center px-4 py-14 text-center">
                     <AlertCircle className="mb-3 h-10 w-10 text-gray-300" />
-                    <p className="text-sm text-gray-600">No returnable items found</p>
+                    <p className="text-sm text-gray-600">Item yang dapat diretur tidak ditemukan</p>
                   </div>
                 ) : (
                   <div className="overflow-x-auto p-4">
@@ -419,17 +419,17 @@ export function EditReturnPage({
                             <Checkbox
                               checked={allSelected}
                               onCheckedChange={(checked) => toggleAllItems(checked === true)}
-                              aria-label="Select all items"
+                              aria-label="Pilih semua item"
                             />
                           </th>
                           <th className="px-4 py-3 text-left font-semibold">
-                            {config.isProduct ? "Product" : "Raw Material"}
+                            {config.isProduct ? "Produk" : "Bahan Baku"}
                           </th>
                           <th className="w-[100px] px-2 py-3 text-center font-semibold">Stall</th>
-                          <th className="w-[88px] px-2 py-3 text-center font-semibold">Available</th>
-                          <th className="w-[112px] px-2 py-3 text-center font-semibold">Return Qty</th>
+                          <th className="w-[88px] px-2 py-3 text-center font-semibold">Tersedia</th>
+                          <th className="w-[112px] px-2 py-3 text-center font-semibold">Qty Retur</th>
                           <th className="min-w-[140px] px-3 py-3 text-left font-semibold">
-                            Condition
+                            Kondisi
                           </th>
                         </tr>
                       </thead>
@@ -445,7 +445,7 @@ export function EditReturnPage({
                               <Checkbox
                                 checked={item.selected}
                                 onCheckedChange={() => toggleItem(item.grn_item_id)}
-                                aria-label={`Select ${itemDisplay.nama}`}
+                                aria-label={`Pilih ${itemDisplay.nama}`}
                               />
                             </td>
                             <td className="px-4 py-3 align-top">
@@ -483,7 +483,7 @@ export function EditReturnPage({
                                   updateConditionNotes(item.grn_item_id, e.target.value)
                                 }
                                 disabled={!item.selected}
-                                placeholder="Item condition..."
+                                placeholder="Kondisi item..."
                                 className="h-9 w-full rounded-lg border border-gray-200/80 bg-white px-2 text-sm focus:border-pink-300 focus:outline-none focus:ring-1 focus:ring-pink-200/80 disabled:bg-gray-50"
                               />
                             </td>
@@ -501,20 +501,20 @@ export function EditReturnPage({
           <div className="xl:col-span-4">
             <Card className="border-gray-200/70 shadow-xs xl:sticky xl:top-6">
               <CardHeader className="border-b border-gray-200/70 pb-3">
-                <CardTitle className="text-base">Summary</CardTitle>
+                <CardTitle className="text-base">Ringkasan</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4 pt-4">
                 <dl className="space-y-3 text-sm">
                   <div className="flex items-start justify-between gap-3">
-                    <dt className="text-gray-500">Selected Items</dt>
+                    <dt className="text-gray-500">Item Terpilih</dt>
                     <dd className="font-medium text-gray-900">{selectedCount}</dd>
                   </div>
                   <div className="flex items-start justify-between gap-3">
-                    <dt className="text-gray-500">Total Quantity</dt>
+                    <dt className="text-gray-500">Total Qty</dt>
                     <dd className="font-medium text-gray-900">{formatQty(totalQty)}</dd>
                   </div>
                   <div className="flex items-start justify-between gap-3 border-t border-gray-200/70 pt-3">
-                    <dt className="font-medium text-gray-900">Total Amount</dt>
+                    <dt className="font-medium text-gray-900">Nilai Total</dt>
                     <dd className="font-semibold text-pink-700">{formatAmount(totalAmount)}</dd>
                   </div>
                 </dl>
@@ -523,8 +523,8 @@ export function EditReturnPage({
                   <div className="flex items-start gap-2">
                     <RotateCcw className="mt-0.5 h-4 w-4 shrink-0" />
                     <p>
-                      On approval, stock will be reduced from the same stall where goods were
-                      received during GRN QC posting.
+                      Saat disetujui, stok akan dikurangi dari stall yang sama dengan tempat barang
+                      diterima pada saat posting QC GRN.
                     </p>
                   </div>
                 </div>
@@ -535,7 +535,7 @@ export function EditReturnPage({
 
         <PurchasingFormFooter
           formId="purchase-return-edit-form"
-          submitLabel={isSubmitting ? "Saving..." : "Save Changes"}
+          submitLabel={isSubmitting ? "Menyimpan..." : "Simpan Perubahan"}
           isSubmitting={isSubmitting}
           onCancel={() => router.push(config.detailRoute(returnId))}
         />

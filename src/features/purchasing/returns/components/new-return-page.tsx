@@ -31,18 +31,18 @@ import {
 import { toast } from "sonner";
 
 const RETURN_REASON_OPTIONS: { value: ReturnReasonType; label: string }[] = [
-  { value: "damaged", label: "Damaged Goods" },
-  { value: "wrong_item", label: "Wrong Item" },
-  { value: "expired", label: "Expired" },
-  { value: "overstock", label: "Overstock" },
-  { value: "specification_mismatch", label: "Specification Mismatch" },
-  { value: "other", label: "Other" },
+  { value: "damaged", label: "Barang Rusak" },
+  { value: "wrong_item", label: "Barang Salah" },
+  { value: "expired", label: "Kedaluwarsa" },
+  { value: "overstock", label: "Kelebihan Stok" },
+  { value: "specification_mismatch", label: "Tidak Sesuai Spesifikasi" },
+  { value: "other", label: "Lainnya" },
 ];
 
 const GUIDELINES = [
-  "Only goods receipts that have completed quality control can be returned.",
-  "Return quantity cannot exceed the QC-posted quantity minus prior returns.",
-  "Submitted returns require purchasing manager approval before stock is deducted.",
+  "Hanya penerimaan barang yang sudah menyelesaikan quality control yang dapat diretur.",
+  "Qty retur tidak boleh melebihi qty hasil posting QC dikurangi retur sebelumnya.",
+  "Retur yang diajukan memerlukan persetujuan purchasing manager sebelum stok dikurangi.",
 ];
 
 function getErrorMessage(error: unknown, fallback: string) {
@@ -50,7 +50,7 @@ function getErrorMessage(error: unknown, fallback: string) {
 }
 
 function formatQty(value: number) {
-  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 4 }).format(value);
+  return new Intl.NumberFormat("id-ID", { maximumFractionDigits: 4 }).format(value);
 }
 
 interface ReturnItem extends ReturnableItem {
@@ -94,14 +94,14 @@ export function NewReturnPage({
 
   useEffect(() => {
     if (grnOptionsQuery.isError) {
-      toast.error("Failed to load goods receipt options");
+      toast.error("Gagal memuat opsi penerimaan barang");
     }
   }, [grnOptionsQuery.isError]);
 
   useEffect(() => {
     if (formDataQuery.isError) {
       console.error("Error loading return items:", formDataQuery.error);
-      toast.error("Failed to load returnable items");
+      toast.error("Gagal memuat item yang dapat diretur");
     }
   }, [formDataQuery.isError, formDataQuery.error]);
 
@@ -195,15 +195,15 @@ export function NewReturnPage({
     e.preventDefault();
 
     if (!formData.grn_id) {
-      toast.error("Goods receipt is required");
+      toast.error("Penerimaan barang wajib diisi");
       return;
     }
     if (config.isProduct ? !formData.vendor_id : !formData.supplier_id) {
-      toast.error(`${config.partyLabel} is required`);
+      toast.error(`${config.partyLabel} wajib diisi`);
       return;
     }
     if (!formData.reason_type) {
-      toast.error("Return reason is required");
+      toast.error("Alasan retur wajib diisi");
       return;
     }
 
@@ -212,14 +212,14 @@ export function NewReturnPage({
     );
 
     if (selectedItems.length === 0) {
-      toast.error("Select at least one item with a return quantity");
+      toast.error("Pilih minimal satu item dengan qty retur");
       return;
     }
 
     for (const item of selectedItems) {
       if (item.qty_return > item.qty_available_to_return) {
         const { nama } = config.itemName(item);
-        toast.error(`Return qty for ${nama} exceeds available quantity`);
+        toast.error(`Qty retur untuk ${nama} melebihi qty yang tersedia`);
         return;
       }
     }
@@ -246,11 +246,11 @@ export function NewReturnPage({
           condition_notes: item.condition_notes,
         })),
       });
-      toast.success("Purchase return created and pending approval");
+      toast.success("Retur pembelian berhasil dibuat dan menunggu persetujuan");
       router.push(config.listRoute);
     } catch (error: unknown) {
       console.error("Error creating return:", error);
-      toast.error(getErrorMessage(error, "Failed to create purchase return"));
+      toast.error(getErrorMessage(error, "Gagal membuat retur pembelian"));
     }
   };
 
@@ -277,8 +277,8 @@ export function NewReturnPage({
     <div className="space-y-6">
       <PurchasingFormHeader
         backHref={config.listRoute}
-        title="Create Purchase Return"
-        description={`Return QC-completed goods to the ${config.partyLabel.toLowerCase()}.`}
+        title="Tambah Retur Pembelian"
+        description={`Retur barang yang sudah selesai QC ke ${config.partyLabel.toLowerCase()}.`}
       />
 
       <form id="purchase-return-form" onSubmit={handleSubmit} className="space-y-6">
@@ -288,13 +288,13 @@ export function NewReturnPage({
               <CardHeader className="border-b border-gray-200/70 pb-3">
                 <CardTitle className="flex items-center gap-2 text-base">
                   <ClipboardList className="h-4 w-4 text-pink-600" />
-                  Return Information
+                  Informasi Retur
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4 pt-4">
                 <div className="min-w-0 space-y-1.5">
                   <Label className="text-xs">
-                    Goods Receipt <span className="text-red-500">*</span>
+                    Penerimaan Barang <span className="text-red-500">*</span>
                   </Label>
                   <Combobox
                     options={grnOptions.map((grn) => ({
@@ -305,22 +305,22 @@ export function NewReturnPage({
                     value={selectedGrnId}
                     onChange={handleGrnChange}
                     placeholder={
-                      loadingGrnOptions ? "Loading goods receipts..." : "Select goods receipt"
+                      loadingGrnOptions ? "Memuat penerimaan barang..." : "Pilih penerimaan barang"
                     }
-                    searchPlaceholder="Search GRN number..."
-                    emptyMessage="No QC-completed goods receipts found"
+                    searchPlaceholder="Cari nomor GRN..."
+                    emptyMessage="Penerimaan barang yang selesai QC tidak ditemukan"
                     disabled={loadingGrnOptions}
                     className="w-full! h-9 text-sm"
                   />
                   <p className="text-xs text-gray-500">
-                    Only receipts with completed quality control are listed.
+                    Hanya penerimaan dengan quality control selesai yang ditampilkan.
                   </p>
                 </div>
 
                 {selectedGrn && (
                   <div className="grid grid-cols-1 gap-3 rounded-xl border border-gray-200/70 bg-gray-50/60 p-4 text-sm md:grid-cols-2">
                     <div>
-                      <p className="text-xs text-gray-500">GRN Number</p>
+                      <p className="text-xs text-gray-500">Nomor GRN</p>
                       <p className="font-medium text-gray-900">{selectedGrn.nomor_grn}</p>
                     </div>
                     <div>
@@ -334,18 +334,18 @@ export function NewReturnPage({
 
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                   <DsDateTimePicker
-                    label="Return Date"
+                    label="Tanggal Retur"
                     value={formData.return_date}
                     onChange={(value) =>
                       setFormData((prev) => ({ ...prev, return_date: value }))
                     }
-                    placeholder="Select return date..."
+                    placeholder="Pilih tanggal retur..."
                     dateOnly
                     required
                   />
                   <div className="min-w-0 space-y-1.5">
                     <Label className="text-xs">
-                      Return Reason <span className="text-red-500">*</span>
+                      Alasan Retur <span className="text-red-500">*</span>
                     </Label>
                     <Combobox
                       options={RETURN_REASON_OPTIONS}
@@ -356,9 +356,9 @@ export function NewReturnPage({
                           reason_type: value as ReturnReasonType,
                         }))
                       }
-                      placeholder="Select reason..."
-                      searchPlaceholder="Search reason..."
-                      emptyMessage="No reason found"
+                      placeholder="Pilih alasan..."
+                      searchPlaceholder="Cari alasan..."
+                      emptyMessage="Alasan tidak ditemukan"
                       className="w-full! h-9 text-sm"
                     />
                   </div>
@@ -366,11 +366,11 @@ export function NewReturnPage({
 
                 <div className="space-y-1.5">
                   <Label htmlFor="reason_notes" className="text-xs">
-                    Reason Notes
+                    Catatan Alasan
                   </Label>
                   <Textarea
                     id="reason_notes"
-                    placeholder="Describe the return reason in detail..."
+                    placeholder="Jelaskan alasan retur secara detail..."
                     value={formData.reason_notes}
                     onChange={(e) =>
                       setFormData((prev) => ({ ...prev, reason_notes: e.target.value }))
@@ -382,11 +382,11 @@ export function NewReturnPage({
 
                 <div className="space-y-1.5">
                   <Label htmlFor="notes" className="text-xs">
-                    Internal Notes
+                    Catatan Internal
                   </Label>
                   <Textarea
                     id="notes"
-                    placeholder="Optional internal notes..."
+                    placeholder="Catatan internal (opsional)..."
                     value={formData.notes}
                     onChange={(e) =>
                       setFormData((prev) => ({ ...prev, notes: e.target.value }))
@@ -402,14 +402,14 @@ export function NewReturnPage({
               <CardHeader className="border-b border-gray-200/70 pb-3">
                 <CardTitle className="flex items-center gap-2 text-base">
                   <Package className="h-4 w-4 text-pink-600" />
-                  Select Items to Return
+                  Pilih Item untuk Diretur
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-0">
                 {!selectedGrnId ? (
                   <div className="flex flex-col items-center py-14 text-center text-sm text-gray-500">
                     <RotateCcw className="mb-3 h-10 w-10 text-gray-300" />
-                    Select a goods receipt to view returnable items.
+                    Pilih penerimaan barang untuk melihat item yang dapat diretur.
                   </div>
                 ) : loadingItems ? (
                   <div className="flex items-center justify-center py-14">
@@ -418,10 +418,10 @@ export function NewReturnPage({
                 ) : returnableItems.length === 0 ? (
                   <div className="flex flex-col items-center px-4 py-14 text-center">
                     <AlertCircle className="mb-3 h-10 w-10 text-gray-300" />
-                    <p className="text-sm text-gray-600">No returnable items found</p>
+                    <p className="text-sm text-gray-600">Item yang dapat diretur tidak ditemukan</p>
                     <p className="mt-1 max-w-md text-xs text-gray-500">
-                      This goods receipt has no QC-posted quantity available to return, or all
-                      quantities have already been returned.
+                      Penerimaan barang ini tidak memiliki qty hasil posting QC yang tersedia untuk
+                      diretur, atau semua qty sudah diretur.
                     </p>
                   </div>
                 ) : (
@@ -433,20 +433,20 @@ export function NewReturnPage({
                             <Checkbox
                               checked={allSelected}
                               onCheckedChange={(checked) => toggleAllItems(checked === true)}
-                              aria-label="Select all items"
+                              aria-label="Pilih semua item"
                             />
                           </th>
                           <th className="px-4 py-3 text-left font-semibold">
-                            {config.isProduct ? "Product" : "Raw Material"}
+                            {config.isProduct ? "Produk" : "Bahan Baku"}
                           </th>
-                          <th className="w-[88px] px-2 py-3 text-center font-semibold">Received</th>
-                          <th className="w-[88px] px-2 py-3 text-center font-semibold">Returned</th>
-                          <th className="w-[96px] px-2 py-3 text-center font-semibold">Available</th>
+                          <th className="w-[88px] px-2 py-3 text-center font-semibold">Diterima</th>
+                          <th className="w-[88px] px-2 py-3 text-center font-semibold">Diretur</th>
+                          <th className="w-[96px] px-2 py-3 text-center font-semibold">Tersedia</th>
                           <th className="w-[112px] px-2 py-3 text-center font-semibold">
-                            Return Qty
+                            Qty Retur
                           </th>
                           <th className="min-w-[140px] px-3 py-3 text-left font-semibold">
-                            Condition
+                            Kondisi
                           </th>
                         </tr>
                       </thead>
@@ -462,7 +462,7 @@ export function NewReturnPage({
                               <Checkbox
                                 checked={item.selected}
                                 onCheckedChange={() => toggleItem(item.grn_item_id)}
-                                aria-label={`Select ${itemDisplay.nama}`}
+                                aria-label={`Pilih ${itemDisplay.nama}`}
                               />
                             </td>
                             <td className="px-4 py-3 align-top">
@@ -503,7 +503,7 @@ export function NewReturnPage({
                                   updateConditionNotes(item.grn_item_id, e.target.value)
                                 }
                                 disabled={!item.selected}
-                                placeholder="Item condition..."
+                                placeholder="Kondisi item..."
                                 className="h-9 w-full rounded-lg border border-gray-200/80 bg-white px-2 text-sm focus:border-pink-300 focus:outline-none focus:ring-1 focus:ring-pink-200/80 disabled:bg-gray-50"
                               />
                             </td>
@@ -521,20 +521,20 @@ export function NewReturnPage({
           <div className="xl:col-span-4">
             <Card className="border-gray-200/70 shadow-xs xl:sticky xl:top-6">
               <CardHeader className="border-b border-gray-200/70 pb-3">
-                <CardTitle className="text-base">Summary</CardTitle>
+                <CardTitle className="text-base">Ringkasan</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4 pt-4">
                 <dl className="space-y-3 text-sm">
                   <div className="flex items-start justify-between gap-3">
-                    <dt className="text-gray-500">Selected Items</dt>
+                    <dt className="text-gray-500">Item Terpilih</dt>
                     <dd className="font-medium text-gray-900">{selectedCount}</dd>
                   </div>
                   <div className="flex items-start justify-between gap-3">
-                    <dt className="text-gray-500">Total Quantity</dt>
+                    <dt className="text-gray-500">Total Qty</dt>
                     <dd className="font-medium text-gray-900">{formatQty(totalQty)}</dd>
                   </div>
                   <div className="flex items-start justify-between gap-3 border-t border-gray-200/70 pt-3">
-                    <dt className="font-medium text-gray-900">Total Amount</dt>
+                    <dt className="font-medium text-gray-900">Nilai Total</dt>
                     <dd className="font-semibold text-pink-700">
                       {formatAmount(totalAmount)}
                     </dd>
@@ -544,7 +544,7 @@ export function NewReturnPage({
                 <div className="rounded-xl border border-gray-200/70 bg-gray-50/60 p-4">
                   <div className="mb-2 flex items-center gap-2 text-sm font-medium text-gray-900">
                     <Info className="h-4 w-4 text-pink-600" />
-                    Guidelines
+                    Panduan
                   </div>
                   <ul className="space-y-2 text-xs leading-5 text-gray-600">
                     {GUIDELINES.map((line) => (
@@ -560,7 +560,7 @@ export function NewReturnPage({
                   <div className="rounded-xl border border-gray-200/70 bg-white p-4">
                     <div className="mb-2 flex items-center gap-2 text-sm font-medium text-gray-900">
                       <Package className="h-4 w-4 text-pink-600" />
-                      Item Preview
+                      Pratinjau Item
                     </div>
                     <ul className="space-y-2 text-xs text-gray-600">
                       {returnableItems
@@ -581,7 +581,7 @@ export function NewReturnPage({
                           );
                         })}
                       {selectedCount > 4 && (
-                        <li className="text-gray-500">+{selectedCount - 4} more items</li>
+                        <li className="text-gray-500">+{selectedCount - 4} item lainnya</li>
                       )}
                     </ul>
                   </div>
@@ -593,7 +593,7 @@ export function NewReturnPage({
 
         <PurchasingFormFooter
           onCancel={() => router.push(config.listRoute)}
-          submitLabel="Submit Return"
+          submitLabel="Simpan Retur"
           loading={isSubmitting}
           disabled={!selectedGrnId || selectedCount === 0 || totalQty <= 0}
           formId="purchase-return-form"

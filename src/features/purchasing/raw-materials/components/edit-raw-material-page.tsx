@@ -93,7 +93,7 @@ export function EditRawMaterialPage() {
   useEffect(() => {
     if (materialQuery.isError) {
       console.error("Failed to load material:", materialQuery.error);
-      toast.error("Failed to load raw material");
+      toast.error("Gagal memuat bahan baku");
     }
   }, [materialQuery.isError, materialQuery.error]);
 
@@ -106,7 +106,7 @@ export function EditRawMaterialPage() {
     e.preventDefault();
 
     if (!formData.nama || !formData.kategori) {
-      toast.error("Material name and category are required");
+      toast.error("Nama bahan dan kategori wajib diisi");
       return;
     }
 
@@ -127,11 +127,11 @@ export function EditRawMaterialPage() {
             })),
         },
       });
-      toast.success("Raw material updated successfully");
+      toast.success("Bahan baku berhasil diperbarui");
       router.push(`${ITEMS_RAW_MATERIALS_PATH}/${materialId}`);
     } catch (error: unknown) {
       console.error("Error updating material:", error);
-      toast.error(getErrorMessage(error, "Failed to update raw material"));
+      toast.error(getErrorMessage(error, "Gagal memperbarui bahan baku"));
     }
   };
 
@@ -139,7 +139,7 @@ export function EditRawMaterialPage() {
     return (
       <div className="flex items-center justify-center py-16 text-sm text-gray-500">
         <Loader2 className="mr-2 h-5 w-5 animate-spin text-pink-600" />
-        Loading raw material...
+        Memuat bahan baku...
       </div>
     );
   }
@@ -148,8 +148,8 @@ export function EditRawMaterialPage() {
     <div className="space-y-6">
       <PurchasingFormHeader
         backHref={`${ITEMS_RAW_MATERIALS_PATH}/${materialId}`}
-        title="Edit Raw Material"
-        description="Update raw material details"
+        title="Ubah Bahan Baku"
+        description="Perbarui detail bahan baku"
       />
 
       <form id="edit-raw-material-form" onSubmit={handleSubmit} className="space-y-6">
@@ -159,14 +159,14 @@ export function EditRawMaterialPage() {
               <CardHeader className="pb-3">
                 <CardTitle className="flex items-center gap-2 text-base">
                   <Package className="h-4 w-4" />
-                  Basic Information
+                  Informasi Dasar
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div className="space-y-1.5">
                     <Label htmlFor="kode" className="text-xs">
-                      Material Code
+                      Kode Bahan
                     </Label>
                     <Input
                       id="kode"
@@ -177,15 +177,15 @@ export function EditRawMaterialPage() {
                   </div>
                   <div className="space-y-1.5">
                     <Label htmlFor="kategori" className="text-xs">
-                      Category <span className="text-red-500">*</span>
+                      Kategori <span className="text-red-500">*</span>
                     </Label>
                     <Combobox
                       options={categoryOptions}
                       value={formData.kategori || ""}
                       onChange={(v) => setFormData({ ...formData, kategori: v as MaterialCategory })}
-                      placeholder={masterLoading ? "Loading categories..." : "Select category..."}
-                      searchPlaceholder="Search category..."
-                      emptyMessage="No category found"
+                      placeholder={masterLoading ? "Memuat kategori..." : "Pilih kategori..."}
+                      searchPlaceholder="Cari kategori..."
+                      emptyMessage="Kategori tidak ditemukan"
                       allowClear
                       className="h-9 text-sm"
                     />
@@ -194,7 +194,7 @@ export function EditRawMaterialPage() {
 
                 <div className="space-y-1.5">
                   <Label htmlFor="nama" className="text-xs">
-                    Material Name <span className="text-red-500">*</span>
+                    Nama Bahan <span className="text-red-500">*</span>
                   </Label>
                   <Input
                     id="nama"
@@ -208,13 +208,13 @@ export function EditRawMaterialPage() {
 
                 <div className="space-y-1.5">
                   <Label htmlFor="deskripsi" className="text-xs">
-                    Description
+                    Deskripsi
                   </Label>
                   <Textarea
                     id="deskripsi"
                     value={formData.deskripsi}
                     onChange={(e) => setFormData({ ...formData, deskripsi: e.target.value })}
-                    placeholder="Additional description..."
+                    placeholder="Deskripsi tambahan..."
                     rows={2}
                     className="resize-none text-sm"
                   />
@@ -226,21 +226,21 @@ export function EditRawMaterialPage() {
               <CardHeader className="pb-3">
                 <CardTitle className="flex items-center gap-2 text-base">
                   <Package className="h-4 w-4" />
-                  Units
+                  Satuan
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-1.5">
                   <Label htmlFor="satuan_besar" className="text-xs">
-                    Large Unit <span className="text-red-500">*</span>
+                    Satuan Besar <span className="text-red-500">*</span>
                   </Label>
                   <Combobox
                     options={satuanBesar.map((u) => ({ value: u.id, label: u.nama, description: u.simbol }))}
                     value={formData.satuan_besar_id}
                     onChange={(v) => setFormData({ ...formData, satuan_besar_id: v })}
-                    placeholder="Select unit..."
-                    searchPlaceholder="Search..."
-                    emptyMessage="No unit found"
+                    placeholder="Pilih satuan..."
+                    searchPlaceholder="Cari..."
+                    emptyMessage="Satuan tidak ditemukan"
                     allowClear
                     className="h-9 text-sm"
                   />
@@ -248,18 +248,18 @@ export function EditRawMaterialPage() {
 
                 <div className="space-y-1.5">
                   <Label htmlFor="satuan_kecil" className="text-xs">
-                    Small Unit
+                    Satuan Kecil
                   </Label>
                   <Combobox
                     options={[
-                      { value: "", label: "None", description: "No small unit" },
+                      { value: "", label: "Tidak ada", description: "Tanpa satuan kecil" },
                       ...satuanKecil.map((u) => ({ value: u.id, label: u.nama, description: u.simbol })),
                     ]}
                     value={formData.satuan_kecil_id || ""}
                     onChange={(v) => setFormData({ ...formData, satuan_kecil_id: v || undefined })}
-                    placeholder="Optional..."
-                    searchPlaceholder="Search..."
-                    emptyMessage="No unit found"
+                    placeholder="Opsional..."
+                    searchPlaceholder="Cari..."
+                    emptyMessage="Satuan tidak ditemukan"
                     allowClear
                     className="h-9 text-sm"
                   />
@@ -268,7 +268,7 @@ export function EditRawMaterialPage() {
                 {formData.satuan_kecil_id && (
                   <div className="space-y-1.5">
                     <Label htmlFor="konversi" className="text-xs">
-                      Conversion Factor
+                      Faktor Konversi
                     </Label>
                     <NumericInput
                       id="konversi"
@@ -306,14 +306,14 @@ export function EditRawMaterialPage() {
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2 text-base">
                 <AlertCircle className="h-4 w-4" />
-                Stock Settings
+                Pengaturan Stok
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-4">
                 <div className="space-y-1.5">
                   <Label htmlFor="stok_minimum" className="text-xs">
-                    Minimum Stock
+                    Stok Minimum
                   </Label>
                   <div className="flex rounded-lg border border-gray-200/70 bg-white focus-within:border-pink-300 focus-within:ring-2 focus-within:ring-pink-100">
                     <NumericInput
@@ -328,12 +328,12 @@ export function EditRawMaterialPage() {
                     </div>
                   </div>
                   <p className="text-xs text-gray-500">
-                    Alert when large-unit stock is at or below this value
+                    Peringatan saat stok satuan besar berada di nilai ini atau kurang
                   </p>
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="stok_maximum" className="text-xs">
-                    Maximum Stock
+                    Stok Maksimum
                   </Label>
                   <div className="flex rounded-lg border border-gray-200/70 bg-white focus-within:border-pink-300 focus-within:ring-2 focus-within:ring-pink-100">
                     <NumericInput
@@ -352,7 +352,7 @@ export function EditRawMaterialPage() {
 
               <div className="space-y-1.5">
                 <Label htmlFor="harga_beli" className="text-xs">
-                  Purchase Price
+                  Harga Beli
                 </Label>
                 <div className="flex rounded-lg border border-gray-200/70 bg-white focus-within:border-pink-300 focus-within:ring-2 focus-within:ring-pink-100">
                   <NumericInput
@@ -367,13 +367,13 @@ export function EditRawMaterialPage() {
                   </div>
                 </div>
                 <p className="text-xs text-gray-500">
-                  Reference purchase price per large unit (used before goods receipt exists)
+                  Harga beli acuan per satuan besar (dipakai sebelum ada penerimaan barang)
                 </p>
               </div>
 
               <div className="space-y-1.5">
                 <Label htmlFor="shelf_life" className="text-xs">
-                  Shelf Life (days)
+                  Masa Simpan (hari)
                 </Label>
                 <Input
                   id="shelf_life"
@@ -383,7 +383,7 @@ export function EditRawMaterialPage() {
                   onChange={(e) =>
                     setFormData({ ...formData, shelf_life_days: parseInt(e.target.value, 10) || undefined })
                   }
-                  placeholder="Optional"
+                  placeholder="Opsional"
                   className="h-9 text-sm"
                 />
               </div>
@@ -402,45 +402,45 @@ export function EditRawMaterialPage() {
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
               <div className="space-y-1.5">
                 <Label htmlFor="coa_production" className="text-xs">
-                  Production
+                  Produksi
                 </Label>
                 <Input
                   id="coa_production"
                   value={formData.coa_production}
                   onChange={(e) => setFormData({ ...formData, coa_production: e.target.value })}
-                  placeholder="Example: 5-1001"
+                  placeholder="Contoh: 5-1001"
                   maxLength={50}
                   className="h-9 text-sm"
                 />
-                <p className="text-xs text-gray-500">Account code for production usage</p>
+                <p className="text-xs text-gray-500">Kode akun untuk pemakaian produksi</p>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="coa_rnd" className="text-xs">
-                  Research and Development
+                  Riset &amp; Pengembangan
                 </Label>
                 <Input
                   id="coa_rnd"
                   value={formData.coa_rnd}
                   onChange={(e) => setFormData({ ...formData, coa_rnd: e.target.value })}
-                  placeholder="Example: 5-2001"
+                  placeholder="Contoh: 5-2001"
                   maxLength={50}
                   className="h-9 text-sm"
                 />
-                <p className="text-xs text-gray-500">Account code for research and development usage</p>
+                <p className="text-xs text-gray-500">Kode akun untuk pemakaian riset &amp; pengembangan</p>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="coa_asset" className="text-xs">
-                  Asset
+                  Aset
                 </Label>
                 <Input
                   id="coa_asset"
                   value={formData.coa_asset}
                   onChange={(e) => setFormData({ ...formData, coa_asset: e.target.value })}
-                  placeholder="Example: 1-3001"
+                  placeholder="Contoh: 1-3001"
                   maxLength={50}
                   className="h-9 text-sm"
                 />
-                <p className="text-xs text-gray-500">Account code for asset recording</p>
+                <p className="text-xs text-gray-500">Kode akun untuk pencatatan aset</p>
               </div>
             </div>
           </CardContent>
@@ -449,7 +449,7 @@ export function EditRawMaterialPage() {
         <PurchasingFormFooter
           formId="edit-raw-material-form"
           onCancel={() => router.back()}
-          submitLabel="Save Changes"
+          submitLabel="Simpan Perubahan"
           loading={isSubmitting}
         />
       </form>

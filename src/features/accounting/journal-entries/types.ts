@@ -3,7 +3,7 @@ import type {
   JournalLineSide,
 } from "@/lib/accounting/fiscal-types";
 
-export type JournalEntryType = "MANUAL" | "OPENING";
+export type JournalEntryType = "MANUAL" | "OPENING" | "AUTO";
 
 export interface JournalEntryLineItem {
   id: string;
@@ -33,6 +33,10 @@ export interface JournalEntryItem {
   posted_by: string | null;
   created_at: string;
   updated_at: string | null;
+  source_module?: string | null;
+  source_event_code?: string | null;
+  source_document_type?: string | null;
+  source_document_id?: string | null;
   lines: JournalEntryLineItem[];
   total_debit: number;
   total_credit: number;

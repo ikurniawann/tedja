@@ -174,23 +174,132 @@ export async function updatePOItemReceivedQty(
   if (error) throw error;
 }
 
+/**
+ * Qty that counts toward PO fulfillment for one GRN line.
+ * QC-posted qty wins; pending GRN (awaiting QC) counts 0; otherwise door-accepted qty.
+ */
+export function resolveGrnItemReceivedQty(params: {
+  qty_diterima: number | null | undefined;
+  qty_qc_posted?: number | null;
+  grn_status: string | null | undefined;
+  inventory_posted: boolean;
+}): number {
+  if (params.inventory_posted) {
+    return toQty(params.qty_qc_posted);
+  }
+  if ((params.grn_status || "").toLowerCase() === "pending") {
+    return 0;
+  }
+  return toQty(params.qty_diterima);
+}
+
+/**
+ * Idempotent: set each PO item qty_received from active GRN lines
+ * (QC accepted when posted, else qty_diterima for finalized non-QC receives).
+ */
+export async function recalculatePoReceivedQty(
+  db: DbClient,
+  poId: string
+): Promise<void> {
+  const { data: poItems, error: poItemsError } = await db
+    .from("purchase_order_items")
+    .select("id")
+    .eq("purchase_order_id", poId)
+    .eq("is_active", true);
+
+  if (poItemsError) throw poItemsError;
+  if (!poItems?.length) return;
+
+  const { data: grns, error: grnError } = await db
+    .from("grn")
+    .select("id, status")
+    .eq("purchase_order_id", poId)
+    .eq("is_active", true);
+
+  if (grnError) throw grnError;
+
+  const receivedByPoItem = new Map<string, number>();
+  for (const item of poItems) {
+    receivedByPoItem.set(item.id as string, 0);
+  }
+
+  if (grns?.length) {
+    type GrnRow = { id: string; status: string | null };
+    type GrnItemRow = {
+      purchase_order_item_id: string | null;
+      qty_diterima: number | null;
+      qty_qc_posted: number | null;
+      grn_id: string;
+    };
+
+    const typedGrns = grns as GrnRow[];
+    const grnIds = typedGrns.map((g: GrnRow) => g.id);
+    const grnStatusById = new Map(
+      typedGrns.map((g: GrnRow) => [g.id, g.status ?? ""])
+    );
+
+    const { data: inspections, error: qcError } = await db
+      .from("grn_qc_inspections")
+      .select("grn_id, inventory_posted")
+      .in("grn_id", grnIds);
+
+    if (qcError) throw qcError;
+
+    const postedByGrn = new Map<string, boolean>();
+    for (const row of inspections || []) {
+      if (row.grn_id && row.inventory_posted) {
+        postedByGrn.set(row.grn_id as string, true);
+      }
+    }
+
+    const { data: grnItems, error: itemsError } = await db
+      .from("grn_items")
+      .select("purchase_order_item_id, qty_diterima, qty_qc_posted, grn_id")
+      .in("grn_id", grnIds)
+      .eq("is_active", true);
+
+    if (itemsError) throw itemsError;
+
+    for (const line of (grnItems || []) as GrnItemRow[]) {
+      const poItemId = line.purchase_order_item_id;
+      if (!poItemId || !receivedByPoItem.has(poItemId)) continue;
+
+      const credited = resolveGrnItemReceivedQty({
+        qty_diterima: line.qty_diterima,
+        qty_qc_posted: line.qty_qc_posted,
+        grn_status: grnStatusById.get(line.grn_id) ?? "",
+        inventory_posted: postedByGrn.get(line.grn_id) === true,
+      });
+
+      receivedByPoItem.set(poItemId, (receivedByPoItem.get(poItemId) || 0) + credited);
+    }
+  }
+
+  for (const [poItemId, qty] of receivedByPoItem) {
+    await updatePOItemReceivedQty(db, poItemId, qty);
+  }
+}
+
 // ============================================================
 // Update Delivery status after GRN
 // ============================================================
 
+/**
+ * One surat jalan / delivery → one GRN. After GRN is recorded, close the delivery
+ * so remaining PO qty can use a new shipment ("Kirim Ulang").
+ * Do not keep partial GRN deliveries as in_transit — that blocks re-shipment.
+ */
 export async function updateDeliveryStatusAfterGrn(
   db: DbClient,
   deliveryId: string,
   grnStatus: GrnStatus
 ): Promise<void> {
   let newStatus: string;
-  
+
   switch (grnStatus) {
     case "received":
-      newStatus = "delivered";
-      break;
     case "partially_received":
-      newStatus = "in_transit";
+      newStatus = "delivered";
       break;
     case "rejected":
       newStatus = "cancelled";
@@ -201,7 +310,7 @@ export async function updateDeliveryStatusAfterGrn(
 
   const { error } = await db
     .from("deliveries")
-    .update({ status: newStatus })
+    .update({ status: newStatus, updated_at: new Date().toISOString() })
     .eq("id", deliveryId);
 
   if (error) throw error;
@@ -215,7 +324,21 @@ export async function updatePOStatusAfterGrn(
   db: DbClient,
   poId: string
 ): Promise<void> {
-  // Get all PO items
+  await recalculatePoReceivedQty(db, poId);
+
+  const { data: po, error: poError } = await db
+    .from("purchase_orders")
+    .select("id, status")
+    .eq("id", poId)
+    .maybeSingle();
+
+  if (poError) throw poError;
+  // Do not reopen a closed or cancelled PO from GRN activity.
+  const current = (po?.status || "").toLowerCase();
+  if (current === "closed" || current === "cancelled") {
+    return;
+  }
+
   const { data: poItems, error: itemsError } = await db
     .from("purchase_order_items")
     .select("qty_ordered, qty_received")
@@ -226,32 +349,31 @@ export async function updatePOStatusAfterGrn(
 
   if (!poItems || poItems.length === 0) return;
 
-  // Calculate totals (coerce numeric strings from Postgres)
   const totalOrdered = poItems.reduce(
-    (sum, item) => sum + toQty(item.qty_ordered),
+    (sum: number, item: { qty_ordered?: number | null; qty_received?: number | null }) =>
+      sum + toQty(item.qty_ordered),
     0
   );
   const totalReceived = poItems.reduce(
-    (sum, item) => sum + toQty(item.qty_received),
+    (sum: number, item: { qty_ordered?: number | null; qty_received?: number | null }) =>
+      sum + toQty(item.qty_received),
     0
   );
 
-  // Determine new status
   let newStatus: string;
   if (totalReceived === 0) {
-    newStatus = "sent"; // Belum diterima sama sekali
+    newStatus = "sent";
   } else if (totalReceived >= totalOrdered) {
-    newStatus = "received"; // Sudah diterima semua
+    newStatus = "received";
   } else {
-    newStatus = "partially_received"; // Diterima sebagian
+    newStatus = "partially_received";
   }
 
-  // Update PO status
   const { error } = await db
     .from("purchase_orders")
-    .update({ 
+    .update({
       status: newStatus,
-      updated_at: new Date().toISOString()
+      updated_at: new Date().toISOString(),
     })
     .eq("id", poId);
 

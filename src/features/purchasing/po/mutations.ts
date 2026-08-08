@@ -11,6 +11,7 @@ import {
   approvePurchaseOrder,
   sendPurchaseOrder,
   cancelPurchaseOrder,
+  closePurchaseOrder,
   createPurchaseOrderPaymentTerm,
   deletePurchaseOrderPaymentTerm,
   createVendorPayment,
@@ -72,6 +73,17 @@ export const useCancelPurchaseOrder = () => {
   return useMutation({
     mutationFn: ({ id, reason }: { id: string; reason: string }) =>
       cancelPurchaseOrder(id, reason),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: poQueryKeys.all });
+    },
+  });
+};
+
+export const useClosePurchaseOrder = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+      closePurchaseOrder(id, reason),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: poQueryKeys.all });
     },

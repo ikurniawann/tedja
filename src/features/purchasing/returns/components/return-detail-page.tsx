@@ -40,12 +40,12 @@ import { formatAmount, formatDate } from "@/lib/purchasing/utils";
 import { toast } from "sonner";
 
 const STATUS_LABELS: Record<ReturnStatus, string> = {
-  draft: "Draft",
-  pending_approval: "Pending Approval",
-  approved: "Approved",
-  rejected: "Rejected",
-  completed: "Completed",
-  cancelled: "Cancelled",
+  draft: "Draf",
+  pending_approval: "Menunggu Persetujuan",
+  approved: "Disetujui",
+  rejected: "Ditolak",
+  completed: "Selesai",
+  cancelled: "Dibatalkan",
 };
 
 const STATUS_STYLES: Record<ReturnStatus, string> = {
@@ -58,16 +58,16 @@ const STATUS_STYLES: Record<ReturnStatus, string> = {
 };
 
 const REASON_LABELS: Record<ReturnReasonType, string> = {
-  damaged: "Damaged Goods",
-  wrong_item: "Wrong Item",
-  expired: "Expired",
-  overstock: "Overstock",
-  specification_mismatch: "Specification Mismatch",
-  other: "Other",
+  damaged: "Barang Rusak",
+  wrong_item: "Barang Salah",
+  expired: "Kedaluwarsa",
+  overstock: "Kelebihan Stok",
+  specification_mismatch: "Tidak Sesuai Spesifikasi",
+  other: "Lainnya",
 };
 
 function formatQty(value: number) {
-  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 4 }).format(value);
+  return new Intl.NumberFormat("id-ID", { maximumFractionDigits: 4 }).format(value);
 }
 
 function getGrnNumber(ret: {
@@ -134,33 +134,33 @@ export function ReturnDetailPage({
 
   useEffect(() => {
     if (detailQuery.isError) {
-      toast.error(getErrorMessage(detailQuery.error, "Failed to load purchase return"));
+      toast.error(getErrorMessage(detailQuery.error, "Gagal memuat retur pembelian"));
     }
   }, [detailQuery.isError, detailQuery.error]);
 
   const handleApprove = async () => {
     try {
       await approveMutation.mutateAsync(returnId);
-      toast.success("Purchase return approved");
+      toast.success("Retur pembelian berhasil disetujui");
       setApproveDialogOpen(false);
     } catch (error: unknown) {
-      toast.error(getErrorMessage(error, "Failed to approve purchase return"));
+      toast.error(getErrorMessage(error, "Gagal menyetujui retur pembelian"));
     }
   };
 
   const handleReject = async () => {
     if (!rejectionReason.trim()) {
-      toast.error("Rejection reason is required");
+      toast.error("Alasan penolakan wajib diisi");
       return;
     }
 
     try {
       await rejectMutation.mutateAsync({ id: returnId, reason: rejectionReason.trim() });
-      toast.success("Purchase return rejected");
+      toast.success("Retur pembelian berhasil ditolak");
       setRejectDialogOpen(false);
       setRejectionReason("");
     } catch (error: unknown) {
-      toast.error(getErrorMessage(error, "Failed to reject purchase return"));
+      toast.error(getErrorMessage(error, "Gagal menolak retur pembelian"));
     }
   };
 
@@ -168,7 +168,7 @@ export function ReturnDetailPage({
     return (
       <div className="flex min-h-56 items-center justify-center text-sm text-gray-500">
         <Loader2 className="mr-2 h-4 w-4 animate-spin text-pink-600" />
-        Loading purchase return...
+        Memuat retur pembelian...
       </div>
     );
   }
@@ -179,12 +179,12 @@ export function ReturnDetailPage({
         <Link href={config.listRoute}>
           <Button variant="ghost" size="sm" className="h-9 gap-2 text-pink-700">
             <ArrowLeftIcon className="h-4 w-4" />
-            Back
+            Kembali
           </Button>
         </Link>
         <Card className="border-gray-200/70 shadow-xs">
           <CardContent className="py-12 text-center text-sm text-gray-500">
-            Purchase return not found or could not be loaded.
+            Retur pembelian tidak ditemukan atau gagal dimuat.
           </CardContent>
         </Card>
       </div>
@@ -206,7 +206,7 @@ export function ReturnDetailPage({
           <Link href={config.listRoute}>
             <Button variant="ghost" size="sm" className="h-9 gap-2 text-pink-700">
               <ArrowLeftIcon className="h-4 w-4" />
-              Back
+              Kembali
             </Button>
           </Link>
           <div>
@@ -230,7 +230,7 @@ export function ReturnDetailPage({
             className="purchasing-secondary-button w-full sm:w-auto"
           >
             <Printer className="mr-2 h-4 w-4" />
-            Print
+            Cetak
           </Button>
           {canEdit && (
             <Link href={config.editRoute(returnId)}>
@@ -239,7 +239,7 @@ export function ReturnDetailPage({
                 className="purchasing-secondary-button w-full sm:w-auto"
               >
                 <Pencil className="mr-2 h-4 w-4" />
-                Edit
+                Ubah
               </Button>
             </Link>
           )}
@@ -252,7 +252,7 @@ export function ReturnDetailPage({
                 disabled={isProcessing}
               >
                 <CheckCircle2 className="mr-2 h-4 w-4" />
-                Approve
+                Setujui
               </Button>
               <Button
                 variant="outline"
@@ -261,7 +261,7 @@ export function ReturnDetailPage({
                 disabled={isProcessing}
               >
                 <XCircle className="mr-2 h-4 w-4" />
-                Reject
+                Tolak
               </Button>
             </>
           )}
@@ -274,15 +274,15 @@ export function ReturnDetailPage({
             <CardHeader className="border-b border-gray-200/70 pb-3">
               <CardTitle className="flex items-center gap-2 text-base">
                 <FileText className="h-4 w-4 text-pink-600" />
-                Return Information
+                Informasi Retur
               </CardTitle>
             </CardHeader>
             <CardContent className="grid gap-4 p-4 md:grid-cols-2">
               <DetailField label={config.partyLabel} value={config.partyNameFromReturn(ret)} />
-              <DetailField label="Return Date" value={formatDate(ret.return_date)} />
-              <DetailField label="Reason" value={REASON_LABELS[reason]} />
+              <DetailField label="Tanggal Retur" value={formatDate(ret.return_date)} />
+              <DetailField label="Alasan" value={REASON_LABELS[reason]} />
               <DetailField
-                label="Goods Receipt"
+                label="Penerimaan Barang"
                 value={getGrnNumber(ret)}
                 href={ret.grn_id ? config.receiveDetailRoute(ret.grn_id) : undefined}
               />
@@ -290,13 +290,13 @@ export function ReturnDetailPage({
                 <div className="md:col-span-2 space-y-3 border-t border-gray-200/70 pt-4">
                   {ret.reason_notes && (
                     <div>
-                      <p className="text-xs font-medium text-gray-500">Reason Notes</p>
+                      <p className="text-xs font-medium text-gray-500">Catatan Alasan</p>
                       <p className="mt-1 text-sm text-gray-700">{ret.reason_notes}</p>
                     </div>
                   )}
                   {ret.notes && (
                     <div>
-                      <p className="text-xs font-medium text-gray-500">Internal Notes</p>
+                      <p className="text-xs font-medium text-gray-500">Catatan Internal</p>
                       <p className="mt-1 text-sm text-gray-700">{ret.notes}</p>
                     </div>
                   )}
@@ -304,7 +304,7 @@ export function ReturnDetailPage({
               )}
               {ret.rejection_reason && (
                 <div className="md:col-span-2 rounded-xl border border-red-200/80 bg-red-50/60 p-4 text-sm text-red-800">
-                  <p className="font-medium">Rejection Reason</p>
+                  <p className="font-medium">Alasan Penolakan</p>
                   <p className="mt-1">{ret.rejection_reason}</p>
                 </div>
               )}
@@ -315,25 +315,25 @@ export function ReturnDetailPage({
             <CardHeader className="border-b border-gray-200/70 pb-3">
               <CardTitle className="flex items-center gap-2 text-base">
                 <Package className="h-4 w-4 text-pink-600" />
-                Returned Items
+                Item yang Diretur
               </CardTitle>
             </CardHeader>
             <CardContent className="p-0">
               {!ret.items?.length ? (
-                <div className="py-12 text-center text-sm text-gray-500">No items found.</div>
+                <div className="py-12 text-center text-sm text-gray-500">Item tidak ditemukan.</div>
               ) : (
                 <div className="overflow-x-auto p-4">
                   <table className="min-w-full text-sm">
                     <thead className="border-b border-gray-100 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
                       <tr>
                         <th className="px-4 py-3 text-left font-semibold">
-                          {config.isProduct ? "Product" : "Raw Material"}
+                          {config.isProduct ? "Produk" : "Bahan Baku"}
                         </th>
                         <th className="px-4 py-3 text-left font-semibold">Stall</th>
                         <th className="px-4 py-3 text-right font-semibold">Batch</th>
-                        <th className="px-4 py-3 text-right font-semibold">Expiry</th>
+                        <th className="px-4 py-3 text-right font-semibold">Kedaluwarsa</th>
                         <th className="px-4 py-3 text-right font-semibold">Qty</th>
-                        <th className="px-4 py-3 text-right font-semibold">Unit Cost</th>
+                        <th className="px-4 py-3 text-right font-semibold">Harga Satuan</th>
                         <th className="px-4 py-3 text-right font-semibold">Subtotal</th>
                       </tr>
                     </thead>
@@ -402,32 +402,32 @@ export function ReturnDetailPage({
             <CardHeader className="border-b border-gray-200/70 pb-3">
               <CardTitle className="flex items-center gap-2 text-base">
                 <RotateCcw className="h-4 w-4 text-pink-600" />
-                Summary
+                Ringkasan
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4 pt-4">
               <dl className="space-y-3 text-sm">
                 <div className="flex items-start justify-between gap-3">
-                  <dt className="text-gray-500">Items</dt>
+                  <dt className="text-gray-500">Item</dt>
                   <dd className="font-medium text-gray-900">{ret.items?.length || 0}</dd>
                 </div>
                 <div className="flex items-start justify-between gap-3">
-                  <dt className="text-gray-500">Total Quantity</dt>
+                  <dt className="text-gray-500">Total Qty</dt>
                   <dd className="font-medium text-gray-900">{formatQty(totalQty)}</dd>
                 </div>
                 <div className="flex items-start justify-between gap-3 border-t border-gray-200/70 pt-3">
-                  <dt className="font-medium text-gray-900">Total Amount</dt>
+                  <dt className="font-medium text-gray-900">Nilai Total</dt>
                   <dd className="font-semibold text-pink-700">{formatAmount(ret.total_amount)}</dd>
                 </div>
               </dl>
 
               <div className="border-t border-gray-200/70 pt-4">
-                <p className="mb-3 text-sm font-medium text-gray-900">Timeline</p>
+                <p className="mb-3 text-sm font-medium text-gray-900">Riwayat</p>
                 <ul className="space-y-3 text-sm">
                   <li className="flex gap-3">
                     <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-gray-300" />
                     <div>
-                      <p className="font-medium text-gray-900">Created</p>
+                      <p className="font-medium text-gray-900">Dibuat</p>
                       <p className="text-xs text-gray-500">{formatDate(ret.created_at)}</p>
                     </div>
                   </li>
@@ -440,7 +440,7 @@ export function ReturnDetailPage({
                       />
                       <div>
                         <p className="font-medium text-gray-900">
-                          {status === "rejected" ? "Rejected" : "Approved"}
+                          {status === "rejected" ? "Ditolak" : "Disetujui"}
                         </p>
                         <p className="text-xs text-gray-500">{formatDate(ret.approved_at)}</p>
                       </div>
@@ -450,10 +450,10 @@ export function ReturnDetailPage({
                     <li className="flex gap-3">
                       <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-blue-500" />
                       <div>
-                        <p className="font-medium text-gray-900">Shipped to Supplier</p>
+                        <p className="font-medium text-gray-900">Dikirim ke Supplier</p>
                         <p className="text-xs text-gray-500">{formatDate(ret.shipping_date)}</p>
                         {ret.tracking_number && (
-                          <p className="text-xs text-gray-500">Tracking: {ret.tracking_number}</p>
+                          <p className="text-xs text-gray-500">No. Resi: {ret.tracking_number}</p>
                         )}
                       </div>
                     </li>
@@ -466,10 +466,10 @@ export function ReturnDetailPage({
                   <div className="flex items-start gap-2">
                     <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
                     <div>
-                      <p className="font-medium">Return approved</p>
+                      <p className="font-medium">Retur disetujui</p>
                       <p className="mt-1 text-emerald-700/90">
-                        Stock has been reduced from the receipt stall. Goods receipt return
-                        quantities have been updated.
+                        Stok sudah dikurangi dari stall penerimaan. Qty retur pada penerimaan barang
+                        sudah diperbarui.
                       </p>
                     </div>
                   </div>
@@ -483,10 +483,10 @@ export function ReturnDetailPage({
       <Dialog open={approveDialogOpen} onOpenChange={setApproveDialogOpen}>
         <DialogPanel size="xs">
           <DialogPanelHeader>
-            <DialogPanelTitle>Approve Purchase Return?</DialogPanelTitle>
+            <DialogPanelTitle>Setujui Retur Pembelian?</DialogPanelTitle>
             <DialogPanelDescription>
-              Stock will be reduced from each item&apos;s receipt stall. Goods receipt return
-              quantities will be updated.
+              Stok akan dikurangi dari stall penerimaan masing-masing item. Qty retur pada
+              penerimaan barang akan diperbarui.
             </DialogPanelDescription>
           </DialogPanelHeader>
           <DialogPanelBody />
@@ -498,7 +498,7 @@ export function ReturnDetailPage({
               onClick={() => setApproveDialogOpen(false)}
               disabled={isProcessing}
             >
-              Cancel
+              Batal
             </Button>
             <Button
               type="button"
@@ -506,7 +506,7 @@ export function ReturnDetailPage({
               onClick={handleApprove}
               disabled={isProcessing}
             >
-              {isProcessing ? "Approving..." : "Approve"}
+              {isProcessing ? "Menyetujui..." : "Setujui"}
             </Button>
           </DialogFooter>
         </DialogPanel>
@@ -515,21 +515,21 @@ export function ReturnDetailPage({
       <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
         <DialogPanel size="sm">
           <DialogPanelHeader>
-            <DialogPanelTitle>Reject Purchase Return</DialogPanelTitle>
+            <DialogPanelTitle>Tolak Retur Pembelian</DialogPanelTitle>
             <DialogPanelDescription>
-              Provide a reason for rejecting this return request.
+              Berikan alasan penolakan untuk permintaan retur ini.
             </DialogPanelDescription>
           </DialogPanelHeader>
           <DialogPanelBody>
             <div className="space-y-1.5">
               <Label htmlFor="rejection_reason" className="text-xs">
-                Rejection Reason <span className="text-red-500">*</span>
+                Alasan Penolakan <span className="text-red-500">*</span>
               </Label>
               <Textarea
                 id="rejection_reason"
                 value={rejectionReason}
                 onChange={(e) => setRejectionReason(e.target.value)}
-                placeholder="Explain why this return is rejected..."
+                placeholder="Jelaskan alasan retur ini ditolak..."
                 rows={4}
                 className="resize-none text-sm"
               />
@@ -546,7 +546,7 @@ export function ReturnDetailPage({
               }}
               disabled={isProcessing}
             >
-              Cancel
+              Batal
             </Button>
             <Button
               type="button"
@@ -555,7 +555,7 @@ export function ReturnDetailPage({
               onClick={handleReject}
               disabled={isProcessing || !rejectionReason.trim()}
             >
-              {isProcessing ? "Rejecting..." : "Reject"}
+              {isProcessing ? "Menolak..." : "Tolak"}
             </Button>
           </DialogFooter>
         </DialogPanel>

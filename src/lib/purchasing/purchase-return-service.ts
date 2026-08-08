@@ -239,5 +239,24 @@ export async function approvePurchaseReturn(
 
   if (updateError) throw updateError;
 
+  const totalAmount = items.reduce(
+    (sum, item) => sum + toQty(item.qty_returned) * toQty(item.unit_cost),
+    0
+  );
+
+  const { postReturnAccountingJournal } = await import(
+    "@/lib/purchasing/accounting-posting"
+  );
+  await postReturnAccountingJournal({
+    companyId: (currentReturn.company_id as string | null) ?? null,
+    userId,
+    returnId,
+    returnNumber,
+    returnDate: String(
+      currentReturn.return_date || new Date().toISOString().slice(0, 10)
+    ),
+    totalAmount,
+  });
+
   return updatedReturn;
 }

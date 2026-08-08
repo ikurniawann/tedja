@@ -67,8 +67,8 @@ export async function PrintPOPage({ params }: PrintPOPageProps) {
     .from("purchase_order_items")
     .select(`
       *,
-      raw_material:raw_material_id(kode, nama),
-      satuan:satuan_id(nama)
+      raw_material:raw_materials!raw_material_id(kode, nama),
+      satuan:units!satuan_id(nama)
     `)
     .eq("purchase_order_id", id)
     .eq("is_active", true)

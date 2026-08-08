@@ -52,7 +52,7 @@ export function PaymentTermsBadgeFilter({
           disabled && "pointer-events-none opacity-50"
         )}
       >
-        All Terms
+        Semua Termin
       </button>
       {PAYMENT_TERMS_OPTIONS.map((term) => {
         const active = value === term;

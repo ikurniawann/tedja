@@ -28,6 +28,10 @@ type EntryRow = {
   posted_by: string | null;
   created_at: string;
   updated_at: string | null;
+  source_module?: string | null;
+  source_event_code?: string | null;
+  source_document_type?: string | null;
+  source_document_id?: string | null;
 };
 
 type LineRow = {
@@ -70,7 +74,11 @@ function mapEntry(
     .reduce((s, l) => s + l.amount, 0);
   const status = row.status as JournalEntryStatus;
   const entry_type =
-    row.entry_type === "OPENING" ? ("OPENING" as const) : ("MANUAL" as const);
+    row.entry_type === "OPENING"
+      ? ("OPENING" as const)
+      : row.entry_type === "AUTO"
+        ? ("AUTO" as const)
+        : ("MANUAL" as const);
   return {
     id: row.id,
     company_id: row.company_id,
@@ -87,10 +95,14 @@ function mapEntry(
     posted_by: row.posted_by,
     created_at: row.created_at,
     updated_at: row.updated_at,
+    source_module: row.source_module ?? null,
+    source_event_code: row.source_event_code ?? null,
+    source_document_type: row.source_document_type ?? null,
+    source_document_id: row.source_document_id ?? null,
     lines,
     total_debit: round2(total_debit),
     total_credit: round2(total_credit),
-    // OPENING dikelola lewat Beginning Balance, bukan form JE biasa
+    // OPENING/AUTO dikelola sistem — bukan form JE biasa
     can_edit: status === "DRAFT" && !row.is_recon && entry_type === "MANUAL",
   };
 }
@@ -107,7 +119,9 @@ const ENTRY_SELECT = `
   y.code AS fiscal_year_code,
   COALESCE(e.entry_type, 'MANUAL') AS entry_type,
   e.status, e.is_recon, e.posted_at, e.posted_by,
-  e.created_at, e.updated_at
+  e.created_at, e.updated_at,
+  e.source_module, e.source_event_code,
+  e.source_document_type, e.source_document_id
 `;
 
 const LINE_SELECT = `
@@ -225,6 +239,11 @@ function assertMutable(entry: JournalEntryItem) {
   if (entry.entry_type === "OPENING") {
     throw new Error(
       "Beginning balance (OPENING) dikelola lewat menu Beginning Balance"
+    );
+  }
+  if (entry.entry_type === "AUTO") {
+    throw new Error(
+      "Journal entry AUTO dari modul operasional tidak bisa diubah dari sini"
     );
   }
   if (entry.status === "POSTED") {
@@ -371,6 +390,14 @@ async function nextEntryNo(
   return `${prefix}${String(seq).padStart(4, "0")}`;
 }
 
+export type CreateJournalEntrySource = {
+  entry_type?: "MANUAL" | "AUTO";
+  source_module?: string | null;
+  source_event_code?: string | null;
+  source_document_type?: string | null;
+  source_document_id?: string | null;
+};
+
 export async function createJournalEntryRecord(opts: {
   userId: string;
   companyId: string | null;
@@ -379,8 +406,10 @@ export async function createJournalEntryRecord(opts: {
   is_recon: boolean;
   lines: JournalEntryLinePayload[];
   post: boolean;
-}): Promise<JournalEntryItem> {
+} & CreateJournalEntrySource): Promise<JournalEntryItem> {
   validateLines(opts.lines);
+
+  const entryType = opts.entry_type ?? "MANUAL";
 
   const id = await withTransaction(async (client) => {
     const period = await assertOpenFiscalPeriod(
@@ -400,13 +429,16 @@ export async function createJournalEntryRecord(opts: {
     const inserted = await client.query<{ id: string }>(
       `INSERT INTO accounting.journal_entries (
          company_id, entry_no, entry_date, description,
-         fiscal_period_id, status, is_recon,
+         fiscal_period_id, status, is_recon, entry_type,
+         source_module, source_event_code,
+         source_document_type, source_document_id,
          posted_at, posted_by, created_by, updated_by
        ) VALUES (
-         $1,$2,$3::date,$4,$5,$6::varchar,$7,
+         $1,$2,$3::date,$4,$5,$6::varchar,$7,$8::varchar,
+         $9,$10,$11,$12::uuid,
          CASE WHEN $6::text = 'POSTED' THEN now() ELSE NULL END,
-         CASE WHEN $6::text = 'POSTED' THEN $8::uuid ELSE NULL END,
-         $8::uuid,$8::uuid
+         CASE WHEN $6::text = 'POSTED' THEN $13::uuid ELSE NULL END,
+         $13::uuid,$13::uuid
        )
        RETURNING id`,
       [
@@ -417,6 +449,11 @@ export async function createJournalEntryRecord(opts: {
         period.id,
         status,
         opts.is_recon,
+        entryType,
+        opts.source_module ?? null,
+        opts.source_event_code ?? null,
+        opts.source_document_type ?? null,
+        opts.source_document_id ?? null,
         opts.userId,
       ]
     );
@@ -429,6 +466,31 @@ export async function createJournalEntryRecord(opts: {
   const detail = await getJournalEntry(id);
   if (!detail) throw new Error("Gagal memuat journal entry setelah create");
   return detail;
+}
+
+export async function findJournalEntryBySource(opts: {
+  companyId: string | null;
+  sourceEventCode: string;
+  sourceDocumentId: string;
+}): Promise<JournalEntryItem | null> {
+  const row = await queryOne<EntryRow>(
+    `SELECT ${ENTRY_SELECT}
+     FROM accounting.journal_entries e
+     JOIN accounting.fiscal_periods p ON p.id = e.fiscal_period_id
+     JOIN accounting.fiscal_years y ON y.id = p.fiscal_year_id
+     WHERE e.deleted_at IS NULL
+       AND e.source_event_code = $1
+       AND e.source_document_id = $2::uuid
+       AND (
+         ($3::uuid IS NULL AND e.company_id IS NULL)
+         OR ($3::uuid IS NOT NULL AND e.company_id = $3::uuid)
+       )
+     LIMIT 1`,
+    [opts.sourceEventCode, opts.sourceDocumentId, opts.companyId]
+  );
+  if (!row) return null;
+  const lineMap = await fetchLinesForEntries([row.id]);
+  return mapEntry(row, lineMap.get(row.id) ?? []);
 }
 
 export async function updateJournalEntryRecord(opts: {

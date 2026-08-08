@@ -45,6 +45,8 @@ import {
   Banknote,
   Boxes,
   Trash2,
+  Lock,
+  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -58,6 +60,7 @@ import {
   useApprovePurchaseOrder,
   useSendPurchaseOrder,
   useCancelPurchaseOrder,
+  useClosePurchaseOrder,
   useCreatePOPaymentTerm,
   useDeletePOPaymentTerm,
   useCreateVendorPayment,
@@ -67,12 +70,26 @@ import { RM_ROUTES } from "@/modules/purchasing/constants/item-routes";
 import { NAV_FROM_APPROVAL_PO } from "@/lib/iam/nav-context";
 import { useNavFrom } from "@/lib/iam/use-nav-from";
 
+// Deskripsi termin disimpan apa adanya di database dan sebagian dibuat oleh server
+// dalam bahasa Inggris, jadi label default itu diterjemahkan saat ditampilkan saja.
+function localizeTermDescription(description: string) {
+  if (/^paid in full$/i.test(description)) return "Lunas";
+  if (/^down payment$/i.test(description)) return "Uang Muka";
+
+  const installment = description.match(/^(?:installment|payment term)\s*(\d+)$/i);
+  if (installment) return `Cicilan ${installment[1]}`;
+
+  return description;
+}
+
 export function PODetailPage() {
   const params = useParams();
   const pathname = usePathname();
   const poId = params.id as string;
   const navFrom = useNavFrom();
-  const fromInvoiceContext = pathname.includes("/invoice/po/");
+  const fromInvoiceContext =
+    pathname.includes("/invoice/po/") ||
+    pathname.includes("/accounts-payable/po/");
   const fromApprovalContext = navFrom === NAV_FROM_APPROVAL_PO;
   const showPaymentManagement = fromInvoiceContext;
   const backHref = fromInvoiceContext
@@ -81,10 +98,10 @@ export function PODetailPage() {
       ? RM_ROUTES.approvalPo
       : RM_ROUTES.purchasingPo;
   const backLabel = fromInvoiceContext
-    ? "Back to Invoices"
+    ? "Kembali ke Account Payable"
     : fromApprovalContext
-      ? "Back to Approvals"
-      : "Back";
+      ? "Kembali ke Persetujuan"
+      : "Kembali";
 
   const detailQuery = usePurchaseOrder(poId);
   const paymentsQuery = usePurchaseOrderPayments(poId, showPaymentManagement);
@@ -97,6 +114,7 @@ export function PODetailPage() {
   const approveMutation = useApprovePurchaseOrder();
   const sendMutation = useSendPurchaseOrder();
   const cancelMutation = useCancelPurchaseOrder();
+  const closeMutation = useClosePurchaseOrder();
   const createTermMutation = useCreatePOPaymentTerm();
   const deleteTermMutation = useDeletePOPaymentTerm();
   const createPaymentMutation = useCreateVendorPayment();
@@ -108,14 +126,16 @@ export function PODetailPage() {
   const [isApproveDialogOpen, setIsApproveDialogOpen] = useState(false);
   const [isSendDialogOpen, setIsSendDialogOpen] = useState(false);
   const [isCancelDialogOpen, setIsCancelDialogOpen] = useState(false);
+  const [isCloseDialogOpen, setIsCloseDialogOpen] = useState(false);
   const [isTermDialogOpen, setIsTermDialogOpen] = useState(false);
   const [isDeleteTermDialogOpen, setIsDeleteTermDialogOpen] = useState(false);
   const [isPaymentDialogOpen, setIsPaymentDialogOpen] = useState(false);
   const [sendVia, setSendVia] = useState<"EMAIL" | "WHATSAPP" | "PRINT" | "OTHER">("EMAIL");
   const [cancelReason, setCancelReason] = useState("");
+  const [closeReason, setCloseReason] = useState("");
   const [deletingTerm, setDeletingTerm] = useState<PurchaseOrderPaymentTerm | null>(null);
   const [termForm, setTermForm] = useState({
-    description: "Payment Term",
+    description: "Termin Pembayaran",
     due_date: new Date().toISOString().slice(0, 10),
     amount: undefined as number | undefined,
     notes: "",
@@ -176,29 +196,29 @@ export function PODetailPage() {
   useEffect(() => {
     if (detailQuery.isError) {
       console.error("Error loading PO:", detailQuery.error);
-      toast.error("Failed to load purchase order");
+      toast.error("Gagal memuat purchase order");
     }
   }, [detailQuery.isError, detailQuery.error]);
 
   const handleApprove = async () => {
     try {
       await approveMutation.mutateAsync(poId);
-      toast.success("Purchase order approved");
+      toast.success("Purchase order berhasil disetujui");
       setIsApproveDialogOpen(false);
     } catch (error: unknown) {
       console.error("Error approving PO:", error);
-      toast.error(getErrorMessage(error, "Failed to approve purchase order"));
+      toast.error(getErrorMessage(error, "Gagal menyetujui purchase order"));
     }
   };
 
   const handleSend = async () => {
     try {
       await sendMutation.mutateAsync({ id: poId, sentVia: sendVia });
-      toast.success(`Purchase order sent via ${sendVia}`);
+      toast.success(`Purchase order berhasil dikirim via ${sendVia}`);
       setIsSendDialogOpen(false);
     } catch (error: unknown) {
       console.error("Error sending PO:", error);
-      toast.error(getErrorMessage(error, "Failed to send purchase order"));
+      toast.error(getErrorMessage(error, "Gagal mengirim purchase order"));
     }
   };
 
@@ -206,27 +226,40 @@ export function PODetailPage() {
     if (!cancelReason) return;
     try {
       await cancelMutation.mutateAsync({ id: poId, reason: cancelReason });
-      toast.success("Purchase order cancelled");
+      toast.success("Purchase order berhasil dibatalkan");
       setIsCancelDialogOpen(false);
     } catch (error: unknown) {
       console.error("Error cancelling PO:", error);
-      toast.error(getErrorMessage(error, "Failed to cancel purchase order"));
+      toast.error(getErrorMessage(error, "Gagal membatalkan purchase order"));
+    }
+  };
+
+  const handleClose = async () => {
+    if (!closeReason.trim()) return;
+    try {
+      await closeMutation.mutateAsync({ id: poId, reason: closeReason.trim() });
+      toast.success("Purchase order ditutup. Kekurangan qty tidak ditagihkan.");
+      setIsCloseDialogOpen(false);
+      setCloseReason("");
+    } catch (error: unknown) {
+      console.error("Error closing PO:", error);
+      toast.error(getErrorMessage(error, "Gagal menutup purchase order"));
     }
   };
 
   const openTermDialog = () => {
     if (remainingScheduledAmount <= 0) {
-      toast.info("The full purchase order amount is already scheduled in payment terms");
+      toast.info("Seluruh nilai purchase order sudah dijadwalkan pada termin pembayaran");
       return;
     }
 
     setTermForm({
       description:
         paymentTerms.length === 0 && remainingScheduledAmount >= payableAmount - 0.01
-          ? "Paid in Full"
+          ? "Lunas"
           : paymentTerms.length === 0
-            ? "Installment 1"
-            : `Installment ${paymentTerms.length + 1}`,
+            ? "Cicilan 1"
+            : `Cicilan ${paymentTerms.length + 1}`,
       due_date: new Date().toISOString().slice(0, 10),
       amount: remainingScheduledAmount > 0 ? remainingScheduledAmount : undefined,
       notes: "",
@@ -254,7 +287,7 @@ export function PODetailPage() {
 
   const openDeleteTermDialog = (term: PurchaseOrderPaymentTerm) => {
     if (Number(term.paid_amount || 0) > 0 || ["partial", "paid"].includes(term.status)) {
-      toast.error("Payment terms with recorded payments cannot be deleted");
+      toast.error("Termin pembayaran yang sudah memiliki pembayaran tidak dapat dihapus");
       return;
     }
 
@@ -265,12 +298,12 @@ export function PODetailPage() {
   const handleCreateTerm = async () => {
     const amount = Number(termForm.amount || 0);
     if (!termForm.description.trim() || !termForm.due_date || amount <= 0) {
-      toast.error("Complete description, due date, and payment term amount");
+      toast.error("Lengkapi deskripsi, jatuh tempo, dan nominal termin pembayaran");
       return;
     }
 
     if (amount > remainingScheduledAmount) {
-      toast.error(`Payment term amount cannot exceed remaining ${formatAmount(remainingScheduledAmount)}`);
+      toast.error(`Nominal termin pembayaran tidak boleh melebihi sisa ${formatAmount(remainingScheduledAmount)}`);
       return;
     }
 
@@ -284,17 +317,17 @@ export function PODetailPage() {
           notes: termForm.notes.trim() || null,
         },
       });
-      toast.success("Payment term added");
+      toast.success("Termin pembayaran berhasil ditambahkan");
       setIsTermDialogOpen(false);
       setTermForm({
-        description: "Payment Term",
+        description: "Termin Pembayaran",
         due_date: new Date().toISOString().slice(0, 10),
         amount: undefined,
         notes: "",
       });
     } catch (error: unknown) {
       console.error("Error creating term:", error);
-      toast.error(getErrorMessage(error, "Failed to add payment term"));
+      toast.error(getErrorMessage(error, "Gagal menambahkan termin pembayaran"));
     }
   };
 
@@ -303,24 +336,24 @@ export function PODetailPage() {
 
     try {
       await deleteTermMutation.mutateAsync({ poId, termId: deletingTerm.id });
-      toast.success("Payment term deleted");
+      toast.success("Termin pembayaran berhasil dihapus");
       setIsDeleteTermDialogOpen(false);
       setDeletingTerm(null);
     } catch (error: unknown) {
       console.error("Error deleting term:", error);
-      toast.error(getErrorMessage(error, "Failed to delete payment term"));
+      toast.error(getErrorMessage(error, "Gagal menghapus termin pembayaran"));
     }
   };
 
   const handleCreatePayment = async () => {
     const amount = Number(paymentForm.amount || 0);
     if (!paymentForm.payment_date || amount <= 0) {
-      toast.error("Enter a payment date and amount");
+      toast.error("Masukkan tanggal dan nominal pembayaran");
       return;
     }
 
     if (amount > poOutstandingAmount + 0.01) {
-      toast.error(`Payment amount cannot exceed outstanding balance (${formatAmount(poOutstandingAmount)})`);
+      toast.error(`Nominal pembayaran tidak boleh melebihi sisa tagihan (${formatAmount(poOutstandingAmount)})`);
       return;
     }
 
@@ -338,13 +371,13 @@ export function PODetailPage() {
       });
       toast.success(
         paymentPreviewType === "full"
-          ? "Full payment recorded"
-          : "Payment recorded successfully"
+          ? "Pelunasan berhasil dicatat"
+          : "Pembayaran berhasil dicatat"
       );
       setIsPaymentDialogOpen(false);
     } catch (error: unknown) {
       console.error("Error creating payment:", error);
-      toast.error(getErrorMessage(error, "Failed to record payment"));
+      toast.error(getErrorMessage(error, "Gagal mencatat pembayaran"));
     }
   };
 
@@ -360,17 +393,19 @@ export function PODetailPage() {
       received: "bg-green-100 text-green-800",
       rejected: "bg-red-100 text-red-800",
       cancelled: "bg-red-100 text-red-800",
+      closed: "bg-slate-100 text-slate-800",
     };
     const labels: Record<POStatus, string> = {
-      draft: "Draft",
-      pending_approval: "Pending Approval",
-      approved: "Approved",
-      sent: "Sent",
-      partial: "Partially Received",
-      partially_received: "Partially Received",
-      received: "Fully Received",
-      rejected: "Rejected",
-      cancelled: "Cancelled",
+      draft: "Draf",
+      pending_approval: "Menunggu Persetujuan",
+      approved: "Disetujui",
+      sent: "Terkirim",
+      partial: "Diterima Sebagian",
+      partially_received: "Diterima Sebagian",
+      received: "Diterima Penuh",
+      rejected: "Ditolak",
+      cancelled: "Dibatalkan",
+      closed: "Ditutup",
     };
     return <Badge className={styles[normalized] || "bg-gray-100 text-gray-800"}>{labels[normalized] || status}</Badge>;
   };
@@ -403,10 +438,10 @@ export function PODetailPage() {
   );
 
   const getOrderProgressDetail = () => {
-    if (normalizedStatus === "draft") return "Draft — awaiting approval";
-    if (normalizedStatus === "approved") return "Approved — not yet sent";
-    if (normalizedStatus === "cancelled") return "Cancelled";
-    return "Order confirmed and sent";
+    if (normalizedStatus === "draft") return "Draf — menunggu persetujuan";
+    if (normalizedStatus === "approved") return "Disetujui — belum dikirim";
+    if (normalizedStatus === "cancelled") return "Dibatalkan";
+    return "Pesanan dikonfirmasi dan dikirim";
   };
 
   const formatDate = (dateStr?: string | null) => {
@@ -431,10 +466,10 @@ export function PODetailPage() {
       overdue: "bg-red-100 text-red-700",
     };
     const labels: Record<string, string> = {
-      unpaid: "Unpaid",
-      partial: "Partially Paid",
-      paid: "Paid",
-      overdue: "Overdue",
+      unpaid: "Belum Dibayar",
+      partial: "Dibayar Sebagian",
+      paid: "Lunas",
+      overdue: "Terlambat",
     };
     return <Badge className={styles[status || "unpaid"] || "bg-gray-100 text-gray-700"}>{labels[status || "unpaid"] || status}</Badge>;
   };
@@ -443,11 +478,11 @@ export function PODetailPage() {
     const description = term.description?.trim();
     if (description) {
       if (/^down payment$/i.test(description) && Number(term.amount || 0) >= payableAmount - 0.01) {
-        return "Paid in Full";
+        return "Lunas";
       }
-      return description;
+      return localizeTermDescription(description);
     }
-    return `Installment ${term.term_no}`;
+    return `Cicilan ${term.term_no}`;
   };
 
   const getLifecycleBadge = () => {
@@ -461,12 +496,12 @@ export function PODetailPage() {
       cancelled: "bg-red-100 text-red-700",
     };
     const labels: Record<string, string> = {
-      draft: "Draft",
-      in_progress: "In Progress",
-      waiting_payment: "Waiting for Payment",
-      waiting_receipt: "Waiting for Receipt",
-      completed: "Completed",
-      cancelled: "Cancelled",
+      draft: "Draf",
+      in_progress: "Sedang Berjalan",
+      waiting_payment: "Menunggu Pembayaran",
+      waiting_receipt: "Menunggu Penerimaan",
+      completed: "Selesai",
+      cancelled: "Dibatalkan",
     };
     return <Badge className={styles[lifecycle] || "bg-blue-100 text-blue-700"}>{labels[lifecycle] || lifecycle}</Badge>;
   };
@@ -474,7 +509,7 @@ export function PODetailPage() {
   if (loading) {
     return (
       <div className="container mx-auto py-6">
-        <div className="py-12 text-center">Loading purchase order...</div>
+        <div className="py-12 text-center">Memuat purchase order...</div>
       </div>
     );
   }
@@ -488,7 +523,7 @@ export function PODetailPage() {
             {backLabel}
           </Button>
         </Link>
-        <div className="py-12 text-center text-red-500">Purchase order not found</div>
+        <div className="py-12 text-center text-red-500">Purchase order tidak ditemukan</div>
       </div>
     );
   }
@@ -521,18 +556,18 @@ export function PODetailPage() {
           <Link href={`/dashboard/purchasing/print/po/${po.id}`} target="_blank">
             <Button variant="outline" className="purchasing-secondary-button w-full sm:w-auto">
               <Printer className="w-4 h-4 mr-2" />
-              Print
+              Cetak
             </Button>
           </Link>
           
           {normalizedStatus === "draft" && (
             <>
               <Link href={`${RM_ROUTES.purchasingPo}/edit/${po.id}`}>
-                <Button variant="outline" className="purchasing-secondary-button w-full sm:w-auto">Edit</Button>
+                <Button variant="outline" className="purchasing-secondary-button w-full sm:w-auto">Ubah</Button>
               </Link>
               <Button onClick={() => setIsApproveDialogOpen(true)} className="purchasing-main-button w-full sm:w-auto">
                 <CheckCircle className="w-4 h-4 mr-2" />
-                Approve
+                Setujui
               </Button>
             </>
           )}
@@ -540,7 +575,7 @@ export function PODetailPage() {
           {normalizedStatus === "approved" && (
             <Button onClick={() => setIsSendDialogOpen(true)} className="purchasing-main-button w-full sm:w-auto">
               <Send className="w-4 h-4 mr-2" />
-              Send to Supplier
+              Kirim ke Supplier
             </Button>
           )}
 
@@ -554,15 +589,32 @@ export function PODetailPage() {
             >
               <Button variant="outline" className="purchasing-secondary-button w-full sm:w-auto">
                 <Truck className="w-4 h-4 mr-2" />
-                {po.active_delivery_id ? `View Delivery${po.active_delivery_number ? ` ${po.active_delivery_number}` : ""}` : "Create Delivery"}
+                {po.active_delivery_id
+                  ? `Lihat Pengiriman${po.active_delivery_number ? ` ${po.active_delivery_number}` : ""}`
+                  : ["partial", "partially_received"].includes(normalizedStatus || "")
+                    ? "Kirim Ulang"
+                    : "Buat Pengiriman"}
               </Button>
             </Link>
           )}
+
+          {["partial", "partially_received"].includes(normalizedStatus || "") && (
+            <Button
+              variant="outline"
+              onClick={() => setIsCloseDialogOpen(true)}
+              className="purchasing-secondary-button w-full sm:w-auto"
+            >
+              <Lock className="w-4 h-4 mr-2" />
+              Tutup PO
+            </Button>
+          )}
           
-          {normalizedStatus !== "received" && normalizedStatus !== "cancelled" && (
+          {normalizedStatus !== "received" &&
+            normalizedStatus !== "cancelled" &&
+            normalizedStatus !== "closed" && (
             <Button variant="outline" onClick={() => setIsCancelDialogOpen(true)} className="h-10 w-full rounded-lg border-red-200 bg-white px-3 text-sm font-medium text-red-600 shadow-sm hover:!border-red-200 hover:!bg-red-50 hover:!text-red-700 sm:w-auto">
               <XCircle className="w-4 h-4 mr-2" />
-              Cancel
+              Batalkan
             </Button>
           )}
         </div>
@@ -576,7 +628,7 @@ export function PODetailPage() {
                 <FileText className="h-5 w-5" />
               </span>
               <div>
-                <p className="text-xs font-medium text-gray-500">Purchase Order Status</p>
+                <p className="text-xs font-medium text-gray-500">Status Purchase Order</p>
                 <div className="mt-1 flex flex-wrap gap-1">{getStatusBadge(po.status)}</div>
               </div>
             </div>
@@ -589,7 +641,7 @@ export function PODetailPage() {
                 <Banknote className="h-5 w-5" />
               </span>
               <div>
-                <p className="text-xs font-medium text-gray-500">Purchase Order Total</p>
+                <p className="text-xs font-medium text-gray-500">Total Purchase Order</p>
                 <p className="text-lg font-bold text-gray-900">{formatAmount(po.grand_total || payableAmount)}</p>
               </div>
             </div>
@@ -602,7 +654,7 @@ export function PODetailPage() {
                 <CreditCard className="h-5 w-5" />
               </span>
               <div>
-                <p className="text-xs font-medium text-gray-500">Paid</p>
+                <p className="text-xs font-medium text-gray-500">Dibayar</p>
                 <p className="text-lg font-bold text-emerald-700">{formatAmount(po.paid_amount || 0)}</p>
               </div>
             </div>
@@ -615,7 +667,7 @@ export function PODetailPage() {
                 <Boxes className="h-5 w-5" />
               </span>
               <div>
-                <p className="text-xs font-medium text-gray-500">Overall Progress</p>
+                <p className="text-xs font-medium text-gray-500">Progres Keseluruhan</p>
                 <p className="text-lg font-bold text-gray-900">{overallProgress}%</p>
               </div>
             </div>
@@ -629,7 +681,7 @@ export function PODetailPage() {
           <CardHeader className="border-b border-gray-100 pb-4">
             <CardTitle className="flex items-center gap-2 text-base">
               <FileText className="w-5 h-5" />
-              Purchase Order Information
+              Informasi Purchase Order
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -642,7 +694,7 @@ export function PODetailPage() {
                 </div>
               </div>
               <div className="space-y-1">
-                <Label className="text-sm text-gray-500">Purchase Order Date</Label>
+                <Label className="text-sm text-gray-500">Tanggal PO</Label>
                 <div className="font-semibold text-gray-900">{formatDate(po.tanggal_po)}</div>
               </div>
             </div>
@@ -661,7 +713,7 @@ export function PODetailPage() {
               <div className="space-y-1">
                 <Label className="flex items-center gap-1 text-sm text-gray-500">
                   <Calendar className="w-4 h-4" />
-                  Estimated Delivery
+                  Estimasi Pengiriman
                 </Label>
                 <div className="font-semibold text-gray-900">
                   {formatDate(po.tanggal_kirim_estimasi)}
@@ -671,7 +723,7 @@ export function PODetailPage() {
 
             {po.catatan && (
               <div className="space-y-1">
-                <Label className="text-sm text-gray-500">Notes</Label>
+                <Label className="text-sm text-gray-500">Catatan</Label>
                 <div className="text-gray-700">{po.catatan}</div>
               </div>
             )}
@@ -680,7 +732,7 @@ export function PODetailPage() {
               <div className="rounded-lg border border-pink-100 bg-pink-50 p-3">
                 <Label className="flex items-center gap-1 text-sm text-pink-700">
                   <Factory className="w-4 h-4" />
-                  Purchase Order Source
+                  Sumber Purchase Order
                 </Label>
                 <div className="mt-1 flex flex-wrap items-center gap-2">
                   <Badge className="bg-pink-600 text-white hover:bg-pink-600">Production Order</Badge>
@@ -702,7 +754,7 @@ export function PODetailPage() {
               <div className="space-y-1">
                 <Label className="flex items-center gap-1 text-sm text-gray-500">
                   <MapPin className="w-4 h-4" />
-                  Delivery Address
+                  Alamat Pengiriman
                 </Label>
                 <div className="text-gray-700">{po.alamat_pengiriman}</div>
               </div>
@@ -710,23 +762,23 @@ export function PODetailPage() {
 
             {/* Tracking Info */}
             <div className="mt-4 border-t border-gray-200/70 pt-4">
-              <h4 className="mb-3 font-semibold text-gray-900">Tracking</h4>
+              <h4 className="mb-3 font-semibold text-gray-900">Pelacakan</h4>
               <div className="space-y-2 text-sm">
                 {po.approved_at && (
                   <div className="flex justify-between">
-                    <span className="text-gray-500">Approved</span>
+                    <span className="text-gray-500">Disetujui</span>
                     <span>{formatDateTime(po.approved_at)}</span>
                   </div>
                 )}
                 {po.sent_at && (
                   <div className="flex justify-between">
-                    <span className="text-gray-500">Sent via {po.sent_via}</span>
+                    <span className="text-gray-500">Terkirim via {po.sent_via}</span>
                     <span>{formatDateTime(po.sent_at)}</span>
                   </div>
                 )}
                 {po.cancelled_at && (
                   <div className="flex justify-between">
-                    <span className="text-gray-500">Cancelled</span>
+                    <span className="text-gray-500">Dibatalkan</span>
                     <span>{formatDateTime(po.cancelled_at)}</span>
                   </div>
                 )}
@@ -738,7 +790,7 @@ export function PODetailPage() {
         {/* Financial Summary */}
         <Card className="border-gray-200/70 shadow-sm">
           <CardHeader className="border-b border-gray-100 pb-4">
-            <CardTitle className="text-base">Summary</CardTitle>
+            <CardTitle className="text-base">Ringkasan</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             {(() => {
@@ -762,7 +814,7 @@ export function PODetailPage() {
                   </div>
                   {diskon > 0 && (
                     <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Discount{po.diskon_persen ? ` (${po.diskon_persen}%)` : ""}</span>
+                      <span className="text-muted-foreground">Diskon{po.diskon_persen ? ` (${po.diskon_persen}%)` : ""}</span>
                       <span className="text-red-500">- {formatAmount(diskon)}</span>
                     </div>
                   )}
@@ -783,7 +835,7 @@ export function PODetailPage() {
             {normalizedStatus !== "cancelled" && (
               <div className="mt-4 border-t border-gray-200/70 pt-4">
                 <div className="mb-3 flex items-center justify-between text-sm">
-                  <span className="font-medium text-gray-900">Overall Purchase Order Progress</span>
+                  <span className="font-medium text-gray-900">Progres Keseluruhan Purchase Order</span>
                   <span className="font-semibold text-pink-700">{overallProgress}%</span>
                 </div>
                 <div className="mb-4 h-2 w-full overflow-hidden rounded-full bg-gray-200">
@@ -800,13 +852,13 @@ export function PODetailPage() {
                 </div>
                 <div className="grid gap-2 sm:grid-cols-2">
                   {renderProgressStage(
-                    "Order",
+                    "Pemesanan",
                     orderProgress,
                     getOrderProgressDetail(),
                     "bg-blue-500"
                   )}
                   {renderProgressStage(
-                    "Receipt",
+                    "Penerimaan",
                     receiptProgress,
                     `${formatQuantity(po.total_qty_received)} / ${formatQuantity(po.total_qty_ordered)} item`,
                     "bg-amber-500"
@@ -814,28 +866,28 @@ export function PODetailPage() {
                   {renderProgressStage(
                     "Quality Control",
                     qcProgress,
-                    `${formatQuantity(po.total_qty_qc_posted ?? 0)} / ${formatQuantity(po.total_qty_received_grn ?? 0)} inspected`,
+                    `${formatQuantity(po.total_qty_qc_posted ?? 0)} / ${formatQuantity(po.total_qty_received_grn ?? 0)} diperiksa`,
                     "bg-violet-500"
                   )}
                   {renderProgressStage(
-                    "Return",
+                    "Retur",
                     returnProgress,
-                    `${formatQuantity(po.total_qty_returned ?? 0)} / ${formatQuantity(po.total_qty_qc_posted ?? 0)} returned`,
+                    `${formatQuantity(po.total_qty_returned ?? 0)} / ${formatQuantity(po.total_qty_qc_posted ?? 0)} diretur`,
                     "bg-red-400"
                   )}
                 </div>
                 <div className="mt-3 grid gap-2 sm:grid-cols-2">
                   <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2">
-                    <div className="text-xs text-emerald-700">Payment</div>
+                    <div className="text-xs text-emerald-700">Pembayaran</div>
                     <div className="mt-1 text-right text-sm font-semibold text-emerald-700">
                       {formatAmount(po.paid_amount || 0)}
                     </div>
                     <div className="mt-1 text-right text-xs text-emerald-700/80">
-                      from {formatAmount(payableAmount)} · {paymentProgress}%
+                      dari {formatAmount(payableAmount)} · {paymentProgress}%
                     </div>
                   </div>
                   <div className="rounded-lg border border-pink-100 bg-pink-50 px-3 py-2">
-                    <div className="text-xs text-pink-700">Outstanding balance</div>
+                    <div className="text-xs text-pink-700">Sisa tagihan</div>
                     <div className="mt-1 text-right text-sm font-semibold text-pink-700">
                       {formatAmount(po.outstanding_amount || 0)}
                     </div>
@@ -852,7 +904,7 @@ export function PODetailPage() {
         <CardHeader className="flex flex-row items-center justify-between gap-4 border-b border-gray-100 pb-4">
           <CardTitle className="flex items-center gap-2 text-base">
             <WalletCards className="w-5 h-5" />
-            {fromInvoiceContext ? "Invoice Payment" : "Payment Terms & Vendor Payments"}
+            {fromInvoiceContext ? "Pembayaran Invoice" : "Termin Pembayaran & Pembayaran Vendor"}
           </CardTitle>
           <div className="flex flex-wrap gap-2 no-print">
             {!fromInvoiceContext && remainingScheduledAmount > 0 && (
@@ -861,7 +913,7 @@ export function PODetailPage() {
                 onClick={openTermDialog}
                 className="purchasing-secondary-button"
               >
-                Add Installment
+                Tambah Cicilan
               </Button>
             )}
             <Button
@@ -869,34 +921,34 @@ export function PODetailPage() {
               disabled={isFullyPaid || createPaymentMutation.isPending}
               className="purchasing-main-button"
             >
-              {createPaymentMutation.isPending ? "Processing..." : "Pay"}
+              {createPaymentMutation.isPending ? "Memproses..." : "Bayar"}
             </Button>
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-3 md:grid-cols-4">
             <div className="rounded-lg border border-gray-200/70 bg-gray-50/60 p-3">
-              <p className="text-xs font-medium text-gray-500">Payment Status</p>
+              <p className="text-xs font-medium text-gray-500">Status Pembayaran</p>
               <div className="mt-2">{getPaymentStatusBadge(po.payment_status)}</div>
             </div>
             <div className="rounded-lg border border-gray-200/70 bg-gray-50/60 p-3">
-              <p className="text-xs font-medium text-gray-500">Net Payable</p>
+              <p className="text-xs font-medium text-gray-500">Tagihan Bersih</p>
               <p className="mt-1 font-semibold text-gray-900">{formatAmount(payableAmount)}</p>
               {(returnCreditAmount > 0 || rejectCreditAmount > 0) && (
                 <p className="mt-1 text-xs text-red-600">
-                  {returnCreditAmount > 0 && <>Returns -{formatAmount(returnCreditAmount)}</>}
+                  {returnCreditAmount > 0 && <>Retur -{formatAmount(returnCreditAmount)}</>}
                   {returnCreditAmount > 0 && rejectCreditAmount > 0 && " · "}
-                  {rejectCreditAmount > 0 && <>Reject credits -{formatAmount(rejectCreditAmount)}</>}
-                  {" from "}PO total {formatAmount(grossPayableAmount)}
+                  {rejectCreditAmount > 0 && <>Nota kredit reject -{formatAmount(rejectCreditAmount)}</>}
+                  {" dari "}Total PO {formatAmount(grossPayableAmount)}
                 </p>
               )}
             </div>
             <div className="rounded-lg border border-gray-200/70 bg-gray-50/60 p-3">
-              <p className="text-xs font-medium text-gray-500">Paid</p>
+              <p className="text-xs font-medium text-gray-500">Dibayar</p>
               <p className="mt-1 font-semibold text-emerald-600">{formatAmount(po.paid_amount || 0)}</p>
             </div>
             <div className="rounded-lg border border-gray-200/70 bg-gray-50/60 p-3">
-              <p className="text-xs font-medium text-gray-500">Next Due Date</p>
+              <p className="text-xs font-medium text-gray-500">Jatuh Tempo Berikutnya</p>
               <p className="mt-1 font-semibold text-gray-900">{formatDate(po.next_due_date)}</p>
             </div>
           </div>
@@ -905,20 +957,20 @@ export function PODetailPage() {
             <table className="min-w-full text-sm">
               <thead className="border-b border-gray-100 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
                 <tr>
-                  <th className="px-4 py-3 text-left font-semibold">Payment Term</th>
-                  <th className="px-4 py-3 text-left font-semibold">Due Date</th>
-                  <th className="px-4 py-3 text-right font-semibold">Amount</th>
-                  <th className="px-4 py-3 text-right font-semibold">Paid</th>
+                  <th className="px-4 py-3 text-left font-semibold">Termin Pembayaran</th>
+                  <th className="px-4 py-3 text-left font-semibold">Jatuh Tempo</th>
+                  <th className="px-4 py-3 text-right font-semibold">Nominal</th>
+                  <th className="px-4 py-3 text-right font-semibold">Dibayar</th>
                   <th className="px-4 py-3 text-center font-semibold">Status</th>
-                  <th className="px-4 py-3 text-right font-semibold no-print">Actions</th>
+                  <th className="px-4 py-3 text-right font-semibold no-print">Aksi</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 bg-white">
                 {paymentTerms.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="px-4 py-8 text-center text-sm text-gray-500">
-                      No payment schedule yet. Use <span className="font-medium text-gray-700">Pay</span> to
-                      record a full or partial payment — the schedule will be created automatically.
+                      Belum ada jadwal pembayaran. Gunakan <span className="font-medium text-gray-700">Bayar</span> untuk
+                      mencatat pelunasan atau pembayaran sebagian — jadwal akan dibuat otomatis.
                     </td>
                   </tr>
                 ) : (
@@ -929,9 +981,9 @@ export function PODetailPage() {
                         <td className="px-4 py-3">
                           <div className="font-semibold text-gray-900">{getTermDisplayLabel(term)}</div>
                           <div className="text-xs text-gray-500">
-                            {getTermDisplayLabel(term) === "Paid in Full"
-                              ? "Full settlement"
-                              : `Installment ${term.term_no}`}
+                            {getTermDisplayLabel(term) === "Lunas"
+                              ? "Pelunasan penuh"
+                              : `Cicilan ${term.term_no}`}
                           </div>
                         </td>
                         <td className="px-4 py-3 text-gray-700">{formatDate(term.due_date)}</td>
@@ -948,7 +1000,7 @@ export function PODetailPage() {
                                 disabled={remaining <= 0}
                                 className="h-8 rounded-lg border-gray-200 px-3 text-xs"
                               >
-                                Pay
+                                Bayar
                               </Button>
                               <Button
                                 variant="ghost"
@@ -958,8 +1010,8 @@ export function PODetailPage() {
                                 className="h-8 w-8 rounded-lg p-0 text-red-500 hover:bg-red-50 hover:text-red-600 disabled:text-gray-300"
                                 title={
                                   Number(term.paid_amount || 0) > 0 || ["partial", "paid"].includes(term.status)
-                                    ? "Paid installments cannot be deleted"
-                                    : "Delete installment"
+                                    ? "Cicilan yang sudah dibayar tidak dapat dihapus"
+                                    : "Hapus cicilan"
                                 }
                               >
                                 <Trash2 className="h-4 w-4" />
@@ -977,7 +1029,7 @@ export function PODetailPage() {
 
           {vendorPayments.length > 0 && (
             <div className="rounded-xl border border-gray-200/70 bg-gray-50/60 p-4">
-              <h4 className="mb-3 font-semibold text-gray-900">Payment History</h4>
+              <h4 className="mb-3 font-semibold text-gray-900">Riwayat Pembayaran</h4>
               <div className="space-y-2">
                 {vendorPayments.map((payment) => (
                   <div key={payment.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-gray-100 bg-white px-3 py-2 text-sm">
@@ -985,7 +1037,7 @@ export function PODetailPage() {
                       <span className="font-semibold text-gray-900">
                         {(() => {
                           const linkedTerm = paymentTermById.get(payment.payment_term_id || "");
-                          return linkedTerm ? getTermDisplayLabel(linkedTerm) : "Payment";
+                          return linkedTerm ? getTermDisplayLabel(linkedTerm) : "Pembayaran";
                         })()}
                       </span>
                       <div className="text-xs text-gray-500">
@@ -1032,13 +1084,13 @@ export function PODetailPage() {
             <table className="min-w-full text-sm">
               <thead className="border-b border-gray-100 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
                 <tr>
-                  <th className="px-4 py-3 text-left font-semibold">Raw Material</th>
-                  <th className="px-4 py-3 text-right font-semibold">Quantity</th>
-                  <th className="px-4 py-3 text-left font-semibold">Unit</th>
-                  <th className="px-4 py-3 text-right font-semibold">Unit Price</th>
+                  <th className="px-4 py-3 text-left font-semibold">Bahan Baku</th>
+                  <th className="px-4 py-3 text-right font-semibold">Qty</th>
+                  <th className="px-4 py-3 text-left font-semibold">Satuan</th>
+                  <th className="px-4 py-3 text-right font-semibold">Harga Satuan</th>
                   <th className="px-4 py-3 text-right font-semibold">Subtotal</th>
                 {normalizedStatus !== "draft" && normalizedStatus !== "cancelled" && (
-                    <th className="px-4 py-3 text-right font-semibold">Received</th>
+                    <th className="px-4 py-3 text-right font-semibold">Qty Diterima</th>
                 )}
                 </tr>
               </thead>
@@ -1088,18 +1140,18 @@ export function PODetailPage() {
       <Dialog open={isApproveDialogOpen} onOpenChange={setIsApproveDialogOpen}>
         <DialogContent className="gap-0 overflow-hidden rounded-2xl border border-gray-200/70 p-0 shadow-xl ring-1 ring-gray-200/60 sm:max-w-[420px]">
           <DialogHeader className="border-b border-gray-200/70 px-5 py-4">
-            <DialogTitle className="text-base font-semibold text-gray-900">Approve PO</DialogTitle>
+            <DialogTitle className="text-base font-semibold text-gray-900">Setujui PO</DialogTitle>
             <DialogDescription className="mt-1 text-sm leading-5 text-gray-500">
-              Are you sure you want to approve purchase order {po.nomor_po}?
-              After approval, the purchase order can no longer be edited.
+              Apakah Anda yakin ingin menyetujui purchase order {po.nomor_po}?
+              Setelah disetujui, purchase order tidak dapat diubah lagi.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="mx-0 mb-0 gap-2 border-t border-gray-200/70 bg-gray-50/60 px-5 py-4 sm:justify-end">
             <Button variant="outline" onClick={() => setIsApproveDialogOpen(false)} disabled={isApproving} className="purchasing-secondary-button">
-              Cancel
+              Batal
             </Button>
             <Button onClick={handleApprove} disabled={isApproving} className="purchasing-main-button">
-              {isApproving ? "Processing..." : "Approve"}
+              {isApproving ? "Memproses..." : "Setujui"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1109,36 +1161,36 @@ export function PODetailPage() {
       <Dialog open={isSendDialogOpen} onOpenChange={setIsSendDialogOpen}>
         <DialogContent className="gap-0 overflow-hidden rounded-2xl border border-gray-200/70 p-0 shadow-xl ring-1 ring-gray-200/60 sm:max-w-[460px]">
           <DialogHeader className="border-b border-gray-200/70 px-5 py-4">
-            <DialogTitle className="text-base font-semibold text-gray-900">Send Purchase Order</DialogTitle>
+            <DialogTitle className="text-base font-semibold text-gray-900">Kirim Purchase Order</DialogTitle>
             <DialogDescription className="mt-1 text-sm leading-5 text-gray-500">
-              Choose a delivery method for purchase order {po.nomor_po}
+              Pilih metode pengiriman untuk purchase order {po.nomor_po}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 px-5 py-4">
             <div className="space-y-1.5">
-              <Label className="text-xs">Delivery Method</Label>
+              <Label className="text-xs">Metode Pengiriman</Label>
               <Combobox
                 options={[
                   { value: "EMAIL", label: "Email" },
                   { value: "WHATSAPP", label: "WhatsApp" },
-                  { value: "PRINT", label: "Print / Manual" },
-                  { value: "OTHER", label: "Other" },
+                  { value: "PRINT", label: "Cetak / Manual" },
+                  { value: "OTHER", label: "Lainnya" },
                 ]}
                 value={sendVia}
                 onChange={(value) => setSendVia(value as "EMAIL" | "WHATSAPP" | "PRINT" | "OTHER")}
-                placeholder="Select method..."
-                searchPlaceholder="Search method..."
-                emptyMessage="No method found"
+                placeholder="Pilih metode..."
+                searchPlaceholder="Cari metode..."
+                emptyMessage="Metode tidak ditemukan"
                 className="!w-full h-9 text-sm"
               />
             </div>
           </div>
           <DialogFooter className="mx-0 mb-0 gap-2 border-t border-gray-200/70 bg-gray-50/60 px-5 py-4 sm:justify-end">
             <Button variant="outline" onClick={() => setIsSendDialogOpen(false)} disabled={isSending} className="purchasing-secondary-button">
-              Cancel
+              Batal
             </Button>
             <Button onClick={handleSend} disabled={isSending} className="purchasing-main-button">
-              {isSending ? "Sending..." : "Send"}
+              {isSending ? "Mengirim..." : "Kirim"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1150,48 +1202,48 @@ export function PODetailPage() {
       <Dialog open={isTermDialogOpen} onOpenChange={setIsTermDialogOpen}>
         <DialogContent className="gap-0 overflow-hidden rounded-2xl border border-gray-200/70 p-0 shadow-xl ring-1 ring-gray-200/60 sm:max-w-[560px]">
           <DialogHeader className="border-b border-gray-200/70 px-5 py-4">
-            <DialogTitle className="text-base font-semibold text-gray-900">Add Installment</DialogTitle>
+            <DialogTitle className="text-base font-semibold text-gray-900">Tambah Cicilan</DialogTitle>
             <DialogDescription className="mt-1 text-sm leading-5 text-gray-500">
-              Schedule a partial payment before recording it. Full PO settlement is handled directly
-              from the Pay action.
+              Jadwalkan pembayaran sebagian sebelum dicatat. Pelunasan penuh PO dilakukan langsung
+              dari aksi Bayar.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 px-5 py-4">
             <div className="rounded-xl border border-pink-100 bg-pink-50 p-3">
-              <div className="text-xs font-semibold text-pink-700">Remaining amount not yet scheduled</div>
+              <div className="text-xs font-semibold text-pink-700">Sisa nominal yang belum dijadwalkan</div>
               <div className="mt-1 text-lg font-bold text-pink-700">{formatAmount(remainingScheduledAmount)}</div>
               <div className="mt-1 text-xs text-pink-700/80">
-                Purchase order total {formatAmount(payableAmount)} · Already scheduled {formatAmount(scheduledAmount)}
+                Total purchase order {formatAmount(payableAmount)} · Sudah dijadwalkan {formatAmount(scheduledAmount)}
               </div>
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs">Payment Term Name</Label>
+              <Label className="text-xs">Nama Termin Pembayaran</Label>
               <Input
                 value={termForm.description}
                 onChange={(event) => setTermForm((prev) => ({ ...prev, description: event.target.value }))}
-                placeholder="Example: 30% Down Payment, Term 2, Final Settlement"
+                placeholder="Contoh: DP 30%, Termin 2, Pelunasan"
                 className="h-9 text-sm"
               />
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <DsDateTimePicker
-                label="Due Date"
+                label="Jatuh Tempo"
                 value={termForm.due_date}
                 onChange={(value) => setTermForm((prev) => ({ ...prev, due_date: value }))}
-                placeholder="Select due date..."
+                placeholder="Pilih tanggal jatuh tempo..."
                 dateOnly
                 required
               />
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between gap-2">
-                  <Label className="text-xs">Amount</Label>
+                  <Label className="text-xs">Nominal</Label>
                   {remainingScheduledAmount > 0 && (
                     <button
                       type="button"
                       className="text-xs font-medium text-pink-600 hover:underline"
                       onClick={() => setTermForm((prev) => ({ ...prev, amount: remainingScheduledAmount }))}
                     >
-                      Use remaining
+                      Gunakan sisa
                     </button>
                   )}
                 </div>
@@ -1205,21 +1257,21 @@ export function PODetailPage() {
               </div>
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs">Notes</Label>
+              <Label className="text-xs">Catatan</Label>
               <Input
                 value={termForm.notes}
                 onChange={(event) => setTermForm((prev) => ({ ...prev, notes: event.target.value }))}
-                placeholder="Optional"
+                placeholder="Opsional"
                 className="h-9 text-sm"
               />
             </div>
           </div>
           <DialogFooter className="mx-0 mb-0 gap-2 border-t border-gray-200/70 bg-gray-50/60 px-5 py-4 sm:justify-end">
             <Button variant="outline" onClick={() => setIsTermDialogOpen(false)} className="purchasing-secondary-button">
-              Cancel
+              Batal
             </Button>
             <Button onClick={handleCreateTerm} disabled={createTermMutation.isPending} className="purchasing-main-button">
-              Submit Payment Term
+              Simpan Termin Pembayaran
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1229,18 +1281,18 @@ export function PODetailPage() {
       <Dialog open={isDeleteTermDialogOpen} onOpenChange={setIsDeleteTermDialogOpen}>
         <DialogContent className="gap-0 overflow-hidden rounded-2xl border border-gray-200/70 p-0 shadow-xl ring-1 ring-gray-200/60 sm:max-w-[440px]">
           <DialogHeader className="border-b border-gray-200/70 px-5 py-4">
-            <DialogTitle className="text-base font-semibold text-gray-900">Delete Payment Term</DialogTitle>
+            <DialogTitle className="text-base font-semibold text-gray-900">Hapus Termin Pembayaran</DialogTitle>
             <DialogDescription className="mt-1 text-sm leading-5 text-gray-500">
-              This payment term will be removed from the schedule and its amount will become available for new terms.
+              Termin pembayaran ini akan dihapus dari jadwal dan nominalnya kembali tersedia untuk termin baru.
             </DialogDescription>
           </DialogHeader>
           <div className="px-5 py-4">
             <div className="rounded-xl border border-red-100 bg-red-50 p-3">
               <p className="text-sm font-semibold text-red-700">
-                {deletingTerm?.description || `Payment Term ${deletingTerm?.term_no || ""}`}
+                {deletingTerm?.description || `Termin Pembayaran ${deletingTerm?.term_no || ""}`}
               </p>
               <p className="mt-1 text-xs text-red-700/80">
-                Amount {formatAmount(Number(deletingTerm?.amount || 0))}. Only unpaid terms can be deleted.
+                Nominal {formatAmount(Number(deletingTerm?.amount || 0))}. Hanya termin yang belum dibayar yang dapat dihapus.
               </p>
             </div>
           </div>
@@ -1251,7 +1303,7 @@ export function PODetailPage() {
               disabled={isDeletingTerm}
               className="purchasing-secondary-button"
             >
-              Cancel
+              Batal
             </Button>
             <Button
               variant="destructive"
@@ -1259,7 +1311,7 @@ export function PODetailPage() {
               disabled={isDeletingTerm}
               className="purchasing-main-button"
             >
-              {isDeletingTerm ? "Deleting..." : "Delete Payment Term"}
+              {isDeletingTerm ? "Menghapus..." : "Hapus Termin Pembayaran"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1269,22 +1321,22 @@ export function PODetailPage() {
       <Dialog open={isPaymentDialogOpen} onOpenChange={setIsPaymentDialogOpen}>
         <DialogContent className="gap-0 overflow-hidden rounded-2xl border border-gray-200/70 p-0 shadow-xl ring-1 ring-gray-200/60 sm:max-w-[620px]">
           <DialogHeader className="border-b border-gray-200/70 px-5 py-4">
-            <DialogTitle className="text-base font-semibold text-gray-900">Pay Purchase Order</DialogTitle>
+            <DialogTitle className="text-base font-semibold text-gray-900">Bayar Purchase Order</DialogTitle>
             <DialogDescription className="mt-1 text-sm leading-5 text-gray-500">
-              Record a payment against this purchase order. Full settlement is labeled{" "}
-              <span className="font-medium text-gray-700">Paid in Full</span>; smaller amounts are
-              recorded as installments.
+              Catat pembayaran untuk purchase order ini. Pelunasan penuh diberi label{" "}
+              <span className="font-medium text-gray-700">Lunas</span>; nominal lebih kecil dicatat
+              sebagai cicilan.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 px-5 py-4">
             <div className="rounded-xl border border-pink-100 bg-pink-50 p-3">
-              <div className="text-xs font-semibold text-pink-700">Outstanding balance</div>
+              <div className="text-xs font-semibold text-pink-700">Sisa tagihan</div>
               <div className="mt-1 text-lg font-bold text-pink-700">{formatAmount(poOutstandingAmount)}</div>
               <div className="mt-1 text-xs text-pink-700/80">
-                PO total {formatAmount(grossPayableAmount)}
-                {returnCreditAmount > 0 && <> · Returns -{formatAmount(returnCreditAmount)}</>}
-                {rejectCreditAmount > 0 && <> · Reject credits -{formatAmount(rejectCreditAmount)}</>}
-                {" · "}Net payable {formatAmount(payableAmount)} · Paid {formatAmount(po?.paid_amount || 0)}
+                Total PO {formatAmount(grossPayableAmount)}
+                {returnCreditAmount > 0 && <> · Retur -{formatAmount(returnCreditAmount)}</>}
+                {rejectCreditAmount > 0 && <> · Nota kredit reject -{formatAmount(rejectCreditAmount)}</>}
+                {" · "}Tagihan bersih {formatAmount(payableAmount)} · Dibayar {formatAmount(po?.paid_amount || 0)}
               </div>
             </div>
 
@@ -1297,23 +1349,23 @@ export function PODetailPage() {
                 }`}
               >
                 {paymentPreviewType === "full"
-                  ? "This payment will be recorded as Paid in Full."
-                  : "This payment will be recorded as an installment."}
+                  ? "Pembayaran ini akan dicatat sebagai Lunas."
+                  : "Pembayaran ini akan dicatat sebagai cicilan."}
               </div>
             )}
 
             <div className="grid gap-4 sm:grid-cols-2">
               <DsDateTimePicker
-                label="Payment Date"
+                label="Tanggal Pembayaran"
                 value={paymentForm.payment_date}
                 onChange={(value) => setPaymentForm((prev) => ({ ...prev, payment_date: value }))}
-                placeholder="Select payment date..."
+                placeholder="Pilih tanggal pembayaran..."
                 dateOnly
                 required
               />
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between gap-2">
-                  <Label className="text-xs">Payment Amount</Label>
+                  <Label className="text-xs">Nominal Pembayaran</Label>
                   {poOutstandingAmount > 0 && (
                     <button
                       type="button"
@@ -1322,7 +1374,7 @@ export function PODetailPage() {
                         setPaymentForm((prev) => ({ ...prev, amount: poOutstandingAmount }))
                       }
                     >
-                      Pay full amount
+                      Bayar lunas
                     </button>
                   )}
                 </div>
@@ -1337,53 +1389,53 @@ export function PODetailPage() {
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-1.5">
-                <Label className="text-xs">Method</Label>
+                <Label className="text-xs">Metode</Label>
                 <Combobox
                   options={[
-                    { value: "bank_transfer", label: "Bank Transfer" },
-                    { value: "cash", label: "Cash" },
+                    { value: "bank_transfer", label: "Transfer Bank" },
+                    { value: "cash", label: "Tunai" },
                     { value: "giro", label: "Giro" },
                     { value: "qris", label: "QRIS" },
-                    { value: "other", label: "Other" },
+                    { value: "other", label: "Lainnya" },
                   ]}
                   value={paymentForm.method}
                   onChange={(value) => setPaymentForm((prev) => ({ ...prev, method: value as VendorPayment["method"] }))}
-                  placeholder="Select method..."
-                  searchPlaceholder="Search method..."
-                  emptyMessage="No method found"
+                  placeholder="Pilih metode..."
+                  searchPlaceholder="Cari metode..."
+                  emptyMessage="Metode tidak ditemukan"
                   className="h-9 text-sm"
                 />
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs">Reference Number</Label>
+                <Label className="text-xs">Nomor Referensi</Label>
                 <Input
                   value={paymentForm.reference_number}
                   onChange={(event) => setPaymentForm((prev) => ({ ...prev, reference_number: event.target.value }))}
-                  placeholder="Transfer number / payment proof"
+                  placeholder="Nomor transfer / bukti pembayaran"
                   className="h-9 text-sm"
                 />
               </div>
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs">Notes</Label>
+              <Label className="text-xs">Catatan</Label>
               <Input
                 value={paymentForm.notes}
                 onChange={(event) => setPaymentForm((prev) => ({ ...prev, notes: event.target.value }))}
-                placeholder="Optional"
+                placeholder="Opsional"
                 className="h-9 text-sm"
               />
             </div>
           </div>
           <DialogFooter className="mx-0 mb-0 gap-2 border-t border-gray-200/70 bg-gray-50/60 px-5 py-4 sm:justify-end">
             <Button variant="outline" onClick={() => setIsPaymentDialogOpen(false)} className="purchasing-secondary-button">
-              Cancel
+              Batal
             </Button>
             <Button
               onClick={handleCreatePayment}
               disabled={createPaymentMutation.isPending || isFullyPaid}
               className="purchasing-main-button"
             >
-              {createPaymentMutation.isPending ? "Processing..." : "Submit Payment"}
+              {createPaymentMutation.isPending ? "Memproses..." : "Simpan Pembayaran"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1395,34 +1447,83 @@ export function PODetailPage() {
       <Dialog open={isCancelDialogOpen} onOpenChange={setIsCancelDialogOpen}>
         <DialogContent className="gap-0 overflow-hidden rounded-2xl border border-gray-200/70 p-0 shadow-xl ring-1 ring-gray-200/60 sm:max-w-[460px]">
           <DialogHeader className="border-b border-gray-200/70 px-5 py-4">
-            <DialogTitle className="text-base font-semibold text-gray-900">Cancel Purchase Order</DialogTitle>
+            <DialogTitle className="text-base font-semibold text-gray-900">Batalkan Purchase Order</DialogTitle>
             <DialogDescription className="mt-1 text-sm leading-5 text-gray-500">
-              Are you sure you want to cancel purchase order {po.nomor_po}?
-              Enter a cancellation reason.
+              Apakah Anda yakin ingin membatalkan purchase order {po.nomor_po}?
+              Masukkan alasan pembatalan.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 px-5 py-4">
             <div className="space-y-1.5">
-              <Label className="text-xs">Cancellation Reason *</Label>
+              <Label className="text-xs">Alasan Pembatalan *</Label>
               <Input
                 value={cancelReason}
                 onChange={(e) => setCancelReason(e.target.value)}
-                placeholder="Enter reason..."
+                placeholder="Masukkan alasan..."
                 className="h-9 text-sm"
               />
             </div>
           </div>
           <DialogFooter className="mx-0 mb-0 gap-2 border-t border-gray-200/70 bg-gray-50/60 px-5 py-4 sm:justify-end">
             <Button variant="outline" onClick={() => setIsCancelDialogOpen(false)} className="purchasing-secondary-button">
-              Cancel
+              Batal
             </Button>
             <Button
               variant="destructive"
               onClick={handleCancel}
-              disabled={!cancelReason}
+              disabled={!cancelReason || cancelMutation.isPending}
               className="purchasing-main-button"
             >
-              Cancel Purchase Order
+              {cancelMutation.isPending ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : null}
+              Batalkan Purchase Order
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Close Dialog — shortage will not be billed; no more deliveries */}
+      <Dialog open={isCloseDialogOpen} onOpenChange={setIsCloseDialogOpen}>
+        <DialogContent className="gap-0 overflow-hidden rounded-2xl border border-gray-200/70 p-0 shadow-xl ring-1 ring-gray-200/60 sm:max-w-[460px]">
+          <DialogHeader className="border-b border-gray-200/70 px-5 py-4">
+            <DialogTitle className="text-base font-semibold text-gray-900">Tutup Purchase Order</DialogTitle>
+            <DialogDescription className="mt-1 text-sm leading-5 text-gray-500">
+              Tutup {po.nomor_po} jika supplier tidak akan mengirim sisa barang.
+              Tagihan hanya menghitung qty yang sudah diterima (lolos QC). Pengiriman baru tidak lagi diizinkan.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 px-5 py-4">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Alasan Penutupan *</Label>
+              <Input
+                value={closeReason}
+                onChange={(e) => setCloseReason(e.target.value)}
+                placeholder="Contoh: Supplier tidak mengganti barang gagal QC"
+                className="h-9 text-sm"
+              />
+            </div>
+          </div>
+          <DialogFooter className="mx-0 mb-0 gap-2 border-t border-gray-200/70 bg-gray-50/60 px-5 py-4 sm:justify-end">
+            <Button
+              variant="outline"
+              onClick={() => setIsCloseDialogOpen(false)}
+              className="purchasing-secondary-button"
+              disabled={closeMutation.isPending}
+            >
+              Batal
+            </Button>
+            <Button
+              onClick={handleClose}
+              disabled={!closeReason.trim() || closeMutation.isPending}
+              className="purchasing-main-button"
+            >
+              {closeMutation.isPending ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Lock className="mr-2 h-4 w-4" />
+              )}
+              Tutup Purchase Order
             </Button>
           </DialogFooter>
         </DialogContent>

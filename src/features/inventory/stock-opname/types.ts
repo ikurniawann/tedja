@@ -88,10 +88,10 @@ export interface UpdateStockOpnameInput {
 }
 
 export const STOCK_OPNAME_STATUS_LABELS: Record<StockOpnameStatus, string> = {
-  draft: "Draft",
-  in_progress: "Counting in Progress",
-  completed: "Completed",
-  cancelled: "Cancelled",
+  draft: "Draf",
+  in_progress: "Perhitungan Berjalan",
+  completed: "Selesai",
+  cancelled: "Dibatalkan",
 };
 
 export const STOCK_OPNAME_STATUS_COLORS: Record<StockOpnameStatus, string> = {

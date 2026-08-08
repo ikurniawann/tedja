@@ -31,16 +31,16 @@ import { PurchasingTablePagination } from "@/modules/purchasing/components/pagin
 import { RM_ROUTES } from "@/modules/purchasing/constants/item-routes";
 
 const STATUS_OPTIONS: { value: POStatus | "all"; label: string }[] = [
-  { value: "all", label: "All Statuses" },
-  { value: "draft", label: "Draft" },
-  { value: "pending_approval", label: "Pending Approval" },
-  { value: "approved", label: "Approved" },
-  { value: "sent", label: "Sent" },
-  { value: "partial", label: "Partially Received" },
-  { value: "partially_received", label: "Partially Received" },
-  { value: "received", label: "Fully Received" },
-  { value: "rejected", label: "Rejected" },
-  { value: "cancelled", label: "Cancelled" },
+  { value: "all", label: "Semua Status" },
+  { value: "draft", label: "Draf" },
+  { value: "pending_approval", label: "Menunggu Persetujuan" },
+  { value: "approved", label: "Disetujui" },
+  { value: "sent", label: "Terkirim" },
+  { value: "partial", label: "Diterima Sebagian" },
+  { value: "partially_received", label: "Diterima Sebagian" },
+  { value: "received", label: "Selesai" },
+  { value: "rejected", label: "Ditolak" },
+  { value: "cancelled", label: "Dibatalkan" },
 ];
 
 function getErrorMessage(error: unknown, fallback: string) {
@@ -50,6 +50,13 @@ function getErrorMessage(error: unknown, fallback: string) {
 function canTrackShipment(status: string) {
   const normalized = status.toLowerCase();
   return ["approved", "sent", "partial", "partially_received"].includes(normalized);
+}
+
+function canReshipPurchaseOrder(po: PurchaseOrderWithStats) {
+  const status = po.status.toLowerCase();
+  return (
+    ["partial", "partially_received"].includes(status) && !po.active_delivery_id
+  );
 }
 
 function getShipmentHref(po: PurchaseOrderWithStats) {
@@ -102,7 +109,7 @@ export function PurchaseOrdersPage() {
   useEffect(() => {
     if (listQuery.isError) {
       console.error("Error loading POs:", listQuery.error);
-      toast.error("Failed to load purchase orders");
+      toast.error("Gagal memuat purchase order");
     }
   }, [listQuery.isError, listQuery.error]);
 
@@ -162,18 +169,18 @@ export function PurchaseOrdersPage() {
       console.log(`Bulk approve completed: ${successCount} success, ${failCount} failed`);
       
       if (successCount > 0) {
-        toast.success(`Approved ${successCount} purchase order${successCount === 1 ? "" : "s"}`);
+        toast.success(`${successCount} purchase order berhasil disetujui`);
       }
       
       if (failCount > 0) {
-        toast.error(`${failCount} purchase order${failCount === 1 ? "" : "s"} failed to approve: ${failedIds.slice(0, 3).join(', ')}${failedIds.length > 3 ? '...' : ''}`);
+        toast.error(`${failCount} purchase order gagal disetujui: ${failedIds.slice(0, 3).join(', ')}${failedIds.length > 3 ? '...' : ''}`);
       }
 
       setSelectedIds(new Set());
       setIsBulkApproveDialogOpen(false);
     } catch (error) {
       console.error("Error bulk approve:", error);
-      toast.error("An error occurred during bulk approval");
+      toast.error("Terjadi kesalahan saat persetujuan massal");
     } finally {
       setIsProcessingBulk(false);
     }
@@ -199,9 +206,9 @@ export function PurchaseOrdersPage() {
         }
       }
       
-      toast.success(`Deleted ${successCount} purchase order${successCount === 1 ? "" : "s"}`);
+      toast.success(`${successCount} purchase order berhasil dihapus`);
       if (failCount > 0) {
-        toast.error(`${failCount} purchase order${failCount === 1 ? "" : "s"} failed to delete`);
+        toast.error(`${failCount} purchase order gagal dihapus`);
       }
 
       listQuery.refetch();
@@ -209,7 +216,7 @@ export function PurchaseOrdersPage() {
       setIsBulkDeleteDialogOpen(false);
     } catch (error) {
       console.error("Error bulk delete:", error);
-      toast.error("Bulk delete failed");
+      toast.error("Gagal menghapus purchase order secara massal");
     } finally {
       setIsProcessingBulk(false);
     }
@@ -219,10 +226,10 @@ export function PurchaseOrdersPage() {
     try {
       setProcessingPoId(po.id);
       await approveMutation.mutateAsync(po.id);
-      toast.success("Purchase order approved");
+      toast.success("Purchase order berhasil disetujui");
     } catch (error: unknown) {
       console.error("Error approving PO:", error);
-      toast.error(getErrorMessage(error, "Failed to approve purchase order"));
+      toast.error(getErrorMessage(error, "Gagal menyetujui purchase order"));
     } finally {
       setProcessingPoId(null);
     }
@@ -239,11 +246,11 @@ export function PurchaseOrdersPage() {
     try {
       setProcessingPoId(sendingPo.id);
       await sendMutation.mutateAsync({ id: sendingPo.id, sentVia: sendVia });
-      toast.success(`Purchase order sent via ${sendVia}`);
+      toast.success(`Purchase order berhasil dikirim via ${sendVia}`);
       setIsSendDialogOpen(false);
     } catch (error: unknown) {
       console.error("Error sending PO:", error);
-      toast.error(getErrorMessage(error, "Failed to send purchase order"));
+      toast.error(getErrorMessage(error, "Gagal mengirim purchase order"));
     } finally {
       setProcessingPoId(null);
     }
@@ -259,11 +266,11 @@ export function PurchaseOrdersPage() {
     if (!cancellingPo || !cancelReason) return;
     try {
       await cancelMutation.mutateAsync({ id: cancellingPo.id, reason: cancelReason });
-      toast.success("Purchase order cancelled");
+      toast.success("Purchase order berhasil dibatalkan");
       setIsCancelDialogOpen(false);
     } catch (error: unknown) {
       console.error("Error cancelling PO:", error);
-      toast.error(getErrorMessage(error, "Failed to cancel purchase order"));
+      toast.error(getErrorMessage(error, "Gagal membatalkan purchase order"));
     }
   };
 
@@ -281,17 +288,19 @@ export function PurchaseOrdersPage() {
       received: "bg-green-100 text-green-800",
       rejected: "bg-red-100 text-red-800",
       cancelled: "bg-red-100 text-red-800",
+      closed: "bg-slate-100 text-slate-800",
     };
     const labels: Record<POStatus, string> = {
-      draft: "Draft",
-      pending_approval: "Pending Approval",
-      approved: "Approved",
-      sent: "Sent",
-      partial: "Partially Received",
-      partially_received: "Partially Received",
-      received: "Fully Received",
-      rejected: "Rejected",
-      cancelled: "Cancelled",
+      draft: "Draf",
+      pending_approval: "Menunggu Persetujuan",
+      approved: "Disetujui",
+      sent: "Terkirim",
+      partial: "Diterima Sebagian",
+      partially_received: "Diterima Sebagian",
+      received: "Selesai",
+      rejected: "Ditolak",
+      cancelled: "Dibatalkan",
+      closed: "Ditutup",
     };
     return <Badge className={styles[normalized] || "bg-gray-100 text-gray-800"}>{labels[normalized] || status}</Badge>;
   };
@@ -307,19 +316,19 @@ export function PurchaseOrdersPage() {
       cancelled: "bg-red-100 text-red-700",
     };
     const labels: Record<string, string> = {
-      draft: "Draft",
-      in_progress: "In Progress",
-      waiting_payment: "Waiting for Payment",
-      waiting_receipt: "Waiting for Receipt",
-      completed: "Completed",
-      cancelled: "Cancelled",
+      draft: "Draf",
+      in_progress: "Sedang Berjalan",
+      waiting_payment: "Menunggu Pembayaran",
+      waiting_receipt: "Menunggu Penerimaan",
+      completed: "Selesai",
+      cancelled: "Dibatalkan",
     };
     return <Badge className={styles[lifecycle] || "bg-blue-100 text-blue-700"}>{labels[lifecycle] || lifecycle}</Badge>;
   };
 
   const formatDate = (dateStr: string) => {
     if (!dateStr) return "-";
-    return new Date(dateStr).toLocaleDateString("en-US", {
+    return new Date(dateStr).toLocaleDateString("id-ID", {
       day: "2-digit",
       month: "short",
       year: "numeric",
@@ -339,19 +348,19 @@ export function PurchaseOrdersPage() {
     <div className="space-y-6">
       <PurchasingPageHeader
         title="Purchase Order"
-        description={`Manage purchase orders from approved purchase requests through receipt — ${total} total`}
+        description={`Kelola purchase order dari purchase request yang disetujui hingga penerimaan barang — total ${total}`}
       />
 
       <PurchasingListSection
         icon={FileText}
-        title="Purchase Order List"
-        description="Track purchase orders, suppliers, approval status, and receipt progress."
+        title="Daftar Purchase Order"
+        description="Pantau purchase order, supplier, status persetujuan, dan progres penerimaan."
         toolbar={
           <div className="flex w-full flex-col gap-3 sm:w-auto md:flex-row md:items-center">
             <label className="relative w-full md:w-80">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
                 <Input
-                  placeholder="Search purchase order number or supplier..."
+                  placeholder="Cari nomor purchase order atau supplier..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="h-10 bg-white pl-10 text-sm focus:border-pink-400 focus:ring-2 focus:ring-pink-100"
@@ -379,7 +388,7 @@ export function PurchaseOrdersPage() {
 
             {(search || isFilterActive || page > 1) && (
               <Button variant="outline" onClick={handleResetFilters} className="h-10 flex-shrink-0 rounded-lg">
-                Reset
+                Atur Ulang
               </Button>
             )}
           </div>
@@ -390,7 +399,7 @@ export function PurchaseOrdersPage() {
       {selectedIds.size > 0 && (
         <div className="flex items-center gap-2 p-3 bg-blue-50 border border-blue-200 rounded-md">
           <span className="text-sm font-medium text-blue-800">
-            {selectedIds.size} purchase order{selectedIds.size === 1 ? "" : "s"} selected
+            {selectedIds.size} purchase order dipilih
           </span>
           <Button
             size="sm"
@@ -399,7 +408,7 @@ export function PurchaseOrdersPage() {
             disabled={isProcessingBulk}
           >
             <CheckCircle className="w-4 h-4 mr-1" />
-            Approve Selected
+            Setujui Terpilih
           </Button>
           <Button
             size="sm"
@@ -408,14 +417,14 @@ export function PurchaseOrdersPage() {
             disabled={isProcessingBulk}
           >
             <Trash2 className="w-4 h-4 mr-1" />
-            Delete Selected
+            Hapus Terpilih
           </Button>
           <Button
             size="sm"
             variant="ghost"
             onClick={() => setSelectedIds(new Set())}
           >
-            Clear
+            Bersihkan
           </Button>
         </div>
       )}
@@ -437,8 +446,8 @@ export function PurchaseOrdersPage() {
                     setPage(1);
                   }}
                   placeholder="Filter status..."
-                  searchPlaceholder="Search status..."
-                  emptyMessage="No status found"
+                  searchPlaceholder="Cari status..."
+                  emptyMessage="Status tidak ditemukan"
                   className="!w-full h-9 text-sm"
                 />
               </div>
@@ -461,24 +470,24 @@ export function PurchaseOrdersPage() {
               <th className="px-4 py-3 text-left font-semibold">Purchase Order</th>
               <th className="px-4 py-3 text-left font-semibold">Purchase Request</th>
               <th className="px-4 py-3 text-left font-semibold">Supplier</th>
-              <th className="px-4 py-3 text-left font-semibold">Date</th>
+              <th className="px-4 py-3 text-left font-semibold">Tanggal</th>
               <th className="px-4 py-3 text-right font-semibold">Total</th>
               <th className="px-4 py-3 text-center font-semibold">Status</th>
-              <th className="px-4 py-3 text-left font-semibold">Progress</th>
-              <th className="px-4 py-3 text-right font-semibold">Actions</th>
+              <th className="px-4 py-3 text-left font-semibold">Progres</th>
+              <th className="px-4 py-3 text-right font-semibold">Aksi</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {loading ? (
               <tr>
                 <td colSpan={9} className="py-12 text-center text-sm text-gray-500">
-                  Loading purchase orders...
+                  Memuat purchase order...
                 </td>
               </tr>
             ) : pos.length === 0 ? (
               <tr>
                 <td colSpan={9} className="py-14 text-center text-sm text-gray-500">
-                  No purchase orders found
+                  Purchase order tidak ditemukan
                 </td>
               </tr>
             ) : (
@@ -544,7 +553,7 @@ export function PurchaseOrdersPage() {
                         </span>
                         </div>
                         <div className="text-xs text-muted-foreground">
-                          Goods {po.received_percentage || 0}% · Payment {po.payment_progress_pct || 0}%
+                          Barang {po.received_percentage || 0}% · Pembayaran {po.payment_progress_pct || 0}%
                         </div>
                       </div>
                     )}
@@ -552,18 +561,18 @@ export function PurchaseOrdersPage() {
                   <td className="px-4 py-3 text-right">
                     <div className="flex items-center justify-end gap-2">
                       <Link href={`/dashboard/purchasing/po/${po.id}`}>
-                        <Button variant="ghost" size="sm" className="cursor-pointer" title="View detail">
+                        <Button variant="ghost" size="sm" className="cursor-pointer" title="Lihat detail">
                           <Eye className="w-4 h-4" />
                         </Button>
                       </Link>
                       {normalizeStatus(po.status) === "draft" && (
                         <>
                           <Link href={`/dashboard/purchasing/po/edit/${po.id}`}>
-                            <Button variant="ghost" size="sm" className="cursor-pointer" title="Edit purchase order">
+                            <Button variant="ghost" size="sm" className="cursor-pointer" title="Ubah purchase order">
                               <Pencil className="w-4 h-4" />
                             </Button>
                           </Link>
-                          <Button variant="ghost" size="sm" onClick={() => handleApprove(po)} disabled={processingPoId === po.id} title="Approve">
+                          <Button variant="ghost" size="sm" onClick={() => handleApprove(po)} disabled={processingPoId === po.id} title="Setujui">
                             {processingPoId === po.id ? (
                               <Loader2 className="w-4 h-4 animate-spin text-green-600" />
                             ) : (
@@ -573,7 +582,7 @@ export function PurchaseOrdersPage() {
                         </>
                       )}
                       {normalizeStatus(po.status) === "approved" && (
-                        <Button variant="ghost" size="sm" onClick={() => handleOpenSend(po)} disabled={processingPoId === po.id} title="Send to supplier">
+                        <Button variant="ghost" size="sm" onClick={() => handleOpenSend(po)} disabled={processingPoId === po.id} title="Kirim ke supplier">
                           {processingPoId === po.id ? (
                             <Loader2 className="w-4 h-4 animate-spin text-pink-600" />
                           ) : (
@@ -581,7 +590,19 @@ export function PurchaseOrdersPage() {
                           )}
                         </Button>
                       )}
-                      {canTrackShipment(po.status) && (
+                      {canReshipPurchaseOrder(po) ? (
+                        <Link href={getShipmentHref(po)}>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8 gap-1.5 rounded-lg border-primary/20 px-2.5 text-xs font-medium text-primary shadow-sm hover:!border-primary/30 hover:!bg-primary/5 hover:!text-primary"
+                            title="Kirim ulang sisa qty PO"
+                          >
+                            <Truck className="h-3.5 w-3.5" />
+                            Kirim Ulang
+                          </Button>
+                        </Link>
+                      ) : canTrackShipment(po.status) ? (
                         <Link href={getShipmentHref(po)}>
                           <Button
                             variant="ghost"
@@ -589,16 +610,16 @@ export function PurchaseOrdersPage() {
                             className="cursor-pointer"
                             title={
                               po.active_delivery_id
-                                ? `Track shipment${po.active_delivery_number ? ` (${po.active_delivery_number})` : ""}`
-                                : "Track shipment"
+                                ? `Lacak pengiriman${po.active_delivery_number ? ` (${po.active_delivery_number})` : ""}`
+                                : "Buat pengiriman"
                             }
                           >
                             <Truck className="h-4 w-4 text-blue-600" />
                           </Button>
                         </Link>
-                      )}
+                      ) : null}
                       {normalizeStatus(po.status) !== "received" && normalizeStatus(po.status) !== "cancelled" && (
-                        <Button variant="ghost" size="sm" onClick={() => handleOpenCancel(po)} title="Cancel">
+                        <Button variant="ghost" size="sm" onClick={() => handleOpenCancel(po)} title="Batalkan">
                           <XCircle className="w-4 h-4 text-red-600" />
                         </Button>
                       )}
@@ -625,36 +646,36 @@ export function PurchaseOrdersPage() {
       <Dialog open={isSendDialogOpen} onOpenChange={setIsSendDialogOpen}>
         <DialogContent className="gap-0 overflow-hidden rounded-2xl border border-gray-200/70 p-0 shadow-xl ring-1 ring-gray-200/60 sm:max-w-[460px]">
           <DialogHeader className="border-b border-gray-200/70 px-5 py-4">
-            <DialogTitle className="text-base font-semibold text-gray-900">Send Purchase Order to Supplier</DialogTitle>
+            <DialogTitle className="text-base font-semibold text-gray-900">Kirim Purchase Order ke Supplier</DialogTitle>
             <DialogDescription className="mt-1 text-sm leading-5 text-gray-500">
-              Choose a delivery method for purchase order {sendingPo?.nomor_po}
+              Pilih metode pengiriman untuk purchase order {sendingPo?.nomor_po}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 px-5 py-4">
             <div className="space-y-1.5">
-              <Label className="text-xs">Delivery Method</Label>
+              <Label className="text-xs">Metode Pengiriman</Label>
               <Combobox
                 options={[
                   { value: "EMAIL", label: "Email" },
                   { value: "WHATSAPP", label: "WhatsApp" },
-                  { value: "PRINT", label: "Print / Manual" },
-                  { value: "OTHER", label: "Other" },
+                  { value: "PRINT", label: "Cetak / Manual" },
+                  { value: "OTHER", label: "Lainnya" },
                 ]}
                 value={sendVia}
                 onChange={(value) => setSendVia(value as "EMAIL" | "WHATSAPP" | "PRINT" | "OTHER")}
-                placeholder="Select method..."
-                searchPlaceholder="Search method..."
-                emptyMessage="No method found"
+                placeholder="Pilih metode..."
+                searchPlaceholder="Cari metode..."
+                emptyMessage="Metode tidak ditemukan"
                 className="!w-full h-9 text-sm"
               />
             </div>
           </div>
           <DialogFooter className="mx-0 mb-0 gap-2 border-t border-gray-200/70 bg-gray-50/60 px-5 py-4 sm:justify-end">
             <Button variant="outline" onClick={() => setIsSendDialogOpen(false)} disabled={isSending} className="purchasing-secondary-button">
-              Cancel
+              Batal
             </Button>
             <Button onClick={handleSend} disabled={isSending} className="purchasing-main-button">
-              {isSending ? "Sending..." : "Send"}
+              {isSending ? "Mengirim..." : "Kirim"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -664,25 +685,25 @@ export function PurchaseOrdersPage() {
       <Dialog open={isCancelDialogOpen} onOpenChange={setIsCancelDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Cancel Purchase Order</DialogTitle>
+            <DialogTitle>Batalkan Purchase Order</DialogTitle>
             <DialogDescription>
-              Are you sure you want to cancel purchase order {cancellingPo?.nomor_po}?
-              Enter a cancellation reason.
+              Apakah Anda yakin ingin membatalkan purchase order {cancellingPo?.nomor_po}?
+              Masukkan alasan pembatalan.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label>Cancellation Reason *</Label>
+              <Label>Alasan Pembatalan *</Label>
               <Input
                 value={cancelReason}
                 onChange={(e) => setCancelReason(e.target.value)}
-                placeholder="Example: Requirement changed"
+                placeholder="Contoh: Kebutuhan berubah"
               />
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsCancelDialogOpen(false)} className="purchasing-secondary-button">
-              Cancel
+              Batal
             </Button>
             <Button
               variant="destructive"
@@ -690,7 +711,7 @@ export function PurchaseOrdersPage() {
               disabled={!cancelReason}
               className="purchasing-main-button"
             >
-              Cancel Purchase Order
+              Batalkan Purchase Order
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -700,17 +721,17 @@ export function PurchaseOrdersPage() {
       <Dialog open={isBulkApproveDialogOpen} onOpenChange={setIsBulkApproveDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Approve Multiple PO</DialogTitle>
+            <DialogTitle>Setujui Beberapa PO</DialogTitle>
             <DialogDescription>
-              You are about to approve {selectedIds.size} selected purchase order{selectedIds.size === 1 ? "" : "s"}. This action cannot be undone.
+              Anda akan menyetujui {selectedIds.size} purchase order yang dipilih. Tindakan ini tidak dapat dibatalkan.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsBulkApproveDialogOpen(false)} disabled={isProcessingBulk} className="purchasing-secondary-button">
-              Cancel
+              Batal
             </Button>
             <Button onClick={handleBulkApprove} disabled={isProcessingBulk} className="purchasing-main-button">
-              {isProcessingBulk ? "Processing..." : `Approve ${selectedIds.size} PO`}
+              {isProcessingBulk ? "Memproses..." : `Setujui ${selectedIds.size} PO`}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -720,17 +741,17 @@ export function PurchaseOrdersPage() {
       <Dialog open={isBulkDeleteDialogOpen} onOpenChange={setIsBulkDeleteDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete Multiple Purchase Orders</DialogTitle>
+            <DialogTitle>Hapus Beberapa Purchase Order</DialogTitle>
             <DialogDescription className="text-red-600">
-              Warning: You are about to delete {selectedIds.size} selected purchase order{selectedIds.size === 1 ? "" : "s"}. This action cannot be undone.
+              Peringatan: Anda akan menghapus {selectedIds.size} purchase order yang dipilih. Tindakan ini tidak dapat dibatalkan.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsBulkDeleteDialogOpen(false)} disabled={isProcessingBulk} className="purchasing-secondary-button">
-              Cancel
+              Batal
             </Button>
             <Button variant="destructive" onClick={handleBulkDelete} disabled={isProcessingBulk} className="purchasing-main-button">
-              {isProcessingBulk ? "Processing..." : `Delete ${selectedIds.size} Purchase Order${selectedIds.size === 1 ? "" : "s"}`}
+              {isProcessingBulk ? "Memproses..." : `Hapus ${selectedIds.size} Purchase Order`}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -29,8 +29,8 @@ export async function PrintPRPage({ params }: PrintPRPageProps) {
       *,
       items:pr_items(
         *,
-        raw_material:raw_material_id(id, kode, nama),
-        satuan:satuan_id(id, nama)
+        raw_material:raw_materials!raw_material_id(id, kode, nama),
+        satuan:units!satuan_id(id, nama)
       )
     `)
     .eq("id", id)

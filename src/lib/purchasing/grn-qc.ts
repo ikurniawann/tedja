@@ -3,6 +3,7 @@ import { addInventoryFromGrn } from "@/lib/inventory";
 import {
   updateDeliveryStatusAfterGrn,
   updatePOStatusAfterGrn,
+  recalculatePoReceivedQty,
   type GrnStatus,
 } from "@/lib/purchasing/grn";
 import { toQty } from "@/lib/purchasing/utils";
@@ -11,6 +12,7 @@ import {
   resolveOverallQcStatus,
   type QcOverallStatus,
 } from "@/lib/purchasing/grn-qc-utils";
+import { createBaseUnitResolver } from "@/lib/purchasing/raw-material-units";
 import { syncQcRejectCredits } from "@/lib/purchasing/vendor-credit-service";
 
 export type { QcOverallStatus } from "@/lib/purchasing/grn-qc-utils";
@@ -18,7 +20,8 @@ export { resolveOverallQcStatus } from "@/lib/purchasing/grn-qc-utils";
 
 export type QcInspectionItemInput = {
   grn_item_id: string;
-  raw_material_id: string;
+  raw_material_id?: string | null;
+  product_id?: string | null;
   qty_inspected: number;
   qty_accepted: number;
   qty_rejected: number;
@@ -34,6 +37,8 @@ export type SubmitGrnQcInput = {
   rekomendasi?: string | null;
   items: QcInspectionItemInput[];
   userId: string;
+  /** When true, skip RM inventory + product merch posting (caller already posted). */
+  skipInventoryPosting?: boolean;
 };
 
 export async function computeGrnStatusAfterQc(
@@ -45,6 +50,9 @@ export async function computeGrnStatusAfterQc(
     return "rejected";
   }
 
+  // qty_qc_posted already written on grn_items — rebuild PO qty_received from GRNs.
+  await recalculatePoReceivedQty(db, poId);
+
   const { data: poItems, error } = await db
     .from("purchase_order_items")
     .select("qty_ordered, qty_received")
@@ -54,8 +62,16 @@ export async function computeGrnStatusAfterQc(
   if (error) throw error;
   if (!poItems?.length) return "partially_received";
 
-  const totalOrdered = poItems.reduce((sum, item) => sum + toQty(item.qty_ordered), 0);
-  const totalReceived = poItems.reduce((sum, item) => sum + toQty(item.qty_received), 0);
+  const totalOrdered = poItems.reduce(
+    (sum: number, item: { qty_ordered?: number | null; qty_received?: number | null }) =>
+      sum + toQty(item.qty_ordered),
+    0
+  );
+  const totalReceived = poItems.reduce(
+    (sum: number, item: { qty_ordered?: number | null; qty_received?: number | null }) =>
+      sum + toQty(item.qty_received),
+    0
+  );
 
   if (totalOrdered > 0 && totalReceived >= totalOrdered) {
     return "received";
@@ -64,6 +80,44 @@ export async function computeGrnStatusAfterQc(
   return "partially_received";
 }
 
+async function postProductMerchStock(
+  db: DbClient,
+  productId: string,
+  qty: number
+): Promise<void> {
+  if (qty <= 0) return;
+  try {
+    const { data: updatedCount, error: stockError } = await db.rpc(
+      "pos_receive_merchandise_stock",
+      { p_source_product_id: productId, p_qty: qty }
+    );
+
+    if (stockError) {
+      console.error(
+        `[GRN QC] Merch stock posting error for product ${productId} (non-fatal):`,
+        stockError
+      );
+    } else if (Number(updatedCount) === 0) {
+      console.warn(
+        `[GRN QC] No linked POS merchandise product for item.products ${productId} — stock not posted`
+      );
+    }
+  } catch (stockErr) {
+    console.error("[GRN QC] Merch stock posting error (non-fatal):", stockErr);
+  }
+}
+
+type GrnItemForQc = {
+  id: string;
+  raw_material_id?: string | null;
+  product_id?: string | null;
+  qty_diterima?: number | null;
+  satuan_id?: string | null;
+  warehouse_id?: string | null;
+  qty_qc_posted?: number | null;
+  purchase_order_item_id?: string | null;
+  purchase_order_item?: { id?: string; harga_satuan?: number | null } | null;
+};
 export async function submitGrnQcInspection(
   db: DbClient,
   input: SubmitGrnQcInput
@@ -72,8 +126,9 @@ export async function submitGrnQcInspection(
   grnStatus: GrnStatus;
   totalAccepted: number;
   totalRejected: number;
+  accountingNote?: string | null;
 }> {
-  const { grnId, userId, items } = input;
+  const { grnId, userId, items, skipInventoryPosting = false } = input;
 
   const { data: grn, error: grnError } = await db
     .from("grn")
@@ -106,7 +161,9 @@ export async function submitGrnQcInspection(
       `
       id,
       raw_material_id,
+      product_id,
       qty_diterima,
+      satuan_id,
       warehouse_id,
       qty_qc_posted,
       purchase_order_item_id,
@@ -121,12 +178,20 @@ export async function submitGrnQcInspection(
 
   if (itemsError) throw itemsError;
 
-  const grnItemMap = new Map((grnItems || []).map((item) => [item.id, item]));
+  const typedGrnItems = (grnItems || []) as GrnItemForQc[];
+  const grnItemMap = new Map(typedGrnItems.map((item) => [item.id, item]));
 
   for (const item of items) {
     const grnItem = grnItemMap.get(item.grn_item_id);
     if (!grnItem) {
       throw new Error(`GRN item ${item.grn_item_id} not found`);
+    }
+
+    const rawMaterialId = item.raw_material_id ?? grnItem.raw_material_id ?? null;
+    const productId = item.product_id ?? grnItem.product_id ?? null;
+
+    if (!rawMaterialId && !productId) {
+      throw new Error(`GRN item ${item.grn_item_id} has no raw material or product`);
     }
 
     const inspected = toQty(item.qty_inspected);
@@ -182,16 +247,23 @@ export async function submitGrnQcInspection(
     throw new Error(inspectionError?.message || "Failed to save QC inspection");
   }
 
-  const qcItemsPayload = items.map((item) => ({
-    qc_inspection_id: inspection.id,
-    grn_item_id: item.grn_item_id,
-    raw_material_id: item.raw_material_id,
-    qty_inspected: toQty(item.qty_inspected),
-    qty_accepted: toQty(item.qty_accepted),
-    qty_rejected: toQty(item.qty_rejected),
-    item_status: resolveItemStatus(toQty(item.qty_accepted), toQty(item.qty_rejected)),
-    catatan: item.catatan || null,
-  }));
+  const qcItemsPayload = items.map((item) => {
+    const grnItem = grnItemMap.get(item.grn_item_id)!;
+    const rawMaterialId = item.raw_material_id ?? grnItem.raw_material_id ?? null;
+    const productId = item.product_id ?? grnItem.product_id ?? null;
+
+    return {
+      qc_inspection_id: inspection.id,
+      grn_item_id: item.grn_item_id,
+      raw_material_id: rawMaterialId,
+      product_id: productId,
+      qty_inspected: toQty(item.qty_inspected),
+      qty_accepted: toQty(item.qty_accepted),
+      qty_rejected: toQty(item.qty_rejected),
+      item_status: resolveItemStatus(toQty(item.qty_accepted), toQty(item.qty_rejected)),
+      catatan: item.catatan || null,
+    };
+  });
 
   const { error: qcItemsError } = await db
     .from("grn_qc_inspection_items")
@@ -201,12 +273,24 @@ export async function submitGrnQcInspection(
     throw new Error(qcItemsError.message || "Failed to save QC line items");
   }
 
+  const resolveBaseUnit = skipInventoryPosting
+    ? null
+    : await createBaseUnitResolver(
+        db,
+        items.map(
+          (item) =>
+            item.raw_material_id ?? grnItemMap.get(item.grn_item_id)?.raw_material_id
+        )
+      );
+
   for (const item of items) {
     const grnItem = grnItemMap.get(item.grn_item_id)!;
     const accepted = toQty(item.qty_accepted);
     const itemStatus = resolveItemStatus(accepted, toQty(item.qty_rejected));
-    const previouslyPosted = toQty((grnItem as { qty_qc_posted?: number | null }).qty_qc_posted);
+    const previouslyPosted = toQty(grnItem.qty_qc_posted);
     const qtyToPost = Math.max(0, accepted - previouslyPosted);
+    const rawMaterialId = item.raw_material_id ?? grnItem.raw_material_id ?? null;
+    const productId = item.product_id ?? grnItem.product_id ?? null;
 
     await db
       .from("grn_items")
@@ -217,21 +301,27 @@ export async function submitGrnQcInspection(
       })
       .eq("id", item.grn_item_id);
 
-    if (qtyToPost > 0) {
-      const poItem = grnItem.purchase_order_item as { harga_satuan?: number | null } | null;
-      const unitCost = toQty(poItem?.harga_satuan);
-      const warehouseId = (grnItem as { warehouse_id?: string | null }).warehouse_id ?? null;
+    if (skipInventoryPosting || qtyToPost <= 0) continue;
+
+    if (rawMaterialId) {
+      const baseUnitFactor = resolveBaseUnit
+        ? resolveBaseUnit(rawMaterialId, grnItem.satuan_id)
+        : 1;
+      const unitCost = toQty(grnItem.purchase_order_item?.harga_satuan);
+      const warehouseId = grnItem.warehouse_id ?? null;
 
       await addInventoryFromGrn(
         db,
-        item.raw_material_id,
-        qtyToPost,
-        unitCost,
+        rawMaterialId,
+        qtyToPost * baseUnitFactor,
+        baseUnitFactor > 0 ? unitCost / baseUnitFactor : unitCost,
         grnId,
         grn.nomor_grn,
         userId,
         warehouseId
       );
+    } else if (productId) {
+      await postProductMerchStock(db, productId, qtyToPost);
     }
   }
 
@@ -273,10 +363,83 @@ export async function submitGrnQcInspection(
     console.error("[GRN QC] Vendor credit sync error (non-fatal):", creditErr);
   }
 
+  const { postGrnAccountingJournals } = await import(
+    "@/lib/purchasing/accounting-posting"
+  );
+  const accounting = await postGrnAccountingJournals({
+    db,
+    grnId,
+    userId,
+  });
+
   return {
     inspectionId: inspection.id,
     grnStatus,
     totalAccepted,
     totalRejected,
+    accountingNote: accounting.note,
   };
+}
+
+/**
+ * Build QC payload from create-GRN line items (combined receive+QC).
+ * Only lines with qty_diterima > 0 are inspected.
+ */
+export function buildInlineQcItemsFromCreatedGrn(params: {
+  createdItems: Array<{
+    id: string;
+    purchase_order_item_id?: string | null;
+    raw_material_id?: string | null;
+    product_id?: string | null;
+    qty_diterima?: number | null;
+  }>;
+  requestItems: Array<{
+    raw_material_id?: string | null;
+    product_id?: string | null;
+    purchase_order_item_id?: string | null;
+    qty_diterima: number;
+    qty_accepted?: number;
+    qty_rejected?: number;
+    catatan?: string | null;
+  }>;
+}): QcInspectionItemInput[] {
+  const remaining = [...params.requestItems];
+  const result: QcInspectionItemInput[] = [];
+
+  for (const created of params.createdItems) {
+    const received = toQty(created.qty_diterima);
+    if (received <= 0) continue;
+
+    const idx = remaining.findIndex((req) => {
+      if (
+        created.purchase_order_item_id &&
+        req.purchase_order_item_id === created.purchase_order_item_id
+      ) {
+        return true;
+      }
+      if (created.raw_material_id && req.raw_material_id === created.raw_material_id) {
+        return true;
+      }
+      if (created.product_id && req.product_id === created.product_id) {
+        return true;
+      }
+      return false;
+    });
+
+    const req = idx >= 0 ? remaining.splice(idx, 1)[0] : null;
+    const accepted = req?.qty_accepted != null ? toQty(req.qty_accepted) : received;
+    const rejected = req?.qty_rejected != null ? toQty(req.qty_rejected) : Math.max(0, received - accepted);
+
+    result.push({
+      grn_item_id: created.id,
+      raw_material_id: created.raw_material_id ?? null,
+      product_id: created.product_id ?? null,
+      qty_inspected: received,
+      qty_accepted: accepted,
+      qty_rejected: rejected,
+      catatan: req?.catatan ?? null,
+    });
+  }
+
+  return result;
 }

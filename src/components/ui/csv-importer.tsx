@@ -170,20 +170,20 @@ export const CsvImporter = forwardRef<CsvImporterHandle, CsvImporterProps>(funct
       const value = row[col.key]?.trim();
 
       if (col.required && !value) {
-        errors.push(`${col.label} is required`);
+        errors.push(`${col.label} wajib diisi`);
       }
 
       if (value) {
         if (col.type === "email" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
-          errors.push(`${col.label} must be a valid email`);
+          errors.push(`${col.label} harus berupa email yang valid`);
         }
 
         if (col.type === "number" && Number.isNaN(Number(value))) {
-          errors.push(`${col.label} must be a number`);
+          errors.push(`${col.label} harus berupa angka`);
         }
 
         if (col.type === "date" && !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-          errors.push(`${col.label} must use YYYY-MM-DD format`);
+          errors.push(`${col.label} harus memakai format YYYY-MM-DD`);
         }
       }
     });
@@ -212,8 +212,8 @@ export const CsvImporter = forwardRef<CsvImporterHandle, CsvImporterProps>(funct
 
       if (!isCsv && !isXlsx) {
         toast({
-          title: "Invalid file format",
-          description: "Please upload a CSV or Excel (.xlsx) file.",
+          title: "Format file tidak valid",
+          description: "Silakan unggah file CSV atau Excel (.xlsx).",
           variant: "destructive",
         });
         return;
@@ -233,8 +233,8 @@ export const CsvImporter = forwardRef<CsvImporterHandle, CsvImporterProps>(funct
           const sheetName = workbook.SheetNames[0];
           if (!sheetName) {
             toast({
-              title: "Empty file",
-              description: "The Excel file does not contain any worksheet.",
+              title: "File kosong",
+              description: "File Excel tidak memiliki worksheet.",
               variant: "destructive",
             });
             return;
@@ -252,8 +252,8 @@ export const CsvImporter = forwardRef<CsvImporterHandle, CsvImporterProps>(funct
 
         if (rows.length < 2) {
           toast({
-            title: "Empty file",
-            description: "The file must include a header row and at least one data row.",
+            title: "File kosong",
+            description: "File harus memuat baris header dan minimal satu baris data.",
             variant: "destructive",
           });
           return;
@@ -316,7 +316,7 @@ export const CsvImporter = forwardRef<CsvImporterHandle, CsvImporterProps>(funct
       const result = (await response.json()) as ImportResult & { message?: string };
 
       if (!response.ok) {
-        throw new Error(result.message || "Import failed");
+        throw new Error(result.message || "Impor gagal");
       }
 
       setImportResult(result);
@@ -325,19 +325,19 @@ export const CsvImporter = forwardRef<CsvImporterHandle, CsvImporterProps>(funct
         const updated = Number(result.updated ?? 0);
         const imported = Number(result.imported ?? 0);
         const parts: string[] = [];
-        if (imported > 0) parts.push(`${imported} imported`);
-        if (updated > 0) parts.push(`${updated} updated`);
+        if (imported > 0) parts.push(`${imported} diimpor`);
+        if (updated > 0) parts.push(`${updated} diperbarui`);
         toast({
-          title: "Import successful",
-          description: parts.length > 0 ? parts.join(", ") + "." : "Import completed.",
+          title: "Impor berhasil",
+          description: parts.length > 0 ? parts.join(", ") + "." : "Impor selesai.",
         });
       }
 
       onSuccess?.(result);
     } catch (error: unknown) {
       toast({
-        title: "Import failed",
-        description: error instanceof Error ? error.message : "Import failed",
+        title: "Impor gagal",
+        description: error instanceof Error ? error.message : "Impor gagal",
         variant: "destructive",
       });
     } finally {
@@ -387,14 +387,14 @@ export const CsvImporter = forwardRef<CsvImporterHandle, CsvImporterProps>(funct
           }`}
         >
           <Upload className="mx-auto mb-4 h-12 w-12 text-gray-400" />
-          <p className="mb-2 text-sm text-gray-600">Drag and drop a CSV or Excel file here, or</p>
+          <p className="mb-2 text-sm text-gray-600">Seret dan lepas file CSV atau Excel di sini, atau</p>
           <Button
             type="button"
             variant="outline"
             className="purchasing-secondary-button"
             onClick={() => fileInputRef.current?.click()}
           >
-            Choose File
+            Pilih File
           </Button>
           <input
             ref={fileInputRef}
@@ -408,7 +408,7 @@ export const CsvImporter = forwardRef<CsvImporterHandle, CsvImporterProps>(funct
               }
             }}
           />
-          <p className="mt-4 text-xs text-gray-500">Accepted formats: CSV, Excel (.xlsx)</p>
+          <p className="mt-4 text-xs text-gray-500">Format yang diterima: CSV, Excel (.xlsx)</p>
         </div>
       ) : (
         <div className={expanded ? "flex min-h-0 flex-1 flex-col space-y-4" : "space-y-4"}>
@@ -418,7 +418,7 @@ export const CsvImporter = forwardRef<CsvImporterHandle, CsvImporterProps>(funct
               <div>
                 <p className="text-sm font-medium">{file.name}</p>
                 <p className="text-xs text-gray-500">
-                  {(file.size / 1024).toFixed(2)} KB • {previewData.length} rows
+                  {(file.size / 1024).toFixed(2)} KB • {previewData.length} baris
                 </p>
               </div>
             </div>
@@ -433,7 +433,7 @@ export const CsvImporter = forwardRef<CsvImporterHandle, CsvImporterProps>(funct
                   {invalidCount} error
                 </Badge>
               )}
-              <Button type="button" variant="ghost" size="icon" onClick={resetImport} aria-label="Remove file">
+              <Button type="button" variant="ghost" size="icon" onClick={resetImport} aria-label="Hapus file">
                 <Trash2 className="h-4 w-4" />
               </Button>
             </div>
@@ -444,19 +444,19 @@ export const CsvImporter = forwardRef<CsvImporterHandle, CsvImporterProps>(funct
               <div className="shrink-0 rounded-lg border border-emerald-200/80 bg-emerald-50 p-4">
                 <div className="mb-2 flex items-center gap-2">
                   <CheckCircle className="h-5 w-5 text-emerald-600" />
-                  <span className="font-medium text-emerald-900">Import complete</span>
+                  <span className="font-medium text-emerald-900">Impor selesai</span>
                 </div>
                 <div className="grid grid-cols-3 gap-4 text-sm">
                   <div>
-                    <span className="text-emerald-700">Imported:</span>
+                    <span className="text-emerald-700">Diimpor:</span>
                     <span className="ml-2 font-semibold">{importResult.imported}</span>
                   </div>
                   <div>
-                    <span className="text-emerald-700">Updated:</span>
+                    <span className="text-emerald-700">Diperbarui:</span>
                     <span className="ml-2 font-semibold">{importResult.updated ?? 0}</span>
                   </div>
                   <div>
-                    <span className="text-emerald-700">Skipped:</span>
+                    <span className="text-emerald-700">Dilewati:</span>
                     <span className="ml-2 font-semibold">{importResult.skipped}</span>
                   </div>
                 </div>
@@ -474,7 +474,7 @@ export const CsvImporter = forwardRef<CsvImporterHandle, CsvImporterProps>(funct
                     <div className="flex items-center gap-2">
                       <AlertCircle className="h-5 w-5 text-red-600" />
                       <span className="font-medium text-red-900">
-                        Errors ({importResult.errors.length})
+                        Kesalahan ({importResult.errors.length})
                       </span>
                     </div>
                   </div>
@@ -483,8 +483,8 @@ export const CsvImporter = forwardRef<CsvImporterHandle, CsvImporterProps>(funct
                       <table className="min-w-full text-sm">
                         <thead className="sticky top-0 bg-red-50">
                           <tr className="border-b border-red-200/70 text-xs uppercase tracking-wide text-red-700">
-                            <th className="w-20 px-4 py-3 text-left font-semibold">Row</th>
-                            <th className="px-4 py-3 text-left font-semibold">Message</th>
+                            <th className="w-20 px-4 py-3 text-left font-semibold">Baris</th>
+                            <th className="px-4 py-3 text-left font-semibold">Pesan</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-red-200/50 text-red-800">
@@ -499,14 +499,14 @@ export const CsvImporter = forwardRef<CsvImporterHandle, CsvImporterProps>(funct
                     ) : (
                       errorRows.map((err) => (
                         <div key={`${err.row}-${err.message}`}>
-                          Row {err.row}: {err.message}
+                          Baris {err.row}: {err.message}
                         </div>
                       ))
                     )}
                   </div>
                   {!expanded && importResult.errors.length > 10 && (
                     <p className="px-4 pb-4 text-xs text-red-600">
-                      ...and {importResult.errors.length - 10} more errors
+                      ...dan {importResult.errors.length - 10} kesalahan lainnya
                     </p>
                   )}
                 </div>
@@ -518,7 +518,7 @@ export const CsvImporter = forwardRef<CsvImporterHandle, CsvImporterProps>(funct
                 variant="outline"
                 className="shrink-0 w-full purchasing-secondary-button"
               >
-                Import Another File
+                Impor File Lain
               </Button>
             </div>
           ) : (
@@ -533,7 +533,7 @@ export const CsvImporter = forwardRef<CsvImporterHandle, CsvImporterProps>(funct
                 >
                   <div className="shrink-0 border-b border-gray-200/70 bg-gray-50 px-4 py-2">
                     <p className="text-sm font-medium text-gray-700">
-                      Preview {expanded ? `(${previewData.length} rows)` : ""}
+                      Pratinjau {expanded ? `(${previewData.length} baris)` : ""}
                     </p>
                   </div>
                   <div className={scrollPanelClass}>
@@ -577,7 +577,7 @@ export const CsvImporter = forwardRef<CsvImporterHandle, CsvImporterProps>(funct
                     </table>
                     {!expanded && previewData.length > 10 && (
                       <div className="border-t border-gray-200/70 bg-gray-50 px-4 py-2 text-center text-xs text-gray-500">
-                        ...and {previewData.length - 10} more rows
+                        ...dan {previewData.length - 10} baris lainnya
                       </div>
                     )}
                   </div>
@@ -587,7 +587,7 @@ export const CsvImporter = forwardRef<CsvImporterHandle, CsvImporterProps>(funct
               {!hideActions && (
                 <div className="flex gap-3">
                   <Button type="button" variant="outline" onClick={resetImport} className="flex-1 purchasing-secondary-button">
-                    Cancel
+                    Batal
                   </Button>
                   <Button
                     type="button"
@@ -598,12 +598,12 @@ export const CsvImporter = forwardRef<CsvImporterHandle, CsvImporterProps>(funct
                     {isImporting ? (
                       <>
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Importing...
+                        Mengimpor...
                       </>
                     ) : (
                       <>
                         <Upload className="mr-2 h-4 w-4" />
-                        Import {validCount} Record{validCount === 1 ? "" : "s"}
+                        Impor {validCount} Data
                       </>
                     )}
                   </Button>
@@ -640,7 +640,7 @@ export const CsvImporter = forwardRef<CsvImporterHandle, CsvImporterProps>(funct
               className="purchasing-secondary-button"
             >
               <Download className="mr-2 h-4 w-4" />
-              Download Template
+              Unduh Template
             </Button>
           </div>
         </CardHeader>

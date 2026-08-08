@@ -24,18 +24,20 @@ export function NewPRPage() {
     try {
       await createMutation.mutateAsync({ ...data, action });
       toast.success(
-        action === "draft" ? "Draft purchase request saved" : "Purchase request submitted"
+        action === "draft"
+          ? "Draf purchase request berhasil disimpan"
+          : "Purchase request berhasil diajukan"
       );
       router.push("/dashboard/purchasing/pr");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to save purchase request");
+      toast.error(err instanceof Error ? err.message : "Gagal menyimpan purchase request");
     }
   }
 
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-20 text-sm text-gray-500">
-        Loading purchase request form...
+        Memuat formulir purchase request...
       </div>
     );
   }
@@ -43,7 +45,7 @@ export function NewPRPage() {
   if (isError || !formData) {
     return (
       <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-        {error instanceof Error ? error.message : "Failed to load purchase request form data"}
+        {error instanceof Error ? error.message : "Gagal memuat data formulir purchase request"}
       </div>
     );
   }
@@ -52,8 +54,8 @@ export function NewPRPage() {
     <div className="space-y-6">
       <PurchasingFormHeader
         backHref="/dashboard/purchasing/pr"
-        title="Create Purchase Request"
-        description="Enter purchasing needs before creating a purchase order"
+        title="Tambah Purchase Request"
+        description="Masukkan kebutuhan pembelian sebelum membuat purchase order"
       />
 
       <PRForm

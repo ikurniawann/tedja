@@ -30,7 +30,7 @@ export const ITEMS_BREADCRUMB = {
 export const PURCHASING_ITEMS_BREADCRUMB = ITEMS_BREADCRUMB;
 
 export const RAW_MATERIAL_BREADCRUMB = {
-  label: "Raw Material",
+  label: "Bahan Baku",
   href: ITEMS_RAW_MATERIALS_PATH,
 } as const;
 
@@ -51,33 +51,31 @@ export interface ItemsNavGroup {
 
 export const RAW_MATERIAL_NAV_GROUPS: readonly ItemsNavGroup[] = [
   {
-    label: "Master Data",
+    label: "Data Master",
     items: [
-      { href: RM_ROUTES.units, label: "Unit" },
-      { href: RM_ROUTES.categories, label: "Category" },
-      { href: RM_ROUTES.materials, label: "Raw Material" },
+      { href: RM_ROUTES.units, label: "Satuan" },
+      { href: RM_ROUTES.categories, label: "Kategori" },
+      { href: RM_ROUTES.materials, label: "Bahan Baku" },
     ],
   },
   {
-    label: "Inventory",
+    label: "Persediaan",
     items: [
-      { href: RM_ROUTES.inventoryStock, label: "Stock" },
-      { href: RM_ROUTES.inventoryOpname, label: "Stock Opname" },
-      { href: RM_ROUTES.inventoryAdjustment, label: "Stock Adjustment" },
-      { href: RM_ROUTES.inventoryTransfer, label: "Stock Transfer" },
+      { href: RM_ROUTES.inventoryStock, label: "Stok" },
+      { href: RM_ROUTES.inventoryOpname, label: "Stok Opname" },
+      { href: RM_ROUTES.inventoryAdjustment, label: "Penyesuaian Stok" },
+      { href: RM_ROUTES.inventoryTransfer, label: "Transfer Stok" },
     ],
   },
   {
-    label: "Purchasing",
+    label: "Pembelian",
     items: [
       { href: RM_ROUTES.purchasingSuppliers, label: "Supplier" },
-      { href: RM_ROUTES.purchasingPriceList, label: "Price List" },
       { href: RM_ROUTES.purchasingPr, label: "Purchase Request" },
       { href: RM_ROUTES.purchasingPo, label: "Purchase Order" },
-      { href: RM_ROUTES.purchasingDelivery, label: "Track Shipment" },
-      { href: RM_ROUTES.purchasingGrn, label: "Receive" },
-      { href: RM_ROUTES.purchasingReturns, label: "Return" },
-      { href: RM_ROUTES.purchasingInvoice, label: "Invoice" },
+      { href: RM_ROUTES.purchasingDelivery, label: "Lacak Pengiriman" },
+      { href: RM_ROUTES.purchasingGrn, label: "Penerimaan (GRN)" },
+      { href: RM_ROUTES.purchasingReturns, label: "Retur" },
     ],
   },
   {
@@ -122,7 +120,7 @@ export const PRODUCT_NAV_GROUPS: readonly ItemsNavGroup[] = [
       { href: PRODUCT_ROUTES.purchasingPr, label: "Purchase Request" },
       { href: PRODUCT_ROUTES.purchasingPo, label: "Purchase Order" },
       { href: PRODUCT_ROUTES.purchasingDelivery, label: "Track Shipment" },
-      { href: PRODUCT_ROUTES.purchasingReceive, label: "Receive" },
+      { href: PRODUCT_ROUTES.purchasingReceive, label: "GRN" },
       { href: PRODUCT_ROUTES.purchasingReturns, label: "Return" },
       { href: PRODUCT_ROUTES.purchasingInvoice, label: "Invoice" },
     ],
@@ -151,7 +149,7 @@ export const PRODUCT_NAV_GROUP: ItemsNavGroup = {
 
 export const ITEMS_NAV_GROUPS = [
   {
-    label: "Raw Material",
+    label: "Bahan Baku",
     items: RAW_MATERIAL_NAV_GROUPS.flatMap((g) => [...g.items]),
   },
   {

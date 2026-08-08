@@ -55,14 +55,22 @@ const nextConfig: NextConfig = {
           source: "/dashboard/raw-material/inventory/transfers",
           destination: "/dashboard/inventory/transfers",
         },
-        // ── Raw Material: purchasing (invoice before catch-all) ───────────────
+        // ── Raw Material: purchasing invoice → Accounting Account Payable ───
         {
           source: "/dashboard/raw-material/purchasing/invoice/po/:path*",
-          destination: "/dashboard/purchasing/invoice/po/:path*",
+          destination: "/dashboard/accounting/accounts-payable/po/:path*",
         },
         {
           source: "/dashboard/raw-material/purchasing/invoice",
-          destination: "/dashboard/purchasing/vendor-payments",
+          destination: "/dashboard/accounting/accounts-payable",
+        },
+        {
+          source: "/dashboard/purchasing/vendor-payments",
+          destination: "/dashboard/accounting/accounts-payable",
+        },
+        {
+          source: "/dashboard/purchasing/invoice/po/:path*",
+          destination: "/dashboard/accounting/accounts-payable/po/:path*",
         },
         {
           source: "/dashboard/raw-material/purchasing/:path*",
@@ -171,16 +179,6 @@ const nextConfig: NextConfig = {
         destination: "/dashboard/raw-material/purchasing/suppliers/:path*",
         permanent: false,
       },
-      {
-        source: "/dashboard/purchasing/price-list",
-        destination: "/dashboard/raw-material/purchasing/price-list",
-        permanent: false,
-      },
-      {
-        source: "/dashboard/purchasing/price-list/:path*",
-        destination: "/dashboard/raw-material/purchasing/price-list/:path*",
-        permanent: false,
-      },
       { source: "/dashboard/purchasing/pr", destination: "/dashboard/raw-material/purchasing/pr", permanent: false },
       {
         source: "/dashboard/purchasing/pr/:path*",
@@ -217,16 +215,6 @@ const nextConfig: NextConfig = {
       {
         source: "/dashboard/purchasing/returns/:path*",
         destination: "/dashboard/raw-material/purchasing/returns/:path*",
-        permanent: false,
-      },
-      {
-        source: "/dashboard/purchasing/vendor-payments",
-        destination: "/dashboard/raw-material/purchasing/invoice",
-        permanent: false,
-      },
-      {
-        source: "/dashboard/purchasing/invoice/po/:path*",
-        destination: "/dashboard/raw-material/purchasing/invoice/po/:path*",
         permanent: false,
       },
       {

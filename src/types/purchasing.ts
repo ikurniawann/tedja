@@ -11,7 +11,8 @@ export type POStatus =
   | 'partially_received'
   | 'received'
   | 'rejected'
-  | 'cancelled';
+  | 'cancelled'
+  | 'closed';
 
 export interface Supplier {
   id: string;
@@ -828,15 +829,15 @@ export interface ReturnSummary {
 export const RETURN_REASON_LABELS: Record<ReturnReasonType, string> = {
   damaged: 'Barang Rusak',
   wrong_item: 'Barang Salah',
-  expired: 'Expired Date',
-  overstock: 'Overstock',
+  expired: 'Kedaluwarsa',
+  overstock: 'Kelebihan Stok',
   specification_mismatch: 'Tidak Sesuai Spesifikasi',
   other: 'Lainnya',
 };
 
 // Status labels for UI
 export const RETURN_STATUS_LABELS: Record<ReturnStatus, string> = {
-  draft: 'Draft',
+  draft: 'Draf',
   pending_approval: 'Menunggu Persetujuan',
   approved: 'Disetujui',
   rejected: 'Ditolak',

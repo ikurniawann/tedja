@@ -45,9 +45,20 @@ const QC_PARAMETERS = [
   "Expiry Date",
 ] as const;
 
+const QC_PARAMETER_LABELS: Record<string, string> = {
+  Packaging: "Kemasan",
+  Label: "Label",
+  Color: "Warna",
+  Odor: "Bau",
+  Texture: "Tekstur",
+  Moisture: "Kelembapan",
+  "Expiry Date": "Tanggal Kedaluwarsa",
+};
+
 type QcLineState = {
   grn_item_id: string;
   raw_material_id: string;
+  product_id: string;
   materialName: string;
   materialCode: string;
   unitLabel: string;
@@ -61,12 +72,17 @@ type QcLineState = {
 type GrnInspectionItem = {
   id: string;
   raw_material_id?: string;
+  product_id?: string;
   qty_diterima?: number | null;
   qc_status?: string | null;
   raw_material?: {
     nama?: string | null;
     kode?: string | null;
     satuan_besar?: { nama?: string | null; kode?: string | null } | null;
+  } | null;
+  product?: {
+    nama?: string | null;
+    kode?: string | null;
   } | null;
   satuan?: { nama?: string | null; kode?: string | null } | null;
   purchase_order_item?: {
@@ -119,10 +135,10 @@ function statusBadge(status: string) {
     pending: "border-slate-200 bg-slate-100 text-slate-700",
   };
   const labels: Record<string, string> = {
-    approved: "Approved",
-    partial: "Partial",
-    rejected: "Rejected",
-    pending: "Pending",
+    approved: "Disetujui",
+    partial: "Sebagian",
+    rejected: "Ditolak",
+    pending: "Menunggu",
   };
   return (
     <Badge variant="outline" className={styles[normalized] || styles.pending}>
@@ -160,7 +176,7 @@ export function QCInspectionPage({
 
   useEffect(() => {
     if (grnQuery.isError) {
-      toast.error("Failed to load goods receipt");
+      toast.error("Gagal memuat data GRN");
     }
   }, [grnQuery.isError]);
 
@@ -190,8 +206,15 @@ export function QCInspectionPage({
           return {
             grn_item_id: item.id,
             raw_material_id: item.raw_material_id || "",
-            materialName: item.raw_material?.nama || "Unknown material",
-            materialCode: item.raw_material?.kode || "-",
+            product_id: item.product_id || "",
+            materialName:
+              item.raw_material?.nama ||
+              item.product?.nama ||
+              "Item tidak dikenal",
+            materialCode:
+              item.raw_material?.kode ||
+              item.product?.kode ||
+              "-",
             unitLabel: unit,
             qtyReceived: qty,
             qty_inspected: String(qty),
@@ -286,7 +309,7 @@ export function QCInspectionPage({
 
   const validateForm = () => {
     if (lines.length === 0) {
-      toast.error("No received items available for quality control");
+      toast.error("Tidak ada item diterima untuk QC");
       return false;
     }
 
@@ -296,17 +319,17 @@ export function QCInspectionPage({
       const rejected = parseQty(line.qty_rejected);
 
       if (inspected <= 0) {
-        toast.error(`Inspected quantity is required for ${line.materialName}`);
+        toast.error(`Qty inspeksi wajib diisi untuk ${line.materialName}`);
         return false;
       }
 
       if (inspected > line.qtyReceived + 0.0001) {
-        toast.error(`Inspected quantity cannot exceed received quantity for ${line.materialName}`);
+        toast.error(`Qty inspeksi tidak boleh melebihi qty diterima untuk ${line.materialName}`);
         return false;
       }
 
       if (Math.abs(accepted + rejected - inspected) > 0.0001) {
-        toast.error(`Accepted and rejected quantities must match inspected quantity for ${line.materialName}`);
+        toast.error(`Qty lolos dan gagal harus sama dengan qty inspeksi untuk ${line.materialName}`);
         return false;
       }
     }
@@ -317,14 +340,16 @@ export function QCInspectionPage({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (qcLocked) {
-      toast.error("Quality control has already been completed for this goods receipt");
+      toast.error("QC untuk GRN ini sudah selesai");
       return;
     }
     if (!validateForm()) return;
 
     const items = lines.map((line) => ({
       grn_item_id: line.grn_item_id,
-      raw_material_id: line.raw_material_id,
+      ...(line.raw_material_id
+        ? { raw_material_id: line.raw_material_id }
+        : { product_id: line.product_id }),
       qty_inspected: parseQty(line.qty_inspected),
       qty_accepted: parseQty(line.qty_accepted),
       qty_rejected: parseQty(line.qty_rejected),
@@ -347,10 +372,10 @@ export function QCInspectionPage({
         },
       });
 
-      toast.success("Quality control completed. Stock has been updated.");
+      toast.success("QC selesai. Stok sudah diperbarui.");
       router.push(detailRoute(grnId));
     } catch (error: unknown) {
-      toast.error(error instanceof Error ? error.message : "Failed to submit quality control");
+      toast.error(error instanceof Error ? error.message : "Gagal mengirim hasil QC");
     }
   };
 
@@ -358,7 +383,7 @@ export function QCInspectionPage({
     return (
       <div className="flex min-h-[320px] items-center justify-center text-sm text-gray-500">
         <Loader2 className="mr-2 h-4 w-4 animate-spin text-pink-600" />
-        Loading quality control workspace...
+        Memuat workspace QC...
       </div>
     );
   }
@@ -368,12 +393,12 @@ export function QCInspectionPage({
       <div className="space-y-4">
         <PurchasingFormHeader
           backHref={listRoute}
-          title="Quality Control"
-          description="Goods receipt not found"
+          title="Inspeksi QC"
+          description="GRN tidak ditemukan"
         />
         <Card className="border-gray-200/70">
           <CardContent className="py-12 text-center text-gray-500">
-            Unable to load goods receipt data.
+            Gagal memuat data GRN.
           </CardContent>
         </Card>
       </div>
@@ -384,22 +409,21 @@ export function QCInspectionPage({
     <div className="space-y-6">
       <PurchasingFormHeader
         backHref={detailRoute(grnId)}
-        title="Quality Control"
+        title="Inspeksi QC"
         description={
           <>
-            Inspect received goods for{" "}
-            <span className="font-medium text-gray-700">{grn.nomor_grn}</span> before stock is
-            posted to inventory.
+            Inspeksi barang diterima untuk{" "}
+            <span className="font-medium text-gray-700">{grn.nomor_grn}</span> sebelum stok diposting ke inventory.
           </>
         }
         actions={
           qcLocked ? (
             <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700">
-              QC Completed
+              QC Selesai
             </Badge>
           ) : (
             <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-700">
-              Awaiting Inspection
+              Menunggu Inspeksi
             </Badge>
           )
         }
@@ -408,7 +432,7 @@ export function QCInspectionPage({
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <Card className="border-gray-200/70 shadow-xs">
           <CardContent className="space-y-1 p-4">
-            <p className="text-xs text-gray-500">Receipt Date</p>
+            <p className="text-xs text-gray-500">Tanggal Penerimaan</p>
             <p className="text-sm font-medium text-gray-900">{formatDate(grn.tanggal_penerimaan)}</p>
           </CardContent>
         </Card>
@@ -420,7 +444,7 @@ export function QCInspectionPage({
         </Card>
         <Card className="border-gray-200/70 shadow-xs">
           <CardContent className="space-y-1 p-4">
-            <p className="text-xs text-gray-500">Good Qty Received</p>
+            <p className="text-xs text-gray-500">Qty Baik Diterima</p>
             <p className="text-sm font-medium text-gray-900">{formatNumber(grn.total_item_diterima)}</p>
           </CardContent>
         </Card>
@@ -431,14 +455,13 @@ export function QCInspectionPage({
           <CardContent className="flex items-start gap-3 p-4 text-sm text-emerald-800">
             <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
             <div>
-              <p className="font-medium">Inspection already completed</p>
+              <p className="font-medium">Inspeksi sudah selesai</p>
               <p className="mt-1 text-emerald-700/90">
-                Stock was posted on {formatDate(existingQc?.inspected_at)}. View the goods receipt
-                detail for the final result.
+                Stok diposting pada {formatDate(existingQc?.inspected_at)}. Lihat detail GRN untuk hasil akhir.
               </p>
               <Link href={detailRoute(grnId)} className="mt-2 inline-block">
                 <Button variant="outline" size="sm" className="purchasing-secondary-button">
-                  View Goods Receipt
+                  Lihat Detail GRN
                 </Button>
               </Link>
             </div>
@@ -453,7 +476,7 @@ export function QCInspectionPage({
               <CardHeader className="border-b border-gray-200/70 pb-3">
                 <CardTitle className="flex items-center gap-2 text-base">
                   <Package className="h-4 w-4 text-pink-600" />
-                  Line Item Inspection
+                  Inspeksi Per Item
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-0">
@@ -461,11 +484,11 @@ export function QCInspectionPage({
                   <table className="min-w-full text-sm">
                     <thead>
                       <tr className="border-b border-gray-200/70 bg-gray-50/80 text-left text-xs text-gray-500">
-                        <th className="px-4 py-3 font-medium">Material</th>
-                        <th className="px-4 py-3 font-medium text-right">Received</th>
-                        <th className="px-4 py-3 font-medium text-right">Inspected</th>
-                        <th className="px-4 py-3 font-medium text-right">Accepted</th>
-                        <th className="px-4 py-3 font-medium text-right">Rejected</th>
+                        <th className="px-4 py-3 font-medium">Item</th>
+                        <th className="px-4 py-3 font-medium text-right">Diterima</th>
+                        <th className="px-4 py-3 font-medium text-right">Diinspeksi</th>
+                        <th className="px-4 py-3 font-medium text-right">Lolos</th>
+                        <th className="px-4 py-3 font-medium text-right">Gagal</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -534,7 +557,7 @@ export function QCInspectionPage({
               <CardHeader className="border-b border-gray-200/70 pb-3">
                 <CardTitle className="flex items-center gap-2 text-base">
                   <ClipboardCheck className="h-4 w-4 text-pink-600" />
-                  Inspection Parameters
+                  Parameter Inspeksi
                 </CardTitle>
               </CardHeader>
               <CardContent className="grid gap-3 pt-4 sm:grid-cols-2">
@@ -543,7 +566,9 @@ export function QCInspectionPage({
                     key={param}
                     className="flex items-center justify-between rounded-xl border border-gray-200/70 bg-gray-50/50 px-3 py-2.5"
                   >
-                    <span className="text-sm font-medium text-gray-800">{param}</span>
+                    <span className="text-sm font-medium text-gray-800">
+                      {QC_PARAMETER_LABELS[param] || param}
+                    </span>
                     <Select
                       value={hasilInspeksi[param] || "OK"}
                       onValueChange={(value) =>
@@ -551,8 +576,11 @@ export function QCInspectionPage({
                       }
                     >
                       <SelectTrigger
-                        className="h-8 w-[120px] border-gray-200/80"
-                        disabled={qcLocked || saving}
+                        className={
+                          qcLocked || saving
+                            ? "h-8 w-[120px] border-gray-200/80 pointer-events-none opacity-50"
+                            : "h-8 w-[120px] border-gray-200/80"
+                        }
                       >
                         <SelectValue />
                       </SelectTrigger>
@@ -569,17 +597,17 @@ export function QCInspectionPage({
 
             <Card className="border-gray-200/70 shadow-xs">
               <CardHeader className="border-b border-gray-200/70 pb-3">
-                <CardTitle className="text-base">Notes</CardTitle>
+                <CardTitle className="text-base">Catatan</CardTitle>
               </CardHeader>
               <CardContent className="pt-4">
                 <Label htmlFor="qc-notes" className="sr-only">
-                  QC notes
+                  Catatan QC
                 </Label>
                 <Textarea
                   id="qc-notes"
                   value={catatan}
                   onChange={(e) => setCatatan(e.target.value)}
-                  placeholder="Add inspection notes, defects found, or follow-up actions..."
+                  placeholder="Tambahkan catatan inspeksi, cacat yang ditemukan, atau tindak lanjut..."
                   rows={4}
                   disabled={qcLocked || saving}
                   className="border-gray-200/80"
@@ -591,29 +619,29 @@ export function QCInspectionPage({
           <div className="space-y-6 xl:col-span-4">
             <Card className="border-gray-200/70 shadow-xs">
               <CardHeader className="border-b border-gray-200/70 pb-3">
-                <CardTitle className="text-base">Inspection Summary</CardTitle>
+                <CardTitle className="text-base">Ringkasan Inspeksi</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4 pt-4">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-500">Overall Result</span>
+                  <span className="text-sm text-gray-500">Hasil Keseluruhan</span>
                   {statusBadge(overallStatus)}
                 </div>
 
                 <div className="grid grid-cols-3 gap-2">
                   <div className="rounded-lg border border-gray-200/70 bg-gray-50/70 px-3 py-2 text-center">
-                    <p className="text-xs text-gray-500">Inspected</p>
+                    <p className="text-xs text-gray-500">Diinspeksi</p>
                     <p className="mt-1 text-sm font-semibold text-gray-900">
                       {formatNumber(totals.inspected)}
                     </p>
                   </div>
                   <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-center">
-                    <p className="text-xs text-emerald-700">Accepted</p>
+                    <p className="text-xs text-emerald-700">Lolos</p>
                     <p className="mt-1 text-sm font-semibold text-emerald-800">
                       {formatNumber(totals.accepted)}
                     </p>
                   </div>
                   <div className="rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-center">
-                    <p className="text-xs text-red-700">Rejected</p>
+                    <p className="text-xs text-red-700">Gagal</p>
                     <p className="mt-1 text-sm font-semibold text-red-700">
                       {formatNumber(totals.rejected)}
                     </p>
@@ -622,40 +650,40 @@ export function QCInspectionPage({
 
                 <div className="space-y-2 border-t border-gray-200/70 pt-3 text-sm">
                   <div className="flex justify-between">
-                    <span className="text-gray-500">Parameters OK</span>
+                    <span className="text-gray-500">Parameter OK</span>
                     <span className="font-medium text-emerald-700">{parameterSummary.ok}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-500">Parameters NG</span>
+                    <span className="text-gray-500">Parameter NG</span>
                     <span className="font-medium text-red-600">{parameterSummary.ng}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-500">Parameters N/A</span>
+                    <span className="text-gray-500">Parameter N/A</span>
                     <span className="font-medium text-gray-700">{parameterSummary.na}</span>
                   </div>
                 </div>
 
                 <div className="rounded-xl border border-gray-200/70 bg-gray-50/60 p-4">
                   <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
-                    Recommendation
+                    Rekomendasi
                   </p>
                   <div className="mt-2 text-sm font-medium">
                     {overallStatus === "approved" && (
                       <span className="flex items-center gap-2 text-emerald-700">
                         <CheckCircle2 className="h-4 w-4" />
-                        Accept and post stock
+                        Terima dan posting stok
                       </span>
                     )}
                     {overallStatus === "rejected" && (
                       <span className="flex items-center gap-2 text-red-600">
                         <XCircle className="h-4 w-4" />
-                        Reject — no stock movement
+                        Tolak — tanpa pergerakan stok
                       </span>
                     )}
                     {overallStatus === "partial" && (
                       <span className="flex items-center gap-2 text-amber-700">
                         <AlertTriangle className="h-4 w-4" />
-                        Partial accept — post accepted qty only
+                        Terima sebagian — posting qty lolos saja
                       </span>
                     )}
                   </div>
@@ -665,11 +693,11 @@ export function QCInspectionPage({
 
             <Card className="border-gray-200/70 bg-gray-50/40 shadow-xs">
               <CardContent className="space-y-2 p-4 text-sm text-gray-600">
-                <p className="font-medium text-gray-900">Before you submit</p>
+                <p className="font-medium text-gray-900">Sebelum mengirim</p>
                 <ul className="list-disc space-y-1 pl-5 text-xs leading-5">
-                  <li>Accepted quantity will be posted to stall stock.</li>
-                  <li>Rejected quantity will not enter available inventory.</li>
-                  <li>Inspection results are linked to this goods receipt permanently.</li>
+                  <li>Qty lolos akan diposting ke stok gudang.</li>
+                  <li>Qty gagal tidak masuk stok tersedia.</li>
+                  <li>Hasil inspeksi terhubung permanen ke GRN ini.</li>
                 </ul>
               </CardContent>
             </Card>
@@ -680,7 +708,7 @@ export function QCInspectionPage({
           <PurchasingFormFooter
             formId="grn-qc-form"
             onCancel={() => router.push(detailRoute(grnId))}
-            submitLabel="Complete Quality Control"
+            submitLabel="Selesaikan QC"
             loading={saving}
             disabled={lines.length === 0}
           />

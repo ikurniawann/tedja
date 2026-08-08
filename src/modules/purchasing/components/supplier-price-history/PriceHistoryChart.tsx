@@ -12,19 +12,10 @@ import {
   ReferenceLine,
 } from "recharts";
 import { formatRupiah } from "@/modules/purchasing/utils";
-
-interface PriceHistoryData {
-  id: string;
-  bahan_baku_nama: string;
-  harga: number;
-  previous_price?: number | null;
-  price_change_percent?: number | null;
-  berlaku_dari: string;
-  satuan_nama: string;
-}
+import type { PurchasePriceHistoryItem } from "./types";
 
 interface PriceHistoryChartProps {
-  data: PriceHistoryData[];
+  data: PurchasePriceHistoryItem[];
   materialName?: string;
   height?: number;
 }
@@ -36,7 +27,7 @@ export function PriceHistoryChart({
 }: PriceHistoryChartProps) {
   // Sort data by date ascending for chart
   const sortedData = [...data].sort(
-    (a, b) => new Date(a.berlaku_dari).getTime() - new Date(b.berlaku_dari).getTime()
+    (a, b) => new Date(a.tanggal).getTime() - new Date(b.tanggal).getTime()
   );
 
   // Format date for display
@@ -87,7 +78,7 @@ export function PriceHistoryChart({
     return (
       <div className="flex items-center justify-center" style={{ height }}>
         <div className="text-center text-gray-400">
-          <p className="text-sm">Belum ada data histori harga</p>
+          <p className="text-sm">Belum ada riwayat pembelian</p>
         </div>
       </div>
     );
@@ -98,7 +89,7 @@ export function PriceHistoryChart({
       <LineChart data={sortedData} margin={{ top: 20, right: 30, left: 20, bottom: 60 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
         <XAxis
-          dataKey="berlaku_dari"
+          dataKey="tanggal"
           tickFormatter={formatDate}
           angle={-45}
           textAnchor="end"

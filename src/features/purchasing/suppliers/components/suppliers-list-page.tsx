@@ -90,7 +90,7 @@ function SuppliersListInner() {
 
   useEffect(() => {
     if (listQuery.isError) {
-      toast.error(`Failed to load suppliers: ${getErrorMessage(listQuery.error, "Unknown error")}`);
+      toast.error(`Gagal memuat data supplier: ${getErrorMessage(listQuery.error, "Kesalahan tidak diketahui")}`);
     }
   }, [listQuery.isError, listQuery.error]);
 
@@ -109,10 +109,10 @@ function SuppliersListInner() {
 
     try {
       await deleteMutation.mutateAsync(supplier.id);
-      toast.success(`Supplier "${supplier.nama_supplier}" deleted successfully.`);
+      toast.success(`Supplier "${supplier.nama_supplier}" berhasil dihapus.`);
       setDeleteDialog({ open: false, supplier: null });
     } catch (err: unknown) {
-      toast.error(`Failed to delete supplier: ${getErrorMessage(err, "Unknown error")}`);
+      toast.error(`Gagal menghapus supplier: ${getErrorMessage(err, "Kesalahan tidak diketahui")}`);
     }
   }
 
@@ -122,10 +122,10 @@ function SuppliersListInner() {
 
     try {
       await statusMutation.mutateAsync({ id: supplier.id, isActive: statusDialog.nextStatus });
-      toast.success(`Supplier ${statusDialog.nextStatus ? "activated" : "deactivated"} successfully.`);
+      toast.success(`Supplier berhasil ${statusDialog.nextStatus ? "diaktifkan" : "dinonaktifkan"}.`);
       setStatusDialog({ open: false, supplier: null, nextStatus: true });
     } catch (err: unknown) {
-      toast.error(`Failed to update status: ${getErrorMessage(err, "Unknown error")}`);
+      toast.error(`Gagal memperbarui status: ${getErrorMessage(err, "Kesalahan tidak diketahui")}`);
     }
   }
 
@@ -137,7 +137,7 @@ function SuppliersListInner() {
       const response = await fetch("/api/purchasing/export/suppliers");
       if (!response.ok) {
         const payload = (await response.json().catch(() => null)) as { message?: string } | null;
-        throw new Error(payload?.message || "Export failed");
+        throw new Error(payload?.message || "Ekspor gagal");
       }
 
       const blob = await response.blob();
@@ -153,9 +153,9 @@ function SuppliersListInner() {
       link.click();
       URL.revokeObjectURL(url);
 
-      toast.success("Suppliers exported to Excel.");
+      toast.success("Supplier berhasil diekspor ke Excel.");
     } catch (err: unknown) {
-      toast.error(`Failed to export: ${getErrorMessage(err, "Unknown error")}`);
+      toast.error(`Gagal mengekspor: ${getErrorMessage(err, "Kesalahan tidak diketahui")}`);
     } finally {
       setExporting(false);
     }
@@ -175,8 +175,8 @@ function SuppliersListInner() {
   return (
     <div className="space-y-6">
       <PurchasingPageHeader
-        title="Suppliers"
-        description={`Manage vendors and supplier records — ${total} total`}
+        title="Supplier"
+        description={`Kelola vendor dan data supplier — total ${total}`}
         actions={
           canManageSuppliers ? (
             <>
@@ -186,13 +186,13 @@ function SuppliersListInner() {
                   className="purchasing-secondary-button w-full sm:w-auto"
                 >
                   <Upload className="mr-2 h-4 w-4" />
-                  Import
+                  Impor
                 </Button>
               </Link>
               <Link href={RM_ROUTES.purchasingSuppliersInsert}>
                 <Button className="purchasing-main-button w-full sm:w-auto">
                   <Plus className="mr-2 h-4 w-4" />
-                  Add Supplier
+                  Tambah Supplier
                 </Button>
               </Link>
             </>
@@ -202,14 +202,14 @@ function SuppliersListInner() {
 
       <PurchasingListSection
         icon={BuildingOfficeIcon}
-        title="Supplier List"
-        description="Manage vendors, payment terms, active status, and supplier contacts."
+        title="Daftar Supplier"
+        description="Kelola vendor, termin pembayaran, status aktif, dan narahubung supplier."
         toolbar={
           <div className="flex w-full flex-col gap-3 sm:w-auto md:flex-row md:items-center">
             <label className="relative w-full md:w-80">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
               <Input
-                placeholder="Search suppliers..."
+                placeholder="Cari supplier..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="h-10 bg-white pl-10 pr-10 text-sm focus:border-pink-400 focus:ring-2 focus:ring-pink-100"
@@ -219,7 +219,7 @@ function SuppliersListInner() {
                   type="button"
                   onClick={() => setSearchQuery("")}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 transition-colors hover:text-gray-700"
-                  aria-label="Clear search"
+                  aria-label="Bersihkan pencarian"
                 >
                   <X className="h-4 w-4" />
                 </button>
@@ -249,7 +249,7 @@ function SuppliersListInner() {
               variant="outline"
               onClick={handleExport}
               disabled={exporting}
-              title="Export Excel"
+              title="Ekspor Excel"
               className="purchasing-secondary-button w-full sm:w-auto"
             >
               {exporting ? (
@@ -257,12 +257,12 @@ function SuppliersListInner() {
               ) : (
                 <Download className="mr-2 h-4 w-4" />
               )}
-              Export
+              Ekspor
             </Button>
 
             {(search || isFilterActive || page > 1) && (
               <Button variant="outline" onClick={handleResetFilters} className="h-10 flex-shrink-0 rounded-lg">
-                Reset
+                Atur Ulang
               </Button>
             )}
           </div>
@@ -279,9 +279,9 @@ function SuppliersListInner() {
                   </div>
                   <Combobox
                     options={[
-                      { value: "all", label: "All Statuses" },
-                      { value: "active", label: "Active" },
-                      { value: "inactive", label: "Inactive" },
+                      { value: "all", label: "Semua Status" },
+                      { value: "active", label: "Aktif" },
+                      { value: "inactive", label: "Nonaktif" },
                       { value: "draft", label: "Draft" },
                     ]}
                     value={statusFilter}
@@ -289,9 +289,9 @@ function SuppliersListInner() {
                       setStatusFilter(value as typeof statusFilter);
                       setPage(1);
                     }}
-                    placeholder="Filter by status..."
-                    searchPlaceholder="Search status..."
-                    emptyMessage="No status found"
+                    placeholder="Filter berdasarkan status..."
+                    searchPlaceholder="Cari status..."
+                    emptyMessage="Status tidak ditemukan"
                     className="!w-full h-9 text-sm"
                   />
                 </div>
@@ -299,7 +299,7 @@ function SuppliersListInner() {
                 <div className="space-y-2 md:col-span-2">
                   <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
                     <Filter className="h-3.5 w-3.5 text-pink-500" />
-                    Payment Terms
+                    Termin Pembayaran
                   </div>
                   <PaymentTermsBadgeFilter
                     value={paymentFilter}
@@ -316,18 +316,18 @@ function SuppliersListInner() {
           {loading ? (
             <div className="py-12 text-center">
               <Loader2 className="mx-auto h-8 w-8 animate-spin text-pink-600" />
-              <p className="mt-2 text-sm text-gray-500">Loading suppliers...</p>
+              <p className="mt-2 text-sm text-gray-500">Memuat supplier...</p>
             </div>
           ) : suppliers.length === 0 ? (
             <div className="py-14 text-center">
               <BuildingOfficeIcon className="mx-auto mb-4 h-12 w-12 text-gray-300" />
               <p className="text-gray-500">
-                {search ? "No suppliers match your search" : "No suppliers yet"}
+                {search ? "Tidak ada supplier yang cocok dengan pencarian" : "Belum ada supplier"}
               </p>
               {canManageSuppliers && !search && (
                 <Link href={RM_ROUTES.purchasingSuppliersInsert}>
                   <Button variant="outline" className="mt-4 purchasing-secondary-button">
-                    Add First Supplier
+                    Tambah Supplier Pertama
                   </Button>
                 </Link>
               )}
@@ -339,13 +339,13 @@ function SuppliersListInner() {
                   <thead className="border-b border-gray-100 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
                     <tr>
                       <th className="w-12 px-4 py-3 text-left font-semibold">No.</th>
-                      <th className="px-4 py-3 text-left font-semibold">Code</th>
-                      <th className="px-4 py-3 text-left font-semibold">Supplier Name</th>
-                      <th className="px-4 py-3 text-left font-semibold">City</th>
-                      <th className="px-4 py-3 text-left font-semibold">Contact Person & Phone</th>
-                      <th className="px-4 py-3 text-left font-semibold">Payment Terms</th>
+                      <th className="px-4 py-3 text-left font-semibold">Kode</th>
+                      <th className="px-4 py-3 text-left font-semibold">Nama Supplier</th>
+                      <th className="px-4 py-3 text-left font-semibold">Kota</th>
+                      <th className="px-4 py-3 text-left font-semibold">Narahubung & Telepon</th>
+                      <th className="px-4 py-3 text-left font-semibold">Termin Pembayaran</th>
                       <th className="px-4 py-3 text-center font-semibold">Status</th>
-                      {canManageSuppliers && <th className="px-4 py-3 text-right font-semibold">Actions</th>}
+                      {canManageSuppliers && <th className="px-4 py-3 text-right font-semibold">Aksi</th>}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
@@ -382,7 +382,7 @@ function SuppliersListInner() {
                               onCheckedChange={(checked) =>
                                 setStatusDialog({ open: true, supplier, nextStatus: checked })
                               }
-                              aria-label={`Toggle status for ${supplier.nama_supplier}`}
+                              aria-label={`Ubah status ${supplier.nama_supplier}`}
                             />
                           </div>
                         </td>
@@ -390,13 +390,13 @@ function SuppliersListInner() {
                           <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                             <div className="flex items-center justify-end gap-2">
                               <Link href={RM_ROUTES.purchasingSuppliersDetail(supplier.id)}>
-                                <Button variant="ghost" size="sm" title="View detail" className="cursor-pointer">
+                                <Button variant="ghost" size="sm" title="Detail" className="cursor-pointer">
                                   <Eye className="h-4 w-4" />
                                 </Button>
                               </Link>
                               {(supplier.is_active || supplier.status === "draft") && (
                                 <Link href={RM_ROUTES.purchasingSuppliersEdit(supplier.id)}>
-                                  <Button variant="ghost" size="sm" title="Edit" className="cursor-pointer">
+                                  <Button variant="ghost" size="sm" title="Ubah" className="cursor-pointer">
                                     <Pencil className="h-4 w-4" />
                                   </Button>
                                 </Link>
@@ -404,7 +404,7 @@ function SuppliersListInner() {
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                title="Delete"
+                                title="Hapus"
                                 className="cursor-pointer text-red-500 hover:text-red-600"
                                 onClick={() => setDeleteDialog({ open: true, supplier })}
                               >
@@ -439,11 +439,11 @@ function SuppliersListInner() {
           }
         }}
         variant="default"
-        title={statusDialog.nextStatus ? "Activate Supplier?" : "Deactivate Supplier?"}
-        description={`Are you sure you want to ${statusDialog.nextStatus ? "activate" : "deactivate"} "${statusDialog.supplier?.nama_supplier ?? ""}"?`}
-        confirmLabel={statusDialog.nextStatus ? "Activate" : "Deactivate"}
-        cancelLabel="Cancel"
-        loadingLabel="Saving..."
+        title={statusDialog.nextStatus ? "Aktifkan Supplier?" : "Nonaktifkan Supplier?"}
+        description={`Apakah Anda yakin ingin ${statusDialog.nextStatus ? "mengaktifkan" : "menonaktifkan"} "${statusDialog.supplier?.nama_supplier ?? ""}"?`}
+        confirmLabel={statusDialog.nextStatus ? "Aktifkan" : "Nonaktifkan"}
+        cancelLabel="Batal"
+        loadingLabel="Menyimpan..."
         loading={Boolean(statusUpdatingId)}
         onConfirm={handleConfirmToggleStatus}
       />
@@ -451,11 +451,11 @@ function SuppliersListInner() {
       <ConfirmDialog
         open={deleteDialog.open}
         onOpenChange={(open) => !open && setDeleteDialog({ open: false, supplier: null })}
-        title="Delete Supplier?"
-        description={`Are you sure you want to delete "${deleteDialog.supplier?.nama_supplier ?? ""}"? The record will be hidden from the list rather than deactivated.`}
-        confirmLabel="Delete"
-        cancelLabel="Cancel"
-        loadingLabel="Deleting..."
+        title="Hapus Supplier?"
+        description={`Apakah Anda yakin ingin menghapus "${deleteDialog.supplier?.nama_supplier ?? ""}"? Data akan disembunyikan dari daftar, bukan dinonaktifkan.`}
+        confirmLabel="Hapus"
+        cancelLabel="Batal"
+        loadingLabel="Menghapus..."
         loading={deleteLoading}
         onConfirm={handleDelete}
       />

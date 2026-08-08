@@ -21,6 +21,7 @@ import {
   PurchasingFormFooter,
   PurchasingFormHeader,
 } from "@/modules/purchasing/components/page/purchasing-page-header";
+import { RM_ROUTES } from "@/modules/purchasing/constants/item-routes";
 import { useSupplier } from "../queries";
 import { useUpdateSupplier } from "../mutations";
 import { toast } from "sonner";
@@ -77,7 +78,7 @@ export function EditSupplierPage() {
 
   useEffect(() => {
     if (supplierQuery.isError) {
-      toast.error("Failed to load supplier data.");
+      toast.error("Gagal memuat data supplier.");
     }
   }, [supplierQuery.isError]);
 
@@ -85,17 +86,17 @@ export function EditSupplierPage() {
     e.preventDefault();
 
     if (!formData.nama_supplier || !formData.kota) {
-      toast.error("Supplier name and city are required.");
+      toast.error("Nama supplier dan kota wajib diisi.");
       return;
     }
 
     try {
       await updateMutation.mutateAsync({ id: supplierId, payload: formData });
-      toast.success("Supplier updated successfully.");
-      router.push("/dashboard/purchasing/suppliers");
+      toast.success("Supplier berhasil diperbarui.");
+      router.push(RM_ROUTES.purchasingSuppliers);
     } catch (error: unknown) {
       console.error("Error updating supplier:", error);
-      toast.error(getErrorMessage(error, "Failed to update supplier."));
+      toast.error(getErrorMessage(error, "Gagal memperbarui supplier."));
     }
   };
 
@@ -110,9 +111,9 @@ export function EditSupplierPage() {
   return (
     <div className="space-y-6">
       <PurchasingFormHeader
-        backHref="/dashboard/purchasing/suppliers"
-        title="Edit Supplier"
-        description="Update supplier record details."
+        backHref={RM_ROUTES.purchasingSuppliers}
+        title="Ubah Supplier"
+        description="Perbarui detail data supplier."
       />
 
       <form id="edit-supplier-form" onSubmit={handleSubmit}>
@@ -121,13 +122,13 @@ export function EditSupplierPage() {
             <CardHeader className="border-b border-gray-200/70 pb-3">
               <CardTitle className="flex items-center gap-2 text-base">
                 <Building2 className="h-4 w-4" />
-                Supplier Information
+                Informasi Supplier
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4 pt-4">
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div className="space-y-1.5">
-                  <Label htmlFor="kode" className="text-xs">Supplier Code</Label>
+                  <Label htmlFor="kode" className="text-xs">Kode Supplier</Label>
                   <Input
                     id="kode"
                     value={formData.kode_supplier}
@@ -137,15 +138,15 @@ export function EditSupplierPage() {
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="kota" className="text-xs">
-                    City <span className="text-red-500">*</span>
+                    Kota <span className="text-red-500">*</span>
                   </Label>
                   <Combobox
                     options={KOTA_OPTIONS.map((k) => ({ value: k, label: k }))}
                     value={formData.kota}
                     onChange={(v) => setFormData({ ...formData, kota: v })}
-                    placeholder="Select city..."
-                    searchPlaceholder="Search..."
-                    emptyMessage="City not found"
+                    placeholder="Pilih kota..."
+                    searchPlaceholder="Cari..."
+                    emptyMessage="Kota tidak ditemukan"
                     allowClear
                     className="h-9 text-sm"
                   />
@@ -154,7 +155,7 @@ export function EditSupplierPage() {
 
               <div className="space-y-1.5">
                 <Label htmlFor="nama" className="text-xs">
-                  Supplier Name <span className="text-red-500">*</span>
+                  Nama Supplier <span className="text-red-500">*</span>
                 </Label>
                 <Input
                   id="nama"
@@ -166,7 +167,7 @@ export function EditSupplierPage() {
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="alamat" className="text-xs">Full Address</Label>
+                <Label htmlFor="alamat" className="text-xs">Alamat Lengkap</Label>
                 <Textarea
                   id="alamat"
                   value={formData.alamat}
@@ -182,13 +183,13 @@ export function EditSupplierPage() {
             <CardHeader className="border-b border-gray-200/70 pb-3">
               <CardTitle className="flex items-center gap-2 text-base">
                 <Phone className="h-4 w-4" />
-                Supplier Contact
+                Kontak Supplier
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4 pt-4">
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div className="space-y-1.5">
-                  <Label htmlFor="telepon" className="text-xs">Phone</Label>
+                  <Label htmlFor="telepon" className="text-xs">Telepon</Label>
                   <Input
                     id="telepon"
                     value={formData.telepon}
@@ -214,13 +215,13 @@ export function EditSupplierPage() {
             <CardHeader className="border-b border-gray-200/70 pb-3">
               <CardTitle className="flex items-center gap-2 text-base">
                 <User className="h-4 w-4" />
-                Contact Person
+                Narahubung
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4 pt-4">
               <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                 <div className="space-y-1.5">
-                  <Label htmlFor="pic_name" className="text-xs">Contact Name</Label>
+                  <Label htmlFor="pic_name" className="text-xs">Nama Narahubung</Label>
                   <Input
                     id="pic_name"
                     value={formData.pic_name}
@@ -229,7 +230,7 @@ export function EditSupplierPage() {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="pic_phone" className="text-xs">Contact Phone</Label>
+                  <Label htmlFor="pic_phone" className="text-xs">Telepon Narahubung</Label>
                   <Input
                     id="pic_phone"
                     value={formData.pic_phone}
@@ -238,7 +239,7 @@ export function EditSupplierPage() {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="pic_email" className="text-xs">Contact Email</Label>
+                  <Label htmlFor="pic_email" className="text-xs">Email Narahubung</Label>
                   <Input
                     id="pic_email"
                     type="email"
@@ -255,37 +256,37 @@ export function EditSupplierPage() {
             <CardHeader className="border-b border-gray-200/70 pb-3">
               <CardTitle className="flex items-center gap-2 text-base">
                 <FileText className="h-4 w-4" />
-                Payment Terms & Administration
+                Termin Pembayaran & Administrasi
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4 pt-4">
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div className="space-y-1.5">
                   <Label htmlFor="payment_terms" className="text-xs">
-                    Payment Terms <span className="text-red-500">*</span>
+                    Termin Pembayaran <span className="text-red-500">*</span>
                   </Label>
                   <Combobox
                     options={PAYMENT_TERMS_OPTIONS.map((pt) => ({ value: pt, label: pt }))}
                     value={formData.payment_terms}
                     onChange={(v) => setFormData({ ...formData, payment_terms: v as PaymentTerms })}
-                    placeholder="Select terms..."
-                    searchPlaceholder="Search..."
-                    emptyMessage="Not found"
+                    placeholder="Pilih termin..."
+                    searchPlaceholder="Cari..."
+                    emptyMessage="Tidak ditemukan"
                     allowClear
                     className="h-9 text-sm"
                   />
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="currency" className="text-xs">
-                    Currency <span className="text-red-500">*</span>
+                    Mata Uang <span className="text-red-500">*</span>
                   </Label>
                   <Combobox
                     options={CURRENCY_OPTIONS.map((c) => ({ value: c, label: c }))}
                     value={formData.currency}
                     onChange={(v) => setFormData({ ...formData, currency: v as Currency })}
-                    placeholder="Select currency..."
-                    searchPlaceholder="Search..."
-                    emptyMessage="Not found"
+                    placeholder="Pilih mata uang..."
+                    searchPlaceholder="Cari..."
+                    emptyMessage="Tidak ditemukan"
                     allowClear
                     className="h-9 text-sm"
                   />
@@ -293,7 +294,7 @@ export function EditSupplierPage() {
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="npwp" className="text-xs">Tax ID (NPWP)</Label>
+                <Label htmlFor="npwp" className="text-xs">NPWP</Label>
                 <Input
                   id="npwp"
                   value={formData.npwp}
@@ -305,7 +306,7 @@ export function EditSupplierPage() {
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="catatan" className="text-xs">Additional Notes</Label>
+                <Label htmlFor="catatan" className="text-xs">Catatan Tambahan</Label>
                 <Textarea
                   id="catatan"
                   value={formData.catatan}
@@ -320,7 +321,7 @@ export function EditSupplierPage() {
 
         <PurchasingFormFooter
           onCancel={() => router.back()}
-          submitLabel="Save Changes"
+          submitLabel="Simpan Perubahan"
           loading={isSubmitting}
           formId="edit-supplier-form"
         />

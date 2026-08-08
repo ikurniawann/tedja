@@ -34,9 +34,9 @@ export function RawMaterialUnitSelect({
       value={value}
       onChange={(v) => onChange((v || "besar") as RawMaterialUnitMode)}
       options={options}
-      placeholder="Select unit"
-      searchPlaceholder="Search unit..."
-      emptyMessage="No unit found"
+      placeholder="Pilih satuan"
+      searchPlaceholder="Cari satuan..."
+      emptyMessage="Satuan tidak ditemukan"
       disabled={disabled}
       className="h-9 min-w-[6.5rem] border-gray-200/80 text-sm"
     />

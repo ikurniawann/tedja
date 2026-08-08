@@ -48,22 +48,6 @@ export interface SupplierMinimal {
   is_active?: boolean;
 }
 
-// ─── Supplier Price List ─────────────────────────────────────────────────────
-
-export interface SupplierPriceListItem {
-  id: string;
-  harga: number;
-  minimum_qty: number;
-  lead_time_days: number;
-  is_preferred: boolean;
-  berlaku_dari: string;
-  berlaku_sampai: string | null;
-  supplier: SupplierMinimal;
-  satuan: Satuan;
-}
-
-export type SupplierPriceList = SupplierPriceListItem;
-
 // ─── Stok Info ───────────────────────────────────────────────────────────────
 
 export interface StokInfo {
@@ -148,7 +132,6 @@ export interface RawMaterial {
 
 export interface RawMaterialDetail extends RawMaterial {
   stok: StokInfo;
-  supplier_price_lists: SupplierPriceListItem[];
   movements: InventoryMovement[];
   bom_products: BomProduct[];
 }
@@ -211,19 +194,4 @@ export interface RawMaterialWithStock {
   is_active: boolean;
   qty_onhand?: number;
   avg_cost?: number;
-}
-
-// ─── Supplier Price List Form Data ──────────────────────────────────────────
-
-export interface SupplierPriceListFormData {
-  supplier_id: string;
-  bahan_baku_id: string;
-  harga: number;
-  satuan_id: string;
-  minimum_qty: number;
-  lead_time_days: number;
-  is_preferred?: boolean;
-  berlaku_dari?: string;
-  berlaku_sampai?: string;
-  catatan?: string;
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -29,12 +29,23 @@ function getErrorMessage(error: unknown, fallback: string) {
 }
 
 const GUIDELINES = [
-  "Select a purchase order that is approved, sent, or partially received.",
-  "Purchase orders with a completed delivery can still receive additional shipments.",
-  "Purchase orders with an open delivery in progress are hidden from this list.",
-  "Delivery note number, shipment date, and estimated arrival date are required.",
-  "Initial status will be pending receipt.",
+  "Pilih purchase order yang sudah disetujui, dikirim, atau diterima sebagian.",
+  "Purchase order yang pengirimannya sudah selesai tetap bisa menerima pengiriman tambahan.",
+  "Purchase order yang masih memiliki pengiriman berjalan disembunyikan dari daftar ini.",
+  "Nomor surat jalan, tanggal kirim, dan estimasi tanggal tiba wajib diisi.",
+  "Status awal adalah menunggu penerimaan.",
 ];
+
+const RESHIP_GUIDELINES = [
+  "Pengiriman ini untuk sisa qty PO yang belum diterima (lolos QC).",
+  "Kolom Sisa = qty yang diharapkan datang pada pengiriman ulang ini.",
+  "Setelah barang tiba, buat GRN baru dari surat jalan pengiriman ulang.",
+  "Nomor surat jalan, tanggal kirim, dan estimasi tanggal tiba wajib diisi.",
+];
+
+function getItemRemainingQty(item: PurchaseOrderItem) {
+  return Math.max(0, Number(item.qty_ordered || 0) - Number(item.qty_received || 0));
+}
 
 export function CreateDeliveryPage() {
   const router = useRouter();
@@ -58,48 +69,54 @@ export function CreateDeliveryPage() {
   const createMutation = useCreateDelivery();
   const loading = createMutation.isPending;
 
-  useEffect(() => {
-    const poId = searchParams.get("po_id");
-    if (!poId || fetchingPOs) return;
+  const presetPoId = searchParams.get("po_id");
+  const presetHandledRef = useRef(false);
+  const [presetRejected, setPresetRejected] = useState(false);
 
-    const po = poList.find((p) => p.id === poId);
-    if (po) {
-      setFormData((prev) =>
-        prev.po_id ? prev : { ...prev, po_id: poId, supplier_id: po.supplier_id }
-      );
+  useEffect(() => {
+    if (!presetPoId || presetHandledRef.current || !poOptionsQuery.isSuccess) return;
+    presetHandledRef.current = true;
+
+    const po = poList.find((p) => p.id === presetPoId);
+    if (!po) {
+      setPresetRejected(true);
+      toast.error("Purchase order ini sudah memiliki pengiriman atau tidak memenuhi syarat.");
       return;
     }
 
-    if (poList.length > 0 || !poOptionsQuery.isLoading) {
-      toast.error("This purchase order already has a delivery or is not eligible.");
-    }
-  }, [searchParams, poList, fetchingPOs, poOptionsQuery.isLoading]);
+    setFormData((prev) => ({ ...prev, po_id: po.id, supplier_id: po.supplier_id || "" }));
+  }, [presetPoId, poList, poOptionsQuery.isSuccess]);
+
+  // PO dikunci saat halaman dibuka dari detail PO — pengiriman harus tetap
+  // melekat pada PO asal. Kalau preset gagal di-resolve, dropdown dibuka lagi
+  // supaya pengguna tidak terjebak pada form yang mati.
+  const poLocked = Boolean(presetPoId) && !presetRejected && formData.po_id === presetPoId;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
 
     if (!formData.po_id || !formData.no_surat_jalan) {
-      toast.error("Purchase order and delivery note number are required.");
+      toast.error("Purchase order dan nomor surat jalan wajib diisi.");
       return;
     }
 
     if (!formData.tanggal_kirim) {
-      toast.error("Shipment date is required.");
+      toast.error("Tanggal kirim wajib diisi.");
       return;
     }
 
     if (!formData.tanggal_estimasi_tiba) {
-      toast.error("Estimated arrival date is required.");
+      toast.error("Estimasi tanggal tiba wajib diisi.");
       return;
     }
 
     try {
       const data = await createMutation.mutateAsync(formData);
-      toast.success(`Delivery ${data.nomor_resi || ""} created successfully.`);
+      toast.success(`Pengiriman ${data.nomor_resi || ""} berhasil dibuat.`);
       router.push(data.id ? `/dashboard/purchasing/delivery/${data.id}` : "/dashboard/purchasing/delivery");
       router.refresh();
     } catch (error: unknown) {
-      toast.error(getErrorMessage(error, "Failed to create delivery."));
+      toast.error(getErrorMessage(error, "Gagal membuat pengiriman."));
     }
   }
 
@@ -114,6 +131,17 @@ export function CreateDeliveryPage() {
     [poItems]
   );
 
+  const remainingSummary = useMemo(() => {
+    const totalOrdered = poItems.reduce((sum, item) => sum + Number(item.qty_ordered || 0), 0);
+    const totalReceived = poItems.reduce((sum, item) => sum + Number(item.qty_received || 0), 0);
+    const totalRemaining = poItems.reduce((sum, item) => sum + getItemRemainingQty(item), 0);
+    const itemsWithRemaining = poItems.filter((item) => getItemRemainingQty(item) > 0).length;
+    return { totalOrdered, totalReceived, totalRemaining, itemsWithRemaining };
+  }, [poItems]);
+
+  const isReship =
+    remainingSummary.totalReceived > 0 && remainingSummary.totalRemaining > 0;
+
   const canSubmit =
     Boolean(formData.po_id) &&
     Boolean(formData.no_surat_jalan.trim()) &&
@@ -127,13 +155,17 @@ export function CreateDeliveryPage() {
           <Link href="/dashboard/purchasing/delivery">
             <Button variant="ghost" size="sm" className="h-9 gap-2 text-pink-700">
               <ArrowLeftIcon className="h-4 w-4" />
-              Back
+              Kembali
             </Button>
           </Link>
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Create Delivery</h1>
+            <h1 className="text-2xl font-bold text-gray-900">
+              {isReship ? "Kirim Ulang — Sisa PO" : "Tambah Pengiriman"}
+            </h1>
             <p className="text-sm text-gray-500">
-              Record a shipment from the supplier against a purchase order
+              {isReship
+                ? "Catat pengiriman ulang supplier untuk qty yang belum diterima"
+                : "Catat pengiriman dari supplier berdasarkan purchase order"}
             </p>
           </div>
         </div>
@@ -146,7 +178,7 @@ export function CreateDeliveryPage() {
               <CardHeader className="border-b border-gray-200/70 pb-3">
                 <CardTitle className="flex items-center gap-2 text-base">
                   <TruckIcon className="h-4 w-4" />
-                  Delivery Information
+                  Informasi Pengiriman
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4 pt-4">
@@ -169,23 +201,28 @@ export function CreateDeliveryPage() {
                         supplier_id: po?.supplier_id || "",
                       }));
                     }}
-                    placeholder={fetchingPOs ? "Loading purchase orders..." : "Select purchase order"}
-                    searchPlaceholder="Search purchase order or supplier..."
-                    emptyMessage="No eligible purchase orders found"
-                    allowClear
-                    disabled={fetchingPOs}
+                    placeholder={fetchingPOs ? "Memuat purchase order..." : "Pilih purchase order"}
+                    searchPlaceholder="Cari purchase order atau supplier..."
+                    emptyMessage="Tidak ada purchase order yang memenuhi syarat"
+                    allowClear={!poLocked}
+                    disabled={fetchingPOs || poLocked}
                     className="w-full! h-9 text-sm"
                   />
+                  {poLocked && (
+                    <p className="text-xs text-muted-foreground">
+                      Purchase order dikunci karena halaman ini dibuka dari detail PO.
+                    </p>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                   <div className="min-w-0 space-y-1.5">
                     <Label htmlFor="no_surat_jalan" className="text-xs">
-                      Delivery Note Number <span className="text-red-500">*</span>
+                      Nomor Surat Jalan <span className="text-red-500">*</span>
                     </Label>
                     <Input
                       id="no_surat_jalan"
-                      placeholder="Example: DN-2025-0001"
+                      placeholder="Contoh: DN-2025-0001"
                       value={formData.no_surat_jalan}
                       onChange={(e) =>
                         setFormData((prev) => ({ ...prev, no_surat_jalan: e.target.value }))
@@ -196,11 +233,11 @@ export function CreateDeliveryPage() {
 
                   <div className="min-w-0 space-y-1.5">
                     <Label htmlFor="no_resi" className="text-xs">
-                      Tracking Number
+                      Nomor Resi
                     </Label>
                     <Input
                       id="no_resi"
-                      placeholder="Example: JNE123456789"
+                      placeholder="Contoh: JNE123456789"
                       value={formData.no_resi}
                       onChange={(e) =>
                         setFormData((prev) => ({ ...prev, no_resi: e.target.value }))
@@ -212,11 +249,11 @@ export function CreateDeliveryPage() {
 
                 <div className="min-w-0 space-y-1.5">
                   <Label htmlFor="kurir" className="text-xs">
-                    Courier / Shipping Company
+                    Ekspedisi / Perusahaan Pengiriman
                   </Label>
                   <Input
                     id="kurir"
-                    placeholder="Example: JNE, J&T, SiCepat"
+                    placeholder="Contoh: JNE, J&T, SiCepat"
                     value={formData.kurir}
                     onChange={(e) =>
                       setFormData((prev) => ({ ...prev, kurir: e.target.value }))
@@ -227,18 +264,18 @@ export function CreateDeliveryPage() {
 
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                   <DsDateTimePicker
-                    label="Shipment Date"
+                    label="Tanggal Kirim"
                     value={formData.tanggal_kirim}
                     onChange={(v) => setFormData((prev) => ({ ...prev, tanggal_kirim: v }))}
-                    placeholder="Select shipment date..."
+                    placeholder="Pilih tanggal kirim..."
                     dateOnly
                     required
                   />
                   <DsDateTimePicker
-                    label="Estimated Arrival Date"
+                    label="Estimasi Tanggal Tiba"
                     value={formData.tanggal_estimasi_tiba}
                     onChange={(v) => setFormData((prev) => ({ ...prev, tanggal_estimasi_tiba: v }))}
-                    placeholder="Select estimated arrival date..."
+                    placeholder="Pilih estimasi tanggal tiba..."
                     dateOnly
                     required
                   />
@@ -246,11 +283,11 @@ export function CreateDeliveryPage() {
 
                 <div className="min-w-0 space-y-1.5">
                   <Label htmlFor="catatan" className="text-xs">
-                    Notes
+                    Catatan
                   </Label>
                   <Textarea
                     id="catatan"
-                    placeholder="Add notes if needed..."
+                    placeholder="Tambahkan catatan bila diperlukan..."
                     value={formData.catatan}
                     onChange={(e) =>
                       setFormData((prev) => ({ ...prev, catatan: e.target.value }))
@@ -267,59 +304,115 @@ export function CreateDeliveryPage() {
                 <CardHeader className="border-b border-gray-200/70 pb-3">
                   <CardTitle className="flex items-center gap-2 text-base">
                     <Package className="h-4 w-4" />
-                    Purchase Order Items
+                    {isReship ? "Item yang dikirim ulang (sisa)" : "Item Purchase Order"}
                   </CardTitle>
+                  {isReship && (
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      Qty di kolom Sisa adalah yang belum diterima — ini target pengiriman ulang.
+                    </p>
+                  )}
                 </CardHeader>
                 <CardContent className="p-0">
                   {fetchingPOItems ? (
                     <div className="flex items-center justify-center py-10 text-sm text-gray-500">
                       <Loader2Icon className="mr-2 h-4 w-4 animate-spin" />
-                      Loading purchase order items...
+                      Memuat item purchase order...
+                    </div>
+                  ) : poItemsQuery.isError ? (
+                    <div className="flex flex-col items-center gap-3 py-10 text-center text-sm text-gray-500">
+                      <span>
+                        {getErrorMessage(poItemsQuery.error, "Gagal memuat item purchase order.")}
+                      </span>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="purchasing-secondary-button"
+                        disabled={poItemsQuery.isFetching}
+                        onClick={() => poItemsQuery.refetch()}
+                      >
+                        {poItemsQuery.isFetching && (
+                          <Loader2Icon className="mr-2 h-4 w-4 animate-spin" />
+                        )}
+                        Coba lagi
+                      </Button>
                     </div>
                   ) : poItems.length === 0 ? (
                     <div className="py-10 text-center text-sm text-gray-500">
-                      No items found for this purchase order
+                      Tidak ada item untuk purchase order ini
                     </div>
                   ) : (
-                    <div className="overflow-x-auto px-4">
+                    <div className="overflow-x-auto px-4 pb-4">
                       <table className="min-w-full text-sm">
                         <thead>
                           <tr className="border-b border-gray-200/70 text-xs uppercase tracking-wide text-gray-500">
-                            <th className="py-3 pr-4 text-left font-semibold">Raw Material</th>
-                            <th className="px-4 py-3 text-right font-semibold">Quantity</th>
-                            <th className="px-4 py-3 text-left font-semibold">Unit</th>
-                            <th className="px-4 py-3 text-right font-semibold">Unit Price</th>
-                            <th className="py-3 pl-4 text-right font-semibold">Subtotal</th>
+                            <th className="py-3 pr-4 text-left font-semibold">Bahan Baku</th>
+                            <th className="px-3 py-3 text-right font-semibold">Dipesan</th>
+                            <th className="px-3 py-3 text-right font-semibold">Diterima</th>
+                            <th className="px-3 py-3 text-right font-semibold">Sisa</th>
+                            <th className="px-3 py-3 text-left font-semibold">Satuan</th>
+                            <th className="px-3 py-3 text-right font-semibold">Harga Satuan</th>
+                            <th className="py-3 pl-3 text-right font-semibold">Subtotal</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-200/70">
-                          {poItems.map((item) => (
-                            <tr key={item.id} className="hover:bg-gray-50/80">
-                              <td className="py-3 pr-4">
-                                <div className="font-medium text-gray-900">
-                                  {item.raw_material?.nama}
-                                </div>
-                                <div className="text-xs text-gray-500">
-                                  {item.raw_material?.kode}
-                                </div>
-                              </td>
-                              <td className="px-4 py-3 text-right text-gray-700">
-                                {formatQuantity(item.qty_ordered)}
-                              </td>
-                              <td className="px-4 py-3 text-gray-700">
-                                {item.satuan?.nama ||
-                                  item.raw_material?.satuan_besar?.nama ||
-                                  item.raw_material?.satuan ||
-                                  "-"}
-                              </td>
-                              <td className="px-4 py-3 text-right text-gray-700">
-                                {formatCurrency(item.harga_satuan)}
-                              </td>
-                              <td className="py-3 pl-4 text-right font-medium text-gray-900">
-                                {formatCurrency(item.subtotal)}
-                              </td>
-                            </tr>
-                          ))}
+                          {poItems.map((item) => {
+                            const remaining = getItemRemainingQty(item);
+                            const isRemainingRow = remaining > 0;
+                            return (
+                              <tr
+                                key={item.id}
+                                className={
+                                  isReship && !isRemainingRow
+                                    ? "bg-gray-50/60 text-gray-400"
+                                    : "hover:bg-gray-50/80"
+                                }
+                              >
+                                <td className="py-3 pr-4">
+                                  <div
+                                    className={`font-medium ${
+                                      isReship && !isRemainingRow ? "text-gray-400" : "text-gray-900"
+                                    }`}
+                                  >
+                                    {item.raw_material?.nama}
+                                  </div>
+                                  <div className="text-xs text-gray-500">
+                                    {item.raw_material?.kode}
+                                  </div>
+                                </td>
+                                <td className="px-3 py-3 text-right text-gray-700">
+                                  {formatQuantity(item.qty_ordered)}
+                                </td>
+                                <td className="px-3 py-3 text-right text-gray-700">
+                                  {formatQuantity(item.qty_received || 0)}
+                                </td>
+                                <td
+                                  className={`px-3 py-3 text-right font-semibold ${
+                                    isRemainingRow ? "text-primary" : "text-gray-400"
+                                  }`}
+                                >
+                                  {formatQuantity(remaining)}
+                                  {isReship && isRemainingRow && (
+                                    <span className="mt-0.5 block text-[10px] font-medium uppercase tracking-wide text-primary/80">
+                                      Kirim ulang
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="px-3 py-3 text-gray-700">
+                                  {item.satuan?.nama ||
+                                    item.raw_material?.satuan_besar?.nama ||
+                                    item.raw_material?.satuan ||
+                                    "-"}
+                                </td>
+                                <td className="px-3 py-3 text-right text-gray-700">
+                                  {formatCurrency(item.harga_satuan)}
+                                </td>
+                                <td className="py-3 pl-3 text-right font-medium text-gray-900">
+                                  {formatCurrency(item.subtotal)}
+                                </td>
+                              </tr>
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>
@@ -332,7 +425,7 @@ export function CreateDeliveryPage() {
           <div className="xl:col-span-4">
             <Card className="border-gray-200/70 shadow-xs xl:sticky xl:top-6">
               <CardHeader className="border-b border-gray-200/70 pb-3">
-                <CardTitle className="text-base">Summary</CardTitle>
+                <CardTitle className="text-base">Ringkasan</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4 pt-4">
                 {selectedPO ? (
@@ -348,14 +441,33 @@ export function CreateDeliveryPage() {
                       </dd>
                     </div>
                     <div className="flex items-start justify-between gap-3">
-                      <dt className="text-gray-500">Items</dt>
+                      <dt className="text-gray-500">Item</dt>
                       <dd className="text-right font-medium text-gray-900">
                         {fetchingPOItems ? "..." : poItems.length}
                       </dd>
                     </div>
+                    {isReship && (
+                      <>
+                        <div className="flex items-start justify-between gap-3">
+                          <dt className="text-gray-500">Sudah diterima</dt>
+                          <dd className="text-right font-medium text-gray-900">
+                            {formatQuantity(remainingSummary.totalReceived)}
+                          </dd>
+                        </div>
+                        <div className="flex items-start justify-between gap-3 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2">
+                          <dt className="font-medium text-primary">Sisa dikirim ulang</dt>
+                          <dd className="text-right font-semibold text-primary">
+                            {formatQuantity(remainingSummary.totalRemaining)}
+                            <span className="mt-0.5 block text-xs font-normal text-primary/80">
+                              {remainingSummary.itemsWithRemaining} item
+                            </span>
+                          </dd>
+                        </div>
+                      </>
+                    )}
                     {poItems.length > 0 && (
                       <div className="flex items-start justify-between gap-3 border-t border-gray-200/70 pt-3">
-                        <dt className="font-medium text-gray-900">Estimated Total</dt>
+                        <dt className="font-medium text-gray-900">Estimasi Total</dt>
                         <dd className="text-right font-semibold text-gray-900">
                           {formatCurrency(itemsSubtotal)}
                         </dd>
@@ -364,17 +476,17 @@ export function CreateDeliveryPage() {
                   </dl>
                 ) : (
                   <p className="text-sm text-gray-500">
-                    Select a purchase order to preview shipment details.
+                    Pilih purchase order untuk melihat pratinjau detail pengiriman.
                   </p>
                 )}
 
                 <div className="rounded-xl border border-gray-200/70 bg-gray-50/60 p-4">
                   <div className="mb-2 flex items-center gap-2 text-sm font-medium text-gray-900">
                     <Info className="h-4 w-4 text-pink-600" />
-                    Guidelines
+                    Panduan
                   </div>
                   <ul className="space-y-2 text-xs leading-5 text-gray-600">
-                    {GUIDELINES.map((line) => (
+                    {(isReship ? RESHIP_GUIDELINES : GUIDELINES).map((line) => (
                       <li key={line} className="flex gap-2">
                         <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-gray-400" />
                         <span>{line}</span>
@@ -394,7 +506,7 @@ export function CreateDeliveryPage() {
             className="purchasing-secondary-button w-full sm:w-auto"
             onClick={() => router.push("/dashboard/purchasing/delivery")}
           >
-            Cancel
+            Batal
           </Button>
           <Button
             type="submit"
@@ -404,12 +516,12 @@ export function CreateDeliveryPage() {
             {loading ? (
               <>
                 <Loader2Icon className="mr-2 h-4 w-4 animate-spin" />
-                Submitting...
+                Menyimpan...
               </>
             ) : (
               <>
                 <SaveIcon className="mr-2 h-4 w-4" />
-                Submit
+                {isReship ? "Simpan Kirim Ulang" : "Simpan"}
               </>
             )}
           </Button>

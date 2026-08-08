@@ -113,13 +113,13 @@ export function ManualAdjustmentPage() {
 
   const validateInputs = () => {
     if (!warehouseId) {
-      toast.error("Please select a stall first");
+      toast.error("Pilih stall terlebih dahulu");
       return false;
     }
 
     const toSave = lines.filter((line) => line.qty_actual_input !== "");
     if (toSave.length === 0) {
-      toast.error("Enter new stock for at least one raw material");
+      toast.error("Isi stok baru untuk minimal satu bahan baku");
       return false;
     }
 
@@ -129,13 +129,13 @@ export function ManualAdjustmentPage() {
       return !Number.isFinite(n) || n < 0;
     });
     if (invalid) {
-      toast.error("New stock must be a number greater than or equal to zero");
+      toast.error("Stok baru harus berupa angka lebih besar atau sama dengan nol");
       return false;
     }
 
     const withVariance = toSave.filter((line) => resolveQty(line) !== line.qty_system);
     if (withVariance.length === 0) {
-      toast.error("No stock variance to save");
+      toast.error("Tidak ada selisih stok untuk disimpan");
       return false;
     }
 
@@ -144,7 +144,7 @@ export function ManualAdjustmentPage() {
 
   const buildNote = () => {
     const base = notes.trim();
-    const dateLabel = adjustDate ? `Adjustment ${adjustDate}` : "Stock adjustment";
+    const dateLabel = adjustDate ? `Penyesuaian ${adjustDate}` : "Penyesuaian Stok";
     return base ? `${dateLabel}: ${base}` : dateLabel;
   };
 
@@ -178,7 +178,7 @@ export function ManualAdjustmentPage() {
           });
           const json = await res.json();
           if (!res.ok) {
-            throw new Error(json.message || "Failed to adjust stock");
+            throw new Error(json.message || "Gagal menyesuaikan stok");
           }
           saved += 1;
           savedIds.push(line.raw_material_id);
@@ -199,11 +199,11 @@ export function ManualAdjustmentPage() {
       }
 
       if (saved > 0 && failed === 0) {
-        toast.success(`${saved} raw material(s) adjusted successfully`);
+        toast.success(`${saved} bahan baku berhasil disesuaikan`);
       } else if (saved > 0) {
-        toast.warning(`${saved} line(s) saved, ${failed} failed`);
+        toast.warning(`${saved} baris tersimpan, ${failed} gagal`);
       } else {
-        toast.error("Failed to save stock adjustments");
+        toast.error("Gagal menyimpan penyesuaian stok");
       }
     } finally {
       setSubmitting(false);
@@ -214,8 +214,8 @@ export function ManualAdjustmentPage() {
     <div className="space-y-6">
       <PurchasingFormHeader
         backHref={RM_ROUTES.inventoryStock}
-        title="Stock Adjustment"
-        description="Manually correct raw material stock per stall"
+        title="Penyesuaian Stok"
+        description="Koreksi stok bahan baku secara manual per stall"
         actions={
           hasItems ? (
             <>
@@ -226,7 +226,7 @@ export function ManualAdjustmentPage() {
                 onClick={handleFillSystem}
                 disabled={submitting}
               >
-                Fill with System Stock
+                Isi dengan Stok Saat Ini
               </Button>
               <Button
                 type="button"
@@ -234,7 +234,7 @@ export function ManualAdjustmentPage() {
                 onClick={handleSubmit}
                 disabled={submitting}
               >
-                {submitting ? "Saving..." : "Save Adjustment"}
+                {submitting ? "Menyimpan..." : "Simpan Penyesuaian"}
               </Button>
             </>
           ) : undefined
@@ -243,7 +243,7 @@ export function ManualAdjustmentPage() {
 
       <Card className="border-gray-200/70 shadow-xs">
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">Adjustment Information</CardTitle>
+          <CardTitle className="text-base">Informasi Penyesuaian</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-12">
@@ -256,7 +256,7 @@ export function ManualAdjustmentPage() {
                 onChange={handleWarehouseChange}
                 options={warehouseOptions}
                 placeholder={
-                  warehousesQuery.isLoading ? "Loading stalls..." : "Select stall"
+                  warehousesQuery.isLoading ? "Memuat stall..." : "Pilih stall"
                 }
                 disabled={warehousesQuery.isLoading || submitting}
                 className="w-full! h-9 border-gray-200/80 text-sm"
@@ -265,10 +265,10 @@ export function ManualAdjustmentPage() {
 
             <div className="min-w-0 md:col-span-3">
               <DsDateTimePicker
-                label="Adjustment Date"
+                label="Tanggal Penyesuaian"
                 value={adjustDate}
                 onChange={setAdjustDate}
-                placeholder="Select adjustment date..."
+                placeholder="Pilih tanggal penyesuaian..."
                 dateOnly
                 disabled={submitting}
               />
@@ -276,13 +276,13 @@ export function ManualAdjustmentPage() {
 
             <div className="min-w-0 space-y-1.5 md:col-span-5">
               <Label htmlFor="notes" className="text-xs">
-                Notes
+                Catatan
               </Label>
               <Input
                 id="notes"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                placeholder="Reason for adjustment (optional)..."
+                placeholder="Alasan penyesuaian (opsional)..."
                 disabled={submitting}
                 className="h-9 border-gray-200/80 text-sm"
               />
@@ -292,15 +292,15 @@ export function ManualAdjustmentPage() {
           {hasItems && (
             <div className="grid grid-cols-3 gap-3 border-t border-gray-200/70 pt-4">
               <div className="rounded-lg border border-gray-200/70 bg-gray-50/50 px-3 py-2">
-                <p className="text-xs font-medium text-gray-500">Total Lines</p>
+                <p className="text-xs font-medium text-gray-500">Total Baris</p>
                 <p className="text-lg font-bold text-gray-900">{progress.total}</p>
               </div>
               <div className="rounded-lg border border-gray-200/70 bg-gray-50/50 px-3 py-2">
-                <p className="text-xs font-medium text-gray-500">Filled</p>
+                <p className="text-xs font-medium text-gray-500">Terisi</p>
                 <p className="text-lg font-bold text-amber-600">{progress.filled}</p>
               </div>
               <div className="rounded-lg border border-gray-200/70 bg-gray-50/50 px-3 py-2">
-                <p className="text-xs font-medium text-gray-500">With Variance</p>
+                <p className="text-xs font-medium text-gray-500">Ada Selisih</p>
                 <p className="text-lg font-bold text-pink-600">{progress.variance}</p>
               </div>
             </div>
@@ -312,17 +312,17 @@ export function ManualAdjustmentPage() {
         <CardContent className="p-0">
           <div className="flex flex-col gap-3 border-b border-gray-200/70 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h2 className="text-base font-semibold text-gray-900">Stock Correction</h2>
+              <h2 className="text-base font-semibold text-gray-900">Koreksi Stok</h2>
               <p className="text-sm text-gray-500">
                 {!warehouseId
-                  ? "Select a stall to load raw materials"
+                  ? "Pilih stall untuk memuat bahan baku"
                   : loading
-                    ? "Loading raw materials..."
+                    ? "Memuat bahan baku..."
                     : hasItems
-                      ? `Enter new stock${
+                      ? `Isi stok baru${
                           selectedWarehouse ? ` — ${selectedWarehouse.label}` : ""
                         }`
-                      : "No active raw materials in this stall"}
+                      : "Tidak ada bahan baku aktif di stall ini"}
               </p>
             </div>
             {hasItems && (
@@ -331,7 +331,7 @@ export function ManualAdjustmentPage() {
                 <Input
                   value={itemSearch}
                   onChange={(e) => setItemSearch(e.target.value)}
-                  placeholder="Search raw materials..."
+                  placeholder="Cari bahan baku..."
                   className="h-10 border-gray-200/80 pl-9"
                   disabled={submitting}
                 />
@@ -343,39 +343,39 @@ export function ManualAdjustmentPage() {
             <table className="w-full min-w-[800px] text-sm">
               <thead>
                 <tr className="border-b border-gray-200/70 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
-                  <th className="px-3 py-3">Code</th>
-                  <th className="px-3 py-3">Material Name</th>
-                  <th className="px-3 py-3">Unit</th>
-                  <th className="px-3 py-3 text-right">System Stock</th>
-                  <th className="px-3 py-3 text-right">New Stock</th>
-                  <th className="px-3 py-3 text-right">Variance</th>
+                  <th className="px-3 py-3">Kode</th>
+                  <th className="px-3 py-3">Nama Bahan Baku</th>
+                  <th className="px-3 py-3">Satuan</th>
+                  <th className="px-3 py-3 text-right">Stok Saat Ini</th>
+                  <th className="px-3 py-3 text-right">Stok Baru</th>
+                  <th className="px-3 py-3 text-right">Selisih</th>
                 </tr>
               </thead>
               <tbody>
                 {!warehouseId ? (
                   <tr>
                     <td colSpan={6} className="px-3 py-10 text-center text-gray-400">
-                      Please select a stall first
+                      Pilih stall terlebih dahulu
                     </td>
                   </tr>
                 ) : loading ? (
                   <tr>
                     <td colSpan={6} className="px-3 py-10 text-center text-gray-400">
-                      Loading items...
+                      Memuat item...
                     </td>
                   </tr>
                 ) : previewQuery.isError ? (
                   <tr>
                     <td colSpan={6} className="px-3 py-10 text-center text-red-500">
-                      Failed to load raw materials
+                      Gagal memuat bahan baku
                     </td>
                   </tr>
                 ) : filteredLines.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="px-3 py-10 text-center text-gray-400">
                       {hasItems
-                        ? "No items match your search"
-                        : "No active raw materials found"}
+                        ? "Data tidak ditemukan"
+                        : "Tidak ada bahan baku aktif"}
                     </td>
                   </tr>
                 ) : (

@@ -4,9 +4,9 @@ export function RawMaterialCategoriesPage() {
   return (
     <ItemsLookupPage
       lookupType="raw-material-categories"
-      listTitle="Category List"
-      listDescription="Review category code, name, description, and active status."
-      addButtonLabel="Add Category"
+      listTitle="Daftar Kategori"
+      listDescription="Tinjau kode, nama, deskripsi, dan status aktif kategori."
+      addButtonLabel="Tambah Kategori"
     />
   );
 }
