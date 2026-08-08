@@ -2,6 +2,7 @@ export interface ProductListParams {
   search?: string;
   is_active?: boolean;
   warehouse_id?: string;
+  hpp_review?: boolean;
   page?: number;
   limit?: number;
 }

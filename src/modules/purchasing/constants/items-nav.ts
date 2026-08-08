@@ -35,7 +35,7 @@ export const RAW_MATERIAL_BREADCRUMB = {
 } as const;
 
 export const PRODUCT_BREADCRUMB = {
-  label: "Product",
+  label: "Produk",
   href: ITEMS_PRODUCTS_PATH,
 } as const;
 
@@ -79,64 +79,63 @@ export const RAW_MATERIAL_NAV_GROUPS: readonly ItemsNavGroup[] = [
     ],
   },
   {
-    label: "Approval",
+    label: "Persetujuan",
     items: [
-      { href: RM_ROUTES.approvalPr, label: "Approval PR" },
-      { href: RM_ROUTES.approvalPo, label: "Approval PO" },
+      { href: RM_ROUTES.approvalPr, label: "Persetujuan PR" },
+      { href: RM_ROUTES.approvalPo, label: "Persetujuan PO" },
     ],
   },
   {
-    label: "Production",
+    label: "Produksi",
     items: [
-      { href: RM_ROUTES.productionRecipes, label: "Bill of Materials" },
-      { href: RM_ROUTES.productionHub, label: "Production In-House" },
+      { href: RM_ROUTES.productionRecipes, label: "Resep (BOM)" },
+      { href: RM_ROUTES.productionHub, label: "Produksi Internal" },
     ],
   },
 ] as const;
 
 export const PRODUCT_NAV_GROUPS: readonly ItemsNavGroup[] = [
   {
-    label: "Master Data",
+    label: "Data Master",
     items: [
-      { href: PRODUCT_ROUTES.units, label: "Unit" },
-      { href: PRODUCT_ROUTES.categories, label: "Category" },
-      { href: PRODUCT_ROUTES.products, label: "Product" },
+      { href: PRODUCT_ROUTES.units, label: "Satuan" },
+      { href: PRODUCT_ROUTES.categories, label: "Kategori" },
+      { href: PRODUCT_ROUTES.products, label: "Produk" },
     ],
   },
   {
-    label: "Inventory",
+    label: "Persediaan",
     items: [
-      { href: PRODUCT_ROUTES.inventoryStock, label: "Stock" },
-      { href: PRODUCT_ROUTES.inventoryOpname, label: "Stock Opname" },
-      { href: PRODUCT_ROUTES.inventoryAdjustment, label: "Stock Adjustment" },
-      { href: PRODUCT_ROUTES.inventoryTransfer, label: "Stock Transfer" },
+      { href: PRODUCT_ROUTES.inventoryStock, label: "Stok" },
+      { href: PRODUCT_ROUTES.inventoryOpname, label: "Stok Opname" },
+      { href: PRODUCT_ROUTES.inventoryAdjustment, label: "Penyesuaian Stok" },
+      { href: PRODUCT_ROUTES.inventoryTransfer, label: "Transfer Stok" },
     ],
   },
   {
-    label: "Purchasing",
+    label: "Pembelian",
     items: [
       { href: PRODUCT_ROUTES.purchasingVendor, label: "Vendor" },
-      { href: PRODUCT_ROUTES.purchasingPriceList, label: "Price List" },
       { href: PRODUCT_ROUTES.purchasingPr, label: "Purchase Request" },
       { href: PRODUCT_ROUTES.purchasingPo, label: "Purchase Order" },
-      { href: PRODUCT_ROUTES.purchasingDelivery, label: "Track Shipment" },
-      { href: PRODUCT_ROUTES.purchasingReceive, label: "GRN" },
-      { href: PRODUCT_ROUTES.purchasingReturns, label: "Return" },
+      { href: PRODUCT_ROUTES.purchasingDelivery, label: "Lacak Pengiriman" },
+      { href: PRODUCT_ROUTES.purchasingReceive, label: "Penerimaan (GRN)" },
+      { href: PRODUCT_ROUTES.purchasingReturns, label: "Retur" },
       { href: PRODUCT_ROUTES.purchasingInvoice, label: "Invoice" },
     ],
   },
   {
-    label: "Approval",
+    label: "Persetujuan",
     items: [
-      { href: PRODUCT_ROUTES.approvalPr, label: "Approval PR" },
-      { href: PRODUCT_ROUTES.approvalPo, label: "Approval PO" },
+      { href: PRODUCT_ROUTES.approvalPr, label: "Persetujuan PR" },
+      { href: PRODUCT_ROUTES.approvalPo, label: "Persetujuan PO" },
     ],
   },
   {
-    label: "Production",
+    label: "Produksi",
     items: [
-      { href: PRODUCT_ROUTES.productionRecipes, label: "Bill of Materials" },
-      { href: PRODUCT_ROUTES.productionHub, label: "Production In-House" },
+      { href: PRODUCT_ROUTES.productionRecipes, label: "Resep (BOM)" },
+      { href: PRODUCT_ROUTES.productionHub, label: "Produksi Internal" },
     ],
   },
 ] as const;
@@ -153,7 +152,7 @@ export const ITEMS_NAV_GROUPS = [
     items: RAW_MATERIAL_NAV_GROUPS.flatMap((g) => [...g.items]),
   },
   {
-    label: "Product",
+    label: "Produk",
     items: PRODUCT_NAV_GROUPS.flatMap((g) => [...g.items]),
   },
   {
@@ -164,7 +163,7 @@ export const ITEMS_NAV_GROUPS = [
       { href: "/dashboard/purchasing/reports/po-summary", label: "PO Summary" },
       { href: "/dashboard/purchasing/reports/po-detail", label: "PO Detail" },
       { href: "/dashboard/purchasing/reports/supplier-performance", label: "Supplier Performance" },
-      { href: "/dashboard/purchasing/reports/production-in-house", label: "Production In-House" },
+      { href: "/dashboard/purchasing/reports/production-in-house", label: "Produksi Internal" },
     ],
   },
 ] as const;

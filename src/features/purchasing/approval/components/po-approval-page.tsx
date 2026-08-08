@@ -25,7 +25,7 @@ import {
 import type { PurchasingModuleType } from "@/lib/purchasing/module-scope";
 import { getApprovalModuleConfig } from "../approval-module";
 import { CheckCircle, Loader2, ShoppingCart } from "lucide-react";
-import { formatAmount, formatDate } from "@/lib/purchasing/utils";
+import { formatAmount, formatDate, getPOStatusLabel } from "@/lib/purchasing/utils";
 import { usePurchaseOrderList } from "../../po/queries";
 import { useApprovePurchaseOrder } from "../../po/mutations";
 import { useProductPurchaseOrderList } from "../../product-po/queries";
@@ -83,7 +83,7 @@ export function POApprovalPage({ moduleType = "raw_material" }: POApprovalPagePr
       toast.error(
         listQuery.error instanceof Error
           ? listQuery.error.message
-          : "Failed to load purchase order approvals"
+          : "Gagal memuat persetujuan PO"
       );
     }
   }, [listQuery.isError, listQuery.error]);
@@ -98,10 +98,10 @@ export function POApprovalPage({ moduleType = "raw_material" }: POApprovalPagePr
     setProcessingId(confirmingPO.id);
     try {
       await approveMutation.mutateAsync(confirmingPO.id);
-      toast.success("Purchase order approved");
+      toast.success("PO berhasil disetujui");
       setConfirmingPO(null);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to approve purchase order");
+      toast.error(error instanceof Error ? error.message : "Gagal menyetujui PO");
     } finally {
       setProcessingId(null);
     }
@@ -115,16 +115,16 @@ export function POApprovalPage({ moduleType = "raw_material" }: POApprovalPagePr
   return (
     <div className="space-y-6">
       <PurchasingPageHeader
-        title="Purchase Order Approval"
+        title="Persetujuan PO"
         description={
           usesVendor
-            ? "Review vendor, pricing, tax, and final totals before the order is sent."
-            : "Review supplier, pricing, tax, and final totals before the order is sent."
+            ? "Tinjau vendor, harga, pajak, dan total final sebelum PO dikirim."
+            : "Tinjau supplier, harga, pajak, dan total final sebelum PO dikirim."
         }
         actions={
           <Link href={config.purchasingPoRoute}>
             <Button variant="outline" className="purchasing-secondary-button w-full sm:w-auto">
-              View All Purchase Orders
+              Lihat Semua PO
             </Button>
           </Link>
         }
@@ -132,23 +132,23 @@ export function POApprovalPage({ moduleType = "raw_material" }: POApprovalPagePr
 
       <PurchasingListSection
         icon={ShoppingCart}
-        title="Pending Approvals"
+        title="Menunggu Persetujuan"
         description={
           usesVendor
-            ? "Draft purchase orders waiting for approval before vendor dispatch."
-            : "Draft purchase orders waiting for approval before supplier dispatch."
+            ? "PO draf yang menunggu persetujuan sebelum dikirim ke vendor."
+            : "PO draf yang menunggu persetujuan sebelum dikirim ke supplier."
         }
       >
         {loading ? (
           <div className="flex items-center justify-center py-12 text-sm text-gray-500">
             <Loader2 className="mr-2 h-4 w-4 animate-spin text-pink-600" />
-            Loading approvals...
+            Memuat persetujuan...
           </div>
         ) : pos.length === 0 ? (
           <div className="py-14 text-center">
             <CheckCircle className="mx-auto mb-3 h-12 w-12 text-emerald-300" />
-            <p className="text-gray-500">No purchase orders pending approval</p>
-            <p className="mt-1 text-sm text-gray-400">You&apos;re all caught up.</p>
+            <p className="text-gray-500">Tidak ada PO yang menunggu persetujuan</p>
+            <p className="mt-1 text-sm text-gray-400">Semua sudah ditindaklanjuti.</p>
           </div>
         ) : (
           <>
@@ -156,13 +156,13 @@ export function POApprovalPage({ moduleType = "raw_material" }: POApprovalPagePr
               <table className="min-w-full text-sm">
                 <thead className="border-b border-gray-100 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
                   <tr>
-                    <th className="px-4 py-3 text-left font-semibold">Number</th>
-                    <th className="px-4 py-3 text-left font-semibold">Date</th>
+                    <th className="px-4 py-3 text-left font-semibold">Nomor</th>
+                    <th className="px-4 py-3 text-left font-semibold">Tanggal</th>
                     <th className="px-4 py-3 text-left font-semibold">{config.partyLabel}</th>
-                    <th className="px-4 py-3 text-left font-semibold">Purchase Request</th>
+                    <th className="px-4 py-3 text-left font-semibold">PR</th>
                     <th className="px-4 py-3 text-right font-semibold">Total</th>
                     <th className="px-4 py-3 text-center font-semibold">Status</th>
-                    <th className="px-4 py-3 text-right font-semibold">Actions</th>
+                    <th className="px-4 py-3 text-right font-semibold">Aksi</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -194,7 +194,7 @@ export function POApprovalPage({ moduleType = "raw_material" }: POApprovalPagePr
                         </td>
                         <td className="px-4 py-3 text-center">
                           <Badge variant="outline" className={DRAFT_STATUS_STYLE}>
-                            Draft
+                            {getPOStatusLabel("draft").label}
                           </Badge>
                         </td>
                         <td className="px-4 py-3 text-right" onClick={(event) => event.stopPropagation()}>
@@ -202,7 +202,7 @@ export function POApprovalPage({ moduleType = "raw_material" }: POApprovalPagePr
                             <Button
                               variant="ghost"
                               size="sm"
-                              title="Approve"
+                              title="Setujui"
                               className="cursor-pointer"
                               onClick={() => setConfirmingPO(po)}
                               disabled={rowProcessing}
@@ -222,7 +222,7 @@ export function POApprovalPage({ moduleType = "raw_material" }: POApprovalPagePr
               </table>
             </div>
             <div className="border-t border-gray-200/70 px-4 py-3 text-sm text-gray-500">
-              Showing {pos.length} pending purchase order{pos.length === 1 ? "" : "s"}
+              Menampilkan {pos.length} PO yang menunggu persetujuan
             </div>
           </>
         )}
@@ -231,11 +231,15 @@ export function POApprovalPage({ moduleType = "raw_material" }: POApprovalPagePr
       <Dialog open={confirmingPO !== null} onOpenChange={(open) => !open && closeDialog()}>
         <DialogPanel size="xs">
           <DialogPanelHeader>
-            <DialogPanelTitle>Approve Purchase Order?</DialogPanelTitle>
+            <DialogPanelTitle>Setujui PO?</DialogPanelTitle>
             <DialogPanelDescription>
               {confirmingPO
-                ? config.approvePoDescription(confirmingPO.nomor_po)
-                : config.emptyPoDescription}
+                ? usesVendor
+                  ? `${confirmingPO.nomor_po} akan disetujui dan dapat dikirim ke vendor.`
+                  : `${confirmingPO.nomor_po} akan disetujui dan dapat dikirim ke supplier.`
+                : usesVendor
+                  ? "PO ini akan disetujui dan dapat dikirim ke vendor."
+                  : "PO ini akan disetujui dan dapat dikirim ke supplier."}
             </DialogPanelDescription>
           </DialogPanelHeader>
           <DialogPanelBody />
@@ -247,7 +251,7 @@ export function POApprovalPage({ moduleType = "raw_material" }: POApprovalPagePr
               onClick={closeDialog}
               disabled={isProcessing}
             >
-              Cancel
+              Batal
             </Button>
             <Button
               type="button"
@@ -256,7 +260,7 @@ export function POApprovalPage({ moduleType = "raw_material" }: POApprovalPagePr
               disabled={isProcessing}
             >
               {isProcessing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {isProcessing ? "Approving..." : "Approve"}
+              {isProcessing ? "Menyetujui..." : "Setujui"}
             </Button>
           </DialogFooter>
         </DialogPanel>

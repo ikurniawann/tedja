@@ -126,9 +126,9 @@ export function DeliveryListPage() {
     <div className="space-y-6">
       <div className="flex flex-col items-start justify-between gap-4 border-b border-gray-200/70 pb-4 sm:flex-row sm:items-center">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Pengiriman</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Lacak Pengiriman</h1>
           <p className="text-sm text-gray-500">
-            Lacak surat jalan dan pengiriman supplier per purchase order — total {total}
+            Lacak surat jalan dan pengiriman per purchase order — total {total}
           </p>
         </div>
         <Link href={selectedPoId ? `${RM_ROUTES.purchasingDelivery}/insert?po_id=${selectedPoId}` : `${RM_ROUTES.purchasingDelivery}/insert`}>

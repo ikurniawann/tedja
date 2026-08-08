@@ -280,6 +280,12 @@ export interface ProductWithCOGS {
   markup_persen?: number;
   is_active?: boolean;
   hpp_estimasi?: number;
+  harga_modal?: number;
+  total_bahan_baku?: number;
+  hpp_tersimpan?: number;
+  hpp_resep?: number;
+  hpp_selisih?: number;
+  hpp_perlu_review?: boolean;
   satuan_id?: string | null;
   satuan_nama?: string | null;
   production_output_type?: ProductOutputType;

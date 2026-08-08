@@ -46,7 +46,7 @@ export const PURCHASING_ROUTES: RouteGroup = {
         { path: "products/insert", label: "Tambah Produk" },
         { path: "products/[id]", label: "Detail Produk" },
         { path: "products/edit/[id]", label: "Edit Produk" },
-        { path: "products/bom/[id]", label: "BOM Editor" },
+        { path: "products/bom/[id]", label: "Editor Resep (BOM)" },
       ],
     },
 
@@ -119,7 +119,7 @@ export const PURCHASING_ROUTES: RouteGroup = {
         { path: "reports/po-summary", label: "PO Summary" },
         { path: "reports/po-detail", label: "PO Detail" },
         { path: "reports/supplier-performance", label: "Supplier Performance" },
-        { path: "reports/production-in-house", label: "Production In-House" },
+        { path: "reports/production-in-house", label: "Produksi Internal" },
         { path: "reports/hpp-breakdown", label: "HPP Produk" },
       ],
     },

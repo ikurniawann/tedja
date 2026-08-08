@@ -11,7 +11,7 @@ type ProductOutputTypeFieldProps = {
 export function ProductOutputTypeField({ value, onChange }: ProductOutputTypeFieldProps) {
   return (
     <div className="space-y-2">
-      <Label className="text-xs text-gray-600">Item Type</Label>
+      <Label className="text-xs text-gray-600">Tipe Item</Label>
       <div className="grid h-10 max-w-md grid-cols-2 rounded-lg border border-gray-200/70 bg-gray-50 p-1">
         <button
           type="button"
@@ -22,7 +22,7 @@ export function ProductOutputTypeField({ value, onChange }: ProductOutputTypeFie
               : "text-gray-500 hover:text-gray-800"
           }`}
         >
-          Work-in-Progress
+          WIP
         </button>
         <button
           type="button"
@@ -33,13 +33,13 @@ export function ProductOutputTypeField({ value, onChange }: ProductOutputTypeFie
               : "text-gray-500 hover:text-gray-800"
           }`}
         >
-          Finished Good
+          Barang Jadi
         </button>
       </div>
       <p className="text-xs text-gray-500">
         {value === "WIP"
-          ? "Default production output goes to WIP stock and can be used as a BOM component."
-          : "Default production output goes to finished goods inventory."}
+          ? "Output produksi default masuk stok WIP dan bisa dipakai sebagai komponen resep (BOM)."
+          : "Output produksi default masuk stok barang jadi."}
       </p>
     </div>
   );

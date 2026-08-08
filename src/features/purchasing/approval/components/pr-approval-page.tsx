@@ -76,7 +76,7 @@ export function PRApprovalPage({ moduleType = "raw_material" }: PRApprovalPagePr
       toast.error(
         listQuery.error instanceof Error
           ? listQuery.error.message
-          : "Gagal memuat persetujuan purchase request"
+          : "Gagal memuat persetujuan permintaan pembelian"
       );
     }
   }, [listQuery.isError, listQuery.error]);
@@ -86,10 +86,10 @@ export function PRApprovalPage({ moduleType = "raw_material" }: PRApprovalPagePr
     setProcessing({ id: confirmingPR.id, action: "approve" });
     try {
       await approveMutation.mutateAsync(confirmingPR.id);
-      toast.success("Purchase request berhasil disetujui");
+      toast.success("Permintaan pembelian berhasil disetujui");
       setConfirmingPR(null);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Gagal menyetujui purchase request");
+      toast.error(error instanceof Error ? error.message : "Gagal menyetujui permintaan pembelian");
     } finally {
       setProcessing(null);
     }
@@ -105,11 +105,11 @@ export function PRApprovalPage({ moduleType = "raw_material" }: PRApprovalPagePr
     setProcessing({ id: rejectingPR.id, action: "reject" });
     try {
       await rejectMutation.mutateAsync({ id: rejectingPR.id, reason: rejectionReason.trim() });
-      toast.success("Purchase request berhasil ditolak");
+      toast.success("Permintaan pembelian berhasil ditolak");
       setRejectingPR(null);
       setRejectionReason("");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Gagal menolak purchase request");
+      toast.error(error instanceof Error ? error.message : "Gagal menolak permintaan pembelian");
     } finally {
       setProcessing(null);
     }
@@ -134,12 +134,12 @@ export function PRApprovalPage({ moduleType = "raw_material" }: PRApprovalPagePr
   return (
     <div className="space-y-6">
       <PurchasingPageHeader
-        title="Persetujuan Purchase Request"
+        title="Persetujuan PR"
         description="Tinjau dan setujui kebutuhan barang sebelum proses pembelian berjalan."
         actions={
           <Link href={config.purchasingPrRoute}>
             <Button variant="outline" className="purchasing-secondary-button w-full sm:w-auto">
-              Lihat Semua Purchase Request
+              Lihat Semua PR
             </Button>
           </Link>
         }
@@ -148,7 +148,7 @@ export function PRApprovalPage({ moduleType = "raw_material" }: PRApprovalPagePr
       <PurchasingListSection
         icon={FileText}
         title="Menunggu Persetujuan"
-        description="Purchase request yang menunggu persetujuan Anda pada tahap alur kerja saat ini."
+        description="Permintaan pembelian yang menunggu persetujuan Anda pada tahap alur kerja saat ini."
       >
         {loading ? (
           <div className="flex items-center justify-center py-12 text-sm text-gray-500">
@@ -158,7 +158,7 @@ export function PRApprovalPage({ moduleType = "raw_material" }: PRApprovalPagePr
         ) : prs.length === 0 ? (
           <div className="py-14 text-center">
             <CheckCircle className="mx-auto mb-3 h-12 w-12 text-emerald-300" />
-            <p className="text-gray-500">Tidak ada purchase request yang menunggu persetujuan</p>
+            <p className="text-gray-500">Tidak ada permintaan pembelian yang menunggu persetujuan</p>
             <p className="mt-1 text-sm text-gray-400">Semua sudah ditindaklanjuti.</p>
           </div>
         ) : (
@@ -263,7 +263,7 @@ export function PRApprovalPage({ moduleType = "raw_material" }: PRApprovalPagePr
               </table>
             </div>
             <div className="border-t border-gray-200/70 px-4 py-3 text-sm text-gray-500">
-              Menampilkan {prs.length} purchase request yang menunggu persetujuan
+              Menampilkan {prs.length} permintaan pembelian yang menunggu persetujuan
             </div>
           </>
         )}
@@ -272,10 +272,10 @@ export function PRApprovalPage({ moduleType = "raw_material" }: PRApprovalPagePr
       <Dialog open={confirmingPR !== null} onOpenChange={(open) => !open && closeApproveDialog()}>
         <DialogPanel size="xs">
           <DialogPanelHeader>
-            <DialogPanelTitle>Setujui Purchase Request?</DialogPanelTitle>
+            <DialogPanelTitle>Setujui Permintaan Pembelian?</DialogPanelTitle>
             <DialogPanelDescription>
               {confirmingPR
-                ? `${confirmingPR.pr_number} akan disetujui sebagai kebutuhan yang sah dan dapat dilanjutkan ke pembuatan purchase order.`
+                ? `${confirmingPR.pr_number} akan disetujui sebagai kebutuhan yang sah dan dapat dilanjutkan ke pembuatan PO.`
                 : "Permintaan ini akan disetujui sebagai kebutuhan yang sah."}
             </DialogPanelDescription>
           </DialogPanelHeader>
@@ -306,7 +306,7 @@ export function PRApprovalPage({ moduleType = "raw_material" }: PRApprovalPagePr
       <Dialog open={rejectingPR !== null} onOpenChange={(open) => !open && closeRejectDialog()}>
         <DialogPanel size="sm">
           <DialogPanelHeader>
-            <DialogPanelTitle>Tolak Purchase Request</DialogPanelTitle>
+            <DialogPanelTitle>Tolak Permintaan Pembelian</DialogPanelTitle>
             <DialogPanelDescription>
               {rejectingPR
                 ? `Berikan alasan penolakan untuk ${rejectingPR.pr_number}. Pemohon dapat membuat revisi bila diperlukan.`

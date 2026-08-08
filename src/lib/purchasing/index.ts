@@ -387,6 +387,7 @@ export async function listProducts(
     search?: string;
     is_active?: boolean;
     warehouse_id?: string;
+    hpp_review?: boolean;
     page?: number;
     limit?: number;
   } = {}
@@ -395,6 +396,7 @@ export async function listProducts(
   if (params.search) sp.set("search", params.search);
   if (params.is_active !== undefined) sp.set("is_active", String(params.is_active));
   if (params.warehouse_id) sp.set("warehouse_id", params.warehouse_id);
+  if (params.hpp_review) sp.set("hpp_review", "true");
   if (params.page) sp.set("page", String(params.page));
   if (params.limit) sp.set("limit", String(params.limit));
 
@@ -446,6 +448,16 @@ export async function createProduct(
     }
   );
   return response.data;
+}
+
+export async function applyProductRecipeHpp(
+  id: string
+): Promise<{ data: ProductWithCOGS; message?: string }> {
+  const response = await fetchApi<{ data: ProductWithCOGS; message?: string }>(
+    `${BASE}/products/${id}/apply-recipe-hpp`,
+    { method: "POST" }
+  );
+  return response;
 }
 
 export async function updateProduct(

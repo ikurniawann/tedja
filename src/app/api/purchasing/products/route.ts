@@ -12,6 +12,7 @@ import {
   validateProductWarehouseScope,
 } from "@/lib/api/scope";
 import { syncPurchasingProductToPos } from "@/lib/pos/purchasing-sync";
+import { withProductHppReview } from "@/lib/purchasing/product-hpp-review";
 
 const productSchema = z.object({
   kode: z.string().max(20).optional(),
@@ -68,6 +69,7 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get("search");
     const isActive = searchParams.get("is_active");
     const warehouseId = searchParams.get("warehouse_id");
+    const hppReview = searchParams.get("hpp_review") === "true";
     const page = parseInt(searchParams.get("page") || "1");
     const limit = parseInt(searchParams.get("limit") || "20");
 
@@ -91,9 +93,36 @@ export async function GET(request: NextRequest) {
     if (isActive !== null) {
       query = query.eq("is_active", isActive === "true");
     }
+    if (hppReview) {
+      query = query.gt("total_bahan_baku", 0);
+    }
 
     const from = (page - 1) * limit;
     const to = from + limit - 1;
+
+    if (hppReview) {
+      const { data, error } = await query
+        .order("nama", { ascending: true })
+        .limit(1000);
+
+      if (error) throw error;
+
+      const reviewed = (data || [])
+        .map((row) => withProductHppReview(row))
+        .filter((row) => row.hpp_perlu_review);
+      const total = reviewed.length;
+
+      return Response.json({
+        success: true,
+        data: reviewed.slice(from, to + 1),
+        pagination: {
+          page,
+          limit,
+          total,
+          total_pages: Math.max(1, Math.ceil(total / limit)),
+        },
+      });
+    }
 
     const { data, error, count } = await query
       .order("nama", { ascending: true })
@@ -103,7 +132,7 @@ export async function GET(request: NextRequest) {
 
     return Response.json({
       success: true,
-      data,
+      data: (data || []).map((row) => withProductHppReview(row)),
       pagination: {
         page,
         limit,

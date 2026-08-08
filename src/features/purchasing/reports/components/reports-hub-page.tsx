@@ -57,7 +57,7 @@ const REPORT_CARDS = [
   {
     href: "/dashboard/purchasing/reports/production-in-house",
     icon: CubeIcon,
-    title: "Production In-House",
+    title: "Produksi Internal",
     description: "Rekap order produksi produk per periode, status, output type, qty, dan nilai HPP.",
     accent: "text-indigo-600",
     bg: "bg-indigo-50",

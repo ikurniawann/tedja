@@ -148,7 +148,7 @@ export const ROUTES: RouteDefinition[] = [
   {
     route: "products.bom",
     path: "/dashboard/product/products/bom/[id]",
-    meta: { label: "BOM Editor", icon: "CubeTransparentIcon" },
+    meta: { label: "Editor Resep (BOM)", icon: "CubeTransparentIcon" },
   },
 
   // ── Purchase Orders ────────────────────────────────────────
@@ -282,7 +282,7 @@ export const ROUTES: RouteDefinition[] = [
   {
     route: "reports.production-in-house",
     path: "/dashboard/purchasing/reports/production-in-house",
-    meta: { label: "Production In-House", icon: "CubeIcon" },
+    meta: { label: "Produksi Internal", icon: "CubeIcon" },
   },
   {
     route: "reports.hpp-breakdown",

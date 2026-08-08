@@ -20,22 +20,22 @@ import { useProductionInHouseReport } from "../queries";
 import type { ProductionDateField, ProductionOutputTypeFilter } from "../types";
 
 const DATE_FIELD_OPTIONS = [
-  { value: "completed_at", label: "Completed At" },
-  { value: "created_at", label: "Created At" },
+  { value: "completed_at", label: "Tanggal Selesai" },
+  { value: "created_at", label: "Tanggal Dibuat" },
 ];
 
 const STATUS_OPTIONS = [
   { value: "all", label: "Semua Status" },
-  { value: "DRAFT", label: "Draft" },
-  { value: "RELEASED", label: "Released" },
-  { value: "IN_PROGRESS", label: "In Progress" },
-  { value: "COMPLETED", label: "Completed" },
-  { value: "CANCELLED", label: "Cancelled" },
+  { value: "DRAFT", label: "Draf" },
+  { value: "RELEASED", label: "Dirilis" },
+  { value: "IN_PROGRESS", label: "Dalam Proses" },
+  { value: "COMPLETED", label: "Selesai" },
+  { value: "CANCELLED", label: "Dibatalkan" },
 ];
 
 const OUTPUT_OPTIONS = [
   { value: "all", label: "Semua Output" },
-  { value: "FINISHED_GOOD", label: "Finished Good" },
+  { value: "FINISHED_GOOD", label: "Barang Jadi" },
   { value: "WIP", label: "WIP" },
 ];
 
@@ -48,11 +48,11 @@ const STATUS_STYLES: Record<string, string> = {
 };
 
 const STATUS_LABELS: Record<string, string> = {
-  DRAFT: "Draft",
-  RELEASED: "Released",
-  IN_PROGRESS: "In Progress",
-  COMPLETED: "Completed",
-  CANCELLED: "Cancelled",
+  DRAFT: "Draf",
+  RELEASED: "Dirilis",
+  IN_PROGRESS: "Dalam Proses",
+  COMPLETED: "Selesai",
+  CANCELLED: "Dibatalkan",
 };
 
 function formatDate(value?: string | null) {
@@ -159,7 +159,7 @@ export function ProductionInHouseReportPage() {
       toast.error(
         reportQuery.error instanceof Error
           ? reportQuery.error.message
-          : "Gagal memuat laporan Production In-House"
+          : "Gagal memuat laporan Produksi Internal"
       );
     }
   }, [reportQuery.isError, reportQuery.error]);
@@ -187,7 +187,7 @@ export function ProductionInHouseReportPage() {
       URL.revokeObjectURL(url);
       toast.success("CSV berhasil diexport");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Gagal export CSV");
+      toast.error(error instanceof Error ? error.message : "Gagal mengekspor CSV");
     } finally {
       setExporting(false);
     }
@@ -197,9 +197,9 @@ export function ProductionInHouseReportPage() {
     <div className="space-y-6 p-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Production In-House</h1>
+          <h1 className="text-2xl font-bold text-foreground">Produksi Internal</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Rekap order produksi produk per periode, status, output type, dan nilai HPP.
+            Rekap order produksi produk per periode, status, tipe output, dan nilai HPP.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -210,7 +210,7 @@ export function ProductionInHouseReportPage() {
             disabled={loading}
           >
             <ArrowPathIcon className={`mr-1 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-            Refresh
+            Muat Ulang
           </Button>
           <Button
             variant="outline"
@@ -219,7 +219,7 @@ export function ProductionInHouseReportPage() {
             disabled={exporting || orders.length === 0}
           >
             <DocumentArrowDownIcon className="mr-1 h-4 w-4" />
-            {exporting ? "Exporting..." : "Export CSV"}
+            {exporting ? "Mengekspor..." : "Ekspor CSV"}
           </Button>
         </div>
       </div>
@@ -251,7 +251,7 @@ export function ProductionInHouseReportPage() {
                 options={DATE_FIELD_OPTIONS}
                 value={dateField}
                 onChange={(value) => setDateField(value as ProductionDateField)}
-                placeholder="Completed At"
+                placeholder="Tanggal Selesai"
                 searchPlaceholder="Cari mode..."
                 emptyMessage="Tidak ditemukan"
                 className="h-10"
@@ -270,7 +270,7 @@ export function ProductionInHouseReportPage() {
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs">Output Type</Label>
+              <Label className="text-xs">Tipe Output</Label>
               <Combobox
                 options={OUTPUT_OPTIONS}
                 value={outputType}
@@ -406,7 +406,7 @@ export function ProductionInHouseReportPage() {
 
         <Card className="border-border shadow-xs">
           <CardHeader className="flex flex-row items-center justify-between border-b border-gray-200/70 pb-3">
-            <CardTitle className="text-base">Daftar Production Orders</CardTitle>
+            <CardTitle className="text-base">Daftar Order Produksi</CardTitle>
             <Badge
               variant="secondary"
               className="border-border bg-muted/50 text-muted-foreground"
@@ -459,7 +459,7 @@ export function ProductionInHouseReportPage() {
                           <div className="text-xs text-muted-foreground">{order.product_kode}</div>
                         </td>
                         <td className="px-3 py-3 text-muted-foreground">
-                          {order.output_type === "WIP" ? "WIP" : "Finished Good"}
+                          {order.output_type === "WIP" ? "WIP" : "Barang Jadi"}
                         </td>
                         <td className="px-3 py-3">
                           <StatusBadge status={order.status} />
@@ -504,7 +504,7 @@ export function ProductionInHouseReportPage() {
             </div>
             <div className="border-t border-gray-200/70 px-4 py-3 text-xs text-muted-foreground">
               Total HPP: {formatRupiah(summary.total_hpp_value)} · Filter tanggal:{" "}
-              {dateField === "completed_at" ? "Completed At" : "Created At"}
+              {dateField === "completed_at" ? "Tanggal Selesai" : "Tanggal Dibuat"}
             </div>
           </CardContent>
         </Card>

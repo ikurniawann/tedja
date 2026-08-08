@@ -123,7 +123,7 @@ export function BOMEditorPage() {
   useEffect(() => {
     if (editorQuery.isError) {
       console.error("Error loading BOM:", editorQuery.error);
-      toast.error(getErrorMessage(editorQuery.error, "Failed to load bill of materials"));
+      toast.error(getErrorMessage(editorQuery.error, "Gagal memuat resep (BOM)"));
     }
   }, [editorQuery.isError, editorQuery.error]);
 
@@ -172,10 +172,10 @@ export function BOMEditorPage() {
 
   async function saveItem(item: BomDraft, options?: { silent?: boolean }) {
     if (!item.raw_material_id) {
-      throw new Error("Raw material is required");
+      throw new Error("Bahan baku wajib diisi");
     }
     if (item.qty_required <= 0) {
-      throw new Error("Quantity must be greater than 0");
+      throw new Error("Qty harus lebih dari 0");
     }
 
     const payload = {
@@ -194,7 +194,7 @@ export function BOMEditorPage() {
     }
 
     if (!options?.silent) {
-      toast.success("Bill of materials saved");
+      toast.success("Resep (BOM) berhasil disimpan");
       await loadData();
     }
   }
@@ -208,10 +208,10 @@ export function BOMEditorPage() {
     try {
       await deleteBomMutation.mutateAsync(item.id);
       setBomItems((items) => items.filter((current) => current.id !== item.id));
-      toast.success("Material removed from bill of materials");
+      toast.success("Bahan dihapus dari resep (BOM)");
     } catch (error: unknown) {
       console.error("Error deleting BOM item:", error);
-      toast.error(getErrorMessage(error, "Failed to remove bill of materials item"));
+      toast.error(getErrorMessage(error, "Gagal menghapus bahan dari resep (BOM)"));
     }
   }
 
@@ -219,11 +219,11 @@ export function BOMEditorPage() {
     if (bomItems.length === 0) return;
 
     if (bomItems.some((item) => !item.raw_material_id)) {
-      toast.error("Complete raw material on every row");
+      toast.error("Lengkapi bahan baku di setiap baris");
       return;
     }
     if (bomItems.some((item) => item.qty_required <= 0)) {
-      toast.error("Quantity for each material must be greater than 0");
+      toast.error("Qty setiap bahan harus lebih dari 0");
       return;
     }
 
@@ -232,11 +232,11 @@ export function BOMEditorPage() {
       for (const item of bomItems) {
         await saveItem(item, { silent: true });
       }
-      toast.success("Bill of materials saved");
+      toast.success("Resep (BOM) berhasil disimpan");
       await loadData();
     } catch (error: unknown) {
       console.error("Error saving BOM:", error);
-      toast.error(getErrorMessage(error, "Failed to save bill of materials"));
+      toast.error(getErrorMessage(error, "Gagal menyimpan resep (BOM)"));
     } finally {
       setSavingAll(false);
     }
@@ -246,7 +246,7 @@ export function BOMEditorPage() {
     return (
       <div className="flex min-h-[360px] items-center justify-center text-sm text-gray-500">
         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-        Loading bill of materials...
+        Memuat resep (BOM)...
       </div>
     );
   }
@@ -259,10 +259,10 @@ export function BOMEditorPage() {
     <div className="space-y-6">
       <PurchasingFormHeader
         backHref={backHref}
-        title="Bill of Materials Editor"
+        title="Editor Resep (BOM)"
         description={
           <>
-            {displayName(product?.nama)} · Total estimated COGS {formatRupiah(totalHpp)}
+            {displayName(product?.nama)} · Total estimasi HPP {formatRupiah(totalHpp)}
           </>
         }
         actions={
@@ -274,7 +274,7 @@ export function BOMEditorPage() {
             className="purchasing-secondary-button w-full sm:w-auto"
           >
             <RefreshCw className={`mr-2 h-4 w-4 ${editorQuery.isFetching ? "animate-spin" : ""}`} />
-            Refresh
+            Muat Ulang
           </Button>
         }
       />
@@ -282,10 +282,10 @@ export function BOMEditorPage() {
       <Card className="border-gray-200/70 shadow-xs">
         <CardHeader className="flex flex-row items-start justify-between border-b border-gray-200/70 pb-3">
           <div>
-            <CardTitle className="text-base">Recipe Components</CardTitle>
+            <CardTitle className="text-base">Komponen Resep</CardTitle>
             <p className="mt-1 text-xs text-gray-500">
-              Raw materials and work-in-progress items can be used as components. WIP from the same
-              product is automatically hidden.
+              Bahan baku dan item WIP dapat dipakai sebagai komponen. WIP dari produk yang sama
+              disembunyikan otomatis.
             </p>
           </div>
           <CardAction>
@@ -297,22 +297,22 @@ export function BOMEditorPage() {
               className="border-pink-200 text-pink-700 hover:bg-pink-50"
             >
               <Plus className="mr-1 h-4 w-4" />
-              Add Material
+              Tambah Bahan
             </Button>
           </CardAction>
         </CardHeader>
         <CardContent className="space-y-4 p-4">
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="rounded-lg border border-gray-200/70 bg-gray-50 px-4 py-3">
-              <p className="text-xs font-medium text-gray-500">Total Components</p>
+              <p className="text-xs font-medium text-gray-500">Total Komponen</p>
               <p className="mt-1 text-lg font-semibold text-gray-950">{bomItems.length}</p>
             </div>
             <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-4 py-3">
-              <p className="text-xs font-medium text-emerald-700">Raw Material</p>
+              <p className="text-xs font-medium text-emerald-700">Bahan Baku</p>
               <p className="mt-1 text-lg font-semibold text-emerald-800">{rawCount}</p>
             </div>
             <div className="rounded-lg border border-sky-100 bg-sky-50 px-4 py-3">
-              <p className="text-xs font-medium text-sky-700">Work in Progress</p>
+              <p className="text-xs font-medium text-sky-700">WIP</p>
               <p className="mt-1 text-lg font-semibold text-sky-800">{wipCount}</p>
             </div>
           </div>
@@ -320,19 +320,19 @@ export function BOMEditorPage() {
             <table className="min-w-full text-sm">
               <thead className="border-b border-gray-100 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
                 <tr>
-                  <th className="px-4 py-3 text-left font-semibold">Raw Material</th>
+                  <th className="px-4 py-3 text-left font-semibold">Bahan Baku</th>
                   <th className="w-[170px] px-4 py-3 text-left font-semibold">Qty</th>
                   <th className="w-[140px] px-4 py-3 text-left font-semibold">Waste (%)</th>
-                  <th className="w-[140px] px-4 py-3 text-right font-semibold">Unit Cost</th>
+                  <th className="w-[140px] px-4 py-3 text-right font-semibold">Biaya Satuan</th>
                   <th className="w-[140px] px-4 py-3 text-right font-semibold">Subtotal</th>
-                  <th className="w-[56px] px-4 py-3" aria-label="Remove" />
+                  <th className="w-[56px] px-4 py-3" aria-label="Hapus" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {bomItems.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="py-10 text-center text-sm text-gray-400">
-                      No bill of materials components yet. Click &quot;Add Material&quot; to get started.
+                      Belum ada komponen resep. Klik &quot;Tambah Bahan&quot; untuk mulai.
                     </td>
                   </tr>
                 ) : (
@@ -345,13 +345,13 @@ export function BOMEditorPage() {
                             options={materials.map((materialOption) => ({
                               value: materialOption.id,
                               label: displayName(materialOption.nama),
-                              description: `${materialOption.material_type === "WIP" ? "WIP" : "Raw"} · ${materialOption.kode}`,
+                              description: `${materialOption.material_type === "WIP" ? "WIP" : "Bahan"} · ${materialOption.kode}`,
                             }))}
                             value={item.raw_material_id}
                             onChange={(value) => updateItem(item.id, { raw_material_id: value })}
-                            placeholder="Select material..."
-                            searchPlaceholder="Search material..."
-                            emptyMessage="No material found"
+                            placeholder="Pilih bahan..."
+                            searchPlaceholder="Cari bahan..."
+                            emptyMessage="Bahan tidak ditemukan"
                             allowClear
                             className="w-full"
                           />
@@ -416,9 +416,9 @@ export function BOMEditorPage() {
                             variant="ghost"
                             size="icon"
                             onClick={() => removeItem(item)}
-                            title="Remove material"
+                            title="Hapus bahan"
                             className="text-gray-400 hover:bg-red-50 hover:text-red-600"
-                            aria-label="Remove material"
+                            aria-label="Hapus bahan"
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>
@@ -431,7 +431,7 @@ export function BOMEditorPage() {
               <tfoot className="border-t border-gray-200/70 bg-gray-50/80">
                 <tr>
                   <td colSpan={4} className="px-4 py-3 text-right text-sm font-semibold text-gray-600">
-                    Total Estimated COGS
+                    Total Estimasi HPP
                   </td>
                   <td className="px-4 py-3 text-right font-mono text-sm font-bold text-gray-900">
                     {formatRupiah(totalHpp)}
@@ -447,7 +447,7 @@ export function BOMEditorPage() {
       <div className="flex flex-col-reverse gap-3 border-t border-gray-200/70 pt-4 sm:flex-row sm:justify-end">
         <Link href={backHref}>
           <Button variant="outline" type="button" className="purchasing-secondary-button w-full sm:w-auto">
-            Cancel
+            Batal
           </Button>
         </Link>
         <Button
@@ -458,10 +458,10 @@ export function BOMEditorPage() {
           {savingAll ? (
             <>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Submitting...
+              Menyimpan...
             </>
           ) : (
-            "Save Bill of Materials"
+            "Simpan Resep (BOM)"
           )}
         </Button>
       </div>

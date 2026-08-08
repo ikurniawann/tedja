@@ -107,7 +107,7 @@ const BREADCRUMB_TREE: Record<string, { parent?: string; labelOverride?: string 
   "reports.po-summary": { labelOverride: "PO Summary" },
   "reports.po-detail": { labelOverride: "PO Detail" },
   "reports.supplier-performance": { labelOverride: "Supplier Performance" },
-  "reports.production-in-house": { labelOverride: "Production In-House" },
+  "reports.production-in-house": { labelOverride: "Produksi Internal" },
   "reports.hpp-breakdown": { labelOverride: "HPP Produk" },
 };
 

@@ -21,9 +21,9 @@ import { useRecipeItems } from "../queries";
 type BomFilter = "all" | "ready" | "incomplete";
 
 const BOM_FILTER_OPTIONS = [
-  { value: "all", label: "All Bill of Materials Statuses" },
-  { value: "ready", label: "Ready for Production" },
-  { value: "incomplete", label: "Incomplete" },
+  { value: "all", label: "Semua Status Resep (BOM)" },
+  { value: "ready", label: "Siap diproduksi" },
+  { value: "incomplete", label: "Belum lengkap" },
 ];
 
 function toNumber(value: unknown) {
@@ -59,7 +59,7 @@ export function ProductionRecipesPage({
       toast.error(
         productsQuery.error instanceof Error
           ? productsQuery.error.message
-          : "Failed to load product recipes"
+          : "Gagal memuat daftar resep"
       );
     }
   }, [productsQuery.isError, productsQuery.error]);
@@ -111,12 +111,12 @@ export function ProductionRecipesPage({
   return (
     <div className="space-y-6">
       <PurchasingPageHeader
-        title={isProduct ? "Recipes / Bill of Materials" : "Raw Material Recipes / Bill of Materials"}
+        title={isProduct ? "Resep (BOM)" : "Resep Bahan Baku (BOM)"}
         description={
           <>
             {isProduct
-              ? "Manage raw material and work-in-progress composition for finished products"
-              : "Manage component raw materials for in-house manufactured materials"}
+              ? "Kelola komposisi bahan baku dan WIP untuk produk jadi"
+              : "Kelola komponen bahan baku untuk bahan yang diproduksi internal"}
             {" — "}
             {products.length} total
           </>
@@ -128,13 +128,13 @@ export function ProductionRecipesPage({
                 variant="outline"
                 className="h-10 w-full gap-2 rounded-lg border-gray-200 bg-white px-3 text-sm font-medium text-gray-700 shadow-sm hover:border-pink-200 hover:bg-pink-50 hover:text-pink-700 sm:w-auto"
               >
-                Back to Production
+                Kembali ke Produksi
               </Button>
             </Link>
             <Link href={config.materialsInsertRoute}>
               <Button className="h-10 w-full gap-2 rounded-lg bg-pink-600 px-3 text-sm font-semibold text-white shadow-sm hover:bg-pink-700 sm:w-auto">
                 <Plus className="h-4 w-4" />
-                {isProduct ? "Create Product" : "Create Raw Material"}
+                {isProduct ? "Tambah Produk" : "Tambah Bahan"}
               </Button>
             </Link>
           </>
@@ -144,19 +144,21 @@ export function ProductionRecipesPage({
       <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
         <Card className="border-gray-200/70 shadow-xs">
           <CardContent className="p-4">
-            <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Total Products</p>
+            <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
+              Total {isProduct ? "Produk" : "Bahan Baku"}
+            </p>
             <p className="mt-1 text-2xl font-bold text-gray-900">{products.length}</p>
           </CardContent>
         </Card>
         <Card className="border-gray-200/70 shadow-xs">
           <CardContent className="p-4">
-            <p className="text-xs font-medium uppercase tracking-wide text-emerald-600">Ready for Production</p>
+            <p className="text-xs font-medium uppercase tracking-wide text-emerald-600">Siap diproduksi</p>
             <p className="mt-1 text-2xl font-bold text-emerald-700">{withBom}</p>
           </CardContent>
         </Card>
         <Card className="border-gray-200/70 shadow-xs">
           <CardContent className="p-4">
-            <p className="text-xs font-medium uppercase tracking-wide text-amber-600">Incomplete Bill of Materials</p>
+            <p className="text-xs font-medium uppercase tracking-wide text-amber-600">Resep (BOM) belum lengkap</p>
             <p className="mt-1 text-2xl font-bold text-amber-700">{withoutBom}</p>
           </CardContent>
         </Card>
@@ -164,14 +166,18 @@ export function ProductionRecipesPage({
 
       <PurchasingListSection
         icon={BeakerIcon}
-        title="Product Recipe List"
-        description="Select a product to configure raw materials, work-in-progress items, waste, and estimated cost of goods sold."
+        title={isProduct ? "Daftar Resep Produk" : "Daftar Resep Bahan Baku"}
+        description="Pilih item untuk mengatur bahan baku, item WIP, susut, dan estimasi harga pokok penjualan."
         toolbar={
           <div className="flex w-full flex-col gap-3 sm:w-auto md:flex-row md:items-center">
             <label className="relative w-full md:w-80">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
               <Input
-                placeholder="Search product name, code, or category..."
+                placeholder={
+                  isProduct
+                    ? "Cari nama, kode, atau kategori produk..."
+                    : "Cari nama atau kode bahan baku..."
+                }
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
                 className="h-10 bg-white pl-10 pr-10 text-sm focus:border-pink-400 focus:ring-2 focus:ring-pink-100"
@@ -181,7 +187,7 @@ export function ProductionRecipesPage({
                   type="button"
                   onClick={() => setSearchQuery("")}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 transition-colors hover:text-gray-700"
-                  aria-label="Clear search"
+                  aria-label="Hapus pencarian"
                 >
                   <X className="h-4 w-4" />
                 </button>
@@ -224,7 +230,7 @@ export function ProductionRecipesPage({
                 <div className="space-y-1.5">
                   <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
                     <Filter className="h-3.5 w-3.5 text-pink-500" />
-                    Bill of Materials Status
+                    Status Resep (BOM)
                   </div>
                   <Combobox
                     options={BOM_FILTER_OPTIONS}
@@ -234,8 +240,8 @@ export function ProductionRecipesPage({
                       setPage(1);
                     }}
                     placeholder="Filter status..."
-                    searchPlaceholder="Search status..."
-                    emptyMessage="No status found"
+                    searchPlaceholder="Cari status..."
+                    emptyMessage="Status tidak ditemukan"
                     className="w-full! h-9 text-sm"
                   />
                 </div>
@@ -247,21 +253,21 @@ export function ProductionRecipesPage({
             <table className="min-w-full text-sm">
               <thead className="border-b border-gray-100 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
                 <tr>
-                  <th className="px-4 py-3 text-left font-semibold">{isProduct ? "Product" : "Raw Material"}</th>
-                  <th className="px-4 py-3 text-left font-semibold">Bill of Materials Status</th>
-                  <th className="px-4 py-3 text-right font-semibold">Components</th>
-                  <th className="px-4 py-3 text-right font-semibold">Estimated COGS</th>
+                  <th className="px-4 py-3 text-left font-semibold">{isProduct ? "Produk" : "Bahan Baku"}</th>
+                  <th className="px-4 py-3 text-left font-semibold">Status Resep (BOM)</th>
+                  <th className="px-4 py-3 text-right font-semibold">Komponen</th>
+                  <th className="px-4 py-3 text-right font-semibold">Estimasi HPP</th>
                   {isProduct && (
-                    <th className="px-4 py-3 text-right font-semibold">Selling Price</th>
+                    <th className="px-4 py-3 text-right font-semibold">Harga Jual</th>
                   )}
-                  <th className="px-4 py-3 text-right font-semibold">Actions</th>
+                  <th className="px-4 py-3 text-right font-semibold">Aksi</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {loading ? (
                   <tr>
                     <td colSpan={isProduct ? 6 : 5} className="px-4 py-12 text-center text-sm text-gray-500">
-                      Loading {isProduct ? "product" : "raw material"} recipes...
+                      Memuat resep {isProduct ? "produk" : "bahan baku"}...
                     </td>
                   </tr>
                 ) : paginatedProducts.length === 0 ? (
@@ -269,14 +275,14 @@ export function ProductionRecipesPage({
                     <td colSpan={isProduct ? 6 : 5} className="px-4 py-14 text-center">
                       <BeakerIcon className="mx-auto mb-4 h-12 w-12 text-gray-300" />
                       <p className="text-gray-500">
-                        No {isProduct ? "products" : "raw materials"} match the current filters
+                        Tidak ada {isProduct ? "produk" : "bahan baku"} yang cocok dengan filter
                       </p>
                       <Link href={config.materialsInsertRoute}>
                         <Button
                           variant="outline"
                           className="mt-4 h-10 gap-2 rounded-lg border-pink-200 bg-white px-3 text-sm font-medium text-pink-700 shadow-sm hover:border-pink-200 hover:bg-pink-50 hover:text-pink-700"
                         >
-                          {isProduct ? "Create Product" : "Create Raw Material"}
+                          {isProduct ? "Tambah Produk" : "Tambah Bahan"}
                         </Button>
                       </Link>
                     </td>
@@ -304,7 +310,7 @@ export function ProductionRecipesPage({
                                 : "border-amber-200/80 bg-amber-50 text-amber-700"
                             }
                           >
-                            {hasBom ? "Ready for Production" : "Incomplete"}
+                            {hasBom ? "Siap diproduksi" : "Belum lengkap"}
                           </Badge>
                         </td>
                         <td className="px-4 py-3 text-right font-medium text-gray-900">
@@ -323,7 +329,7 @@ export function ProductionRecipesPage({
                             <Button
                               variant="ghost"
                               size="sm"
-                              title="Edit recipe"
+                              title="Edit resep"
                               className="cursor-pointer"
                             >
                               <Pencil className="h-4 w-4" />

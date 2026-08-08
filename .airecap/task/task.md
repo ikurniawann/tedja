@@ -1,22 +1,18 @@
-# Task: Sync master harga_beli dari last GRN purchase price
+# Task: Suggest update HPP produk dari resep
 
 ## Goal
-Saat stok bahan baku masuk dari GRN, update `raw_materials.harga_beli` ke **harga beli terakhir** (bukan avg). Avg stok tetap weighted average di `inventory.unit_cost`.
-
-## Rules
-- `harga_beli` master = per satuan besar
-- Cost di inventory/movement GRN = per satuan dasar → konversi: `harga_beli = baseUnitCost × bigUnitFactor`
-- Skip jika cost ≤ 0
-- Hook di `addInventoryFromGrn` (semua jalur QC/GRN lewat sini)
-- Bonus: movement line simpan **harga transaksi** (bukan avg) agar riwayat harga akurat
+Tampilkan HPP tersimpan vs HPP resep (BOM × avg cost bahan). User pilih update atau tetap. Tidak auto-timpa.
 
 ## Plan
-- [x] Helper `masterHargaBeliFromBaseUnitCost` + `updateRawMaterialLastPurchasePrice`
-- [x] Panggil dari `addInventoryFromGrn`
-- [x] Unit test helper konversi (3 passed)
-- [x] Movement GRN simpan harga transaksi (bukan avg)
+- [x] Helper `buildProductHppReview` (threshold Rp 1, hanya produk ber-BOM + HPP resep > 0)
+- [x] Enrich GET list/detail produk dengan field review
+- [x] Filter list `hpp_review=true`
+- [x] POST apply: set `harga_modal` = HPP resep; sync POS bila FINISHED_GOOD
+- [x] UI detail: bandingkan + ConfirmDialog update
+- [x] UI list: badge, filter, aksi update cepat
 
 ## Review
-- Setelah stok GRN post: `harga_beli` master = last purchase (per satuan besar)
-- `inventory.unit_cost` tetap weighted average
-- Riwayat harga memakai `unit_cost` movement = harga transaksi PO
+- List: kolom HPP tersimpan / HPP resep, badge "Perlu update", filter, tombol refresh
+- Detail: bandingkan + CTA Update HPP / Tetap
+- Apply: `harga_modal` = HPP resep; FINISHED_GOOD sync POS `cost_price`
+- Trading tanpa BOM tidak masuk review

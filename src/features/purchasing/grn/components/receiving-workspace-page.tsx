@@ -458,7 +458,7 @@ export function ReceivingWorkspacePage({
   return (
     <div className="space-y-6">
       <div className="border-b border-gray-200/70 pb-4">
-        <h1 className="text-2xl font-bold text-gray-900">GRN</h1>
+        <h1 className="text-2xl font-bold text-gray-900">Penerimaan (GRN)</h1>
         <p className="text-sm text-gray-500">
           Pantau pengiriman, penerimaan, qty diterima/ditolak, dan sisa kiriman — {filteredRows.length} total
         </p>
@@ -477,7 +477,7 @@ export function ReceivingWorkspacePage({
 
       <PurchasingListSection
         icon={ClipboardDocumentCheckIcon}
-        title="Daftar GRN"
+        title="Daftar Penerimaan (GRN)"
         description="Setiap baris adalah purchase order yang sudah punya pengiriman. Buat GRN (terima + QC), lanjutkan penerimaan sebagian, atau tinjau yang sudah selesai. GRN lama yang menunggu QC masih menampilkan aksi QC."
         toolbar={
           <div className="flex w-full flex-col gap-3 sm:w-auto md:flex-row md:items-center">

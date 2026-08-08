@@ -1,5 +1,24 @@
 # Lessons
 
+## HPP produk resep vs PO
+- Tidak semua HPP lewat PO. Trading → `harga_modal`/GRN; resep → BOM × avg cost.
+- Jangan auto-timpa HPP POS. Suggest: HPP saat ini vs HPP seharusnya, user pilih update.
+- `hpp_estimasi` di `v_products_cogs` live; `harga_modal` snapshot yang di-accept user.
+
+
+
+## i18n Product master + inventory pages
+- Sidebar + page title harus bareng: Satuan/Kategori/Produk, Stok/Opname/Penyesuaian/Transfer.
+- Satuan & Transfer Stok sudah id-ID; fokus sisa: products CRUD, kategori, stok produk, opname produk, adjustment produk.
+
+## Product purchasing align RM
+- Price list produk dipensiun (soft-delete IAM) seperti RM; PR/PO estimasi pakai `harga_modal`, bukan vendor-price-list.
+- Label sidebar + page GRN/pengiriman produk: Penerimaan (GRN), Lacak Pengiriman. Invoice produk belum dipindah ke AP.
+
+## i18n menu + page harus bareng
+- Ganti label sidebar IAM saja tidak cukup; page title/toast/empty state di feature page sering masih English.
+- Scope Approval + Produksi: hub, list, editor BOM, detail order, laporan terkait.
+
 ## Master harga_beli vs avg stok
 - GRN post stok: update `raw_materials.harga_beli` = **last purchase** (konversi ke satuan besar); jangan set ke weighted avg.
 - `inventory.unit_cost` = avg; movement GRN `unit_cost` = harga transaksi (bukan avg) supaya riwayat/harga terakhir akurat.

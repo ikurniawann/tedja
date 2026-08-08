@@ -162,7 +162,7 @@ export async function getProductionInHouseReport(
   const result = await response.json().catch(() => null);
   if (!response.ok || !result?.success) {
     throw new Error(
-      result?.message || result?.error || "Gagal memuat laporan Production In-House"
+      result?.message || result?.error || "Gagal memuat laporan Produksi Internal"
     );
   }
   return {
@@ -184,7 +184,7 @@ export async function exportProductionInHouseReport(
   const sp = buildParams({ ...params, export: "csv" });
   const response = await fetch(`${BASE}/production-in-house?${sp.toString()}`);
   if (!response.ok) {
-    throw new Error("Gagal export laporan Production In-House");
+    throw new Error("Gagal mengekspor laporan Produksi Internal");
   }
   return response.blob();
 }

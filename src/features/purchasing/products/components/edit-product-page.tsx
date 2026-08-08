@@ -39,11 +39,11 @@ function getBomWastePercent(item: Partial<BOMItem>) {
 }
 
 function getMaterialSmallUnitLabel(material?: RawMaterialWithStock) {
-  return material?.satuan_kecil_nama || material?.satuan || "Unit";
+  return material?.satuan_kecil_nama || material?.satuan || "Satuan";
 }
 
 function formatQuantity(value: number | string | null | undefined, maxFractionDigits = 4) {
-  return new Intl.NumberFormat("en-US", {
+  return new Intl.NumberFormat("id-ID", {
     maximumFractionDigits: maxFractionDigits,
   }).format(Number(value) || 0);
 }
@@ -56,10 +56,6 @@ function getMaterialCost(material?: RawMaterialWithStock) {
   return baseCost;
 }
 
-function calculatePriceFromMarkup(hpp: number, markup: number) {
-  return Math.round(hpp * (1 + markup / 100));
-}
-
 function calculateMarkupFromPrice(hpp: number, price: number) {
   if (hpp <= 0) return 0;
   return Number((((price - hpp) / hpp) * 100).toFixed(2));
@@ -69,8 +65,6 @@ export function EditProductPage() {
   const router = useRouter();
   const params = useParams();
   const productId = params.id as string;
-
-  const [pricingSource, setPricingSource] = useState<"markup" | "price">("price");
 
   const editQuery = useProductEditData(productId);
   const product = editQuery.data?.product ?? null;
@@ -98,7 +92,7 @@ export function EditProductPage() {
     warehouse_id: "",
     deskripsi: "",
     harga_jual: 0,
-    markup_persen: 30,
+    markup_persen: 0,
     is_active: true,
     production_output_type: "FINISHED_GOOD",
   });
@@ -111,7 +105,7 @@ export function EditProductPage() {
   useEffect(() => {
     if (editQuery.isError) {
       console.error("Error loading data:", editQuery.error);
-      toast.error("Failed to load product data");
+      toast.error("Gagal memuat data produk");
     }
   }, [editQuery.isError, editQuery.error]);
 
@@ -128,7 +122,7 @@ export function EditProductPage() {
       harga_jual: Number(productData.harga_jual) || 0,
       markup_persen:
         productData.markup_persen == null || productData.markup_persen === ""
-          ? 30
+          ? 0
           : Number(productData.markup_persen),
       is_active: productData.is_active ?? true,
       production_output_type:
@@ -148,27 +142,12 @@ export function EditProductPage() {
     if (loading) return;
 
     setFormData((prev) => {
-      if (pricingSource === "markup") {
-        const nextPrice = calculatePriceFromMarkup(totalCost, prev.markup_persen || 0);
-        return prev.harga_jual === nextPrice ? prev : { ...prev, harga_jual: nextPrice };
-      }
-
       const nextMarkup = calculateMarkupFromPrice(totalCost, prev.harga_jual || 0);
       return prev.markup_persen === nextMarkup ? prev : { ...prev, markup_persen: nextMarkup };
     });
-  }, [loading, pricingSource, totalCost]);
-
-  const handleMarkupChange = (value: number) => {
-    setPricingSource("markup");
-    setFormData((prev) => ({
-      ...prev,
-      markup_persen: value,
-      harga_jual: calculatePriceFromMarkup(totalCost, value),
-    }));
-  };
+  }, [loading, totalCost, formData.harga_jual]);
 
   const handlePriceChange = (value: number) => {
-    setPricingSource("price");
     setFormData((prev) => ({
       ...prev,
       harga_jual: value,
@@ -180,11 +159,11 @@ export function EditProductPage() {
     e.preventDefault();
 
     if (!formData.nama) {
-      toast.error("Product name is required");
+      toast.error("Nama produk wajib diisi");
       return;
     }
     if (!formData.satuan_id) {
-      toast.error("Unit is required");
+      toast.error("Satuan wajib diisi");
       return;
     }
     if (!formData.warehouse_id) {
@@ -202,11 +181,11 @@ export function EditProductPage() {
           harga_modal: Number(totalCost) || 0,
         },
       });
-      toast.success("Product updated successfully");
+      toast.success("Produk berhasil diperbarui");
       router.push(PRODUCT_ROUTES.productsDetail(productId));
     } catch (error: unknown) {
       console.error("Error updating product:", error);
-      toast.error(error instanceof Error ? error.message : "Failed to update product");
+      toast.error(error instanceof Error ? error.message : "Gagal memperbarui produk");
     }
   };
 
@@ -214,7 +193,7 @@ export function EditProductPage() {
     return (
       <div className="flex items-center justify-center py-16 text-sm text-gray-500">
         <Loader2 className="mr-2 h-5 w-5 animate-spin text-pink-600" />
-        Loading product...
+        Memuat produk...
       </div>
     );
   }
@@ -223,13 +202,13 @@ export function EditProductPage() {
     <div className="space-y-6">
       <PurchasingFormHeader
         backHref={PRODUCT_ROUTES.productsDetail(productId)}
-        title="Edit Product"
-        description={product?.nama ? `Update details for ${product.nama}` : "Update product details"}
+        title="Ubah Produk"
+        description={product?.nama ? `Perbarui detail untuk ${product.nama}` : "Perbarui detail produk"}
         actions={
           <Link href={PRODUCT_ROUTES.productsBom(productId)}>
             <Button variant="outline" className="purchasing-secondary-button w-full sm:w-auto">
               <Calculator className="mr-2 h-4 w-4" />
-              Edit Bill of Materials
+              Ubah Resep (BOM)
             </Button>
           </Link>
         }
@@ -240,14 +219,14 @@ export function EditProductPage() {
           <CardHeader className="border-b border-gray-200/70 pb-3">
             <CardTitle className="flex items-center gap-2 text-base">
               <Package className="h-4 w-4 text-pink-600" />
-              Product Information
+              Informasi Produk
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4 p-4">
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
               <div className="space-y-1.5">
                 <Label htmlFor="nama" className="text-xs">
-                  Product Name <span className="text-red-500">*</span>
+                  Nama Produk <span className="text-red-500">*</span>
                 </Label>
                 <Input
                   id="nama"
@@ -276,15 +255,15 @@ export function EditProductPage() {
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="kategori" className="text-xs">
-                  Category <span className="text-red-500">*</span>
+                  Kategori <span className="text-red-500">*</span>
                 </Label>
                 <Combobox
                   options={categoryOptions}
                   value={formData.kategori}
                   onChange={(v) => setFormData({ ...formData, kategori: v })}
-                  placeholder={categoriesQuery.isLoading ? "Loading categories..." : "Select category..."}
-                  searchPlaceholder="Search category..."
-                  emptyMessage="No category found"
+                  placeholder={categoriesQuery.isLoading ? "Memuat kategori..." : "Pilih kategori..."}
+                  searchPlaceholder="Cari kategori..."
+                  emptyMessage="Kategori tidak ditemukan"
                   disabled={categoriesQuery.isLoading}
                   allowClear
                   className="h-9 text-sm"
@@ -292,15 +271,15 @@ export function EditProductPage() {
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="satuan_id" className="text-xs">
-                  Unit <span className="text-red-500">*</span>
+                  Satuan <span className="text-red-500">*</span>
                 </Label>
                 <Combobox
                   options={unitOptions}
                   value={formData.satuan_id || ""}
                   onChange={(v) => setFormData({ ...formData, satuan_id: v })}
-                  placeholder={loading ? "Loading units..." : "Select unit..."}
-                  searchPlaceholder="Search unit..."
-                  emptyMessage="No unit found"
+                  placeholder={loading ? "Memuat satuan..." : "Pilih satuan..."}
+                  searchPlaceholder="Cari satuan..."
+                  emptyMessage="Satuan tidak ditemukan"
                   disabled={loading}
                   className="h-9 text-sm"
                 />
@@ -316,7 +295,7 @@ export function EditProductPage() {
 
             <div className="space-y-1.5">
               <Label htmlFor="deskripsi" className="text-xs">
-                Description
+                Deskripsi
               </Label>
               <Textarea
                 id="deskripsi"
@@ -333,14 +312,14 @@ export function EditProductPage() {
           <CardHeader className="border-b border-gray-200/70 pb-3">
             <CardTitle className="flex items-center gap-2 text-base">
               <Calculator className="h-4 w-4 text-pink-600" />
-              Pricing & Estimated COGS
+              Harga & Estimasi HPP
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4 p-4">
             <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
               <div className="space-y-1.5">
                 <Label htmlFor="harga_modal" className="text-xs">
-                  Estimated COGS
+                  Estimasi HPP
                 </Label>
                 <div className="flex rounded-lg border border-gray-200/70 bg-gray-50">
                   <NumericInput
@@ -352,30 +331,30 @@ export function EditProductPage() {
                     className="h-9 border-0 bg-gray-50 text-sm font-mono shadow-none focus-visible:ring-0"
                   />
                 </div>
-                <p className="text-xs text-gray-500">Calculated from bill of materials</p>
+                <p className="text-xs text-gray-500">Dihitung dari resep (BOM)</p>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="markup" className="text-xs">
                   Markup (%)
                 </Label>
-                <div className="flex rounded-lg border border-gray-200/70 bg-white focus-within:border-pink-300 focus-within:ring-2 focus-within:ring-pink-100">
+                <div className="flex rounded-lg border border-gray-200/70 bg-gray-50">
                   <NumericInput
                     id="markup"
-                    min="0"
-                    max="1000"
                     value={formData.markup_persen}
-                    onValueChange={handleMarkupChange}
+                    onValueChange={() => undefined}
                     decimalScale={2}
-                    className="h-9 rounded-r-none border-0 text-sm shadow-none focus-visible:ring-0"
+                    disabled
+                    className="h-9 rounded-r-none border-0 bg-gray-50 text-sm shadow-none focus-visible:ring-0"
                   />
                   <div className="flex min-w-12 items-center justify-center rounded-r-lg border-l border-gray-200/70 bg-gray-50 px-3 text-xs font-semibold text-gray-500">
                     %
                   </div>
                 </div>
+                <p className="text-xs text-gray-500">Dihitung dari harga jual vs HPP. 100% = 2× HPP</p>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="harga_jual" className="text-xs">
-                  Selling Price
+                  Harga Jual
                 </Label>
                 <div className="flex rounded-lg border border-gray-200/70 bg-white focus-within:border-pink-300 focus-within:ring-2 focus-within:ring-pink-100">
                   <NumericInput
@@ -386,6 +365,7 @@ export function EditProductPage() {
                     className="h-9 border-0 text-sm font-mono shadow-none focus-visible:ring-0"
                   />
                 </div>
+                <p className="text-xs text-gray-500">Harga ke pelanggan. Bisa diisi manual</p>
               </div>
             </div>
           </CardContent>
@@ -395,23 +375,23 @@ export function EditProductPage() {
           <CardHeader className="flex flex-row items-center justify-between border-b border-gray-200/70 pb-3">
             <CardTitle className="flex items-center gap-2 text-base">
               <Package className="h-4 w-4 text-pink-600" />
-              Bill of Materials
+              Resep (BOM)
             </CardTitle>
             <Badge variant="secondary" className="text-xs">
-              {bomItems.length} material{bomItems.length === 1 ? "" : "s"}
+              {bomItems.length} bahan
             </Badge>
           </CardHeader>
           <CardContent className="space-y-3 p-4">
             {bomItems.length === 0 ? (
               <div className="py-8 text-center text-sm text-gray-500">
-                No bill of materials yet.{" "}
+                Belum ada resep (BOM).{" "}
                 <Link
                   href={PRODUCT_ROUTES.productsBom(productId)}
                   className="font-medium text-pink-700 hover:underline"
                 >
-                  Edit bill of materials
+                  Ubah resep (BOM)
                 </Link>{" "}
-                to add components.
+                untuk menambah komponen.
               </div>
             ) : (
               <div className="space-y-2">
@@ -428,7 +408,7 @@ export function EditProductPage() {
                       className="grid grid-cols-12 gap-4 rounded-lg border border-gray-200/70 bg-white p-3"
                     >
                       <div className="col-span-12 min-w-0 md:col-span-5">
-                        <p className="text-sm font-medium">{material?.nama || "Unknown"}</p>
+                        <p className="text-sm font-medium">{material?.nama || "Tidak diketahui"}</p>
                         <p className="text-xs text-gray-500">{material?.kode}</p>
                       </div>
                       <div className="col-span-12 space-y-1 md:col-span-2">
@@ -443,7 +423,7 @@ export function EditProductPage() {
                         </div>
                       </div>
                       <div className="col-span-12 space-y-1 md:col-span-2">
-                        <p className="text-xs font-medium text-gray-500">Waste</p>
+                        <p className="text-xs font-medium text-gray-500">Susut</p>
                         <div className="flex rounded-lg border border-gray-200/70 bg-gray-50">
                           <div className="flex h-9 flex-1 items-center justify-end px-3 text-sm text-gray-900">
                             {formatQuantity(wastePercent, 2)}
@@ -465,7 +445,7 @@ export function EditProductPage() {
 
                 <div className="flex justify-end border-t border-gray-200/70 pt-3">
                   <div className="text-right">
-                    <p className="text-xs text-gray-500">Total Estimated COGS</p>
+                    <p className="text-xs text-gray-500">Total Estimasi HPP</p>
                     <p className="text-lg font-bold text-gray-900">{formatAmount(totalCost)}</p>
                   </div>
                 </div>
@@ -477,7 +457,7 @@ export function EditProductPage() {
         <PurchasingFormFooter
           formId="edit-product-form"
           onCancel={() => router.back()}
-          submitLabel="Save Changes"
+          submitLabel="Simpan Perubahan"
           loading={isSubmitting}
         />
       </form>

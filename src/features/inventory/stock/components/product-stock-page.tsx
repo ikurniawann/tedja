@@ -7,8 +7,8 @@ export function ProductStockPage() {
   return (
     <div className="space-y-6">
       <PurchasingPageHeader
-        title="Product Stock"
-        description="Monitor finished product balances, inventory value, and availability status per outlet."
+        title="Stok Produk"
+        description="Pantau saldo produk jadi, nilai stok, dan ketersediaan per outlet."
       />
       <ProductStockTab />
     </div>

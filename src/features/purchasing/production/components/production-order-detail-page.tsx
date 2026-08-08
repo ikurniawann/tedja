@@ -124,7 +124,7 @@ function toNumber(value: unknown) {
 }
 
 function formatQty(value: unknown) {
-  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 3 }).format(toNumber(value));
+  return new Intl.NumberFormat("id-ID", { maximumFractionDigits: 3 }).format(toNumber(value));
 }
 
 function displayName(value?: string | null) {
@@ -137,11 +137,11 @@ function materialUnitLabel(material: ProductionMaterial) {
 
 function statusLabel(status: string) {
   const labels: Record<string, string> = {
-    DRAFT: "Draft",
-    RELEASED: "Released",
-    IN_PROGRESS: "In Progress",
-    COMPLETED: "Completed",
-    CANCELLED: "Cancelled",
+    DRAFT: "Draf",
+    RELEASED: "Dirilis",
+    IN_PROGRESS: "Dalam Proses",
+    COMPLETED: "Selesai",
+    CANCELLED: "Dibatalkan",
   };
   return labels[status] || status;
 }
@@ -204,7 +204,7 @@ export function ProductionOrderDetailPage({
       toast.error(
         orderQuery.error instanceof Error
           ? orderQuery.error.message
-          : "Failed to load production order details"
+          : "Gagal memuat detail order produksi"
       );
     }
   }, [orderQuery.isError, orderQuery.error]);
@@ -213,13 +213,13 @@ export function ProductionOrderDetailPage({
     try {
       const result = await actionMutation.mutateAsync({ id: orderId, payload: { action } });
       if (result.ok) {
-        toast.success(result.message || "Production order updated");
+        toast.success(result.message || "Order produksi diperbarui");
       } else {
-        toast.error(result.message || "Failed to update production order");
+        toast.error(result.message || "Gagal memperbarui order produksi");
       }
       if (result.ok || action === "recheck_stock") await loadOrder();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to update production order");
+      toast.error(error instanceof Error ? error.message : "Gagal memperbarui order produksi");
     }
   };
 
@@ -266,15 +266,15 @@ export function ProductionOrderDetailPage({
         },
       });
       if (result.ok) {
-        toast.success(result.message || "Production output received into inventory");
+        toast.success(result.message || "Output produksi diterima ke inventori");
         setCompleteOpen(false);
         setCompleteForm(null);
         await loadOrder();
       } else {
-        toast.error(result.message || "Failed to receive production output");
+        toast.error(result.message || "Gagal menerima output produksi");
       }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to receive production output");
+      toast.error(error instanceof Error ? error.message : "Gagal menerima output produksi");
     }
   };
 
@@ -282,7 +282,7 @@ export function ProductionOrderDetailPage({
     return (
       <div className="flex min-h-[360px] items-center justify-center text-sm text-gray-500">
         <Loader2 className="mr-2 h-5 w-5 animate-spin text-pink-600" />
-        Loading production order...
+        Memuat order produksi...
       </div>
     );
   }
@@ -292,11 +292,11 @@ export function ProductionOrderDetailPage({
       <div className="space-y-4">
         <PurchasingFormHeader
           backHref={config.productionHubRoute}
-          title="Production Order"
-          description="The requested production order could not be loaded."
+          title="Order Produksi"
+          description="Order produksi yang diminta tidak dapat dimuat."
         />
         <div className="rounded-xl border border-red-100 bg-red-50 px-5 py-4 text-sm font-medium text-red-700">
-          Production order not found
+          Order produksi tidak ditemukan
         </div>
       </div>
     );
@@ -359,7 +359,7 @@ export function ProductionOrderDetailPage({
                   : "border-emerald-200/80 bg-emerald-50 text-emerald-700"
               }
             >
-              {order.output_type === "WIP" ? "Work-in-Progress" : "Finished Good"}
+              {order.output_type === "WIP" ? "WIP" : "Barang Jadi"}
             </Badge>
           </span>
         }
@@ -373,7 +373,7 @@ export function ProductionOrderDetailPage({
               className={PAGE_SECONDARY_ACTION}
             >
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-              Refresh
+              Muat Ulang
             </Button>
             {["DRAFT", "RELEASED", "IN_PROGRESS"].includes(order.status) && (
               <Button
@@ -384,7 +384,7 @@ export function ProductionOrderDetailPage({
                 className={`${PAGE_ACTION_BUTTON} border-emerald-200/80 bg-white text-emerald-700 hover:bg-emerald-50`}
               >
                 <RefreshCw className="h-4 w-4" />
-                Recheck Stock
+                Cek Ulang Stok
               </Button>
             )}
             {canRelease && (
@@ -396,7 +396,7 @@ export function ProductionOrderDetailPage({
                 className={`${PAGE_ACTION_BUTTON} border-amber-200/80 bg-white text-amber-700 hover:bg-amber-50`}
               >
                 <CheckCircle2 className="h-4 w-4" />
-                Release
+                Dirilis
               </Button>
             )}
             {canStart && (
@@ -408,7 +408,7 @@ export function ProductionOrderDetailPage({
                 className={`${PAGE_ACTION_BUTTON} border-sky-200/80 bg-white text-sky-700 hover:bg-sky-50`}
               >
                 <Play className="h-4 w-4" />
-                Start
+                Mulai
               </Button>
             )}
             {canComplete && (
@@ -419,7 +419,7 @@ export function ProductionOrderDetailPage({
                 className={PAGE_MAIN_ACTION}
               >
                 <PackageCheck className="h-4 w-4" />
-                Receive Output
+                Terima Output
               </Button>
             )}
             {canCancel && (
@@ -430,7 +430,7 @@ export function ProductionOrderDetailPage({
                 disabled={loading}
                 className={PAGE_DESTRUCTIVE_ACTION}
               >
-                Cancel
+                Batal
               </Button>
             )}
           </>
@@ -443,9 +443,9 @@ export function ProductionOrderDetailPage({
             <div className="flex gap-3">
               <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-red-600" />
               <div>
-                <h2 className="text-sm font-semibold text-red-800">Insufficient stock</h2>
+                <h2 className="text-sm font-semibold text-red-800">Stok tidak cukup</h2>
                 <p className="mt-1 text-sm text-red-700">
-                  Release or receive will be blocked until the material shortages below are resolved.
+                  Dirilis atau terima output akan diblokir sampai kekurangan bahan di bawah ini teratasi.
                 </p>
               </div>
             </div>
@@ -458,13 +458,13 @@ export function ProductionOrderDetailPage({
                 className={`${PAGE_ACTION_BUTTON} border-red-200/80 bg-white text-red-700 hover:bg-red-50`}
               >
                 <RefreshCw className="h-4 w-4" />
-                Recheck Stock
+                Cek Ulang Stok
               </Button>
               <Link
                 href={`${config.purchasingPoInsertRoute}?source=production&production_order_id=${order.id}&production_order=${productionOrderParam}&items=${shortageQuery}`}
                 className={`${PAGE_ACTION_BUTTON} bg-red-600 text-white hover:bg-red-700`}
               >
-                Create Purchase Order
+                Buat Purchase Order
               </Link>
             </div>
           </CardContent>
@@ -474,7 +474,7 @@ export function ProductionOrderDetailPage({
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <Card className="border-gray-200/70 shadow-xs">
           <CardContent className="p-4">
-            <p className="text-xs font-medium text-gray-500">Planned Quantity</p>
+            <p className="text-xs font-medium text-gray-500">Kuantitas Rencana</p>
             <p className="mt-2 text-xl font-semibold text-gray-950">
               {formatQty(order.planned_qty)}
               {order.output_satuan_nama ? (
@@ -485,7 +485,7 @@ export function ProductionOrderDetailPage({
         </Card>
         <Card className="border-gray-200/70 shadow-xs">
           <CardContent className="p-4">
-            <p className="text-xs font-medium text-gray-500">Actual Quantity</p>
+            <p className="text-xs font-medium text-gray-500">Kuantitas Aktual</p>
             <p className="mt-2 text-xl font-semibold text-gray-950">
               {formatQty(order.actual_qty)}
               {order.output_satuan_nama ? (
@@ -496,13 +496,13 @@ export function ProductionOrderDetailPage({
         </Card>
         <Card className="border-pink-200/70 bg-pink-50/40 shadow-xs">
           <CardContent className="p-4">
-            <p className="text-xs font-medium text-pink-700">Material Cost</p>
+            <p className="text-xs font-medium text-pink-700">Biaya Bahan</p>
             <p className="mt-2 text-xl font-semibold text-pink-800">{formatAmount(actualMaterialCost)}</p>
           </CardContent>
         </Card>
         <Card className="border-emerald-200/70 bg-emerald-50/40 shadow-xs">
           <CardContent className="p-4">
-            <p className="text-xs font-medium text-emerald-700">COGS / Unit</p>
+            <p className="text-xs font-medium text-emerald-700">HPP / Unit</p>
             <p className="mt-2 text-xl font-semibold text-emerald-800">{formatAmount(order.hpp_per_unit)}</p>
           </CardContent>
         </Card>
@@ -511,9 +511,9 @@ export function ProductionOrderDetailPage({
       <Card className="border-gray-200/70 shadow-xs">
         <CardHeader className="flex flex-row items-center justify-between border-b border-gray-200/70 pb-3">
           <div>
-            <CardTitle className="text-base">Material Requirements</CardTitle>
+            <CardTitle className="text-base">Kebutuhan Bahan</CardTitle>
             <p className="mt-1 text-xs text-gray-500">
-              Planned consumption, available stock, and production line values.
+              Konsumsi rencana, stok tersedia, dan nilai baris produksi.
             </p>
           </div>
           <Badge
@@ -525,8 +525,8 @@ export function ProductionOrderDetailPage({
             }
           >
             {insufficientMaterials.length > 0
-              ? `${insufficientMaterials.length} shortage${insufficientMaterials.length === 1 ? "" : "s"}`
-              : "Stock sufficient"}
+              ? `${insufficientMaterials.length} kekurangan`
+              : "Stok cukup"}
           </Badge>
         </CardHeader>
         <CardContent className="p-0">
@@ -534,13 +534,13 @@ export function ProductionOrderDetailPage({
             <table className="min-w-full text-sm">
               <thead className="border-b border-gray-100 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
                 <tr>
-                  <th className="px-4 py-3 text-left font-semibold">Material</th>
-                  <th className="px-4 py-3 text-left font-semibold whitespace-nowrap">Unit</th>
-                  <th className="px-4 py-3 text-right font-semibold">Planned</th>
-                  <th className="px-4 py-3 text-right font-semibold">Actual</th>
-                  <th className="px-4 py-3 text-right font-semibold">Stock</th>
-                  <th className="px-4 py-3 text-right font-semibold">Shortage</th>
-                  <th className="px-4 py-3 text-right font-semibold">Cost</th>
+                  <th className="px-4 py-3 text-left font-semibold">Bahan</th>
+                  <th className="px-4 py-3 text-left font-semibold whitespace-nowrap">Satuan</th>
+                  <th className="px-4 py-3 text-right font-semibold">Rencana</th>
+                  <th className="px-4 py-3 text-right font-semibold">Aktual</th>
+                  <th className="px-4 py-3 text-right font-semibold">Stok</th>
+                  <th className="px-4 py-3 text-right font-semibold">Kekurangan</th>
+                  <th className="px-4 py-3 text-right font-semibold">Biaya</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -584,7 +584,7 @@ export function ProductionOrderDetailPage({
                             </div>
                           </div>
                         ) : (
-                          <span className="font-semibold text-emerald-600">OK</span>
+                          <span className="font-semibold text-emerald-600">Cukup</span>
                         )}
                       </td>
                       <td className="px-4 py-3 text-right font-semibold text-pink-700">
@@ -602,27 +602,27 @@ export function ProductionOrderDetailPage({
       <div className="grid gap-6 xl:grid-cols-12">
         <Card className="border-gray-200/70 shadow-xs xl:col-span-5">
           <CardHeader className="border-b border-gray-200/70 pb-3">
-            <CardTitle className="text-base">Cost Breakdown</CardTitle>
+            <CardTitle className="text-base">Rincian Biaya</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3 p-4 text-sm">
-            <div className="flex justify-between"><span className="text-gray-500">Material</span><span className="font-medium">{formatAmount(actualMaterialCost)}</span></div>
+            <div className="flex justify-between"><span className="text-gray-500">Bahan</span><span className="font-medium">{formatAmount(actualMaterialCost)}</span></div>
             <div className="flex justify-between"><span className="text-gray-500">Overhead</span><span className="font-medium">{formatAmount(order.overhead_cost)}</span></div>
-            <div className="flex justify-between"><span className="text-gray-500">Labor</span><span className="font-medium">{formatAmount(order.labor_cost)}</span></div>
-            <div className="flex justify-between"><span className="text-gray-500">Packaging</span><span className="font-medium">{formatAmount(order.packaging_cost)}</span></div>
-            <div className="flex justify-between"><span className="text-gray-500">Waste</span><span className="font-medium">{formatAmount(order.waste_cost)}</span></div>
+            <div className="flex justify-between"><span className="text-gray-500">Tenaga Kerja</span><span className="font-medium">{formatAmount(order.labor_cost)}</span></div>
+            <div className="flex justify-between"><span className="text-gray-500">Kemasan</span><span className="font-medium">{formatAmount(order.packaging_cost)}</span></div>
+            <div className="flex justify-between"><span className="text-gray-500">Susut</span><span className="font-medium">{formatAmount(order.waste_cost)}</span></div>
           </CardContent>
         </Card>
         <Card className="border-gray-200/70 shadow-xs xl:col-span-7">
           <CardHeader className="border-b border-gray-200/70 pb-3">
             <CardTitle className="flex items-center gap-2 text-base">
               <Box className="h-4 w-4 text-pink-600" />
-              Batch Output
+              Output Batch
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3 p-4">
             {order.batches.length === 0 ? (
               <div className="rounded-lg border border-dashed border-gray-200/80 px-4 py-6 text-center text-sm text-gray-500">
-                Batches appear after production output is received.
+                Batch muncul setelah output produksi diterima.
               </div>
             ) : (
               order.batches.map((batch) => (
@@ -630,7 +630,7 @@ export function ProductionOrderDetailPage({
                   <p className="font-semibold text-gray-950">{batch.batch_number}</p>
                   <div className="mt-2 grid grid-cols-3 gap-3 text-xs text-gray-500">
                     <span>Qty {formatQty(batch.qty_produced)}{order.output_satuan_nama ? ` ${order.output_satuan_nama}` : ""}</span>
-                    <span>{formatAmount(batch.hpp_per_unit)}/unit</span>
+                    <span>{formatAmount(batch.hpp_per_unit)}/satuan</span>
                     <span>{formatDate(batch.created_at)}</span>
                   </div>
                 </div>
@@ -652,23 +652,23 @@ export function ProductionOrderDetailPage({
         {completeForm && completePreview && (
           <DialogPanel size="xl" className="max-h-[min(92vh,960px)]">
             <DialogPanelHeader>
-              <DialogPanelTitle>Receive Production Output</DialogPanelTitle>
+              <DialogPanelTitle>Terima Output Produksi</DialogPanelTitle>
               <DialogPanelDescription>
-                Finalize output quantity, actual material consumption, and COGS for {order.nomor_produksi}.
+                Finalisasi kuantitas output, konsumsi bahan aktual, dan HPP untuk {order.nomor_produksi}.
               </DialogPanelDescription>
             </DialogPanelHeader>
             <DialogPanelBody className="space-y-5">
               <Card className="border-gray-200/70 shadow-xs">
                 <CardHeader className="border-b border-gray-200/70 pb-3">
-                  <CardTitle className="text-sm">Output & Additional Costs</CardTitle>
+                  <CardTitle className="text-sm">Output & Biaya Tambahan</CardTitle>
                 </CardHeader>
                 <CardContent className="grid gap-4 p-4 md:grid-cols-5">
                   {[
-                    ["Actual Output", "actualQty"],
+                    ["Output Aktual", "actualQty"],
                     ["Overhead", "overheadCost"],
-                    ["Labor", "laborCost"],
-                    ["Packaging", "packagingCost"],
-                    ["Waste Cost", "wasteCost"],
+                    ["Tenaga Kerja", "laborCost"],
+                    ["Kemasan", "packagingCost"],
+                    ["Biaya Susut", "wasteCost"],
                   ].map(([label, key]) => (
                     <div key={key} className="space-y-1.5">
                       <Label className="text-xs text-gray-500">{label}</Label>
@@ -689,19 +689,19 @@ export function ProductionOrderDetailPage({
               <div className="grid gap-5 xl:grid-cols-[1fr_300px]">
                 <Card className="border-gray-200/70 shadow-xs">
                   <CardHeader className="border-b border-gray-200/70 pb-3">
-                    <CardTitle className="text-sm">Actual Material Consumption</CardTitle>
+                    <CardTitle className="text-sm">Konsumsi Bahan Aktual</CardTitle>
                   </CardHeader>
                   <CardContent className="overflow-x-auto p-0">
                     <table className="min-w-[760px] w-full text-sm">
                       <thead className="border-b border-gray-100 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
                         <tr>
-                          <th className="px-4 py-3 text-left font-semibold">Material</th>
-                          <th className="px-4 py-3 text-left font-semibold whitespace-nowrap">Unit</th>
-                          <th className="px-4 py-3 text-right font-semibold">Planned</th>
-                          <th className="px-4 py-3 text-right font-semibold">Stock</th>
-                          <th className="px-4 py-3 text-right font-semibold">Actual</th>
-                          <th className="px-4 py-3 text-right font-semibold">Waste</th>
-                          <th className="px-4 py-3 text-right font-semibold">Value</th>
+                          <th className="px-4 py-3 text-left font-semibold">Bahan</th>
+                          <th className="px-4 py-3 text-left font-semibold whitespace-nowrap">Satuan</th>
+                          <th className="px-4 py-3 text-right font-semibold">Rencana</th>
+                          <th className="px-4 py-3 text-right font-semibold">Stok</th>
+                          <th className="px-4 py-3 text-right font-semibold">Aktual</th>
+                          <th className="px-4 py-3 text-right font-semibold">Susut</th>
+                          <th className="px-4 py-3 text-right font-semibold">Nilai</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
@@ -713,7 +713,7 @@ export function ProductionOrderDetailPage({
                               <td className="px-4 py-3">
                                 <p className="font-medium text-gray-900">{material.name}</p>
                                 <p className="text-xs text-gray-500">
-                                  {material.code} · {formatAmount(material.unitCost)} / unit
+                                  {material.code} · {formatAmount(material.unitCost)} / satuan
                                 </p>
                               </td>
                               <td className="px-4 py-3 whitespace-nowrap">
@@ -772,7 +772,7 @@ export function ProductionOrderDetailPage({
                 <div className="space-y-4">
                   <Card className="border-pink-200/70 bg-pink-50/40 shadow-xs">
                     <CardHeader className="pb-3">
-                      <CardTitle className="text-sm text-pink-900">COGS Preview</CardTitle>
+                      <CardTitle className="text-sm text-pink-900">Pratinjau HPP</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-3 p-4 pt-0 text-sm">
                       <div className="flex justify-between gap-3">
@@ -783,7 +783,7 @@ export function ProductionOrderDetailPage({
                         </span>
                       </div>
                       <div className="flex justify-between gap-3">
-                        <span className="text-pink-700">Material</span>
+                        <span className="text-pink-700">Bahan</span>
                         <span className="font-semibold text-pink-950">{formatAmount(completePreview.materialCost)}</span>
                       </div>
                       <div className="flex justify-between gap-3">
@@ -791,24 +791,24 @@ export function ProductionOrderDetailPage({
                         <span className="font-semibold text-pink-950">{formatAmount(completePreview.overheadCost)}</span>
                       </div>
                       <div className="flex justify-between gap-3">
-                        <span className="text-pink-700">Labor</span>
+                        <span className="text-pink-700">Tenaga Kerja</span>
                         <span className="font-semibold text-pink-950">{formatAmount(completePreview.laborCost)}</span>
                       </div>
                       <div className="flex justify-between gap-3">
-                        <span className="text-pink-700">Packaging</span>
+                        <span className="text-pink-700">Kemasan</span>
                         <span className="font-semibold text-pink-950">{formatAmount(completePreview.packagingCost)}</span>
                       </div>
                       <div className="flex justify-between gap-3">
-                        <span className="text-pink-700">Waste</span>
+                        <span className="text-pink-700">Susut</span>
                         <span className="font-semibold text-pink-950">{formatAmount(completePreview.wasteCost)}</span>
                       </div>
                       <div className="border-t border-pink-200/70 pt-3">
                         <div className="flex justify-between gap-3">
-                          <span className="font-semibold text-pink-800">Total Cost</span>
+                          <span className="font-semibold text-pink-800">Total Biaya</span>
                           <span className="font-bold text-pink-950">{formatAmount(completePreview.totalCost)}</span>
                         </div>
                         <div className="mt-3 rounded-lg bg-white px-3 py-3">
-                          <p className="text-xs font-medium text-pink-600">COGS / Unit</p>
+                          <p className="text-xs font-medium text-pink-600">HPP / Unit</p>
                           <p className="mt-1 text-2xl font-semibold text-pink-900">
                             {formatAmount(completePreview.hppPerUnit)}
                           </p>
@@ -819,21 +819,21 @@ export function ProductionOrderDetailPage({
 
                   {completePreview.actualQty <= 0 && (
                     <div className="rounded-xl border border-red-100 bg-red-50 p-4 text-sm font-medium text-red-700">
-                      Actual output must be greater than 0 before receiving production output.
+                      Output aktual harus lebih dari 0 sebelum menerima output produksi.
                     </div>
                   )}
 
                   {completePreview.shortageItems.length > 0 && (
                     <div className="rounded-xl border border-red-100 bg-red-50 p-4">
-                      <h3 className="text-sm font-semibold text-red-800">Insufficient stock</h3>
+                      <h3 className="text-sm font-semibold text-red-800">Stok tidak cukup</h3>
                       <p className="mt-1 text-sm text-red-700">
-                        Reduce actual consumption or receive incoming goods first.
+                        Kurangi konsumsi aktual atau terima barang masuk terlebih dahulu.
                       </p>
                       <div className="mt-3 space-y-2">
                         {completePreview.shortageItems.map((material) => (
                           <div key={material.id} className="rounded-lg bg-white px-3 py-2 text-xs text-red-700">
-                            <span className="font-semibold">{material.name}</span>: need{" "}
-                            {formatQty(material.qtyActual)}, stock {formatQty(material.stockQty)}
+                            <span className="font-semibold">{material.name}</span>: butuh{" "}
+                            {formatQty(material.qtyActual)}, stok {formatQty(material.stockQty)}
                           </div>
                         ))}
                       </div>
@@ -853,7 +853,7 @@ export function ProductionOrderDetailPage({
                 disabled={loading}
                 className={`${PAGE_SECONDARY_ACTION} sm:w-auto`}
               >
-                Cancel
+                Batal
               </Button>
               <Button
                 type="button"
@@ -864,12 +864,12 @@ export function ProductionOrderDetailPage({
                 {loading ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    Receiving...
+                    Menerima...
                   </>
                 ) : (
                   <>
                     <PackageCheck className="h-4 w-4" />
-                    Receive Output
+                    Terima Output
                   </>
                 )}
               </Button>

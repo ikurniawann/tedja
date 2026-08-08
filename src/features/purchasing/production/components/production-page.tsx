@@ -62,7 +62,7 @@ function toNumber(value: unknown) {
 }
 
 function formatQty(value: unknown) {
-  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 3 }).format(toNumber(value));
+  return new Intl.NumberFormat("id-ID", { maximumFractionDigits: 3 }).format(toNumber(value));
 }
 
 function displayName(value?: string | null) {
@@ -79,11 +79,11 @@ function statusClass(status: string) {
 
 function statusLabel(status: string) {
   const labels: Record<string, string> = {
-    DRAFT: "Draft",
-    RELEASED: "Released",
-    IN_PROGRESS: "In Progress",
-    COMPLETED: "Completed",
-    CANCELLED: "Cancelled",
+    DRAFT: "Draf",
+    RELEASED: "Dirilis",
+    IN_PROGRESS: "Dalam Proses",
+    COMPLETED: "Selesai",
+    CANCELLED: "Dibatalkan",
   };
   return labels[status] || status;
 }
@@ -99,9 +99,9 @@ type AdditionalCostLine = {
 
 const ADDITIONAL_COST_TYPES: Array<{ value: AdditionalCostType; label: string }> = [
   { value: "OVERHEAD", label: "Overhead" },
-  { value: "LABOR", label: "Labor" },
-  { value: "PACKAGING", label: "Packaging" },
-  { value: "OTHER", label: "Other" },
+  { value: "LABOR", label: "Tenaga Kerja" },
+  { value: "PACKAGING", label: "Kemasan" },
+  { value: "OTHER", label: "Lainnya" },
 ];
 
 function createAdditionalCostLine(): AdditionalCostLine {
@@ -191,7 +191,7 @@ export function ProductionPage({ moduleType = "raw_material" }: ProductionPagePr
       toast.error(
         dashboardQuery.error instanceof Error
           ? dashboardQuery.error.message
-          : "Failed to load production data"
+          : "Gagal memuat data produksi"
       );
     }
   }, [dashboardQuery.isError, dashboardQuery.error]);
@@ -201,7 +201,7 @@ export function ProductionPage({ moduleType = "raw_material" }: ProductionPagePr
     toast.error(
       cogsQuery.error instanceof Error
         ? cogsQuery.error.message
-        : "Failed to load bill of materials"
+        : "Gagal memuat resep (BOM)"
     );
   }, [cogsQuery.isError, cogsQuery.error]);
 
@@ -285,9 +285,9 @@ export function ProductionPage({ moduleType = "raw_material" }: ProductionPagePr
   const handleRefresh = async () => {
     try {
       await dashboardQuery.refetch();
-      toast.success("Production data refreshed");
+      toast.success("Data produksi diperbarui");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to refresh production data");
+      toast.error(error instanceof Error ? error.message : "Gagal memperbarui data produksi");
     }
   };
 
@@ -324,15 +324,15 @@ export function ProductionPage({ moduleType = "raw_material" }: ProductionPagePr
       if (result.ok) {
         toast.success(
           result.message ||
-            "Production order created. Use Release in the orders list to continue the workflow."
+            "Order produksi dibuat. Gunakan Dirilis di daftar order untuk melanjutkan alur."
         );
         setFormOpen(false);
         setOrderPage(1);
       } else {
-        toast.error(result.message || "Failed to create production order");
+        toast.error(result.message || "Gagal membuat order produksi");
       }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to create production order");
+      toast.error(error instanceof Error ? error.message : "Gagal membuat order produksi");
     }
   };
 
@@ -341,13 +341,13 @@ export function ProductionPage({ moduleType = "raw_material" }: ProductionPagePr
     try {
       const result = await updateMutation.mutateAsync({ id: orderId, payload: { action } });
       if (result.ok) {
-        toast.success(result.message || `Production order ${action === "release" ? "released" : "started"}`);
+        toast.success(result.message || `Order produksi ${action === "release" ? "dirilis" : "dimulai"}`);
         await dashboardQuery.refetch();
       } else {
-        toast.error(result.message || "Failed to update production order");
+        toast.error(result.message || "Gagal memperbarui order produksi");
       }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to update production order");
+      toast.error(error instanceof Error ? error.message : "Gagal memperbarui order produksi");
     } finally {
       setOrderAction(null);
     }
@@ -363,7 +363,7 @@ export function ProductionPage({ moduleType = "raw_material" }: ProductionPagePr
       );
       if (shortages.length > 0) {
         toast.error(
-          `Cannot receive output: ${shortages.length} material shortage${shortages.length === 1 ? "" : "s"}. Open the order to review stock.`
+          `Tidak dapat menerima output: ${shortages.length} bahan kurang stok. Buka detail order untuk meninjau stok.`
         );
         return;
       }
@@ -386,14 +386,14 @@ export function ProductionPage({ moduleType = "raw_material" }: ProductionPagePr
       });
 
       if (result.ok) {
-        toast.success(result.message || "Output received into inventory");
+        toast.success(result.message || "Output diterima ke inventori");
         setReceiveOrder(null);
         await dashboardQuery.refetch();
       } else {
-        toast.error(result.message || "Failed to receive production output");
+        toast.error(result.message || "Gagal menerima output produksi");
       }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to receive production output");
+      toast.error(error instanceof Error ? error.message : "Gagal menerima output produksi");
     } finally {
       setReceiveLoading(false);
     }
@@ -402,14 +402,14 @@ export function ProductionPage({ moduleType = "raw_material" }: ProductionPagePr
   return (
     <div className="space-y-6">
       <PurchasingPageHeader
-        title={isProduct ? "Production In-House" : "Raw Material Production"}
+        title={isProduct ? "Produksi Internal" : "Produksi Bahan Baku"}
         description={
           <>
             {isProduct
-              ? "Select products to manufacture, review bill of materials coverage, and create production orders"
-              : "Select raw materials to manufacture in-house, review component coverage, and create production orders"}
+              ? "Pilih produk untuk diproduksi, tinjau kelengkapan resep (BOM), dan buat order produksi"
+              : "Pilih bahan baku untuk diproduksi internal, tinjau kelengkapan komponen, dan buat order produksi"}
             {" — "}
-            {products.length} {isProduct ? "products" : "raw materials"}
+            {products.length} {isProduct ? "produk" : "bahan baku"}
           </>
         }
         actions={
@@ -420,7 +420,7 @@ export function ProductionPage({ moduleType = "raw_material" }: ProductionPagePr
                 className="h-10 w-full gap-2 rounded-lg border-gray-200 bg-white px-3 text-sm font-medium text-gray-700 shadow-sm hover:border-pink-200 hover:bg-pink-50 hover:text-pink-700 sm:w-auto"
               >
                 <Beaker className="h-4 w-4" />
-                Bill of Materials
+                Resep (BOM)
               </Button>
             </Link>
             <Button
@@ -435,7 +435,7 @@ export function ProductionPage({ moduleType = "raw_material" }: ProductionPagePr
               ) : (
                 <RefreshCw className="h-4 w-4" />
               )}
-              Refresh
+              Muat Ulang
             </Button>
           </>
         }
@@ -445,7 +445,7 @@ export function ProductionPage({ moduleType = "raw_material" }: ProductionPagePr
         <Card className="border-gray-200/70 shadow-xs">
           <CardContent className="p-4">
             <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
-              Total {isProduct ? "Products" : "Raw Materials"}
+              Total {isProduct ? "Produk" : "Bahan Baku"}
             </p>
             <p className="mt-1 text-2xl font-bold text-gray-900">{products.length}</p>
           </CardContent>
@@ -453,20 +453,20 @@ export function ProductionPage({ moduleType = "raw_material" }: ProductionPagePr
         <Card className="border-gray-200/70 shadow-xs">
           <CardContent className="p-4">
             <p className="text-xs font-medium uppercase tracking-wide text-emerald-600">
-              Ready for Production
+              Siap diproduksi
             </p>
             <p className="mt-1 text-2xl font-bold text-emerald-700">{readyProducts}</p>
           </CardContent>
         </Card>
         <Card className="border-gray-200/70 shadow-xs">
           <CardContent className="p-4">
-            <p className="text-xs font-medium uppercase tracking-wide text-pink-600">Active Orders</p>
+            <p className="text-xs font-medium uppercase tracking-wide text-pink-600">Order Aktif</p>
             <p className="mt-1 text-2xl font-bold text-pink-700">{draftOrders}</p>
           </CardContent>
         </Card>
         <Card className="border-gray-200/70 shadow-xs">
           <CardContent className="p-4">
-            <p className="text-xs font-medium uppercase tracking-wide text-sky-600">WIP Ready for BOM</p>
+            <p className="text-xs font-medium uppercase tracking-wide text-sky-600">WIP Siap untuk BOM</p>
             <p className="mt-1 text-2xl font-bold text-sky-700">{wipSummary?.ready_wip || 0}</p>
           </CardContent>
         </Card>
@@ -474,15 +474,15 @@ export function ProductionPage({ moduleType = "raw_material" }: ProductionPagePr
 
       <PurchasingListSection
         icon={Layers}
-        title="Work-in-Progress Inventory"
-        description="Completed work-in-progress output is added to material stock and can be used as bill of materials components."
+        title="Stok WIP"
+        description="Output WIP yang selesai ditambahkan ke stok bahan dan dapat dipakai sebagai komponen resep (BOM)."
         toolbar={
           <div className="flex flex-wrap gap-2 text-xs">
             <Badge variant="outline" className="border-sky-200/80 bg-white text-sky-700">
-              {wipSummary?.total_wip || 0} WIP items
+              {wipSummary?.total_wip || 0} item WIP
             </Badge>
             <Badge variant="outline" className="border-emerald-200/80 bg-white text-emerald-700">
-              Value {formatAmount(wipSummary?.total_value || 0)}
+              Nilai {formatAmount(wipSummary?.total_value || 0)}
             </Badge>
           </div>
         }
@@ -491,12 +491,12 @@ export function ProductionPage({ moduleType = "raw_material" }: ProductionPagePr
           <table className="min-w-full text-sm">
             <thead className="border-b border-gray-100 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
               <tr>
-                <th className="px-4 py-3 text-left font-semibold">Work-in-Progress</th>
-                <th className="px-4 py-3 text-left font-semibold">Source Product</th>
-                <th className="px-4 py-3 text-right font-semibold">Stock</th>
-                <th className="px-4 py-3 text-right font-semibold">WIP COGS</th>
-                <th className="px-4 py-3 text-left font-semibold">Latest Batch</th>
-                <th className="px-4 py-3 text-right font-semibold">Actions</th>
+                <th className="px-4 py-3 text-left font-semibold">WIP</th>
+                <th className="px-4 py-3 text-left font-semibold">Produk Sumber</th>
+                <th className="px-4 py-3 text-right font-semibold">Stok</th>
+                <th className="px-4 py-3 text-right font-semibold">HPP WIP</th>
+                <th className="px-4 py-3 text-left font-semibold">Batch Terakhir</th>
+                <th className="px-4 py-3 text-right font-semibold">Aksi</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -504,14 +504,13 @@ export function ProductionPage({ moduleType = "raw_material" }: ProductionPagePr
                 <tr>
                   <td colSpan={6} className="px-4 py-12 text-center text-sm text-gray-500">
                     <Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin text-pink-600" />
-                    Loading work-in-progress inventory...
+                    Memuat stok WIP...
                   </td>
                 </tr>
               ) : wipInventory.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="px-4 py-12 text-center text-sm text-gray-500">
-                    No work-in-progress items yet. Create a production order with WIP output, then
-                    release, start, and complete it.
+                    Belum ada item WIP. Buat order produksi dengan output WIP, lalu dirilis, mulai, dan selesaikan.
                   </td>
                 </tr>
               ) : (
@@ -549,7 +548,7 @@ export function ProductionPage({ moduleType = "raw_material" }: ProductionPagePr
                       <p className="text-xs text-gray-500">
                         {item.latest_batch
                           ? `${formatQty(item.latest_batch.qty_produced)} qty · ${formatDate(item.latest_batch.created_at)}`
-                          : "No batch yet"}
+                          : "Belum ada batch"}
                       </p>
                     </td>
                     <td className="px-4 py-3 text-right">
@@ -558,7 +557,7 @@ export function ProductionPage({ moduleType = "raw_material" }: ProductionPagePr
                           <Button
                             variant="ghost"
                             size="sm"
-                            title="View stock card"
+                            title="Lihat kartu stok"
                             className="cursor-pointer"
                           >
                             <Eye className="h-4 w-4" />
@@ -568,7 +567,7 @@ export function ProductionPage({ moduleType = "raw_material" }: ProductionPagePr
                           <Button
                             variant="ghost"
                             size="sm"
-                            title="Use in bill of materials"
+                            title="Gunakan di resep (BOM)"
                             className="cursor-pointer"
                           >
                             <Pencil className="h-4 w-4" />
@@ -586,17 +585,17 @@ export function ProductionPage({ moduleType = "raw_material" }: ProductionPagePr
 
       <PurchasingListSection
         icon={Box}
-        title={isProduct ? "Products for Production" : "Raw Materials for Production"}
+        title={isProduct ? "Produk untuk Produksi" : "Bahan Baku untuk Produksi"}
         description={
           isProduct
-            ? "Products with a complete bill of materials can be converted into production orders."
-            : "Raw materials with a complete bill of materials can be manufactured in-house."
+            ? "Produk dengan resep (BOM) lengkap dapat diubah menjadi order produksi."
+            : "Bahan baku dengan resep (BOM) lengkap dapat diproduksi internal."
         }
         toolbar={
           <label className="relative w-full sm:w-80">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
             <Input
-              placeholder={isProduct ? "Search product name, code, or category..." : "Search raw material name or code..."}
+              placeholder={isProduct ? "Cari nama, kode, atau kategori produk..." : "Cari nama atau kode bahan baku..."}
               value={productSearchQuery}
               onChange={(event) => setProductSearchQuery(event.target.value)}
               className="h-10 bg-white pl-10 pr-10 text-sm focus:border-pink-400 focus:ring-2 focus:ring-pink-100"
@@ -606,7 +605,7 @@ export function ProductionPage({ moduleType = "raw_material" }: ProductionPagePr
                 type="button"
                 onClick={() => setProductSearchQuery("")}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 transition-colors hover:text-gray-700"
-                aria-label="Clear search"
+                aria-label="Hapus pencarian"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -619,27 +618,27 @@ export function ProductionPage({ moduleType = "raw_material" }: ProductionPagePr
             <table className="min-w-full text-sm">
               <thead className="border-b border-gray-100 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
                 <tr>
-                  <th className="px-4 py-3 text-left font-semibold">{isProduct ? "Product" : "Raw Material"}</th>
+                  <th className="px-4 py-3 text-left font-semibold">{isProduct ? "Produk" : "Bahan Baku"}</th>
                   <th className="px-4 py-3 text-left font-semibold">Status</th>
-                  <th className="px-4 py-3 text-right font-semibold">Components</th>
-                  <th className="px-4 py-3 text-right font-semibold">Estimated COGS</th>
+                  <th className="px-4 py-3 text-right font-semibold">Komponen</th>
+                  <th className="px-4 py-3 text-right font-semibold">Estimasi HPP</th>
                   {isProduct && (
-                    <th className="px-4 py-3 text-right font-semibold">Selling Price</th>
+                    <th className="px-4 py-3 text-right font-semibold">Harga Jual</th>
                   )}
-                  <th className="px-4 py-3 text-right font-semibold">Actions</th>
+                  <th className="px-4 py-3 text-right font-semibold">Aksi</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {loading ? (
                   <tr>
                     <td colSpan={isProduct ? 6 : 5} className="px-4 py-12 text-center text-sm text-gray-500">
-                      {isProduct ? "Loading products..." : "Loading raw materials..."}
+                      {isProduct ? "Memuat produk..." : "Memuat bahan baku..."}
                     </td>
                   </tr>
                 ) : paginatedProducts.length === 0 ? (
                   <tr>
                     <td colSpan={isProduct ? 6 : 5} className="px-4 py-12 text-center text-sm text-gray-500">
-                      No {isProduct ? "products" : "raw materials"} match the current search.
+                      Tidak ada {isProduct ? "produk" : "bahan baku"} yang cocok dengan pencarian.
                     </td>
                   </tr>
                 ) : (
@@ -663,7 +662,7 @@ export function ProductionPage({ moduleType = "raw_material" }: ProductionPagePr
                                 : "border-amber-200/80 bg-amber-50 text-amber-700"
                             }
                           >
-                            {hasBom ? "Ready for Production" : "Incomplete Bill of Materials"}
+                            {hasBom ? "Siap diproduksi" : "Resep (BOM) belum lengkap"}
                           </Badge>
                         </td>
                         <td className="px-4 py-3 text-right font-medium text-gray-900">
@@ -683,7 +682,7 @@ export function ProductionPage({ moduleType = "raw_material" }: ProductionPagePr
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                title="Edit recipe"
+                                title="Edit resep"
                                 className="cursor-pointer"
                               >
                                 <Pencil className="h-4 w-4" />
@@ -693,7 +692,7 @@ export function ProductionPage({ moduleType = "raw_material" }: ProductionPagePr
                               type="button"
                               variant="ghost"
                               size="sm"
-                              title="Create production order"
+                              title="Buat order produksi"
                               className="cursor-pointer disabled:opacity-40"
                               disabled={!hasBom}
                               onClick={() => openProductionForm(product)}
@@ -724,11 +723,11 @@ export function ProductionPage({ moduleType = "raw_material" }: ProductionPagePr
 
       <PurchasingListSection
         icon={ClipboardList}
-        title="Active Production Orders"
-        description="New orders start as Draft. Release reserves materials, Start begins production, and Receive posts output into inventory."
+        title="Order Produksi Aktif"
+        description="Order baru dimulai sebagai Draf. Dirilis untuk reservasi bahan, Mulai untuk memulai produksi, dan Terima untuk memposting output ke inventori."
         toolbar={
           <Badge variant="outline" className="border-gray-200/80 bg-gray-50 text-gray-600">
-            {orders.length} orders
+            {orders.length} order
           </Badge>
         }
       >
@@ -737,25 +736,25 @@ export function ProductionPage({ moduleType = "raw_material" }: ProductionPagePr
             <table className="min-w-full text-sm">
               <thead className="border-b border-gray-100 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
                 <tr>
-                  <th className="px-4 py-3 text-left font-semibold">Production Number</th>
-                  <th className="px-4 py-3 text-left font-semibold">{isProduct ? "Product" : "Raw Material"}</th>
-                  <th className="px-4 py-3 text-right font-semibold">Quantity</th>
-                  <th className="px-4 py-3 text-right font-semibold">Material Cost</th>
-                  <th className="px-4 py-3 text-right font-semibold">COGS / Unit</th>
-                  <th className="px-4 py-3 text-right font-semibold">Actions</th>
+                  <th className="px-4 py-3 text-left font-semibold">Nomor Produksi</th>
+                  <th className="px-4 py-3 text-left font-semibold">{isProduct ? "Produk" : "Bahan Baku"}</th>
+                  <th className="px-4 py-3 text-right font-semibold">Kuantitas</th>
+                  <th className="px-4 py-3 text-right font-semibold">Biaya Bahan</th>
+                  <th className="px-4 py-3 text-right font-semibold">HPP / Unit</th>
+                  <th className="px-4 py-3 text-right font-semibold">Aksi</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {loading ? (
                   <tr>
                     <td colSpan={6} className="px-4 py-12 text-center text-sm text-gray-500">
-                      Loading production orders...
+                      Memuat order produksi...
                     </td>
                   </tr>
                 ) : paginatedOrders.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="px-4 py-12 text-center text-sm text-gray-500">
-                      No production orders yet.
+                      Belum ada order produksi.
                     </td>
                   </tr>
                 ) : (
@@ -807,7 +806,7 @@ export function ProductionPage({ moduleType = "raw_material" }: ProductionPagePr
                             <Button
                               variant="ghost"
                               size="sm"
-                              title="View order detail"
+                              title="Lihat detail order"
                               className="cursor-pointer"
                             >
                               <Eye className="h-4 w-4" />
@@ -818,7 +817,7 @@ export function ProductionPage({ moduleType = "raw_material" }: ProductionPagePr
                               type="button"
                               variant="outline"
                               size="sm"
-                              title="Release order"
+                              title="Dirilis order"
                               disabled={rowActionLoading || receiveLoading}
                               onClick={() => runOrderAction(order.id, "release")}
                               className="h-8 gap-1.5 border-amber-200/80 px-2.5 text-xs font-medium text-amber-700 hover:bg-amber-50"
@@ -828,7 +827,7 @@ export function ProductionPage({ moduleType = "raw_material" }: ProductionPagePr
                               ) : (
                                 <CheckCircle2 className="h-3.5 w-3.5" />
                               )}
-                              Release
+                              Dirilis
                             </Button>
                           )}
                           {order.status === "RELEASED" && (
@@ -836,7 +835,7 @@ export function ProductionPage({ moduleType = "raw_material" }: ProductionPagePr
                               type="button"
                               variant="outline"
                               size="sm"
-                              title="Start production"
+                              title="Mulai produksi"
                               disabled={rowActionLoading || receiveLoading}
                               onClick={() => runOrderAction(order.id, "start")}
                               className="h-8 gap-1.5 border-sky-200/80 px-2.5 text-xs font-medium text-sky-700 hover:bg-sky-50"
@@ -846,7 +845,7 @@ export function ProductionPage({ moduleType = "raw_material" }: ProductionPagePr
                               ) : (
                                 <Play className="h-3.5 w-3.5" />
                               )}
-                              Start
+                              Mulai
                             </Button>
                           )}
                           {order.status === "IN_PROGRESS" && (
@@ -854,13 +853,13 @@ export function ProductionPage({ moduleType = "raw_material" }: ProductionPagePr
                               type="button"
                               variant="outline"
                               size="sm"
-                              title="Receive output into inventory"
+                              title="Terima output ke inventori"
                               disabled={rowActionLoading || receiveLoading}
                               onClick={() => setReceiveOrder(order)}
                               className="h-8 gap-1.5 border-pink-200/80 px-2.5 text-xs font-medium text-pink-700 hover:bg-pink-50"
                             >
                               <PackageCheck className="h-3.5 w-3.5" />
-                              Receive
+                              Terima
                             </Button>
                           )}
                         </div>
@@ -889,10 +888,9 @@ export function ProductionPage({ moduleType = "raw_material" }: ProductionPagePr
         <DialogPanel size="2xl" className="max-h-[min(92vh,960px)]">
           <DialogPanelForm onSubmit={createOrder}>
             <DialogPanelHeader>
-              <DialogPanelTitle>Create Production Order</DialogPanelTitle>
+              <DialogPanelTitle>Buat Order Produksi</DialogPanelTitle>
               <DialogPanelDescription>
-                Configure output quantity, review bill of materials coverage, and submit a draft
-                production order.
+                Atur kuantitas output, tinjau kelengkapan resep (BOM), dan kirim order produksi draf.
               </DialogPanelDescription>
             </DialogPanelHeader>
 
@@ -920,29 +918,28 @@ export function ProductionPage({ moduleType = "raw_material" }: ProductionPagePr
                           }
                         >
                           {selectedProduct.production_output_type === "WIP"
-                            ? "Work-in-Progress"
-                            : "Finished Good"}
+                            ? "WIP"
+                            : "Barang Jadi"}
                         </Badge>
                       )}
                       <Badge
                         variant="outline"
                         className="border-emerald-200/80 bg-emerald-50 text-emerald-700"
                       >
-                        {formatQty(selectedProduct.total_bahan_baku)} components
+                        {formatQty(selectedProduct.total_bahan_baku)} komponen
                       </Badge>
                       <Badge
                         variant="outline"
                         className="border-pink-200/80 bg-pink-50 text-pink-700"
                       >
-                        Est. COGS {formatAmount(selectedProduct.hpp_estimasi)}
+                        Est. HPP {formatAmount(selectedProduct.hpp_estimasi)}
                       </Badge>
                       {materialShortages.length > 0 && (
                         <Badge
                           variant="outline"
                           className="border-red-200/80 bg-red-50 text-red-700"
                         >
-                          {materialShortages.length} shortage
-                          {materialShortages.length === 1 ? "" : "s"}
+                          {materialShortages.length} kekurangan
                         </Badge>
                       )}
                     </div>
@@ -952,12 +949,12 @@ export function ProductionPage({ moduleType = "raw_material" }: ProductionPagePr
                 <DialogPanelBody className="space-y-5">
                   <Card className="border-gray-200/70 shadow-xs">
                     <CardHeader className="pb-3">
-                      <CardTitle className="text-base">Target Quantity</CardTitle>
+                      <CardTitle className="text-base">Kuantitas Target</CardTitle>
                     </CardHeader>
                     <CardContent>
                       <div className="max-w-xs space-y-2">
                         <Label className="text-xs text-gray-600">
-                          Quantity <span className="text-red-500">*</span>
+                          Kuantitas <span className="text-red-500">*</span>
                         </Label>
                         <Input
                           value={plannedQty}
@@ -976,12 +973,11 @@ export function ProductionPage({ moduleType = "raw_material" }: ProductionPagePr
                       <div>
                         <CardTitle className="flex items-center gap-2 text-base">
                           <Beaker className="h-4 w-4 text-pink-600" />
-                          Bill of Materials
+                          Resep (BOM)
                         </CardTitle>
                         <p className="mt-1 text-xs text-gray-500">
-                          Components required for {formatQty(plannedQtyNumber)} unit
-                          {plannedQtyNumber === 1 ? "" : "s"}
-                          {hasBomLines ? ` · ${bomLineItems.length} materials` : ""}
+                          Komponen yang dibutuhkan untuk {formatQty(plannedQtyNumber)} unit
+                          {hasBomLines ? ` · ${bomLineItems.length} bahan` : ""}
                         </p>
                       </div>
                       {productId && (
@@ -1003,22 +999,22 @@ export function ProductionPage({ moduleType = "raw_material" }: ProductionPagePr
                         <table className="min-w-[960px] w-full text-sm">
                           <thead className="border-b border-gray-100 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
                             <tr>
-                              <th className="px-4 py-3 text-left font-semibold">Material</th>
-                              <th className="px-4 py-3 text-left font-semibold whitespace-nowrap">Unit</th>
+                              <th className="px-4 py-3 text-left font-semibold">Bahan</th>
+                              <th className="px-4 py-3 text-left font-semibold whitespace-nowrap">Satuan</th>
                               <th className="px-4 py-3 text-right font-semibold whitespace-nowrap">
-                                Recipe Qty
+                                Qty Resep
                               </th>
                               <th className="px-4 py-3 text-right font-semibold whitespace-nowrap">
-                                Required
+                                Dibutuhkan
                               </th>
                               <th className="px-4 py-3 text-right font-semibold whitespace-nowrap">
-                                Stock
+                                Stok
                               </th>
                               <th className="px-4 py-3 text-center font-semibold whitespace-nowrap">
                                 Status
                               </th>
                               <th className="px-4 py-3 text-right font-semibold whitespace-nowrap">
-                                Line Cost
+                                Biaya Baris
                               </th>
                             </tr>
                           </thead>
@@ -1027,13 +1023,13 @@ export function ProductionPage({ moduleType = "raw_material" }: ProductionPagePr
                               <tr>
                                 <td colSpan={7} className="px-4 py-12 text-center text-sm text-gray-500">
                                   <Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin text-pink-600" />
-                                  Loading bill of materials...
+                                  Memuat resep (BOM)...
                                 </td>
                               </tr>
                             ) : cogsQuery.isError ? (
                               <tr>
                                 <td colSpan={7} className="px-4 py-12 text-center text-sm text-gray-500">
-                                  <p>Failed to load bill of materials.</p>
+                                  <p>Gagal memuat resep (BOM).</p>
                                   <Button
                                     type="button"
                                     variant="outline"
@@ -1042,7 +1038,7 @@ export function ProductionPage({ moduleType = "raw_material" }: ProductionPagePr
                                     onClick={() => void cogsQuery.refetch()}
                                   >
                                     <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
-                                    Retry
+                                    Coba Lagi
                                   </Button>
                                 </td>
                               </tr>
@@ -1050,8 +1046,7 @@ export function ProductionPage({ moduleType = "raw_material" }: ProductionPagePr
                               <tr>
                                 <td colSpan={7} className="px-4 py-12 text-center text-sm text-gray-500">
                                   <p>
-                                    This {isProduct ? "product" : "raw material"} does not have a bill
-                                    of materials yet.
+                                    {isProduct ? "Produk" : "Bahan baku"} ini belum memiliki resep (BOM).
                                   </p>
                                   {productId && (
                                     <Link href={`${config.bomEditorRoute(productId)}?from=production`}>
@@ -1062,7 +1057,7 @@ export function ProductionPage({ moduleType = "raw_material" }: ProductionPagePr
                                         className="mt-3 border-pink-200 text-pink-700 hover:bg-pink-50"
                                       >
                                         <Pencil className="mr-1.5 h-3.5 w-3.5" />
-                                        Set Up Bill of Materials
+                                        Atur Resep (BOM)
                                       </Button>
                                     </Link>
                                   )}
@@ -1102,7 +1097,7 @@ export function ProductionPage({ moduleType = "raw_material" }: ProductionPagePr
                                     <td className="px-4 py-3 text-right align-top tabular-nums text-gray-700 whitespace-nowrap">
                                       <p>{formatQty(material.jumlah)}</p>
                                       <p className="text-xs text-gray-500">
-                                        Waste {formatQty(material.waste_percentage)}%
+                                        Susut {formatQty(material.waste_percentage)}%
                                       </p>
                                     </td>
                                     <td className="px-4 py-3 text-right align-top tabular-nums font-medium text-gray-900 whitespace-nowrap">
@@ -1125,14 +1120,14 @@ export function ProductionPage({ moduleType = "raw_material" }: ProductionPagePr
                                           variant="outline"
                                           className="border-red-200/80 bg-red-50 text-red-700"
                                         >
-                                          Short {formatQty(shortage)}
+                                          Kurang {formatQty(shortage)}
                                         </Badge>
                                       ) : (
                                         <Badge
                                           variant="outline"
                                           className="border-emerald-200/80 bg-emerald-50 text-emerald-700"
                                         >
-                                          Sufficient
+                                          Cukup
                                         </Badge>
                                       )}
                                     </td>
@@ -1156,7 +1151,7 @@ export function ProductionPage({ moduleType = "raw_material" }: ProductionPagePr
                                   colSpan={6}
                                   className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500"
                                 >
-                                  Total material cost
+                                  Total biaya bahan
                                 </td>
                                 <td className="px-4 py-3 text-right text-base font-bold tabular-nums text-pink-700">
                                   {formatAmount(estimatedMaterialCost)}
@@ -1172,9 +1167,9 @@ export function ProductionPage({ moduleType = "raw_material" }: ProductionPagePr
                   <Card className="border-gray-200/70 shadow-xs">
                     <CardHeader className="flex flex-col gap-3 border-b border-gray-100 pb-4 sm:flex-row sm:items-center sm:justify-between">
                       <div>
-                        <CardTitle className="text-base">Additional Costs</CardTitle>
+                        <CardTitle className="text-base">Biaya Tambahan</CardTitle>
                         <p className="mt-1 text-xs text-gray-500">
-                          Add overhead, labor, packaging, or other production costs.
+                          Tambahkan overhead, tenaga kerja, kemasan, atau biaya produksi lainnya.
                         </p>
                       </div>
                       <CardAction>
@@ -1186,7 +1181,7 @@ export function ProductionPage({ moduleType = "raw_material" }: ProductionPagePr
                           onClick={addAdditionalCostLine}
                         >
                           <Plus className="mr-1.5 h-3.5 w-3.5" />
-                          Add Line
+                          Tambah Baris
                         </Button>
                       </CardAction>
                     </CardHeader>
@@ -1195,11 +1190,11 @@ export function ProductionPage({ moduleType = "raw_material" }: ProductionPagePr
                         <table className="min-w-[720px] w-full text-sm">
                           <thead className="border-b border-gray-100 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
                             <tr>
-                              <th className="px-4 py-3 text-left font-semibold">Description</th>
-                              <th className="px-4 py-3 text-left font-semibold whitespace-nowrap">Type</th>
-                              <th className="px-4 py-3 text-right font-semibold whitespace-nowrap">Amount</th>
+                              <th className="px-4 py-3 text-left font-semibold">Keterangan</th>
+                              <th className="px-4 py-3 text-left font-semibold whitespace-nowrap">Tipe</th>
+                              <th className="px-4 py-3 text-right font-semibold whitespace-nowrap">Nominal</th>
                               <th className="px-4 py-3 text-right font-semibold whitespace-nowrap w-16">
-                                Actions
+                                Aksi
                               </th>
                             </tr>
                           </thead>
@@ -1214,7 +1209,7 @@ export function ProductionPage({ moduleType = "raw_material" }: ProductionPagePr
                                         description: event.target.value,
                                       })
                                     }
-                                    placeholder="e.g. Shift labor, box packaging"
+                                    placeholder="mis. Tenaga kerja shift, kemasan box"
                                     className="h-10 text-sm focus:border-pink-400 focus:ring-1 focus:ring-pink-100"
                                   />
                                 </td>
@@ -1260,9 +1255,9 @@ export function ProductionPage({ moduleType = "raw_material" }: ProductionPagePr
                                     variant="ghost"
                                     size="icon"
                                     onClick={() => removeAdditionalCostLine(line.id)}
-                                    title="Remove line"
+                                    title="Hapus baris"
                                     className="text-gray-400 hover:bg-red-50 hover:text-red-600"
-                                    aria-label="Remove additional cost line"
+                                    aria-label="Hapus baris biaya tambahan"
                                   >
                                     <Trash2 className="h-4 w-4" />
                                   </Button>
@@ -1276,7 +1271,7 @@ export function ProductionPage({ moduleType = "raw_material" }: ProductionPagePr
                                 colSpan={2}
                                 className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500"
                               >
-                                Total additional costs
+                                Total biaya tambahan
                               </td>
                               <td className="px-4 py-3 text-right text-base font-bold tabular-nums text-gray-900">
                                 {formatAmount(additionalCosts)}
@@ -1292,24 +1287,24 @@ export function ProductionPage({ moduleType = "raw_material" }: ProductionPagePr
                   <Card className="border-pink-100/80 bg-pink-50/40 shadow-xs">
                     <CardHeader className="pb-3">
                       <CardTitle className="text-sm font-semibold text-pink-800">
-                        COGS Preview
+                        Pratinjau HPP
                       </CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-2 text-sm">
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-gray-600">Material</span>
+                        <span className="text-gray-600">Bahan</span>
                         <span className="font-semibold tabular-nums text-gray-900">
                           {formatAmount(estimatedMaterialCost)}
                         </span>
                       </div>
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-gray-600">Additional</span>
+                        <span className="text-gray-600">Tambahan</span>
                         <span className="font-semibold tabular-nums text-gray-900">
                           {formatAmount(additionalCosts)}
                         </span>
                       </div>
                       <div className="flex items-center justify-between gap-2 border-t border-pink-100/80 pt-2">
-                        <span className="font-medium text-pink-700">COGS / Unit</span>
+                        <span className="font-medium text-pink-700">HPP / Unit</span>
                         <span className="text-base font-bold tabular-nums text-pink-800">
                           {formatAmount(estimatedHpp || selectedProduct.hpp_estimasi)}
                         </span>
@@ -1328,7 +1323,7 @@ export function ProductionPage({ moduleType = "raw_material" }: ProductionPagePr
                 disabled={createMutation.isPending}
                 className="purchasing-secondary-button"
               >
-                Cancel
+                Batal
               </Button>
               <Button
                 type="submit"
@@ -1344,12 +1339,12 @@ export function ProductionPage({ moduleType = "raw_material" }: ProductionPagePr
                 {createMutation.isPending ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    Creating...
+                    Membuat...
                   </>
                 ) : (
                   <>
                     <Box className="h-4 w-4" />
-                    Create Production Order
+                    Buat Order Produksi
                   </>
                 )}
               </Button>
@@ -1361,11 +1356,11 @@ export function ProductionPage({ moduleType = "raw_material" }: ProductionPagePr
       <Dialog open={!!receiveOrder} onOpenChange={(open) => !open && !receiveLoading && setReceiveOrder(null)}>
         <DialogPanel size="xs">
           <DialogPanelHeader>
-            <DialogPanelTitle>Receive Production Output</DialogPanelTitle>
+            <DialogPanelTitle>Terima Output Produksi</DialogPanelTitle>
             <DialogPanelDescription>
-              Post planned quantity and material usage into inventory for{" "}
+              Posting kuantitas rencana dan pemakaian bahan ke inventori untuk{" "}
               <span className="font-medium text-gray-900">{receiveOrder?.nomor_produksi}</span>.
-              Adjust quantities on the order detail page if actual usage differs.
+              Sesuaikan kuantitas di halaman detail order jika pemakaian aktual berbeda.
             </DialogPanelDescription>
           </DialogPanelHeader>
           <DialogFooter>
@@ -1376,7 +1371,7 @@ export function ProductionPage({ moduleType = "raw_material" }: ProductionPagePr
               disabled={receiveLoading}
               className="purchasing-secondary-button"
             >
-              Cancel
+              Batal
             </Button>
             <Button
               type="button"
@@ -1387,12 +1382,12 @@ export function ProductionPage({ moduleType = "raw_material" }: ProductionPagePr
               {receiveLoading ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  Receiving...
+                  Menerima...
                 </>
               ) : (
                 <>
                   <PackageCheck className="h-4 w-4" />
-                  Receive Output
+                  Terima Output
                 </>
               )}
             </Button>

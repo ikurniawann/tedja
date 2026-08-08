@@ -122,6 +122,26 @@ const nextConfig: NextConfig = {
   },
   async redirects() {
     return [
+      {
+        source: "/dashboard/product/purchasing/price-list/:path*",
+        destination: "/dashboard/product/purchasing/vendor",
+        permanent: false,
+      },
+      {
+        source: "/dashboard/product/purchasing/price-list",
+        destination: "/dashboard/product/purchasing/vendor",
+        permanent: false,
+      },
+      {
+        source: "/dashboard/items/product/purchasing/price-list/:path*",
+        destination: "/dashboard/product/purchasing/vendor",
+        permanent: false,
+      },
+      {
+        source: "/dashboard/items/product/purchasing/price-list",
+        destination: "/dashboard/product/purchasing/vendor",
+        permanent: false,
+      },
       // Raw Material legacy → canonical
       { source: "/dashboard/items/units", destination: "/dashboard/raw-material/units", permanent: false },
       {

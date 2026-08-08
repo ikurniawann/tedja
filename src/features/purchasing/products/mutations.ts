@@ -8,6 +8,7 @@ import type {
 import {
   createProduct,
   updateProduct,
+  applyProductRecipeHpp,
   updateProductStatus,
   deleteProduct,
   createBOMItem,
@@ -39,6 +40,16 @@ export const useUpdateProduct = () => {
       updateProduct(id, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: productsQueryKeys.all });
+    },
+  });
+};
+
+export const useApplyProductRecipeHpp = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => applyProductRecipeHpp(id),
+    onSuccess: () => {
+      invalidateProductAndProduction(queryClient);
     },
   });
 };

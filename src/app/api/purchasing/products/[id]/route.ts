@@ -6,6 +6,7 @@ import { NextRequest } from "next/server";
 import { createServerPgClient } from "@/lib/pg/create-client";
 import { getApiUserScope, isRowInBusinessScope, validateProductWarehouseScope } from "@/lib/api/scope";
 import { syncPurchasingProductToPos } from "@/lib/pos/purchasing-sync";
+import { withProductHppReview } from "@/lib/purchasing/product-hpp-review";
 import { z } from "zod";
 
 const productSchema = z.object({
@@ -136,7 +137,7 @@ export async function GET(
     return Response.json({
       success: true,
       data: {
-        ...product,
+        ...withProductHppReview(product),
         bom_items: bomWithCost,
         hpp_calculated: totalHPP,
       },
