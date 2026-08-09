@@ -67,12 +67,17 @@
 - Nomor antrian = kolom `queue_number` pendek harian, generate sekali via `generate_queue_number` (advisory lock). Jangan reuse `order_number`.
 - Query builder `IN`/`NOT IN`: jangan `.not('col','in','(a,b)')` tanpa quote — parser lama nyatu jadi `"ab"`. Prefer array `.not('col','in', ['a','b'])`. Enum Postgres akan error `22P02`.
 - KDS fullscreen = `/pos/kds` di LUAR `/dashboard/pos` layout (App Router tidak bisa opt-out induk). Sama pola `/pos/customer-display`. Jangan taruh fullscreen KDS di bawah layout yang masih `AppSidebar`.
+- Jangan `<Link>` ke `/pos/*` dari dashboard: Next RSC payload gagal (`TypeError: Failed to fetch`) karena beda root layout. Sidebar pakai `<a>` hard nav (`isPosChromeLessPath`). KDS enter/exit tetap `location.assign`.
 - `AppSidebar` Suspense fallback jangan render `ThemeToggle`/`useTheme` (atau chrome penuh). `useSearchParams` suspend → fallback SSR kadang di luar ThemeProvider → crash `useTheme must be used within ThemeProvider`. Fallback = shell mesh kosong; `ThemeToggle` pakai `useThemeOrNull`.
 - TV antrian customer = `/pos/queue` (bukan CFD `/pos/customer-display`). CFD = monitor kasir (cart/bayar); queue board = dinding tamu (nomor + status).
-- Kasir mode tablet: jangan tampilkan Layar Customer / TV Antrian di toolbar — itu untuk monitor kedua di desktop. Tablet cukup chrome (layar penuh / pasang / keluar mode).
+- Kasir mode tablet: jangan tampilkan Layar Customer / TV Antrian di toolbar — itu untuk monitor kedua di desktop. Sembunyikan juga di **handheld UA** (iPad/Android) meski URL masih `/cashier-new` tanpa `?tablet=1`. Jangan ikat hanya ke immersive flag.
+- POS chrome: **Beranda** hanya saat immersive/tablet (sidebar hilang). Desktop kasir jangan tampilkan. Layar penuh = immersive + FS API. KDS fullscreen: Beranda pakai `location.assign('/dashboard')`.
 - Kasir PWA/tablet: produk + keranjang wajib `flex-row` (jangan tunggu `lg`). Target min **8.7"** (~800px): cart `w-56`, grid 3–4 kolom via `@container`. Layar lebih besar: cart `w-72/80/96`, kolom 5–8. Jangan `w-[40vw]` — di 8.7" keranjang makan ruang produk.
+- Split 800px berlaku juga di **cashier-new** (bukan cuma `?tablet=1`). `lg:flex-row` + cart `max-h-[60vh]` di iPad → grid produk height 0 (tampak blank). Pakai `cashier-workspace-layout` + `min-h-[240px]` pada scroller produk.
+- Restaurant tablet: floor 3-kolom dari 800px (`restaurant-workspace-layout`), bukan `lg`. Handoff meja → kasir pakai `shouldUseTabletCashierHandoff` (immersive **atau** handheld) supaya iPad di `/restaurant` masuk `cashier-fullscreen?tablet=1`, bukan `cashier-new`. Chrome Beranda tetap hanya jika immersive (sidebar hilang).
 - Kasir: jangan buka modal Print Struk di tick yang sama dengan close PaymentModal (Base UI Dialog). Tutup payment dulu + delay ~120ms. Payload cash/method dari `onConfirm`, jangan andalkan state parent yang masih stale.
 - Print thermal: pairing Bluetooth 1x di `/dashboard/pos/printer-settings`, bukan di modal kasir. Print Struk hanya kirim job. `window.print()` selalu preview; Web Serial ESC/POS silent. Fallback iframe (1 dialog OS).
+- Web Serial di tablet/Android sering tetap ada API-nya tapi picker kosong (“tidak ada perangkat kompatibel”). Deteksi handheld → jangan tampilkan Hubungkan; pairing hanya Chrome/Edge laptop.
 - Menu baru: delta + INSERT `iam-menus.sql` + whitelist prune. Code `pos.kitchen.queue-board` di bawah `pos.kitchen`. Icon wajib ada di `VALID_ICONS` (pakai `video`, bukan `monitor`/`tv`).
 - Unique index harian tidak boleh pakai `timezone()`/`now()` (bukan IMMUTABLE). Wrapper `pos_jkt_date(timestamptz)` IMMUTABLE + index pada `ordered_at` saja.
 

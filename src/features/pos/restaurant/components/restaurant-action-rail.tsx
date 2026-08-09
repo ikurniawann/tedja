@@ -265,11 +265,11 @@ export function RestaurantActionRail({
     "h-auto w-full flex-col items-center justify-center gap-1.5 whitespace-normal rounded-lg border-gray-200/70 px-2 py-2.5 text-center text-[11px] font-medium leading-tight text-gray-700 hover:border-primary/30 hover:bg-primary/5 hover:text-primary";
 
   return (
-    <aside className="flex h-fit flex-col gap-2 rounded-xl border border-gray-200/70 bg-white p-2.5 shadow-xs max-lg:grid max-lg:grid-cols-2 sm:max-lg:grid-cols-4">
+    <aside className="flex h-fit flex-col gap-2 rounded-xl border border-gray-200/70 bg-white p-2.5 shadow-xs max-[799px]:grid max-[799px]:grid-cols-2 sm:max-[799px]:grid-cols-4">
       <div
         className={cn(
           "flex flex-col items-center justify-center gap-1 rounded-lg border border-gray-200/70 bg-gray-50/80 px-2 py-2.5",
-          "max-lg:col-span-2 sm:max-lg:col-span-4"
+          "max-[799px]:col-span-2 sm:max-[799px]:col-span-4"
         )}
       >
         <div className="flex items-center justify-center gap-2 text-sm font-semibold tabular-nums text-gray-900">
@@ -305,7 +305,7 @@ export function RestaurantActionRail({
         className={cn(
           actionButtonClass,
           "border-primary/25 text-primary hover:border-primary/40 hover:bg-primary/10 hover:text-primary",
-          "max-lg:col-span-2 sm:max-lg:col-span-4"
+          "max-[799px]:col-span-2 sm:max-[799px]:col-span-4"
         )}
         onClick={() => setViewOrdersOpen(true)}
       >

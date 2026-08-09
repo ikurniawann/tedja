@@ -1,18 +1,19 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Bluetooth, CheckCircle2, Loader2, Monitor, Printer, Save, Server, SlidersHorizontal, Wifi } from "lucide-react";
+import { Bluetooth, CheckCircle2, Laptop, Loader2, Monitor, Printer, Save, Server, SlidersHorizontal, Tablet, Wifi } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
-  canUseDirectThermalPrint,
   getPairedThermalCount,
   getThermalBaud,
+  getThermalPairingCapability,
   pairThermalPrinter,
   printBytesToPairedThermal,
   setThermalBaud,
   THERMAL_BAUD_OPTIONS,
   type ThermalBaud,
+  type ThermalPairingCapability,
 } from "@/lib/pos/thermal-serial";
 import { encodeEscPosText } from "@/lib/pos/thermal-escpos";
 
@@ -66,15 +67,13 @@ export function PrinterSettingsPage() {
   const [baud, setBaud] = useState<ThermalBaud>(9600);
   const [pairing, setPairing] = useState(false);
   const [testing, setTesting] = useState(false);
-  const [serialSupported, setSerialSupported] = useState(false);
-  const [serialChecked, setSerialChecked] = useState(false);
+  const [capability, setCapability] = useState<ThermalPairingCapability | null>(null);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
       setSettings(loadSettings());
       setBaud(getThermalBaud());
-      setSerialSupported(canUseDirectThermalPrint());
-      setSerialChecked(true);
+      setCapability(getThermalPairingCapability());
       void getPairedThermalCount().then(setPairedCount);
     }, 0);
     return () => window.clearTimeout(timeoutId);
@@ -101,116 +100,148 @@ export function PrinterSettingsPage() {
           <h1 className="text-2xl font-bold text-gray-950">Printer Settings</h1>
           <p className="text-sm text-gray-500">Hubungkan printer Bluetooth kasir sekali, lalu atur printer per station.</p>
         </div>
-        <Button onClick={saveSettings} className="gap-2 bg-pink-600 hover:bg-pink-700">
+        <Button onClick={saveSettings} className="gap-2 bg-primary hover:bg-primary/90">
           <Save className="size-4" />
           Simpan Settings
         </Button>
       </div>
 
       {saved && (
-        <div className="flex items-center gap-2 rounded-lg border border-emerald-200/70 bg-emerald-50/80 px-4 py-3 text-sm font-semibold text-emerald-700">
+        <div className="flex items-center gap-2 rounded-xl border border-emerald-200/70 bg-emerald-50/80 px-4 py-3 text-sm font-semibold text-emerald-700">
           <CheckCircle2 className="size-4" />
           Konfigurasi printer tersimpan di device ini.
         </div>
       )}
 
-      <section className="rounded-xl border border-gray-200/70 bg-white p-5 shadow-sm">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
+      <section className="overflow-hidden rounded-xl border border-gray-200/70 bg-white shadow-sm">
+        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-gray-200/70 px-5 py-4">
+          <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <Bluetooth className="h-5 w-5 text-primary" />
-              <h2 className="text-lg font-semibold text-foreground">Printer Bluetooth kasir</h2>
+              <span className="flex size-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <Bluetooth className="h-4 w-4" />
+              </span>
+              <h2 className="text-base font-semibold text-foreground">Printer Bluetooth kasir</h2>
             </div>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Setting sekali di laptop ini. Print Struk di kasir langsung cetak tanpa preview.
-              Pair printer dulu di Bluetooth Windows/macOS, lalu hubungkan di sini.
+            <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
+              Pairing sekali di laptop Chrome/Edge. Print Struk di kasir laptop itu langsung tanpa preview.
             </p>
           </div>
           <span
-            className={`inline-flex w-fit rounded-full px-2.5 py-1 text-xs font-semibold ${
-              pairedCount > 0
+            className={`inline-flex w-fit shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${
+              capability === "desktop" && pairedCount > 0
                 ? "bg-emerald-50 text-emerald-700"
                 : "bg-muted text-muted-foreground"
             }`}
           >
-            {pairedCount > 0 ? "Terhubung" : "Belum terhubung"}
+            {capability === "handheld"
+              ? "Khusus laptop"
+              : capability === "unsupported"
+                ? "Tidak tersedia"
+                : pairedCount > 0
+                  ? "Terhubung"
+                  : "Belum terhubung"}
           </span>
         </div>
 
-        {!serialChecked ? null : !serialSupported ? (
-          <p className="mt-4 text-sm text-amber-700">
-            Browser ini tidak mendukung print langsung. Pakai Chrome atau Edge di laptop.
-          </p>
-        ) : (
-          <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
-            <div className="sm:w-40">
-              <label className="text-xs font-medium text-muted-foreground">Baud rate</label>
-              <select
-                value={baud}
-                onChange={(event) => {
-                  const next = Number(event.target.value) as ThermalBaud;
-                  setBaud(next);
-                  setThermalBaud(next);
-                }}
-                className="mt-1 h-10 w-full rounded-lg border border-gray-200/80 bg-white px-3 text-sm text-foreground outline-none ring-1 ring-transparent focus:border-primary/40 focus:ring-primary/30"
-              >
-                {THERMAL_BAUD_OPTIONS.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
+        <div className="space-y-4 px-5 py-4">
+          {!capability ? null : capability === "handheld" ? (
+            <div className="flex gap-3 rounded-xl border border-gray-200/70 bg-gray-50/60 p-4">
+              <Tablet className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" />
+              <div className="min-w-0 text-sm">
+                <p className="font-medium text-foreground">Tablet tidak bisa tautkan printer Bluetooth</p>
+                <p className="mt-1 text-muted-foreground">
+                  Chrome di tablet tidak menampilkan perangkat serial/Bluetooth yang kompatibel.
+                  Pair printer di Windows/macOS dulu, lalu buka halaman ini di Chrome atau Edge laptop kasir dan klik Hubungkan printer.
+                  Print dari tablet tetap lewat dialog print sistem.
+                </p>
+              </div>
             </div>
-            <Button
-              type="button"
-              disabled={pairing}
-              onClick={async () => {
-                if (pairing) return;
-                setPairing(true);
-                try {
-                  await pairThermalPrinter();
-                  setPairedCount(await getPairedThermalCount());
-                  toast.success("Printer Bluetooth terhubung di device ini");
-                } catch (error) {
-                  if (error instanceof DOMException && error.name === "NotFoundError") return;
-                  toast.error(error instanceof Error ? error.message : "Gagal hubungkan printer");
-                } finally {
-                  setPairing(false);
-                }
-              }}
-            >
-              {pairing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Bluetooth className="h-4 w-4" />}
-              Hubungkan printer
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={testing || pairedCount === 0}
-              onClick={async () => {
-                if (testing) return;
-                setTesting(true);
-                try {
-                  const ok = await printBytesToPairedThermal(
-                    encodeEscPosText(["ARKIV POS", "Test printer OK"])
-                  );
-                  if (!ok) {
-                    toast.error("Printer belum terhubung. Klik Hubungkan printer dulu.");
-                    return;
-                  }
-                  toast.success("Test print terkirim");
-                } catch (error) {
-                  toast.error(error instanceof Error ? error.message : "Test print gagal");
-                } finally {
-                  setTesting(false);
-                }
-              }}
-              className="border-gray-200/80"
-            >
-              {testing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
-              Test print
-            </Button>
-          </div>
-        )}
+          ) : capability === "unsupported" ? (
+            <div className="flex gap-3 rounded-xl border border-amber-200/70 bg-amber-50/70 p-4">
+              <Laptop className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" />
+              <div className="min-w-0 text-sm">
+                <p className="font-medium text-amber-900">Browser ini tidak mendukung print langsung</p>
+                <p className="mt-1 text-amber-800/90">
+                  Pakai Chrome atau Edge di laptop. Pair printer di Bluetooth OS, lalu hubungkan di sini.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-xl border border-gray-200/70 bg-gray-50/60 p-4">
+              <p className="text-sm text-muted-foreground">
+                Pair printer di Bluetooth Windows/macOS, lalu tautkan di bawah. Perangkat akan muncul di daftar Chrome.
+              </p>
+              <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
+                <div className="sm:w-40">
+                  <label className="text-xs font-medium text-muted-foreground">Baud rate</label>
+                  <select
+                    value={baud}
+                    onChange={(event) => {
+                      const next = Number(event.target.value) as ThermalBaud;
+                      setBaud(next);
+                      setThermalBaud(next);
+                    }}
+                    className="mt-1 h-10 w-full rounded-lg border border-gray-200/80 bg-white px-3 text-sm text-foreground outline-none ring-1 ring-transparent focus:border-primary/40 focus:ring-primary/30"
+                  >
+                    {THERMAL_BAUD_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <Button
+                  type="button"
+                  disabled={pairing}
+                  onClick={async () => {
+                    if (pairing) return;
+                    setPairing(true);
+                    try {
+                      await pairThermalPrinter();
+                      setPairedCount(await getPairedThermalCount());
+                      toast.success("Printer Bluetooth terhubung di device ini");
+                    } catch (error) {
+                      if (error instanceof DOMException && error.name === "NotFoundError") return;
+                      toast.error(error instanceof Error ? error.message : "Gagal hubungkan printer");
+                    } finally {
+                      setPairing(false);
+                    }
+                  }}
+                >
+                  {pairing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Bluetooth className="h-4 w-4" />}
+                  Hubungkan printer
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={testing || pairedCount === 0}
+                  onClick={async () => {
+                    if (testing) return;
+                    setTesting(true);
+                    try {
+                      const ok = await printBytesToPairedThermal(
+                        encodeEscPosText(["ARKIV POS", "Test printer OK"])
+                      );
+                      if (!ok) {
+                        toast.error("Printer belum terhubung. Klik Hubungkan printer dulu.");
+                        return;
+                      }
+                      toast.success("Test print terkirim");
+                    } catch (error) {
+                      toast.error(error instanceof Error ? error.message : "Test print gagal");
+                    } finally {
+                      setTesting(false);
+                    }
+                  }}
+                  className="border-gray-200/80"
+                >
+                  {testing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
+                  Test print
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
       </section>
 
       <div className="grid gap-3 sm:grid-cols-3">

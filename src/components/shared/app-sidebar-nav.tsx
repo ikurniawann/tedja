@@ -7,6 +7,7 @@ import { ChevronDownIcon } from "@heroicons/react/24/outline";
 import { isNavLinkActive } from "@/lib/iam/nav-active";
 import { useNavFrom } from "@/lib/iam/use-nav-from";
 import type { NavItem } from "@/lib/iam/types";
+import { isPosChromeLessPath } from "@/features/pos/tablet-mode";
 import { AppSidebarNavIcon } from "./app-sidebar-nav-icons";
 
 interface AppSidebarNavProps {
@@ -303,14 +304,10 @@ export default function AppSidebarNav({
         ? badges[item.href]
         : 0;
 
-    return (
-      <Link
-        key={itemKey}
-        href={item.href}
-        onClick={onNavigate}
-        className={`relative ${leafShellClass}`}
-        title={collapsed ? item.label : undefined}
-      >
+    const leafClassName = `relative ${leafShellClass}`;
+    const leafTitle = collapsed ? item.label : undefined;
+    const leafInner = (
+      <>
         {showIcon && <AppSidebarNavIcon name={item.icon} isActive={itemActive} />}
         {!collapsed && <span className="flex-1">{item.label}</span>}
         {badgeCount > 0 &&
@@ -321,6 +318,33 @@ export default function AppSidebarNav({
               {badgeCount > 99 ? "99+" : badgeCount}
             </span>
           ))}
+      </>
+    );
+
+    // /pos/kds, /pos/queue, CFD: beda root layout → <Link> RSC fetch TypeError.
+    if (isPosChromeLessPath(item.href)) {
+      return (
+        <a
+          key={itemKey}
+          href={item.href}
+          onClick={onNavigate}
+          className={leafClassName}
+          title={leafTitle}
+        >
+          {leafInner}
+        </a>
+      );
+    }
+
+    return (
+      <Link
+        key={itemKey}
+        href={item.href}
+        onClick={onNavigate}
+        className={leafClassName}
+        title={leafTitle}
+      >
+        {leafInner}
       </Link>
     );
   };

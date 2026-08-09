@@ -89,7 +89,7 @@ export function CartPanel({
   return (
     <div
       className={cn(
-        "flex w-full max-h-[60vh] flex-col rounded-xl border border-gray-200/70 bg-white shadow-xs lg:max-h-none lg:w-96",
+        "flex w-full flex-col rounded-xl border border-gray-200/70 bg-white shadow-xs",
         className,
       )}
     >

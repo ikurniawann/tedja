@@ -22,6 +22,36 @@ export function canUseDirectThermalPrint() {
   return Boolean(getSerialApi());
 }
 
+export type ThermalPairingCapability = "desktop" | "handheld" | "unsupported";
+
+/** Android/iPad/phone — Web Serial picker usually empty even if API exists. */
+export function isHandheldClient(
+  ua = typeof navigator === "undefined" ? "" : navigator.userAgent,
+  extras?: { maxTouchPoints?: number; platform?: string },
+) {
+  if (/Android/i.test(ua)) return true;
+  if (/iPhone|iPad|iPod/i.test(ua)) return true;
+  if (/webOS|BlackBerry|IEMobile|Opera Mini/i.test(ua)) return true;
+  if (/Mobile/i.test(ua) && !/Windows NT/i.test(ua)) return true;
+  const platform =
+    extras?.platform ?? (typeof navigator === "undefined" ? "" : navigator.platform);
+  const touch =
+    extras?.maxTouchPoints ?? (typeof navigator === "undefined" ? 0 : navigator.maxTouchPoints);
+  return platform === "MacIntel" && touch > 1;
+}
+
+export function getThermalPairingCapability(): ThermalPairingCapability {
+  if (typeof navigator === "undefined") return "unsupported";
+  if (isHandheldClient()) return "handheld";
+  if (typeof window !== "undefined") {
+    const coarse = window.matchMedia("(pointer: coarse)").matches;
+    const noHover = window.matchMedia("(hover: none)").matches;
+    if (coarse && noHover) return "handheld";
+  }
+  if (!getSerialApi()) return "unsupported";
+  return "desktop";
+}
+
 export const THERMAL_BAUD_OPTIONS = [9600, 19200, 115200] as const;
 export type ThermalBaud = (typeof THERMAL_BAUD_OPTIONS)[number];
 
@@ -63,8 +93,12 @@ async function writeToPort(port: SerialPortLike, bytes: Uint8Array) {
 }
 
 export async function pairThermalPrinter() {
+  const capability = getThermalPairingCapability();
+  if (capability === "handheld") {
+    throw new Error("Tablet/PWA tidak bisa tautkan printer Bluetooth. Pairing hanya di Chrome atau Edge laptop.");
+  }
   const serial = getSerialApi();
-  if (!serial) {
+  if (!serial || capability === "unsupported") {
     throw new Error("Browser ini tidak mendukung print langsung. Pakai Chrome/Edge di laptop.");
   }
   const port = await serial.requestPort();

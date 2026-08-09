@@ -124,7 +124,7 @@ export function RestaurantBillsRail({
   };
 
   return (
-    <aside className="min-w-0 rounded-xl border border-gray-200/70 bg-white shadow-xs">
+    <aside className="flex min-h-0 min-w-0 flex-col rounded-xl border border-gray-200/70 bg-white shadow-xs min-[800px]:h-full">
       <div className="border-b border-gray-200/70 px-4 py-3">
         <div className="flex items-center justify-between gap-3">
           <div>
@@ -139,7 +139,7 @@ export function RestaurantBillsRail({
         </div>
       </div>
 
-      <div className="min-h-[220px] space-y-3 overflow-y-auto p-3 lg:max-h-[calc(100vh-18rem)]">
+      <div className="min-h-[220px] flex-1 space-y-3 overflow-y-auto p-3">
         {loading ? (
           <div className="flex items-center gap-2 rounded-lg border border-gray-200/70 bg-gray-50/80 p-4 text-sm text-muted-foreground">
             <Loader2 className="size-4 animate-spin" />

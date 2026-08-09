@@ -1,11 +1,24 @@
 import { describe, expect, it } from "vitest";
 import {
+  cashierDesktopRoute,
   cashierTabletRoute,
+  isPosChromeLessPath,
   isPosImmersiveShell,
   isPosTabletQuery,
   restaurantTabletRoute,
+  shouldShowSecondaryPosDisplays,
   withPosTabletParam,
 } from "./tablet-mode";
+
+describe("isPosChromeLessPath", () => {
+  it("matches immersive POS shells outside dashboard", () => {
+    expect(isPosChromeLessPath("/pos/kds")).toBe(true);
+    expect(isPosChromeLessPath("/pos/queue?foo=1")).toBe(true);
+    expect(isPosChromeLessPath("/pos/customer-display")).toBe(true);
+    expect(isPosChromeLessPath("/dashboard/pos/kds")).toBe(false);
+    expect(isPosChromeLessPath("/dashboard/pos/cashier-new")).toBe(false);
+  });
+});
 
 describe("isPosTabletQuery", () => {
   it("accepts 1 or true", () => {
@@ -74,9 +87,43 @@ describe("cashierTabletRoute", () => {
   });
 });
 
+describe("cashierDesktopRoute", () => {
+  it("returns embedded cashier without tablet flags", () => {
+    expect(cashierDesktopRoute()).toBe("/dashboard/pos/cashier-new");
+  });
+
+  it("strips tablet and immersive but keeps handoff params", () => {
+    expect(
+      cashierDesktopRoute(
+        new URLSearchParams("tablet=1&immersive=1&from=restaurant&tableId=t1&pax=4")
+      )
+    ).toBe("/dashboard/pos/cashier-new?from=restaurant&tableId=t1&pax=4");
+  });
+});
+
 describe("restaurantTabletRoute", () => {
   it("points at dedicated restaurant tablet path", () => {
     expect(restaurantTabletRoute()).toBe("/dashboard/pos/restaurant-tablet");
+  });
+});
+
+describe("shouldShowSecondaryPosDisplays", () => {
+  it("hides CFD and TV queue on immersive tablet shell", () => {
+    expect(
+      shouldShowSecondaryPosDisplays({ immersiveTablet: true, handheldClient: false })
+    ).toBe(false);
+  });
+
+  it("hides CFD and TV queue on handheld even without tablet=1", () => {
+    expect(
+      shouldShowSecondaryPosDisplays({ immersiveTablet: false, handheldClient: true })
+    ).toBe(false);
+  });
+
+  it("shows CFD and TV queue on desktop dashboard cashier", () => {
+    expect(
+      shouldShowSecondaryPosDisplays({ immersiveTablet: false, handheldClient: false })
+    ).toBe(true);
   });
 });
 

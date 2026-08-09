@@ -160,7 +160,7 @@ export async function printThermalReceipt(payload: ReceiptPayload, label: Therma
   try {
     const sent = await printBytesToPairedThermal(encodeEscPosText(buildReceiptLines(payload, label)));
     if (sent) {
-      toast.success("Struk terkirim ke printer (tanpa preview)");
+      toast.success("Print");
       return;
     }
   } catch (error) {

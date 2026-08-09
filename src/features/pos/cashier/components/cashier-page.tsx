@@ -7,10 +7,22 @@ import {
   User, Users, X, Sparkles, Printer, CheckCircle, AlertCircle, Loader2, ArrowLeft,
   Monitor as MonitorIcon,
 } from 'lucide-react';
-import { ArrowsPointingInIcon, ArrowsPointingOutIcon } from '@heroicons/react/24/outline';
 import { toast } from 'sonner';
 import { RESTAURANT_FROM, isRestaurantImmersive, restaurantPath } from '@/features/pos/restaurant/nav';
-import { cashierTabletRoute, isPosTabletQuery } from '@/features/pos/tablet-mode';
+import {
+  cashierDesktopRoute,
+  cashierTabletRoute,
+  isPosTabletQuery,
+  shouldShowSecondaryPosDisplays,
+} from '@/features/pos/tablet-mode';
+import { useHandheldClient } from '@/features/pos/use-handheld-client';
+import {
+  cashierCartPanelClass,
+  cashierLeftPanelClass,
+  cashierProductGridClass,
+  cashierProductScrollClass,
+  cashierSplitRowClass,
+} from '@/features/pos/cashier/cashier-workspace-layout';
 import { PosTabletChromeControls } from '@/features/pos/components/pos-tablet-chrome-controls';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -143,6 +155,11 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     formatArkAmount(value, loyaltySettings?.ark_rate || 1000);
   const isTabletMode =
     variant === 'fullscreen' || isPosTabletQuery(searchParams);
+  const handheldClient = useHandheldClient();
+  const showSecondaryDisplays = shouldShowSecondaryPosDisplays({
+    immersiveTablet: isTabletMode,
+    handheldClient,
+  });
   const homeRoute = cashierRoute(variant, searchParams);
   const paymentOrderId = searchParams.get('orderId');
   const loadedPaymentOrderRef = useRef<string | null>(null);
@@ -1435,7 +1452,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
           : undefined
       }
     >
-    <div className={`flex min-h-0 flex-1 flex-col ${isTabletMode ? 'gap-2 touch-manipulation' : 'gap-4'}`}>
+    <div className={`flex flex-col ${isTabletMode ? 'min-h-0 flex-1 gap-2 touch-manipulation' : 'gap-4'}`}>
       <div className={`flex shrink-0 flex-wrap items-center justify-between ${isTabletMode ? 'gap-2' : 'gap-3'}`}>
         <div className="min-w-0">
           <h1 className={`font-semibold text-gray-900 ${isTabletMode ? 'text-base' : 'text-xl'}`}>POS Cashier</h1>
@@ -1528,8 +1545,8 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
               Back to Restaurant
             </Button>
           )}
-          {!isTabletMode ? (
-            <>
+          {showSecondaryDisplays ? (
+            <div className="hidden [@media(hover:hover)_and_(pointer:fine)]:contents">
               {/* EPIC-024: buka layar customer sebagai window baru — drag ke
                   monitor kedua lalu F11 (BroadcastChannel sesama browser) */}
               <Button
@@ -1564,42 +1581,19 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
                 <MonitorIcon className="mr-2 h-4 w-4" />
                 TV Antrian
               </Button>
-            </>
+            </div>
           ) : null}
-          {isTabletMode ? (
-            <>
-              <PosTabletChromeControls />
-              <Button
-                type="button"
-                variant="outline"
-                className="border-gray-200/80 text-gray-700 hover:border-primary/30 hover:bg-primary/10 hover:text-primary"
-                onClick={() => router.push(cashierRoute('embedded', searchParams))}
-              >
-                <ArrowsPointingInIcon className="mr-2 h-4 w-4" />
-                Keluar mode tablet
-              </Button>
-            </>
-          ) : (
-            <Button
-              type="button"
-              variant="outline"
-              className="border-gray-200/80 text-gray-700 hover:border-primary/30 hover:bg-primary/10 hover:text-primary"
-              onClick={() => router.push(cashierTabletRoute(searchParams))}
-            >
-              <ArrowsPointingOutIcon className="mr-2 h-4 w-4" />
-              Mode tablet
-            </Button>
-          )}
+          <PosTabletChromeControls
+            immersive={isTabletMode}
+            onToggleImmersive={(next) => {
+              if (next) router.push(cashierTabletRoute(searchParams));
+              else router.replace(cashierDesktopRoute(searchParams));
+            }}
+          />
         </div>
       </div>
 
-      <div
-        className={
-          isTabletMode
-            ? 'flex min-h-0 flex-1 flex-row gap-3'
-            : `flex flex-col lg:flex-row ${shellHeight} gap-4`
-        }
-      >
+      <div className={cashierSplitRowClass({ isTabletMode, shellHeight })}>
       {loading && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="flex items-center gap-3 rounded-xl border border-gray-200/70 bg-white p-6 shadow-xs">
@@ -1618,7 +1612,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       )}
 
       {/* LEFT PANEL */}
-      <div className={`flex min-w-0 flex-1 flex-col overflow-hidden ${isTabletMode ? '@container gap-2' : 'gap-4'}`}>
+      <div className={cashierLeftPanelClass(isTabletMode)}>
         {/* Offline Status Bar */}
         {!isOnline && (
           <div className="flex items-center justify-between rounded-lg border border-amber-200/80 bg-amber-50/80 px-4 py-2 text-sm text-amber-800">
@@ -1860,14 +1854,8 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         </div>
 
         {/* Product Grid */}
-        <div className="flex-1 overflow-y-auto">
-          <div
-            className={
-              isTabletMode
-                ? 'grid grid-cols-3 gap-2 @min-[28rem]:grid-cols-4 @min-[28rem]:gap-2.5 @min-[40rem]:grid-cols-5 @min-[40rem]:gap-3 @min-[52rem]:grid-cols-6 @min-[64rem]:grid-cols-7 @min-[80rem]:grid-cols-8'
-                : 'grid grid-cols-4 gap-2 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-7 xl:grid-cols-8 2xl:grid-cols-9'
-            }
-          >
+        <div className={cashierProductScrollClass()}>
+          <div className={cashierProductGridClass()}>
             {filteredProducts.map(product => {
               const xp = product.xp ?? ((Math.abs(product.id.split('').reduce((a, c) => a + c.charCodeAt(0), 0)) % 100) + 1);
               // Produk privilege member (EPIC-011 Fase C): terkunci bila
@@ -1930,11 +1918,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
 
       {/* RIGHT PANEL — Cart */}
       <CartPanel
-        className={
-          isTabletMode
-            ? 'h-full max-h-none w-56 shrink-0 min-[900px]:w-72 min-[1100px]:w-80 min-[1280px]:w-96'
-            : undefined
-        }
+        className={cashierCartPanelClass(isTabletMode)}
         cart={cart.items}
         orderType={cart.orderType}
         selectedTable={selectedTableDisplay}

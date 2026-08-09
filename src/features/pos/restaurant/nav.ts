@@ -24,6 +24,14 @@ export function isRestaurantTabletPath(pathname: string): boolean {
   return pathname === RESTAURANT_TABLET_PATH;
 }
 
+/** Meja → kasir tablet bila immersive ATAU device handheld (iPad tanpa ?tablet=1). */
+export function shouldUseTabletCashierHandoff(input: {
+  immersive: boolean;
+  handheldClient: boolean;
+}): boolean {
+  return input.immersive || input.handheldClient;
+}
+
 export function restaurantPath(opts?: { immersive?: boolean }): string {
   if (opts?.immersive) {
     return RESTAURANT_TABLET_PATH;

@@ -7,6 +7,7 @@ import {
   buildCashierHandoffUrl,
   isRestaurantImmersive,
   restaurantPath,
+  shouldUseTabletCashierHandoff,
 } from "./nav";
 
 describe("isRestaurantImmersive", () => {
@@ -39,6 +40,26 @@ describe("restaurantPath", () => {
 
   it("uses dedicated tablet route when immersive requested", () => {
     expect(restaurantPath({ immersive: true })).toBe(RESTAURANT_TABLET_PATH);
+  });
+});
+
+describe("shouldUseTabletCashierHandoff", () => {
+  it("is true when restaurant shell is immersive", () => {
+    expect(
+      shouldUseTabletCashierHandoff({ immersive: true, handheldClient: false })
+    ).toBe(true);
+  });
+
+  it("is true on handheld even without immersive restaurant URL", () => {
+    expect(
+      shouldUseTabletCashierHandoff({ immersive: false, handheldClient: true })
+    ).toBe(true);
+  });
+
+  it("is false on desktop dashboard restaurant", () => {
+    expect(
+      shouldUseTabletCashierHandoff({ immersive: false, handheldClient: false })
+    ).toBe(false);
   });
 });
 

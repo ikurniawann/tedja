@@ -1,19 +1,31 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Expand, Minimize2, Smartphone } from "lucide-react";
-import { toast } from "sonner";
+import { useRouter } from "next/navigation";
+import { Expand, Home, Minimize2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
+const HOME_HREF = "/dashboard";
+
+const chromeButtonClass =
+  "border-gray-200/80 text-gray-700 hover:border-primary/30 hover:bg-primary/10 hover:text-primary";
+
 type Props = {
-  /** Compact toolbar style for cashier header */
   className?: string;
+  /** Immersive POS shell (tanpa sidebar dashboard). */
+  immersive?: boolean;
+  onToggleImmersive?: (next: boolean) => void;
 };
 
 /**
- * Browser Fullscreen API + hint for Add to Home Screen (PWA manifest-pos).
+ * Chrome POS: Beranda + layar penuh (sembunyikan sidebar + Fullscreen API).
  */
-export function PosTabletChromeControls({ className }: Props) {
+export function PosTabletChromeControls({
+  className,
+  immersive = false,
+  onToggleImmersive,
+}: Props) {
+  const router = useRouter();
   const [isBrowserFullscreen, setIsBrowserFullscreen] = useState(false);
 
   useEffect(() => {
@@ -25,38 +37,57 @@ export function PosTabletChromeControls({ className }: Props) {
     return () => document.removeEventListener("fullscreenchange", sync);
   }, []);
 
-  const toggleBrowserFullscreen = useCallback(async () => {
+  const expanded = immersive || isBrowserFullscreen;
+
+  const goHome = useCallback(async () => {
     try {
-      if (document.fullscreenElement) {
-        await document.exitFullscreen();
-        return;
+      if (document.fullscreenElement) await document.exitFullscreen();
+    } catch {
+      // ignore
+    }
+    router.push(HOME_HREF);
+  }, [router]);
+
+  const toggle = useCallback(async () => {
+    if (expanded) {
+      try {
+        if (document.fullscreenElement) await document.exitFullscreen();
+      } catch {
+        // ignore
       }
+      onToggleImmersive?.(false);
+      return;
+    }
+    try {
       await document.documentElement.requestFullscreen();
     } catch {
-      toast.error(
-        "Browser menolak layar penuh. Coba dari tombol di halaman (bukan otomatis), atau gunakan Add to Home Screen."
-      );
+      // PWA / tablet sering menolak FS; shell tanpa sidebar tetap dipakai
     }
-  }, []);
-
-  const showInstallHint = useCallback(() => {
-    toast.message("Pasang sebagai app tablet", {
-      description:
-        "Chrome/Edge: menu ⋮ → Install app / Add to Home screen. Safari iPad: Share → Add to Home Screen. Buka ikon POS Kasir agar tanpa address bar.",
-      duration: 10_000,
-    });
-  }, []);
+    onToggleImmersive?.(true);
+  }, [expanded, onToggleImmersive]);
 
   return (
     <div className={className ?? "flex flex-wrap items-center gap-2"}>
+      {immersive ? (
+        <Button
+          type="button"
+          variant="outline"
+          className={chromeButtonClass}
+          onClick={() => void goHome()}
+          title="Kembali ke Beranda"
+        >
+          <Home className="mr-2 h-4 w-4" />
+          Beranda
+        </Button>
+      ) : null}
       <Button
         type="button"
         variant="outline"
-        className="border-gray-200/80 text-gray-700 hover:border-primary/30 hover:bg-primary/10 hover:text-primary"
-        onClick={() => void toggleBrowserFullscreen()}
-        title="Layar penuh browser (sembunyikan address bar)"
+        className={chromeButtonClass}
+        onClick={() => void toggle()}
+        title={expanded ? "Kembali ke tampilan biasa" : "Layar penuh tanpa sidebar"}
       >
-        {isBrowserFullscreen ? (
+        {expanded ? (
           <>
             <Minimize2 className="mr-2 h-4 w-4" />
             Keluar layar penuh
@@ -67,16 +98,6 @@ export function PosTabletChromeControls({ className }: Props) {
             Layar penuh
           </>
         )}
-      </Button>
-      <Button
-        type="button"
-        variant="outline"
-        className="border-gray-200/80 text-gray-700 hover:border-primary/30 hover:bg-primary/10 hover:text-primary"
-        onClick={showInstallHint}
-        title="Cara pasang POS ke Home Screen tablet"
-      >
-        <Smartphone className="mr-2 h-4 w-4" />
-        Pasang ke tablet
       </Button>
     </div>
   );

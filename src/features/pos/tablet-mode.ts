@@ -16,6 +16,20 @@ import {
 
 export { POS_TABLET_PARAM };
 
+/** CFD + TV antrian = monitor kedua di laptop. Jangan tampil di tablet/handheld. */
+export function shouldShowSecondaryPosDisplays(input: {
+  immersiveTablet: boolean;
+  handheldClient: boolean;
+}): boolean {
+  return !input.immersiveTablet && !input.handheldClient;
+}
+
+/** `/pos/kds`, `/pos/queue`, CFD — luar layout dashboard. Jangan `<Link>` (RSC gagal). */
+export function isPosChromeLessPath(href: string): boolean {
+  const path = href.split("?")[0] ?? "";
+  return path === "/pos" || path.startsWith("/pos/");
+}
+
 type SearchParamsLike = { get(name: string): string | null };
 
 /** Query flag used across POS pages for tablet/kiosk shell. */
@@ -69,6 +83,20 @@ export function cashierTabletRoute(searchParams?: URLSearchParams | string): str
   params.set(POS_TABLET_PARAM, "1");
   const query = params.toString();
   return query ? `${base}?${query}` : `${base}?${POS_TABLET_PARAM}=1`;
+}
+
+/** Dashboard kasir tanpa flag tablet/immersive (Keluar layar penuh). */
+export function cashierDesktopRoute(searchParams?: URLSearchParams | string): string {
+  const params =
+    !searchParams
+      ? new URLSearchParams()
+      : typeof searchParams === "string"
+        ? new URLSearchParams(searchParams)
+        : new URLSearchParams(searchParams.toString());
+  params.delete(POS_TABLET_PARAM);
+  params.delete(RESTAURANT_IMMERSIVE_PARAM);
+  const query = params.toString();
+  return query ? `${CASHIER_ROUTES.embedded}?${query}` : CASHIER_ROUTES.embedded;
 }
 
 export function restaurantTabletRoute(): string {

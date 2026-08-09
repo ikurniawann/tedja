@@ -4,7 +4,7 @@ import { Suspense, useCallback, useEffect, useState } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
 import {
   ChefHat, Volume2, VolumeX, RefreshCw, Monitor, Coffee, UtensilsCrossed, IceCreamBowl,
-  Maximize2, Minimize2, ArrowLeft, Tv,
+  Maximize2, Minimize2, ArrowLeft, Home, Tv,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -229,6 +229,24 @@ function KdsPageContent() {
           {isImmersive ? (
             <>
               <Button
+                variant="ghost"
+                onClick={() => {
+                  void (async () => {
+                    try {
+                      if (document.fullscreenElement) await document.exitFullscreen();
+                    } catch {
+                      // ignore
+                    }
+                    window.location.assign("/dashboard");
+                  })();
+                }}
+                className="h-8 gap-1.5 px-2 text-xs text-gray-400 hover:text-white"
+                title="Kembali ke Beranda"
+              >
+                <Home className="w-4 h-4" />
+                Beranda
+              </Button>
+              <Button
                 size="icon"
                 variant="ghost"
                 onClick={() => void toggleBrowserFullscreen()}
@@ -241,7 +259,7 @@ function KdsPageContent() {
                 variant="ghost"
                 onClick={() => void exitImmersive()}
                 className="h-8 gap-1.5 px-2 text-xs text-gray-400 hover:text-white"
-                title="Kembali ke dashboard"
+                title="Kembali ke dashboard KDS"
               >
                 <ArrowLeft className="w-4 h-4" />
                 Keluar

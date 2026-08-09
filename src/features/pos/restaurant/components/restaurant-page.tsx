@@ -3,10 +3,6 @@
 import { Suspense, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
-import {
-  ArrowsPointingInIcon,
-  ArrowsPointingOutIcon,
-} from "@heroicons/react/24/outline";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -29,6 +25,7 @@ import {
 } from "@/lib/pos-api";
 import { cn } from "@/lib/utils";
 import { PosTabletChromeControls } from "@/features/pos/components/pos-tablet-chrome-controls";
+import { useHandheldClient } from "@/features/pos/use-handheld-client";
 
 import { MoveItemsDialog, type MoveItemsSelection } from "./move-items-dialog";
 import { RestaurantActionRail } from "./restaurant-action-rail";
@@ -42,7 +39,9 @@ import {
   isRestaurantImmersive,
   isRestaurantTabletPath,
   restaurantPath,
+  shouldUseTabletCashierHandoff,
 } from "../nav";
+import { restaurantWorkspaceClass } from "../restaurant-workspace-layout";
 import {
   isTableSelected,
   tableSelection,
@@ -105,6 +104,11 @@ function RestaurantPageContent() {
   const queryClient = useQueryClient();
   const immersive =
     isRestaurantTabletPath(pathname) || isRestaurantImmersive(searchParams);
+  const handheldClient = useHandheldClient();
+  const tabletHandoff = shouldUseTabletCashierHandoff({
+    immersive,
+    handheldClient,
+  });
   const { data: tables = [], isLoading, error } = useCashierTables();
   const { data: orders = [], refetch: refetchOrders } = useOpenBills({ limit: 200 });
   const createSplitsMutation = useCreateOrderSplits();
@@ -446,10 +450,6 @@ function RestaurantPageContent() {
     }
   };
 
-  const toggleImmersive = () => {
-    router.replace(restaurantPath({ immersive: !immersive }));
-  };
-
   const handleConfirmSplit = async (config: SplitConfig) => {
     if (!selectedOrder) return;
 
@@ -486,25 +486,12 @@ function RestaurantPageContent() {
           <h1 className="text-base font-semibold text-foreground">Restaurant</h1>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {immersive ? <PosTabletChromeControls /> : null}
-          <Button
-            type="button"
-            variant="outline"
-            className="shrink-0 border-gray-200/80 text-gray-700 hover:border-primary/30 hover:bg-primary/10 hover:text-primary"
-            onClick={toggleImmersive}
-          >
-            {immersive ? (
-              <>
-                <ArrowsPointingInIcon className="mr-2 h-4 w-4" />
-                Keluar mode tablet
-              </>
-            ) : (
-              <>
-                <ArrowsPointingOutIcon className="mr-2 h-4 w-4" />
-                Mode tablet
-              </>
-            )}
-          </Button>
+          <PosTabletChromeControls
+            immersive={immersive}
+            onToggleImmersive={(next) => {
+              router.replace(restaurantPath({ immersive: next }));
+            }}
+          />
         </div>
       </div>
 
@@ -576,14 +563,7 @@ function RestaurantPageContent() {
         </div>
       ) : null}
 
-      <div
-        className={cn(
-          "grid gap-3 lg:grid-cols-[184px_1fr_280px]",
-          immersive
-            ? "h-[calc(100dvh-4.5rem)] min-h-[560px]"
-            : "min-h-[70vh]"
-        )}
-      >
+      <div className={restaurantWorkspaceClass(immersive)}>
         <RestaurantActionRail
           selection={selection}
           selectedOrder={selectedOrder}
@@ -617,7 +597,7 @@ function RestaurantPageContent() {
               isLoading={isLoading}
               error={tableError}
               selectedTableId={selection?.tableId ?? null}
-              immersive={immersive}
+              immersive={tabletHandoff}
               boardMode={boardMode}
               busy={boardBusy}
               sourceTableId={selection?.tableId ?? null}
@@ -630,7 +610,7 @@ function RestaurantPageContent() {
         <RestaurantBillsRail
           tablesById={tablesById}
           selection={selection}
-          immersive={immersive}
+          immersive={tabletHandoff}
           onSelect={handleSelectBill}
           onPaySplits={(order) => setSplitPaymentOrder(order)}
         />
