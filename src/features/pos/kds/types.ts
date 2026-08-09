@@ -18,6 +18,8 @@ export interface KDSOrderItem {
 export interface KDSOrder {
   id: string;
   order_number: string;
+  queue_number?: string | null;
+  station_status?: string;
   status: string;
   payment_status: string;
   order_type: string;

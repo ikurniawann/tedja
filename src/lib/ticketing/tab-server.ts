@@ -228,8 +228,7 @@ export async function chargeFnbOrderToTab(input: {
     if (input.markOrderPaid) {
       await client.query(
         `UPDATE pos.pos_orders
-         SET status = 'completed', payment_status = 'paid',
-             completed_at = now(), updated_at = now()
+         SET payment_status = 'paid', updated_at = now()
          WHERE id = $1`,
         [input.orderId]
       );

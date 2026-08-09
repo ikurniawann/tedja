@@ -22,6 +22,10 @@ describe("isPosImmersiveShell", () => {
     ).toBe(true);
   });
 
+  it("is true for kds fullscreen outside dashboard chrome", () => {
+    expect(isPosImmersiveShell("/pos/kds", new URLSearchParams())).toBe(true);
+  });
+
   it("is true for cashier tablet shortcut", () => {
     expect(
       isPosImmersiveShell("/dashboard/pos/tablet", new URLSearchParams())

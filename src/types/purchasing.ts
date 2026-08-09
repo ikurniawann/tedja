@@ -247,6 +247,7 @@ export interface ProductFormData {
   harga_jual?: number;
   notes?: string;
   production_output_type?: ProductOutputType;
+  station?: string;
   // Legacy fields for compatibility
   nama?: string;
   kategori?: string;
@@ -289,6 +290,7 @@ export interface ProductWithCOGS {
   satuan_id?: string | null;
   satuan_nama?: string | null;
   production_output_type?: ProductOutputType;
+  station?: string | null;
   warehouse_id?: string;
   warehouse_name?: string | null;
   warehouse_code?: string | null;

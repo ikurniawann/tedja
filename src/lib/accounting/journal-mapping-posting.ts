@@ -12,6 +12,7 @@ import type {
 import type { JournalLineSide } from "@/lib/accounting/fiscal-types";
 
 export type JournalAmountBag = Partial<Record<JournalAmountSource, number>>;
+export type JournalAmountMap = JournalAmountBag;
 
 export type MappingPostResult = {
   status: "posted" | "draft" | "skipped";

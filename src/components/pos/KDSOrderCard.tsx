@@ -1,14 +1,14 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { ChefHat, CheckCircle2, ArrowRight, Utensils, Flame } from 'lucide-react';
+import { ChefHat, CheckCircle2, ArrowRight, Utensils, Flame, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 import type { KDSOrder } from "@/features/pos/kds/types";
 
 interface KDSOrderCardProps {
   order: KDSOrder;
-  onStatusChange: (orderId: string, newStatus: string) => void;
+  onStatusChange: (orderId: string, newStatus: string) => void | Promise<void>;
   index: number;
 }
 
@@ -62,11 +62,24 @@ function formatWaitTime(seconds: number): string {
 }
 
 export function KDSOrderCard({ order, onStatusChange, index }: KDSOrderCardProps) {
-  const colors = STATUS_COLORS[order.status] || STATUS_COLORS.pending;
-  const nextStatus = STATUS_FLOW[order.status];
+  const displayStatus = order.station_status || order.status;
+  const colors = STATUS_COLORS[displayStatus] || STATUS_COLORS.pending;
+  const nextStatus = STATUS_FLOW[displayStatus];
+  const paid = String(order.payment_status || '').toLowerCase() === 'paid';
   const actionButtonClass = nextStatus ? ACTION_BUTTON_COLORS[nextStatus] || 'bg-gray-900 hover:bg-gray-800 text-white' : '';
   const [elapsed, setElapsed] = useState(order.wait_seconds);
+  const [updating, setUpdating] = useState(false);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const handleBump = async () => {
+    if (!nextStatus || updating) return;
+    setUpdating(true);
+    try {
+      await onStatusChange(order.id, nextStatus);
+    } finally {
+      setUpdating(false);
+    }
+  };
 
   useEffect(() => {
     // Keep the kitchen ticket timer aligned when polling returns a fresh wait value.
@@ -92,14 +105,25 @@ export function KDSOrderCard({ order, onStatusChange, index }: KDSOrderCardProps
       <div className="flex items-start justify-between mb-3">
         <div className="flex items-center gap-2">
           <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wide ${colors.badge}`}>
-            {STATUS_LABELS[order.status] || order.status}
+            {STATUS_LABELS[displayStatus] || displayStatus}
+          </span>
+          <span
+            className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide ${
+              paid ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+            }`}
+          >
+            {paid ? 'Lunas' : 'Open'}
           </span>
           {isUrgent && (
             <Flame className="w-4 h-4 text-red-500 animate-bounce" />
           )}
         </div>
         <div className="text-right">
-          <p className={`text-lg font-black ${isUrgent ? 'text-red-600' : colors.text}`}>
+          <p className={`text-3xl font-black tabular-nums leading-none ${isUrgent ? 'text-red-600' : colors.text}`}>
+            {order.queue_number || '—'}
+          </p>
+          <p className="mt-1 text-[10px] text-gray-500">No. Antrian</p>
+          <p className={`text-xs font-semibold ${isUrgent ? 'text-red-600' : colors.text}`}>
             {formatWaitTime(elapsed)}
           </p>
           <p className="text-[10px] text-gray-500 font-mono">{order.order_number}</p>
@@ -152,15 +176,18 @@ export function KDSOrderCard({ order, onStatusChange, index }: KDSOrderCardProps
         {nextStatus ? (
           <Button
             size="sm"
-            onClick={() => onStatusChange(order.id, nextStatus)}
+            onClick={() => void handleBump()}
+            disabled={updating}
             className={`${actionButtonClass} text-xs h-8 px-3 gap-1 shadow-sm`}
           >
-            {nextStatus === 'ready' ? (
+            {updating ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : nextStatus === 'ready' ? (
               <CheckCircle2 className="w-3.5 h-3.5" />
             ) : (
               <ArrowRight className="w-3.5 h-3.5" />
             )}
-            {STATUS_LABELS[nextStatus] || nextStatus}
+            {updating ? 'Menyimpan...' : STATUS_LABELS[nextStatus] || nextStatus}
           </Button>
         ) : (
           <Button

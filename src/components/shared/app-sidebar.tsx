@@ -17,7 +17,7 @@ import {
 import { toast } from "sonner";
 import { ActivityLogBell } from "@/components/layout/ActivityLogBell";
 import { NotificationBell } from "@/components/hris/NotificationBell";
-import { useTheme } from "@/components/providers/theme-provider";
+import { useThemeOrNull } from "@/components/providers/theme-provider";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -205,7 +205,13 @@ function AppSidebarWithSearch(props: AppSidebarProps) {
 export default function AppSidebar(props: AppSidebarProps) {
   return (
     <Suspense
-      fallback={<AppSidebarContent {...props} posImmersive={false} />}
+      fallback={
+        <div
+          className="min-h-dvh w-full"
+          style={{ background: "var(--page-mesh)" }}
+          aria-hidden
+        />
+      }
     >
       <AppSidebarWithSearch {...props} />
     </Suspense>
@@ -332,7 +338,9 @@ const THEME_MODES = [
 ];
 
 function ThemeToggle() {
-  const { state, setMode } = useTheme();
+  const theme = useThemeOrNull();
+  if (!theme) return null;
+  const { state, setMode } = theme;
   const currentIdx = THEME_MODES.findIndex((m) => m.value === state.mode);
   const current = THEME_MODES[currentIdx] ?? THEME_MODES[0];
   const next = THEME_MODES[(currentIdx + 1) % THEME_MODES.length];

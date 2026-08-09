@@ -1,12 +1,18 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { Suspense, useCallback, useEffect, useState } from 'react';
+import { usePathname, useSearchParams } from 'next/navigation';
 import {
   ChefHat, Volume2, VolumeX, RefreshCw, Monitor, Coffee, UtensilsCrossed, IceCreamBowl,
+  Maximize2, Minimize2, ArrowLeft, Tv,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
-import { useKds } from "../queries";
+import { isPosTabletQuery } from '@/features/pos/tablet-mode';
 import { KDSOrderCard } from '@/components/pos/KDSOrderCard';
+import { KDS_ROUTES } from '../constants';
+import { QUEUE_BOARD_ROUTE } from '@/features/pos/queue-board/constants';
+import { unlockKdsSound, useKds } from "../queries";
 
 const STATIONS = [
   { key: 'all', label: 'Semua', icon: Monitor },
@@ -28,6 +34,19 @@ function getTodayRange() {
 }
 
 export function KdsPage() {
+  return (
+    <Suspense fallback={<div className="flex h-dvh items-center justify-center bg-gray-950 text-sm text-gray-500">Memuat KDS...</div>}>
+      <KdsPageContent />
+    </Suspense>
+  );
+}
+
+function KdsPageContent() {
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const isImmersive =
+    pathname === KDS_ROUTES.fullscreen || isPosTabletQuery(searchParams);
+  const [isBrowserFullscreen, setIsBrowserFullscreen] = useState(false);
   const [station, setStation] = useState('all');
   const [dateScope, setDateScope] = useState<'today' | 'all'>('today');
   const todayRange = dateScope === 'today' ? getTodayRange() : { dateFrom: undefined, dateTo: undefined };
@@ -38,23 +57,69 @@ export function KdsPage() {
     pollInterval: 3000,
   });
 
-  const handleStatusChange = useCallback(
-    async (orderId: string, newStatus: string) => {
-      const result = await updateStatus(orderId, newStatus);
-      if (!result?.success) {
-        alert(result?.error || 'Gagal update status order');
+  useEffect(() => {
+    const sync = () => setIsBrowserFullscreen(Boolean(document.fullscreenElement));
+    sync();
+    document.addEventListener("fullscreenchange", sync);
+    return () => document.removeEventListener("fullscreenchange", sync);
+  }, []);
+
+  const enterImmersive = useCallback(() => {
+    unlockKdsSound();
+    window.location.assign(KDS_ROUTES.fullscreen);
+  }, []);
+
+  const exitImmersive = useCallback(async () => {
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+    } catch {
+      // ignore
+    }
+    window.location.assign(KDS_ROUTES.embedded);
+  }, []);
+
+  const toggleBrowserFullscreen = useCallback(async () => {
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
         return;
       }
+      await document.documentElement.requestFullscreen();
+    } catch {
+      toast.error("Browser menolak layar penuh. Coba klik lagi, atau tekan F11.");
+    }
+  }, []);
+
+  const handleStatusChange = useCallback(
+    async (orderId: string, newStatus: string) => {
+      const result = await updateStatus(
+        orderId,
+        newStatus,
+        undefined,
+        station === 'all' ? undefined : station
+      );
+      if (!result?.success) {
+        toast.error(result?.error || 'Gagal update status order');
+        return;
+      }
+      toast.success(
+        newStatus === 'ready'
+          ? 'Pesanan siap diambil'
+          : newStatus === 'served'
+            ? 'Pesanan disajikan'
+            : `Status diubah: ${newStatus}`
+      );
       await refresh();
     },
-    [updateStatus, refresh]
+    [updateStatus, refresh, station]
   );
 
-  // Group by status for visual ordering
+  // Group by station ticket status (not payment/order header alone)
   const grouped = orders.reduce(
     (acc, o) => {
-      acc[o.status] = acc[o.status] || [];
-      acc[o.status].push(o);
+      const key = String(o.station_status || o.status || 'pending').toLowerCase();
+      acc[key] = acc[key] || [];
+      acc[key].push(o);
       return acc;
     },
     {} as Record<string, typeof orders>
@@ -64,7 +129,11 @@ export function KdsPage() {
   const displayedOrders = displayOrder.flatMap((s) => grouped[s] || []);
 
   return (
-    <div className="h-screen bg-gray-950 text-white flex flex-col overflow-hidden">
+    <div
+      className={`flex flex-col overflow-hidden bg-gray-950 text-white ${
+        isImmersive ? "h-dvh" : "h-screen"
+      }`}
+    >
       {/* Header */}
       <header className="flex items-center justify-between px-4 py-3 bg-gray-900 border-b border-gray-800">
         <div className="flex items-center gap-3">
@@ -123,7 +192,13 @@ export function KdsPage() {
           <Button
             size="icon"
             variant="ghost"
-            onClick={() => setSoundEnabled((v) => !v)}
+            onClick={() => {
+              setSoundEnabled((v) => {
+                const next = !v;
+                if (next) unlockKdsSound();
+                return next;
+              });
+            }}
             className="text-gray-400 hover:text-white"
           >
             {soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
@@ -135,9 +210,54 @@ export function KdsPage() {
             variant="ghost"
             onClick={() => void refresh()}
             className="text-gray-400 hover:text-white"
+            title="Muat ulang"
           >
             <RefreshCw className="w-4 h-4" />
           </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={() =>
+              window.open(QUEUE_BOARD_ROUTE, "pos-queue-board", "popup=yes,width=1440,height=900")
+            }
+            className="text-gray-400 hover:text-white"
+            title="Buka TV antrian customer"
+          >
+            <Tv className="w-4 h-4" />
+          </Button>
+
+          {isImmersive ? (
+            <>
+              <Button
+                size="icon"
+                variant="ghost"
+                onClick={() => void toggleBrowserFullscreen()}
+                className="text-gray-400 hover:text-white"
+                title={isBrowserFullscreen ? "Keluar layar penuh browser" : "Layar penuh browser"}
+              >
+                {isBrowserFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+              </Button>
+              <Button
+                variant="ghost"
+                onClick={() => void exitImmersive()}
+                className="h-8 gap-1.5 px-2 text-xs text-gray-400 hover:text-white"
+                title="Kembali ke dashboard"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                Keluar
+              </Button>
+            </>
+          ) : (
+            <Button
+              size="icon"
+              variant="ghost"
+              onClick={enterImmersive}
+              className="text-gray-400 hover:text-white"
+              title="Mode layar penuh tanpa sidebar"
+            >
+              <Maximize2 className="w-4 h-4" />
+            </Button>
+          )}
         </div>
       </header>
 

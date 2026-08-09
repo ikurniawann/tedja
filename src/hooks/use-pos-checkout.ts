@@ -9,6 +9,7 @@ export interface PaymentResult {
   success: boolean;
   orderId?: string;
   orderNumber?: string;
+  queueNumber?: string | null;
   total: number;
   change: number;
   error?: string;
@@ -86,6 +87,7 @@ export function usePosCheckout() {
             name,
             group: `Option-${idx}`,
           })) || [],
+          station: item.station,
           quantity: Number(item.quantity),
           unit_price: Number(item.price - (item.variantPriceAdj || 0) - (item.modifierPriceAdj || 0)),
           variant_price_adjustment: item.variantPriceAdj || 0,
@@ -154,6 +156,7 @@ export function usePosCheckout() {
           success: true,
           orderId: response.data?.order_id || response.data?.id,
           orderNumber: response.data?.order_number,
+          queueNumber: response.data?.queue_number ?? null,
           total,
           change,
           xpEarned: response.data?.xp_earned,

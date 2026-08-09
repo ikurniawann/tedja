@@ -42,7 +42,7 @@ export async function POST(
     // 2. Fetch order
     const { data: order, error: orderErr } = await db
       .from('pos_orders')
-      .select('id, status, order_number, total_amount')
+      .select('id, status, payment_status, order_number, total_amount')
       .eq('id', orderId)
       .single();
 
@@ -53,8 +53,8 @@ export async function POST(
     if (order.status === 'voided') {
       return Response.json({ success: false, error: 'Order already voided' }, { status: 400 });
     }
-    if (order.status === 'completed') {
-      return Response.json({ success: false, error: 'Cannot void completed order' }, { status: 400 });
+    if (order.status === 'completed' || order.payment_status === 'paid') {
+      return Response.json({ success: false, error: 'Cannot void paid order' }, { status: 400 });
     }
     if (order.status === 'merged') {
       return Response.json({ success: false, error: 'Cannot void merged order' }, { status: 400 });

@@ -4,8 +4,9 @@ import { getPosSession } from '@/lib/api/auth';
 import { buildCostSnapshot, loadPosProductCostMap } from '@/lib/pos/purchasing-sync';
 import { checkProductPrivileges } from '@/lib/crm/product-privilege';
 import { normalizeGuestCount } from '@/lib/pos/guest-count';
-
-const STATIONS = ['kitchen', 'bar', 'bakery', 'dessert', 'merchandise', 'photobooth'];
+import { getCrmDefaultVenue } from '@/lib/crm/server';
+import { allocateQueueNumber } from '@/lib/pos/queue-number';
+import { buildKitchenPrintJobs, normalizeStation } from '@/lib/pos/kitchen-station';
 
 type OpenBillItem = {
   product_id?: string;
@@ -64,56 +65,6 @@ function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : 'Unknown error';
 }
 
-function normalizeStation(value?: string | null, productName = '', kitchenNotes = '') {
-  const lower = String(value || '').trim().toLowerCase();
-  if (STATIONS.includes(lower)) return lower;
-
-  const haystack = `${productName} ${kitchenNotes}`.toLowerCase();
-  if (/kopi|coffee|tea|teh|minuman|drink|juice|jus|soda|es|latte|cappuccino|mocktail|milkshake|bar/.test(haystack)) {
-    return 'bar';
-  }
-  if (/roti|bread|pastry|cake|kue|croissant|donut|dessert|ice cream|gelato|bakery/.test(haystack)) {
-    return 'bakery';
-  }
-  return 'kitchen';
-}
-
-function buildPrintJobs(order: Record<string, unknown>, insertedItems: PrintJobItem[]) {
-  const stationGroups = new Map<string, PrintJobItem[]>();
-
-  insertedItems.forEach((item) => {
-    const station = normalizeStation(item.station, item.product_name || '', item.kitchen_notes || '');
-    stationGroups.set(station, [...(stationGroups.get(station) || []), item]);
-  });
-
-  return Array.from(stationGroups.entries()).map(([station, stationItems]) => ({
-    order_id: order.id,
-    station,
-    job_type: station === 'bar' ? 'bar_ticket' : 'kitchen_ticket',
-    status: 'pending',
-    payload: {
-      order_id: order.id,
-      order_number: order.order_number,
-      order_type: order.order_type,
-      table_id: order.table_id,
-      station,
-      requested_at: new Date().toISOString(),
-      items: stationItems.map((item) => ({
-        id: item.id,
-        product_id: item.product_id,
-        product_name: item.product_name,
-        product_sku: item.product_sku,
-        variants: item.variants || [],
-        modifiers: item.modifiers || [],
-        quantity: Number(item.quantity) || 1,
-        unit_price: Number(item.unit_price) || 0,
-        total_amount: Number(item.total_amount) || 0,
-        notes: item.kitchen_notes || '',
-      })),
-    },
-  }));
-}
-
 export async function POST(request: NextRequest) {
   const sessionUserId = await getPosSession();
   if (!sessionUserId) {
@@ -161,6 +112,7 @@ export async function POST(request: NextRequest) {
     }
 
     const db = createPgClient();
+    const venue = await getCrmDefaultVenue(db);
 
     // Generate order number via existing RPC
     const { data: orderNumData, error: orderNumErr } = await db.rpc('generate_order_number');
@@ -169,40 +121,53 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Failed to generate order number' }, { status: 500 });
     }
     const orderNumber = typeof orderNumData === 'string' ? orderNumData : String(orderNumData);
+    const queueNumber = await allocateQueueNumber(db, venue.companyId, venue.branchId);
 
-    // Insert order
-    const { data: orderData, error: orderErr } = await db
+    const orderPayload = {
+      order_number: orderNumber,
+      queue_number: queueNumber,
+      order_type,
+      status: 'pending',
+      payment_status: 'unpaid',
+      company_id: venue.companyId,
+      branch_id: venue.branchId,
+      customer_id: customer_id || null,
+      cashier_id: cashier_id || sessionUserId,
+      server_id: server_id || null,
+      table_id: table_id || null,
+      // Dinormalisasi di server, bukan dipercaya dari klien: jalur lain
+      // (seat reservation, tablet) juga menembak endpoint ini.
+      guest_count: normalizeGuestCount(body.guest_count),
+      shift_id: shift_id || null,
+      subtotal: Number(subtotal) || 0,
+      discount_amount: Number(discount_amount) || 0,
+      discount_reason: discount_reason || null,
+      tax_amount: Number(tax_amount) || 0,
+      service_charge_amount: Number(service_charge_amount) || 0,
+      other_charges_amount: Number(other_charges_amount) || 0,
+      charges_breakdown: Array.isArray(charges_breakdown) ? charges_breakdown : [],
+      total_amount: Number(total_amount) || 0,
+      payment_method: null,
+      amount_paid: 0,
+      notes: notes || null,
+      special_requests: special_requests || null,
+      ark_coins_used: 0,
+      ordered_at: new Date().toISOString(),
+    };
+
+    let { data: orderData, error: orderErr } = await db
       .from('pos_orders')
-      .insert({
-        order_number: orderNumber,
-        order_type,
-        status: 'pending',
-        payment_status: 'unpaid',
-        customer_id: customer_id || null,
-        cashier_id: cashier_id || sessionUserId,
-        server_id: server_id || null,
-        table_id: table_id || null,
-        // Dinormalisasi di server, bukan dipercaya dari klien: jalur lain
-        // (seat reservation, tablet) juga menembak endpoint ini.
-        guest_count: normalizeGuestCount(body.guest_count),
-        shift_id: shift_id || null,
-        subtotal: Number(subtotal) || 0,
-        discount_amount: Number(discount_amount) || 0,
-        discount_reason: discount_reason || null,
-        tax_amount: Number(tax_amount) || 0,
-        service_charge_amount: Number(service_charge_amount) || 0,
-        other_charges_amount: Number(other_charges_amount) || 0,
-        charges_breakdown: Array.isArray(charges_breakdown) ? charges_breakdown : [],
-        total_amount: Number(total_amount) || 0,
-        payment_method: null,
-        amount_paid: 0,
-        notes: notes || null,
-        special_requests: special_requests || null,
-        ark_coins_used: 0,
-        ordered_at: new Date().toISOString(),
-      })
+      .insert(orderPayload)
       .select()
       .single();
+
+    if (orderErr?.code === '42703' || orderErr?.code === 'PGRST204') {
+      const legacyPayload = { ...orderPayload };
+      delete (legacyPayload as { queue_number?: string | null }).queue_number;
+      const legacyResult = await db.from('pos_orders').insert(legacyPayload).select().single();
+      orderData = legacyResult.data;
+      orderErr = legacyResult.error;
+    }
 
     if (orderErr || !orderData) {
       console.error('Open bill insert error:', orderErr);
@@ -299,7 +264,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: itemsErr.message }, { status: 500 });
     }
 
-    const printJobs = buildPrintJobs(orderData, (insertedItems || orderItems) as PrintJobItem[]);
+    const printJobs = buildKitchenPrintJobs(orderData, (insertedItems || orderItems) as PrintJobItem[]);
     if (printJobs.length > 0) {
       const { error: printJobError } = await db
         .from('pos_print_jobs')

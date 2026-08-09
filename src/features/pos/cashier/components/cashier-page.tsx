@@ -823,13 +823,13 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       try {
         let orderId: string;
         let orderNumber: string;
+        let queueNumber: string | null = null;
         const cTotal = total;
 
         if (paymentOrderId) {
           const data = await payOpenOrderMutation.mutateAsync({
             orderId: paymentOrderId,
             payload: {
-              status: 'completed',
               payment_status: 'paid',
               payment_method: 'gift_card',
               amount_paid: 0,
@@ -839,6 +839,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
           });
           orderId = paymentOrderId;
           orderNumber = payingOrderNumber || data.data?.order_number || paymentOrderId;
+          queueNumber = data.data?.queue_number || null;
         } else {
           const res = await checkout({
             cart: cart.items,
@@ -862,11 +863,13 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
           }
           orderId = res.orderId || '';
           orderNumber = res.orderNumber || '';
+          queueNumber = res.queueNumber || null;
         }
 
         const receipt: ReceiptPayload = {
           orderId,
           orderNumber,
+          queueNumber,
           orderType: cart.orderType,
           table: selectedTableDisplay,
           items: [...cart.items],
@@ -914,13 +917,13 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       try {
         let orderId: string;
         let orderNumber: string;
+        let queueNumber: string | null = null;
         const cTotal = total;
 
         if (paymentOrderId) {
           const data = await payOpenOrderMutation.mutateAsync({
             orderId: paymentOrderId,
             payload: {
-              status: 'completed',
               payment_status: 'paid',
               payment_method: 'nfc_tab',
               amount_paid: 0,
@@ -930,6 +933,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
           });
           orderId = paymentOrderId;
           orderNumber = payingOrderNumber || data.data?.order_number || paymentOrderId;
+          queueNumber = data.data?.queue_number || null;
         } else {
           const res = await checkout({
             cart: cart.items,
@@ -953,11 +957,13 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
           }
           orderId = res.orderId || '';
           orderNumber = res.orderNumber || '';
+          queueNumber = res.queueNumber || null;
         }
 
         const receipt: ReceiptPayload = {
           orderId,
           orderNumber,
+          queueNumber,
           orderType: cart.orderType,
           table: selectedTableDisplay,
           items: [...cart.items],
@@ -1008,7 +1014,6 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         const data = await payOpenOrderMutation.mutateAsync({
           orderId: paymentOrderId,
           payload: {
-            status: 'completed',
             payment_status: 'paid',
             payment_method: paymentMethodForApi,
             amount_paid: paidAmount,
@@ -1019,6 +1024,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         const receipt: ReceiptPayload = {
           orderId: paymentOrderId,
           orderNumber: payingOrderNumber || data.data?.order_number || paymentOrderId,
+          queueNumber: data.data?.queue_number || null,
           orderType: cart.orderType,
           table: selectedTableDisplay,
           items: [...cart.items],
@@ -1145,6 +1151,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       const receipt: ReceiptPayload = {
         orderId: res.orderId,
         orderNumber: res.orderNumber,
+        queueNumber: res.queueNumber || null,
         orderType: cart.orderType,
         table: selectedTableDisplay,
         items: [...cart.items],
@@ -1351,7 +1358,11 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       });
 
       if (res.success && res.data) {
-        toast.success(`Open bill saved — Order ${res.data.order_number}`);
+        toast.success(
+          res.data.queue_number
+            ? `Open bill tersimpan — Antrian ${res.data.queue_number}`
+            : `Open bill tersimpan — Order ${res.data.order_number}`
+        );
         cart.clearCart();
         maybeReturnToRestaurant();
       } else {
@@ -1477,6 +1488,22 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
           >
             <MonitorIcon className="mr-2 h-4 w-4" />
             Layar Customer
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            title="Buka TV antrian customer — drag ke TV/monitor tamu, lalu F11"
+            className="border-gray-200/80 text-gray-700 hover:border-primary/30 hover:bg-primary/10 hover:text-primary"
+            onClick={() =>
+              window.open(
+                "/pos/queue",
+                "pos-queue-board",
+                "popup=yes,width=1440,height=900"
+              )
+            }
+          >
+            <MonitorIcon className="mr-2 h-4 w-4" />
+            TV Antrian
           </Button>
           {isTabletMode ? (
             <>
@@ -2330,10 +2357,18 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
                       <h2 className="text-xl font-bold text-foreground">
                         Payment successful
                       </h2>
+                      {resultPayload.queueNumber ? (
+                        <p className="text-4xl font-black tabular-nums text-foreground">
+                          {resultPayload.queueNumber}
+                        </p>
+                      ) : null}
                       <p className="text-sm text-muted-foreground">
-                        Order #
-                        {resultPayload.orderNumber?.slice(-8).toUpperCase() ||
-                          resultPayload.orderId?.slice(-8).toUpperCase()}
+                        {resultPayload.queueNumber
+                          ? `Nomor Antrian · Order ${resultPayload.orderNumber || ""}`
+                          : `Order #${
+                              resultPayload.orderNumber?.slice(-8).toUpperCase() ||
+                              resultPayload.orderId?.slice(-8).toUpperCase()
+                            }`}
                       </p>
                     </div>
 

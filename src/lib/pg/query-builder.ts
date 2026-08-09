@@ -60,7 +60,7 @@ async function loadForeignKeys(pool: Pool): Promise<ForeignKey[]> {
 const qid = (id: string) => `"${id.replace(/"/g, '""')}"`;
 
 /** Parse PostgREST-style IN list: ('a','b') atau ["a","b"] */
-function parseInValues(value: unknown): unknown[] {
+export function parseInValues(value: unknown): unknown[] {
   if (Array.isArray(value)) return value;
   if (typeof value !== "string") return [value];
   const s = value.trim();
@@ -88,7 +88,12 @@ function parseInValues(value: unknown): unknown[] {
       cur += ch;
     } else if (ch === "'" || ch === '"') {
       quote = ch;
-    } else if (ch !== "," && !/\s/.test(ch)) {
+    } else if (ch === ",") {
+      if (cur) {
+        items.push(cur);
+        cur = "";
+      }
+    } else if (!/\s/.test(ch)) {
       cur += ch;
     }
   }

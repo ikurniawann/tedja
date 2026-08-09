@@ -22,12 +22,13 @@ export async function listKdsOrders(params: KdsListParams = {}): Promise<KDSOrde
 export async function updateKdsOrderStatus(
   orderId: string,
   status: string,
-  reason?: string
+  reason?: string,
+  station?: string
 ): Promise<{ success: boolean; error?: string }> {
   const res = await fetch(`/api/pos/orders/${orderId}/status`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ status, reason }),
+    body: JSON.stringify({ status, reason, station }),
   });
   return res.json();
 }

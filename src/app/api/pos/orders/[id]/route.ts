@@ -10,6 +10,8 @@ import {
   redeemGiftCardForPosOrder,
   refundGiftCardForPosOrder,
 } from '@/lib/giftcard/giftcard-server';
+import { ensureQueueNumber } from '@/lib/pos/queue-number';
+import { AccountingPostError } from '@/lib/pos/accounting-posting';
 
 type OrderPatchBody = {
   status?: string;
@@ -50,22 +52,22 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     const numericArkUsed = Number(ark_coins_used) || 0;
 
     const updateData: Record<string, string | number> = {};
-    if (status) updateData.status = status;
+    if (status && status !== 'completed') updateData.status = status;
     if (payment_status) updateData.payment_status = payment_status;
     if (payment_method) updateData.payment_method = payment_method;
     if (amount_paid !== undefined) updateData.amount_paid = numericAmountPaid;
     if (ark_coins_used !== undefined) updateData.ark_coins_used = numericArkUsed;
     if (notes) updateData.notes = notes;
 
-    // Add timestamps based on status
-    if (status === 'completed') {
-      updateData.completed_at = new Date().toISOString();
+    // Payment no longer drives kitchen status. Client may still send
+    // status=completed when paying; treat it as paid only.
+    if (status === 'completed' || payment_status === 'paid') {
       updateData.payment_status = 'paid';
     }
 
     const { data: existing, error: fetchErr } = await db
       .from('pos_orders')
-      .select('customer_id, payment_status, payment_method, total_amount, order_number, company_id, branch_id')
+      .select('customer_id, payment_status, payment_method, total_amount, order_number, company_id, branch_id, queue_number, status')
       .eq('id', orderId)
       .single();
 
@@ -288,12 +290,46 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       });
     }
 
+    const nowPaid =
+      (updateData.payment_status === 'paid' || payment_status === 'paid') &&
+      existing.payment_status !== 'paid';
+
+    if (nowPaid) {
+      const queueNumber = await ensureQueueNumber(db, {
+        id: orderId,
+        queue_number: existing.queue_number as string | null,
+        company_id: existing.company_id as string | null,
+        branch_id: existing.branch_id as string | null,
+      });
+      if (queueNumber && data) {
+        (data as { queue_number?: string | null }).queue_number = queueNumber;
+      }
+    }
+
+    let accountingNote: string | null = null;
+    if (nowPaid) {
+      try {
+        const { postPosSaleAccountingJournals } = await import('@/lib/pos/accounting-posting');
+        const accounting = await postPosSaleAccountingJournals({
+          db,
+          orderId,
+          userId: sessionUserId,
+          paymentMethod: effectiveMethod,
+        });
+        accountingNote = accounting.note;
+      } catch (err) {
+        if (err instanceof AccountingPostError) {
+          return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+        }
+        throw err;
+      }
+    }
+
     let crmXp = null;
     if (data.customer_id && (status === 'completed' || payment_status === 'paid')) {
       // Statistik kunjungan/belanja untuk SEMUA metode; hanya sekali per order
       // (saat transisi ke paid), agar visit_count tidak dobel.
-      const nowPaid = updateData.payment_status === 'paid' || payment_status === 'paid';
-      if (nowPaid && existing.payment_status !== 'paid') {
+      if (nowPaid) {
         await syncPosCustomerOrderStats(db, data.customer_id, Number(data.total_amount || 0));
       }
 
@@ -312,7 +348,12 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       });
     }
 
-    return NextResponse.json({ success: true, data, crm_xp: crmXp });
+    return NextResponse.json({
+      success: true,
+      data,
+      crm_xp: crmXp,
+      message: accountingNote || undefined,
+    });
   } catch (error: unknown) {
     console.error('Error updating order:', error);
     return NextResponse.json(

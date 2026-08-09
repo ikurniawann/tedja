@@ -12,6 +12,7 @@ import {
   validateProductWarehouseScope,
 } from "@/lib/api/scope";
 import { syncPurchasingProductToPos } from "@/lib/pos/purchasing-sync";
+import { resolvePosStation } from "@/lib/pos/kitchen-station";
 import { withProductHppReview } from "@/lib/purchasing/product-hpp-review";
 
 const productSchema = z.object({
@@ -25,6 +26,10 @@ const productSchema = z.object({
   harga_modal: z.coerce.number().min(0).optional(),
   markup_persen: z.coerce.number().optional(),
   production_output_type: z.enum(["FINISHED_GOOD", "WIP"]).default("FINISHED_GOOD").optional(),
+  station: z
+    .enum(["kitchen", "bar", "bakery", "dessert", "merchandise", "photobooth"])
+    .default("kitchen")
+    .optional(),
 });
 
 function getErrorMessage(error: unknown, fallback: string) {
@@ -203,6 +208,7 @@ export async function POST(request: NextRequest) {
         harga_modal: validated.harga_modal,
         markup_persen: validated.markup_persen,
         production_output_type: validated.production_output_type,
+        station: resolvePosStation(validated.station, validated.kategori),
         kode,
         company_id: companyId,
         branch_id: branchId,
@@ -220,16 +226,11 @@ export async function POST(request: NextRequest) {
 
     let posSync = null;
     if (outputType === "FINISHED_GOOD") {
-      const kategori = String((data as { kategori?: string | null }).kategori || "");
-      const station = /coffee|tea|beverage|juice|mocktail|minuman|drink|bar/i.test(kategori)
-        ? "bar"
-        : "kitchen";
+      const row = data as { id: string; kategori?: string | null; station?: string | null };
       try {
-        posSync = await syncPurchasingProductToPos(
-          db,
-          (data as { id: string }).id,
-          { station }
-        );
+        posSync = await syncPurchasingProductToPos(db, row.id, {
+          station: resolvePosStation(row.station, row.kategori),
+        });
       } catch (syncError) {
         console.warn("POS sync after product create failed:", syncError);
       }

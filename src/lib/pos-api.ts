@@ -368,11 +368,13 @@ export interface OrderItem {
   unit_price: number;
   subtotal: number;
   total_amount: number;
+  station?: string;
 }
 
 export interface Order {
   id: string;
   order_number?: string;
+  queue_number?: string | null;
   order_type?: string;
   status?: string;
   payment_status?: string;

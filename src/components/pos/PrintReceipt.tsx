@@ -5,6 +5,7 @@ import type { PosCartItem } from "@/hooks/use-pos-cart";
 export interface ReceiptPayload {
   orderId?: string;
   orderNumber?: string;
+  queueNumber?: string | null;
   orderType: string;
   table: string | null;
   items: PosCartItem[];
@@ -36,6 +37,7 @@ export function printThermalReceipt(payload: ReceiptPayload, label: ThermalPrint
   const {
     orderId,
     orderNumber,
+    queueNumber,
     orderType,
     table,
     items,
@@ -149,6 +151,7 @@ export function printThermalReceipt(payload: ReceiptPayload, label: ThermalPrint
     <h1>--- ${heading} ---</h1>
     <div class="big">${orderType.replace(/_/g, "-").toUpperCase()}</div>
     ${table ? `<div class="center">${table}</div>` : ""}
+    ${queueNumber ? `<div class="big">ANTRIAN ${queueNumber}</div>` : ""}
     <div class="center">Order #${(orderNumber || "").slice(-8).toUpperCase() || (orderId || "").slice(-8).toUpperCase()}</div>
     <div class="center">${new Date().toLocaleTimeString("id-ID")}</div>
     ${customerName ? `<div class="center">Customer: ${customerName}</div>` : ""}

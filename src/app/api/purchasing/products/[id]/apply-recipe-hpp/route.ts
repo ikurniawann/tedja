@@ -3,17 +3,10 @@ import { createServerPgClient } from "@/lib/pg/create-client";
 import { getApiUserScope, isRowInBusinessScope } from "@/lib/api/scope";
 import { syncPurchasingProductToPos } from "@/lib/pos/purchasing-sync";
 import { buildProductHppReview } from "@/lib/purchasing/product-hpp-review";
+import { resolvePosStation } from "@/lib/pos/kitchen-station";
 
 function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
-}
-
-function stationFromCategory(kategori?: string | null) {
-  return /coffee|tea|beverage|juice|mocktail|minuman|drink|bar/i.test(
-    String(kategori || "")
-  )
-    ? "bar"
-    : "kitchen";
 }
 
 // POST /api/purchasing/products/:id/apply-recipe-hpp
@@ -94,9 +87,11 @@ export async function POST(
     let posSync = null;
     if (outputType === "FINISHED_GOOD") {
       try {
+        const row = updated as { kategori?: string | null; station?: string | null };
         posSync = await syncPurchasingProductToPos(db, id, {
-          station: stationFromCategory(
-            (updated as { kategori?: string | null }).kategori || product.kategori
+          station: resolvePosStation(
+            row.station ?? (product as { station?: string | null }).station,
+            row.kategori || product.kategori
           ),
           costPriceOverride: review.hpp_resep,
         });

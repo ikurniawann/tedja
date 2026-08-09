@@ -1,7 +1,7 @@
 import { act, render, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 import { THEME_STORAGE_KEY } from "@/lib/theme/theme-state";
-import { ThemeProvider, useTheme } from "./theme-provider";
+import { ThemeProvider, useTheme, useThemeOrNull } from "./theme-provider";
 
 const wrapper = ({ children }: { children: React.ReactNode }) => (
   <ThemeProvider>{children}</ThemeProvider>
@@ -26,5 +26,10 @@ describe("useTheme", () => {
     act(() => result.current.setMode("dark"));
     expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
     expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toContain("dark");
+  });
+
+  it("useThemeOrNull returns null outside ThemeProvider", () => {
+    const { result } = renderHook(() => useThemeOrNull());
+    expect(result.current).toBeNull();
   });
 });

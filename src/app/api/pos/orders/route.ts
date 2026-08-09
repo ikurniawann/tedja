@@ -32,6 +32,13 @@ import {
   type IssuedGiftCard,
 } from '@/lib/giftcard/giftcard-server';
 import { sendGiftCardSoldWa } from '@/lib/giftcard/gift-card-wa';
+import { allocateQueueNumber, ensureQueueNumber } from '@/lib/pos/queue-number';
+import {
+  backfillMissingItemStations,
+  buildKitchenPrintJobs,
+  normalizeStation,
+} from '@/lib/pos/kitchen-station';
+import { AccountingPostError } from '@/lib/pos/accounting-posting';
 
 type PosOrderItemRequest = {
   product_id?: string;
@@ -105,13 +112,6 @@ function isUuid(value: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
-function normalizeStation(value?: string) {
-  const station = String(value || '').trim().toLowerCase();
-  if (['kitchen', 'bar', 'bakery', 'dessert', 'merchandise', 'photobooth'].includes(station)) {
-    return station;
-  }
-  return 'kitchen';
-}
 
 // GET /api/pos/orders — list orders with filters
 export async function GET(request: NextRequest) {
@@ -331,6 +331,21 @@ export async function POST(request: NextRequest) {
         .update({ guest_count: normalizeGuestCount(body.guest_count) })
         .eq('id', result.order_id);
 
+      const venueForSplit = await getCrmDefaultVenue(db);
+      await db
+        .from('pos_orders')
+        .update({
+          company_id: venueForSplit.companyId,
+          branch_id: body.branch_id || venueForSplit.branchId,
+        })
+        .eq('id', result.order_id);
+      await ensureQueueNumber(db, {
+        id: result.order_id,
+        company_id: venueForSplit.companyId,
+        branch_id: body.branch_id || venueForSplit.branchId,
+      });
+      await backfillMissingItemStations(db, result.order_id);
+
       // Fetch complete order with relations
       const { data: completeOrder } = await db
         .from('pos_orders')
@@ -347,12 +362,18 @@ export async function POST(request: NextRequest) {
     // Single-payment flow
     // Avoid the old DB RPC because some deployed databases still have p_order_type TEXT
     // inserted into pos_order_type enum without casting.
+    const venue = await getCrmDefaultVenue(db);
     const { data: orderNumData, error: orderNumErr } = await db.rpc('generate_order_number');
     if (orderNumErr) {
       return NextResponse.json({ success: false, error: orderNumErr.message }, { status: 500 });
     }
 
     const orderNumber = typeof orderNumData === 'string' ? orderNumData : String(orderNumData);
+    const queueNumber = await allocateQueueNumber(
+      db,
+      venue.companyId,
+      body.branch_id || venue.branchId
+    );
     const serverSubtotal = items.reduce((sum: number, item: PosOrderItemRequest) => {
       const qty = Number(item.quantity) || 1;
       const unit = Number(item.unit_price) || 0;
@@ -375,7 +396,6 @@ export async function POST(request: NextRequest) {
     const promoCode = String(body.promo_code || '').trim();
     let promoHold: PromoHold | null = null;
     let promoOrderId: string | null = null;
-    const venue = await getCrmDefaultVenue(db);
     if (promoCode) {
       const promoCompanyId = venue.companyId;
       const promoBranchId = body.branch_id || venue.branchId;
@@ -575,8 +595,9 @@ export async function POST(request: NextRequest) {
       .insert({
         ...(promoOrderId ? { id: promoOrderId } : {}),
         order_number: orderNumber,
+        queue_number: queueNumber,
         order_type,
-        status: deferPaid ? 'pending' : 'completed',
+        status: 'pending',
         payment_status: deferPaid ? 'unpaid' : 'paid',
         company_id: venue.companyId,
         branch_id: body.branch_id || venue.branchId,
@@ -601,7 +622,6 @@ export async function POST(request: NextRequest) {
         notes: notes || null,
         special_requests: special_requests || null,
         ordered_at: new Date().toISOString(),
-        ...(deferPaid ? {} : { completed_at: new Date().toISOString() }),
       })
       .select()
       .single();
@@ -669,7 +689,7 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      orderData.status = 'completed';
+      orderData.status = 'pending';
       orderData.payment_status = 'paid';
     }
 
@@ -724,9 +744,7 @@ export async function POST(request: NextRequest) {
       const { error: markPaidErr } = await db
         .from('pos_orders')
         .update({
-          status: 'completed',
           payment_status: 'paid',
-          completed_at: new Date().toISOString(),
         })
         .eq('id', orderData.id);
       if (markPaidErr) {
@@ -742,7 +760,7 @@ export async function POST(request: NextRequest) {
         );
         throw markPaidErr;
       }
-      orderData.status = 'completed';
+      orderData.status = 'pending';
       orderData.payment_status = 'paid';
     }
 
@@ -773,13 +791,11 @@ export async function POST(request: NextRequest) {
       const { error: markPaidErr } = await db
         .from('pos_orders')
         .update({
-          status: 'completed',
           payment_status: 'paid',
-          completed_at: new Date().toISOString(),
         })
         .eq('id', orderData.id);
       if (markPaidErr) throw markPaidErr;
-      orderData.status = 'completed';
+      orderData.status = 'pending';
       orderData.payment_status = 'paid';
     }
 
@@ -815,7 +831,11 @@ export async function POST(request: NextRequest) {
         discount_amount: 0,
         total_amount: subtotalValue,
         xp_earned: 0,
-        station: normalizeStation(item.station),
+        station: normalizeStation(
+          item.station,
+          String(item.product_name || ''),
+          ''
+        ),
         kitchen_status: 'pending',
         // EPIC-039 Fase A — true untuk baris merchandise yang stoknya sudah
         // diklaim di atas; dipakai restore saat order dibatalkan.
@@ -869,10 +889,25 @@ export async function POST(request: NextRequest) {
     await db.from('pos_order_status_history').insert({
       order_id: orderData.id,
       from_status: null,
-      to_status: 'completed',
+      to_status: 'pending',
       changed_by: effectiveCashierId,
-      notes: 'Order created and paid from cashier',
+      notes: deferPaid
+        ? 'Order created from cashier'
+        : 'Order created and paid from cashier',
     });
+
+    const printJobs = buildKitchenPrintJobs(
+      { ...orderData, queue_number: queueNumber },
+      orderItems
+    );
+    if (printJobs.length > 0) {
+      const { error: printJobError } = await db
+        .from('pos_print_jobs')
+        .insert(printJobs);
+      if (printJobError && printJobError.code !== '42P01' && printJobError.code !== 'PGRST205') {
+        console.warn('Checkout print jobs warning:', printJobError.message);
+      }
+    }
 
     // Statistik kunjungan/belanja untuk semua metode pembayaran
     if (customer_id) {
@@ -935,6 +970,18 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    let accountingNote: string | null = null;
+    if (orderData.payment_status === 'paid') {
+      const { postPosSaleAccountingJournals } = await import('@/lib/pos/accounting-posting');
+      const accounting = await postPosSaleAccountingJournals({
+        db,
+        orderId: orderData.id,
+        userId: sessionUserId,
+        paymentMethod: payment_method,
+      });
+      accountingNote = accounting.note;
+    }
+
     const { data: completeOrder } = await db
       .from('pos_orders')
       .select(`*, customer:pos_customers(name, phone), items:pos_order_items(*)`)
@@ -946,6 +993,7 @@ export async function POST(request: NextRequest) {
         success: true,
         data: completeOrder || orderData,
         crm_xp: crmXp,
+        message: accountingNote || undefined,
         ...(sellsGiftCard
           ? { gift_cards: giftCardsIssued, gift_card_error: giftCardIssueError }
           : {}),
@@ -953,6 +1001,9 @@ export async function POST(request: NextRequest) {
       { status: 201 }
     );
   } catch (error: unknown) {
+    if (error instanceof AccountingPostError) {
+      return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    }
     console.error('Error creating order:', error);
     if (merchClaims.length > 0) {
       // Error dilempar setelah stok diklaim (mis. markPaidErr) → kembalikan.

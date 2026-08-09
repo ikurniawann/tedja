@@ -4,6 +4,7 @@ import { createPgClient } from "@/lib/pg/create-client";
 import { awardCrmXpForPosOrder, syncPosCustomerOrderStats } from "@/lib/crm/loyalty-engine";
 import { getCrmDefaultVenue } from "@/lib/crm/server";
 import { checkProductPrivileges } from "@/lib/crm/product-privilege";
+import { allocateQueueNumber } from "@/lib/pos/queue-number";
 
 const orderItemSchema = z.object({
   product_id: z.string().uuid(),
@@ -124,11 +125,13 @@ export async function POST(request: NextRequest) {
     const paymentStatus = selfPaid ? "paid" : "unpaid";
     const orderStatus = selfPaid ? "confirmed" : "pending";
     const paymentMethod = selfPaid ? "ark_coin" : null;
+    const queueNumber = await allocateQueueNumber(db, venue.companyId, venue.branchId);
 
     const { data: order, error: orderError } = await db
       .from("pos_orders")
       .insert({
         order_number: orderNumber,
+        queue_number: queueNumber,
         order_type: "dine_in",
         status: orderStatus,
         payment_status: paymentStatus,
@@ -198,6 +201,20 @@ export async function POST(request: NextRequest) {
 
     if (selfPaid && payload.customer_id) {
       await syncPosCustomerOrderStats(db, payload.customer_id, total);
+    }
+
+    if (selfPaid) {
+      try {
+        const { postPosSaleAccountingJournals } = await import("@/lib/pos/accounting-posting");
+        await postPosSaleAccountingJournals({
+          db,
+          orderId,
+          userId: cashierId,
+          paymentMethod: "ark_coin",
+        });
+      } catch (err) {
+        console.error("[table-order] accounting post error:", err);
+      }
     }
 
     const crmXp = selfPaid

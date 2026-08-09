@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createPgClient } from "@/lib/pg/create-client";
 import { getPosSession } from '@/lib/api/auth';
 import { awardCrmXpForSplitPayment, syncPosCustomerOrderStats } from '@/lib/crm/loyalty-engine';
+import { AccountingPostError } from '@/lib/pos/accounting-posting';
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : 'Unknown error';
@@ -113,15 +114,19 @@ export async function POST(
       }
     }
 
-    const { error: paymentError } = await db.from('pos_split_payments').insert({
-      split_id: splitId,
-      order_id: orderId,
-      amount: amountPaid,
-      change_amount: changeAmount,
-      payment_method,
-      reference_number: reference_number || null,
-      cashier_id: cashierId,
-    });
+    const { data: paymentRow, error: paymentError } = await db
+      .from('pos_split_payments')
+      .insert({
+        split_id: splitId,
+        order_id: orderId,
+        amount: amountPaid,
+        change_amount: changeAmount,
+        payment_method,
+        reference_number: reference_number || null,
+        cashier_id: cashierId,
+      })
+      .select('id')
+      .single();
 
     if (paymentError) {
       return NextResponse.json({ success: false, error: paymentError.message }, { status: 500 });
@@ -161,7 +166,6 @@ export async function POST(
       .from('pos_orders')
       .update({
         payment_status: paymentStatus,
-        ...(allPaid ? { completed_at: new Date().toISOString() } : {}),
       })
       .eq('id', orderId);
 
@@ -180,6 +184,52 @@ export async function POST(
     // Statistik kunjungan/belanja untuk semua metode pembayaran
     if (split.customer_id) {
       await syncPosCustomerOrderStats(db, split.customer_id, splitTotal);
+    }
+
+    let accountingNote: string | null = null;
+    try {
+      const { data: orderRow } = await db
+        .from('pos_orders')
+        .select('total_amount, service_charge_amount, other_charges_amount')
+        .eq('id', orderId)
+        .maybeSingle();
+      const { data: costItems } = await db
+        .from('pos_order_items')
+        .select('cost_total')
+        .eq('order_id', orderId);
+      const orderCogs = (costItems || []).reduce(
+        (sum, item) => sum + Math.max(0, Number(item.cost_total) || 0),
+        0
+      );
+      const {
+        postPosSaleAccountingJournals,
+        buildSplitAccountingAmounts,
+      } = await import('@/lib/pos/accounting-posting');
+      const accounting = await postPosSaleAccountingJournals({
+        db,
+        orderId,
+        userId: sessionUserId,
+        paymentMethod: payment_method,
+        documentId: paymentRow?.id || splitId,
+        documentType: 'pos_split_payment',
+        amountsOverride: buildSplitAccountingAmounts({
+          subtotal: Number(split.subtotal) || 0,
+          discount_amount: Number(split.discount_amount) || 0,
+          tax_amount: Number(split.tax_amount) || 0,
+          total_amount: splitTotal,
+          amount_paid: amountPaid,
+          orderTotal: Number(orderRow?.total_amount) || splitTotal,
+          orderCogs,
+          service_charge_amount: Number(orderRow?.service_charge_amount) || 0,
+          other_charges_amount: Number(orderRow?.other_charges_amount) || 0,
+        }),
+      });
+      accountingNote = accounting.note;
+    } catch (err) {
+      if (err instanceof AccountingPostError) {
+        return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+      }
+      throw err;
     }
 
     const crmXp = await awardCrmXpForSplitPayment(db, {
@@ -202,6 +252,7 @@ export async function POST(
         payment_status: paymentStatus,
         crm_xp: crmXp,
       },
+      message: accountingNote || undefined,
     });
   } catch (error: unknown) {
     console.error('Error paying split:', error);

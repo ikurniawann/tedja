@@ -56,6 +56,21 @@
 - Update `iam-menus.sql` + whitelist soft-delete; `RM_ROUTES.purchasingInvoice` + redirect next.config ke path Accounting.
 - Detail PO dari AP: deteksi `/accounts-payable/po/` selain `/invoice/po/`.
 
+## POS journal mapping + KDS + antrian
+- Jurnal POS cash-basis: hook setelah lunas (checkout / PATCH pay / split pay), bukan open bill atau KDS status.
+- `sourceModule: "POS"`; sale + COGS = 2 event, `document_id` sama (order id). Split pakai `pos_split_payments.id`.
+- NFC Tab skip jurnal POS (AR pindah ticketing). Hybrid sama purchasing: mapping kosong → skip/draft; fiscal gagal → `AccountingPostError`.
+- Mapping sale wajib DISCOUNT (Dr, optional) + SERVICE_CHARGE (Cr, optional) + TAX optional supaya ticket diskon/SC/tax=0 tetap balance.
+- KDS = `pos_orders` + items, bukan tabel `pos_kds_*`. Payment jangan set `status=completed` — pisahkan `payment_status` vs kitchen status. Status bump per station.
+- Item `kitchen_status` check harus include `confirmed`. Jangan map `confirmed` → `pending`: derive order status dari item lalu ticket KDS tidak bergerak. Gagal update item harus 500, jangan `console.warn`.
+- Nomor antrian = kolom `queue_number` pendek harian, generate sekali via `generate_queue_number` (advisory lock). Jangan reuse `order_number`.
+- Query builder `IN`/`NOT IN`: jangan `.not('col','in','(a,b)')` tanpa quote — parser lama nyatu jadi `"ab"`. Prefer array `.not('col','in', ['a','b'])`. Enum Postgres akan error `22P02`.
+- KDS fullscreen = `/pos/kds` di LUAR `/dashboard/pos` layout (App Router tidak bisa opt-out induk). Sama pola `/pos/customer-display`. Jangan taruh fullscreen KDS di bawah layout yang masih `AppSidebar`.
+- `AppSidebar` Suspense fallback jangan render `ThemeToggle`/`useTheme` (atau chrome penuh). `useSearchParams` suspend → fallback SSR kadang di luar ThemeProvider → crash `useTheme must be used within ThemeProvider`. Fallback = shell mesh kosong; `ThemeToggle` pakai `useThemeOrNull`.
+- TV antrian customer = `/pos/queue` (bukan CFD `/pos/customer-display`). CFD = monitor kasir (cart/bayar); queue board = dinding tamu (nomor + status).
+- Menu baru: delta + INSERT `iam-menus.sql` + whitelist prune. Code `pos.kitchen.queue-board` di bawah `pos.kitchen`. Icon wajib ada di `VALID_ICONS` (pakai `video`, bukan `monitor`/`tv`).
+- Unique index harian tidak boleh pakai `timezone()`/`now()` (bukan IMMUTABLE). Wrapper `pos_jkt_date(timestamptz)` IMMUTABLE + index pada `ordered_at` saja.
+
 ## Purchasing → Accounting journal mapping
 - Hook setelah stok GRN / payment posted / return approved; jangan di PO create.
 - Idempotensi: `(company_id, source_event_code, source_document_id)` — GRN memicu 2 event berbeda dengan `document_id` sama.

@@ -55,6 +55,7 @@ INSERT INTO iam.menus (code, menu_name, route_path, icon, menu_type, order_numbe
   ('items.raw-material.master', 'Data Master', NULL, 'database', 'group', 10, '{"actions":["read"]}'::jsonb),
   ('pos.catalog.products', 'Produk', '/dashboard/pos/products', 'cube', 'sidebar', 10, '{"actions":["read"]}'::jsonb),
   ('pos.kitchen.kds', 'KDS', '/dashboard/pos/kds', 'cube', 'sidebar', 10, '{"actions":["read"]}'::jsonb),
+  ('pos.kitchen.queue-board', 'TV Antrian', '/pos/queue', 'video', 'sidebar', 15, '{"actions":["read"]}'::jsonb),
   ('pos.loyalty.topup', 'Topup', '/dashboard/pos/topup', 'money', 'sidebar', 10, '{"actions":["read"]}'::jsonb),
   ('pos.loyalty.settings', 'ARK & XP', '/dashboard/pos/loyalty-settings', 'settings', 'sidebar', 20, '{"actions":["read","update"]}'::jsonb),
   ('pos.operations.cashier', 'Kasir', '/dashboard/pos/tablet', 'shopping', 'sidebar', 10, '{"actions":["read"]}'::jsonb),
@@ -248,4 +249,6 @@ WHERE deleted_at IS NULL
     'accounting.period', 'accounting.period.beginning-balance', 'accounting.period.fiscal-years',
     'accounting.period.accounting-period', 'accounting.period.closing',
     'accounting.reports', 'accounting.reports.balance-sheet', 'accounting.reports.income-statement',
-    'accounting.reports.cash-flow', 'accounting.reports.equity', 'accounting.reports.budget');
+    'accounting.reports.cash-flow', 'accounting.reports.equity', 'accounting.reports.budget',
+    -- POS TV Antrian (9 Aug 2026):
+    'pos.kitchen.queue-board');

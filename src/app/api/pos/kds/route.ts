@@ -1,5 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createPgClient } from "@/lib/pg/create-client";
+import { normalizeStation } from '@/lib/pos/kitchen-station';
+import {
+  deriveStationStatus,
+  isFnbStation,
+  isTerminalKitchenStatus,
+  mapOrderStatusToKitchenStatus,
+} from '@/lib/pos/kds-status';
 
 type KDSOrderItemRow = {
   id: string;
@@ -21,6 +28,7 @@ type KDSOrderItemRow = {
 type KDSOrderRow = {
   id: string;
   order_number: string;
+  queue_number?: string | null;
   status: string;
   payment_status?: string | null;
   order_type?: string | null;
@@ -38,24 +46,8 @@ type PosTableRow = {
   qr_code?: string | null;
 };
 
-const STATIONS = ['kitchen', 'bar', 'bakery', 'dessert', 'merchandise', 'photobooth'];
-
 function isUuid(value: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
-}
-
-function normalizeStation(value?: string | null, productName = '', kitchenNotes = '') {
-  const lower = String(value || '').trim().toLowerCase();
-  if (STATIONS.includes(lower)) return lower;
-
-  const haystack = `${productName} ${kitchenNotes}`.toLowerCase();
-  if (/kopi|coffee|tea|teh|minuman|drink|juice|jus|soda|es|latte|cappuccino|mocktail|milkshake|bar/.test(haystack)) {
-    return 'bar';
-  }
-  if (/roti|bread|pastry|cake|kue|croissant|donut|dessert|ice cream|gelato|bakery/.test(haystack)) {
-    return 'bakery';
-  }
-  return 'kitchen';
 }
 
 function formatVariantInfo(value: unknown) {
@@ -73,7 +65,6 @@ function formatVariantInfo(value: unknown) {
  */
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
-  const statusFilter = searchParams.get('status') || 'pending,confirmed,preparing,ready';
   const station = searchParams.get('station');
   const limit = parseInt(searchParams.get('limit') || '50', 10);
   const branchId = searchParams.get('branch_id');
@@ -81,6 +72,8 @@ export async function GET(request: NextRequest) {
   const dateTo = searchParams.get('date_to');
 
   const db = createPgClient();
+
+  const excludedStatuses = ['voided', 'cancelled', 'merged', 'completed'];
 
   const baseSelect = `
       id,
@@ -109,6 +102,7 @@ export async function GET(request: NextRequest) {
   const stationSelect = `
       id,
       order_number,
+      queue_number,
       status,
       payment_status,
       order_type,
@@ -138,9 +132,9 @@ export async function GET(request: NextRequest) {
   let query = db
     .from('pos_orders')
     .select(stationSelect)
-    .in('status', statusFilter.split(','))
+    .not('status', 'in', excludedStatuses)
     .order('ordered_at', { ascending: false })
-    .limit(limit);
+    .limit(Math.max(limit, 80));
 
   if (branchId) {
     query = query.eq('branch_id', branchId);
@@ -160,9 +154,9 @@ export async function GET(request: NextRequest) {
     let legacyQuery = db
       .from('pos_orders')
       .select(baseSelect)
-      .in('status', statusFilter.split(','))
+      .not('status', 'in', excludedStatuses)
       .order('ordered_at', { ascending: false })
-      .limit(limit);
+      .limit(Math.max(limit, 80));
 
     if (branchId) {
       legacyQuery = legacyQuery.eq('branch_id', branchId);
@@ -205,26 +199,38 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  const wantedStation = station ? station.toLowerCase() : null;
   const orders = orderRows
-    .map((order) => ({
-      ...order,
-      table_label: order.table_id
-        ? tableById.get(order.table_id)?.table_number || tableById.get(order.table_id)?.qr_code || null
-        : null,
-      pos_order_items: (order.pos_order_items || [])
+    .map((order) => {
+      const items = (order.pos_order_items || [])
         .map((item) => {
           const itemStation = normalizeStation(item.station, item.product_name || '', item.kitchen_notes || '');
           return {
             ...item,
             station: itemStation,
-            kitchen_status: item.kitchen_status || (order.status === 'preparing' ? 'preparing' : order.status === 'ready' ? 'ready' : order.status === 'served' ? 'served' : 'pending'),
+            kitchen_status: item.kitchen_status || mapOrderStatusToKitchenStatus(order.status),
             variant_info: formatVariantInfo(item.variants),
             modifier_info: formatVariantInfo(item.modifiers),
             notes: item.kitchen_notes || '',
           };
         })
-        .filter((item) => !station || item.station === station.toLowerCase()),
-    }))
+        .filter((item) => {
+          if (!isFnbStation(item.station)) return false;
+          if (isTerminalKitchenStatus(item.kitchen_status)) return false;
+          if (wantedStation && item.station !== wantedStation) return false;
+          return true;
+        });
+      const stationStatus = deriveStationStatus(items, wantedStation);
+      return {
+        ...order,
+        station_status: stationStatus,
+        status: wantedStation ? stationStatus : order.status,
+        table_label: order.table_id
+          ? tableById.get(order.table_id)?.table_number || tableById.get(order.table_id)?.qr_code || null
+          : null,
+        pos_order_items: items,
+      };
+    })
     .filter((order) => order.pos_order_items.length > 0);
 
   const now = Date.now();

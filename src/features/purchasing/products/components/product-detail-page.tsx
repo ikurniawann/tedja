@@ -17,6 +17,7 @@ import { PurchasingPageHeader } from "@/modules/purchasing/components/page/purch
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { formatAmount } from "@/lib/purchasing/utils";
 import { getProductUnitLabel } from "../product-unit";
+import { posStationLabel } from "@/lib/pos/kitchen-station";
 import { ProductHppCompare } from "./product-hpp-compare";
 
 function getErrorMessage(error: unknown, fallback: string) {
@@ -219,6 +220,10 @@ export function ProductDetailPage() {
             <div>
               <p className="text-xs font-medium text-gray-500">Kategori</p>
               <p className="font-medium text-gray-900">{categoryLabel}</p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-gray-500">Station</p>
+              <p className="font-medium text-gray-900">{posStationLabel(product.station)}</p>
             </div>
             <div>
               <p className="text-xs font-medium text-gray-500">Satuan</p>

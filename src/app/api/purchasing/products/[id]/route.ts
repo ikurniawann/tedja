@@ -6,6 +6,7 @@ import { NextRequest } from "next/server";
 import { createServerPgClient } from "@/lib/pg/create-client";
 import { getApiUserScope, isRowInBusinessScope, validateProductWarehouseScope } from "@/lib/api/scope";
 import { syncPurchasingProductToPos } from "@/lib/pos/purchasing-sync";
+import { resolvePosStation } from "@/lib/pos/kitchen-station";
 import { withProductHppReview } from "@/lib/purchasing/product-hpp-review";
 import { z } from "zod";
 
@@ -20,6 +21,10 @@ const productSchema = z.object({
   markup_persen: z.coerce.number().optional(),
   is_active: z.boolean().optional(),
   production_output_type: z.enum(["FINISHED_GOOD", "WIP"]).optional(),
+  station: z
+    .enum(["kitchen", "bar", "bakery", "dessert", "merchandise", "photobooth"])
+    .optional()
+    .nullable(),
 });
 
 type BomItemRow = {
@@ -192,6 +197,10 @@ export async function PUT(
 
     const updatePayload: Record<string, unknown> = {
       ...validated,
+      station: resolvePosStation(
+        validated.station ?? existingProduct.station,
+        validated.kategori ?? existingProduct.kategori
+      ),
       updated_at: new Date().toISOString(),
     };
 
@@ -222,16 +231,14 @@ export async function PUT(
 
     let posSync = null;
     if (outputType === "FINISHED_GOOD") {
-      const kategori = String(
-        (data as { kategori?: string | null }).kategori ||
-          existingProduct.kategori ||
-          ""
-      );
-      const station = /coffee|tea|beverage|juice|mocktail|minuman|drink|bar/i.test(kategori)
-        ? "bar"
-        : "kitchen";
+      const row = data as { kategori?: string | null; station?: string | null };
       try {
-        posSync = await syncPurchasingProductToPos(db, id, { station });
+        posSync = await syncPurchasingProductToPos(db, id, {
+          station: resolvePosStation(
+            row.station ?? existingProduct.station,
+            row.kategori ?? existingProduct.kategori
+          ),
+        });
       } catch (syncError) {
         console.warn("POS sync after product update failed:", syncError);
       }

@@ -10,13 +10,27 @@ export interface UseKdsOptions extends KdsListParams {
   pollInterval?: number;
 }
 
+let kdsAudioCtx: AudioContext | null = null;
+
+function getKdsAudioContext() {
+  const AudioContextClass =
+    window.AudioContext ||
+    (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  if (!AudioContextClass) return null;
+  if (!kdsAudioCtx) kdsAudioCtx = new AudioContextClass();
+  return kdsAudioCtx;
+}
+
+export function unlockKdsSound() {
+  const audioCtx = getKdsAudioContext();
+  if (audioCtx?.state === "suspended") void audioCtx.resume();
+}
+
 function playNotificationSound() {
   try {
-    const AudioContextClass =
-      window.AudioContext ||
-      (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-    if (!AudioContextClass) return;
-    const audioCtx = new AudioContextClass();
+    const audioCtx = getKdsAudioContext();
+    if (!audioCtx) return;
+    if (audioCtx.state === "suspended") void audioCtx.resume();
     const oscillator = audioCtx.createOscillator();
     const gainNode = audioCtx.createGain();
     oscillator.connect(gainNode);
@@ -56,11 +70,15 @@ export function useKds(options: UseKdsOptions = {}) {
   }, [query.data, soundEnabled]);
 
   const updateStatus = useCallback(
-    async (orderId: string, newStatus: string, reason?: string) => {
-      const data = await updateKdsOrderStatus(orderId, newStatus, reason);
+    async (orderId: string, newStatus: string, reason?: string, station?: string) => {
+      const data = await updateKdsOrderStatus(orderId, newStatus, reason, station);
       if (data.success) {
         queryClient.setQueryData(kdsQueryKeys.list(listParams), (current: typeof query.data) =>
-          current?.map((order) => (order.id === orderId ? { ...order, status: newStatus } : order))
+          current?.map((order) =>
+            order.id === orderId
+              ? { ...order, status: newStatus, station_status: newStatus }
+              : order
+          )
         );
         setTimeout(() => {
           void queryClient.invalidateQueries({ queryKey: kdsQueryKeys.all });

@@ -1,4 +1,5 @@
 import { createPgClient } from "@/lib/pg/create-client";
+import { resolvePosStation } from "@/lib/pos/kitchen-station";
 
 type PgServiceClient = import("@/lib/pg/types").DbClient;
 
@@ -12,6 +13,7 @@ type PurchasingProduct = {
   hpp_estimasi?: number | string | null;
   estimated_cogs?: number | string | null;
   is_active?: boolean | null;
+  station?: string | null;
 };
 
 type PosCategory = {
@@ -30,14 +32,6 @@ type PosProductCostRow = {
 function toNumber(value: unknown) {
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : 0;
-}
-
-function normalizeStation(value?: string | null) {
-  const station = String(value || "").trim().toLowerCase();
-  if (["kitchen", "bar", "bakery", "dessert", "merchandise", "photobooth"].includes(station)) {
-    return station;
-  }
-  return "kitchen";
 }
 
 function normalizeCategoryName(value?: string | null) {
@@ -116,7 +110,10 @@ export async function syncPurchasingProductToPos(
     is_active: purchasingProduct.is_active !== false,
     is_available: true,
     inventory_tracking: false,
-    station: normalizeStation(options.station),
+    station: resolvePosStation(
+      options.station ?? purchasingProduct.station,
+      purchasingProduct.kategori
+    ),
     updated_at: now,
   };
 
