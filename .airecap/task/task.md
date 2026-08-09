@@ -37,3 +37,7 @@ Integrasi jurnal POS (cash-basis), KDS tampilkan semua order belum diproses kitc
 ## UI insert/edit produk
 - [x] Layout 8+4 seperti master Bahan Baku; field 2 kolom; harga sidebar; BOM table style PR
 - [x] Token semantik (tanpa pink keras); toast stall Indonesia
+
+## Printer Bluetooth kasir
+- [x] Pairing 1x di `/dashboard/pos/printer-settings` (Hubungkan + Test print + baud)
+- [x] Modal Print Struk kasir hanya cetak, tanpa tombol pairing

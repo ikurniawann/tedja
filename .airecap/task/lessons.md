@@ -58,6 +58,7 @@
 
 ## POS journal mapping + KDS + antrian
 - Jurnal POS cash-basis: hook setelah lunas (checkout / PATCH pay / split pay), bukan open bill atau KDS status.
+- `entry_date` jurnal WAJIB `YYYY-MM-DD`. Jangan `String(ordered_at).slice(0,10)` — `Date` dari pg jadi `"Sun Aug 09"` → Postgres `invalid input syntax for type date`. Pakai `toJournalEntryDate` (en-CA + Asia/Jakarta).
 - `sourceModule: "POS"`; sale + COGS = 2 event, `document_id` sama (order id). Split pakai `pos_split_payments.id`.
 - NFC Tab skip jurnal POS (AR pindah ticketing). Hybrid sama purchasing: mapping kosong → skip/draft; fiscal gagal → `AccountingPostError`.
 - Mapping sale wajib DISCOUNT (Dr, optional) + SERVICE_CHARGE (Cr, optional) + TAX optional supaya ticket diskon/SC/tax=0 tetap balance.
@@ -68,6 +69,8 @@
 - KDS fullscreen = `/pos/kds` di LUAR `/dashboard/pos` layout (App Router tidak bisa opt-out induk). Sama pola `/pos/customer-display`. Jangan taruh fullscreen KDS di bawah layout yang masih `AppSidebar`.
 - `AppSidebar` Suspense fallback jangan render `ThemeToggle`/`useTheme` (atau chrome penuh). `useSearchParams` suspend → fallback SSR kadang di luar ThemeProvider → crash `useTheme must be used within ThemeProvider`. Fallback = shell mesh kosong; `ThemeToggle` pakai `useThemeOrNull`.
 - TV antrian customer = `/pos/queue` (bukan CFD `/pos/customer-display`). CFD = monitor kasir (cart/bayar); queue board = dinding tamu (nomor + status).
+- Kasir: jangan buka modal Print Struk di tick yang sama dengan close PaymentModal (Base UI Dialog). Tutup payment dulu + delay ~120ms. Payload cash/method dari `onConfirm`, jangan andalkan state parent yang masih stale.
+- Print thermal: pairing Bluetooth 1x di `/dashboard/pos/printer-settings`, bukan di modal kasir. Print Struk hanya kirim job. `window.print()` selalu preview; Web Serial ESC/POS silent. Fallback iframe (1 dialog OS).
 - Menu baru: delta + INSERT `iam-menus.sql` + whitelist prune. Code `pos.kitchen.queue-board` di bawah `pos.kitchen`. Icon wajib ada di `VALID_ICONS` (pakai `video`, bukan `monitor`/`tv`).
 - Unique index harian tidak boleh pakai `timezone()`/`now()` (bukan IMMUTABLE). Wrapper `pos_jkt_date(timestamptz)` IMMUTABLE + index pada `ordered_at` saja.
 

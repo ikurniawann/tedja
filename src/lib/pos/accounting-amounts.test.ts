@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   computePosAccountingAmounts,
   mapPaymentMethodToSaleEvent,
+  toJournalEntryDate,
 } from "@/lib/pos/accounting-amounts";
 
 describe("computePosAccountingAmounts", () => {
@@ -44,6 +45,20 @@ describe("computePosAccountingAmounts", () => {
     expect(amounts.SUBTOTAL).toBe(0);
     expect(amounts.DISCOUNT).toBe(0);
     expect(amounts.TOTAL).toBe(0);
+  });
+});
+
+describe("toJournalEntryDate", () => {
+  it("keeps ISO date strings and formats Date/timestamptz as YYYY-MM-DD JKT", () => {
+    expect(toJournalEntryDate("2026-08-09")).toBe("2026-08-09");
+    expect(toJournalEntryDate("2026-08-09T10:15:00.000+07:00")).toBe("2026-08-09");
+    expect(toJournalEntryDate(new Date("2026-08-09T01:00:00+07:00"))).toBe("2026-08-09");
+  });
+
+  it("does not slice Date.toString() into invalid Postgres dates", () => {
+    const value = new Date("2026-08-09T08:30:00+07:00");
+    expect(String(value).slice(0, 10)).toMatch(/^[A-Za-z]{3} /);
+    expect(toJournalEntryDate(value)).toBe("2026-08-09");
   });
 });
 

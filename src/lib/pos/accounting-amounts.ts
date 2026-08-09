@@ -6,6 +6,19 @@ function round2(n: number) {
   return Math.round(n * 100) / 100;
 }
 
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}/;
+
+/** Journal entry_date must be YYYY-MM-DD. pg Date objects stringify as "Sun Aug 09…". */
+export function toJournalEntryDate(value?: string | Date | null): string {
+  if (typeof value === "string" && ISO_DATE.test(value.trim())) {
+    return value.trim().slice(0, 10);
+  }
+  const parsed =
+    value instanceof Date ? value : value ? new Date(value) : new Date();
+  const date = Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jakarta" }).format(date);
+}
+
 export type PosSaleEventCode =
   | Extract<
       JournalEventCode,
@@ -112,7 +125,7 @@ export async function buildPosAccountingAmounts(
   return {
     companyId: (order.company_id as string | null) || null,
     branchId: (order.branch_id as string | null) || null,
-    entryDate: String(order.ordered_at || new Date().toISOString()).slice(0, 10),
+    entryDate: toJournalEntryDate(order.ordered_at as string | Date | null),
     orderNumber: String(order.order_number || orderId),
     paymentMethod: (order.payment_method as string | null) || null,
     paymentStatus: (order.payment_status as string | null) || null,

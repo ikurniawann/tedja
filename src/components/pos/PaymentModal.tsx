@@ -608,7 +608,7 @@ export function PaymentModal({
             className="bg-primary hover:bg-primary/90"
             disabled={!isValid || submitting}
             onClick={() =>
-              onConfirm({
+              void onConfirm({
                 method,
                 cashReceived: String(cashAmount || ""),
                 arkToUse,

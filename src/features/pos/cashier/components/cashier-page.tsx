@@ -225,8 +225,8 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
 
   /* Result */
   const [resultPayload, setResultPayload] = useState<ReceiptPayload | null>(null);
+  const receiptRevealTimerRef = useRef<number | null>(null);
   const storeResultPayload = useCallback((payload: ReceiptPayload) => {
-    setResultPayload(payload);
     window.sessionStorage.setItem(LAST_RECEIPT_KEY, JSON.stringify(payload));
     // EPIC-024: layar customer merayakan transaksi selesai + kembalian.
     // Semua jalur sukses bayar (online/offline/open-bill) lewat sini —
@@ -238,6 +238,24 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       done_change: payload.change > 0 ? payload.change : 0,
       updated_at: Date.now(),
     });
+    // Base UI Dialog tidak bisa close+open di tick yang sama — tutup payment
+    // dulu, baru buka modal Print Struk setelah overlay unmount.
+    setShowPayment(false);
+    if (receiptRevealTimerRef.current) {
+      window.clearTimeout(receiptRevealTimerRef.current);
+    }
+    receiptRevealTimerRef.current = window.setTimeout(() => {
+      setResultPayload(payload);
+      receiptRevealTimerRef.current = null;
+    }, 120);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (receiptRevealTimerRef.current) {
+        window.clearTimeout(receiptRevealTimerRef.current);
+      }
+    };
   }, []);
 
   /* EPIC-024 — state pembayaran dari PaymentModal utk customer display */
@@ -802,10 +820,18 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     method?: PaymentMethod;
     nfcTabUid?: string;
     giftCardCode?: string;
+    cashReceived?: string;
+    arkToUse?: number;
   }) => {
     if (processingPayment) return;
     if (cart.items.length === 0) return;
     if (!requireActiveShift()) return;
+
+    const method = overrides?.method ?? paymentMethod;
+    const cashValue = overrides?.cashReceived ?? cashReceived;
+    const arkValue = overrides?.arkToUse ?? currentArkToUse;
+    const arkCapped = Math.min(arkValue, maxArkUsable);
+    const payTotal = total - (method === 'ark_coin' ? arkCapped : arkToUseCapped);
 
     // EPIC-034 Fase C — bayar dgn saldo gift card. Kode dioper eksplisit dari
     // PaymentModal (state paymentMethod belum ter-flush di tick yang sama),
@@ -997,8 +1023,11 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       return;
     }
 
-    if (paymentMethod === 'ark_coin' && !selectedCustomer) { setShowNFC(true); return; }
-    if (paymentMethod === 'cash' && (parseFloat(cashReceived) || 0) < totalAfterArk) return;
+    if (method === 'ark_coin' && !selectedCustomer) { setShowNFC(true); return; }
+    if (method === 'cash' && (parseFloat(cashValue) || 0) < payTotal) {
+      toast.error('Nominal tunai kurang dari total tagihan');
+      return;
+    }
 
     setProcessingPayment(true);
 
@@ -1008,8 +1037,8 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         setProcessingPayment(false);
         return;
       }
-      const paymentMethodForApi = paymentMethod === 'credit_card' ? 'credit' : paymentMethod;
-      const paidAmount = paymentMethod === 'cash' ? (parseFloat(cashReceived) || totalAfterArk) : totalAfterArk;
+      const paymentMethodForApi = method === 'credit_card' ? 'credit' : method;
+      const paidAmount = method === 'cash' ? (parseFloat(cashValue) || payTotal) : payTotal;
       try {
         const data = await payOpenOrderMutation.mutateAsync({
           orderId: paymentOrderId,
@@ -1017,7 +1046,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
             payment_status: 'paid',
             payment_method: paymentMethodForApi,
             amount_paid: paidAmount,
-            ark_coins_used: paymentMethod === 'ark_coin' ? arkToUseCapped : 0,
+            ark_coins_used: method === 'ark_coin' ? arkCapped : 0,
           },
         });
 
@@ -1029,9 +1058,9 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
           table: selectedTableDisplay,
           items: [...cart.items],
           notes: cart.notes,
-          total: totalAfterArk,
-          change: paymentMethod === 'cash' ? (parseFloat(cashReceived) || 0) - totalAfterArk : 0,
-          paymentMethod,
+          total: payTotal,
+          change: method === 'cash' ? (parseFloat(cashValue) || 0) - payTotal : 0,
+          paymentMethod: method,
           customerName: selectedCustomer?.name,
           discountAmount,
           taxAmount,
@@ -1089,12 +1118,12 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         other_charges_amount: otherChargesAmount,
         charges_breakdown: billCharges.breakdown,
         total_amount: cTotal,
-        payment_method: paymentMethod === 'qris' ? 'qris' : paymentMethod === 'credit_card' ? 'credit' : paymentMethod === 'ark_coin' ? 'ark_coin' : 'cash',
-        amount_paid: paymentMethod === 'cash' ? (parseFloat(cashReceived) || cTotal) : cTotal,
+        payment_method: method === 'qris' ? 'qris' : method === 'credit_card' ? 'credit' : method === 'ark_coin' ? 'ark_coin' : 'cash',
+        amount_paid: method === 'cash' ? (parseFloat(cashValue) || cTotal) : cTotal,
         include_tax: cart.includeTax,
         membership_discount_pct: membershipDiscount,
         notes: cart.notes,
-        ark_coins_used: paymentMethod === 'ark_coin' ? arkToUseCapped : 0,
+        ark_coins_used: method === 'ark_coin' ? arkCapped : 0,
         shift_id: shift?.id || undefined,
       };
       await enqueue(payload, 'order');
@@ -1106,8 +1135,8 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         items: [...cart.items],
         notes: cart.notes,
         total: cTotal,
-        change: paymentMethod === 'cash' ? (parseFloat(cashReceived) || 0) - cTotal : 0,
-        paymentMethod,
+        change: method === 'cash' ? (parseFloat(cashValue) || 0) - cTotal : 0,
+        paymentMethod: method,
         customerName: selectedCustomer?.name,
         discountAmount,
         taxAmount,
@@ -1131,11 +1160,11 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       orderType: cart.orderType,
       selectedTable: effectiveTableId,
       selectedCustomer,
-      paymentMethod,
-      cashReceived,
+      paymentMethod: method,
+      cashReceived: cashValue,
       includeTax: cart.includeTax,
       notes: cart.notes,
-      arkToUse: paymentMethod === 'ark_coin' ? arkToUseCapped : 0,
+      arkToUse: method === 'ark_coin' ? arkCapped : 0,
       shiftId: shift?.id || null,
       giftCardBuyer,
       promo: promoApplied,
@@ -1158,7 +1187,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         notes: cart.notes,
         total: res.total,
         change: res.change,
-        paymentMethod,
+        paymentMethod: method,
         customerName: selectedCustomer?.name,
         discountAmount,
         taxAmount,
@@ -1166,6 +1195,11 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         giftCards: res.giftCards,
       };
       storeResultPayload(receipt);
+      toast.success(
+        res.queueNumber
+          ? `Pembayaran berhasil — Antrian ${res.queueNumber}`
+          : 'Pembayaran berhasil'
+      );
       setGiftCardBuyer(null);
       // Saldo ARK/XP customer berubah di server — segarkan cache kasir
       if (selectedCustomer) void refetchCustomers();
@@ -1180,7 +1214,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       toast.error(res.error || 'Payment failed');
     }
     setProcessingPayment(false);
-  }, [cart, paymentMethod, selectedCustomer, cashReceived, totalAfterArk, checkout, discountAmount, taxAmount, arkToUseCapped, isOnline, enqueue, membershipDiscount, shift, refreshCount, paymentOrderId, payingOrderNumber, router, processingPayment, selectedTableDisplay, effectiveTableId, requireActiveShift, payOpenOrderMutation, deferReturnToRestaurant, storeResultPayload, refetchCustomers, promoApplied, giftCardBuyer, billCharges, serviceChargeAmount, otherChargesAmount, total, homeRoute, guestCount]);
+  }, [cart, paymentMethod, selectedCustomer, cashReceived, currentArkToUse, maxArkUsable, totalAfterArk, arkToUseCapped, checkout, discountAmount, taxAmount, isOnline, enqueue, membershipDiscount, shift, refreshCount, paymentOrderId, payingOrderNumber, router, processingPayment, selectedTableDisplay, effectiveTableId, requireActiveShift, payOpenOrderMutation, deferReturnToRestaurant, storeResultPayload, refetchCustomers, promoApplied, giftCardBuyer, billCharges, serviceChargeAmount, otherChargesAmount, total, homeRoute, guestCount]);
 
   /* Split Bill */
   const handleConfirmSplit = useCallback(async (config: SplitConfig) => {
@@ -1376,10 +1410,16 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
   }, [cart, selectedCustomer, discountAmount, taxAmount, total, requireActiveShift, shift, maybeReturnToRestaurant, effectiveTableId, serviceChargeAmount, otherChargesAmount, billCharges, guestCount]);
 
   /* Print helpers */
-  const handlePrint = useCallback((label: 'KITCHEN' | 'BAR' | 'CUSTOMER') => {
-    if (!resultPayload) return;
-    printThermalReceipt(resultPayload, label);
-  }, [resultPayload]);
+  const [printingReceipt, setPrintingReceipt] = useState(false);
+  const handlePrint = useCallback(async (label: 'KITCHEN' | 'BAR' | 'CUSTOMER') => {
+    if (!resultPayload || printingReceipt) return;
+    setPrintingReceipt(true);
+    try {
+      await printThermalReceipt(resultPayload, label);
+    } finally {
+      setPrintingReceipt(false);
+    }
+  }, [resultPayload, printingReceipt]);
 
   /* ─── Render ───────────────────────────────────────────────────── */
   const shellHeight = isTabletMode
@@ -2166,13 +2206,13 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
           setPaymentMethod(method);
           setCashReceived(cashReceived);
           setCurrentArkToUse(arkToUse);
-          await handleCreateOrder(
-            method === 'nfc_tab'
-              ? { method, nfcTabUid }
-              : method === 'gift_card'
-                ? { method, giftCardCode }
-                : undefined
-          );
+          await handleCreateOrder({
+            method,
+            cashReceived,
+            arkToUse,
+            nfcTabUid,
+            giftCardCode,
+          });
         }}
         formatCurrency={formatCurrency}
         formatArk={formatArk}
@@ -2314,11 +2354,19 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* ── Result Modal ── */}
+      {/* ── Result Modal / Print Struk ── */}
       <Dialog open={!!resultPayload} onOpenChange={(open) => { if (!open) closeResultModal(); }}>
         <DialogPanel size="sm" showCloseButton={false}>
           {resultPayload ? (
             <>
+              <DialogPanelHeader>
+                <DialogPanelTitle>Print Struk</DialogPanelTitle>
+                <DialogPanelDescription>
+                  {lastResultType === "offlined"
+                    ? "Order tersimpan offline. Cetak struk bila perlu."
+                    : "Pembayaran berhasil. Cetak struk untuk pelanggan."}
+                </DialogPanelDescription>
+              </DialogPanelHeader>
               <DialogPanelBody className="space-y-5">
                 {lastResultType === "offlined" ? (
                   <>
@@ -2399,19 +2447,19 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
                   </>
                 )}
 
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 gap-2">
                   {(
                     [
                       ["KITCHEN", "Kitchen"],
                       ["BAR", "Bar"],
-                      ["CUSTOMER", "Receipt"],
                     ] as const
                   ).map(([label, text]) => (
                     <Button
                       key={label}
                       type="button"
                       variant="outline"
-                      onClick={() => handlePrint(label)}
+                      onClick={() => void handlePrint(label)}
+                      disabled={printingReceipt}
                       className="h-auto flex-col gap-1 border-gray-200/80 px-2 py-2.5 text-xs font-semibold text-foreground hover:border-primary/30 hover:bg-primary/5 hover:text-primary"
                     >
                       <Printer className="h-4 w-4" />
@@ -2419,15 +2467,25 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
                     </Button>
                   ))}
                 </div>
-              </DialogPanelBody>
-
-              <DialogFooter className="sm:justify-stretch">
                 <Button
                   type="button"
-                  onClick={closeResultModal}
-                  className="w-full bg-primary hover:bg-primary/90"
+                  onClick={() => void handlePrint("CUSTOMER")}
+                  disabled={printingReceipt}
+                  className="h-11 w-full gap-2 bg-primary hover:bg-primary/90"
                 >
-                  New transaction
+                  {printingReceipt ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
+                  Print Struk
+                </Button>
+              </DialogPanelBody>
+
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={closeResultModal}
+                  className="w-full border-gray-200/80 sm:w-auto"
+                >
+                  Transaksi baru
                 </Button>
               </DialogFooter>
             </>
