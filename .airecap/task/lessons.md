@@ -69,6 +69,8 @@
 - KDS fullscreen = `/pos/kds` di LUAR `/dashboard/pos` layout (App Router tidak bisa opt-out induk). Sama pola `/pos/customer-display`. Jangan taruh fullscreen KDS di bawah layout yang masih `AppSidebar`.
 - `AppSidebar` Suspense fallback jangan render `ThemeToggle`/`useTheme` (atau chrome penuh). `useSearchParams` suspend → fallback SSR kadang di luar ThemeProvider → crash `useTheme must be used within ThemeProvider`. Fallback = shell mesh kosong; `ThemeToggle` pakai `useThemeOrNull`.
 - TV antrian customer = `/pos/queue` (bukan CFD `/pos/customer-display`). CFD = monitor kasir (cart/bayar); queue board = dinding tamu (nomor + status).
+- Kasir mode tablet: jangan tampilkan Layar Customer / TV Antrian di toolbar — itu untuk monitor kedua di desktop. Tablet cukup chrome (layar penuh / pasang / keluar mode).
+- Kasir PWA/tablet: produk + keranjang wajib `flex-row` (jangan tunggu `lg`). Target min **8.7"** (~800px): cart `w-56`, grid 3–4 kolom via `@container`. Layar lebih besar: cart `w-72/80/96`, kolom 5–8. Jangan `w-[40vw]` — di 8.7" keranjang makan ruang produk.
 - Kasir: jangan buka modal Print Struk di tick yang sama dengan close PaymentModal (Base UI Dialog). Tutup payment dulu + delay ~120ms. Payload cash/method dari `onConfirm`, jangan andalkan state parent yang masih stale.
 - Print thermal: pairing Bluetooth 1x di `/dashboard/pos/printer-settings`, bukan di modal kasir. Print Struk hanya kirim job. `window.print()` selalu preview; Web Serial ESC/POS silent. Fallback iframe (1 dialog OS).
 - Menu baru: delta + INSERT `iam-menus.sql` + whitelist prune. Code `pos.kitchen.queue-board` di bawah `pos.kitchen`. Icon wajib ada di `VALID_ICONS` (pakai `video`, bukan `monitor`/`tv`).

@@ -4,6 +4,7 @@ import { Minus, Plus, Trash2, ShoppingBag, Utensils, Truck, Check, Loader2 } fro
 import { Button } from '@/components/ui/button';
 import type { PosCartItem } from '@/hooks/use-pos-cart';
 import { HelpHint } from '@/components/ui/help-hint';
+import { cn } from '@/lib/utils';
 
 interface CartPanelProps {
   cart: PosCartItem[];
@@ -43,6 +44,7 @@ interface CartPanelProps {
   onPromoInputChange?: (value: string) => void;
   onApplyPromo?: () => void;
   onClearPromo?: () => void;
+  className?: string;
 }
 
 export function CartPanel({
@@ -80,11 +82,17 @@ export function CartPanel({
   onPromoInputChange,
   onApplyPromo,
   onClearPromo,
+  className,
 }: CartPanelProps) {
   const membershipAmt = membershipDiscountAmount ?? discountAmount;
   const showPromoUi = typeof onApplyPromo === 'function';
   return (
-    <div className="flex w-full max-h-[60vh] flex-col rounded-xl border border-gray-200/70 bg-white shadow-xs lg:max-h-none lg:w-96">
+    <div
+      className={cn(
+        "flex w-full max-h-[60vh] flex-col rounded-xl border border-gray-200/70 bg-white shadow-xs lg:max-h-none lg:w-96",
+        className,
+      )}
+    >
       <div className="border-b border-gray-200/70 p-4">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-lg font-bold text-gray-900">Order</h2>

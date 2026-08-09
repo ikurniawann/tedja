@@ -1428,11 +1428,29 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
 
   return (
     <TooltipProvider>
-    <PageTransition>
-    <div className={`flex flex-col gap-4 ${isTabletMode ? 'touch-manipulation' : ''}`}>
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <PageTransition
+      className={
+        isTabletMode
+          ? 'flex h-[calc(100dvh-1rem)] min-h-0 flex-col sm:h-[calc(100dvh-1.5rem)] md:h-[calc(100dvh-2rem)]'
+          : undefined
+      }
+    >
+    <div className={`flex min-h-0 flex-1 flex-col ${isTabletMode ? 'gap-2 touch-manipulation' : 'gap-4'}`}>
+      <div className={`flex shrink-0 flex-wrap items-center justify-between ${isTabletMode ? 'gap-2' : 'gap-3'}`}>
         <div className="min-w-0">
-          <h1 className="text-xl font-semibold text-gray-900">POS Cashier</h1>
+          <h1 className={`font-semibold text-gray-900 ${isTabletMode ? 'text-base' : 'text-xl'}`}>POS Cashier</h1>
+          {isTabletMode ? (
+            <p className="truncate text-xs text-muted-foreground">
+              {selectedTableDisplay
+                ? `Meja ${selectedTableDisplay}`
+                : cart.orderType === 'takeaway'
+                  ? 'Take Away'
+                  : 'Without Table'}
+              {selectedTableDisplay || cart.orderType === 'dine_in'
+                ? ` · ${normalizeGuestCount(guestCount)} tamu`
+                : null}
+            </p>
+          ) : (
           <p className="text-sm text-gray-500">
             {cart.orderType === 'dine_in' ||
             cart.orderType === 'takeaway' ||
@@ -1492,12 +1510,11 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
                   </>
                 ) : null}
               </span>
-            ) : isTabletMode ? (
-              'Kasir tablet'
             ) : (
               'Process orders with the dashboard sidebar available'
             )}
           </p>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {fromRestaurant && (
@@ -1511,40 +1528,44 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
               Back to Restaurant
             </Button>
           )}
-          {/* EPIC-024: buka layar customer sebagai window baru — drag ke
-              monitor kedua lalu F11 (BroadcastChannel sesama browser) */}
-          <Button
-            type="button"
-            variant="outline"
-            title="Buka layar customer di window baru — drag ke monitor kedua, lalu F11"
-            className="border-gray-200/80 text-gray-700 hover:border-primary/30 hover:bg-primary/10 hover:text-primary"
-            onClick={() =>
-              window.open(
-                '/pos/customer-display',
-                'pos-customer-display',
-                'popup=yes,width=1024,height=640'
-              )
-            }
-          >
-            <MonitorIcon className="mr-2 h-4 w-4" />
-            Layar Customer
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            title="Buka TV antrian customer — drag ke TV/monitor tamu, lalu F11"
-            className="border-gray-200/80 text-gray-700 hover:border-primary/30 hover:bg-primary/10 hover:text-primary"
-            onClick={() =>
-              window.open(
-                "/pos/queue",
-                "pos-queue-board",
-                "popup=yes,width=1440,height=900"
-              )
-            }
-          >
-            <MonitorIcon className="mr-2 h-4 w-4" />
-            TV Antrian
-          </Button>
+          {!isTabletMode ? (
+            <>
+              {/* EPIC-024: buka layar customer sebagai window baru — drag ke
+                  monitor kedua lalu F11 (BroadcastChannel sesama browser) */}
+              <Button
+                type="button"
+                variant="outline"
+                title="Buka layar customer di window baru — drag ke monitor kedua, lalu F11"
+                className="border-gray-200/80 text-gray-700 hover:border-primary/30 hover:bg-primary/10 hover:text-primary"
+                onClick={() =>
+                  window.open(
+                    '/pos/customer-display',
+                    'pos-customer-display',
+                    'popup=yes,width=1024,height=640'
+                  )
+                }
+              >
+                <MonitorIcon className="mr-2 h-4 w-4" />
+                Layar Customer
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                title="Buka TV antrian customer — drag ke TV/monitor tamu, lalu F11"
+                className="border-gray-200/80 text-gray-700 hover:border-primary/30 hover:bg-primary/10 hover:text-primary"
+                onClick={() =>
+                  window.open(
+                    "/pos/queue",
+                    "pos-queue-board",
+                    "popup=yes,width=1440,height=900"
+                  )
+                }
+              >
+                <MonitorIcon className="mr-2 h-4 w-4" />
+                TV Antrian
+              </Button>
+            </>
+          ) : null}
           {isTabletMode ? (
             <>
               <PosTabletChromeControls />
@@ -1572,7 +1593,13 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         </div>
       </div>
 
-      <div className={`flex flex-col lg:flex-row ${shellHeight} gap-4`}>
+      <div
+        className={
+          isTabletMode
+            ? 'flex min-h-0 flex-1 flex-row gap-3'
+            : `flex flex-col lg:flex-row ${shellHeight} gap-4`
+        }
+      >
       {loading && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="flex items-center gap-3 rounded-xl border border-gray-200/70 bg-white p-6 shadow-xs">
@@ -1591,7 +1618,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       )}
 
       {/* LEFT PANEL */}
-      <div className="flex-1 flex flex-col gap-4 overflow-hidden">
+      <div className={`flex min-w-0 flex-1 flex-col overflow-hidden ${isTabletMode ? '@container gap-2' : 'gap-4'}`}>
         {/* Offline Status Bar */}
         {!isOnline && (
           <div className="flex items-center justify-between rounded-lg border border-amber-200/80 bg-amber-50/80 px-4 py-2 text-sm text-amber-800">
@@ -1629,7 +1656,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
           </div>
         )}
 
-        <div className="rounded-xl border border-gray-200/70 bg-white p-4 shadow-xs">
+        <div className={`rounded-xl border border-gray-200/70 bg-white shadow-xs ${isTabletMode ? 'p-2.5' : 'p-4'}`}>
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
@@ -1670,7 +1697,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
             </button>
             <button
               onClick={() => setShowCustomerModal(true)}
-              className={`flex min-w-[150px] items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition-all ${
+              className={`flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition-all ${isTabletMode ? 'min-w-0' : 'min-w-[150px]'} ${
                 selectedCustomer
                   ? 'border-violet-500 bg-violet-500 text-white shadow-sm hover:bg-violet-600'
                   : 'border-violet-200/80 bg-violet-50 text-violet-700 hover:border-violet-400 hover:bg-violet-100'
@@ -1681,7 +1708,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
                 {selectedCustomer?.name ? selectedCustomer.name.split(' ')[0] : 'Find Customer'}
               </span>
             </button>
-            <div className="relative min-w-[220px] flex-1">
+            <div className={`relative flex-1 ${isTabletMode ? 'min-w-32' : 'min-w-[220px]'}`}>
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
               <Input
                 type="text"
@@ -1794,7 +1821,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
               </span>
               <span className="text-xs text-amber-600">({favorites.length} items)</span>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+            <div className={isTabletMode ? 'grid grid-cols-2 gap-2 @min-[22rem]:grid-cols-3 @min-[36rem]:grid-cols-4' : 'grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4'}>
               {favorites.map(product => (
                 <button key={product.id} onClick={() => openCustomization(product)} className="flex items-center gap-2 rounded-lg border border-amber-200/80 bg-white p-2 text-left transition-all hover:border-amber-400 hover:bg-amber-50">
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-gray-100">
@@ -1834,7 +1861,13 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
 
         {/* Product Grid */}
         <div className="flex-1 overflow-y-auto">
-          <div className="grid grid-cols-4 gap-2 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-7 xl:grid-cols-8 2xl:grid-cols-9">
+          <div
+            className={
+              isTabletMode
+                ? 'grid grid-cols-3 gap-2 @min-[28rem]:grid-cols-4 @min-[28rem]:gap-2.5 @min-[40rem]:grid-cols-5 @min-[40rem]:gap-3 @min-[52rem]:grid-cols-6 @min-[64rem]:grid-cols-7 @min-[80rem]:grid-cols-8'
+                : 'grid grid-cols-4 gap-2 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-7 xl:grid-cols-8 2xl:grid-cols-9'
+            }
+          >
             {filteredProducts.map(product => {
               const xp = product.xp ?? ((Math.abs(product.id.split('').reduce((a, c) => a + c.charCodeAt(0), 0)) % 100) + 1);
               // Produk privilege member (EPIC-011 Fase C): terkunci bila
@@ -1872,18 +1905,18 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
                       {isLocked ? '🔒 ' : '★ '}{minXp} XP
                     </span>
                   )}
-                  <div className="aspect-[5/4] w-full overflow-hidden bg-gray-100">
+                  <div className={`${isTabletMode ? 'aspect-[4/3]' : 'aspect-[5/4]'} w-full overflow-hidden bg-gray-100`}>
                     <PosProductThumbnail src={product.image_url} alt={product.name} />
                   </div>
-                  <div className="flex flex-col gap-0.5 p-1.5">
-                    <div className="line-clamp-2 text-[11px] font-medium leading-tight text-gray-900">
+                  <div className={`flex flex-col ${isTabletMode ? 'gap-0.5 p-2 @min-[40rem]:gap-1 @min-[40rem]:p-2.5' : 'gap-0.5 p-1.5'}`}>
+                    <div className={`line-clamp-2 font-medium leading-snug text-gray-900 ${isTabletMode ? 'text-[11px] @min-[40rem]:text-xs' : 'text-[11px] leading-tight'}`}>
                       {product.name}
                     </div>
-                    <div className="text-[11px] font-bold text-primary">{formatCurrency(product.base_price)}</div>
+                    <div className={`font-bold text-primary ${isTabletMode ? 'text-xs @min-[40rem]:text-sm' : 'text-[11px]'}`}>{formatCurrency(product.base_price)}</div>
                     <div className="flex items-center justify-between gap-1">
-                      <span className="text-[9px] font-medium text-amber-600">{formatArk(product.base_price)}</span>
-                      <span className="inline-flex items-center gap-0.5 text-[9px] font-semibold text-purple-600">
-                        <Sparkles className="h-2.5 w-2.5" />
+                      <span className={`font-medium text-amber-600 ${isTabletMode ? 'text-[11px]' : 'text-[9px]'}`}>{formatArk(product.base_price)}</span>
+                      <span className={`inline-flex items-center gap-0.5 font-semibold text-purple-600 ${isTabletMode ? 'text-[11px]' : 'text-[9px]'}`}>
+                        <Sparkles className={isTabletMode ? 'h-3 w-3' : 'h-2.5 w-2.5'} />
                         +{xp}
                       </span>
                     </div>
@@ -1897,6 +1930,11 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
 
       {/* RIGHT PANEL — Cart */}
       <CartPanel
+        className={
+          isTabletMode
+            ? 'h-full max-h-none w-56 shrink-0 min-[900px]:w-72 min-[1100px]:w-80 min-[1280px]:w-96'
+            : undefined
+        }
         cart={cart.items}
         orderType={cart.orderType}
         selectedTable={selectedTableDisplay}
