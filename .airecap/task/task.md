@@ -24,3 +24,8 @@ Kasir jual hanya di stall aktif; 1 `pos_orders` = 1 stall. Switch stall diblok j
 - Switcher: toast blok jika cart berisi; `can_switch_stall` untuk multi-stall non-admin
 - Laporan transaksi prefer `o.warehouse_id`, fallback legacy item-infer
 - Test: `pos-sell-stall.test.ts` 12 passed; `tsc --noEmit` OK
+
+## DB restore (2026-08-11)
+- [x] Backup remote `db-dev-arkiv` (tunnel `:15432`) → `database/backups/db-dev-arkiv_2026-08-11T01-19-32.sql`
+- [x] Restore ke Postgres lokal `:5432` dengan nama sama `db-dev-arkiv` (~32 MB, 19 schema)
+- [x] `.env` `DATABASE_URL` / `MIGRATE_DATABASE_URL` diarahkan ke local `db-dev-arkiv`
