@@ -71,54 +71,54 @@ export async function GET(request: NextRequest) {
     }
 
     const rows = await query<TransactionRow>(
-      `WITH stall_orders AS (
+      `SELECT
+         o.id,
+         o.order_number,
+         o.ordered_at,
+         o.status,
+         o.payment_status,
+         o.payment_method,
+         o.total_amount,
+         o.ark_coins_used,
+         o.cashier_id,
+         COALESCE(o.warehouse_id, stall_from_item.warehouse_id) AS warehouse_id,
+         COALESCE(w_order.code, stall_from_item.stall_code) AS stall_code,
+         COALESCE(w_order.name, stall_from_item.stall_name) AS stall_name
+       FROM pos.pos_orders o
+       LEFT JOIN configuration.warehouses w_order ON w_order.id = o.warehouse_id
+       LEFT JOIN LATERAL (
          SELECT
-           o.id,
-           o.order_number,
-           o.ordered_at,
-           o.status,
-           o.payment_status,
-           o.payment_method,
-           o.total_amount,
-           o.ark_coins_used,
-           o.cashier_id,
-           w.id AS warehouse_id,
-           w.code AS stall_code,
-           w.name AS stall_name,
-           ROW_NUMBER() OVER (
-             PARTITION BY o.id
-             ORDER BY COALESCE(i.total_amount, 0) DESC, i.id
-           ) AS rn
-         FROM pos.pos_orders o
-         INNER JOIN pos.pos_order_items i ON i.order_id = o.id
+           COALESCE(p.warehouse_id, p_sku.warehouse_id) AS warehouse_id,
+           COALESCE(w.code, w_sku.code) AS stall_code,
+           COALESCE(w.name, w_sku.name) AS stall_name
+         FROM pos.pos_order_items i
          INNER JOIN pos.pos_products pp ON pp.id = i.product_id
-         LEFT JOIN item.products p ON p.id = pp.source_product_id
+         LEFT JOIN item.products p ON p.id = pp.source_product_id AND p.deleted_at IS NULL
          LEFT JOIN configuration.warehouses w ON w.id = p.warehouse_id
-         WHERE o.ordered_at >= $1::timestamptz
-           AND o.ordered_at <= $2::timestamptz
-           AND o.status NOT IN ('cancelled', 'voided', 'merged')
-           AND (o.payment_status = 'paid' OR o.status = 'completed')
-           AND (
-             $3::uuid[] IS NULL
-             OR p.warehouse_id = ANY($3::uuid[])
+         LEFT JOIN item.products p_sku
+           ON pp.source_product_id IS NULL
+          AND pp.sku = ('PUR-' || p_sku.kode)
+          AND p_sku.deleted_at IS NULL
+          AND p_sku.kode IS NOT NULL
+          AND btrim(p_sku.kode) <> ''
+         LEFT JOIN configuration.warehouses w_sku ON w_sku.id = p_sku.warehouse_id
+         WHERE i.order_id = o.id
+         ORDER BY COALESCE(i.total_amount, 0) DESC, i.id
+         LIMIT 1
+       ) stall_from_item ON o.warehouse_id IS NULL
+       WHERE o.ordered_at >= $1::timestamptz
+         AND o.ordered_at <= $2::timestamptz
+         AND o.status NOT IN ('cancelled', 'voided', 'merged')
+         AND (o.payment_status = 'paid' OR o.status = 'completed')
+         AND (
+           $3::uuid[] IS NULL
+           OR o.warehouse_id = ANY($3::uuid[])
+           OR (
+             o.warehouse_id IS NULL
+             AND stall_from_item.warehouse_id = ANY($3::uuid[])
            )
-       )
-       SELECT
-         id,
-         order_number,
-         ordered_at,
-         status,
-         payment_status,
-         payment_method,
-         total_amount,
-         ark_coins_used,
-         cashier_id,
-         warehouse_id,
-         stall_code,
-         stall_name
-       FROM stall_orders
-       WHERE rn = 1
-       ORDER BY ordered_at DESC NULLS LAST`,
+         )
+       ORDER BY o.ordered_at DESC NULLS LAST`,
       [range.startIso, range.endIso, stallFilter.warehouseIds]
     );
 

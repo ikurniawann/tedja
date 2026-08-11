@@ -13,6 +13,10 @@ import {
   type MerchStockClaim,
 } from '@/lib/pos/merchandise-stock';
 import { normalizeGuestCount } from '@/lib/pos/guest-count';
+import {
+  assertOrderItemsMatchSellStall,
+  resolvePosSellStallForUser,
+} from '@/lib/pos/pos-sell-stall-server';
 import { withTransaction } from '@/lib/db';
 import {
   PromoRejectedError,
@@ -226,6 +230,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Items and total amount are required' }, { status: 400 });
     }
 
+    const sellStall = await resolvePosSellStallForUser(sessionUserId);
+    if (!sellStall.ok) {
+      return NextResponse.json({ success: false, error: sellStall.message }, { status: 400 });
+    }
+    const itemStallCheck = await assertOrderItemsMatchSellStall(
+      items.map((item) => String(item.product_id || '')),
+      sellStall.warehouseId
+    );
+    if (!itemStallCheck.ok) {
+      return NextResponse.json({ success: false, error: itemStallCheck.message }, { status: 400 });
+    }
+
     const effectiveCashierId = cashier_id || await resolveCashierId();
     const splits = Array.isArray(body.splits) ? body.splits : [];
 
@@ -337,6 +353,7 @@ export async function POST(request: NextRequest) {
         .update({
           company_id: venueForSplit.companyId,
           branch_id: body.branch_id || venueForSplit.branchId,
+          warehouse_id: sellStall.warehouseId,
         })
         .eq('id', result.order_id);
       await ensureQueueNumber(db, {
@@ -601,6 +618,7 @@ export async function POST(request: NextRequest) {
         payment_status: deferPaid ? 'unpaid' : 'paid',
         company_id: venue.companyId,
         branch_id: body.branch_id || venue.branchId,
+        warehouse_id: sellStall.warehouseId,
         customer_id: customer_id || null,
         cashier_id: effectiveCashierId,
         server_id: server_id || null,

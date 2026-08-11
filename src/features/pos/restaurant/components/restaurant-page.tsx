@@ -9,6 +9,13 @@ import { toast } from "sonner";
 import { PageTransition } from "@/components/motion";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { cashierQueryKeys } from "@/features/pos/cashier/query-keys";
 import { useCashierTables } from "@/features/pos/cashier/queries";
 import { useOpenBills } from "@/features/pos/open-bills/queries";
@@ -123,6 +130,7 @@ function RestaurantPageContent() {
   const [seatingId, setSeatingId] = useState<string | null>(null);
   const [showSplitModal, setShowSplitModal] = useState(false);
   const [splitPaymentOrder, setSplitPaymentOrder] = useState<Order | null>(null);
+  const [billsDrawerOpen, setBillsDrawerOpen] = useState(false);
 
   const waitingDate = todayIsoDate();
   const {
@@ -154,6 +162,18 @@ function RestaurantPageContent() {
     if (!selection?.orderId) return null;
     return orders.find((order) => order.id === selection.orderId) ?? null;
   }, [orders, selection]);
+
+  const openBillsCount = useMemo(
+    () =>
+      orders.filter((order) => {
+        const status = order.status || "";
+        return (
+          !["completed", "cancelled", "voided", "merged"].includes(status) &&
+          (order.payment_status || "unpaid") !== "paid"
+        );
+      }).length,
+    [orders]
+  );
 
   const selectedTableLabel = useMemo(() => {
     if (!selection?.tableId) return null;
@@ -568,9 +588,9 @@ function RestaurantPageContent() {
           selection={selection}
           selectedOrder={selectedOrder}
           selectedTableLabel={selectedTableLabel}
-          tablesById={tablesById}
           availableCount={availableCount}
           occupiedCount={occupiedCount}
+          openBillsCount={openBillsCount}
           onSplitBill={() => setShowSplitModal(true)}
           onPaySplits={() => {
             if (!selectedOrder) {
@@ -587,7 +607,7 @@ function RestaurantPageContent() {
             setShowWaitingList(true);
             void refetchWaitingList();
           }}
-          onSelectBill={handleSelectBill}
+          onViewOrders={() => setBillsDrawerOpen(true)}
         />
 
         <Card className="min-h-0 min-w-0 overflow-auto border-gray-200/70 shadow-xs">
@@ -606,15 +626,35 @@ function RestaurantPageContent() {
             />
           </CardContent>
         </Card>
-
-        <RestaurantBillsRail
-          tablesById={tablesById}
-          selection={selection}
-          immersive={tabletHandoff}
-          onSelect={handleSelectBill}
-          onPaySplits={(order) => setSplitPaymentOrder(order)}
-        />
       </div>
+
+      <Sheet open={billsDrawerOpen} onOpenChange={setBillsDrawerOpen}>
+        <SheetContent
+          side="right"
+          className="h-full w-full gap-0 border-l border-gray-200/70 p-0 sm:max-w-md"
+        >
+          <SheetHeader className="sr-only">
+            <SheetTitle>Open Bills</SheetTitle>
+            <SheetDescription>
+              Select a bill to use restaurant actions.
+            </SheetDescription>
+          </SheetHeader>
+          <RestaurantBillsRail
+            variant="drawer"
+            tablesById={tablesById}
+            selection={selection}
+            immersive={tabletHandoff}
+            onSelect={(next) => {
+              handleSelectBill(next);
+              toast.message("Bill selected.");
+            }}
+            onPaySplits={(order) => {
+              setBillsDrawerOpen(false);
+              setSplitPaymentOrder(order);
+            }}
+          />
+        </SheetContent>
+      </Sheet>
 
       <MoveItemsDialog
         open={showMoveItemsDialog}

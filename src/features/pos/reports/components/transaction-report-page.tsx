@@ -36,6 +36,23 @@ const firstDayOfMonth = () => {
   return new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
 };
 
+function toNumber(value: unknown) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/** Jangan render UUID mentah di kolom Stall. */
+function formatStallLabel(row: Pick<TransactionReportRow, "stall_name" | "stall_code">) {
+  const name = row.stall_name?.trim();
+  if (name && !UUID_RE.test(name)) return name;
+  const code = row.stall_code?.trim();
+  if (code && !UUID_RE.test(code)) return code;
+  return "—";
+}
+
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat("id-ID", {
     style: "currency",
@@ -74,11 +91,6 @@ type OrderDetail = {
   status?: string | null;
   items?: OrderItemDetail[];
 };
-
-function toNumber(value: unknown) {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : 0;
-}
 
 export function TransactionReportPage() {
   const [dateFrom, setDateFrom] = useState(firstDayOfMonth);
@@ -252,7 +264,7 @@ export function TransactionReportPage() {
                       </td>
                       <td className="px-3 py-3 text-muted-foreground">{formatDateTime(row.ordered_at)}</td>
                       <td className="px-3 py-3 text-muted-foreground">
-                        {row.stall_name || row.stall_code || "—"}
+                        {formatStallLabel(row)}
                       </td>
                       <td className="px-3 py-3 capitalize text-muted-foreground">
                         {row.status || "—"}
@@ -308,7 +320,7 @@ export function TransactionReportPage() {
               </DialogPanelTitle>
               <DialogPanelDescription>
                 {selectedRow
-                  ? `${formatDateTime(selectedRow.ordered_at)} · ${selectedRow.stall_name || selectedRow.stall_code || "Stall"}`
+                  ? `${formatDateTime(selectedRow.ordered_at)} · ${formatStallLabel(selectedRow)}`
                   : "Item dalam transaksi"}
               </DialogPanelDescription>
             </DialogPanelHeader>

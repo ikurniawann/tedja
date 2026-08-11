@@ -6,6 +6,9 @@ import {
   DEFAULT_BILLING_CHARGES,
   resolveEnabledOptionalCodes,
 } from "@/lib/pos/billing-settings";
+import { POS_CART_STORAGE_KEY } from "@/lib/pos/pos-sell-stall";
+
+export { POS_CART_STORAGE_KEY };
 
 export interface PosCartItem {
   id: string;               // composite: productId + variant + modifier join
@@ -47,7 +50,7 @@ type CartAction =
   | { type: "SET_INCLUDE_TAX"; include: boolean }
   | { type: "HYDRATE"; state: CartState };
 
-const STORAGE_KEY = "pos_cart_state";
+const STORAGE_KEY = POS_CART_STORAGE_KEY;
 
 const DEFAULT_CART_STATE: CartState = {
   items: [],

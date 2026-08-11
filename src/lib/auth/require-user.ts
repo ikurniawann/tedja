@@ -18,10 +18,12 @@ export interface AuthUser {
   branch_name: string | null;
   warehouse_name: string | null;
   /**
-   * Stall aktif pilihan super_admin/admin (switcher sidebar).
+   * Stall aktif pilihan user (switcher sidebar).
    * null = Semua Stall; bila cookie belum pernah diset, fallback ke penempatan user.
    */
   active_stall_id: string | null;
+  /** true bila user boleh membuka StallSwitcher (multi-stall / admin / allAccess). */
+  can_switch_stall: boolean;
 }
 
 export const getUser = cache(async (): Promise<{
@@ -43,8 +45,6 @@ export const getUser = cache(async (): Promise<{
 
   if (!profile) return { user: null, db };
 
-  const canSwitchStall = profile.role === "super_admin" || profile.role === "admin";
-
   const [scope, warehouses, resolvedStall] = await Promise.all([
     queryOne<{
       company_name: string | null;
@@ -59,8 +59,19 @@ export const getUser = cache(async (): Promise<{
       [user.id]
     ),
     loadUserWarehouses(user.id),
-    canSwitchStall ? resolveActiveStallFromCookies() : Promise.resolve({ mode: "unset" as const }),
+    resolveActiveStallFromCookies(),
   ]);
+
+  const access = await getStallAccess(
+    user.id,
+    profile.role,
+    scope?.branch_id ?? null
+  );
+  const canSwitchStall =
+    profile.role === "super_admin" ||
+    profile.role === "admin" ||
+    access.allAccess ||
+    access.stalls.length > 1;
 
   // Default penempatan: Main Storage (is_default) jika ada, else stall pertama.
   const placementDefault = warehouses[0] ?? null;
@@ -69,11 +80,6 @@ export const getUser = cache(async (): Promise<{
   let active_stall_id: string | null;
 
   if (canSwitchStall) {
-    const access = await getStallAccess(
-      user.id,
-      profile.role,
-      scope?.branch_id ?? null
-    );
     const allowedIds = new Set(access.stalls.map((stall) => stall.id));
     // Stall default dari penempatan; bila allAccess tanpa penempatan → Semua Stall.
     const fallbackName = placementDefault?.name ?? (access.allAccess ? "Semua Stall" : null);
@@ -95,7 +101,7 @@ export const getUser = cache(async (): Promise<{
   } else {
     warehouse_name =
       warehouses.length > 0 ? warehouses.map((warehouse) => warehouse.name).join(", ") : null;
-    active_stall_id = null;
+    active_stall_id = warehouses[0]?.warehouse_id ?? null;
   }
 
   const isUnscoped =
@@ -127,6 +133,7 @@ export const getUser = cache(async (): Promise<{
       branch_name,
       warehouse_name,
       active_stall_id,
+      can_switch_stall: canSwitchStall,
     },
     db,
   };

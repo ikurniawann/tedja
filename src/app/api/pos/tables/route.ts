@@ -42,7 +42,10 @@ function normalizeTable(
   table: TableRow,
   activeOrder?: ActiveOrderRow | null
 ) {
-  const tableNumber = table.table_number || table.qr_code || table.id;
+  const tableNumber = String(table.table_number || "").trim()
+    || String(table.qr_code || "").trim()
+    || String(table.name || "").trim()
+    || "Meja";
   const orderPayload = activeOrder
     ? {
         id: activeOrder.id,

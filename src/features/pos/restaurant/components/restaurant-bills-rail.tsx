@@ -74,7 +74,7 @@ function resolveOrderTableLabel(order: Order, tablesById: Map<string, PosTable>)
 
   if (order.table?.table_number) return order.table.table_number;
   if (order.table?.qr_code) return order.table.qr_code;
-  return order.table_id ? `Table ${order.table_id.slice(0, 8)}` : "Without table";
+  return order.table_id ? "Meja" : "Without table";
 }
 
 function isOpenBill(order: Order) {
@@ -88,6 +88,8 @@ export interface RestaurantBillsRailProps {
   tablesById: Map<string, PosTable>;
   selection: NullableRestaurantSelection;
   immersive?: boolean;
+  /** panel = permanent column (legacy); drawer = content inside Sheet */
+  variant?: "panel" | "drawer";
   onSelect: (selection: RestaurantSelection) => void;
   onPaySplits?: (order: Order) => void;
 }
@@ -96,6 +98,7 @@ export function RestaurantBillsRail({
   tablesById,
   selection,
   immersive = false,
+  variant = "panel",
   onSelect,
   onPaySplits,
 }: RestaurantBillsRailProps) {
@@ -123,111 +126,133 @@ export function RestaurantBillsRail({
     );
   };
 
+  const header = (
+    <div className={cn(variant === "drawer" ? "pr-10" : undefined)}>
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-semibold text-gray-950">Open Bills</h2>
+          <p className="text-xs text-muted-foreground">
+            Select a bill to use restaurant actions.
+          </p>
+        </div>
+        <Badge variant="outline" className="border-primary/20 text-primary">
+          {openBills.length}
+        </Badge>
+      </div>
+    </div>
+  );
+
+  const body = (
+    <div
+      className={cn(
+        "min-h-0 flex-1 space-y-3 overflow-y-auto",
+        variant === "drawer" ? "p-4 pt-0" : "p-3",
+        variant === "panel" && "min-h-[220px]"
+      )}
+    >
+      {loading ? (
+        <div className="flex items-center gap-2 rounded-lg border border-gray-200/70 bg-gray-50/80 p-4 text-sm text-muted-foreground">
+          <Loader2 className="size-4 animate-spin" />
+          Loading open bills...
+        </div>
+      ) : errorMessage ? (
+        <div className="rounded-lg border border-red-200/80 bg-red-50 p-4 text-sm font-medium text-red-600">
+          {errorMessage}
+        </div>
+      ) : openBills.length === 0 ? (
+        <div className="rounded-lg border border-gray-200/70 bg-gray-50/80 p-6 text-center">
+          <ReceiptText className="mx-auto size-8 text-muted-foreground" />
+          <div className="mt-3 text-sm font-semibold text-gray-950">
+            No open bills
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Active restaurant bills will appear here.
+          </p>
+        </div>
+      ) : (
+        openBills.map((order) => {
+          const selected = isBillSelected(selection, order.id);
+          const tableLabel = resolveOrderTableLabel(order, tablesById);
+          const splitSummary = getActiveSplitSummary(order.splits);
+
+          return (
+            <article
+              key={order.id}
+              role="button"
+              tabIndex={0}
+              onClick={() => onSelect(billSelection(order.id, order.table_id))}
+              onDoubleClick={() => openBill(order)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") openBill(order);
+              }}
+              className={cn(
+                "rounded-lg border bg-white p-3 text-left shadow-xs transition-all",
+                selected
+                  ? "border-primary bg-primary/5 ring-1 ring-primary/40"
+                  : "border-gray-200/70 hover:border-primary/30 hover:bg-primary/5"
+              )}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="truncate font-mono text-sm font-bold text-gray-950">
+                    {order.order_number || order.id.slice(0, 8)}
+                  </div>
+                  <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <Table2 className="size-3.5" />
+                    <span className="truncate">{tableLabel}</span>
+                  </div>
+                  {splitSummary ? (
+                    <Badge
+                      variant="outline"
+                      className="mt-2 border-primary/20 bg-primary/5 text-[10px] text-primary"
+                    >
+                      Split · {splitSummary.paid}/{splitSummary.total}
+                    </Badge>
+                  ) : null}
+                </div>
+                <div className="shrink-0 text-right text-sm font-bold text-gray-950">
+                  {formatCurrency(Number(order.total_amount || 0))}
+                </div>
+              </div>
+
+              <div className="mt-3 flex items-center justify-between gap-2">
+                <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <Clock className="size-3.5" />
+                  <RelativeTime value={order.ordered_at} />
+                </span>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-7 border-primary/20 px-2 text-xs text-primary hover:bg-primary/5"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    openBill(order);
+                  }}
+                >
+                  {splitSummary ? "Pay" : "Open"}
+                </Button>
+              </div>
+            </article>
+          );
+        })
+      )}
+    </div>
+  );
+
+  if (variant === "drawer") {
+    return (
+      <div className="flex h-full min-h-0 flex-col">
+        <div className="border-b border-gray-200/70 px-4 py-3">{header}</div>
+        {body}
+      </div>
+    );
+  }
+
   return (
     <aside className="flex min-h-0 min-w-0 flex-col rounded-xl border border-gray-200/70 bg-white shadow-xs min-[800px]:h-full">
-      <div className="border-b border-gray-200/70 px-4 py-3">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h2 className="text-sm font-semibold text-gray-950">Open Bills</h2>
-            <p className="text-xs text-muted-foreground">
-              Select a bill to use restaurant actions.
-            </p>
-          </div>
-          <Badge variant="outline" className="border-primary/20 text-primary">
-            {openBills.length}
-          </Badge>
-        </div>
-      </div>
-
-      <div className="min-h-[220px] flex-1 space-y-3 overflow-y-auto p-3">
-        {loading ? (
-          <div className="flex items-center gap-2 rounded-lg border border-gray-200/70 bg-gray-50/80 p-4 text-sm text-muted-foreground">
-            <Loader2 className="size-4 animate-spin" />
-            Loading open bills...
-          </div>
-        ) : errorMessage ? (
-          <div className="rounded-lg border border-red-200/80 bg-red-50 p-4 text-sm font-medium text-red-600">
-            {errorMessage}
-          </div>
-        ) : openBills.length === 0 ? (
-          <div className="rounded-lg border border-gray-200/70 bg-gray-50/80 p-6 text-center">
-            <ReceiptText className="mx-auto size-8 text-muted-foreground" />
-            <div className="mt-3 text-sm font-semibold text-gray-950">
-              No open bills
-            </div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Active restaurant bills will appear here.
-            </p>
-          </div>
-        ) : (
-          openBills.map((order) => {
-            const selected = isBillSelected(selection, order.id);
-            const tableLabel = resolveOrderTableLabel(order, tablesById);
-            const splitSummary = getActiveSplitSummary(order.splits);
-
-            return (
-              <article
-                key={order.id}
-                role="button"
-                tabIndex={0}
-                onClick={() => onSelect(billSelection(order.id, order.table_id))}
-                onDoubleClick={() => openBill(order)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") openBill(order);
-                }}
-                className={cn(
-                  "rounded-lg border bg-white p-3 text-left shadow-xs transition-all",
-                  selected
-                    ? "border-primary bg-primary/5 ring-1 ring-primary/40"
-                    : "border-gray-200/70 hover:border-primary/30 hover:bg-primary/5"
-                )}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="truncate font-mono text-sm font-bold text-gray-950">
-                      {order.order_number || order.id.slice(0, 8)}
-                    </div>
-                    <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-                      <Table2 className="size-3.5" />
-                      <span className="truncate">{tableLabel}</span>
-                    </div>
-                    {splitSummary ? (
-                      <Badge
-                        variant="outline"
-                        className="mt-2 border-primary/20 bg-primary/5 text-[10px] text-primary"
-                      >
-                        Split · {splitSummary.paid}/{splitSummary.total}
-                      </Badge>
-                    ) : null}
-                  </div>
-                  <div className="shrink-0 text-right text-sm font-bold text-gray-950">
-                    {formatCurrency(Number(order.total_amount || 0))}
-                  </div>
-                </div>
-
-                <div className="mt-3 flex items-center justify-between gap-2">
-                  <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <Clock className="size-3.5" />
-                    <RelativeTime value={order.ordered_at} />
-                  </span>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="h-7 border-primary/20 px-2 text-xs text-primary hover:bg-primary/5"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      openBill(order);
-                    }}
-                  >
-                    {splitSummary ? "Pay" : "Open"}
-                  </Button>
-                </div>
-              </article>
-            );
-          })
-        )}
-      </div>
+      <div className="border-b border-gray-200/70 px-4 py-3">{header}</div>
+      {body}
     </aside>
   );
 }

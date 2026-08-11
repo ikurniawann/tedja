@@ -24,6 +24,7 @@ import {
   cashierSplitRowClass,
 } from '@/features/pos/cashier/cashier-workspace-layout';
 import { PosTabletChromeControls } from '@/features/pos/components/pos-tablet-chrome-controls';
+import { CashierStallGate } from '@/features/pos/cashier/components/cashier-stall-gate';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -184,7 +185,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
   const handoffOrderType = searchParams.get('orderType');
   const handoffKeyRef = useRef<string | null>(null);
   const pendingRestaurantReturnRef = useRef(false);
-  const { products, categories, loading, error } = usePosProducts();
+  const { products, categories, loading, error, stallBlockedReason } = usePosProducts();
   const { customers, findCustomer, refetch: refetchCustomers } = usePosCustomers();
   const cart = usePosCart();
   const { checkout, submitting } = usePosCheckout();
@@ -367,7 +368,9 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
   const selectedTableDisplay = useMemo(() => {
     if (!effectiveTableId) return null;
     const selected = tableById.get(effectiveTableId);
-    return selected ? getTableDisplayName(selected) : effectiveTableId;
+    if (selected) return getTableDisplayName(selected);
+    // Jangan tampilkan UUID mentah bila daftar meja belum match.
+    return "Meja";
   }, [effectiveTableId, tableById]);
 
   const selectedTableCapacity = useMemo(() => {
@@ -1610,6 +1613,9 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
           </div>
         </div>
       )}
+      {stallBlockedReason && !loading && (
+        <CashierStallGate reason={stallBlockedReason} />
+      )}
 
       {/* LEFT PANEL */}
       <div className={cashierLeftPanelClass(isTabletMode)}>
@@ -1970,7 +1976,6 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         onSearchChange={setCustomerSearch}
         onCreateCustomer={handleCreateCustomer}
         initialNfcUid={pendingNfcUid}
-        onInitialNfcUidConsumed={() => setPendingNfcUid(null)}
         onSelect={(c) => {
           cart.setCustomer(c?.id ?? null);
           setShowCustomerModal(false);
@@ -2323,7 +2328,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
             <AlertDialogTitle>Card ID has no member</AlertDialogTitle>
             <AlertDialogDescription>
               This card ID ({createMemberPromptUid}) is not linked to a member yet.
-              Would you like to create a new member?
+              Link it to an existing customer or create a new one.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -2337,7 +2342,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
                 setShowCustomerModal(true);
               }}
             >
-              Yes, create member
+              Continue
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

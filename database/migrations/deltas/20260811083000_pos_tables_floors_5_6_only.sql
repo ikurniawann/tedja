@@ -1,5 +1,4 @@
--- POS tables seeder: 10 tables per floor (Lantai 5 & 6 only).
--- Idempotent on table_number.
+-- POS tables: keep only Floor 5 & 6 active; seed Floor 6 if missing.
 
 WITH floors AS (
   SELECT *
@@ -14,7 +13,6 @@ nums AS (
 ),
 seed AS (
   SELECT
-    f.floor_idx,
     f.floor_code,
     f.floor_label,
     f.default_area,
@@ -26,7 +24,6 @@ seed AS (
       ELSE 'VIP'
     END AS area,
     (ARRAY[2, 4, 4, 6, 4, 4, 6, 8, 2, 4])[n.n] AS capacity,
-    -- Local layout within each floor canvas (5 cols × 2 rows)
     round((4 + ((n.n - 1) % 5) * 18)::numeric, 2) AS pos_x,
     round((8 + ((n.n - 1) / 5) * 42)::numeric, 2) AS pos_y
   FROM floors f
@@ -71,9 +68,18 @@ ON CONFLICT (table_number) DO UPDATE SET
   pos_y = EXCLUDED.pos_y,
   updated_at = now();
 
--- Soft-deactivate legacy floors (B/GF/1–4) so restaurant/tables only show 5 & 6.
 UPDATE pos.pos_tables
 SET is_active = false,
     updated_at = now()
 WHERE coalesce(floor, '') NOT IN ('5', '6')
   AND is_active IS DISTINCT FROM false;
+
+UPDATE pos.pos_tables
+SET notes = CASE
+      WHEN floor = '5' THEN 'Lantai 5 seed table'
+      WHEN floor = '6' THEN 'Lantai 6 seed table'
+      ELSE notes
+    END,
+    updated_at = now()
+WHERE floor IN ('5', '6')
+  AND is_active = true;

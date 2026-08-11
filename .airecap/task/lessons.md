@@ -1,5 +1,32 @@
 # Lessons
 
+## Restaurant Open Bills drawer
+- Panel kanan Open Bills default **tertutup**; buka via **View Orders** → Sheet kanan.
+- Workspace restaurant = 2 kolom (action + floor), bukan 3.
+
+## Login hydration mismatch
+- Jangan `useState(() => typeof window === "undefined" ? null : searchParams…)` — SSR = null, client = `module=pos` → mismatch teks.
+- Baca `redirect`/`module` + jam lokal di `useEffect` setelah mount; state awal sama di server & client.
+
+## POS GUID di UI
+- Jangan fallback label meja/stall ke `id` UUID. Pakai "Meja" / "—" / nama dari join warehouses.
+- Kasir: bila `tableById` belum match, tampilkan "Meja" — bukan `effectiveTableId` mentah.
+- Laporan transaksi: formatStallLabel tolak string yang mirip UUID.
+
+- Jangan biarkan catalog = union semua assignment user. Kasir wajib **satu stall aktif**.
+- Mode cookie `all` / "Semua Stall" → block jual (produk kosong + checkout 400).
+- Superadmin default sering "Semua Stall" — kasir banner = **pesan saja**, jangan list stall kedua (duplikat switcher sidebar).
+- Di path cashier/restaurant: sembunyikan opsi "Semua Stall" di sidebar switcher.
+- Stamp `pos_orders.warehouse_id`; laporan transaksi baca header order dulu, bukan `ROW_NUMBER` item termahal.
+- Ganti stall saat `pos_cart_state` berisi → **blok** (bukan auto-clear). Key: `POS_CART_STORAGE_KEY`.
+- Switcher boleh untuk multi-stall / allAccess, bukan cuma super_admin/admin.
+- `stall-options` + `active-stall` API: pakai `requireApiUser` + cek canSwitch, selaras dengan gate kasir.
+
+- Jangan auto-buka form create saat Card ID belum terdaftar. Tampilkan choice: pilih existing (link `nfc_uid`) atau buat baru.
+- Jangan `onInitialNfcUidConsumed` / clear `pendingNfcUid` saat modal open — Strict Mode + `router.replace(?card=)` bisa remount dan opsi create hilang.
+- Topup harus claim NFC (`setPaymentNfcActive(true)`) supaya scan di halaman itu tidak cuma lewat URL. Clear `?card=` setelah select/close, bukan saat resolve unknown.
+- Fitur yang “sudah disesuaikan” tapi belum commit/merge akan hilang saat pindah branch.
+
 ## Sidebar parent icons
 - Icon parent (group) jangan solid + pill penuh: terasa pecah di samping chevron. Outline + `shrink-0` + label `truncate`.
 - Nama icon IAM yang tidak ada di `VALID_ICONS`/`iconMap` jatuh ke clipboard. Tambah mapping dulu sebelum ganti icon di DB.

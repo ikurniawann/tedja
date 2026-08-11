@@ -27,19 +27,40 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [transitioning, setTransitioning] = useState(false);
-  const [now, setNow] = useState(new Date());
+  // null sampai mount — hindari hydration mismatch jam/locale SSR vs client
+  const [now, setNow] = useState<Date | null>(null);
   const [wallpaper, setWallpaper] = useState("/bg.png");
+  const [requestedRedirect, setRequestedRedirect] = useState<string | null>(null);
+  const [requestedModule, setRequestedModule] = useState<string | null>(null);
 
   const formattedTime = useMemo(
-    () => now.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }).replace(".", ":"),
+    () =>
+      now
+        ? now
+            .toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })
+            .replace(".", ":")
+        : "--:--",
     [now]
   );
   const formattedDate = useMemo(
-    () => now.toLocaleDateString("id-ID", { weekday: "long", day: "numeric", month: "long" }),
+    () =>
+      now
+        ? now.toLocaleDateString("id-ID", {
+            weekday: "long",
+            day: "numeric",
+            month: "long",
+          })
+        : "\u00a0",
     [now]
   );
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const redirect = params.get("redirect");
+    setRequestedRedirect(redirect?.startsWith("/dashboard") ? redirect : null);
+    setRequestedModule(params.get("module"));
+
+    setNow(new Date());
     const interval = window.setInterval(() => setNow(new Date()), 1000);
     const wallpapers = {
       arkiv: "/bg.png",
@@ -51,16 +72,6 @@ export default function LoginPage() {
     if (saved && wallpapers[saved]) setWallpaper(wallpapers[saved]);
     return () => window.clearInterval(interval);
   }, []);
-
-  const [requestedRedirect] = useState<string | null>(() => {
-    if (typeof window === "undefined") return null;
-    const redirect = new URLSearchParams(window.location.search).get("redirect");
-    return redirect?.startsWith("/dashboard") ? redirect : null;
-  });
-  const [requestedModule] = useState<string | null>(() => {
-    if (typeof window === "undefined") return null;
-    return new URLSearchParams(window.location.search).get("module");
-  });
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();

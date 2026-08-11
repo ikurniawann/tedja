@@ -88,7 +88,16 @@ export interface ProductModifier {
 
 export async function getProducts(params?: { category?: string; search?: string }) {
   const queryString = params ? new URLSearchParams(params as any).toString() : '';
-  return fetchAPI<{ success: boolean; data: Product[] }>(`/products${queryString ? '?' + queryString : ''}`);
+  return fetchAPI<{
+    success: boolean;
+    data: Product[];
+    meta?: {
+      stall_scoped?: boolean;
+      warehouse_ids?: string[];
+      reason?: string;
+      product_count?: number;
+    };
+  }>(`/products${queryString ? '?' + queryString : ''}`);
 }
 
 // ============ CUSTOMERS ============

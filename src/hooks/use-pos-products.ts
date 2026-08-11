@@ -10,6 +10,7 @@ export function usePosProducts() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isOfflineFallback, setIsOfflineFallback] = useState(false);
+  const [stallBlockedReason, setStallBlockedReason] = useState<string | null>(null);
 
   const fetchProducts = useCallback(async () => {
     try {
@@ -21,33 +22,46 @@ export function usePosProducts() {
       setProducts(data);
       const cats = Array.from(new Set(data.map((p: any) => p.category?.name || "Uncategorized")));
       setCategories(["All", ...cats]);
-      // Cache to IndexedDB
-      void cacheProducts(data.map((p: any) => ({
-        id: p.id,
-        name: p.name,
-        sku: p.sku,
-        base_price: p.base_price,
-        is_active: p.is_active,
-        is_available: p.is_available,
-        image_url: p.image_url,
-        category: p.category,
-        variants: p.variants,
-        modifiers: p.modifiers,
-        xp: p.xp,
-        station: p.station,
-        product_kind: p.product_kind,
-      })));
-      void setLastSyncTimestamp('products');
+      const reason = res.meta?.reason;
+      setStallBlockedReason(
+        data.length === 0 &&
+          (reason === "all_stalls" ||
+            reason === "multiple_unselected" ||
+            reason === "no_stall" ||
+            reason === "no_stall_assignment")
+          ? reason
+          : null
+      );
+      void cacheProducts(
+        data.map((p: any) => ({
+          id: p.id,
+          name: p.name,
+          sku: p.sku,
+          base_price: p.base_price,
+          is_active: p.is_active,
+          is_available: p.is_available,
+          image_url: p.image_url,
+          category: p.category,
+          variants: p.variants,
+          modifiers: p.modifiers,
+          xp: p.xp,
+          station: p.station,
+          product_kind: p.product_kind,
+        }))
+      );
+      void setLastSyncTimestamp("products");
     } catch (err: any) {
-      // Try fallback from IndexedDB
       try {
         const cached = await getCachedProducts();
         if (cached.length > 0) {
           setProducts(cached as Product[]);
-          const cats = Array.from(new Set(cached.map((p: any) => p.category?.name || "Uncategorized")));
+          const cats = Array.from(
+            new Set(cached.map((p: any) => p.category?.name || "Uncategorized"))
+          );
           setCategories(["All", ...cats]);
           setIsOfflineFallback(true);
           setError(null);
+          setStallBlockedReason(null);
         } else {
           setError(err.message || "Failed to load products");
         }
@@ -63,5 +77,13 @@ export function usePosProducts() {
     fetchProducts();
   }, [fetchProducts]);
 
-  return { products, categories, loading, error, isOfflineFallback, refetch: fetchProducts };
+  return {
+    products,
+    categories,
+    loading,
+    error,
+    isOfflineFallback,
+    stallBlockedReason,
+    refetch: fetchProducts,
+  };
 }

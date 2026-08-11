@@ -61,9 +61,7 @@ function resolveOrderTableLabel(
   }
   if (order.table?.table_number) return order.table.table_number;
   if (order.table?.qr_code) return order.table.qr_code;
-  return order.table_id
-    ? `Table ${order.table_id.slice(0, 8)}`
-    : "Without table";
+  return order.table_id ? "Meja" : "Without table";
 }
 
 function isOpenBill(order: Order) {

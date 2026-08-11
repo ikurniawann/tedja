@@ -82,7 +82,10 @@ export async function GET(request: NextRequest) {
         meta: {
           stall_scoped: true,
           warehouse_ids: stallScope.mode === "ids" ? stallScope.warehouseIds : [],
-          reason: stallScope.mode === "none" ? "no_stall_assignment" : "no_products_for_stall",
+          reason:
+            stallScope.mode === "none"
+              ? stallScope.reason || "no_stall_assignment"
+              : "no_products_for_stall",
         },
       });
     }

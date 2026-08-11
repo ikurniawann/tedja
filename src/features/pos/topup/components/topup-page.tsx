@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   AlertCircle,
@@ -13,7 +13,6 @@ import {
   Nfc,
   Printer,
   QrCode,
-  Search,
   User,
   Wallet,
 } from 'lucide-react';
@@ -22,7 +21,11 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { CustomerSearchModal } from '@/components/pos/CustomerSearchModal';
-import { findCustomerByCard } from '@/features/pos/nfc';
+import {
+  findCustomerByCard,
+  POS_NFC_CARD_EVENT,
+  usePosNfcOptional,
+} from '@/features/pos/nfc';
 import { saveCustomer } from '@/lib/pos-api';
 import type { CustomerWithDiscount } from '@/hooks/use-pos-customers';
 import { cn } from '@/lib/utils';
@@ -49,14 +52,6 @@ function parseAmountInput(raw: string) {
   return Number.parseInt(digits, 10) || 0;
 }
 
-function tierBadgeClass(tier?: string | null) {
-  const value = String(tier || 'regular').toLowerCase();
-  if (value === 'platinum') return 'bg-violet-100 text-violet-700';
-  if (value === 'gold') return 'bg-amber-100 text-amber-800';
-  if (value === 'silver') return 'bg-slate-100 text-slate-700';
-  return 'bg-sky-100 text-sky-700';
-}
-
 export function TopupPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -66,7 +61,7 @@ export function TopupPage() {
   const [step, setStep] = useState<TopupStatus>('idle');
   const [customerSearch, setCustomerSearch] = useState('');
   const [customer, setCustomer] = useState<TopupCustomer | null>(null);
-  const [showCustomerList, setShowCustomerList] = useState(false);
+  const [showCustomerModal, setShowCustomerModal] = useState(false);
   const [topupRp, setTopupRp] = useState(0);
   const [customRp, setCustomRp] = useState('');
   const [payment, setPayment] = useState<PaymentMethod>('qris');
@@ -75,13 +70,11 @@ export function TopupPage() {
   const [error, setError] = useState('');
   const [resolvingCard, setResolvingCard] = useState(false);
   const [printingReceipt, setPrintingReceipt] = useState(false);
-  const [showCreateFromNfc, setShowCreateFromNfc] = useState(false);
   const [pendingNfcUid, setPendingNfcUid] = useState<string | null>(null);
-  const [createSearch, setCreateSearch] = useState('');
   const [pendingTopupId, setPendingTopupId] = useState<string | null>(null);
   const [actionTopupId, setActionTopupId] = useState<string | null>(null);
 
-  const { data: customers = [], isLoading: loadingCustomers, error: customersError, refetch } =
+  const { data: customers = [], error: customersError, refetch } =
     useTopupCustomers({ search: customerSearch });
   const {
     data: topupHistory = [],
@@ -92,6 +85,8 @@ export function TopupPage() {
   const topupMutation = useProcessTopup();
   const cancelMutation = useCancelTopup(customer?.id);
   const { data: loyaltySettings } = useLoyaltySettings();
+  const posNfc = usePosNfcOptional();
+  const setPaymentNfcActive = posNfc?.setPaymentNfcActive;
 
   const arkRate = loyaltySettings?.ark_rate || 1000;
   const presetValues = loyaltySettings?.topup_presets?.length
@@ -99,14 +94,6 @@ export function TopupPage() {
     : [50000, 100000, 200000, 500000, 1000000];
   const minTopup = loyaltySettings?.topup_min_amount ?? 10000;
   const formatArk = (value: number) => formatArkAmount(value, arkRate);
-
-  const filtered = useMemo(() => {
-    const query = customerSearch.trim().toLowerCase();
-    if (!query) return customers;
-    return customers.filter((item) =>
-      `${item.name || ''} ${item.phone} ${item.nfc_uid || ''}`.toLowerCase().includes(query)
-    );
-  }, [customers, customerSearch]);
 
   const projectedBalance = customer ? Number(customer.ark_coin_balance || 0) + topupRp : 0;
   const customersErrorMessage = customersError instanceof Error ? customersError.message : '';
@@ -117,6 +104,7 @@ export function TopupPage() {
         id: item.id,
         phone: item.phone,
         name: item.name || undefined,
+        email: item.email || undefined,
         membership_tier: item.membership_tier || 'regular',
         ark_coin_balance: Number(item.ark_coin_balance || 0),
         total_xp: 0,
@@ -128,15 +116,26 @@ export function TopupPage() {
     [customers]
   );
 
-  function clearCardParam() {
+  const clearCardParam = useCallback(() => {
+    if (!searchParams.get('card')) return;
     router.replace('/dashboard/pos/topup');
-  }
+  }, [router, searchParams]);
+
+  const closeCustomerModal = useCallback(() => {
+    setShowCustomerModal(false);
+    setPendingNfcUid(null);
+    setCustomerSearch('');
+    cardHandledRef.current = null;
+    clearCardParam();
+  }, [clearCardParam]);
 
   function selectCustomer(item: TopupCustomer) {
     setCustomer(item);
-    setShowCustomerList(false);
-    setShowCreateFromNfc(false);
+    setShowCustomerModal(false);
     setPendingNfcUid(null);
+    setCustomerSearch('');
+    cardHandledRef.current = null;
+    clearCardParam();
     setStep('enter_amount');
     setTopupRp(0);
     setCustomRp('');
@@ -169,53 +168,63 @@ export function TopupPage() {
   }
 
   useEffect(() => {
-    const card = cardParam?.trim();
-    if (!card) {
-      cardHandledRef.current = null;
-      return;
-    }
-    if (cardHandledRef.current === card) return;
+    setPaymentNfcActive?.(true);
+    return () => setPaymentNfcActive?.(false);
+  }, [setPaymentNfcActive]);
 
-    let cancelled = false;
+  const resolveScannedCard = useCallback(async (rawCard: string) => {
+    const card = rawCard.trim();
+    if (!card || cardHandledRef.current === card) return;
 
-    async function resolveCard() {
-      setResolvingCard(true);
-      setError('');
-      try {
-        const list = await listTopupCustomers({});
-        if (cancelled) return;
-        const found = findCustomerByCard(list, card!);
-        cardHandledRef.current = card!;
-        clearCardParam();
-        if (!found) {
-          setPendingNfcUid(card!.toUpperCase());
-          setShowCreateFromNfc(true);
-          toast.message('Kartu belum terdaftar. Lengkapi data member.');
-          return;
-        }
-        toast.success(`Member ${found.name || found.phone} dipilih`);
-        selectCustomer(found);
-      } catch (err) {
-        if (cancelled) return;
-        cardHandledRef.current = card!;
-        clearCardParam();
-        const message = err instanceof Error ? err.message : 'Gagal membaca kartu';
-        toast.error(message);
-        setError(message);
-      } finally {
-        if (!cancelled) setResolvingCard(false);
+    setResolvingCard(true);
+    setError('');
+    try {
+      const list = await listTopupCustomers({});
+      const found = findCustomerByCard(list, card);
+      cardHandledRef.current = card;
+      if (!found) {
+        setCustomerSearch('');
+        setPendingNfcUid(card.toUpperCase());
+        setShowCustomerModal(true);
+        toast.message('Kartu belum terdaftar. Pilih customer existing atau buat baru.');
+        return;
       }
+      toast.success(`Member ${found.name || found.phone} dipilih`);
+      selectCustomer(found);
+    } catch (err) {
+      cardHandledRef.current = card;
+      clearCardParam();
+      const message = err instanceof Error ? err.message : 'Gagal membaca kartu';
+      toast.error(message);
+      setError(message);
+    } finally {
+      setResolvingCard(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clearCardParam]);
+
+  useEffect(() => {
+    const card = cardParam?.trim();
+    if (!card) return;
+    void resolveScannedCard(card);
+  }, [cardParam, resolveScannedCard]);
+
+  useEffect(() => {
+    function onBridgeCard(event: Event) {
+      const card = (event as CustomEvent<{ card?: string }>).detail?.card;
+      if (!card) return;
+      cardHandledRef.current = null;
+      void resolveScannedCard(card);
     }
 
-    void resolveCard();
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cardParam]);
+    window.addEventListener(POS_NFC_CARD_EVENT, onBridgeCard);
+    return () => window.removeEventListener(POS_NFC_CARD_EVENT, onBridgeCard);
+  }, [resolveScannedCard]);
 
   async function openCustomerList() {
-    setShowCustomerList(true);
+    setPendingNfcUid(null);
+    setCustomerSearch('');
+    setShowCustomerModal(true);
     if (customers.length === 0) await refetch();
   }
 
@@ -803,67 +812,6 @@ export function TopupPage() {
         )}
       </div>
 
-      <Dialog open={showCustomerList} onOpenChange={(open) => !open && setShowCustomerList(false)}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="text-sm font-semibold">Select customer</DialogTitle>
-          </DialogHeader>
-          <div className="py-2">
-            <div className="relative mb-3">
-              <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                type="text"
-                placeholder="Search name, phone, or card ID…"
-                value={customerSearch}
-                onChange={(event) => setCustomerSearch(event.target.value)}
-                autoFocus
-                className="border-gray-200/80 pl-9"
-              />
-            </div>
-            <div className="max-h-64 space-y-1 overflow-y-auto">
-              {loadingCustomers ? (
-                <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Loading customers…
-                </div>
-              ) : filtered.length === 0 ? (
-                <div className="py-10 text-center text-sm text-muted-foreground">No customers found</div>
-              ) : (
-                filtered.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => selectCustomer(item)}
-                    className="flex w-full items-center gap-3 rounded-xl border border-transparent p-3 text-left transition-colors hover:border-primary/20 hover:bg-primary/5"
-                  >
-                    <div className="grid h-9 w-9 place-items-center rounded-full bg-primary/10 text-sm font-bold text-primary">
-                      {(item.name || item.phone).charAt(0)}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm font-medium text-foreground">
-                        {item.name || 'Unnamed'}
-                      </div>
-                      <div className="text-xs text-muted-foreground">{item.phone}</div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-xs font-bold text-amber-600">{formatArk(item.ark_coin_balance)}</div>
-                      <div
-                        className={cn(
-                          'mt-1 inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-semibold capitalize',
-                          tierBadgeClass(item.membership_tier)
-                        )}
-                      >
-                        {item.membership_tier || 'regular'}
-                      </div>
-                    </div>
-                  </button>
-                ))
-              )}
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
       <Dialog open={showReceipt} onOpenChange={(open) => !open && setShowReceipt(false)}>
         <DialogContent className="max-w-xs">
           <DialogHeader>
@@ -916,17 +864,17 @@ export function TopupPage() {
       </Dialog>
 
       <CustomerSearchModal
-        open={showCreateFromNfc}
+        open={showCustomerModal}
         customers={modalCustomers}
-        search={createSearch}
+        search={customerSearch}
         selectedCustomerId={customer?.id ?? null}
-        onSearchChange={setCreateSearch}
+        onSearchChange={setCustomerSearch}
         onCreateCustomer={handleCreateCustomer}
         initialNfcUid={pendingNfcUid}
-        onInitialNfcUidConsumed={() => setPendingNfcUid(null)}
+        allowGuest={false}
         onSelect={(c) => {
           if (!c) {
-            setShowCreateFromNfc(false);
+            closeCustomerModal();
             return;
           }
           toast.success(`Member ${c.name || c.phone} selected`);
@@ -934,16 +882,13 @@ export function TopupPage() {
             id: c.id,
             name: c.name,
             phone: c.phone,
+            email: c.email,
             membership_tier: c.membership_tier,
             ark_coin_balance: Number(c.ark_coin_balance || 0),
             nfc_uid: c.nfc_uid,
           });
         }}
-        onClose={() => {
-          setShowCreateFromNfc(false);
-          setPendingNfcUid(null);
-          setCreateSearch('');
-        }}
+        onClose={closeCustomerModal}
       />
     </div>
   );

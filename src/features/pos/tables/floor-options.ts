@@ -1,11 +1,6 @@
 export const FLOOR_PRESETS = [
-  { value: "B", label: "Basement" },
-  { value: "GF", label: "Ground Floor" },
-  { value: "1", label: "Floor 1" },
-  { value: "2", label: "Floor 2" },
-  { value: "3", label: "Floor 3" },
-  { value: "4", label: "Floor 4" },
-  { value: "5", label: "Floor 5" },
+  { value: "5", label: "Lantai 5" },
+  { value: "6", label: "Lantai 6" },
 ] as const;
 
 export const FLOOR_LABEL: Record<string, string> = Object.fromEntries(

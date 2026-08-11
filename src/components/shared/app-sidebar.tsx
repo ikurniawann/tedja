@@ -43,6 +43,10 @@ import { isPosImmersiveShell } from "@/features/pos/tablet-mode";
 import { PosTabletManifestLink } from "@/features/pos/components/pos-tablet-manifest-link";
 import type { NavItem } from "@/lib/iam/types";
 import { isEssOnlyRole } from "@/lib/iam/access";
+import {
+  POS_CART_STORAGE_KEY,
+  posCartHasItems,
+} from "@/lib/pos/pos-sell-stall";
 import AppSidebarNav from "./app-sidebar-nav";
 import { DashboardBreadcrumbs } from "./dashboard-breadcrumbs";
 
@@ -55,6 +59,7 @@ export interface SidebarUser {
   branch_name?: string | null;
   warehouse_name?: string | null;
   active_stall_id?: string | null;
+  can_switch_stall?: boolean;
 }
 
 export interface AppSidebarProps {
@@ -130,7 +135,7 @@ function AppSidebarContent({
           companyName={user.company_name}
           branchName={user.branch_name}
           warehouseName={user.warehouse_name}
-          canSwitchStall={user.role === "super_admin" || user.role === "admin"}
+          canSwitchStall={user.can_switch_stall === true}
           activeStallId={user.active_stall_id ?? null}
         />
 
@@ -374,6 +379,9 @@ function StallSwitcher({
   activeStallId: string | null;
   children: React.ReactNode;
 }) {
+  const pathname = usePathname();
+  const hideAllStallsOption =
+    pathname.includes("/cashier") || pathname.includes("/restaurant");
   const [stalls, setStalls] = useState<StallOption[] | null>(null);
   const [allAccess, setAllAccess] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -402,6 +410,16 @@ function StallSwitcher({
 
   async function selectStall(warehouseId: string | null) {
     if (switching || warehouseId === activeStallId) return;
+    try {
+      if (posCartHasItems(localStorage.getItem(POS_CART_STORAGE_KEY))) {
+        toast.error(
+          "Kosongkan atau selesaikan keranjang sebelum ganti stall"
+        );
+        return;
+      }
+    } catch {
+      /* localStorage may be unavailable */
+    }
     setSwitching(true);
     try {
       const res = await fetch("/api/auth/active-stall", {
@@ -440,7 +458,7 @@ function StallSwitcher({
           <DropdownMenuLabel className="px-2 pb-1.5 pt-1 text-xs font-medium text-gray-400">
             Stall
           </DropdownMenuLabel>
-          {allAccess && (
+          {allAccess && !hideAllStallsOption && (
             <DropdownMenuItem
               disabled={switching}
               onClick={() => selectStall(null)}
@@ -454,6 +472,11 @@ function StallSwitcher({
               </span>
               {activeStallId === null && <Check className="h-4 w-4 shrink-0 text-pink-600" />}
             </DropdownMenuItem>
+          )}
+          {hideAllStallsOption && (
+            <p className="px-2 pb-1.5 text-[11px] leading-snug text-amber-700/90">
+              Di kasir/restaurant wajib pilih satu stall (bukan Semua Stall).
+            </p>
           )}
           {stalls === null ? (
             <div className="flex justify-center py-3">
