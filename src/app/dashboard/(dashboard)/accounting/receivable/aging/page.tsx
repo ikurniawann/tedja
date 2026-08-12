@@ -1,6 +1,5 @@
-import { createAccountingComingSoonPage } from "@/features/accounting/coming-soon";
+import { ArAgingPage } from "@/features/accounting/ar";
 
-export default createAccountingComingSoonPage(
-  "AR Aging",
-  "Umur piutang customer. Halaman ini sedang disiapkan."
-);
+export default function Page() {
+  return <ArAgingPage />;
+}

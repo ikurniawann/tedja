@@ -3,6 +3,7 @@ export const JOURNAL_MODULES = [
   "PURCHASING",
   "PAYROLL",
   "PINJAMAN",
+  "SALES",
 ] as const;
 export type JournalModule = (typeof JOURNAL_MODULES)[number];
 
@@ -28,6 +29,7 @@ export const JOURNAL_LINE_ROLES = [
   "COGS",
   "INVENTORY",
   "AP",
+  "AR",
   "GRNI",
   "WALLET",
   "GIFT_CARD_LIABILITY",
@@ -58,6 +60,8 @@ export const JOURNAL_EVENT_CODES = [
   "PAYROLL_LOAN_DEDUCTION",
   "PINJAMAN_DISBURSEMENT",
   "PINJAMAN_REPAYMENT",
+  "SALE_AR_INVOICE",
+  "SALE_AR_RECEIPT",
 ] as const;
 export type JournalEventCode = (typeof JOURNAL_EVENT_CODES)[number];
 
@@ -154,6 +158,16 @@ export const JOURNAL_EVENT_META: Record<
     name: "Pinjaman — Pelunasan/Cicilan",
     module: "PINJAMAN",
     description: "Cicilan atau pelunasan pinjaman di luar payroll",
+  },
+  SALE_AR_INVOICE: {
+    name: "Sale AR Invoice",
+    module: "SALES",
+    description: "Pengakuan piutang dari invoice B2B / sales",
+  },
+  SALE_AR_RECEIPT: {
+    name: "Sale AR Receipt",
+    module: "SALES",
+    description: "Penerimaan pembayaran piutang customer",
   },
 };
 

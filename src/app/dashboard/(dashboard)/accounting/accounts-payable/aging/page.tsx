@@ -1,6 +1,5 @@
-import { createAccountingComingSoonPage } from "@/features/accounting/coming-soon";
+import { ApAgingPage } from "@/features/accounting/ap";
 
-export default createAccountingComingSoonPage(
-  "AP Aging",
-  "Umur hutang vendor. Halaman ini sedang disiapkan."
-);
+export default function Page() {
+  return <ApAgingPage />;
+}

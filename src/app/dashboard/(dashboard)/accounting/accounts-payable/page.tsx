@@ -1,11 +1,5 @@
-import { PurchaseInvoicesPage } from "@/features/purchasing/vendor-payments";
+import { ApPayablePage } from "@/features/accounting/ap";
 
 export default function Page() {
-  return (
-    <PurchaseInvoicesPage
-      moduleType="raw_material"
-      title="Account Payable"
-      listTitle="Daftar hutang vendor (Account Payable)"
-    />
-  );
+  return <ApPayablePage />;
 }

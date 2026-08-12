@@ -1,31 +1,31 @@
-# Task: POS 1 order = 1 stall (opsi 1)
+# Task: Accounting AP/AR native
 
 ## Goal
-Kasir jual hanya di stall aktif; 1 `pos_orders` = 1 stall. Switch stall diblok jika cart berisi.
+AP + AR sebagai modul kerja native di Accounting (spek 2026-08-12).
 
-## Plan
-- [x] Helper murni + test: resolve sell stall, cart-has-items, item stall check shape
-- [x] Migration `pos_orders.warehouse_id`
-- [x] Catalog: `resolvePosProductStallScope` ikut stall aktif (tolak "Semua Stall")
-- [x] Checkout + open-bill: validasi item vs stall, stamp `warehouse_id`
-- [x] StallSwitcher: blok ganti stall jika `pos_cart_state` punya items; extend switch ke user multi-stall
-- [x] Laporan transaksi: filter/join `o.warehouse_id`
-- [x] Verifikasi unit test
+## Done
+- [x] AP Phase 1 (schema, GRN→invoice, payment, payable, aging, deprecate Purchasing pay)
+- [x] AR schema + SALE_AR_INVOICE / SALE_AR_RECEIPT mapping (module SALES)
+- [x] AR store/API/UI: receivable, invoices, receipts, aging
+- [x] B2B terbit (terkirim) → create AR invoice + jurnal
+- [x] Lazy sync terkirim existing → AR
+- [x] Finance pay POST 410; CTA “Terima di Accounting”
 
-## Decisions
-- Cart non-empty + switch stall → **blok** (bukan auto-clear)
-- Mode "Semua Stall" → tidak boleh jual di POS
-- Satu assignment → auto pakai stall itu
+## Cash In / Cash Out
+- [x] Store: `createCashMovement` / `listCashMovements` / `listPostableAccounts`
+- [x] API: `/api/accounting/cash-bank/cash-in|cash-out|accounts-options`
+- [x] UI: list + DialogPanel form di `/dashboard/accounting/cash-bank/cash-in|cash-out`
+- Cash In: Debit kas/bank, Credit akun lawan → JE MANUAL POSTED (`source_document_type=cash_in`)
+- Cash Out: Debit akun lawan, Credit kas/bank → JE MANUAL POSTED (`source_document_type=cash_out`)
+
+## Still optional / later
+- [ ] AR Invoice non-B2B (manual) — menu masih bisa pakai list AR; create form belum
+- [ ] Backfill AP dari GRN lama
+- [ ] Hapus dual-write vendor_payments / deal_payments
+- [ ] Detail pages AP/AR
+- [x] Transfer: `/dashboard/accounting/cash-bank/transfer` — Debit tujuan, Credit asal, `source_document_type=cash_transfer`
 
 ## Review
-- Helper: `src/lib/pos/pos-sell-stall.ts` + server resolver
-- Delta: `20260811080000_pos_orders_warehouse_id.sql` — **jalankan migrasi** sebelum deploy POS
-- Catalog & checkout menolak mode Semua Stall / multi tanpa pilihan
-- Switcher: toast blok jika cart berisi; `can_switch_stall` untuk multi-stall non-admin
-- Laporan transaksi prefer `o.warehouse_id`, fallback legacy item-infer
-- Test: `pos-sell-stall.test.ts` 12 passed; `tsc --noEmit` OK
-
-## DB restore (2026-08-11)
-- [x] Backup remote `db-dev-arkiv` (tunnel `:15432`) → `database/backups/db-dev-arkiv_2026-08-11T01-19-32.sql`
-- [x] Restore ke Postgres lokal `:5432` dengan nama sama `db-dev-arkiv` (~32 MB, 19 schema)
-- [x] `.env` `DATABASE_URL` / `MIGRATE_DATABASE_URL` diarahkan ke local `db-dev-arkiv`
+- Migrasi: `20260812140000_accounting_ar_documents.sql` applied
+- Cek Journal Mapping: event SALE_* + role AR terisi COA 1201001 / 4101001 / 1102001
+- Cash In/Out: jurnal langsung (bukan Journal Mapping event) tagged `source_module=CASH_BANK`

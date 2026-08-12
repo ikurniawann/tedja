@@ -1,6 +1,5 @@
-import { createAccountingComingSoonPage } from "@/features/accounting/coming-soon";
+import { SubsidiaryLedgerPage } from "@/features/accounting/ledger";
 
-export default createAccountingComingSoonPage(
-  "Subsidiary Ledger",
-  "Buku pembantu per akun, customer, atau vendor. Halaman ini sedang disiapkan."
-);
+export default function Page() {
+  return <SubsidiaryLedgerPage />;
+}

@@ -410,10 +410,12 @@ export function FinanceInvoicesPage() {
                       type="button"
                       size="sm"
                       variant="outline"
-                      onClick={() => setPaymentInvoice(invoice)}
-                      className="h-8 gap-1.5 rounded-lg"
+                      onClick={() => {
+                        window.location.href = `/dashboard/accounting/receivable/receipts?sales_invoice=${invoice.id}`;
+                      }}
+                      className="h-8 gap-1.5 rounded-lg border-primary/20 text-primary hover:bg-primary/5"
                     >
-                      <Wallet className="h-3.5 w-3.5" /> Catat Bayar
+                      <Wallet className="h-3.5 w-3.5" /> Terima di Accounting
                     </Button>
                   ) : null}
                   {invoice.paid > 0 ? (

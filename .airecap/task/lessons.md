@@ -45,6 +45,7 @@
 - Jangan edit delta yang sudah ter-apply (checksum ledger). Urutan menu → delta baru.
 - AR: Invoice B2B = funnel sales; Invoice = register customer non-B2B (belum). Jangan samakan nama menu.
 - Pindah Finance → Accounting: update ROLE_MODULE_PATHS `finance_staff` ke `/dashboard/accounting`, whitelist seeder, redirect URL lama.
+- AP native SoT: dokumen di `accounting.ap_*`; GRN buat AP invoice + post `PURCHASE_AP_INVOICE` keyed by `ap_invoice` id; bayar hanya via Accounting AP Payment (Purchasing pay API 410). Dual-write `vendor_payments` sementara untuk outstanding PO.
 
 
 

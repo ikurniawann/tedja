@@ -1,6 +1,5 @@
-import { createAccountingComingSoonPage } from "@/features/accounting/coming-soon";
+import { ArInvoicesPage } from "@/features/accounting/ar";
 
-export default createAccountingComingSoonPage(
-  "AR Invoice",
-  "Invoice piutang customer di luar funnel B2B. Halaman ini sedang disiapkan."
-);
+export default function Page() {
+  return <ArInvoicesPage />;
+}

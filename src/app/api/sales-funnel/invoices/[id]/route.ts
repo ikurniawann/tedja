@@ -103,7 +103,35 @@ export async function PATCH(
        RETURNING id, invoice_number, status`,
       [status, status, id]
     );
-    return successResponse(row, "Invoice diperbarui");
+
+    let accountingNote: string | null = null;
+    if (status === "terkirim" && row) {
+      try {
+        const { createArInvoiceFromSalesInvoice } = await import(
+          "@/lib/accounting/ar-store"
+        );
+        const ar = await createArInvoiceFromSalesInvoice({
+          salesInvoiceId: id,
+          userId: user.id,
+        });
+        accountingNote = ar.note
+          ? `AR ${ar.invoice.invoice_no} (${ar.note})`
+          : `AR ${ar.invoice.invoice_no}`;
+      } catch (arErr) {
+        console.error("[sales-funnel] create AR invoice:", arErr);
+        accountingNote =
+          arErr instanceof Error
+            ? `AR gagal: ${arErr.message}`
+            : "AR gagal dibuat";
+      }
+    }
+
+    return successResponse(
+      row,
+      accountingNote
+        ? `Invoice diperbarui (${accountingNote})`
+        : "Invoice diperbarui"
+    );
   } catch (err) {
     console.error("[sales-funnel] update invoice error:", err);
     return NextResponse.json(

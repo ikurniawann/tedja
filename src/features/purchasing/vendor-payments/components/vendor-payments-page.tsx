@@ -28,8 +28,9 @@ import { PurchasingTablePagination } from "@/modules/purchasing/components/pagin
 import { RM_ROUTES, PRODUCT_ROUTES, GENERAL_ROUTES } from "@/modules/purchasing/constants/item-routes";
 import { formatAmount, formatDate } from "@/lib/purchasing/utils";
 import { usePurchaseInvoiceList } from "../queries";
-import { PurchaseInvoicePayDialog } from "./purchase-invoice-pay-dialog";
 import type { PurchaseInvoicePaymentStatus, PurchaseInvoiceRow } from "../types";
+
+const AP_PAYMENTS_HREF = "/dashboard/accounting/accounts-payable/payments";
 
 const PAYMENT_STATUS_LABELS: Record<PurchaseInvoicePaymentStatus, string> = {
   unpaid: "Belum Dibayar",
@@ -81,7 +82,6 @@ export function PurchaseInvoicesPage({
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<PurchaseInvoicePaymentStatus | "all">("all");
   const [filterOpen, setFilterOpen] = useState(false);
-  const [payRow, setPayRow] = useState<PurchaseInvoiceRow | null>(null);
 
   const listQuery = usePurchaseInvoiceList(
     {
@@ -331,7 +331,7 @@ export function PurchaseInvoicesPage({
                         onOpen={() =>
                           router.push(routes.purchasingInvoicePoDetail(row.purchase_order_id))
                         }
-                        onPay={() => setPayRow(row)}
+                        onPay={() => router.push(AP_PAYMENTS_HREF)}
                       />
                     ))}
                   </tbody>
@@ -349,14 +349,6 @@ export function PurchaseInvoicesPage({
           )}
         </div>
       </PurchasingListSection>
-
-      <PurchaseInvoicePayDialog
-        row={payRow}
-        open={Boolean(payRow)}
-        onOpenChange={(open) => {
-          if (!open) setPayRow(null);
-        }}
-      />
     </div>
   );
 }
@@ -427,12 +419,12 @@ function InvoiceTableRow({
             <Button
               variant="outline"
               size="sm"
-              title="Bayar purchase order"
-              className="h-8 rounded-lg border-pink-200 px-3 text-xs font-medium text-pink-700 hover:bg-pink-50"
+              title="Bayar di Accounting AP Payment"
+              className="h-8 rounded-lg border-primary/20 px-3 text-xs font-medium text-primary hover:bg-primary/5"
               onClick={onPay}
             >
               <Banknote className="mr-1.5 h-3.5 w-3.5" />
-              Bayar
+              Bayar di Accounting
             </Button>
           )}
           <Link href={poDetailRoute}>

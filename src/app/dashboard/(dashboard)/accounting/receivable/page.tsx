@@ -1,6 +1,5 @@
-import { createAccountingComingSoonPage } from "@/features/accounting/coming-soon";
+import { ArReceivablePage } from "@/features/accounting/ar";
 
-export default createAccountingComingSoonPage(
-  "Receivable",
-  "Daftar piutang customer. Halaman ini sedang disiapkan."
-);
+export default function Page() {
+  return <ArReceivablePage />;
+}

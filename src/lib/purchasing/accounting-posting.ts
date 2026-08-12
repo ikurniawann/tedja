@@ -28,7 +28,8 @@ function summarizeResults(results: MappingPostResult[]): string | null {
 }
 
 /**
- * After GRN inventory is posted: PURCHASE_GRN then PURCHASE_AP_INVOICE.
+ * After GRN inventory is posted: PURCHASE_GRN, then native AP invoice + PURCHASE_AP_INVOICE.
+ * AP invoice journal is keyed by accounting.ap_invoices id (SoT), not grn id.
  * Throws AccountingPostError when mapping is ready but technical/fiscal post fails.
  */
 export async function postGrnAccountingJournals(opts: {
@@ -49,7 +50,7 @@ export async function postGrnAccountingJournals(opts: {
     };
   }
 
-  const common = {
+  const grnResult = await postJournalFromMapping({
     companyId: built.companyId,
     userId: opts.userId,
     documentType: "grn",
@@ -57,19 +58,31 @@ export async function postGrnAccountingJournals(opts: {
     entryDate: built.entryDate,
     amounts: built.amounts,
     sourceModule: "PURCHASING",
-  };
-
-  const grnResult = await postJournalFromMapping({
-    ...common,
     eventCode: "PURCHASE_GRN",
     description: `GRN ${built.nomorGrn} — penerimaan inventory`,
   });
 
-  const apResult = await postJournalFromMapping({
-    ...common,
-    eventCode: "PURCHASE_AP_INVOICE",
-    description: `GRN ${built.nomorGrn} — pengakuan hutang vendor (AP)`,
-  });
+  const { createApInvoiceFromGrn } = await import("@/lib/accounting/ap-store");
+  const { postApInvoiceJournal } = await import("@/lib/accounting/ap-posting");
+
+  let apResult: MappingPostResult;
+  try {
+    const invoice = await createApInvoiceFromGrn({
+      db: opts.db,
+      grnId: opts.grnId,
+      userId: opts.userId,
+    });
+    const posted = await postApInvoiceJournal({
+      companyId: built.companyId,
+      userId: opts.userId,
+      invoice,
+      description: `GRN ${built.nomorGrn} / ${invoice.invoice_no} — pengakuan hutang vendor (AP)`,
+    });
+    apResult = posted.result;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Gagal membuat AP invoice";
+    apResult = { status: "skipped", reason: message };
+  }
 
   const results = [grnResult, apResult];
   return { results, note: summarizeResults(results) };

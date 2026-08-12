@@ -1,6 +1,10 @@
-import { createAccountingComingSoonPage } from "@/features/accounting/coming-soon";
+import { Suspense } from "react";
+import { ArReceiptsPage } from "@/features/accounting/ar";
 
-export default createAccountingComingSoonPage(
-  "AR Receipt",
-  "Penerimaan pembayaran piutang. Halaman ini sedang disiapkan."
-);
+export default function Page() {
+  return (
+    <Suspense fallback={null}>
+      <ArReceiptsPage />
+    </Suspense>
+  );
+}

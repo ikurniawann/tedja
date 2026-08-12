@@ -1,6 +1,5 @@
-import { createAccountingComingSoonPage } from "@/features/accounting/coming-soon";
+import { CashTransferPage } from "@/features/accounting/cash-bank";
 
-export default createAccountingComingSoonPage(
-  "Bank Transfer",
-  "Pemindahan dana antar kas/bank. Halaman ini sedang disiapkan."
-);
+export default function TransferPage() {
+  return <CashTransferPage />;
+}

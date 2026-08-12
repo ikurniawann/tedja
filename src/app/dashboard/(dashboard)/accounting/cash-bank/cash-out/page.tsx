@@ -1,6 +1,5 @@
-import { createAccountingComingSoonPage } from "@/features/accounting/coming-soon";
+import { CashMovementPage } from "@/features/accounting/cash-bank";
 
-export default createAccountingComingSoonPage(
-  "Cash Out",
-  "Pencatatan pengeluaran kas. Halaman ini sedang disiapkan."
-);
+export default function CashOutPage() {
+  return <CashMovementPage kind="cash_out" />;
+}
