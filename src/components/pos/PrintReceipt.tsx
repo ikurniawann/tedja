@@ -2,7 +2,11 @@
 
 import { toast } from "sonner";
 import type { PosCartItem } from "@/hooks/use-pos-cart";
-import { encodeEscPosText, formatReceiptRow } from "@/lib/pos/thermal-escpos";
+import {
+  canUseRawBtPrint,
+  printBytesViaRawBt,
+} from "@/lib/pos/rawbt-print";
+import { encodeEscPosLines, formatReceiptRow } from "@/lib/pos/thermal-escpos";
 import { printBytesToPairedThermal } from "@/lib/pos/thermal-serial";
 
 export interface ReceiptPayload {
@@ -40,105 +44,159 @@ function formatCurrency(n: number) {
   return "Rp " + new Intl.NumberFormat("id-ID", { minimumFractionDigits: 0 }).format(Math.abs(n));
 }
 
-function buildReceiptLines(payload: ReceiptPayload, label: ThermalPrintLabel): string[] {
+export function buildReceiptLines(payload: ReceiptPayload, label: ThermalPrintLabel): string[] {
+  return buildReceiptEscPosLayout(payload, label).map((line) => line.text);
+}
+
+/** Layout matching HTML receipt: centered header / footer, left items + totals. */
+export function buildReceiptEscPosLayout(
+  payload: ReceiptPayload,
+  label: ThermalPrintLabel,
+): Array<{ text: string; align: "left" | "center" }> {
   const isKitchen = label === "KITCHEN";
   const isBar = label === "BAR";
   const isPreviewBill = label === "PREVIEW_BILL";
   const heading = isPreviewBill ? "PREVIEW BILL" : label;
-  const lines: string[] = [
-    `--- ${heading} ---`,
-    payload.orderType.replace(/_/g, "-").toUpperCase(),
+  const lines: Array<{ text: string; align: "left" | "center" }> = [
+    { text: `--- ${heading} ---`, align: "center" },
+    { text: payload.orderType.replace(/_/g, "-").toUpperCase(), align: "center" },
   ];
-  if (payload.table) lines.push(payload.table);
-  if (payload.queueNumber) lines.push(`ANTRIAN ${payload.queueNumber}`);
-  lines.push(
-    `Order #${(payload.orderNumber || "").slice(-8).toUpperCase() || (payload.orderId || "").slice(-8).toUpperCase()}`
-  );
-  lines.push(new Date().toLocaleTimeString("id-ID"));
-  if (payload.customerName) lines.push(`Customer: ${payload.customerName}`);
-  if (isPreviewBill) lines.push("PRE-SETTLEMENT - UNPAID");
-  lines.push("--------------------------------");
+  if (payload.table) lines.push({ text: payload.table, align: "center" });
+  if (payload.queueNumber) {
+    lines.push({ text: `ANTRIAN ${payload.queueNumber}`, align: "center" });
+  }
+  lines.push({
+    text: `Order #${(payload.orderNumber || "").slice(-8).toUpperCase() || (payload.orderId || "").slice(-8).toUpperCase()}`,
+    align: "center",
+  });
+  lines.push({ text: new Date().toLocaleTimeString("id-ID"), align: "center" });
+  if (payload.customerName) {
+    lines.push({ text: `Customer: ${payload.customerName}`, align: "center" });
+  }
+  if (isPreviewBill) {
+    lines.push({ text: "PRE-SETTLEMENT - UNPAID", align: "center" });
+  }
+  lines.push({ text: "--------------------------------", align: "left" });
 
   for (const item of payload.items) {
-    lines.push(`${item.quantity}x ${item.name}`);
-    if (item.variantName) lines.push(`  ${item.variantName}`);
-    if (item.modifierNames?.length) lines.push(`  ${item.modifierNames.join(", ")}`);
-    if (item.notes) lines.push(`  * ${item.notes}`);
+    lines.push({ text: `${item.quantity}x ${item.name}`, align: "left" });
+    if (item.variantName) lines.push({ text: `  ${item.variantName}`, align: "left" });
+    if (item.modifierNames?.length) {
+      lines.push({ text: `  ${item.modifierNames.join(", ")}`, align: "left" });
+    }
+    if (item.notes) lines.push({ text: `  * ${item.notes}`, align: "left" });
   }
 
   if (!isKitchen && !isBar) {
-    lines.push("--------------------------------");
+    lines.push({ text: "--------------------------------", align: "left" });
     if (payload.discountAmount > 0) {
-      lines.push(formatReceiptRow("Diskon", `-${formatCurrency(payload.discountAmount)}`));
+      lines.push({
+        text: formatReceiptRow("Diskon", `-${formatCurrency(payload.discountAmount)}`),
+        align: "left",
+      });
     }
     if (payload.chargesBreakdown?.length) {
       for (const line of payload.chargesBreakdown) {
         const amountLabel =
           line.amount < 0 ? `-${formatCurrency(Math.abs(line.amount))}` : formatCurrency(line.amount);
-        lines.push(formatReceiptRow(line.name, amountLabel));
+        lines.push({ text: formatReceiptRow(line.name, amountLabel), align: "left" });
       }
     } else if (payload.taxAmount > 0) {
-      lines.push(formatReceiptRow("PPN", formatCurrency(payload.taxAmount)));
+      lines.push({
+        text: formatReceiptRow("PPN", formatCurrency(payload.taxAmount)),
+        align: "left",
+      });
     }
-    lines.push(formatReceiptRow("TOTAL", formatCurrency(payload.total)));
+    lines.push({
+      text: formatReceiptRow("TOTAL", formatCurrency(payload.total)),
+      align: "left",
+    });
     if (isPreviewBill) {
-      lines.push(formatReceiptRow("Status", "UNPAID"));
+      lines.push({ text: formatReceiptRow("Status", "UNPAID"), align: "left" });
     } else {
-      lines.push(
-        formatReceiptRow(
+      lines.push({
+        text: formatReceiptRow(
           `Bayar (${payload.paymentMethod.toUpperCase()})`,
-          formatCurrency(payload.total + payload.change)
-        )
-      );
+          formatCurrency(payload.total + payload.change),
+        ),
+        align: "left",
+      });
       if (payload.change > 0) {
-        lines.push(formatReceiptRow("Kembalian", formatCurrency(payload.change)));
+        lines.push({
+          text: formatReceiptRow("Kembalian", formatCurrency(payload.change)),
+          align: "left",
+        });
       }
     }
   }
 
   if (!isKitchen && !isBar && !isPreviewBill && payload.giftCards?.length) {
-    lines.push("--------------------------------");
-    lines.push("GIFT CARD");
+    lines.push({ text: "--------------------------------", align: "left" });
+    lines.push({ text: "GIFT CARD", align: "center" });
     for (const card of payload.giftCards) {
-      lines.push(card.code);
-      lines.push(`Saldo ${formatCurrency(card.initial_value)}`);
+      lines.push({ text: card.code, align: "center" });
+      lines.push({ text: `Saldo ${formatCurrency(card.initial_value)}`, align: "center" });
     }
   }
 
   if (payload.notes) {
-    lines.push("--------------------------------");
-    lines.push(`Catatan: ${payload.notes}`);
+    lines.push({ text: "--------------------------------", align: "left" });
+    lines.push({ text: `Catatan: ${payload.notes}`, align: "left" });
   }
-  lines.push("--------------------------------");
-  lines.push(`--- ${heading} COPY ---`);
+  lines.push({ text: "--------------------------------", align: "left" });
+  lines.push({ text: `--- ${heading} COPY ---`, align: "center" });
   return lines;
 }
 
-function printViaHiddenIframe(html: string) {
-  const iframe = document.createElement("iframe");
-  iframe.setAttribute("aria-hidden", "true");
-  iframe.style.cssText =
-    "position:fixed;right:0;bottom:0;width:0;height:0;border:0;opacity:0;pointer-events:none";
-  document.body.appendChild(iframe);
-  const win = iframe.contentWindow;
+/** ESC/POS bytes for RawBT — same layout as desktop thermal / Chrome tablet HTML. */
+export function buildReceiptEscPosBytes(
+  payload: ReceiptPayload,
+  label: ThermalPrintLabel,
+): Uint8Array {
+  return encodeEscPosLines(buildReceiptEscPosLayout(payload, label));
+}
+
+/**
+ * Visible receipt tab — Android Chrome often captures the parent page when
+ * printing from a 0×0 hidden iframe (cashier "screenshot dialog" bug).
+ * Do not close until afterprint; early close breaks RawBT PDF handoff.
+ */
+function printViaPopupWindow(html: string) {
+  const win = window.open("", "_blank");
   if (!win) {
-    iframe.remove();
-    toast.error("Gagal menyiapkan print. Izinkan popup/iframe di browser.");
+    toast.error("Gagal membuka jendela print. Izinkan popup di browser.");
     return;
   }
   win.document.open();
   win.document.write(html);
   win.document.close();
-  const cleanup = () => iframe.remove();
+
+  let closed = false;
+  const cleanup = () => {
+    if (closed) return;
+    closed = true;
+    try {
+      win.close();
+    } catch {
+      // ignore
+    }
+  };
+
   win.addEventListener("afterprint", cleanup);
   window.setTimeout(() => {
-    win.focus();
-    win.print();
-    window.setTimeout(cleanup, 2000);
-  }, 250);
+    try {
+      win.focus();
+      win.print();
+    } catch {
+      cleanup();
+      return;
+    }
+    // Safety net if afterprint never fires (some Android browsers)
+    window.setTimeout(cleanup, 60_000);
+  }, 300);
 }
 
-export async function printThermalReceipt(payload: ReceiptPayload, label: ThermalPrintLabel) {
+function buildReceiptHtml(payload: ReceiptPayload, label: ThermalPrintLabel): string {
   const {
     orderId,
     orderNumber,
@@ -156,16 +214,6 @@ export async function printThermalReceipt(payload: ReceiptPayload, label: Therma
     chargesBreakdown,
     giftCards,
   } = payload;
-
-  try {
-    const sent = await printBytesToPairedThermal(encodeEscPosText(buildReceiptLines(payload, label)));
-    if (sent) {
-      toast.success("Print");
-      return;
-    }
-  } catch (error) {
-    toast.error(error instanceof Error ? error.message : "Print langsung gagal, pakai dialog browser");
-  }
 
   const itemsHtml = items
     .map(
@@ -205,7 +253,7 @@ export async function printThermalReceipt(payload: ReceiptPayload, label: Therma
         ? `<div class="row"><span>PPN</span><span>${formatCurrency(taxAmount)}</span></div>`
         : "";
 
-  printViaHiddenIframe(`<!DOCTYPE html>
+  return `<!DOCTYPE html>
 <html>
   <head>
     <meta charset="utf-8">
@@ -216,17 +264,14 @@ export async function printThermalReceipt(payload: ReceiptPayload, label: Therma
       body {
         font-family: 'Courier New', monospace;
         font-size: 12px;
-        background: #f3f4f6;
-        padding: 24px 16px;
-        display: flex;
-        justify-content: center;
+        background: #fff;
+        padding: 8px;
       }
       .ticket {
         width: 72mm;
         max-width: 100%;
         background: #fff;
-        padding: 6mm 4mm;
-        box-shadow: 0 8px 24px rgba(0,0,0,0.08);
+        padding: 4mm 2mm;
       }
       h1 { font-size:15px; text-align:center; letter-spacing:2px; margin-bottom:4px; }
       .center { text-align:center; }
@@ -236,8 +281,8 @@ export async function printThermalReceipt(payload: ReceiptPayload, label: Therma
       .row.total { font-weight:bold; font-size:14px; margin-top:4px; }
       table { width:100%; border-collapse:collapse; }
       @media print {
-        body { background: #fff; padding: 0; display: block; }
-        .ticket { width: 72mm; box-shadow: none; padding: 6mm 4mm; }
+        body { background: #fff; padding: 0; }
+        .ticket { width: 72mm; padding: 2mm; }
         @page { margin: 0; size: 72mm auto; }
       }
     </style>
@@ -271,7 +316,6 @@ export async function printThermalReceipt(payload: ReceiptPayload, label: Therma
     `}
 
     ${
-      // Kode gift card hanya di struk pelanggan — bukan copy dapur/bar.
       !isKitchen && !isBar && !isPreviewBill && giftCards && giftCards.length > 0
         ? `<div class="divider"></div>
     <div class="center"><strong>GIFT CARD</strong></div>
@@ -298,5 +342,31 @@ export async function printThermalReceipt(payload: ReceiptPayload, label: Therma
     <div class="center">--- ${heading} COPY ---</div>
     </div>
   </body>
-</html>`);
+</html>`;
+}
+
+export async function printThermalReceipt(payload: ReceiptPayload, label: ThermalPrintLabel) {
+  const escPos = buildReceiptEscPosBytes(payload, label);
+
+  // 1) Android Chrome → RawBT ESC/POS intent
+  if (canUseRawBtPrint()) {
+    if (printBytesViaRawBt(escPos)) {
+      toast.success("Print dikirim ke RawBT");
+      return;
+    }
+  }
+
+  // 2) Desktop / paired Web Serial thermal
+  try {
+    const sent = await printBytesToPairedThermal(escPos);
+    if (sent) {
+      toast.success("Print");
+      return;
+    }
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : "Print langsung gagal, coba jalur lain");
+  }
+
+  // 3) Browser print dialog
+  printViaPopupWindow(buildReceiptHtml(payload, label));
 }

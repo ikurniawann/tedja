@@ -16,6 +16,10 @@ import {
   type ThermalPairingCapability,
 } from "@/lib/pos/thermal-serial";
 import { encodeEscPosText } from "@/lib/pos/thermal-escpos";
+import {
+  canUseRawBtPrint,
+  printBytesViaRawBt,
+} from "@/lib/pos/rawbt-print";
 
 type PrinterMode = "browser" | "local_worker" | "network";
 
@@ -152,7 +156,7 @@ export function PrinterSettingsPage() {
                 <p className="mt-1 text-muted-foreground">
                   Chrome di tablet tidak menampilkan perangkat serial/Bluetooth yang kompatibel.
                   Pair printer di Windows/macOS dulu, lalu buka halaman ini di Chrome atau Edge laptop kasir dan klik Hubungkan printer.
-                  Print dari tablet tetap lewat dialog print sistem.
+                  Di Android + RawBT, Print Struk mengirim ESC/POS langsung ke aplikasi RawBT (bukan screenshot dialog).
                 </p>
               </div>
             </div>
@@ -214,14 +218,17 @@ export function PrinterSettingsPage() {
                 <Button
                   type="button"
                   variant="outline"
-                  disabled={testing || pairedCount === 0}
+                  disabled={testing || (pairedCount === 0 && !canUseRawBtPrint())}
                   onClick={async () => {
                     if (testing) return;
                     setTesting(true);
                     try {
-                      const ok = await printBytesToPairedThermal(
-                        encodeEscPosText(["ARKIV POS", "Test printer OK"])
-                      );
+                      const bytes = encodeEscPosText(["ARKIV POS", "Test printer OK"]);
+                      if (canUseRawBtPrint() && printBytesViaRawBt(bytes)) {
+                        toast.success("Test print dikirim ke RawBT");
+                        return;
+                      }
+                      const ok = await printBytesToPairedThermal(bytes);
                       if (!ok) {
                         toast.error("Printer belum terhubung. Klik Hubungkan printer dulu.");
                         return;

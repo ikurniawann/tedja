@@ -104,8 +104,8 @@
 - Split 800px berlaku juga di **cashier-new** (bukan cuma `?tablet=1`). `lg:flex-row` + cart `max-h-[60vh]` di iPad → grid produk height 0 (tampak blank). Pakai `cashier-workspace-layout` + `min-h-[240px]` pada scroller produk.
 - Restaurant tablet: floor 3-kolom dari 800px (`restaurant-workspace-layout`), bukan `lg`. Handoff meja → kasir pakai `shouldUseTabletCashierHandoff` (immersive **atau** handheld) supaya iPad di `/restaurant` masuk `cashier-fullscreen?tablet=1`, bukan `cashier-new`. Chrome Beranda tetap hanya jika immersive (sidebar hilang).
 - Kasir: jangan buka modal Print Struk di tick yang sama dengan close PaymentModal (Base UI Dialog). Tutup payment dulu + delay ~120ms. Payload cash/method dari `onConfirm`, jangan andalkan state parent yang masih stale.
-- Print thermal: pairing Bluetooth 1x di `/dashboard/pos/printer-settings`, bukan di modal kasir. Print Struk hanya kirim job. `window.print()` selalu preview; Web Serial ESC/POS silent. Fallback iframe (1 dialog OS).
-- Web Serial di tablet/Android sering tetap ada API-nya tapi picker kosong (“tidak ada perangkat kompatibel”). Deteksi handheld → jangan tampilkan Hubungkan; pairing hanya Chrome/Edge laptop.
+- Print thermal: pairing Bluetooth 1x di `/dashboard/pos/printer-settings`, bukan di modal kasir. Print Struk hanya kirim job. Desktop: Web Serial ESC/POS silent. Android tablet: intent RawBT (`rawbt` + base64 ESC/POS). Fallback terakhir: popup HTML + `print()` (jangan iframe 0×0 — Android sering capture halaman kasir/dialog).
+- Web Serial di tablet/Android sering tetap ada API-nya tapi picker kosong (“tidak ada perangkat kompatibel”). Deteksi handheld → jangan tampilkan Hubungkan; pairing hanya Chrome/Edge laptop. Print tablet Android lewat RawBT intent.
 - Menu baru: delta + INSERT `iam-menus.sql` + whitelist prune. Code `pos.kitchen.queue-board` di bawah `pos.kitchen`. Icon wajib ada di `VALID_ICONS` (pakai `video`, bukan `monitor`/`tv`).
 - Unique index harian tidak boleh pakai `timezone()`/`now()` (bukan IMMUTABLE). Wrapper `pos_jkt_date(timestamptz)` IMMUTABLE + index pada `ordered_at` saja.
 

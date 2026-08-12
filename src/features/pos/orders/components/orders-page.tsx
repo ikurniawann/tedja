@@ -20,7 +20,9 @@ import {
   XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
-
+import {
+  printThermalReceipt,
+} from "@/components/pos/PrintReceipt";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -38,6 +40,7 @@ import { VoidModal } from "@/components/pos/VoidModal";
 import { cn } from "@/lib/utils";
 
 import type { Order } from "../types";
+import { orderToReceiptPayload } from "../order-to-receipt";
 import { useOrderList } from "../queries";
 import { useLoyaltySettings } from "@/features/pos/loyalty-settings";
 import { formatArkAmount } from "@/lib/pos/loyalty-settings";
@@ -170,67 +173,8 @@ function PaymentBadge({ method }: { method?: string | null }) {
   );
 }
 
-function printReceiptPreview(order: Order) {
-  const printWindow = window.open("", "_blank");
-  if (!printWindow) {
-    toast.error("Could not open print window");
-    return;
-  }
-  printWindow.document.write(`
-    <html>
-      <head>
-        <title>Receipt - ${order.order_number}</title>
-        <style>
-          body { font-family: monospace; width: 58mm; padding: 10px; margin: 0; }
-          .header { text-align: center; margin-bottom: 10px; }
-          .divider { border-bottom: 1px dashed #000; margin: 5px 0; }
-          .row { display: flex; justify-content: space-between; margin: 3px 0; }
-          .total { font-weight: bold; font-size: 1.2em; }
-          @media print { @page { margin: 0; } }
-        </style>
-      </head>
-      <body>
-        <div class="header">
-          <h3>Arkiv OS POS</h3>
-          <p>${order.order_number}</p>
-          ${order.queue_number ? `<p>Antrian ${order.queue_number}</p>` : ""}
-          <p>${new Date(order.ordered_at || Date.now()).toLocaleString("en-GB")}</p>
-        </div>
-        <div class="divider"></div>
-        ${(order.items || [])
-          .map(
-            (item: {
-              product_name?: string;
-              quantity?: number;
-              total_amount?: number;
-            }) => `
-          <div class="row">
-            <span>${item.product_name} x${item.quantity}</span>
-            <span>${(Number(item.total_amount) || 0).toLocaleString("id-ID")}</span>
-          </div>
-        `
-          )
-          .join("")}
-        <div class="divider"></div>
-        <div class="row total">
-          <span>Total</span>
-          <span>${(Number(order.total_amount) || 0).toLocaleString("id-ID")}</span>
-        </div>
-        <div class="row">
-          <span>Payment</span>
-          <span>${(order.payment_method || "unpaid").toUpperCase()}</span>
-        </div>
-        <div class="divider"></div>
-        <p style="text-align: center; font-size: 0.8em;">Thank you!</p>
-      </body>
-    </html>
-  `);
-  printWindow.document.close();
-  printWindow.focus();
-  setTimeout(() => {
-    printWindow.print();
-    printWindow.close();
-  }, 250);
+function printOrderReceipt(order: Order) {
+  void printThermalReceipt(orderToReceiptPayload(order), "CUSTOMER");
 }
 
 const STATUS_FILTERS = [
@@ -516,7 +460,7 @@ export function OrdersPage() {
               className="border-gray-200/80"
               onClick={() => {
                 if (!selectedOrder) return;
-                printReceiptPreview(selectedOrder);
+                printOrderReceipt(selectedOrder);
               }}
             >
               <Printer className="mr-2 h-4 w-4" />
