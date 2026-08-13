@@ -13,6 +13,14 @@ export const PROMO_SCOPE_LABELS: Record<PromoScope, string> = {
   semua: "Semua Kanal",
 };
 
+/** Prefix default voucher dari kanal — biar user tidak perlu input manual. */
+export const PROMO_SCOPE_PREFIX: Record<PromoScope, string> = {
+  ticketing_online: "ONLINE",
+  ticketing_loket: "LOKET",
+  pos: "POS",
+  semua: "ALL",
+};
+
 export interface PromoCampaign {
   id: string;
   name: string;

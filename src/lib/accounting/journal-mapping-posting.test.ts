@@ -85,6 +85,40 @@ describe("buildJournalLinesFromMapping", () => {
       amounts: { TOTAL: 100 },
     });
     expect(built.ready).toBe(false);
-    expect(built.reason).toMatch(/belum lengkap/i);
+    expect(built.reason).toMatch(/belum lengkap|belum diisi/i);
+  });
+
+  it("returns not ready when optional DISCOUNT has amount but no COA", () => {
+    const built = buildJournalLinesFromMapping({
+      lines: [
+        {
+          entry_side: "DEBIT",
+          account_id: "cash",
+          amount_source: "TOTAL",
+          sort_order: 10,
+          is_required: true,
+          line_role: "CASH",
+        },
+        {
+          entry_side: "DEBIT",
+          account_id: null,
+          amount_source: "DISCOUNT",
+          sort_order: 15,
+          is_required: false,
+          line_role: "DISCOUNT",
+        },
+        {
+          entry_side: "CREDIT",
+          account_id: "rev",
+          amount_source: "SUBTOTAL",
+          sort_order: 20,
+          is_required: true,
+          line_role: "REVENUE",
+        },
+      ],
+      amounts: { TOTAL: 36_000, DISCOUNT: 4_000, SUBTOTAL: 40_000 },
+    });
+    expect(built.ready).toBe(false);
+    expect(built.reason).toMatch(/DISCOUNT/i);
   });
 });

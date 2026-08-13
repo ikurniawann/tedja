@@ -48,7 +48,7 @@ export const DEFAULT_BILLING_CHARGES: BillingCharge[] = [
   {
     id: "b0000000-0000-4000-8000-000000000011",
     code: "TAX",
-    name: "Tax (PPN)",
+    name: "Tax",
     charge_kind: "tax",
     calc_method: "percent",
     rate: 10,
@@ -295,15 +295,20 @@ export function profileScopeLabel(scope: BillingProfile["scope"]) {
   return "Default sistem";
 }
 
-/** TAX optional follows cashier includeTax; other optional charges default on. */
+/** TAX/SERVICE optional follow cashier toggles; other optionals default on. */
 export function resolveEnabledOptionalCodes(
   charges: BillingCharge[],
-  includeTax: boolean
+  includeTax: boolean,
+  includeService = true
 ): string[] {
   return charges
     .filter((charge) => charge.is_enabled && charge.is_optional)
-    .map((charge) => charge.code)
-    .filter((code) => (code.toUpperCase() === "TAX" ? includeTax : true));
+    .filter((charge) => {
+      if (charge.charge_kind === "tax") return includeTax;
+      if (charge.charge_kind === "service") return includeService;
+      return true;
+    })
+    .map((charge) => charge.code);
 }
 
 export function taxToggleLabel(charges: BillingCharge[]): string | null {
@@ -315,4 +320,16 @@ export function taxToggleLabel(charges: BillingCharge[]): string | null {
     return `${tax.name} (${tax.rate}%)`;
   }
   return tax.name;
+}
+
+export function serviceToggleLabel(charges: BillingCharge[]): string | null {
+  const service = charges.find(
+    (charge) =>
+      charge.charge_kind === "service" && charge.is_enabled && charge.is_optional
+  );
+  if (!service) return null;
+  if (service.calc_method === "percent" && service.rate > 0) {
+    return `${service.name} (${service.rate}%)`;
+  }
+  return service.name;
 }

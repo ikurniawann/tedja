@@ -84,7 +84,6 @@ export function buildJournalLinesFromMapping(opts: {
 
   const journalLines: JournalEntryLinePayload[] = [];
   for (const line of opts.lines) {
-    if (!line.account_id) continue;
     const amount = resolveAmountFromSource(line.amount_source, opts.amounts);
     if (amount <= 0) {
       if (line.is_required) {
@@ -95,6 +94,15 @@ export function buildJournalLinesFromMapping(opts: {
         };
       }
       continue;
+    }
+    // Optional role (DISCOUNT/TAX/SC) dengan nilai > 0 tapi COA kosong
+    // jangan di-skip diam-diam — itu bikin jurnal tidak balance.
+    if (!line.account_id) {
+      return {
+        ready: false,
+        reason: `Akun COA untuk role ${line.line_role} belum diisi (nilai ${line.amount_source}=${amount})`,
+        journalLines: [],
+      };
     }
     journalLines.push({
       account_id: line.account_id,

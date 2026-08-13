@@ -4,6 +4,7 @@ import {
   DEFAULT_BILLING_CHARGES,
   profileScopeLabel,
   resolveEnabledOptionalCodes,
+  serviceToggleLabel,
   taxToggleLabel,
   type BillingCharge,
 } from "./billing-settings";
@@ -29,7 +30,7 @@ describe("calculateBillCharges", () => {
     expect(result.tax_amount).toBe(10_000);
     expect(result.total).toBe(110_000);
     expect(result.breakdown).toEqual([
-      { code: "TAX", name: "Tax (PPN)", kind: "tax", amount: 10_000 },
+      { code: "TAX", name: "Tax", kind: "tax", amount: 10_000 },
     ]);
   });
 
@@ -126,7 +127,7 @@ describe("calculateBillCharges", () => {
 });
 
 describe("resolveEnabledOptionalCodes", () => {
-  test("TAX follows includeTax; other optionals stay on", () => {
+  test("TAX follows includeTax; SERVICE follows includeService; other optionals stay on", () => {
     const charges: BillingCharge[] = [
       ...DEFAULT_BILLING_CHARGES.map((c) =>
         c.code === "SERVICE" ? { ...c, is_enabled: true, rate: 5 } : c
@@ -144,10 +145,17 @@ describe("resolveEnabledOptionalCodes", () => {
         base: "subtotal_after_discount",
       },
     ];
-    expect(resolveEnabledOptionalCodes(charges, false)).toEqual(["SERVICE", "PACK"]);
-    expect(resolveEnabledOptionalCodes(charges, true)).toEqual([
+    expect(resolveEnabledOptionalCodes(charges, false, true)).toEqual([
+      "SERVICE",
+      "PACK",
+    ]);
+    expect(resolveEnabledOptionalCodes(charges, true, true)).toEqual([
       "TAX",
       "SERVICE",
+      "PACK",
+    ]);
+    expect(resolveEnabledOptionalCodes(charges, true, false)).toEqual([
+      "TAX",
       "PACK",
     ]);
   });
@@ -155,7 +163,20 @@ describe("resolveEnabledOptionalCodes", () => {
 
 describe("taxToggleLabel", () => {
   test("formats optional percent tax", () => {
-    expect(taxToggleLabel(DEFAULT_BILLING_CHARGES)).toBe("Tax (PPN) (10%)");
+    expect(taxToggleLabel(DEFAULT_BILLING_CHARGES)).toBe("Tax (10%)");
+  });
+});
+
+describe("serviceToggleLabel", () => {
+  test("formats optional percent service when enabled", () => {
+    const charges = DEFAULT_BILLING_CHARGES.map((c) =>
+      c.code === "SERVICE" ? { ...c, is_enabled: true, rate: 5 } : c
+    );
+    expect(serviceToggleLabel(charges)).toBe("Service Charge (5%)");
+  });
+
+  test("null when service disabled", () => {
+    expect(serviceToggleLabel(DEFAULT_BILLING_CHARGES)).toBeNull();
   });
 });
 

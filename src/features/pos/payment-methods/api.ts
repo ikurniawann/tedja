@@ -1,0 +1,37 @@
+import type { PosPaymentMethod } from "@/lib/pos/payment-methods";
+
+async function parseError(res: Response, fallback: string): Promise<never> {
+  let message = fallback;
+  try {
+    const body = (await res.json()) as { error?: string; message?: string };
+    message = body.error ?? body.message ?? fallback;
+  } catch {
+    // ignore
+  }
+  throw new Error(message);
+}
+
+export async function fetchPaymentMethods(activeOnly = false) {
+  const qs = activeOnly ? "?active=1" : "";
+  const res = await fetch(`/api/pos/payment-methods${qs}`);
+  if (!res.ok) await parseError(res, "Gagal memuat metode bayar");
+  const body = (await res.json()) as { data: PosPaymentMethod[] };
+  return body.data;
+}
+
+export async function updatePaymentMethod(input: {
+  code: string;
+  name?: string;
+  description?: string;
+  is_active?: boolean;
+  sort_order?: number;
+}) {
+  const res = await fetch("/api/pos/payment-methods", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) await parseError(res, "Gagal memperbarui metode bayar");
+  const body = (await res.json()) as { data: PosPaymentMethod };
+  return body.data;
+}

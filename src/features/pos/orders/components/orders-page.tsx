@@ -41,12 +41,48 @@ import type { Order } from "../types";
 import { useOrderList } from "../queries";
 import { useLoyaltySettings } from "@/features/pos/loyalty-settings";
 import { formatArkAmount } from "@/lib/pos/loyalty-settings";
+import {
+  formatDiscountLabel,
+  reconstructOrderDiscountBreakdown,
+} from "@/lib/pos/manual-discount";
 
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat("id-ID", {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   }).format(Number.isFinite(Number(value)) ? Math.abs(Number(value)) : 0);
+
+type ChargeBreakdownLine = {
+  code: string;
+  name: string;
+  kind: string;
+  amount: number;
+};
+
+/** JSONB kadang datang sebagai object/string — normalisasi ke array. */
+function asChargeRows(value: unknown): ChargeBreakdownLine[] {
+  let raw: unknown = value;
+  if (typeof raw === "string") {
+    try {
+      raw = JSON.parse(raw);
+    } catch {
+      return [];
+    }
+  }
+  if (Array.isArray(raw)) {
+    return raw.filter(
+      (row): row is ChargeBreakdownLine =>
+        !!row && typeof row === "object" && Number.isFinite(Number((row as ChargeBreakdownLine).amount))
+    );
+  }
+  if (raw && typeof raw === "object") {
+    const values = Object.values(raw as Record<string, unknown>);
+    if (values.every((v) => v && typeof v === "object")) {
+      return asChargeRows(values);
+    }
+  }
+  return [];
+}
 
 const formatDate = (dateString: string) =>
   new Intl.DateTimeFormat("en-GB", {
@@ -176,6 +212,41 @@ function printReceiptPreview(order: Order) {
     toast.error("Could not open print window");
     return;
   }
+  const discountInfo = reconstructOrderDiscountBreakdown(order);
+  const discountLines: string[] = [];
+  if (discountInfo.total > 0) {
+    discountLines.push(
+      `<div class="row"><span>Diskon</span><span>-${formatCurrency(discountInfo.total)}</span></div>`
+    );
+    if (discountInfo.item_amount > 0) {
+      discountLines.push(
+        `<div class="row muted"><span>  Item</span><span>-${formatCurrency(discountInfo.item_amount)}</span></div>`
+      );
+    }
+    if (discountInfo.membership_amount > 0) {
+      discountLines.push(
+        `<div class="row muted"><span>  Member${discountInfo.member_pct != null ? ` ${discountInfo.member_pct}%` : ""}</span><span>-${formatCurrency(discountInfo.membership_amount)}</span></div>`
+      );
+    }
+    if (discountInfo.promo_amount > 0 || discountInfo.promo_code) {
+      discountLines.push(
+        `<div class="row muted"><span>  Promo${discountInfo.promo_code ? ` ${discountInfo.promo_code}` : ""}</span><span>-${formatCurrency(discountInfo.promo_amount)}</span></div>`
+      );
+    }
+    if (discountInfo.manual_amount > 0) {
+      discountLines.push(
+        `<div class="row muted"><span>  Transaksi${discountInfo.manual_label ? ` ${discountInfo.manual_label}` : ""}</span><span>-${formatCurrency(discountInfo.manual_amount)}</span></div>`
+      );
+    }
+  }
+  const chargeLines = asChargeRows(order.charges_breakdown)
+    .filter((c) => Number(c.amount) > 0)
+    .map(
+      (c) =>
+        `<div class="row"><span>${c.name || c.code}</span><span>${formatCurrency(Number(c.amount) || 0)}</span></div>`
+    )
+    .join("");
+
   printWindow.document.write(`
     <html>
       <head>
@@ -185,6 +256,8 @@ function printReceiptPreview(order: Order) {
           .header { text-align: center; margin-bottom: 10px; }
           .divider { border-bottom: 1px dashed #000; margin: 5px 0; }
           .row { display: flex; justify-content: space-between; margin: 3px 0; }
+          .row.muted { font-size: 0.85em; opacity: 0.8; }
+          .item-disc { font-size: 0.85em; }
           .total { font-weight: bold; font-size: 1.2em; }
           @media print { @page { margin: 0; } }
         </style>
@@ -198,20 +271,35 @@ function printReceiptPreview(order: Order) {
         </div>
         <div class="divider"></div>
         ${(order.items || [])
-          .map(
-            (item: {
-              product_name?: string;
-              quantity?: number;
-              total_amount?: number;
-            }) => `
+          .map((item) => {
+            const lineDisc = Number(item.discount_amount) || 0;
+            const discLabel = formatDiscountLabel(
+              item.discount_type,
+              item.discount_value
+            );
+            return `
           <div class="row">
             <span>${item.product_name} x${item.quantity}</span>
             <span>${(Number(item.total_amount) || 0).toLocaleString("id-ID")}</span>
           </div>
-        `
-          )
+          ${
+            lineDisc > 0
+              ? `<div class="row item-disc"><span>  disc ${discLabel || ""}</span><span>-${formatCurrency(lineDisc)}</span></div>`
+              : ""
+          }
+        `;
+          })
           .join("")}
         <div class="divider"></div>
+        <div class="row">
+          <span>Subtotal</span>
+          <span>${formatCurrency(order.subtotal || 0)}</span>
+        </div>
+        ${discountLines.join("")}
+        ${(order.tax_amount || 0) > 0
+          ? `<div class="row"><span>Tax</span><span>${formatCurrency(order.tax_amount || 0)}</span></div>`
+          : ""}
+        ${chargeLines}
         <div class="row total">
           <span>Total</span>
           <span>${(Number(order.total_amount) || 0).toLocaleString("id-ID")}</span>
@@ -554,6 +642,15 @@ function OrderDetail({ order }: { order: Order }) {
   const { data: loyaltySettings } = useLoyaltySettings();
   const formatArk = (value: number) =>
     formatArkAmount(value, loyaltySettings?.ark_rate || 1000);
+
+  const breakdown = reconstructOrderDiscountBreakdown(order);
+  const hasDiscount = breakdown.total > 0;
+  const chargeRows = asChargeRows(order.charges_breakdown).filter(
+    (c) => Number(c.amount) > 0
+  );
+  const serviceCharge = Number(order.service_charge_amount) || 0;
+  const otherCharges = Number(order.other_charges_amount) || 0;
+
   return (
     <div className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -575,6 +672,19 @@ function OrderDetail({ order }: { order: Order }) {
             <PaymentBadge method={order.payment_method} />
           </div>
         </div>
+        {breakdown.promo_code ? (
+          <div className="rounded-xl border border-emerald-200/70 bg-emerald-50/50 px-3.5 py-3 sm:col-span-2 lg:col-span-1">
+            <div className="text-xs font-medium text-emerald-800/80">Promo</div>
+            <div className="mt-1 font-mono text-sm font-semibold text-emerald-800">
+              {breakdown.promo_code}
+            </div>
+            {breakdown.promo_amount > 0 ? (
+              <div className="mt-0.5 text-xs tabular-nums text-emerald-700">
+                −{formatCurrency(breakdown.promo_amount)}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
       </div>
 
       {order.customer ? (
@@ -615,50 +725,73 @@ function OrderDetail({ order }: { order: Order }) {
           <h3 className="text-sm font-semibold text-foreground">Items</h3>
         </div>
         <div className="divide-y divide-gray-200/70">
-          {(order.items || []).map((item, idx) => (
-            <div
-              key={item.id || `${item.product_id}-${idx}`}
-              className="flex items-start justify-between gap-3 px-4 py-3"
-            >
-              <div className="min-w-0">
-                <div className="font-medium text-foreground">
-                  {item.product_name}
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  {item.quantity} × {formatCurrency(item.unit_price || 0)}
-                </div>
-                {item.variants && item.variants.length > 0 ? (
-                  <div className="mt-1.5 flex flex-wrap gap-1">
-                    {item.variants.map((v, i) => (
-                      <Badge
-                        key={i}
-                        variant="secondary"
-                        className="bg-primary/10 text-xs text-primary"
-                      >
-                        {v.name}
-                      </Badge>
-                    ))}
+          {(order.items || []).map((item, idx) => {
+            const lineDisc = Number(item.discount_amount) || 0;
+            const discLabel = formatDiscountLabel(
+              item.discount_type,
+              item.discount_value
+            );
+            const bruto =
+              Number(item.subtotal) ||
+              (Number(item.total_amount) || 0) + lineDisc;
+            return (
+              <div
+                key={item.id || `${item.product_id}-${idx}`}
+                className="flex items-start justify-between gap-3 px-4 py-3"
+              >
+                <div className="min-w-0">
+                  <div className="font-medium text-foreground">
+                    {item.product_name}
                   </div>
-                ) : null}
-                {item.modifiers && item.modifiers.length > 0 ? (
-                  <div className="mt-1 flex flex-wrap gap-1">
-                    {item.modifiers.map((m, i) => (
-                      <Badge
-                        key={i}
-                        variant="secondary"
-                        className="bg-amber-50 text-xs text-amber-800"
-                      >
-                        {m.name}
-                      </Badge>
-                    ))}
+                  <div className="text-xs text-muted-foreground">
+                    {item.quantity} × {formatCurrency(item.unit_price || 0)}
                   </div>
-                ) : null}
+                  {lineDisc > 0 ? (
+                    <p className="mt-1 text-xs font-medium text-emerald-700">
+                      Diskon item{discLabel ? ` ${discLabel}` : ""} · −
+                      {formatCurrency(lineDisc)}
+                    </p>
+                  ) : null}
+                  {item.variants && item.variants.length > 0 ? (
+                    <div className="mt-1.5 flex flex-wrap gap-1">
+                      {item.variants.map((v, i) => (
+                        <Badge
+                          key={i}
+                          variant="secondary"
+                          className="bg-primary/10 text-xs text-primary"
+                        >
+                          {v.name}
+                        </Badge>
+                      ))}
+                    </div>
+                  ) : null}
+                  {item.modifiers && item.modifiers.length > 0 ? (
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {item.modifiers.map((m, i) => (
+                        <Badge
+                          key={i}
+                          variant="secondary"
+                          className="bg-amber-50 text-xs text-amber-800"
+                        >
+                          {m.name}
+                        </Badge>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+                <div className="shrink-0 text-right">
+                  <div className="font-semibold tabular-nums text-foreground">
+                    {formatCurrency(item.total_amount || 0)}
+                  </div>
+                  {lineDisc > 0 ? (
+                    <div className="text-[11px] tabular-nums text-muted-foreground line-through">
+                      {formatCurrency(bruto)}
+                    </div>
+                  ) : null}
+                </div>
               </div>
-              <div className="shrink-0 font-semibold tabular-nums text-foreground">
-                {formatCurrency(item.total_amount || 0)}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </section>
 
@@ -668,16 +801,85 @@ function OrderDetail({ order }: { order: Order }) {
         </h3>
         <div className="space-y-2 text-sm">
           <SummaryRow label="Subtotal" value={formatCurrency(order.subtotal || 0)} />
-          {(order.discount_amount || 0) > 0 ? (
-            <SummaryRow
-              label="Discount"
-              value={`−${formatCurrency(order.discount_amount || 0)}`}
-              tone="text-emerald-600"
-            />
+
+          {hasDiscount ? (
+            <div className="space-y-1.5 rounded-lg border border-emerald-200/70 bg-emerald-50/40 px-3 py-2">
+              <SummaryRow
+                label="Diskon total"
+                value={`−${formatCurrency(breakdown.total)}`}
+                tone="text-emerald-700"
+              />
+              {breakdown.item_amount > 0 ? (
+                <SummaryRow
+                  label="Diskon item"
+                  value={`−${formatCurrency(breakdown.item_amount)}`}
+                  tone="text-emerald-700"
+                />
+              ) : null}
+              {breakdown.membership_amount > 0 ? (
+                <SummaryRow
+                  label={`Membership${breakdown.member_pct != null ? ` ${breakdown.member_pct}%` : ""}`}
+                  value={`−${formatCurrency(breakdown.membership_amount)}`}
+                  tone="text-emerald-700"
+                />
+              ) : null}
+              {breakdown.promo_amount > 0 || breakdown.promo_code ? (
+                <div className="flex items-center justify-between gap-3">
+                  <span className="flex min-w-0 items-center gap-2 text-muted-foreground">
+                    Diskon promo
+                    {breakdown.promo_code ? (
+                      <Badge className="border-0 bg-emerald-100 font-mono font-normal text-emerald-800">
+                        {breakdown.promo_code}
+                      </Badge>
+                    ) : null}
+                  </span>
+                  <span className="font-medium tabular-nums text-emerald-700">
+                    −{formatCurrency(breakdown.promo_amount)}
+                  </span>
+                </div>
+              ) : null}
+              {breakdown.manual_amount > 0 ? (
+                <SummaryRow
+                  label={`Diskon transaksi${breakdown.manual_label ? ` (${breakdown.manual_label})` : ""}`}
+                  value={`−${formatCurrency(breakdown.manual_amount)}`}
+                  tone="text-emerald-700"
+                />
+              ) : null}
+              {order.discount_reason ? (
+                <p className="border-t border-emerald-200/60 pt-1.5 text-[11px] text-muted-foreground">
+                  {order.discount_reason}
+                </p>
+              ) : null}
+            </div>
           ) : null}
+
           {(order.tax_amount || 0) > 0 ? (
             <SummaryRow label="Tax" value={formatCurrency(order.tax_amount || 0)} />
           ) : null}
+          {chargeRows.length > 0
+            ? chargeRows.map((c) => (
+                <SummaryRow
+                  key={`${c.code}-${c.name}`}
+                  label={c.name || c.code}
+                  value={formatCurrency(Number(c.amount) || 0)}
+                />
+              ))
+            : (
+              <>
+                {serviceCharge > 0 ? (
+                  <SummaryRow
+                    label="Service charge"
+                    value={formatCurrency(serviceCharge)}
+                  />
+                ) : null}
+                {otherCharges > 0 ? (
+                  <SummaryRow
+                    label="Other charges"
+                    value={formatCurrency(otherCharges)}
+                  />
+                ) : null}
+              </>
+            )}
           {(order.ark_coins_used || 0) > 0 ? (
             <SummaryRow
               label="ARK used"

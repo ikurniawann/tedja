@@ -6,6 +6,7 @@ import { usePosNfc } from "./pos-nfc-context";
 import { routePosNfcCard } from "./route-card-scan";
 import { normalizeNfcUid } from "./normalize-nfc-uid";
 import { createWedgeBuffer, reduceWedgeKey } from "./wedge-buffer";
+import { shouldIgnoreWedgeKeydown } from "./wedge-target";
 import { usePosNfcBridge } from "./use-pos-nfc-bridge";
 import { usePosNfcWebViewIngest } from "./use-pos-nfc-webview-ingest";
 
@@ -52,6 +53,12 @@ export function PosNfcScanListener() {
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
+      // Ketikan di search produk / form biasa ≠ scan kartu wedge.
+      if (shouldIgnoreWedgeKeydown(event.target)) {
+        bufferRef.current = createWedgeBuffer();
+        return;
+      }
+
       const now = Date.now();
       const next = reduceWedgeKey(bufferRef.current, { key: event.key, now });
       bufferRef.current = next;
