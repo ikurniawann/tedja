@@ -37,11 +37,17 @@ export const getUser = cache(async (): Promise<{
 
   if (!user) return { user: null, db };
 
-  const { data: profile } = await db
+  const { data: profile, error: profileError } = await db
     .from("users")
     .select("full_name, role, brand_id, business_scope, can_switch_stall, default_warehouse_id")
     .eq("id", user.id)
     .single();
+
+  // Query gagal (kolom belum ada, dsb.) bukan "tidak login" — jangan hapus sesi.
+  // PGRST116 = tidak ada baris profil; itu yang boleh dianggap unauthenticated.
+  if (profileError && profileError.code !== "PGRST116") {
+    throw new Error(`Gagal memuat profil user: ${profileError.message}`);
+  }
 
   if (!profile) return { user: null, db };
 
