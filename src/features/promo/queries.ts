@@ -5,12 +5,14 @@ import { toast } from "sonner";
 import {
   createCampaign,
   createSingleCode,
+  deleteCode,
   fetchCampaigns,
   fetchCodes,
   fetchRedemptions,
   generateBatchCodes,
   toggleCode,
   updateCampaign,
+  updateCode,
 } from "./api";
 import type { PromoCampaignFormValues } from "./types";
 
@@ -41,28 +43,32 @@ export const usePromoRedemptions = (campaignId: string | null) =>
 function usePromoMutation<TVariables, TResult = unknown>(
   mutationFn: (variables: TVariables) => Promise<TResult>,
   successMessage: string,
-  onSuccess?: (result: TResult) => void
+  onSuccess?: (result: TResult) => void | Promise<void>
 ) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn,
-    onSuccess: (result) => {
+    onSuccess: async (result) => {
       toast.success(successMessage);
-      queryClient.invalidateQueries({ queryKey: ["promo"] });
-      onSuccess?.(result);
+      await onSuccess?.(result);
+      await queryClient.invalidateQueries({ queryKey: ["promo"] });
     },
     onError: (error: Error) => toast.error(error.message),
   });
 }
 
-export const useCreateCampaign = (onSuccess?: () => void) =>
+export const useCreateCampaign = (
+  onSuccess?: (result: { id: string }) => void | Promise<void>
+) =>
   usePromoMutation(
     (values: PromoCampaignFormValues) => createCampaign(values),
     "Campaign promo dibuat",
     onSuccess
   );
 
-export const useUpdateCampaign = () =>
+export const useUpdateCampaign = (
+  onSuccess?: (result: { id: string }) => void | Promise<void>
+) =>
   usePromoMutation(
     ({
       id,
@@ -71,7 +77,8 @@ export const useUpdateCampaign = () =>
       id: string;
       values: Partial<PromoCampaignFormValues> & { is_active?: boolean };
     }) => updateCampaign(id, values),
-    "Campaign diperbarui"
+    "Campaign diperbarui",
+    onSuccess
   );
 
 export const useCreateSingleCode = (onSuccess?: () => void) =>
@@ -111,4 +118,23 @@ export const useToggleCode = () =>
     ({ id, isActive }: { id: string; isActive: boolean }) =>
       toggleCode(id, isActive),
     "Kode diperbarui"
+  );
+
+export const useUpdateCode = (onSuccess?: () => void) =>
+  usePromoMutation(
+    ({
+      id,
+      values,
+    }: {
+      id: string;
+      values: { code?: string; usage_limit?: number | null; is_active?: boolean };
+    }) => updateCode(id, values),
+    "Kode diperbarui",
+    onSuccess
+  );
+
+export const useDeleteCode = () =>
+  usePromoMutation(
+    ({ id }: { id: string }) => deleteCode(id),
+    "Kode dihapus"
   );

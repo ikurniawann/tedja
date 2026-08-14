@@ -63,8 +63,16 @@ import {
   DEFAULT_BILLING_CHARGES,
   resolveEnabledOptionalCodes,
   taxToggleLabel,
+  serviceToggleLabel,
 } from '@/lib/pos/billing-settings';
 import { useResolvedBillingProfile } from '@/features/pos/billing-settings';
+import {
+  planOfferQuickAdd,
+  usePosActiveOffers,
+  type PosActiveOffer,
+} from '@/features/pos/cashier/offers';
+import { evaluateOfferRules } from '@/lib/promo/offer-evaluate';
+import { PosOfferBanners } from '@/components/pos/PosOfferBanners';
 import { ShiftModal } from '@/components/pos/ShiftModal';
 import { PosProductThumbnail } from '@/components/pos/PosProductThumbnail';
 
@@ -484,36 +492,79 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
   const [promoInput, setPromoInput] = useState('');
   const [promoBusy, setPromoBusy] = useState(false);
   const [promoError, setPromoError] = useState<string | null>(null);
+  const activeOffersQuery = usePosActiveOffers(true);
 
-  /* Financials */
+  const offerEval = useMemo(() => {
+    const rules = (activeOffersQuery.data ?? []).map((o) => o.eval).filter(Boolean);
+    if (rules.length === 0 || cart.items.length === 0) {
+      return { offer_discount: 0, applied: [] as ReturnType<typeof evaluateOfferRules>['applied'] };
+    }
+    return evaluateOfferRules(
+      cart.items.map((item) => ({
+        productId: item.productId,
+        quantity: item.quantity,
+        unitPrice: item.price,
+      })),
+      rules
+    );
+  }, [activeOffersQuery.data, cart.items]);
+
+  /* Financials — item → offer → membership → promo → manual transaksi */
   const membershipDiscount = selectedCustomer ? selectedCustomer.discount : 0;
-  const membershipDiscountAmount =
-    membershipDiscount > 0 ? Math.floor(cart.subtotal * membershipDiscount / 100) : 0;
-  // EPIC-032 C2 — promo kasir: menumpuk di atas membership, dicap ≥ 0.
-  // Rumus identik dgn server & use-pos-checkout — selisih ditolak server.
-  const promoDiscount = promoApplied
-    ? Math.min(promoApplied.discount, Math.max(0, cart.subtotal - membershipDiscountAmount))
-    : 0;
-  const discountAmount = membershipDiscountAmount + promoDiscount;
-  const afterDiscount = cart.subtotal - discountAmount;
+  const discountStack = useMemo(
+    () =>
+      cart.buildDiscountStack(
+        membershipDiscount,
+        promoApplied?.discount ?? 0,
+        offerEval.offer_discount
+      ),
+    [
+      cart.items,
+      cart.manual_discount_type,
+      cart.manual_discount_value,
+      cart.buildDiscountStack,
+      membershipDiscount,
+      promoApplied,
+      offerEval.offer_discount,
+    ]
+  );
+  const membershipDiscountAmount = discountStack.membership_amount;
+  const promoDiscount = discountStack.promo_amount;
+  const offerDiscount = discountStack.offer_amount;
+  const itemDiscountTotal = discountStack.line_discount_total;
+  const manualDiscountAmount = discountStack.manual_amount;
+  const manualDiscountBasis = Math.max(
+    0,
+    discountStack.items_subtotal -
+      offerDiscount -
+      membershipDiscountAmount -
+      promoDiscount
+  );
+  const discountAmount = discountStack.discount_amount;
+  const afterDiscount = discountStack.after_discount;
   const billCharges = useMemo(
     () =>
       calculateBillCharges({
         subtotalAfterDiscount: afterDiscount,
         charges: billingCharges,
-        enabledOptionalCodes: resolveEnabledOptionalCodes(billingCharges, cart.includeTax),
+        enabledOptionalCodes: resolveEnabledOptionalCodes(
+          billingCharges,
+          cart.includeTax,
+          cart.includeService
+        ),
       }),
-    [afterDiscount, billingCharges, cart.includeTax]
+    [afterDiscount, billingCharges, cart.includeTax, cart.includeService]
   );
   const taxAmount = billCharges.tax_amount;
   const serviceChargeAmount = billCharges.service_charge_amount;
   const otherChargesAmount = billCharges.other_charges_amount;
   const total = billCharges.total;
   const taxLabel = taxToggleLabel(billingCharges);
+  const serviceLabel = serviceToggleLabel(billingCharges);
   const otherChargeLines = useMemo(
     () =>
       billCharges.breakdown
-        .filter((line) => line.kind !== "tax")
+        .filter((line) => line.kind !== 'tax' && line.kind !== 'service')
         .map((line) => ({
           code: line.code,
           name: line.name,
@@ -525,11 +576,11 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
   const arkToUseCapped = Math.min(currentArkToUse, maxArkUsable);
   const totalAfterArk = total - arkToUseCapped;
 
-  /* Promo basi saat cart berubah (nilai preview terikat subtotal) */
+  /* Promo basi saat cart / diskon item berubah (basis = setelah line discount) */
   useEffect(() => {
     setPromoApplied(null);
     setPromoError(null);
-  }, [cart.subtotal]);
+  }, [cart.itemsSubtotal]);
 
   const applyPromo = useCallback(async () => {
     const code = promoInput.trim();
@@ -544,7 +595,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       const res = await fetch('/api/pos/promo-check', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code, subtotal: cart.subtotal }),
+        body: JSON.stringify({ code, subtotal: cart.itemsSubtotal }),
       });
       const body = await res.json();
       if (!res.ok || !body.success) {
@@ -562,7 +613,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     } finally {
       setPromoBusy(false);
     }
-  }, [promoInput, promoBusy, isOnline, cart.subtotal]);
+  }, [promoInput, promoBusy, isOnline, cart.itemsSubtotal]);
 
   /* EPIC-024 — pancarkan state cart/pembayaran ke customer display
      (BroadcastChannel, satu arah). Publish adalah sinkronisasi ke sistem
@@ -669,6 +720,90 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       });
     }
   }, [cart, requireActiveShift]);
+
+  const applyOfferToCart = useCallback(
+    (offer: PosActiveOffer) => {
+      if (!requireActiveShift()) return;
+
+      const plan = planOfferQuickAdd(offer);
+      if (plan.length === 0) {
+        toast.error(
+          offer.offer_type === "volume" && offer.volume_basis === "spend"
+            ? "Promo volume belanja: pilih produk eligible lalu tambah sampai min tercapai"
+            : "Promo ini belum punya produk yang bisa ditambahkan otomatis"
+        );
+        return;
+      }
+
+      const byId = new Map(products.map((p) => [p.id, p]));
+      let added = 0;
+      const skipped: string[] = [];
+      const missing: string[] = [];
+
+      for (const row of plan) {
+        const product = byId.get(row.productId);
+        if (!product) {
+          missing.push(row.label);
+          continue;
+        }
+        if (product.product_kind === "gift_card") {
+          skipped.push(product.name);
+          continue;
+        }
+        if (
+          product.product_kind === "merchandise" &&
+          (product.skus ?? []).some((sku) => sku.is_active !== false)
+        ) {
+          skipped.push(product.name);
+          continue;
+        }
+        if (
+          (product.variants && product.variants.length > 0) ||
+          (product.modifiers && product.modifiers.length > 0)
+        ) {
+          skipped.push(product.name);
+          continue;
+        }
+
+        cart.addItem({
+          id: product.id,
+          productId: product.id,
+          name: product.name,
+          price: product.base_price,
+          quantity: row.qty,
+          imageUrl: product.image_url,
+          station: product.station,
+        });
+        added += 1;
+      }
+
+      if (added > 0) {
+        toast.success(`Promo “${offer.name}” ditambahkan ke keranjang`);
+      }
+      if (skipped.length > 0) {
+        toast.message(
+          `Perlu pilih varian/opsi: ${skipped.slice(0, 3).join(", ")}${
+            skipped.length > 3 ? "…" : ""
+          }`
+        );
+      }
+      if (missing.length > 0) {
+        toast.error(
+          `Produk tidak tersedia di stall: ${missing.slice(0, 3).join(", ")}`
+        );
+      }
+      if (added === 0 && skipped.length === 0 && missing.length === 0) {
+        toast.error("Tidak ada produk yang bisa ditambahkan");
+      } else if (
+        added > 0 &&
+        offer.offer_type === "volume" &&
+        offer.volume_basis === "spend"
+      ) {
+        toast.message("Tambah qty sampai min belanja promo tercapai");
+      }
+    },
+    [cart, products, requireActiveShift]
+  );
 
   /* EPIC-034 Fase B — nominal gift card dikonfirmasi → masuk keranjang.
      Harga baris = nominal yang dipilih; server memvalidasi ulang. */
@@ -901,6 +1036,10 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
             giftCardCode,
             promo: promoApplied,
             billCharges,
+            manualDiscountType: cart.manual_discount_type,
+            manualDiscountValue: cart.manual_discount_value,
+            offerDiscount,
+            offerLabels: offerEval.applied.map((a) => a.name),
           });
           if (!res.success) {
             toast.error(res.error || 'Pembayaran gift card gagal');
@@ -995,6 +1134,10 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
             nfcTabUid,
             promo: promoApplied,
             billCharges,
+            manualDiscountType: cart.manual_discount_type,
+            manualDiscountValue: cart.manual_discount_value,
+            offerDiscount,
+            offerLabels: offerEval.applied.map((a) => a.name),
           });
           if (!res.success) {
             toast.error(res.error || 'Charge ke tab gagal');
@@ -1189,6 +1332,10 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       giftCardBuyer,
       promo: promoApplied,
       billCharges,
+      manualDiscountType: cart.manual_discount_type,
+      manualDiscountValue: cart.manual_discount_value,
+      offerDiscount,
+      offerLabels: offerEval.applied.map((a) => a.name),
     });
 
     if (res.success) {
@@ -1234,7 +1381,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       toast.error(res.error || 'Payment failed');
     }
     setProcessingPayment(false);
-  }, [cart, paymentMethod, selectedCustomer, cashReceived, currentArkToUse, maxArkUsable, totalAfterArk, arkToUseCapped, checkout, discountAmount, taxAmount, isOnline, enqueue, membershipDiscount, shift, refreshCount, paymentOrderId, payingOrderNumber, router, processingPayment, selectedTableDisplay, effectiveTableId, requireActiveShift, payOpenOrderMutation, deferReturnToRestaurant, storeResultPayload, refetchCustomers, promoApplied, giftCardBuyer, billCharges, serviceChargeAmount, otherChargesAmount, total, homeRoute, guestCount]);
+  }, [cart, paymentMethod, selectedCustomer, cashReceived, currentArkToUse, maxArkUsable, totalAfterArk, arkToUseCapped, checkout, discountAmount, taxAmount, isOnline, enqueue, membershipDiscount, shift, refreshCount, paymentOrderId, payingOrderNumber, router, processingPayment, selectedTableDisplay, effectiveTableId, requireActiveShift, payOpenOrderMutation, deferReturnToRestaurant, storeResultPayload, refetchCustomers, promoApplied, giftCardBuyer, billCharges, serviceChargeAmount, otherChargesAmount, total, homeRoute, guestCount, offerDiscount, offerEval]);
 
   /* Split Bill */
   const handleConfirmSplit = useCallback(async (config: SplitConfig) => {
@@ -1384,31 +1531,54 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         table_id: effectiveTableId || undefined,
         guest_count: normalizeGuestCount(guestCount),
         shift_id: shift?.id || undefined,
-        items: cart.items.map(item => ({
-          product_id: item.productId,
-          sku_id: item.skuId,
-          product_name: item.name,
-          product_sku: item.skuCode || item.productId,
-          variants: item.variantName ? [{ name: item.variantName, group: 'Size', price: item.variantPriceAdj || 0 }] : [],
-          modifiers: item.modifierNames?.map((name, idx) => ({ name, group: `Option-${idx}` })) || [],
-          quantity: Number(item.quantity),
-          unit_price: Number(item.price - (item.variantPriceAdj || 0) - (item.modifierPriceAdj || 0)),
-          variant_price_adjustment: item.variantPriceAdj || 0,
-          modifier_price_adjustment: item.modifierPriceAdj || 0,
-          subtotal: Number(item.price * item.quantity),
-          total_amount: Number(item.price * item.quantity),
-          station: item.station,
-          kitchen_notes: item.notes,
-        })),
+        items: cart.items.map((item, index) => {
+          const line = discountStack.line_results[index];
+          return {
+            product_id: item.productId,
+            sku_id: item.skuId,
+            product_name: item.name,
+            product_sku: item.skuCode || item.productId,
+            variants: item.variantName ? [{ name: item.variantName, group: 'Size', price: item.variantPriceAdj || 0 }] : [],
+            modifiers: item.modifierNames?.map((name, idx) => ({ name, group: `Option-${idx}` })) || [],
+            quantity: Number(item.quantity),
+            unit_price: Number(item.price - (item.variantPriceAdj || 0) - (item.modifierPriceAdj || 0)),
+            variant_price_adjustment: item.variantPriceAdj || 0,
+            modifier_price_adjustment: item.modifierPriceAdj || 0,
+            subtotal: Number(item.price * item.quantity),
+            discount_type: item.discount_type ?? null,
+            discount_value: item.discount_value ?? null,
+            discount_amount: line?.discount_amount ?? 0,
+            total_amount: line?.total_amount ?? Number(item.price * item.quantity),
+            station: item.station,
+            kitchen_notes: item.notes,
+          };
+        }),
         subtotal: cart.subtotal,
         discount_amount: discountAmount,
+        discount_reason: [
+          itemDiscountTotal > 0 ? 'ITEM line discounts' : null,
+          ...offerEval.applied.map((a) => `OFFER ${a.name}`),
+          membershipDiscount > 0 ? `MEMBER ${membershipDiscount}%` : null,
+          promoApplied ? `PROMO ${promoApplied.code}` : null,
+          cart.manual_discount_type && cart.manual_discount_value
+            ? cart.manual_discount_type === 'percent'
+              ? `MANUAL ${cart.manual_discount_value}%`
+              : `MANUAL Rp ${Math.floor(cart.manual_discount_value)}`
+            : null,
+        ]
+          .filter(Boolean)
+          .join('; ') || undefined,
+        manual_discount_type: cart.manual_discount_type,
+        manual_discount_value: cart.manual_discount_value,
+        membership_discount_pct: selectedCustomer?.discount || 0,
+        promo_discount: promoApplied?.discount ?? 0,
+        promo_code: promoApplied?.code,
         tax_amount: taxAmount,
         service_charge_amount: serviceChargeAmount,
         other_charges_amount: otherChargesAmount,
         charges_breakdown: billCharges.breakdown,
         total_amount: total,
         notes: cart.notes,
-        membership_discount_pct: selectedCustomer?.discount || 0,
       });
 
       if (res.success && res.data) {
@@ -1427,7 +1597,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     } finally {
       setSavingBill(false);
     }
-  }, [cart, selectedCustomer, discountAmount, taxAmount, total, requireActiveShift, shift, maybeReturnToRestaurant, effectiveTableId, serviceChargeAmount, otherChargesAmount, billCharges, guestCount]);
+  }, [cart, selectedCustomer, discountAmount, taxAmount, total, requireActiveShift, shift, maybeReturnToRestaurant, effectiveTableId, serviceChargeAmount, otherChargesAmount, billCharges, guestCount, discountStack, itemDiscountTotal, membershipDiscount, promoApplied, offerEval]);
 
   /* Print helpers */
   const [printingReceipt, setPrintingReceipt] = useState(false);
@@ -1613,12 +1783,11 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
           </div>
         </div>
       )}
-      {stallBlockedReason && !loading && (
-        <CashierStallGate reason={stallBlockedReason} />
-      )}
-
       {/* LEFT PANEL */}
-      <div className={cashierLeftPanelClass(isTabletMode)}>
+      <div className={`relative ${cashierLeftPanelClass(isTabletMode)}`}>
+        {stallBlockedReason && !loading && (
+          <CashierStallGate reason={stallBlockedReason} />
+        )}
         {/* Offline Status Bar */}
         {!isOnline && (
           <div className="flex items-center justify-between rounded-lg border border-amber-200/80 bg-amber-50/80 px-4 py-2 text-sm text-amber-800">
@@ -1859,6 +2028,14 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
           ))}
         </div>
 
+        {(activeOffersQuery.data?.length ?? 0) > 0 && (
+          <PosOfferBanners
+            offers={activeOffersQuery.data ?? []}
+            className="pb-1"
+            onApplyOffer={applyOfferToCart}
+          />
+        )}
+
         {/* Product Grid */}
         <div className={cashierProductScrollClass()}>
           <div className={cashierProductGridClass()}>
@@ -1946,10 +2123,22 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
           setPromoApplied(null);
           setPromoError(null);
         }}
+        itemDiscountTotal={itemDiscountTotal}
+        offerDiscount={offerDiscount}
+        offerApplied={offerEval.applied}
+        manualDiscountAmount={manualDiscountAmount}
+        manualDiscountType={cart.manual_discount_type}
+        manualDiscountValue={cart.manual_discount_value}
+        manualDiscountBasis={manualDiscountBasis}
+        onSetItemDiscount={cart.setItemDiscount}
+        onSetManualDiscount={cart.setManualDiscount}
         selectedCustomer={selectedCustomer}
         includeTax={cart.includeTax}
+        includeService={cart.includeService}
         tax={taxAmount}
+        serviceCharge={serviceChargeAmount}
         taxToggleLabel={taxLabel}
+        serviceToggleLabel={serviceLabel}
         otherChargeLines={otherChargeLines}
         arkToUseCapped={arkToUseCapped}
         paymentMethod={paymentMethod}
@@ -1958,6 +2147,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         formatCurrency={formatCurrency}
         formatArk={formatArk}
         setIncludeTax={cart.setIncludeTax}
+        setIncludeService={cart.setIncludeService}
         setShowPaymentModal={openPaymentModal}
         onOpenBill={handleOpenBill}
         isSavingBill={savingBill}
@@ -1965,6 +2155,14 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         onOpenShift={POS_SHIFT_MANAGEMENT_ENABLED ? () => setShowShiftModal(true) : undefined}
         updateQuantity={cart.updateQty}
         removeFromCart={cart.removeItem}
+        onClearCart={() => {
+          if (cart.items.length === 0) return;
+          cart.clearItems();
+          setPromoApplied(null);
+          setPromoError(null);
+          setPromoInput('');
+          toast.success('Keranjang dikosongkan');
+        }}
       />
 
       {/* ── Customer Modal ── */}

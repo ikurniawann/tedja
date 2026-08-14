@@ -1,30 +1,34 @@
 "use client";
 
-// EPIC-032 A3 — dialog detail campaign: daftar kode (+tambah kode publik,
-// generate batch voucher sekali-pakai, export CSV klien) + riwayat
-// pemakaian 100 terbaru.
+// EPIC-032 A3 — dialog detail campaign: daftar kode (+tambah, generate,
+// edit/hapus jika belum terpakai, export CSV) + riwayat pemakaian.
 
 import { useState } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2, Pencil, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
+  DialogFooter,
+  DialogPanel,
+  DialogPanelBody,
+  DialogPanelDescription,
+  DialogPanelHeader,
+  DialogPanelTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import {
-  useCreateSingleCode,
+  useDeleteCode,
   useGenerateBatch,
   usePromoCodes,
   usePromoRedemptions,
   useToggleCode,
+  useUpdateCode,
 } from "../queries";
 import type { PromoCampaign, PromoCode } from "../types";
+import { PROMO_SCOPE_PREFIX } from "../types";
 
 const formatRp = (n: number) => `Rp${n.toLocaleString("id-ID")}`;
 const formatTime = (iso: string) =>
@@ -46,7 +50,6 @@ const STATUS_LABELS: Record<string, string> = {
   released: "Dilepas",
 };
 
-/** Unduh daftar kode sebagai CSV — dibangun di klien, tanpa route khusus. */
 function downloadCodesCsv(campaignName: string, codes: PromoCode[]) {
   const lines = [
     "code,usage_limit,usage_count,is_active",
@@ -77,76 +80,56 @@ export function CampaignDetailDialog({
   const codesQuery = usePromoCodes(campaignId);
   const redemptionsQuery = usePromoRedemptions(campaignId);
   const toggleMutation = useToggleCode();
+  const deleteMutation = useDeleteCode();
+  const updateCodeMutation = useUpdateCode(() => setEditingCode(null));
 
-  const [singleCode, setSingleCode] = useState("");
-  const [batchPrefix, setBatchPrefix] = useState("");
   const [batchCount, setBatchCount] = useState("");
-  const createSingle = useCreateSingleCode(() => setSingleCode(""));
+  const [editingCode, setEditingCode] = useState<PromoCode | null>(null);
+  const [editCodeValue, setEditCodeValue] = useState("");
+  const [editUsageLimit, setEditUsageLimit] = useState("");
+
   const generateBatch = useGenerateBatch(() => {
-    setBatchPrefix("");
     setBatchCount("");
   });
 
   const codes = codesQuery.data ?? [];
   const redemptions = redemptionsQuery.data ?? [];
   const batchCountNum = Number(batchCount);
+  const scopePrefix = campaign
+    ? PROMO_SCOPE_PREFIX[campaign.scope]
+    : PROMO_SCOPE_PREFIX.pos;
   const batchInvalid =
-    !/^[A-Za-z0-9]{2,12}$/.test(batchPrefix.trim()) ||
     Number.isNaN(batchCountNum) ||
     batchCountNum < 1 ||
     batchCountNum > 1000;
 
-  return (
-    <Dialog open={campaign !== null} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>Kode & Riwayat — {campaign?.name}</DialogTitle>
-        </DialogHeader>
+  const openEditCode = (code: PromoCode) => {
+    setEditingCode(code);
+    setEditCodeValue(code.code);
+    setEditUsageLimit(code.usage_limit !== null ? String(code.usage_limit) : "");
+  };
 
-        <div className="space-y-5">
-          {/* Tambah kode */}
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-1.5 rounded-xl border border-gray-200/70 p-3">
-              <Label htmlFor="single_code">Kode Publik Baru</Label>
-              <div className="flex gap-2">
-                <Input
-                  id="single_code"
-                  placeholder="mis. MERDEKA45"
-                  value={singleCode}
-                  onChange={(e) => setSingleCode(e.target.value.toUpperCase())}
-                />
-                <Button
-                  size="sm"
-                  disabled={
-                    !/^[A-Za-z0-9-]{3,40}$/.test(singleCode.trim()) ||
-                    createSingle.isPending ||
-                    !campaignId
-                  }
-                  onClick={() =>
-                    campaignId &&
-                    createSingle.mutate({
-                      campaignId,
-                      code: singleCode.trim(),
-                      usageLimit: null,
-                    })
-                  }
-                >
-                  Tambah
-                </Button>
-              </div>
-              <p className="text-xs text-gray-500">
-                Kode publik ikut kuota campaign (bisa dipakai berulang).
-              </p>
-            </div>
+  const editCodeInvalid = !/^[A-Za-z0-9-]{3,40}$/.test(editCodeValue.trim());
+  const codeBusy =
+    updateCodeMutation.isPending ||
+    deleteMutation.isPending ||
+    toggleMutation.isPending;
+
+  return (
+    <>
+      <Dialog open={campaign !== null} onOpenChange={onOpenChange}>
+        <DialogPanel size="lg" className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+          <DialogPanelHeader>
+            <DialogPanelTitle>Kode & Riwayat — {campaign?.name}</DialogPanelTitle>
+            <DialogPanelDescription>
+              Edit atau hapus voucher hanya jika belum pernah terpakai.
+            </DialogPanelDescription>
+          </DialogPanelHeader>
+
+          <DialogPanelBody className="space-y-5">
             <div className="space-y-1.5 rounded-xl border border-gray-200/70 p-3">
               <Label>Generate Batch Voucher (sekali pakai)</Label>
               <div className="flex gap-2">
-                <Input
-                  placeholder="Prefix — mis. GIFT"
-                  value={batchPrefix}
-                  onChange={(e) => setBatchPrefix(e.target.value.toUpperCase())}
-                  className="w-32"
-                />
                 <Input
                   type="number"
                   min={1}
@@ -156,6 +139,7 @@ export function CampaignDetailDialog({
                   onChange={(e) =>
                     setBatchCount(e.target.value.replace(/\D/g, ""))
                   }
+                  className="border-gray-200/80"
                 />
                 <Button
                   size="sm"
@@ -164,114 +148,240 @@ export function CampaignDetailDialog({
                     campaignId &&
                     generateBatch.mutate({
                       campaignId,
-                      prefix: batchPrefix.trim(),
+                      prefix: scopePrefix,
                       count: batchCountNum,
                     })
                   }
                 >
-                  {generateBatch.isPending ? "…" : "Generate"}
+                  {generateBatch.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    "Generate"
+                  )}
                 </Button>
               </div>
-              <p className="text-xs text-gray-500">
-                Maks 1000/batch — tiap kode mati setelah dipakai sekali.
+              <p className="text-xs text-muted-foreground">
+                Prefix otomatis: {scopePrefix} → {scopePrefix}-XXXXXX. Maks
+                1000/batch.
               </p>
             </div>
-          </div>
 
-          {/* Daftar kode */}
-          <div>
-            <div className="flex items-center justify-between">
-              <Label>Kode ({codes.length})</Label>
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-8"
-                disabled={codes.length === 0 || !campaign}
-                onClick={() => campaign && downloadCodesCsv(campaign.name, codes)}
-              >
-                Export CSV
-              </Button>
-            </div>
-            {codesQuery.isLoading ? (
-              <div className="py-6 text-center">
-                <Loader2 className="mx-auto h-6 w-6 animate-spin text-pink-600" />
+            <div>
+              <div className="flex items-center justify-between">
+                <Label>Kode ({codes.length})</Label>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8"
+                  disabled={codes.length === 0 || !campaign}
+                  onClick={() => campaign && downloadCodesCsv(campaign.name, codes)}
+                >
+                  Export CSV
+                </Button>
               </div>
-            ) : codes.length === 0 ? (
-              <p className="mt-2 rounded-lg border border-dashed border-gray-200 px-3 py-4 text-center text-sm text-gray-500">
-                Belum ada kode di campaign ini
-              </p>
-            ) : (
-              <div className="mt-2 max-h-56 space-y-1.5 overflow-y-auto pr-1">
-                {codes.map((code) => (
-                  <div
-                    key={code.id}
-                    className="flex items-center justify-between gap-3 rounded-lg border border-gray-200/70 px-3 py-2"
-                  >
-                    <div className="min-w-0">
-                      <p className="font-mono text-sm font-semibold text-gray-900">
-                        {code.code}
-                      </p>
-                      <p className="text-xs text-gray-500">
-                        terpakai {code.usage_count}
-                        {code.usage_limit !== null ? `/${code.usage_limit}` : ""}
-                      </p>
-                    </div>
-                    <Switch
-                      checked={code.is_active}
-                      disabled={toggleMutation.isPending}
-                      onCheckedChange={(checked) =>
-                        toggleMutation.mutate({ id: code.id, isActive: checked })
-                      }
-                    />
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Riwayat pemakaian */}
-          <div>
-            <Label>Riwayat Pemakaian (100 terbaru)</Label>
-            {redemptionsQuery.isLoading ? (
-              <div className="py-6 text-center">
-                <Loader2 className="mx-auto h-6 w-6 animate-spin text-pink-600" />
-              </div>
-            ) : redemptions.length === 0 ? (
-              <p className="mt-2 rounded-lg border border-dashed border-gray-200 px-3 py-4 text-center text-sm text-gray-500">
-                Belum ada pemakaian
-              </p>
-            ) : (
-              <div className="mt-2 max-h-56 space-y-1.5 overflow-y-auto pr-1">
-                {redemptions.map((r) => (
-                  <div
-                    key={r.id}
-                    className="flex items-center justify-between gap-3 rounded-lg border border-gray-200/70 px-3 py-2 text-sm"
-                  >
-                    <div className="min-w-0">
-                      <p className="font-mono text-xs font-semibold text-gray-900">
-                        {r.code}
-                      </p>
-                      <p className="text-xs text-gray-500">
-                        {r.phone ?? "tanpa nomor"} · {formatTime(r.created_at)}
-                      </p>
-                    </div>
-                    <div className="shrink-0 text-right">
-                      <p className="font-medium tabular-nums text-gray-900">
-                        −{formatRp(Number(r.discount_amount))}
-                      </p>
-                      <Badge
-                        className={`border-0 font-normal ${STATUS_BADGES[r.status]}`}
+              {codesQuery.isLoading ? (
+                <div className="py-6 text-center">
+                  <Loader2 className="mx-auto h-6 w-6 animate-spin text-primary" />
+                </div>
+              ) : codes.length === 0 ? (
+                <p className="mt-2 rounded-lg border border-dashed border-gray-200 px-3 py-4 text-center text-sm text-muted-foreground">
+                  Belum ada kode di campaign ini
+                </p>
+              ) : (
+                <div className="mt-2 max-h-56 space-y-1.5 overflow-y-auto pr-1">
+                  {codes.map((code) => {
+                    const unused = Number(code.usage_count) === 0;
+                    return (
+                      <div
+                        key={code.id}
+                        className="flex items-center justify-between gap-3 rounded-lg border border-gray-200/70 px-3 py-2"
                       >
-                        {STATUS_LABELS[r.status]}
-                      </Badge>
+                        <div className="min-w-0">
+                          <p className="font-mono text-sm font-semibold text-foreground">
+                            {code.code}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            terpakai {code.usage_count}
+                            {code.usage_limit !== null ? `/${code.usage_limit}` : ""}
+                          </p>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-1.5">
+                          {unused && (
+                            <>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="h-8 w-8 p-0"
+                                disabled={codeBusy}
+                                onClick={() => openEditCode(code)}
+                                aria-label="Edit kode"
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="h-8 w-8 p-0 border-red-200/80 text-red-600 hover:bg-red-50 hover:text-red-700"
+                                disabled={codeBusy}
+                                onClick={() => deleteMutation.mutate({ id: code.id })}
+                                aria-label="Hapus kode"
+                              >
+                                {deleteMutation.isPending ? (
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                ) : (
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                )}
+                              </Button>
+                            </>
+                          )}
+                          <Switch
+                            checked={code.is_active}
+                            disabled={codeBusy}
+                            onCheckedChange={(checked) =>
+                              toggleMutation.mutate({
+                                id: code.id,
+                                isActive: checked,
+                              })
+                            }
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div>
+              <Label>Riwayat Pemakaian (100 terbaru)</Label>
+              {redemptionsQuery.isLoading ? (
+                <div className="py-6 text-center">
+                  <Loader2 className="mx-auto h-6 w-6 animate-spin text-primary" />
+                </div>
+              ) : redemptions.length === 0 ? (
+                <p className="mt-2 rounded-lg border border-dashed border-gray-200 px-3 py-4 text-center text-sm text-muted-foreground">
+                  Belum ada pemakaian
+                </p>
+              ) : (
+                <div className="mt-2 max-h-56 space-y-1.5 overflow-y-auto pr-1">
+                  {redemptions.map((r) => (
+                    <div
+                      key={r.id}
+                      className="flex items-center justify-between gap-3 rounded-lg border border-gray-200/70 px-3 py-2 text-sm"
+                    >
+                      <div className="min-w-0">
+                        <p className="font-mono text-xs font-semibold text-foreground">
+                          {r.code}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {r.phone ?? "tanpa nomor"} · {formatTime(r.created_at)}
+                        </p>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <p className="font-medium tabular-nums text-foreground">
+                          −{formatRp(Number(r.discount_amount))}
+                        </p>
+                        <Badge
+                          className={`border-0 font-normal ${STATUS_BADGES[r.status]}`}
+                        >
+                          {STATUS_LABELS[r.status]}
+                        </Badge>
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
+                  ))}
+                </div>
+              )}
+            </div>
+          </DialogPanelBody>
+        </DialogPanel>
+      </Dialog>
+
+      <Dialog
+        open={editingCode !== null}
+        onOpenChange={(open) => {
+          if (updateCodeMutation.isPending) return;
+          if (!open) setEditingCode(null);
+        }}
+      >
+        <DialogPanel size="xs">
+          <DialogPanelHeader>
+            <DialogPanelTitle>Edit Voucher</DialogPanelTitle>
+            <DialogPanelDescription>
+              Ubah kode atau batas pemakaian. Hanya untuk voucher yang belum
+              terpakai.
+            </DialogPanelDescription>
+          </DialogPanelHeader>
+          <DialogPanelBody className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="edit_code">Kode</Label>
+              <Input
+                id="edit_code"
+                value={editCodeValue}
+                disabled={updateCodeMutation.isPending}
+                onChange={(e) => setEditCodeValue(e.target.value.toUpperCase())}
+                className="border-gray-200/80 font-mono"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="edit_usage_limit">Batas pakai (opsional)</Label>
+              <Input
+                id="edit_usage_limit"
+                type="number"
+                min={1}
+                placeholder="kosong = tanpa batas / ikut campaign"
+                value={editUsageLimit}
+                disabled={updateCodeMutation.isPending}
+                onChange={(e) =>
+                  setEditUsageLimit(e.target.value.replace(/\D/g, ""))
+                }
+                className="border-gray-200/80"
+              />
+            </div>
+          </DialogPanelBody>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={updateCodeMutation.isPending}
+              onClick={() => setEditingCode(null)}
+            >
+              Batal
+            </Button>
+            <Button
+              type="button"
+              disabled={
+                editCodeInvalid ||
+                updateCodeMutation.isPending ||
+                editingCode === null
+              }
+              onClick={() => {
+                if (!editingCode || editCodeInvalid) return;
+                updateCodeMutation.mutate({
+                  id: editingCode.id,
+                  values: {
+                    code: editCodeValue.trim(),
+                    usage_limit:
+                      editUsageLimit.trim() === ""
+                        ? null
+                        : Number(editUsageLimit),
+                  },
+                });
+              }}
+            >
+              {updateCodeMutation.isPending ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Menyimpan…
+                </>
+              ) : (
+                "Simpan"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogPanel>
+      </Dialog>
+    </>
   );
 }

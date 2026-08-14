@@ -94,19 +94,29 @@ async function main() {
     console.error("ERROR: Set MIGRATE_DATABASE_URL (target Postgres lokal) di .env.local");
     process.exit(1);
   }
-  try {
-    assertLocalTarget(url, "MIGRATE_DATABASE_URL");
-  } catch (err) {
-    console.error(err.message);
-    process.exit(1);
-  }
-
   const apply = process.argv.includes("--apply");
+  const allowRemote = process.argv.includes("--allow-remote");
   const files = listMigrationFiles();
   if (files.length === 0) {
     console.error(`Tidak ada file migrasi di ${MIGRATIONS_DIR}`);
     console.error("Jalankan generate dulu: npm run db:pull");
     process.exit(1);
+  }
+
+  if (!allowRemote) {
+    try {
+      assertLocalTarget(url, "MIGRATE_DATABASE_URL");
+    } catch (err) {
+      console.error(err.message);
+      console.error(
+        "Untuk target remote (mis. server-sulu), tambahkan --allow-remote."
+      );
+      process.exit(1);
+    }
+  } else {
+    console.warn(
+      `[warn] --allow-remote: apply ke ${url.replace(/:[^:@/]+@/, ":****@")}`
+    );
   }
 
   const client = new Client({ connectionString: url, ssl: sslForUrl(url) });

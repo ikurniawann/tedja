@@ -26,7 +26,12 @@ const HELP: Record<string, HelpEntry> = {
       "Split one bill into separate payments: equally across guests, or by assigning items to each guest.",
   },
   "pos.tax-toggle": {
-    default: "Aktifkan/nonaktifkan pajak 10% pada transaksi ini.",
+    default:
+      "Centang untuk menambahkan pajak (Tax) ke total transaksi ini.",
+  },
+  "pos.service-toggle": {
+    default:
+      "Centang untuk menambahkan Service Charge ke total transaksi ini.",
   },
   "pos.discount": {
     default:

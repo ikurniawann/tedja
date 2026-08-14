@@ -165,3 +165,157 @@ export async function POST(
     );
   }
 }
+
+const syncSchema = z.object({
+  target_count: z.number().int().min(0).max(MAX_BATCH),
+  prefix: z
+    .string()
+    .trim()
+    .regex(/^[A-Za-z0-9]{2,12}$/, "Prefix: huruf/angka, 2-12 karakter")
+    .optional(),
+});
+
+function inferPrefix(codes: string[]): string | null {
+  for (const code of codes) {
+    const match = /^([A-Z0-9]{2,12})-/.exec(code.toUpperCase());
+    if (match) return match[1];
+  }
+  return null;
+}
+
+/** Samakan jumlah voucher campaign (hanya jika belum ada yang terpakai). */
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { error, ctx } = await requirePromoContext();
+  if (error) return error;
+
+  try {
+    const { id } = await params;
+    if (!(await assertCampaign(id, ctx.branchId, ctx.companyId))) {
+      return NextResponse.json(
+        { success: false, error: "Campaign tidak ditemukan" },
+        { status: 404 }
+      );
+    }
+
+    const parsed = syncSchema.safeParse(await request.json());
+    if (!parsed.success) {
+      return NextResponse.json(
+        { success: false, error: "Validation failed", details: parsed.error.issues },
+        { status: 400 }
+      );
+    }
+    const { target_count: targetCount } = parsed.data;
+
+    const usage = await queryOne<{ captured: string; used_codes: string }>(
+      `SELECT
+         (SELECT COUNT(*)::text FROM promo.promo_redemptions r
+           WHERE r.campaign_id = $1 AND r.status = 'captured') AS captured,
+         (SELECT COUNT(*)::text FROM promo.promo_codes c
+           WHERE c.campaign_id = $1 AND c.usage_count > 0) AS used_codes`,
+      [id]
+    );
+    if (Number(usage?.captured) > 0 || Number(usage?.used_codes) > 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Sudah ada voucher terpakai — jumlah tidak bisa diubah",
+        },
+        { status: 409 }
+      );
+    }
+
+    const existing = await query<{ id: string; code: string }>(
+      `SELECT id, code FROM promo.promo_codes
+       WHERE campaign_id = $1 AND branch_id = $2 AND company_id = $3
+       ORDER BY created_at DESC, code`,
+      [id, ctx.branchId, ctx.companyId]
+    );
+    const currentCount = existing.length;
+    if (targetCount === currentCount) {
+      return successResponse(
+        { count: currentCount, added: 0, removed: 0 },
+        "Jumlah voucher tidak berubah"
+      );
+    }
+
+    if (targetCount < currentCount) {
+      const toRemove = currentCount - targetCount;
+      const ids = existing.slice(0, toRemove).map((row) => row.id);
+      await withTransaction(async (client) => {
+        await client.query(
+          `DELETE FROM promo.promo_redemptions
+           WHERE code_id = ANY($1::uuid[]) AND status IN ('held', 'released')`,
+          [ids]
+        );
+        await client.query(
+          `DELETE FROM promo.promo_codes
+           WHERE id = ANY($1::uuid[]) AND usage_count = 0`,
+          [ids]
+        );
+      });
+      return successResponse(
+        { count: targetCount, added: 0, removed: toRemove },
+        `${toRemove} voucher dihapus`
+      );
+    }
+
+    const need = targetCount - currentCount;
+    const prefix = (
+      parsed.data.prefix?.toUpperCase() ||
+      inferPrefix(existing.map((row) => row.code)) ||
+      ""
+    ).trim();
+    if (!/^[A-Z0-9]{2,12}$/.test(prefix)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "Prefix tidak tersedia — pastikan kanal campaign valid atau isi prefix",
+        },
+        { status: 400 }
+      );
+    }
+
+    const created: string[] = [];
+    await withTransaction(async (client) => {
+      for (let round = 0; round < 6 && created.length < need; round++) {
+        const gap = need - created.length;
+        const candidates = new Set<string>();
+        while (candidates.size < gap) {
+          candidates.add(generateVoucherCode(prefix));
+        }
+        const inserted = await client.query<{ code: string }>(
+          `INSERT INTO promo.promo_codes
+             (company_id, branch_id, campaign_id, code, usage_limit)
+           SELECT $1, $2, $3, unnest($4::text[]), 1
+           ON CONFLICT (branch_id, code) DO NOTHING
+           RETURNING code`,
+          [ctx.companyId, ctx.branchId, id, [...candidates]]
+        );
+        created.push(...inserted.rows.map((r) => r.code));
+      }
+      if (created.length < need) {
+        throw new Error(
+          `Hanya ${created.length}/${need} kode berhasil ditambah — coba prefix lain`
+        );
+      }
+    });
+
+    return successResponse(
+      { count: targetCount, added: created.length, removed: 0 },
+      `${created.length} voucher ditambah`
+    );
+  } catch (err) {
+    console.error("[promo] sync codes error:", err);
+    return NextResponse.json(
+      {
+        success: false,
+        error: (err as Error).message || "Gagal mengubah jumlah voucher",
+      },
+      { status: 500 }
+    );
+  }
+}

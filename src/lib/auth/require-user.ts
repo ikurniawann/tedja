@@ -39,7 +39,7 @@ export const getUser = cache(async (): Promise<{
 
   const { data: profile } = await db
     .from("users")
-    .select("full_name, role, brand_id, business_scope")
+    .select("full_name, role, brand_id, business_scope, can_switch_stall, default_warehouse_id")
     .eq("id", user.id)
     .single();
 
@@ -70,20 +70,22 @@ export const getUser = cache(async (): Promise<{
   const canSwitchStall =
     profile.role === "super_admin" ||
     profile.role === "admin" ||
+    profile.can_switch_stall === true ||
     access.allAccess ||
     access.stalls.length > 1;
 
-  // Default penempatan: Main Storage (is_default) jika ada, else stall pertama.
-  const placementDefault = warehouses[0] ?? null;
+  const homeStall =
+    warehouses.find((row) => row.warehouse_id === profile.default_warehouse_id) ??
+    warehouses[0] ??
+    null;
 
   let warehouse_name: string | null;
   let active_stall_id: string | null;
 
   if (canSwitchStall) {
     const allowedIds = new Set(access.stalls.map((stall) => stall.id));
-    // Stall default dari penempatan; bila allAccess tanpa penempatan → Semua Stall.
-    const fallbackName = placementDefault?.name ?? (access.allAccess ? "Semua Stall" : null);
-    const fallbackId = placementDefault?.warehouse_id ?? null;
+    const fallbackName = homeStall?.name ?? (access.allAccess ? "Semua Stall" : null);
+    const fallbackId = homeStall?.warehouse_id ?? null;
 
     if (resolvedStall.mode === "stall" && allowedIds.has(resolvedStall.stall.id)) {
       // Cookie valid & masih dalam penempatan / akses user.
@@ -99,9 +101,12 @@ export const getUser = cache(async (): Promise<{
       active_stall_id = fallbackId;
     }
   } else {
-    warehouse_name =
-      warehouses.length > 0 ? warehouses.map((warehouse) => warehouse.name).join(", ") : null;
-    active_stall_id = warehouses[0]?.warehouse_id ?? null;
+    warehouse_name = homeStall
+      ? homeStall.name
+      : warehouses.length > 0
+        ? warehouses.map((warehouse) => warehouse.name).join(", ")
+        : null;
+    active_stall_id = homeStall?.warehouse_id ?? warehouses[0]?.warehouse_id ?? null;
   }
 
   const isUnscoped =

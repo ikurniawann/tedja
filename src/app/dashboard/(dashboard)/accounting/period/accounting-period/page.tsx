@@ -1,6 +1,5 @@
-import { createAccountingComingSoonPage } from "@/features/accounting/coming-soon";
+import { AccountingPeriodPage } from "@/features/accounting/period";
 
-export default createAccountingComingSoonPage(
-  "Accounting Period",
-  "Kelola periode akuntansi (buka/tutup bulan). Halaman ini sedang disiapkan."
-);
+export default function Page() {
+  return <AccountingPeriodPage />;
+}

@@ -24,6 +24,51 @@ export function shouldShowStallPicker(input: {
   return true;
 }
 
+export function resolveDefaultWarehouseId(input: {
+  defaultWarehouseId?: string | null;
+  warehouseIds?: string[];
+}): string | null {
+  const explicit = String(input.defaultWarehouseId || "").trim();
+  if (explicit) return explicit;
+  const first = input.warehouseIds?.find((id) => Boolean(id));
+  return first ?? null;
+}
+
+export function resolveSavedWarehouseIds(input: {
+  defaultWarehouseId?: string | null;
+  warehouseIds?: string[];
+  canSwitchStall?: boolean;
+}): string[] {
+  const defaultId = resolveDefaultWarehouseId(input);
+  return defaultId ? [defaultId] : [];
+}
+
+export function computeStallAllAccess(input: {
+  role: string | null | undefined;
+  canSwitchStall: boolean;
+  assignedMainStorage: boolean;
+}): boolean {
+  if (input.role === "super_admin") return true;
+  if (input.canSwitchStall) return true;
+  if (input.assignedMainStorage) return true;
+  return false;
+}
+
+export function isSellStallAllowed(input: {
+  warehouseId: string;
+  assignedIds: string[];
+  canSwitchStall: boolean;
+  isUnscoped: boolean;
+  defaultWarehouseId?: string | null;
+}): boolean {
+  if (input.isUnscoped || input.canSwitchStall) return true;
+  if (input.assignedIds.includes(input.warehouseId)) return true;
+  if (input.defaultWarehouseId && input.warehouseId === input.defaultWarehouseId) {
+    return true;
+  }
+  return false;
+}
+
 export function findBranchStallsFromTree(
   tree: { holdings: Array<{ companies: Array<{ branches: Array<{ id: string; warehouses: Array<{ id: string; name: string; code: string; is_active: boolean }> }> }> }> },
   branchId: string

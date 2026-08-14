@@ -331,6 +331,8 @@ export interface OpenBillRequest {
   subtotal: number;
   discount_amount?: number;
   discount_reason?: string;
+  manual_discount_type?: 'percent' | 'fixed' | null;
+  manual_discount_value?: number | null;
   tax_amount?: number;
   service_charge_amount?: number;
   other_charges_amount?: number;
@@ -344,6 +346,8 @@ export interface OpenBillRequest {
   notes?: string;
   special_requests?: string;
   membership_discount_pct?: number;
+  promo_discount?: number;
+  promo_code?: string;
 }
 
 export async function openBill(payload: OpenBillRequest) {
@@ -369,15 +373,21 @@ export async function preSettleOrder(orderId: string) {
 
 export interface OrderItem {
   product_id: string;
+  sku_id?: string;
   product_name: string;
   product_sku: string;
   variants?: Array<{ name: string; group: string; price: number }>;
   modifiers?: Array<{ name: string; group: string }>;
   quantity: number;
   unit_price: number;
+  variant_price_adjustment?: number;
+  modifier_price_adjustment?: number;
   subtotal: number;
   total_amount: number;
   station?: string;
+  discount_type?: 'percent' | 'fixed' | null;
+  discount_value?: number | null;
+  discount_amount?: number;
 }
 
 export interface Order {
@@ -398,6 +408,9 @@ export interface Order {
   guest_count?: number;
   subtotal?: number;
   discount_amount?: number;
+  discount_reason?: string;
+  manual_discount_type?: 'percent' | 'fixed' | null;
+  manual_discount_value?: number | null;
   tax_amount?: number;
   service_charge_amount?: number;
   other_charges_amount?: number;
@@ -438,6 +451,8 @@ export interface CreateOrderRequest {
   subtotal: number;
   discount_amount?: number;
   discount_reason?: string;
+  manual_discount_type?: 'percent' | 'fixed' | null;
+  manual_discount_value?: number | null;
   tax_amount?: number;
   service_charge_amount?: number;
   other_charges_amount?: number;

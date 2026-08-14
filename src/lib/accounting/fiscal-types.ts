@@ -38,3 +38,23 @@ export type FiscalCoverageResult = {
   period: ResolvedFiscalPeriod | null;
   suggestion: FiscalOpenSuggestion | null;
 };
+
+/** Period row for Accounting Period / Closing operational UI. */
+export type AccountingPeriodListItem = ResolvedFiscalPeriod & {
+  posted_count: number;
+  draft_count: number;
+};
+
+export type PeriodClosePreview = {
+  period: ResolvedFiscalPeriod;
+  posted_count: number;
+  draft_count: number;
+  draft_entries: Array<{
+    id: string;
+    entry_no: string;
+    entry_date: string;
+    description: string | null;
+  }>;
+  can_close: boolean;
+  blockers: string[];
+};

@@ -25,14 +25,17 @@ async function getJson<T>(url: string, fallback: string): Promise<T> {
 
 async function sendJson<T>(
   url: string,
-  method: "POST" | "PATCH",
+  method: "POST" | "PATCH" | "DELETE",
   payload: unknown,
   fallback: string
 ): Promise<T> {
   const res = await fetch(url, {
     method,
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+    headers:
+      method === "DELETE"
+        ? undefined
+        : { "Content-Type": "application/json" },
+    body: method === "DELETE" ? undefined : JSON.stringify(payload),
   });
   if (!res.ok) await parseError(res, fallback);
   const body = (await res.json()) as { data: T };
@@ -91,12 +94,46 @@ export const generateBatchCodes = (
     "Gagal generate voucher"
   );
 
+export const syncVoucherCount = (
+  campaignId: string,
+  targetCount: number,
+  prefix?: string
+) =>
+  sendJson<{ count: number; added: number; removed: number }>(
+    `/api/promo/campaigns/${campaignId}/codes`,
+    "PATCH",
+    {
+      target_count: targetCount,
+      ...(prefix ? { prefix } : {}),
+    },
+    "Gagal mengubah jumlah voucher"
+  );
+
 export const toggleCode = (id: string, isActive: boolean) =>
   sendJson<{ id: string }>(
     `/api/promo/codes/${id}`,
     "PATCH",
     { is_active: isActive },
     "Gagal memperbarui kode"
+  );
+
+export const updateCode = (
+  id: string,
+  values: { code?: string; usage_limit?: number | null; is_active?: boolean }
+) =>
+  sendJson<{ id: string }>(
+    `/api/promo/codes/${id}`,
+    "PATCH",
+    values,
+    "Gagal memperbarui kode"
+  );
+
+export const deleteCode = (id: string) =>
+  sendJson<{ id: string }>(
+    `/api/promo/codes/${id}`,
+    "DELETE",
+    null,
+    "Gagal menghapus kode"
   );
 
 export const fetchRedemptions = (campaignId: string) =>

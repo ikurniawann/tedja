@@ -7,7 +7,7 @@ import {
   normalizeBusinessScopePayload,
   validateBusinessScope,
 } from "@/lib/configuration/business-scope";
-import { requiresStallAssignment } from "./stall-assignment";
+import { requiresStallAssignment, resolveDefaultWarehouseId } from "./stall-assignment";
 
 const employeeCoreSchema = z.object({
   full_name: z.string().min(2),
@@ -47,6 +47,8 @@ const businessScopeFieldsSchema = z.object({
   company_id: z.string().uuid().nullable().optional(),
   branch_id: z.string().uuid().nullable().optional(),
   warehouse_ids: z.array(z.string().uuid()).optional(),
+  default_warehouse_id: z.string().uuid().nullable().optional(),
+  can_switch_stall: z.boolean().optional(),
 });
 
 const appAccessSchema = z
@@ -105,12 +107,15 @@ export const createUserEmployeeSchema = employeeCoreSchema
     );
     if (
       requiresStallAssignment(data.role, scopePayload.business_scope ?? null, true) &&
-      (data.warehouse_ids?.length ?? 0) === 0
+      !resolveDefaultWarehouseId({
+        defaultWarehouseId: data.default_warehouse_id,
+        warehouseIds: data.warehouse_ids,
+      })
     ) {
       ctx.addIssue({
         code: "custom",
-        path: ["warehouse_ids"],
-        message: "At least one stall is required for branch scope",
+        path: ["default_warehouse_id"],
+        message: "Stall default wajib untuk scope branch",
       });
     }
   });
@@ -169,12 +174,15 @@ export const updateUserEmployeeSchema = employeeCoreSchema
         scopePayload.business_scope ?? null,
         data.is_access_app === true
       ) &&
-      (data.warehouse_ids?.length ?? 0) === 0
+      !resolveDefaultWarehouseId({
+        defaultWarehouseId: data.default_warehouse_id,
+        warehouseIds: data.warehouse_ids,
+      })
     ) {
       ctx.addIssue({
         code: "custom",
-        path: ["warehouse_ids"],
-        message: "At least one stall is required for branch scope",
+        path: ["default_warehouse_id"],
+        message: "Stall default wajib untuk scope branch",
       });
     }
   });

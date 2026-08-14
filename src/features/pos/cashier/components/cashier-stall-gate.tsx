@@ -1,24 +1,155 @@
 "use client";
 
+import { useEffect, useState } from "react";
+import { BuildingStorefrontIcon } from "@heroicons/react/24/outline";
+import { Loader2 } from "lucide-react";
+import { toast } from "sonner";
+import {
+  POS_CART_STORAGE_KEY,
+  posCartHasItems,
+} from "@/lib/pos/pos-sell-stall";
+
+type StallOption = { id: string; name: string; code: string };
+
 /**
- * Banner only — stall selection stays in the sidebar switcher (single source).
- * Avoids a second stall list on the cashier canvas.
+ * Centered gate when kasir blocks "Semua Stall" / no assignment.
+ * Stall list reuses the same APIs as sidebar StallSwitcher.
  */
 export function CashierStallGate({ reason }: { reason: string }) {
-  const title =
-    reason === "no_stall"
-      ? "Tidak ada stall penempatan"
-      : "Pilih stall aktif untuk berjualan";
-  const hint =
-    reason === "no_stall"
-      ? "Hubungi admin untuk assign stall ke akun Anda."
-      : "Mode Semua Stall tidak diizinkan di kasir. Ganti lewat switcher stall di sidebar (klik nama stall di kiri atas), pilih satu stall — bukan Semua Stall.";
+  const isNoStall = reason === "no_stall";
+  const title = isNoStall
+    ? "Tidak ada stall penempatan"
+    : "Pilih stall aktif untuk berjualan";
+  const hint = isNoStall
+    ? "Hubungi admin untuk assign stall ke akun Anda."
+    : "Mode Semua Stall tidak diizinkan di kasir. Pilih satu stall di bawah untuk mulai berjualan.";
+
+  const [stalls, setStalls] = useState<StallOption[] | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [switchingId, setSwitchingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isNoStall) return;
+    let cancelled = false;
+
+    async function loadStalls() {
+      try {
+        const res = await fetch("/api/auth/stall-options");
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(json.error ?? "Gagal memuat daftar stall");
+        }
+        if (cancelled) return;
+        setStalls(
+          ((json.data?.stalls ?? []) as StallOption[]).map(({ id, name, code }) => ({
+            id,
+            name,
+            code,
+          }))
+        );
+      } catch (error) {
+        if (cancelled) return;
+        setLoadFailed(true);
+        setLoadError(error instanceof Error ? error.message : "Gagal memuat daftar stall");
+        setStalls([]);
+      }
+    }
+
+    void loadStalls();
+    return () => {
+      cancelled = true;
+    };
+  }, [isNoStall]);
+
+  async function selectStall(warehouseId: string) {
+    if (switchingId) return;
+    try {
+      if (posCartHasItems(localStorage.getItem(POS_CART_STORAGE_KEY))) {
+        toast.error("Kosongkan atau selesaikan keranjang sebelum ganti stall");
+        return;
+      }
+    } catch {
+      /* localStorage may be unavailable */
+    }
+
+    setSwitchingId(warehouseId);
+    try {
+      const res = await fetch("/api/auth/active-stall", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ warehouse_id: warehouseId }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error ?? "Gagal mengganti stall");
+      toast.success("Stall diganti — memuat ulang…");
+      window.location.reload();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Gagal mengganti stall");
+      setSwitchingId(null);
+    }
+  }
 
   return (
-    <div className="absolute inset-x-0 top-16 z-40 mx-auto max-w-lg px-4">
-      <div className="rounded-xl border border-amber-200/80 bg-amber-50 px-4 py-3 text-sm text-amber-950 shadow-sm">
+    <div className="absolute inset-0 z-40 flex items-center justify-center px-4">
+      <div className="w-full max-w-lg rounded-xl border border-amber-200/80 bg-amber-50 px-4 py-4 text-center text-sm text-amber-950 shadow-sm">
         <p className="font-medium text-amber-950">{title}</p>
         <p className="mt-1 text-amber-900/90">{hint}</p>
+
+        {!isNoStall && (
+          <div className="mt-4 text-left">
+            {stalls === null ? (
+              <div className="flex items-center justify-center gap-2 py-4 text-amber-900/80">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span>Memuat stall…</span>
+              </div>
+            ) : loadFailed ? (
+              <p className="rounded-lg border border-amber-200/80 bg-white/60 px-3 py-2 text-center text-xs text-amber-900/90">
+                {loadError ?? "Gagal memuat daftar stall"}. Ganti lewat switcher stall di sidebar.
+              </p>
+            ) : stalls.length === 0 ? (
+              <p className="rounded-lg border border-amber-200/80 bg-white/60 px-3 py-2 text-center text-xs text-amber-900/90">
+                Tidak ada stall yang bisa dipilih. Hubungi admin.
+              </p>
+            ) : (
+              <ul className="max-h-56 space-y-2 overflow-y-auto pr-0.5 [scrollbar-width:thin]">
+                {stalls.map((stall) => {
+                  const busy = switchingId === stall.id;
+                  const disabled = switchingId !== null;
+                  return (
+                    <li key={stall.id}>
+                      <button
+                        type="button"
+                        disabled={disabled}
+                        onClick={() => void selectStall(stall.id)}
+                        className="flex w-full items-center gap-2.5 rounded-lg border border-amber-200/80 bg-white px-3 py-2.5 text-left transition hover:border-primary/30 hover:bg-primary/5 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-gray-200/70 bg-muted/50 text-muted-foreground">
+                          {busy ? (
+                            <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                          ) : (
+                            <BuildingStorefrontIcon className="h-4 w-4" />
+                          )}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm font-medium text-foreground">
+                            {stall.name}
+                          </span>
+                          <span className="block truncate text-xs text-muted-foreground">
+                            {stall.code}
+                          </span>
+                        </span>
+                        <span className="shrink-0 text-xs font-medium text-primary">
+                          {busy ? "Mengganti…" : "Pilih"}
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

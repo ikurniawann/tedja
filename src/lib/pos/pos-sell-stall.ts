@@ -9,6 +9,7 @@ export type PosSellStallInput = {
   activeMode: ActiveStallMode;
   activeStallId: string | null;
   assignedWarehouseIds: string[];
+  defaultWarehouseId?: string | null;
 };
 
 export type PosSellStallResult =
@@ -37,6 +38,9 @@ export function resolvePosSellStall(input: PosSellStallInput): PosSellStallResul
   }
 
   // unset (or invalid stall cookie cleared by caller)
+  if (input.defaultWarehouseId) {
+    return { ok: true, warehouseId: input.defaultWarehouseId };
+  }
   if (assigned.length === 1) {
     return { ok: true, warehouseId: assigned[0] };
   }

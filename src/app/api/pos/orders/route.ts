@@ -43,6 +43,12 @@ import {
   normalizeStation,
 } from '@/lib/pos/kitchen-station';
 import { AccountingPostError } from '@/lib/pos/accounting-posting';
+import {
+  buildDiscountReason,
+  computeOrderDiscountStack,
+  type DiscountType,
+} from '@/lib/pos/manual-discount';
+import { evaluateActiveOffersForPosCart } from '@/lib/promo/offer-pos';
 
 type PosOrderItemRequest = {
   product_id?: string;
@@ -57,6 +63,9 @@ type PosOrderItemRequest = {
   variants?: unknown[];
   modifiers?: unknown[];
   station?: string;
+  discount_type?: string | null;
+  discount_value?: number | string | null;
+  discount_amount?: number | string;
 };
 
 type PosOrderBody = {
@@ -71,6 +80,8 @@ type PosOrderBody = {
   subtotal?: number | string;
   discount_amount?: number | string;
   discount_reason?: string;
+  manual_discount_type?: string | null;
+  manual_discount_value?: number | string | null;
   /** EPIC-032 C1 — kode promo (server evaluasi & override diskon). */
   promo_code?: string;
   membership_discount_pct?: number | string;
@@ -398,21 +409,75 @@ export async function POST(request: NextRequest) {
       const modifierAdj = Number(item.modifier_price_adjustment) || 0;
       return sum + ((unit + variantAdj + modifierAdj) * qty);
     }, 0);
-    let serverDiscount = Number(discount_amount) || 0;
+    const clientDiscount = Number(discount_amount) || 0;
     let discountReasonFinal: string | null = discount_reason || null;
     const serverTax = Number(tax_amount) || 0;
     const serverServiceCharge = Number(service_charge_amount) || 0;
     const serverOtherCharges = Number(other_charges_amount) || 0;
     const serverChargesBreakdown = Array.isArray(charges_breakdown) ? charges_breakdown : [];
 
+    const parseDiscountType = (raw: unknown): DiscountType | null =>
+      raw === 'percent' || raw === 'fixed' ? raw : null;
+
+    const lineInputs = items.map((item: PosOrderItemRequest) => {
+      const qty = Number(item.quantity) || 1;
+      const unit = Number(item.unit_price) || 0;
+      const variantAdj = Number(item.variant_price_adjustment) || 0;
+      const modifierAdj = Number(item.modifier_price_adjustment) || 0;
+      return {
+        line_subtotal: (unit + variantAdj + modifierAdj) * qty,
+        discount_type: parseDiscountType(item.discount_type),
+        discount_value:
+          item.discount_value == null || item.discount_value === ''
+            ? null
+            : Number(item.discount_value),
+      };
+    });
+
+    const membershipPct = Number(body.membership_discount_pct) || 0;
+    const manualType = parseDiscountType(body.manual_discount_type);
+    const manualValue =
+      body.manual_discount_value == null || body.manual_discount_value === ''
+        ? null
+        : Number(body.manual_discount_value);
+
+    const offerEval = await evaluateActiveOffersForPosCart({
+      companyId: venue.companyId,
+      branchId: body.branch_id || venue.branchId,
+      items: items.map((item: PosOrderItemRequest) => {
+        const qty = Number(item.quantity) || 1;
+        const unit = Number(item.unit_price) || 0;
+        const variantAdj = Number(item.variant_price_adjustment) || 0;
+        const modifierAdj = Number(item.modifier_price_adjustment) || 0;
+        return {
+          productId: String(item.product_id || ''),
+          quantity: qty,
+          unitPrice: unit + variantAdj + modifierAdj,
+        };
+      }),
+    });
+    const offerDiscountRaw = offerEval.offer_discount;
+
     // ── EPIC-032 C1 — kode promo kasir ─────────────────────────────
     // Hold DI AWAL dgn id order yang di-generate sendiri (insert pakai id
     // eksplisit) supaya kuota terkunci sebelum uang diterima; diskon =
-    // turunan SERVER (membership dari pct + promo dari engine), klien
+    // turunan SERVER (line + offer + membership + promo + manual), klien
     // hanya diverifikasi. Gagal lolos → 422 sebelum ada baris order.
     const promoCode = String(body.promo_code || '').trim();
     let promoHold: PromoHold | null = null;
     let promoOrderId: string | null = null;
+    let promoDiscountRaw = 0;
+
+    const provisionalStack = computeOrderDiscountStack({
+      items: lineInputs,
+      offer_discount: offerDiscountRaw,
+      membership_pct: membershipPct,
+      promo_discount: 0,
+      manual_discount_type: manualType,
+      manual_discount_value: manualValue,
+    });
+    const promoHoldSubtotal = provisionalStack.items_subtotal;
+
     if (promoCode) {
       const promoCompanyId = venue.companyId;
       const promoBranchId = body.branch_id || venue.branchId;
@@ -432,11 +497,12 @@ export async function POST(request: NextRequest) {
             channel: 'pos',
             contextType: 'pos_order',
             contextId: promoOrderId!,
-            subtotal: serverSubtotal,
+            subtotal: promoHoldSubtotal,
             phone: null,
             customerId: customer_id || null,
           })
         );
+        promoDiscountRaw = promoHold.discount;
       } catch (promoErr) {
         if (promoErr instanceof PromoRejectedError) {
           return NextResponse.json(
@@ -446,33 +512,41 @@ export async function POST(request: NextRequest) {
         }
         throw promoErr;
       }
-      const membershipPct = Number(body.membership_discount_pct) || 0;
-      const membershipAmt =
-        membershipPct > 0 ? Math.floor((serverSubtotal * membershipPct) / 100) : 0;
-      const authoritativeDiscount = Math.min(
-        serverSubtotal,
-        membershipAmt + promoHold.discount
-      );
-      // Klien wajib menghitung angka yang sama — selisih > 1 rupiah =
-      // state basi (mis. cart berubah setelah kode dipakai) → tolak rapi
-      if (Math.abs(serverDiscount - authoritativeDiscount) > 1) {
+    }
+
+    const stack = computeOrderDiscountStack({
+      items: lineInputs,
+      offer_discount: offerDiscountRaw,
+      membership_pct: membershipPct,
+      promo_discount: promoDiscountRaw,
+      manual_discount_type: manualType,
+      manual_discount_value: manualValue,
+    });
+    const serverDiscount = stack.discount_amount;
+
+    if (Math.abs(clientDiscount - serverDiscount) > 1) {
+      if (promoOrderId) {
         await withTransaction((client) =>
           releasePromoRedemption(client, 'pos_order', promoOrderId!)
         ).catch(() => {});
-        return NextResponse.json(
-          {
-            success: false,
-            error:
-              'Total diskon tidak cocok dengan kode promo — muat ulang dan coba lagi',
-          },
-          { status: 400 }
-        );
       }
-      serverDiscount = authoritativeDiscount;
-      discountReasonFinal = [discount_reason, `PROMO ${promoCode.toUpperCase()}`]
-        .filter(Boolean)
-        .join(' + ');
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Total diskon tidak cocok — muat ulang dan coba lagi',
+        },
+        { status: 400 }
+      );
     }
+
+    discountReasonFinal = buildDiscountReason({
+      has_item_discounts: stack.line_discount_total > 0,
+      offer_labels: offerEval.applied.map((a) => a.name),
+      membership_pct: membershipPct,
+      promo_code: promoCode || null,
+      manual_type: manualType,
+      manual_value: manualValue,
+    });
 
     const serverDerivedTotal =
       serverSubtotal - serverDiscount + serverTax + serverServiceCharge + serverOtherCharges;
@@ -607,7 +681,7 @@ export async function POST(request: NextRequest) {
     merchClaims = merchClaimResult.claims;
     const merchClaimedIds = new Set(merchClaims.map((claim) => claim.productId));
 
-    const { data: orderData, error: orderErr } = await db
+    const { data: insertedOrder, error: orderErr } = await db
       .from('pos_orders')
       .insert({
         ...(promoOrderId ? { id: promoOrderId } : {}),
@@ -628,6 +702,8 @@ export async function POST(request: NextRequest) {
         subtotal: serverSubtotal,
         discount_amount: serverDiscount,
         discount_reason: discountReasonFinal,
+        manual_discount_type: manualType,
+        manual_discount_value: manualValue,
         tax_amount: serverTax,
         service_charge_amount: serverServiceCharge,
         other_charges_amount: serverOtherCharges,
@@ -644,8 +720,52 @@ export async function POST(request: NextRequest) {
       .select()
       .single();
 
-    if (orderErr || !orderData) {
-      console.error('Order insert error:', orderErr);
+    // Satu binding orderData (insert → optional legacy fallback). Jangan redeclare.
+    let orderData = insertedOrder;
+    let orderInsertErr = orderErr;
+    if (orderInsertErr?.code === '42703' || orderInsertErr?.code === 'PGRST204') {
+      const legacyResult = await db
+        .from('pos_orders')
+        .insert({
+          ...(promoOrderId ? { id: promoOrderId } : {}),
+          order_number: orderNumber,
+          queue_number: queueNumber,
+          order_type,
+          status: 'pending',
+          payment_status: deferPaid ? 'unpaid' : 'paid',
+          company_id: venue.companyId,
+          branch_id: body.branch_id || venue.branchId,
+          warehouse_id: sellStall.warehouseId,
+          customer_id: customer_id || null,
+          cashier_id: effectiveCashierId,
+          server_id: server_id || null,
+          table_id: table_id || null,
+          guest_count: normalizeGuestCount(body.guest_count),
+          shift_id: body.shift_id || null,
+          subtotal: serverSubtotal,
+          discount_amount: serverDiscount,
+          discount_reason: discountReasonFinal,
+          tax_amount: serverTax,
+          service_charge_amount: serverServiceCharge,
+          other_charges_amount: serverOtherCharges,
+          charges_breakdown: serverChargesBreakdown,
+          total_amount: serverTotal,
+          amount_paid: paidAmount,
+          change_amount: Math.max(0, paidAmount + arkUsed - serverTotal),
+          payment_method,
+          ark_coins_used: arkUsed,
+          notes: notes || null,
+          special_requests: special_requests || null,
+          ordered_at: new Date().toISOString(),
+        })
+        .select()
+        .single();
+      orderData = legacyResult.data;
+      orderInsertErr = legacyResult.error;
+    }
+
+    if (orderInsertErr || !orderData) {
+      console.error('Order insert error:', orderInsertErr);
       await restoreMerchandiseStock(db, merchClaims);
       merchClaims = [];
       if (promoOrderId) {
@@ -653,7 +773,7 @@ export async function POST(request: NextRequest) {
           releasePromoRedemption(client, 'pos_order', promoOrderId!)
         ).catch(() => {});
       }
-      return NextResponse.json({ success: false, error: orderErr?.message || 'Failed to create order' }, { status: 500 });
+      return NextResponse.json({ success: false, error: orderInsertErr?.message || 'Failed to create order' }, { status: 500 });
     }
 
     // Debit saldo ARK atomik (fix bug: checkout langsung sebelumnya tidak
@@ -822,18 +942,26 @@ export async function POST(request: NextRequest) {
       items.map((item) => String(item.product_id || '')).filter(Boolean)
     );
 
-    const orderItems = items.map((item: PosOrderItemRequest) => {
+    const orderItems = items.map((item: PosOrderItemRequest, index: number) => {
       const qty = Number(item.quantity) || 1;
       const unitPrice =
         (Number(item.unit_price) || 0) +
         (Number(item.variant_price_adjustment) || 0) +
         (Number(item.modifier_price_adjustment) || 0);
       const subtotalValue = unitPrice * qty;
+      const line = stack.line_results[index];
+      const lineDiscount = line?.discount_amount ?? 0;
+      const lineTotal = line?.total_amount ?? subtotalValue;
       const costSnapshot = buildCostSnapshot(
         item.product_id ? productCostMap.get(item.product_id) : undefined,
         qty,
-        subtotalValue
+        lineTotal
       );
+      const discType = parseDiscountType(item.discount_type);
+      const discValue =
+        item.discount_value == null || item.discount_value === ''
+          ? null
+          : Number(item.discount_value);
 
       return {
         order_id: orderData.id,
@@ -846,8 +974,10 @@ export async function POST(request: NextRequest) {
         quantity: qty,
         unit_price: unitPrice,
         subtotal: subtotalValue,
-        discount_amount: 0,
-        total_amount: subtotalValue,
+        discount_type: discType,
+        discount_value: discValue,
+        discount_amount: lineDiscount,
+        total_amount: lineTotal,
         xp_earned: 0,
         station: normalizeStation(
           item.station,
@@ -875,6 +1005,8 @@ export async function POST(request: NextRequest) {
         delete legacyItem.cost_total;
         delete legacyItem.gross_profit;
         delete legacyItem.gross_margin_pct;
+        delete legacyItem.discount_type;
+        delete legacyItem.discount_value;
         return legacyItem;
       });
       const legacyResult = await db.from('pos_order_items').insert(legacyItems);
@@ -941,14 +1073,6 @@ export async function POST(request: NextRequest) {
       paymentMethod: payment_method,
     });
 
-    // EPIC-032 C1 — order lunas → pemakaian kode FINAL (held → captured).
-    // Void order melepasnya kembali (route void).
-    if (promoOrderId) {
-      await withTransaction((client) =>
-        capturePromoRedemption(client, 'pos_order', promoOrderId!)
-      ).catch((err) => console.error('[pos] capture promo error:', err));
-    }
-
     // ── EPIC-034 Fase B — kartu terbit setelah order LUNAS ─────────────
     // Idempoten per order (retry tidak menggandakan kartu). Gagal terbit
     // TIDAK membatalkan order yang sudah dibayar — kasir diberi peringatan
@@ -988,16 +1112,36 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Jurnal dulu, baru capture voucher — supaya gagal balance tidak
+    // meninggalkan promo terpakai tanpa jejak jurnal yang jelas.
     let accountingNote: string | null = null;
     if (orderData.payment_status === 'paid') {
       const { postPosSaleAccountingJournals } = await import('@/lib/pos/accounting-posting');
-      const accounting = await postPosSaleAccountingJournals({
-        db,
-        orderId: orderData.id,
-        userId: sessionUserId,
-        paymentMethod: payment_method,
-      });
-      accountingNote = accounting.note;
+      try {
+        const accounting = await postPosSaleAccountingJournals({
+          db,
+          orderId: orderData.id,
+          userId: sessionUserId,
+          paymentMethod: payment_method,
+        });
+        accountingNote = accounting.note;
+      } catch (err) {
+        if (err instanceof AccountingPostError) {
+          // Order sudah lunas; jangan gagalkan checkout. Catat untuk admin.
+          console.error(`[pos] accounting post failed: order=${orderData.id}:`, err);
+          accountingNote = err.message;
+        } else {
+          throw err;
+        }
+      }
+    }
+
+    // EPIC-032 C1 — order lunas → pemakaian kode FINAL (held → captured).
+    // Void order melepasnya kembali (route void).
+    if (promoOrderId) {
+      await withTransaction((client) =>
+        capturePromoRedemption(client, 'pos_order', promoOrderId!)
+      ).catch((err) => console.error('[pos] capture promo error:', err));
     }
 
     const { data: completeOrder } = await db

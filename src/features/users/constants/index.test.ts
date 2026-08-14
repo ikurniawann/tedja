@@ -20,6 +20,8 @@ describe("users constants helpers", () => {
     expect(emptyUserForm.account_status).toBe("active");
     expect(emptyUserForm.approval_permissions).toEqual([]);
     expect(emptyUserForm.role).toBe("admin");
+    expect(emptyUserForm.can_switch_stall).toBe(false);
+    expect(emptyUserForm.default_warehouse_id).toBe("");
   });
 
   it("workflowsForModule returns only matching workflows", () => {

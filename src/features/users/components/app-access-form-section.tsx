@@ -98,6 +98,8 @@ export function AppAccessFormSection({
         company_id: "",
         branch_id: "",
         warehouse_ids: [],
+        default_warehouse_id: "",
+        can_switch_stall: false,
       });
       return;
     }
@@ -235,9 +237,10 @@ export function AppAccessFormSection({
               ) : null}
               <StallAssignmentPicker
                 stalls={branchStalls}
-                selectedIds={form.warehouse_ids}
+                defaultWarehouseId={form.default_warehouse_id}
+                canSwitchStall={form.can_switch_stall}
                 required={requiresStallAssignment(form.role, form.business_scope || null, true)}
-                onChange={(warehouse_ids) => onChange({ warehouse_ids })}
+                onChange={(patch) => onChange(patch)}
               />
             </div>
           ) : null}

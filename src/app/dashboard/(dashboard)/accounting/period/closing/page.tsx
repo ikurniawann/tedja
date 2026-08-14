@@ -1,6 +1,10 @@
-import { createAccountingComingSoonPage } from "@/features/accounting/coming-soon";
+import { Suspense } from "react";
+import { PeriodClosingPage } from "@/features/accounting/period";
 
-export default createAccountingComingSoonPage(
-  "Period Closing",
-  "Tutup buku periode dan jurnal penutup. Halaman ini sedang disiapkan."
-);
+export default function Page() {
+  return (
+    <Suspense fallback={null}>
+      <PeriodClosingPage />
+    </Suspense>
+  );
+}

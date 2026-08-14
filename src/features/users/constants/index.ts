@@ -117,6 +117,8 @@ export const emptyUserForm: UserEmployeeFormValues = {
   company_id: "",
   branch_id: "",
   warehouse_ids: [],
+  default_warehouse_id: "",
+  can_switch_stall: false,
   account_status: "active",
   approval_permissions: [],
 };
