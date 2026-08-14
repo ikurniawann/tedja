@@ -10,6 +10,7 @@ import {
   Coins,
   History,
   Loader2,
+  MessageCircle,
   Nfc,
   Printer,
   QrCode,
@@ -66,6 +67,34 @@ export function TopupPage() {
   const [customRp, setCustomRp] = useState('');
   const [payment, setPayment] = useState<PaymentMethod>('qris');
   const [showReceipt, setShowReceipt] = useState(false);
+  const [waSending, setWaSending] = useState(false);
+  const [waSentTo, setWaSentTo] = useState<string | null>(null);
+
+  /* Kirim bukti top-up via WA (fitur WA struk). Top-up selalu ber-member,
+   * jadi nomor default = nomor member; endpoint tetap memuat data dari DB. */
+  async function sendTopupWa() {
+    const topupId = result?.topup_id || result?.transaction?.id || null;
+    if (!topupId) {
+      toast.error("ID transaksi tidak ditemukan — tidak bisa kirim WA");
+      return;
+    }
+    try {
+      setWaSending(true);
+      const res = await fetch(`/api/pos/topup/${topupId}/send-wa`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) throw new Error(json.error || "Gagal mengirim WA");
+      setWaSentTo(json.data?.phone ?? "WA member");
+      toast.success(`Bukti top-up terkirim ke ${json.data?.phone ?? "WA member"}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Gagal mengirim WA");
+    } finally {
+      setWaSending(false);
+    }
+  }
   const [result, setResult] = useState<TopupResult | null>(null);
   const [error, setError] = useState('');
   const [resolvingCard, setResolvingCard] = useState(false);
@@ -350,6 +379,7 @@ export function TopupPage() {
   }
 
   function finishSuccess(data: TopupResult) {
+    setWaSentTo(null);
     if (!customer) return;
     const balanceAfter = Number(data.balance_after || projectedBalance);
     setResult(data);
@@ -797,6 +827,20 @@ export function TopupPage() {
                   onClick={() => setShowReceipt(true)}
                 >
                   Receipt
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={waSending || Boolean(waSentTo)}
+                  onClick={() => void sendTopupWa()}
+                  className="gap-2 border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                >
+                  {waSending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <MessageCircle className="h-4 w-4" />
+                  )}
+                  {waSentTo ? `Terkirim ke ${waSentTo}` : "Kirim WA"}
                 </Button>
                 <Button
                   type="button"

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Lock, Unlock, Loader2, Banknote, Receipt, Clock } from 'lucide-react';
+import { Lock, Unlock, Loader2, Banknote, Printer, Receipt, Clock } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   Dialog,
@@ -82,6 +82,12 @@ export function ShiftModal({
   const [notes, setNotes] = useState('');
   const [busy, setBusy] = useState(false);
   const [summary, setSummary] = useState<ShiftSummary | null>(null);
+  /* Laporan tutup kasir via WA (dipicu tombol Cetak — keputusan owner: print
+   * dulu, WA menyusul otomatis ke nomor-nomor di Settings). shift prop bisa
+   * sudah di-null-kan parent setelah close, jadi id-nya ditangkap saat close. */
+  const [closedShiftId, setClosedShiftId] = useState<string | null>(null);
+  const [sendingReport, setSendingReport] = useState(false);
+  const [reportSent, setReportSent] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -131,6 +137,8 @@ export function ShiftModal({
     try {
       const res = await onCloseShift(val, notes.trim() || undefined);
       if (res.success) {
+        setClosedShiftId(shift?.id ?? null);
+        setReportSent(false);
         setSummary(res.summary ?? null);
         setView('summary');
         toast.success('Shift closed successfully');
@@ -139,6 +147,51 @@ export function ShiftModal({
       }
     } finally {
       setBusy(false);
+    }
+  };
+
+  const handlePrintReport = async () => {
+    if (!summary) return;
+
+    // Cetak lewat jendela kecil berisi ringkasan — tidak bergantung printer
+    // thermal; di tablet Android jendela ini juga bisa diarahkan ke RawBT.
+    const w = window.open("", "_blank", "width=320,height=480");
+    if (w) {
+      const baris = (label: string, value: string) =>
+        `<tr><td style="padding:2px 8px 2px 0">${label}</td><td style="text-align:right;font-weight:600">${value}</td></tr>`;
+      w.document.write(
+        `<html><head><title>Laporan Tutup Kasir</title></head><body style="font-family:monospace;font-size:12px">` +
+          `<h3 style="margin:0 0 8px">Laporan Tutup Kasir</h3><table>` +
+          baris("Orders", String(summary.total_orders ?? 0)) +
+          baris("Total Sales", formatMoney(summary.total_sales ?? 0)) +
+          baris("Opening Cash", formatMoney(summary.opening_cash ?? 0)) +
+          baris("Expected Cash", formatMoney(summary.expected_cash ?? 0)) +
+          baris("Physical Cash", formatMoney(summary.closing_cash ?? 0)) +
+          baris("Variance", formatMoney(summary.variance ?? 0)) +
+          `</table></body></html>`
+      );
+      w.document.close();
+      w.focus();
+      w.print();
+    }
+
+    // Setelah print dipicu → laporan WA menyusul otomatis, sekali saja.
+    if (reportSent || !closedShiftId) return;
+    try {
+      setSendingReport(true);
+      const res = await fetch(`/api/pos/shifts/${closedShiftId}/send-report`, {
+        method: "POST",
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) throw new Error(json.error || "Gagal mengirim laporan WA");
+      setReportSent(true);
+      toast.success(
+        `Laporan terkirim via WA ke ${json.data?.terkirim ?? 0} dari ${json.data?.total ?? 0} nomor`
+      );
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Gagal mengirim laporan WA");
+    } finally {
+      setSendingReport(false);
     }
   };
 
@@ -171,6 +224,20 @@ export function ShiftModal({
               </div>
             </DialogPanelBody>
             <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={sendingReport}
+                onClick={() => void handlePrintReport()}
+                className="gap-2"
+              >
+                {sendingReport ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Printer className="h-4 w-4" />
+                )}
+                {reportSent ? "Cetak lagi" : "Cetak & Kirim WA"}
+              </Button>
               <Button
                 type="button"
                 onClick={handleDismiss}

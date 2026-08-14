@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Search, Utensils, ShoppingBag, Table as TableIcon,
   User, Users, X, Sparkles, Printer, CheckCircle, AlertCircle, Loader2, ArrowLeft,
+  MessageCircle,
   Monitor as MonitorIcon,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -251,6 +252,12 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
 
   /* Result */
   const [resultPayload, setResultPayload] = useState<ReceiptPayload | null>(null);
+  /* Kirim struk via WA dari modal sukses (fitur WA struk). Member → nomor
+   * profil dipakai otomatis; non-member → kasir mengetik nomor dulu. */
+  const [waPhoneInput, setWaPhoneInput] = useState("");
+  const [waSending, setWaSending] = useState(false);
+  const [waSentTo, setWaSentTo] = useState<string | null>(null);
+  const [waError, setWaError] = useState<string | null>(null);
   const receiptRevealTimerRef = useRef<number | null>(null);
   const storeResultPayload = useCallback((payload: ReceiptPayload) => {
     window.sessionStorage.setItem(LAST_RECEIPT_KEY, JSON.stringify(payload));
@@ -472,8 +479,36 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     return true;
   }, [fromRestaurant]);
 
+  const sendReceiptWa = useCallback(async (phoneOverride?: string) => {
+    const orderId = resultPayload?.orderId;
+    if (!orderId) {
+      setWaError("Order offline belum tersinkron — kirim WA setelah online.");
+      return;
+    }
+    try {
+      setWaSending(true);
+      setWaError(null);
+      const res = await fetch(`/api/pos/orders/${orderId}/send-wa`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(phoneOverride ? { phone: phoneOverride } : {}),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) throw new Error(json.error || "Gagal mengirim WA");
+      setWaSentTo(json.data?.phone ?? "nomor tujuan");
+      toast.success(`Struk terkirim ke ${json.data?.phone ?? "WA pelanggan"}`);
+    } catch (err) {
+      setWaError(err instanceof Error ? err.message : "Gagal mengirim WA");
+    } finally {
+      setWaSending(false);
+    }
+  }, [resultPayload?.orderId]);
+
   const closeResultModal = useCallback(() => {
     setResultPayload(null);
+    setWaPhoneInput("");
+    setWaSentTo(null);
+    setWaError(null);
     if (pendingRestaurantReturnRef.current) {
       pendingRestaurantReturnRef.current = false;
       router.push(returnToRestaurantPath);
@@ -2701,6 +2736,51 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
                   {printingReceipt ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
                   Print Struk
                 </Button>
+
+                {/* Kirim struk via WA. Member → langsung ke nomor profil;
+                    non-member → kasir isi nomor dulu. Setelah terkirim tombol
+                    berubah jadi penanda, bukan bisa dispam. */}
+                {waSentTo ? (
+                  <div className="flex items-center justify-center gap-2 rounded-xl border border-emerald-200/70 bg-emerald-50/60 px-4 py-2.5 text-sm text-emerald-700">
+                    <CheckCircle className="h-4 w-4" />
+                    Struk terkirim ke {waSentTo}
+                  </div>
+                ) : selectedCustomer?.phone ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => void sendReceiptWa()}
+                    disabled={waSending}
+                    className="h-11 w-full gap-2 border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                  >
+                    {waSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageCircle className="h-4 w-4" />}
+                    Kirim WA ke {selectedCustomer.phone}
+                  </Button>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="flex gap-2">
+                      <Input
+                        type="tel"
+                        inputMode="tel"
+                        value={waPhoneInput}
+                        onChange={(e) => { setWaPhoneInput(e.target.value); setWaError(null); }}
+                        placeholder="Nomor WA pelanggan (08…)"
+                        className="h-11"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => void sendReceiptWa(waPhoneInput)}
+                        disabled={waSending || !waPhoneInput.trim()}
+                        className="h-11 shrink-0 gap-2 border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                      >
+                        {waSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageCircle className="h-4 w-4" />}
+                        Kirim WA
+                      </Button>
+                    </div>
+                  </div>
+                )}
+                {waError && <p className="text-center text-xs text-red-600">{waError}</p>}
               </DialogPanelBody>
 
               <DialogFooter>

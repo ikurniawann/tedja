@@ -42,6 +42,9 @@ export function WaNotifSettingsPanel() {
   const [catalog, setCatalog] = useState<WaNotifTypeMeta[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
 
+  const [shiftRecipients, setShiftRecipients] = useState<string[]>([]);
+  const [shiftPhoneInput, setShiftPhoneInput] = useState("");
+  const [shiftPhoneError, setShiftPhoneError] = useState<string | null>(null);
   const [phoneInput, setPhoneInput] = useState("");
   const [phoneError, setPhoneError] = useState<string | null>(null);
 
@@ -61,6 +64,11 @@ export function WaNotifSettingsPanel() {
         if (!res.ok) throw new Error(json.error || "Gagal memuat");
         if (!cancelled) {
           setConfig(json.data.config);
+          setShiftRecipients(
+            Array.isArray(json.data.shift_report_recipients)
+              ? json.data.shift_report_recipients
+              : []
+          );
           setCatalog(json.data.catalog);
         }
       } catch (e) {
@@ -105,6 +113,25 @@ export function WaNotifSettingsPanel() {
     setPhoneError(null);
   };
 
+  const addShiftPhone = () => {
+    const normalized = normalizeWaRecipient(shiftPhoneInput);
+    if (!normalized) {
+      setShiftPhoneError("Nomor tidak valid — pakai format 08… atau 62…");
+      return;
+    }
+    if (shiftRecipients.includes(normalized)) {
+      setShiftPhoneError("Nomor sudah terdaftar");
+      return;
+    }
+    if (shiftRecipients.length >= 10) {
+      setShiftPhoneError("Maksimal 10 nomor");
+      return;
+    }
+    setShiftRecipients([...shiftRecipients, normalized]);
+    setShiftPhoneInput("");
+    setShiftPhoneError(null);
+  };
+
   const save = async () => {
     setSaving(true);
     setSaveError(null);
@@ -113,7 +140,7 @@ export function WaNotifSettingsPanel() {
       const res = await fetch("/api/settings/wa-notifications", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(config),
+        body: JSON.stringify({ ...config, shift_report_recipients: shiftRecipients }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Gagal menyimpan");
@@ -207,6 +234,60 @@ export function WaNotifSettingsPanel() {
           </button>
         </div>
         {phoneError && <p className="mt-2 text-xs text-rose-300">{phoneError}</p>}
+      </div>
+
+      {/* penerima laporan tutup kasir — daftar TERPISAH dari nomor owner di
+          atas: laporan shift biasanya ke supervisor/finance, dan dikirim saat
+          kasir menekan Cetak di ringkasan tutup kasir. */}
+      <div className="rounded-3xl border border-white/14 bg-slate-950/55 p-4">
+        <div className="text-sm font-semibold">Penerima Laporan Tutup Kasir</div>
+        <div className="mt-1 text-xs text-white/45">
+          Laporan dikirim otomatis via WA saat kasir mencetak ringkasan tutup
+          kasir. Maksimal 10 nomor.
+        </div>
+        {shiftRecipients.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {shiftRecipients.map((r) => (
+              <span key={r} className="inline-flex items-center gap-1.5 rounded-full border border-white/14 bg-slate-950/55 px-3 py-1 text-xs">
+                {r}
+                <button
+                  type="button"
+                  aria-label={`Hapus ${r}`}
+                  onClick={() => setShiftRecipients(shiftRecipients.filter((x) => x !== r))}
+                  className="text-white/45 transition hover:text-rose-300"
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+        <div className="mt-3 flex gap-2">
+          <input
+            value={shiftPhoneInput}
+            onChange={(e) => {
+              setShiftPhoneInput(e.target.value);
+              setShiftPhoneError(null);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                addShiftPhone();
+              }
+            }}
+            placeholder="08xxxxxxxxxx"
+            inputMode="tel"
+            className="arkiv-glass-input min-w-0 flex-1 rounded-xl border px-3 py-2 text-sm"
+          />
+          <button
+            type="button"
+            onClick={addShiftPhone}
+            className="shrink-0 rounded-xl bg-white/12 px-4 py-2 text-sm font-semibold transition hover:bg-white/18"
+          >
+            Tambah
+          </button>
+        </div>
+        {shiftPhoneError && <p className="mt-2 text-xs text-rose-300">{shiftPhoneError}</p>}
       </div>
 
       {/* jenis notifikasi per tingkat */}
