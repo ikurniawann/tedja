@@ -11,7 +11,7 @@
  */
 
 import { getPool } from "@/lib/db";
-import { readGatewayConfig, sendGatewayText } from "@/lib/whatsapp/gateway";
+import { loadGatewayConfig, sendGatewayText } from "@/lib/whatsapp/gateway";
 import { normalizePhone, isValidNormalizedPhone } from "./server";
 
 const CHECK_INTERVAL_MS = 5 * 60_000;
@@ -55,7 +55,7 @@ function buildReminderMessage(row: ReminderRow): string {
 }
 
 export async function sendDueFollowupReminders(): Promise<{ sent: number }> {
-  const config = readGatewayConfig();
+  const config = await loadGatewayConfig();
   if (!config) return { sent: 0 };
 
   const pool = getPool();

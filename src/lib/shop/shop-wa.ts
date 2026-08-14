@@ -1,7 +1,7 @@
 // EPIC-039 Fase D — notifikasi WA order toko online (best-effort, pola
 // booking-wa: gagal WA tidak menggagalkan webhook).
 
-import { readGatewayConfig, sendGatewayText } from "@/lib/whatsapp/gateway";
+import { loadGatewayConfig, sendGatewayText } from "@/lib/whatsapp/gateway";
 
 export interface ShopOrderWaInput {
   orderNumber: string;
@@ -24,7 +24,7 @@ export interface ShopOrderShippedWaInput extends ShopOrderWaInput {
 export async function sendShopOrderShippedWa(
   order: ShopOrderShippedWaInput
 ): Promise<{ success: boolean; reason?: string }> {
-  const config = readGatewayConfig();
+  const config = await loadGatewayConfig();
   if (!config) {
     console.error("[shop] WA gateway belum dikonfigurasi — resi tidak terkirim");
     return { success: false, reason: "gateway-belum-dikonfigurasi" };
@@ -52,7 +52,7 @@ export async function sendShopOrderShippedWa(
 export async function sendShopOrderPaidWa(
   order: ShopOrderWaInput
 ): Promise<{ success: boolean; reason?: string }> {
-  const config = readGatewayConfig();
+  const config = await loadGatewayConfig();
   if (!config) {
     console.error("[shop] WA gateway belum dikonfigurasi — konfirmasi order tidak terkirim");
     return { success: false, reason: "gateway-belum-dikonfigurasi" };

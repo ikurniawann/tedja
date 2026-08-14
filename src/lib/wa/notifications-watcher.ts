@@ -12,7 +12,7 @@
  */
 
 import { query } from "@/lib/db";
-import { readGatewayConfig, sendGatewayText } from "@/lib/whatsapp/gateway";
+import { loadGatewayConfig, sendGatewayText } from "@/lib/whatsapp/gateway";
 import { buildDesktopOverview } from "@/lib/desktop/overview";
 import {
   SALES_TARGET_SETTING_KEY,
@@ -356,7 +356,7 @@ async function maybeSendKontrakHabis(config: WaNotifConfig): Promise<void> {
 const PASS_EXPIRY_REMINDER_DAYS = 14;
 
 async function maybeSendPassExpiring(): Promise<void> {
-  const gw = readGatewayConfig();
+  const gw = await loadGatewayConfig();
   if (!gw) return;
 
   const rows = await query<{

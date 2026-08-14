@@ -4,7 +4,7 @@
 // menggagalkan penjualan (uang sudah diterima, kartu sudah terbit dan
 // kodenya ada di struk). Meniru pass-wa.ts / booking-wa.ts.
 
-import { readGatewayConfig, sendGatewayText } from "@/lib/whatsapp/gateway";
+import { loadGatewayConfig, sendGatewayText } from "@/lib/whatsapp/gateway";
 import type { IssuedGiftCard } from "./giftcard-server";
 
 const formatRp = (n: number) => `Rp${n.toLocaleString("id-ID")}`;
@@ -26,7 +26,7 @@ export async function sendGiftCardSoldWa(input: {
   if (!input.buyerPhone) return { success: false, reason: "tanpa-nomor" };
   if (input.cards.length === 0) return { success: false, reason: "tanpa-kartu" };
 
-  const config = readGatewayConfig();
+  const config = await loadGatewayConfig();
   if (!config) {
     console.error("[giftcard] WA gateway belum dikonfigurasi — kode tidak terkirim");
     return { success: false, reason: "gateway-belum-dikonfigurasi" };

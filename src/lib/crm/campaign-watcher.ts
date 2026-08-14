@@ -6,7 +6,7 @@
 // FALSE — sebelum WA official siap, watcher ini TIDAK PERNAH menyentuh
 // gateway. Semua jalur lain (build antrean, preview, UI) aman dijalankan.
 
-import { readGatewayConfig, sendGatewayText } from "@/lib/whatsapp/gateway";
+import { loadGatewayConfig, sendGatewayText } from "@/lib/whatsapp/gateway";
 import {
   activeCampaignBranches,
   campaignTransaction,
@@ -38,7 +38,7 @@ export async function campaignTick(): Promise<{ sent: number }> {
   if (!config.enabled) return { sent: 0 };
   if (!isWithinSendWindow(hourWibNow())) return { sent: 0 };
 
-  const gateway = readGatewayConfig();
+  const gateway = await loadGatewayConfig();
   if (!gateway) return { sent: 0 };
 
   let sent = 0;

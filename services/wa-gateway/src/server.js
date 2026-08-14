@@ -12,6 +12,21 @@ import { connect, getQr, getStatus, sendText } from "./wa.js";
 
 const PORT = Number(process.env.WA_GATEWAY_PORT || 3471);
 const HOST = "127.0.0.1";
+/**
+ * Alamat TAMBAHAN untuk mendengar — dipakai agar container Docker (aplikasi
+ * yang di-deploy CI) bisa menjangkau gateway lewat IP bridge Docker
+ * (host.docker.internal → biasanya 172.17.0.1). loopback host tidak terlihat
+ * dari dalam container, jadi tanpa ini fitur WA mati begitu aplikasi pindah
+ * dari PM2 ke Docker.
+ *
+ * Tetap BUKAN ekspos internet: 172.17.0.1 hanya terjangkau dari host dan
+ * container di mesin ini, dan setiap permintaan tetap wajib ber-token.
+ * Kosongkan env-nya untuk kembali ke loopback murni.
+ */
+const EXTRA_HOSTS = (process.env.WA_GATEWAY_EXTRA_HOSTS || "")
+  .split(",")
+  .map((h) => h.trim())
+  .filter(Boolean);
 const TOKEN = process.env.WA_GATEWAY_TOKEN;
 
 if (!TOKEN) {
@@ -102,6 +117,19 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, HOST, () => {
   console.log(`[wa-gateway] Mendengar di http://${HOST}:${PORT}`);
 });
+
+// Listener tambahan berbagi handler yang sama — request-nya identik, hanya
+// alamat masuknya yang berbeda. Gagal bind di salah satu alamat (mis. docker
+// belum jalan sehingga 172.17.0.1 tidak ada) tidak mematikan listener utama.
+for (const extraHost of EXTRA_HOSTS) {
+  const extra = http.createServer(server.listeners("request")[0]);
+  extra.on("error", (error) => {
+    console.error(`[wa-gateway] Gagal mendengar di ${extraHost}:${PORT}:`, error?.message ?? error);
+  });
+  extra.listen(PORT, extraHost, () => {
+    console.log(`[wa-gateway] Mendengar juga di http://${extraHost}:${PORT}`);
+  });
+}
 
 connect().catch((error) => {
   console.error("[wa-gateway] Gagal memulai koneksi WhatsApp:", error?.message ?? error);

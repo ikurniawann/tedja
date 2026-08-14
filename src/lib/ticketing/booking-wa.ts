@@ -3,7 +3,7 @@
 // Booking (D5). Best-effort: kegagalan WA tidak boleh menggagalkan
 // transaksi pemanggil — pemanggil memutus sendiri apa arti hasil false.
 
-import { readGatewayConfig, sendGatewayText } from "@/lib/whatsapp/gateway";
+import { loadGatewayConfig, sendGatewayText } from "@/lib/whatsapp/gateway";
 
 export interface PaidBookingWaInput {
   booking_code: string;
@@ -37,7 +37,7 @@ function buildTotalLines(booking: PaidBookingWaInput): string {
 export async function sendBookingPaidWa(
   booking: PaidBookingWaInput
 ): Promise<{ success: boolean; reason?: string }> {
-  const config = readGatewayConfig();
+  const config = await loadGatewayConfig();
   if (!config) {
     console.error(
       "[booking] WA gateway belum dikonfigurasi — kode booking tidak terkirim"
@@ -79,7 +79,7 @@ export async function sendBookingGiftWa(
   if (!booking.gift_recipient_name || !booking.gift_recipient_phone) {
     return { success: false, reason: "bukan-hadiah" };
   }
-  const config = readGatewayConfig();
+  const config = await loadGatewayConfig();
   if (!config) {
     console.error(
       "[booking] WA gateway belum dikonfigurasi — e-tiket hadiah tidak terkirim"
