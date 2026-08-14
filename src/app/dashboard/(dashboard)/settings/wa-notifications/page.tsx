@@ -7,8 +7,7 @@ import { WaNotifSettingsPanel } from "@/components/arkiv/wa-notif-settings";
  * Komponennya sama dengan jendela Settings di desktop /arkiv-os (EPIC-020) —
  * satu sumber untuk recipients owner, ambang notifikasi, dan penerima laporan
  * tutup kasir. Komponen itu ditata untuk latar gelap desktop, jadi di dashboard
- * (terang) ia dibungkus panel gelap alih-alih menduplikasi seluruh form dengan
- * gaya terang — dua salinan form berarti dua tempat yang bisa saling basi.
+ * (terang) ia dirender dengan tone="light" — satu form dua kulit, bukan dua salinan.
  */
 export default async function WaNotificationsSettingsPage() {
   await requireRole(["super_admin", "direksi"]);
@@ -20,8 +19,8 @@ export default async function WaNotificationsSettingsPage() {
         Nomor penerima notifikasi owner, ambang peringatan, dan penerima laporan
         tutup kasir.
       </p>
-      <div className="mt-4 overflow-hidden rounded-3xl bg-slate-950 text-white">
-        <WaNotifSettingsPanel />
+      <div className="mt-4">
+        <WaNotifSettingsPanel tone="light" />
       </div>
     </div>
   );
