@@ -15,9 +15,15 @@ import {
   Settings,
   XCircle,
 } from "lucide-react";
+import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  canUseRawBtPrint,
+  printBytesViaRawBt,
+} from "@/lib/pos/rawbt-print";
+import { encodeEscPosLines, formatReceiptRow } from "@/lib/pos/thermal-escpos";
 import type { PrintJob, PrintJobAction } from "../types";
 import { usePrintJobs } from "../queries";
 import { useUpdatePrintJob } from "../mutations";
@@ -67,6 +73,50 @@ function escapeHtml(value?: string | number | null) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+function buildTicketEscPosBytes(job: PrintJob): Uint8Array {
+  const items = job.payload?.items || [];
+  const lines: Array<{ text: string; align: "left" | "center" }> = [
+    { text: stationLabel(job.station).toUpperCase(), align: "center" },
+    { text: job.job_type.replaceAll("_", " "), align: "center" },
+    { text: "--------------------------------", align: "left" },
+    {
+      text: formatReceiptRow(
+        "Order",
+        String(job.order?.order_number || job.order_id.slice(0, 8)),
+      ),
+      align: "left",
+    },
+    {
+      text: formatReceiptRow("Type", String(job.order?.order_type || "-")),
+      align: "left",
+    },
+    {
+      text: formatReceiptRow("Time", formatDateTime(job.requested_at)),
+      align: "left",
+    },
+    { text: "--------------------------------", align: "left" },
+  ];
+
+  if (items.length === 0) {
+    lines.push({ text: "Tidak ada item.", align: "left" });
+  } else {
+    for (const item of items) {
+      lines.push({
+        text: formatReceiptRow(
+          String(item.product_name || "Item"),
+          `x${item.quantity || 1}`,
+        ),
+        align: "left",
+      });
+      if (item.notes) lines.push({ text: `  ${item.notes}`, align: "left" });
+    }
+  }
+
+  lines.push({ text: "--------------------------------", align: "left" });
+  lines.push({ text: "ARKIV POS PRINT QUEUE", align: "center" });
+  return encodeEscPosLines(lines);
 }
 
 function buildTicketHtml(job: PrintJob) {
@@ -156,6 +206,12 @@ export function PrintQueuePage() {
   }
 
   function printFromBrowser(job: PrintJob) {
+    // Android Chrome: same ticket content via RawBT ESC/POS.
+    if (canUseRawBtPrint() && printBytesViaRawBt(buildTicketEscPosBytes(job))) {
+      toast.success("Print dikirim ke RawBT");
+      return;
+    }
+
     const printWindow = window.open("", "_blank", "width=420,height=720");
     if (!printWindow) {
       setError("Popup print diblokir browser. Izinkan popup untuk halaman ini lalu coba lagi.");

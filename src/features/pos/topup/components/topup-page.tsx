@@ -435,11 +435,11 @@ export function TopupPage() {
     setStep('enter_amount');
   }
 
-  function handlePrintReceipt() {
+  async function handlePrintReceipt() {
     if (!customer || !result || printingReceipt) return;
     try {
       setPrintingReceipt(true);
-      printTopupReceipt({
+      await printTopupReceipt({
         customerName: customer.name || customer.phone || 'Member',
         phone: customer.phone,
         amount: topupRp,
@@ -450,7 +450,6 @@ export function TopupPage() {
         balanceAfterLabel: formatArk(result.balance_after),
         cardId: customer.nfc_uid,
       });
-      toast.success('Receipt sent to printer');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to print receipt');
     } finally {
@@ -844,7 +843,7 @@ export function TopupPage() {
             <Button
               type="button"
               className="bg-primary hover:bg-primary/90"
-              onClick={handlePrintReceipt}
+              onClick={() => void handlePrintReceipt()}
               disabled={!result || !customer || printingReceipt}
             >
               {printingReceipt ? (

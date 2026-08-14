@@ -1,3 +1,8 @@
+import { toast } from "sonner";
+import { printBytesViaRawBt, canUseRawBtPrint } from "@/lib/pos/rawbt-print";
+import { encodeEscPosLines, formatReceiptRow } from "@/lib/pos/thermal-escpos";
+import { printBytesToPairedThermal } from "@/lib/pos/thermal-serial";
+
 export type TopupReceiptPrintPayload = {
   customerName: string;
   phone?: string;
@@ -10,7 +15,40 @@ export type TopupReceiptPrintPayload = {
   cardId?: string | null;
 };
 
-export function printTopupReceipt(payload: TopupReceiptPrintPayload) {
+/** ESC/POS layout matching the HTML topup ticket. */
+export function buildTopupReceiptEscPosBytes(payload: TopupReceiptPrintPayload): Uint8Array {
+  const when = new Date().toLocaleString("id-ID");
+  const lines: Array<{ text: string; align: "left" | "center" }> = [
+    { text: "--- TOPUP ---", align: "center" },
+    { text: "ARK E-MONEY", align: "center" },
+    { text: when, align: "center" },
+    { text: "--------------------------------", align: "left" },
+    { text: payload.customerName, align: "center" },
+  ];
+  if (payload.phone) lines.push({ text: payload.phone, align: "center" });
+  if (payload.cardId) lines.push({ text: `Card ${payload.cardId}`, align: "center" });
+  lines.push({ text: "--------------------------------", align: "left" });
+  lines.push({ text: payload.arkAmountLabel, align: "center" });
+  lines.push({ text: payload.amountLabel, align: "center" });
+  lines.push({ text: "--------------------------------", align: "left" });
+  lines.push({
+    text: formatReceiptRow("Method", payload.paymentMethod.toUpperCase()),
+    align: "left",
+  });
+  lines.push({
+    text: formatReceiptRow("Before", payload.balanceBeforeLabel),
+    align: "left",
+  });
+  lines.push({
+    text: formatReceiptRow("Balance", payload.balanceAfterLabel),
+    align: "left",
+  });
+  lines.push({ text: "--------------------------------", align: "left" });
+  lines.push({ text: "--- TOPUP COPY ---", align: "center" });
+  return encodeEscPosLines(lines);
+}
+
+function printTopupViaPopup(payload: TopupReceiptPrintPayload) {
   const popupWidth = Math.min(720, Math.max(480, window.screen.availWidth - 80));
   const popupHeight = Math.min(900, Math.max(640, window.screen.availHeight - 80));
   const left = Math.max(0, Math.round((window.screen.availWidth - popupWidth) / 2));
@@ -18,7 +56,7 @@ export function printTopupReceipt(payload: TopupReceiptPrintPayload) {
   const win = window.open(
     "",
     "_blank",
-    `width=${popupWidth},height=${popupHeight},left=${left},top=${top},scrollbars=yes,resizable=yes`
+    `width=${popupWidth},height=${popupHeight},left=${left},top=${top},scrollbars=yes,resizable=yes`,
   );
 
   if (!win) {
@@ -90,4 +128,26 @@ export function printTopupReceipt(payload: TopupReceiptPrintPayload) {
     win.print();
     win.close();
   }, 400);
+}
+
+/** Print topup receipt — RawBT on Android Chrome, else Web Serial / HTML popup. */
+export async function printTopupReceipt(payload: TopupReceiptPrintPayload) {
+  const escPos = buildTopupReceiptEscPosBytes(payload);
+
+  if (canUseRawBtPrint() && printBytesViaRawBt(escPos)) {
+    toast.success("Print dikirim ke RawBT");
+    return;
+  }
+
+  try {
+    const sent = await printBytesToPairedThermal(escPos);
+    if (sent) {
+      toast.success("Print");
+      return;
+    }
+  } catch {
+    // fall through to HTML
+  }
+
+  printTopupViaPopup(payload);
 }
