@@ -36,6 +36,17 @@ describe("resolvePosSellStall", () => {
     ).toEqual({ ok: true, warehouseId: "w-only" });
   });
 
+  it("uses default warehouse when cookie is unset", () => {
+    expect(
+      resolvePosSellStall({
+        activeMode: "unset",
+        activeStallId: null,
+        assignedWarehouseIds: ["w-1", "w-2"],
+        defaultWarehouseId: "w-1",
+      })
+    ).toEqual({ ok: true, warehouseId: "w-1" });
+  });
+
   it("rejects multi assignment without explicit stall", () => {
     const result = resolvePosSellStall({
       activeMode: "unset",

@@ -1,7 +1,8 @@
-import { query } from "@/lib/db";
+import { query, queryOne } from "@/lib/db";
 import { resolveActiveStallFromCookies } from "@/lib/auth/active-stall";
 import { getApiUserScope } from "@/lib/api/scope";
 import { loadUserWarehouses } from "@/lib/users/user-warehouses";
+import { isSellStallAllowed } from "@/lib/users/stall-assignment";
 import {
   assertProductWarehousesMatchStall,
   resolvePosSellStall,
@@ -11,14 +12,22 @@ import {
 export async function resolvePosSellStallForUser(
   userId: string
 ): Promise<PosSellStallResult> {
-  const [warehouses, activeStall, scope] = await Promise.all([
+  const [warehouses, activeStall, scope, flags] = await Promise.all([
     loadUserWarehouses(userId),
     resolveActiveStallFromCookies(),
     getApiUserScope(),
+    queryOne<{ can_switch_stall: boolean; default_warehouse_id: string | null }>(
+      `SELECT COALESCE(can_switch_stall, false) AS can_switch_stall,
+              default_warehouse_id
+       FROM configuration.users
+       WHERE id = $1`,
+      [userId]
+    ),
   ]);
 
   const assignedIds = warehouses.map((row) => row.warehouse_id);
   const isUnscoped = !scope || scope.isUnscoped || scope.role === "super_admin";
+  const canSwitchStall = flags?.can_switch_stall === true;
 
   // Super/admin with cookie "all" or unset and no placement → cannot sell until they pick.
   // Unscoped with unset and zero assignments: treat as all_stalls if cookie is all/unset without single placement.
@@ -35,12 +44,20 @@ export async function resolvePosSellStallForUser(
     activeMode,
     activeStallId,
     assignedWarehouseIds: assignedIds,
+    defaultWarehouseId: flags?.default_warehouse_id ?? assignedIds[0] ?? null,
   });
 
   if (!resolved.ok) return resolved;
 
-  // Bound active stall to assignment when user is stall-scoped (not unscoped/admin free).
-  if (!isUnscoped && assignedIds.length > 0 && !assignedIds.includes(resolved.warehouseId)) {
+  if (
+    !isSellStallAllowed({
+      warehouseId: resolved.warehouseId,
+      assignedIds,
+      canSwitchStall,
+      isUnscoped,
+      defaultWarehouseId: flags?.default_warehouse_id ?? null,
+    })
+  ) {
     return {
       ok: false,
       reason: "no_stall",

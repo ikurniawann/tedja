@@ -53,6 +53,8 @@ export interface UserEmployeeFormValues {
   company_id: string;
   branch_id: string;
   warehouse_ids: string[];
+  default_warehouse_id: string;
+  can_switch_stall: boolean;
   account_status: AccountStatus;
   approval_permissions: ApprovalPermission[];
 }

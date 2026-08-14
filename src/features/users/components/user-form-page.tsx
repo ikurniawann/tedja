@@ -75,6 +75,11 @@ function toFormValues(detail: NonNullable<ReturnType<typeof useUserDetail>["data
     company_id: detail.appAccount?.companyId ?? "",
     branch_id: detail.appAccount?.branchId ?? "",
     warehouse_ids: detail.appAccount?.warehouses?.map((warehouse) => warehouse.id) ?? [],
+    default_warehouse_id:
+      detail.appAccount?.defaultWarehouseId ??
+      detail.appAccount?.warehouses?.[0]?.id ??
+      "",
+    can_switch_stall: detail.appAccount?.canSwitchStall === true,
     account_status: detail.appAccount?.status ?? "active",
     approval_permissions:
       detail.appAccount?.approvalPermissions
@@ -103,6 +108,8 @@ function buildPayload(form: UserEmployeeFormValues, isEdit: boolean) {
       key === "company_id" ||
       key === "branch_id" ||
       key === "warehouse_ids" ||
+      key === "default_warehouse_id" ||
+      key === "can_switch_stall" ||
       key === "account_status" ||
       key === "approval_permissions" ||
       key === "is_access_app"
@@ -119,7 +126,11 @@ function buildPayload(form: UserEmployeeFormValues, isEdit: boolean) {
     base.role = form.role;
     base.account_status = form.account_status;
     base.approval_permissions = form.approval_permissions;
-    base.warehouse_ids = form.warehouse_ids;
+    base.warehouse_ids = form.default_warehouse_id
+      ? [form.default_warehouse_id]
+      : form.warehouse_ids;
+    base.default_warehouse_id = form.default_warehouse_id || null;
+    base.can_switch_stall = form.can_switch_stall;
 
     const scope = normalizeBusinessScopePayload(
       form.role === "super_admin" ? null : form.business_scope || null,
@@ -264,9 +275,9 @@ export function UserFormPage({ mode, employeeId }: UserFormPageProps) {
       if (
         form.role !== "super_admin" &&
         form.business_scope === "branch" &&
-        form.warehouse_ids.length === 0
+        !form.default_warehouse_id
       ) {
-        showToast("At least one stall is required for branch scope", "error");
+        showToast("Pilih stall default untuk scope branch", "error");
         return;
       }
     }

@@ -120,9 +120,9 @@ export function CreateAccountDialog({
     }
     if (
       requiresStallAssignment(form.role, scope.business_scope ?? null, true) &&
-      form.warehouse_ids.length === 0
+      !form.default_warehouse_id
     ) {
-      onError("Pilih minimal satu stall untuk scope branch");
+      onError("Pilih stall default untuk scope branch");
       return;
     }
 
@@ -135,7 +135,9 @@ export function CreateAccountDialog({
         password: form.password,
         role: form.role,
         account_status: "active",
-        warehouse_ids: form.warehouse_ids,
+        warehouse_ids: form.default_warehouse_id ? [form.default_warehouse_id] : [],
+        default_warehouse_id: form.default_warehouse_id || null,
+        can_switch_stall: form.can_switch_stall,
         ...scope,
       },
       {
@@ -228,7 +230,12 @@ export function CreateAccountDialog({
                 options={roleOptions}
                 value={form.role}
                 onChange={(value) =>
-                  setField({ role: value as UserRole, warehouse_ids: [] })
+                  setField({
+                    role: value as UserRole,
+                    warehouse_ids: [],
+                    default_warehouse_id: "",
+                    can_switch_stall: false,
+                  })
                 }
                 placeholder="Pilih role"
                 searchPlaceholder="Cari role..."
@@ -242,9 +249,10 @@ export function CreateAccountDialog({
             {showStalls && (
               <StallAssignmentPicker
                 stalls={stallOptions}
-                selectedIds={form.warehouse_ids}
+                defaultWarehouseId={form.default_warehouse_id}
+                canSwitchStall={form.can_switch_stall}
                 required={requiresStallAssignment(form.role, form.business_scope || null, true)}
-                onChange={(warehouseIds) => setField({ warehouse_ids: warehouseIds })}
+                onChange={(patch) => setField(patch)}
               />
             )}
             <p className="text-xs text-gray-400">
