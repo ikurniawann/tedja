@@ -109,9 +109,9 @@ export function WaGatewayPage() {
             WhatsApp Gateway
           </h1>
           <p className="mt-1 text-sm text-slate-500">
-            Koneksi nomor pengirim OTP portal member ({""}
-            <span className="font-medium">+62 858-8097-4659</span>). Pindai QR di bawah
-            dari HP nomor tersebut untuk menautkan.
+            Koneksi nomor pengirim OTP portal member &amp; notifikasi WhatsApp.
+            Pindai QR di bawah dari HP yang ingin dijadikan nomor pengirim untuk
+            menautkan.
           </p>
         </div>
 
@@ -186,7 +186,7 @@ export function WaGatewayPage() {
                   Menunggu pairing
                 </h2>
                 <ol className="mt-2 list-decimal space-y-1 pl-4 text-sm text-slate-600">
-                  <li>Buka WhatsApp di HP nomor <strong>+62 858-8097-4659</strong></li>
+                  <li>Buka WhatsApp di HP yang ingin dijadikan nomor pengirim bisnis ini</li>
                   <li>Setelan → <strong>Perangkat Tertaut</strong> → <strong>Tautkan Perangkat</strong></li>
                   <li>Pindai QR di bawah</li>
                 </ol>
