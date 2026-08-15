@@ -147,3 +147,10 @@ button{font:inherit}
 #app[data-mode="missions"] .shadow{left:41%}#app[data-mode="rewards"] .shadow{left:61%}#app[data-mode="coins"] .shadow{left:46%}#app[data-mode="history"] .shadow{left:38%}
 
 @media (max-width:1100px){.side-stack{right:25px;width:340px}.hero-copy{left:112px}.name{font-size:54px}.stat-glass{width:320px}.bottom-tray{width:520px}.character-wrap{width:410px}.mode-panel{right:25px;width:360px}}
+
+/* ── Penyesuaian integrasi (di luar prototipe) ──────────────────────────
+ * Rute /member/nox mewarisi layout /member yang memusatkan konten ke kolom
+ * max-w-lg (512px) — kanvas 100vw prototipe jadi terdorong keluar layar.
+ * Overlay fixed inset-0 melepaskan kanvas dari wrapper itu TANPA mengubah
+ * layout /member (portal lama tetap memakainya sebagai fallback). */
+#app{position:fixed;inset:0;width:auto;height:auto}
