@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
- * Reset HRIS + seed Master Data dari docs/DATABASE - EMPLOYEE.xlsx
+ * Reset HRIS + seed Master Data dari docs/DATABASE - SULU IN WONDERLAND EMPLOYEE.xlsx
  *
  * - Hapus auth.users kecuali keep-list
  * - Wipe data operasional HRIS + employees
  * - Upsert departments / positions dari sheet Master Data
- * - Insert karyawan + akun app (password default password123)
+ * - Insert karyawan + akun app (login = email Excel, password default suluin123*)
  * - Role by jabatan: Cashier→pos; Head Bar/SPV/Captain/CDP/Demi→pos_supervisor; else→employee
  *
  * Safety: default hanya Postgres lokal (localhost / 127.0.0.1).
@@ -35,9 +35,17 @@ const {
 } = require("../scripts/pg-utils");
 
 const ROOT = path.join(__dirname, "..", "..");
-const DEFAULT_XLSX = path.join(ROOT, "docs", "DATABASE - EMPLOYEE.xlsx");
-const KEEP_EMAILS = ["super@arkivworld.com", "agus@wit.id"];
-const DEFAULT_PASSWORD = process.env.HRIS_SEED_PASSWORD || "password123";
+const DEFAULT_XLSX = path.join(
+  ROOT,
+  "docs",
+  "DATABASE - SULU IN WONDERLAND EMPLOYEE.xlsx"
+);
+const KEEP_EMAILS = [
+  "super@arkivworld.com",
+  "agus@wit.id",
+  "agussugiman@gmail.com",
+];
+const DEFAULT_PASSWORD = process.env.HRIS_SEED_PASSWORD || "suluin123*";
 const HOLDING_CODE = "PROLOGE";
 const COMPANY_CODE = "SULU";
 const BRANCH_CODE = "SULU-DAGO";
@@ -62,6 +70,7 @@ const DEPT_META = {
   Cashier: { code: "CSH", name: "Cashier" },
   Kitchen: { code: "KIT", name: "Kitchen" },
   Service: { code: "SVC", name: "Service" },
+  "Back Office": { code: "BO", name: "Back Office" },
 };
 
 function loadEnv() {
@@ -153,6 +162,7 @@ function positionLevel(title) {
 function roleForPosition(title) {
   const t = normalizeKey(title);
   if (t.includes("cashier")) return "pos";
+  if (t === "hrd" || t.includes("hrd") || t.includes("human resource")) return "hrd";
   if (
     t.includes("head bar") ||
     t.includes("spv floor") ||
@@ -220,9 +230,14 @@ function readMasterData(xlsxPath) {
   for (const row of rows) {
     const fullName = normalizeText(row["Nama Lengkap"]);
     if (!fullName) continue;
-    const email = normalizeText(row["Email"]).toLowerCase();
+    let email = normalizeText(row["Email"]).toLowerCase();
     if (!email) {
       throw new Error(`Email kosong untuk ${fullName}`);
+    }
+    if (email.endsWith(".con")) {
+      const fixed = `${email.slice(0, -4)}.com`;
+      console.warn(`Email typo dikoreksi: ${email} → ${fixed} (${fullName})`);
+      email = fixed;
     }
     const department = normalizeText(row["Departement"] || row["Department"]);
     const position = normalizeText(row["Posisi Saat Ini"]);
@@ -687,7 +702,12 @@ async function main() {
     }
   }
 
-  const master = readMasterData(xlsxPath);
+  const keepSet = new Set(KEEP_EMAILS.map((e) => e.toLowerCase()));
+  const master = readMasterData(xlsxPath).filter((row) => {
+    if (!keepSet.has(row.email)) return true;
+    console.warn(`Skip Excel row (keep account): ${row.email}`);
+    return false;
+  });
   console.log(`Target: ${host}/${dbName}${isRemote ? " (remote)" : " (local)"}`);
   console.log(`Master Data rows: ${master.length}`);
   console.log(`Password default: ${DEFAULT_PASSWORD}`);

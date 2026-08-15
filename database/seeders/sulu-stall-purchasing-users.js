@@ -30,21 +30,22 @@ const BRANCH_CODE = process.env.SULU_STALL_BRANCH_CODE || "SULU-DAGO";
 
 /** Stall yang di-seed (nama harus cocok / akan di-upsert bila belum ada). */
 const STALL_SEEDS = [
-  { name: "Main Storage", emailLocal: "mainstorage", codeHint: "WH-01", is_default: true },
-  { name: "Hikiniku Bar", emailLocal: "hikiniku", codeHint: "STALL-02", is_default: false },
-  { name: "Noodles Bar", emailLocal: "noodles", codeHint: "STALL-03", is_default: false },
-  { name: "Onigiri Corner", emailLocal: "onigiri", codeHint: "STALL-04", is_default: false },
-  { name: "Yokocho 1", emailLocal: "yokocho1", codeHint: "STALL-05", is_default: false },
-  { name: "Yokocho 2", emailLocal: "yokocho2", codeHint: "STALL-06", is_default: false },
-  { name: "Yokocho 3", emailLocal: "yokocho3", codeHint: "STALL-07", is_default: false },
-  { name: "Yokocho 4", emailLocal: "yokocho4", codeHint: "STALL-08", is_default: false },
-  { name: "Yokocho 5", emailLocal: "yokocho5", codeHint: "STALL-09", is_default: false },
-  { name: "Yokocho 6", emailLocal: "yokocho6", codeHint: "STALL-10", is_default: false },
-  { name: "Yokocho 7", emailLocal: "yokocho7", codeHint: "STALL-11", is_default: false },
-  // Belum ada di data Dago saat ini — dibuat otomatis dengan STALL-14.
-  { name: "Yokocho 8", emailLocal: "yokocho8", codeHint: "STALL-14", is_default: false },
-  { name: "Yokocho 9", emailLocal: "yokocho9", codeHint: "STALL-12", is_default: false },
-  { name: "Yokocho 10", emailLocal: "yokocho10", codeHint: "STALL-13", is_default: false },
+  { name: "Operasional", emailLocal: "operasional", codeHint: "WH-01", is_default: true },
+  { name: "Yakitori Stall", emailLocal: "yakitori", codeHint: "STALL-02", is_default: false },
+  { name: "Teppanyaki Stall", emailLocal: "teppanyaki", codeHint: "STALL-03", is_default: false },
+  { name: "Dumpling Stall", emailLocal: "dumpling", codeHint: "STALL-04", is_default: false },
+  { name: "Sushi - Sashimi Stall", emailLocal: "sushi", codeHint: "STALL-05", is_default: false },
+  { name: "Bakery Stall", emailLocal: "bakery", codeHint: "STALL-06", is_default: false },
+  { name: "Burger - sandwiches Stall", emailLocal: "burger", codeHint: "STALL-07", is_default: false },
+  { name: "Agemono - Frying Section Stall", emailLocal: "agemono", codeHint: "STALL-08", is_default: false },
+  { name: "Rice bowl Stall", emailLocal: "ricebowl", codeHint: "STALL-09", is_default: false },
+  { name: "Ramen - Noodles Stall", emailLocal: "ramen", codeHint: "STALL-10", is_default: false },
+  { name: "Udon - Noodles Stall", emailLocal: "udon", codeHint: "STALL-11", is_default: false },
+  { name: "Japanese Poridge Stall", emailLocal: "okayu", codeHint: "STALL-12", is_default: false },
+  { name: "Yakimono - Griiled Stall", emailLocal: "yakimono", codeHint: "STALL-13", is_default: false },
+  { name: "Onigiri Corner Stall", emailLocal: "onigiri", codeHint: "STALL-14", is_default: false },
+  { name: "Yokoco Beverage Stall", emailLocal: "yokoco", codeHint: "STALL-15", is_default: false },
+  { name: "Sando Stall", emailLocal: "sando", codeHint: "STALL-16", is_default: false },
 ];
 
 const APPROVAL_PERMS = [
