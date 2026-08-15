@@ -33,6 +33,7 @@ export interface PosCartItem {
   imageUrl?: string;
   station?: string;
   warehouse_id?: string;
+  warehouse_name?: string | null;
   /** Manual line discount */
   discount_type?: DiscountType | null;
   discount_value?: number | null;

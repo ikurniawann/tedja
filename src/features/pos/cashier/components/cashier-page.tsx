@@ -27,7 +27,16 @@ import {
 import { PosTabletChromeControls } from '@/features/pos/components/pos-tablet-chrome-controls';
 import { useCanUseCentralCashier } from '@/components/pos/confirm-stall-switch-dialog';
 import { CashierStallGate } from '@/features/pos/cashier/components/cashier-stall-gate';
-import { canAddItemToSingleStallCart } from '@/lib/pos/central-cashier';
+import {
+  MIXED_NFC_GIFT_UNSUPPORTED_MESSAGE,
+  MIXED_SPLIT_UNSUPPORTED_MESSAGE,
+  canSellMixedStall,
+  isMixedUnsupportedTender,
+  resolveAddCatalogItem,
+  shouldCreateCheckout,
+  shouldDisableSplitBill,
+  uniqueStallIds,
+} from '@/lib/pos/central-cashier';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -49,7 +58,7 @@ import {
   saveCustomer,
   createSplitOrder,
 } from '../api';
-import type { ProductSku } from '@/lib/pos-api';
+import { completeCheckout, type ProductSku } from '@/lib/pos-api';
 import { MerchSkuPickerDialog } from '@/components/pos/MerchSkuPickerDialog';
 import { useCashierOrder, useCashierTables, useCustomerFavoriteProducts } from '../queries';
 import { usePayOpenOrder } from '../mutations';
@@ -198,6 +207,11 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
   const pendingRestaurantReturnRef = useRef(false);
   const { products, categories, loading, error, stallBlockedReason, activeMode } = usePosProducts();
   const canUseCentralCashier = useCanUseCentralCashier();
+  const canSellMixed = canSellMixedStall({
+    hasCentralMenu: canUseCentralCashier,
+    canCentralCheckout: canUseCentralCashier,
+    activeMode,
+  });
   const { customers, findCustomer, refetch: refetchCustomers } = usePosCustomers();
   const cart = usePosCart();
   const { checkout, submitting } = usePosCheckout();
@@ -706,6 +720,11 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
   );
 
   const showStallFilters = canUseCentralCashier && activeMode === 'all';
+  const cartStallIds = useMemo(
+    () => uniqueStallIds(cart.items.map((row) => row.warehouse_id)),
+    [cart.items]
+  );
+  const isMixedCart = shouldCreateCheckout(cartStallIds);
 
   /* Product filter */
   const filteredProducts = useMemo(() => products.filter((product) => {
@@ -721,19 +740,26 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
 
   const tryAddCatalogItem = useCallback((
     product: Product,
-    item: Omit<Parameters<typeof cart.addItem>[0], 'warehouse_id'>
+    item: Omit<Parameters<typeof cart.addItem>[0], 'warehouse_id' | 'warehouse_name'>
   ) => {
     const existing = cart.items.map((row) => row.warehouse_id);
-    const check = canAddItemToSingleStallCart(existing, product.warehouse_id, {
+    const check = resolveAddCatalogItem({
+      canSellMixed,
+      existingStallIds: existing,
+      incomingWarehouseId: product.warehouse_id,
       centralAllMode: canUseCentralCashier && activeMode === 'all',
     });
     if (!check.ok) {
       toast.error(check.message);
       return false;
     }
-    cart.addItem({ ...item, warehouse_id: product.warehouse_id });
+    cart.addItem({
+      ...item,
+      warehouse_id: product.warehouse_id,
+      warehouse_name: product.warehouse_name,
+    });
     return true;
-  }, [activeMode, canUseCentralCashier, cart]);
+  }, [activeMode, canSellMixed, canUseCentralCashier, cart]);
 
   const productSuggestions = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
@@ -1062,12 +1088,69 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     giftCardCode?: string;
     cashReceived?: string;
     arkToUse?: number;
+    checkoutId?: string;
+    checkoutNumber?: string;
+    queueNumber?: string | null;
   }) => {
     if (processingPayment) return;
     if (cart.items.length === 0) return;
     if (!requireActiveShift()) return;
 
     const method = overrides?.method ?? paymentMethod;
+    const mixedCart = shouldCreateCheckout(
+      uniqueStallIds(cart.items.map((row) => row.warehouse_id))
+    );
+    if (mixedCart && isMixedUnsupportedTender(method)) {
+      toast.error(MIXED_NFC_GIFT_UNSUPPORTED_MESSAGE);
+      return;
+    }
+    if (mixedCart && !isOnline && !overrides?.checkoutId) {
+      toast.error('Checkout multi-stall membutuhkan koneksi');
+      return;
+    }
+
+    if (mixedCart && method === 'qris' && overrides?.checkoutId) {
+      setProcessingPayment(true);
+      try {
+        await completeCheckout(overrides.checkoutId);
+        const receipt: ReceiptPayload = {
+          orderId: overrides.checkoutId,
+          orderNumber: overrides.checkoutNumber,
+          checkoutNumber: overrides.checkoutNumber,
+          queueNumber: overrides.queueNumber ?? null,
+          orderType: cart.orderType,
+          table: selectedTableDisplay,
+          items: [...cart.items],
+          notes: cart.notes,
+          total,
+          change: 0,
+          paymentMethod: 'qris',
+          customerName: selectedCustomer?.name,
+          discountAmount,
+          taxAmount,
+          chargesBreakdown: billCharges.breakdown,
+        };
+        storeResultPayload(receipt);
+        toast.success(
+          overrides.queueNumber
+            ? `Pembayaran berhasil — Antrian ${overrides.queueNumber}`
+            : 'Pembayaran berhasil'
+        );
+        setShowPayment(false);
+        setLastResultType('standard');
+        cart.clearCart();
+        setCashReceived('');
+        setPaymentMethod('cash');
+        setCurrentArkToUse(0);
+        deferReturnToRestaurant();
+      } catch (e: unknown) {
+        toast.error(e instanceof Error ? e.message : 'Pembayaran QRIS gagal');
+      } finally {
+        setProcessingPayment(false);
+      }
+      return;
+    }
+
     const cashValue = overrides?.cashReceived ?? cashReceived;
     const arkValue = overrides?.arkToUse ?? currentArkToUse;
     const arkCapped = Math.min(arkValue, maxArkUsable);
@@ -1432,6 +1515,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       const receipt: ReceiptPayload = {
         orderId: res.orderId,
         orderNumber: res.orderNumber,
+        checkoutNumber: res.checkoutNumber,
         queueNumber: res.queueNumber || null,
         orderType: cart.orderType,
         table: selectedTableDisplay,
@@ -1471,6 +1555,10 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
   /* Split Bill */
   const handleConfirmSplit = useCallback(async (config: SplitConfig) => {
     if (cart.items.length === 0) return;
+    if (shouldDisableSplitBill(uniqueStallIds(cart.items.map((row) => row.warehouse_id)))) {
+      toast.error(MIXED_SPLIT_UNSUPPORTED_MESSAGE);
+      return;
+    }
     // EPIC-032 C2 — promo belum didukung split bill: totals split tidak
     // melewati validasi promo server, jangan biarkan diskon promo bocor
     if (promoApplied) {
@@ -2531,7 +2619,50 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         selectedCustomer={selectedCustomer}
         onClose={() => setShowPayment(false)}
         submitting={processingPayment || submitting}
-        onConfirm={async ({ method, cashReceived, arkToUse, nfcTabUid, giftCardCode }) => {
+        isMixedCart={isMixedCart}
+        onPrepareMixedQrisCheckout={
+          isMixedCart
+            ? async () => {
+                const res = await checkout({
+                  cart: cart.items,
+                  orderType: cart.orderType,
+                  selectedTable: effectiveTableId,
+                  selectedCustomer,
+                  paymentMethod: 'qris',
+                  cashReceived: '',
+                  includeTax: cart.includeTax,
+                  notes: cart.notes,
+                  arkToUse: 0,
+                  shiftId: shift?.id || null,
+                  promo: promoApplied,
+                  billCharges,
+                  manualDiscountType: cart.manual_discount_type,
+                  manualDiscountValue: cart.manual_discount_value,
+                  offerDiscount,
+                  offerLabels: offerEval.applied.map((a) => a.name),
+                  paymentStatus: 'unpaid',
+                });
+                if (!res.success || !res.checkoutId) {
+                  throw new Error(res.error || 'Gagal menyiapkan checkout QRIS');
+                }
+                return {
+                  checkout_id: res.checkoutId,
+                  checkout_number: res.checkoutNumber,
+                  queue_number: res.queueNumber ?? null,
+                };
+              }
+            : undefined
+        }
+        onConfirm={async ({
+          method,
+          cashReceived,
+          arkToUse,
+          nfcTabUid,
+          giftCardCode,
+          checkoutId,
+          checkoutNumber,
+          queueNumber,
+        }) => {
           setPaymentMethod(method);
           setCashReceived(cashReceived);
           setCurrentArkToUse(arkToUse);
@@ -2541,6 +2672,9 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
             arkToUse,
             nfcTabUid,
             giftCardCode,
+            checkoutId,
+            checkoutNumber,
+            queueNumber,
           });
         }}
         formatCurrency={formatCurrency}

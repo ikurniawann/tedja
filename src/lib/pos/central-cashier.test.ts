@@ -1,12 +1,20 @@
 import { describe, expect, it } from "vitest";
 import {
+  MIXED_NFC_GIFT_UNSUPPORTED_MESSAGE,
+  MIXED_SPLIT_UNSUPPORTED_MESSAGE,
   allocateCheckoutCharges,
   assertAllModeSellStallAssigned,
+  buildPosQrisCreateBody,
   canAddItemToSingleStallCart,
   canSellMixedStall,
+  isMixedUnsupportedTender,
+  mapPaidSaleToReceiptIds,
+  resolveAddCatalogItem,
+  resolveCheckoutApi,
   resolveSingleStallSellFromAllMode,
   shouldConfirmClearCart,
   shouldCreateCheckout,
+  shouldDisableSplitBill,
   uniqueStallIds,
 } from "./central-cashier";
 
@@ -44,6 +52,74 @@ describe("checkout decision", () => {
     expect(uniqueStallIds(["w-a", "w-a", "w-b"])).toEqual(["w-a", "w-b"]);
     expect(shouldCreateCheckout(["w-a"])).toBe(false);
     expect(shouldCreateCheckout(["w-a", "w-b"])).toBe(true);
+  });
+});
+
+describe("resolveAddCatalogItem", () => {
+  it("skips the single-stall guard when kasir pusat may sell mixed", () => {
+    expect(
+      resolveAddCatalogItem({
+        canSellMixed: true,
+        existingStallIds: ["w-a"],
+        incomingWarehouseId: "w-b",
+        centralAllMode: true,
+      })
+    ).toEqual({ ok: true });
+  });
+
+  it("keeps the single-stall guard for regular cashiers", () => {
+    const result = resolveAddCatalogItem({
+      canSellMixed: false,
+      existingStallIds: ["w-a"],
+      incomingWarehouseId: "w-b",
+      centralAllMode: false,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.message).toContain("satu stall");
+    }
+  });
+});
+
+describe("mixed cart payment UI", () => {
+  it("routes 2+ stalls to checkout API and blocks split / NFC / gift", () => {
+    expect(resolveCheckoutApi(["w-a", "w-b"])).toBe("checkout");
+    expect(resolveCheckoutApi(["w-a"])).toBe("order");
+    expect(shouldDisableSplitBill(["w-a", "w-b"])).toBe(true);
+    expect(shouldDisableSplitBill(["w-a"])).toBe(false);
+    expect(isMixedUnsupportedTender("nfc_tab")).toBe(true);
+    expect(isMixedUnsupportedTender("gift_card")).toBe(true);
+    expect(isMixedUnsupportedTender("cash")).toBe(false);
+    expect(MIXED_SPLIT_UNSUPPORTED_MESSAGE).toBe(
+      "Split bill belum didukung untuk checkout multi-stall"
+    );
+    expect(MIXED_NFC_GIFT_UNSUPPORTED_MESSAGE).toBe(
+      "Pembayaran NFC Tab / Gift Card belum didukung untuk checkout multi-stall"
+    );
+  });
+
+  it("builds QRIS body with checkout_id for mixed cart", () => {
+    expect(buildPosQrisCreateBody({ amount: 15000, checkoutId: "chk-1" })).toEqual({
+      checkout_id: "chk-1",
+      amount: 15000,
+    });
+    expect(buildPosQrisCreateBody({ amount: 15000 })).toEqual({ amount: 15000 });
+  });
+
+  it("maps mixed checkout response onto one receipt header", () => {
+    expect(
+      mapPaidSaleToReceiptIds({
+        checkout_id: "c1",
+        checkout_number: "CHK-20260815-0001",
+        queue_number: "A7",
+        order_ids: ["o1", "o2"],
+      })
+    ).toEqual({
+      orderId: "c1",
+      orderNumber: "CHK-20260815-0001",
+      checkoutNumber: "CHK-20260815-0001",
+      queueNumber: "A7",
+    });
   });
 });
 

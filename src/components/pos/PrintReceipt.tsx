@@ -8,10 +8,16 @@ import {
 } from "@/lib/pos/rawbt-print";
 import { encodeEscPosLines, formatReceiptRow } from "@/lib/pos/thermal-escpos";
 import { printBytesToPairedThermal } from "@/lib/pos/thermal-serial";
+import {
+  buildReceiptItemLines,
+  groupCartItemsByStallName,
+  receiptDocumentLabel,
+} from "@/lib/pos/receipt-layout";
 
 export interface ReceiptPayload {
   orderId?: string;
   orderNumber?: string;
+  checkoutNumber?: string;
   queueNumber?: string | null;
   orderType: string;
   table: string | null;
@@ -66,7 +72,7 @@ export function buildReceiptEscPosLayout(
     lines.push({ text: `ANTRIAN ${payload.queueNumber}`, align: "center" });
   }
   lines.push({
-    text: `Order #${(payload.orderNumber || "").slice(-8).toUpperCase() || (payload.orderId || "").slice(-8).toUpperCase()}`,
+    text: receiptDocumentLabel(payload),
     align: "center",
   });
   lines.push({ text: new Date().toLocaleTimeString("id-ID"), align: "center" });
@@ -78,14 +84,7 @@ export function buildReceiptEscPosLayout(
   }
   lines.push({ text: "--------------------------------", align: "left" });
 
-  for (const item of payload.items) {
-    lines.push({ text: `${item.quantity}x ${item.name}`, align: "left" });
-    if (item.variantName) lines.push({ text: `  ${item.variantName}`, align: "left" });
-    if (item.modifierNames?.length) {
-      lines.push({ text: `  ${item.modifierNames.join(", ")}`, align: "left" });
-    }
-    if (item.notes) lines.push({ text: `  * ${item.notes}`, align: "left" });
-  }
+  lines.push(...buildReceiptItemLines(payload.items));
 
   if (!isKitchen && !isBar) {
     lines.push({ text: "--------------------------------", align: "left" });
@@ -198,8 +197,6 @@ function printViaPopupWindow(html: string) {
 
 function buildReceiptHtml(payload: ReceiptPayload, label: ThermalPrintLabel): string {
   const {
-    orderId,
-    orderNumber,
     queueNumber,
     orderType,
     table,
@@ -215,9 +212,16 @@ function buildReceiptHtml(payload: ReceiptPayload, label: ThermalPrintLabel): st
     giftCards,
   } = payload;
 
-  const itemsHtml = items
-    .map(
-      (item) => `
+  const stallGroups = groupCartItemsByStallName(items);
+  const showStallHeaders = stallGroups.length >= 2;
+  const itemsHtml = stallGroups
+    .map((group) => {
+      const header = showStallHeaders
+        ? `<tr><td colspan="2" style="text-align:center;font-weight:bold;padding:6px 2px">--- ${group.stallName} ---</td></tr>`
+        : "";
+      const rows = group.items
+        .map(
+          (item) => `
     <tr>
       <td style="width:28px;vertical-align:top;font-weight:bold;padding:3px 2px">${item.quantity}x</td>
       <td style="padding:3px 2px">
@@ -229,7 +233,10 @@ function buildReceiptHtml(payload: ReceiptPayload, label: ThermalPrintLabel): st
     </tr>
     <tr><td colspan="2"><div style="border-top:1px dashed #ccc;margin:2px 0"></div></td></tr>
   `
-    )
+        )
+        .join("");
+      return `${header}${rows}`;
+    })
     .join("");
 
   const isKitchen = label === "KITCHEN";
@@ -293,7 +300,7 @@ function buildReceiptHtml(payload: ReceiptPayload, label: ThermalPrintLabel): st
     <div class="big">${orderType.replace(/_/g, "-").toUpperCase()}</div>
     ${table ? `<div class="center">${table}</div>` : ""}
     ${queueNumber ? `<div class="big">ANTRIAN ${queueNumber}</div>` : ""}
-    <div class="center">Order #${(orderNumber || "").slice(-8).toUpperCase() || (orderId || "").slice(-8).toUpperCase()}</div>
+    <div class="center">${receiptDocumentLabel(payload)}</div>
     <div class="center">${new Date().toLocaleTimeString("id-ID")}</div>
     ${customerName ? `<div class="center">Customer: ${customerName}</div>` : ""}
     ${isPreviewBill ? `<div class="center">PRE-SETTLEMENT · UNPAID</div>` : ""}

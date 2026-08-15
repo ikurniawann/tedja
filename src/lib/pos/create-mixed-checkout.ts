@@ -6,6 +6,8 @@ import { getCrmDefaultVenue } from "@/lib/crm/server";
 import { awardCrmXpForPosOrder, syncPosCustomerOrderStats } from "@/lib/crm/loyalty-engine";
 import { AccountingPostError } from "@/lib/pos/accounting-posting";
 import {
+  MIXED_NFC_GIFT_UNSUPPORTED_MESSAGE,
+  MIXED_SPLIT_UNSUPPORTED_MESSAGE,
   allocateCheckoutCharges,
   shouldCreateCheckout,
   uniqueStallIds,
@@ -29,14 +31,15 @@ import {
 } from "@/lib/pos/merchandise-stock";
 import { buildCostSnapshot, loadPosProductCostMap } from "@/lib/pos/purchasing-sync";
 
+export {
+  MIXED_NFC_GIFT_UNSUPPORTED_MESSAGE,
+  MIXED_SPLIT_UNSUPPORTED_MESSAGE,
+} from "@/lib/pos/central-cashier";
+
 export const MIXED_STALL_FORBIDDEN_MESSAGE =
   "Keranjang campur stall hanya untuk kasir pusat";
-export const MIXED_SPLIT_UNSUPPORTED_MESSAGE =
-  "Split bill belum didukung untuk checkout multi-stall";
 export const MISSING_PRODUCT_STALL_MESSAGE =
   "Ada produk tanpa stall — tidak bisa dimasukkan ke keranjang";
-export const MIXED_NFC_GIFT_UNSUPPORTED_MESSAGE =
-  "Pembayaran NFC Tab / Gift Card belum didukung untuk checkout multi-stall";
 export const CHECKOUT_QRIS_MISSING_MESSAGE = "QRIS belum dibuat untuk checkout ini";
 export const CHECKOUT_QRIS_UNPAID_MESSAGE = "QRIS belum lunas";
 

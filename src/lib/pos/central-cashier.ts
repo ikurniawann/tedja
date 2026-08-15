@@ -27,6 +27,76 @@ export function shouldCreateCheckout(stallIds: string[]): boolean {
   return uniqueStallIds(stallIds).length >= 2;
 }
 
+export const MIXED_SPLIT_UNSUPPORTED_MESSAGE =
+  "Split bill belum didukung untuk checkout multi-stall";
+export const MIXED_NFC_GIFT_UNSUPPORTED_MESSAGE =
+  "Pembayaran NFC Tab / Gift Card belum didukung untuk checkout multi-stall";
+
+export function resolveAddCatalogItem(input: {
+  canSellMixed: boolean;
+  existingStallIds: string[];
+  incomingWarehouseId: string | null | undefined;
+  centralAllMode?: boolean;
+}): { ok: true } | { ok: false; message: string } {
+  if (input.canSellMixed) return { ok: true };
+  return canAddItemToSingleStallCart(
+    input.existingStallIds,
+    input.incomingWarehouseId,
+    { centralAllMode: input.centralAllMode }
+  );
+}
+
+export function resolveCheckoutApi(stallIds: string[]): "checkout" | "order" {
+  return shouldCreateCheckout(stallIds) ? "checkout" : "order";
+}
+
+export function shouldDisableSplitBill(stallIds: string[]): boolean {
+  return shouldCreateCheckout(stallIds);
+}
+
+export function isMixedUnsupportedTender(method: string): boolean {
+  return method === "nfc_tab" || method === "gift_card";
+}
+
+export function buildPosQrisCreateBody(input: {
+  amount: number;
+  checkoutId?: string | null;
+}): { amount: number; checkout_id?: string } {
+  if (input.checkoutId) {
+    return { checkout_id: input.checkoutId, amount: input.amount };
+  }
+  return { amount: input.amount };
+}
+
+export function mapPaidSaleToReceiptIds(data: {
+  checkout_id?: string;
+  checkout_number?: string;
+  queue_number?: string | null;
+  order_ids?: string[];
+  order_id?: string;
+  id?: string;
+  order_number?: string;
+}): {
+  orderId?: string;
+  orderNumber?: string;
+  checkoutNumber?: string;
+  queueNumber?: string | null;
+} {
+  if (data.checkout_number) {
+    return {
+      orderId: data.checkout_id || data.order_ids?.[0],
+      orderNumber: data.checkout_number,
+      checkoutNumber: data.checkout_number,
+      queueNumber: data.queue_number ?? null,
+    };
+  }
+  return {
+    orderId: data.order_id || data.id,
+    orderNumber: data.order_number,
+    queueNumber: data.queue_number ?? null,
+  };
+}
+
 export function canAddItemToSingleStallCart(
   existingStallIds: string[],
   incomingWarehouseId: string | null | undefined,

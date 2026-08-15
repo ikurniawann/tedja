@@ -1,7 +1,12 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { createOrder, type CreateOrderRequest } from "@/lib/pos-api";
+import { createCheckout, createOrder, type CreateOrderRequest } from "@/lib/pos-api";
+import {
+  mapPaidSaleToReceiptIds,
+  resolveCheckoutApi,
+  uniqueStallIds,
+} from "@/lib/pos/central-cashier";
 import type { BillChargesResult } from "@/lib/pos/billing-settings";
 import {
   buildDiscountReason,
@@ -14,6 +19,8 @@ export interface PaymentResult {
   success: boolean;
   orderId?: string;
   orderNumber?: string;
+  checkoutId?: string;
+  checkoutNumber?: string;
   queueNumber?: string | null;
   total: number;
   change: number;
@@ -53,6 +60,7 @@ export function usePosCheckout() {
       manualDiscountValue,
       offerDiscount,
       offerLabels,
+      paymentStatus,
     }: {
       cart: PosCartItem[];
       orderType: string;
@@ -79,6 +87,7 @@ export function usePosCheckout() {
       /** Product offers (bundle/bxgy/volume) already evaluated on client */
       offerDiscount?: number;
       offerLabels?: string[];
+      paymentStatus?: "paid" | "unpaid";
     }): Promise<PaymentResult> => {
       const snap = {
         snapshotCart: [...cart],
@@ -164,6 +173,9 @@ export function usePosCheckout() {
                 ? 0 // dibayar dari saldo kartu — laci kasir tidak menerima uang
                 : total;
 
+        const useCheckout =
+          resolveCheckoutApi(uniqueStallIds(cart.map((item) => item.warehouse_id))) ===
+          "checkout";
         const payload: CreateOrderRequest = {
           order_type: orderType as CreateOrderRequest["order_type"],
           customer_id: selectedCustomer?.id,
@@ -194,24 +206,42 @@ export function usePosCheckout() {
           gift_card_buyer_phone: giftCardBuyer?.phone || undefined,
         };
 
-        const response = await createOrder(payload);
+        const response = useCheckout
+          ? await createCheckout({
+              ...payload,
+              payment_status: paymentStatus ?? (paymentMethod === "qris" ? "unpaid" : "paid"),
+            })
+          : await createOrder(payload);
 
         if (!response.success) {
           return { success: false, total, change: 0, error: response.error || "Gagal membuat order", ...snap };
         }
 
         const change = paymentMethod === "cash" ? (parseFloat(cashReceived) || 0) - total : 0;
+        const data = (response.data || {}) as {
+          checkout_id?: string;
+          checkout_number?: string;
+          queue_number?: string | null;
+          order_ids?: string[];
+          order_id?: string;
+          id?: string;
+          order_number?: string;
+          xp_earned?: number;
+        };
+        const ids = mapPaidSaleToReceiptIds(data);
 
         return {
           success: true,
-          orderId: response.data?.order_id || response.data?.id,
-          orderNumber: response.data?.order_number,
-          queueNumber: response.data?.queue_number ?? null,
+          orderId: ids.orderId,
+          orderNumber: ids.orderNumber,
+          checkoutId: data.checkout_id,
+          checkoutNumber: ids.checkoutNumber,
+          queueNumber: ids.queueNumber ?? data.queue_number ?? null,
           total,
           change,
-          xpEarned: response.data?.xp_earned,
-          giftCards: response.gift_cards,
-          giftCardError: response.gift_card_error ?? null,
+          xpEarned: data.xp_earned,
+          giftCards: "gift_cards" in response ? response.gift_cards : undefined,
+          giftCardError: "gift_card_error" in response ? response.gift_card_error ?? null : null,
           ...snap,
         };
       } catch (err: unknown) {
