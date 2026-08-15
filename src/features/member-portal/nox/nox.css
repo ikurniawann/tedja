@@ -234,3 +234,13 @@ button{font:inherit}
 .name{color:var(--cream);font-size:clamp(34px,3.8vw,56px);overflow-wrap:break-word}
 @media (max-width:1100px){.name{font-size:clamp(32px,4.2vw,46px)}}
 @media (max-width:900px){.name{font-size:clamp(24px,7vw,36px)}}
+
+/* ── Fase E lanjutan: presisi layar login (temuan owner) ────────────────
+ * 1) Logo entry rata kiri, bukan center: Tailwind preflight aplikasi
+ *    menjadikan semua img display:block — di prototipe mandiri img inline
+ *    dan ikut text-align:center. Dipaksa center via margin auto.
+ * 2) Input nomor HP tampil terang: Safari memakai gaya bawaan form control
+ *    kecuali appearance dimatikan; specificity dinaikkan (#app) supaya
+ *    kebal gaya global aplikasi. */
+.entry-logo{display:block;margin-left:auto;margin-right:auto}
+#app .entry-input{-webkit-appearance:none;appearance:none;background-color:rgba(20,26,48,.56);border:1px solid var(--line);color:var(--text)}
