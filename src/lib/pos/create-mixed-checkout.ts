@@ -355,6 +355,11 @@ export type CompleteMixedCheckoutTender = {
   amountPaid?: number | null;
 };
 
+export type CompleteMixedCheckoutOptions = {
+  /** Webhook already verified paid; skip Xendit GET re-confirm. */
+  paymentAlreadyConfirmed?: boolean;
+};
+
 export function resolveCompleteCheckoutTender(input: {
   tender?: CompleteMixedCheckoutTender;
   storedPaymentMethod?: string | null;
@@ -1509,7 +1514,8 @@ async function confirmStoredCheckoutQrisPaid(input: {
 
 export async function completeMixedCheckout(
   checkoutId: string,
-  tender: CompleteMixedCheckoutTender = {}
+  tender: CompleteMixedCheckoutTender = {},
+  options: CompleteMixedCheckoutOptions = {}
 ): Promise<{ orderIds: string[] }> {
   const db = createPgClient();
 
@@ -1603,10 +1609,12 @@ export async function completeMixedCheckout(
     return { orderIds: existingIds };
   }
 
-  await confirmStoredCheckoutQrisPaid({
-    xenditQrId: preview.xendit_qr_id,
-    xenditExternalId: preview.xendit_external_id,
-  });
+  if (!options.paymentAlreadyConfirmed) {
+    await confirmStoredCheckoutQrisPaid({
+      xenditQrId: preview.xendit_qr_id,
+      xenditExternalId: preview.xendit_external_id,
+    });
+  }
 
   let merchClaims: MerchStockClaim[] = [];
   try {

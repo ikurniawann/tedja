@@ -135,7 +135,9 @@ export async function POST(request: NextRequest) {
     }
 
     if (action.type === "complete_checkout") {
-      const result = await completeMixedCheckout(action.checkoutId);
+      const result = await completeMixedCheckout(action.checkoutId, {}, {
+        paymentAlreadyConfirmed: true,
+      });
       return NextResponse.json({
         success: true,
         data: {

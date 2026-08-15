@@ -431,6 +431,16 @@ describe("resolveXenditPaidWebhookAction", () => {
       })
     ).toEqual({ type: "ignore" });
   });
+
+  it("no-ops on webhook retry when a single child order already exists", () => {
+    expect(
+      resolveXenditPaidWebhookAction({
+        topupId: null,
+        checkoutId: "chk-1",
+        childCount: 1,
+      })
+    ).toEqual({ type: "noop_checkout", checkoutId: "chk-1" });
+  });
 });
 
 describe("resolveCompleteCheckoutTender", () => {
