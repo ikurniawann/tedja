@@ -59,6 +59,7 @@ INSERT INTO iam.menus (code, menu_name, route_path, icon, menu_type, order_numbe
   ('pos.loyalty.topup', 'Topup', '/dashboard/pos/topup', 'money', 'sidebar', 10, '{"actions":["read"]}'::jsonb),
   ('pos.loyalty.settings', 'ARK & XP', '/dashboard/pos/loyalty-settings', 'settings', 'sidebar', 20, '{"actions":["read","update"]}'::jsonb),
   ('pos.operations.cashier', 'Kasir', '/dashboard/pos/tablet', 'shopping', 'sidebar', 10, '{"actions":["read"]}'::jsonb),
+  ('pos.cashier.central', 'Kasir Pusat', NULL, 'shopping', 'sidebar', 12, '{"actions":["read"]}'::jsonb),
   ('pos.operations.restaurant', 'Restaurant', '/dashboard/pos/restaurant-tablet', 'map', 'sidebar', 15, '{"actions":["read"]}'::jsonb),
   ('pos.reports.dashboard', 'Dashboard', '/dashboard/pos', 'home', 'sidebar', 10, '{"actions":["read"]}'::jsonb),
   ('hris.master.departments', 'Departemen', '/dashboard/master/departments', 'building', 'sidebar', 10, '{"actions":["read"]}'::jsonb),
@@ -251,4 +252,5 @@ WHERE deleted_at IS NULL
     'accounting.reports', 'accounting.reports.balance-sheet', 'accounting.reports.income-statement',
     'accounting.reports.cash-flow', 'accounting.reports.equity', 'accounting.reports.budget',
     -- POS TV Antrian (9 Aug 2026):
+    'pos.cashier.central',
     'pos.kitchen.queue-board');
