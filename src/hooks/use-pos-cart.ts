@@ -32,6 +32,8 @@ export interface PosCartItem {
   modifierPriceAdj?: number;
   imageUrl?: string;
   station?: string;
+  /** Stall asal item — tercetak di struk/CO saat transaksi lintas stall */
+  stallName?: string;
   /** Manual line discount */
   discount_type?: DiscountType | null;
   discount_value?: number | null;

@@ -195,7 +195,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
   const handoffOrderType = searchParams.get('orderType');
   const handoffKeyRef = useRef<string | null>(null);
   const pendingRestaurantReturnRef = useRef(false);
-  const { products, categories, loading, error, stallBlockedReason } = usePosProducts();
+  const { products, categories, loading, error, stallBlockedReason, allStalls } = usePosProducts();
   const { customers, findCustomer, refetch: refetchCustomers } = usePosCustomers();
   const cart = usePosCart();
   const { checkout, submitting } = usePosCheckout();
@@ -824,6 +824,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         quantity: 1,
         imageUrl: product.image_url,
         station: product.station,
+        stallName: product.stall_name ?? undefined,
       });
     }
   }, [cart, requireActiveShift]);
@@ -880,6 +881,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
           quantity: row.qty,
           imageUrl: product.image_url,
           station: product.station,
+          stallName: product.stall_name ?? undefined,
         });
         added += 1;
       }
@@ -927,6 +929,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       quantity: values.quantity,
       imageUrl: product.image_url,
       station: product.station,
+      stallName: product.stall_name ?? undefined,
     });
     setGiftCardBuyer(
       values.buyerName || values.buyerPhone
@@ -957,6 +960,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       quantity: 1,
       imageUrl: product.image_url,
       station: product.station,
+      stallName: product.stall_name ?? undefined,
     });
     setMerchSkuProduct(null);
   }, [cart, requireActiveShift]);
@@ -1013,6 +1017,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       notes: custom.notes,
       imageUrl: product.image_url,
       station: product.station,
+      stallName: product.stall_name ?? undefined,
     });
     setCustom(null);
     setCustomizingProduct(null);
@@ -2197,6 +2202,11 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
                     <div className={`line-clamp-2 font-medium leading-snug text-gray-900 ${isTabletMode ? 'text-[11px] @min-[40rem]:text-xs' : 'text-[11px] leading-tight'}`}>
                       {product.name}
                     </div>
+                    {allStalls && product.stall_name ? (
+                      <div className="truncate text-[9px] font-semibold uppercase tracking-wide text-sky-700">
+                        {product.stall_name}
+                      </div>
+                    ) : null}
                     <div className={`font-bold text-primary ${isTabletMode ? 'text-xs @min-[40rem]:text-sm' : 'text-[11px]'}`}>{formatCurrency(product.base_price)}</div>
                     <div className="flex items-center justify-between gap-1">
                       <span className={`font-medium text-amber-600 ${isTabletMode ? 'text-[11px]' : 'text-[9px]'}`}>{formatArk(product.base_price)}</span>
@@ -2239,6 +2249,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         }}
         orderNotes={cart.notes}
         onOrderNotesChange={cart.setNotes}
+        showStallBadges={allStalls}
         itemDiscountTotal={itemDiscountTotal}
         offerDiscount={offerDiscount}
         offerApplied={offerEval.applied}

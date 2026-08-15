@@ -11,6 +11,7 @@ export function usePosProducts() {
   const [error, setError] = useState<string | null>(null);
   const [isOfflineFallback, setIsOfflineFallback] = useState(false);
   const [stallBlockedReason, setStallBlockedReason] = useState<string | null>(null);
+  const [allStalls, setAllStalls] = useState(false);
 
   const fetchProducts = useCallback(async () => {
     try {
@@ -22,6 +23,7 @@ export function usePosProducts() {
       setProducts(data);
       const cats = Array.from(new Set(data.map((p: any) => p.category?.name || "Uncategorized")));
       setCategories(["All", ...cats]);
+      setAllStalls(Boolean(res.meta?.all_stalls));
       const reason = res.meta?.reason;
       setStallBlockedReason(
         data.length === 0 &&
@@ -47,6 +49,9 @@ export function usePosProducts() {
           xp: p.xp,
           station: p.station,
           product_kind: p.product_kind,
+          stall_warehouse_id: p.stall_warehouse_id,
+          stall_code: p.stall_code,
+          stall_name: p.stall_name,
         }))
       );
       void setLastSyncTimestamp("products");
@@ -84,6 +89,7 @@ export function usePosProducts() {
     error,
     isOfflineFallback,
     stallBlockedReason,
+    allStalls,
     refetch: fetchProducts,
   };
 }

@@ -6,7 +6,7 @@ import {
   parseReportDateRange,
   resolveReportStallFilter,
 } from "@/lib/pos/report-stall-filter";
-import { aggregatePerStall, summarizeSales } from "@/lib/pos/sales-summary";
+import { summarizeSales } from "@/lib/pos/sales-summary";
 
 type TransactionRow = {
   id: string;
@@ -149,7 +149,6 @@ export async function GET(request: NextRequest) {
     );
 
     const summary = summarizeSales(rows);
-    const perStall = aggregatePerStall(rows);
 
     // Tren harian (hari WIB): nett + jumlah transaksi per tanggal — bahan
     // grafik tren di halaman laporan.
@@ -171,6 +170,54 @@ export async function GET(request: NextRequest) {
     // Top produk pada rentang & stall yang SAMA dengan daftar transaksi —
     // satu sumber filter, supaya angka antar-bagian laporan tidak berselisih.
     const orderIds = rows.map((row) => row.id);
+
+    // Rekap per stall berbasis ITEM: order lintas stall (mode Semua Stall,
+    // warehouse_id order null) menyumbang ke tiap stall sesuai itemnya.
+    let perStall: Array<{
+      stall_code: string | null;
+      stall_name: string;
+      transactions: number;
+      quantity: number;
+      sales: number;
+    }> = [];
+    if (orderIds.length > 0) {
+      const stallRows = await query<{
+        stall_code: string | null;
+        stall_name: string | null;
+        transactions: string | number;
+        quantity: string | number;
+        sales: string | number;
+      }>(
+        `SELECT COALESCE(w.code, w_sku.code) AS stall_code,
+                COALESCE(w.name, w_sku.name) AS stall_name,
+                COUNT(DISTINCT i.order_id) AS transactions,
+                SUM(i.quantity)::float8 AS quantity,
+                SUM(i.total_amount)::float8 AS sales
+           FROM pos.pos_order_items i
+           INNER JOIN pos.pos_products pp ON pp.id = i.product_id
+           LEFT JOIN item.products p ON p.id = pp.source_product_id AND p.deleted_at IS NULL
+           LEFT JOIN configuration.warehouses w ON w.id = p.warehouse_id
+           LEFT JOIN item.products p_sku
+             ON pp.source_product_id IS NULL
+            AND pp.sku = ('PUR-' || p_sku.kode)
+            AND p_sku.deleted_at IS NULL
+            AND p_sku.kode IS NOT NULL
+            AND btrim(p_sku.kode) <> ''
+           LEFT JOIN configuration.warehouses w_sku ON w_sku.id = p_sku.warehouse_id
+          WHERE i.order_id = ANY($1::uuid[])
+          GROUP BY 1, 2
+          ORDER BY SUM(i.total_amount) DESC`,
+        [orderIds]
+      );
+      perStall = stallRows.map((row) => ({
+        stall_code: row.stall_code,
+        stall_name: row.stall_name ?? "Tanpa Stall",
+        transactions: toNumber(row.transactions),
+        quantity: Math.round(toNumber(row.quantity) * 100) / 100,
+        sales: Math.round(toNumber(row.sales) * 100) / 100,
+      }));
+    }
+
     let topProducts: Array<{ product_name: string; quantity: number; revenue: number }> = [];
     if (orderIds.length > 0) {
       const topRows = await query<TopProductRow>(

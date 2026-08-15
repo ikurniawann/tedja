@@ -1,6 +1,6 @@
 import { query } from "@/lib/db";
 import type { UserScope } from "@/lib/api/scope";
-import { resolvePosSellStallForUser } from "@/lib/pos/pos-sell-stall-server";
+import { resolvePosSellScopeForUser } from "@/lib/pos/pos-sell-stall-server";
 
 export type StallProductScope =
   | { mode: "all" }
@@ -36,8 +36,8 @@ async function loadProductIdsForWarehouses(
 
 /**
  * Resolve which POS products a logged-in user may sell.
- * Always scoped to the single active sell stall (1 order = 1 stall).
- * "Semua Stall" / no stall selected → empty catalog.
+ * Stall tunggal → katalog stall itu. Mode "Semua Stall" (user akses penuh,
+ * owner 2026-08-16) → seluruh katalog, transaksi boleh lintas stall.
  */
 export async function resolvePosProductStallScope(
   scope: UserScope | null
@@ -46,12 +46,15 @@ export async function resolvePosProductStallScope(
     return { mode: "none", reason: "no_session" };
   }
 
-  const sellStall = await resolvePosSellStallForUser(scope.userId);
-  if (!sellStall.ok) {
-    return { mode: "none", reason: sellStall.reason };
+  const sellScope = await resolvePosSellScopeForUser(scope.userId);
+  if (sellScope.mode === "blocked") {
+    return { mode: "none", reason: sellScope.reason };
+  }
+  if (sellScope.mode === "all") {
+    return { mode: "all" };
   }
 
-  const warehouseIds = [sellStall.warehouseId];
+  const warehouseIds = [sellScope.warehouseId];
   const productIds = await loadProductIdsForWarehouses(warehouseIds);
   return { mode: "ids", productIds, warehouseIds };
 }

@@ -6,7 +6,7 @@ import { checkProductPrivileges } from '@/lib/crm/product-privilege';
 import { normalizeGuestCount } from '@/lib/pos/guest-count';
 import {
   assertOrderItemsMatchSellStall,
-  resolvePosSellStallForUser,
+  resolvePosSellScopeForUser,
 } from '@/lib/pos/pos-sell-stall-server';
 import { getCrmDefaultVenue } from '@/lib/crm/server';
 import { allocateQueueNumber } from '@/lib/pos/queue-number';
@@ -115,16 +115,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Items are required' }, { status: 400 });
     }
 
-    const sellStall = await resolvePosSellStallForUser(sessionUserId);
-    if (!sellStall.ok) {
-      return NextResponse.json({ success: false, error: sellStall.message }, { status: 400 });
+    // Mode "Semua Stall": open bill juga boleh lintas stall (lihat orders/route)
+    const sellScope = await resolvePosSellScopeForUser(sessionUserId);
+    if (sellScope.mode === 'blocked') {
+      return NextResponse.json({ success: false, error: sellScope.message }, { status: 400 });
     }
-    const itemStallCheck = await assertOrderItemsMatchSellStall(
-      items.map((item) => String(item.product_id || '')),
-      sellStall.warehouseId
-    );
-    if (!itemStallCheck.ok) {
-      return NextResponse.json({ success: false, error: itemStallCheck.message }, { status: 400 });
+    const sellStallWarehouseId = sellScope.mode === 'stall' ? sellScope.warehouseId : null;
+    if (sellScope.mode === 'stall') {
+      const itemStallCheck = await assertOrderItemsMatchSellStall(
+        items.map((item) => String(item.product_id || '')),
+        sellScope.warehouseId
+      );
+      if (!itemStallCheck.ok) {
+        return NextResponse.json({ success: false, error: itemStallCheck.message }, { status: 400 });
+      }
     }
 
     // Produk privilege (min_xp) — EPIC-011 Fase C
@@ -219,7 +223,7 @@ export async function POST(request: NextRequest) {
       payment_status: 'unpaid',
       company_id: venue.companyId,
       branch_id: venue.branchId,
-      warehouse_id: sellStall.warehouseId,
+      warehouse_id: sellStallWarehouseId,
       customer_id: customer_id || null,
       cashier_id: cashier_id || sessionUserId,
       server_id: server_id || null,

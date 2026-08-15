@@ -15,7 +15,7 @@ import {
 import { normalizeGuestCount } from '@/lib/pos/guest-count';
 import {
   assertOrderItemsMatchSellStall,
-  resolvePosSellStallForUser,
+  resolvePosSellScopeForUser,
 } from '@/lib/pos/pos-sell-stall-server';
 import { withTransaction } from '@/lib/db';
 import {
@@ -241,16 +241,23 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Items and total amount are required' }, { status: 400 });
     }
 
-    const sellStall = await resolvePosSellStallForUser(sessionUserId);
-    if (!sellStall.ok) {
-      return NextResponse.json({ success: false, error: sellStall.message }, { status: 400 });
+    // Mode "Semua Stall" (owner 2026-08-16): user akses penuh boleh menjual
+    // lintas stall dalam satu transaksi — order.warehouse_id null, stall per
+    // item diturunkan dari produknya (laporan & struk sudah menanganinya).
+    const sellScope = await resolvePosSellScopeForUser(sessionUserId);
+    if (sellScope.mode === 'blocked') {
+      return NextResponse.json({ success: false, error: sellScope.message }, { status: 400 });
     }
-    const itemStallCheck = await assertOrderItemsMatchSellStall(
-      items.map((item) => String(item.product_id || '')),
-      sellStall.warehouseId
-    );
-    if (!itemStallCheck.ok) {
-      return NextResponse.json({ success: false, error: itemStallCheck.message }, { status: 400 });
+    const sellStallWarehouseId =
+      sellScope.mode === 'stall' ? sellScope.warehouseId : null;
+    if (sellScope.mode === 'stall') {
+      const itemStallCheck = await assertOrderItemsMatchSellStall(
+        items.map((item) => String(item.product_id || '')),
+        sellScope.warehouseId
+      );
+      if (!itemStallCheck.ok) {
+        return NextResponse.json({ success: false, error: itemStallCheck.message }, { status: 400 });
+      }
     }
 
     const effectiveCashierId = cashier_id || await resolveCashierId();
@@ -364,7 +371,7 @@ export async function POST(request: NextRequest) {
         .update({
           company_id: venueForSplit.companyId,
           branch_id: body.branch_id || venueForSplit.branchId,
-          warehouse_id: sellStall.warehouseId,
+          warehouse_id: sellStallWarehouseId,
         })
         .eq('id', result.order_id);
       await ensureQueueNumber(db, {
@@ -692,7 +699,7 @@ export async function POST(request: NextRequest) {
         payment_status: deferPaid ? 'unpaid' : 'paid',
         company_id: venue.companyId,
         branch_id: body.branch_id || venue.branchId,
-        warehouse_id: sellStall.warehouseId,
+        warehouse_id: sellStallWarehouseId,
         customer_id: customer_id || null,
         cashier_id: effectiveCashierId,
         server_id: server_id || null,
@@ -735,7 +742,7 @@ export async function POST(request: NextRequest) {
           payment_status: deferPaid ? 'unpaid' : 'paid',
           company_id: venue.companyId,
           branch_id: body.branch_id || venue.branchId,
-          warehouse_id: sellStall.warehouseId,
+          warehouse_id: sellStallWarehouseId,
           customer_id: customer_id || null,
           cashier_id: effectiveCashierId,
           server_id: server_id || null,

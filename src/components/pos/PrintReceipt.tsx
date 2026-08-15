@@ -120,6 +120,9 @@ export function buildReceiptEscPosLayout(
     } else {
       lines.push({ text: `${item.quantity}x ${item.name}`, align: "left" });
     }
+    if (item.stallName && item.stallName !== payload.stallName) {
+      lines.push({ text: `  [${item.stallName}]`, align: "left" });
+    }
     if (item.variantName) lines.push({ text: `  ${item.variantName}`, align: "left" });
     if (item.modifierNames?.length) {
       lines.push({ text: `  ${item.modifierNames.join(", ")}`, align: "left" });
@@ -283,6 +286,7 @@ export function buildReceiptHtml(payload: ReceiptPayload, label: ThermalPrintLab
       <td style="width:28px;vertical-align:top;font-weight:bold;padding:3px 2px">${item.quantity}x</td>
       <td style="padding:3px 2px">
         <strong>${item.name}</strong>
+        ${item.stallName && item.stallName !== stallName ? `<br><small style="color:#0369a1;font-weight:600">[${item.stallName}]</small>` : ""}
         ${!isKitchenCopy && qty > 1 ? `<br><small style="color:#555">@ ${formatCurrency(Number(item.price) || 0)}</small>` : ""}
         ${item.variantName ? `<br><small style="color:#555">${item.variantName}</small>` : ""}
         ${item.modifierNames?.length ? `<br><small style="color:#555">${item.modifierNames.join(", ")}</small>` : ""}

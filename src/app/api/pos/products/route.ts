@@ -10,6 +10,7 @@ import {
   applyStallScopeToProductIds,
   resolvePosProductStallScope,
 } from '@/lib/pos/stall-product-scope';
+import { loadPosProductStallInfo } from '@/lib/pos/pos-sell-stall-server';
 
 type ProductVariantPayload = {
   name?: string;
@@ -141,13 +142,29 @@ export async function GET(request: NextRequest) {
       normalizedProducts as Array<Record<string, unknown>>
     );
 
+    // Mode "Semua Stall": tiap produk membawa stall asalnya supaya katalog,
+    // keranjang, dan struk/CO bisa menandai lintas stall dalam 1 transaksi.
+    const stallInfo = await loadPosProductStallInfo(
+      enrichedProducts.map((p) => String((p as { id?: unknown }).id ?? ""))
+    );
+    const productsWithStall = enrichedProducts.map((product: Record<string, unknown>) => {
+      const info = stallInfo.get(String((product as { id?: unknown }).id ?? ""));
+      return {
+        ...product,
+        stall_warehouse_id: info?.warehouse_id ?? null,
+        stall_code: info?.stall_code ?? null,
+        stall_name: info?.stall_name ?? null,
+      };
+    });
+
     return NextResponse.json({
       success: true,
-      data: enrichedProducts,
+      data: productsWithStall,
       meta: {
         stall_scoped: allowedIds !== null,
+        all_stalls: stallScope.mode === "all",
         warehouse_ids: stallScope.mode === "ids" ? stallScope.warehouseIds : [],
-        product_count: enrichedProducts.length,
+        product_count: productsWithStall.length,
       },
     });
   } catch (error: unknown) {
