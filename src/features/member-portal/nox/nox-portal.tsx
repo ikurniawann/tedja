@@ -3,19 +3,19 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import "./nox.css";
+import { CREDIT_TXN_TYPES, useNoxMember } from "./use-nox-member";
 
 /**
- * Portal member "Nox Lab" — port React dari prototipe membernox.html (Fase A).
+ * Portal member "Nox Lab" — port React dari prototipe membernox.html.
  *
- * Fase A = paritas visual dengan data contoh; penyambungan API menyusul di
- * Fase B, login OTP di Fase C, adaptasi mobile di Fase D. Keputusan owner
- * 2026-08-15: Missions, XP Streak, dan Nox Shards DISEMBUNYIKAN (belum ada
- * backend-nya) — yang tampil hanya informasi profil, XP, dan ARK Coins.
- * Mode tersisa: dashboard · profile · coins · history.
+ * Fase A: paritas visual. Fase B (ini): data nyata dari API portal member —
+ * profil, XP/tier, saldo ARK Coin, riwayat. Sesi memakai cookie member_session
+ * dari login OTP portal klasik (/member); login OTP di dalam Nox = Fase C,
+ * adaptasi mobile = Fase D.
  *
- * Perilaku prototipe yang dipertahankan: layar entry, pindah mode via
- * nav/scroll/keyboard, parallax latar & karakter mengikuti kursor, drag
- * kamera, kursor kustom (mati otomatis di layar sentuh), hotspot lore, toast.
+ * Keputusan owner 2026-08-15: Missions/Streak/Shards disembunyikan (belum ada
+ * backend). "Level" prototipe dipetakan ke TIER membership — satu-satunya
+ * tangga kemajuan yang nyata di sistem.
  */
 
 const MODES = ["dashboard", "profile", "coins", "history"] as const;
@@ -26,6 +26,13 @@ const MODE_LABELS: Record<NoxMode, string> = {
   profile: "Profile",
   coins: "ARK Coins",
   history: "History",
+};
+
+const TXN_LABELS: Record<string, string> = {
+  topup: "Top-up",
+  topup_bonus: "Bonus top-up",
+  payment: "Pembayaran",
+  refund: "Refund",
 };
 
 /** Teks lore hotspot — flavor dunia, disalin apa adanya dari prototipe. */
@@ -47,16 +54,16 @@ const LORE: Record<string, { tag: string; title: string; text: string }> = {
   },
 };
 
-/** Data contoh Fase A — diganti API /api/member-portal/* di Fase B. */
-const SAMPLE = {
-  name: "CITIZEN",
-  coins: 2450,
-  xp: 650,
-  xpNext: 1250,
-  level: 12,
-};
+const angka = (value: number) => value.toLocaleString("id-ID");
+const tanggal = (iso: string) =>
+  new Date(iso).toLocaleString("id-ID", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "Asia/Jakarta",
+  });
 
 export function NoxPortal() {
+  const { state, reload } = useNoxMember();
   const [mode, setMode] = useState<NoxMode>("dashboard");
   const [entered, setEntered] = useState(false);
   const [lore, setLore] = useState<string | null>(null);
@@ -215,7 +222,20 @@ export function NoxPortal() {
   }, []);
 
   const modeIndex = MODES.indexOf(mode);
-  const coins = SAMPLE.coins.toLocaleString("id-ID");
+
+  /* ── Turunan data tampilan ─────────────────────────────────────────── */
+  const ready = state.status === "ready" ? state : null;
+  const member = ready?.member ?? null;
+  const coins = member ? angka(member.coins) : "—";
+  const displayName = (member?.profile.name || member?.profile.phone || "CITIZEN").toUpperCase();
+
+  // "Level" prototipe = tier membership. Progres bar = posisi XP di antara
+  // tier sekarang dan ambang tier berikutnya; tier tertinggi = bar penuh.
+  const totalXp = member?.totalXp ?? 0;
+  const nextTier = member?.nextTier ?? null;
+  const xpTarget = nextTier?.minLifetimeXp ?? totalXp;
+  const xpPct = nextTier && xpTarget > 0 ? Math.min(100, (totalXp / xpTarget) * 100) : 100;
+
   const activeLore = lore ? LORE[lore] : null;
 
   return (
@@ -279,24 +299,31 @@ export function NoxPortal() {
       <main className="scene-ui">
         <section className="hero-copy">
           <div className="eyebrow">HEY THERE,</div>
-          <h1 className="name">{SAMPLE.name}</h1>
+          <h1 className="name">{displayName}</h1>
           <div className="citizen-tag">Citizen of Wounderland</div>
           <div className="stat-glass interactive" data-cursor="OPEN">
             <div className="level-row">
               <div className="level">
-                <small>Level</small>
-                <strong>{SAMPLE.level}</strong>
+                <small>Tier</small>
+                <strong>{member?.tier?.name ?? "—"}</strong>
               </div>
               <div className="xp">
                 <small>
-                  XP · {SAMPLE.xp.toLocaleString("id-ID")} / {SAMPLE.xpNext.toLocaleString("id-ID")}
+                  XP · {angka(totalXp)}
+                  {nextTier ? ` / ${angka(nextTier.minLifetimeXp)}` : ""}
                 </small>
                 <div className="xpbar">
-                  <span style={{ width: `${Math.min(100, (SAMPLE.xp / SAMPLE.xpNext) * 100)}%` }} />
+                  <span style={{ width: `${xpPct}%` }} />
                 </div>
                 <div className="xp-meta">
-                  <span>Next Level {SAMPLE.level + 1}</span>
-                  <span>{(SAMPLE.xpNext - SAMPLE.xp).toLocaleString("id-ID")} XP to go</span>
+                  {nextTier ? (
+                    <>
+                      <span>Next: {nextTier.name}</span>
+                      <span>{angka(nextTier.xpNeeded)} XP to go</span>
+                    </>
+                  ) : (
+                    <span>Tier tertinggi tercapai</span>
+                  )}
                 </div>
               </div>
             </div>
@@ -347,18 +374,30 @@ export function NoxPortal() {
             <div className="list-row interactive">
               <div className="list-icon">ID</div>
               <div>
-                <b>Citizen</b>
-                <small>Bergabung —</small>
+                <b>{member?.profile.name ?? "Citizen"}</b>
+                <small>{member?.profile.phone ?? "—"}</small>
               </div>
-              <span className="pill">Active</span>
+              <span className="pill">{member?.memberType === "card" ? "Kartu" : "Member"}</span>
             </div>
             <div className="list-row interactive">
               <div className="list-icon">✦</div>
               <div>
-                <b>Tier</b>
-                <small>Membership saat ini</small>
+                <b>{member?.tier?.name ?? "Tier"}</b>
+                <small>
+                  {member?.tier
+                    ? `Diskon member ${member.tier.discountPercent}%`
+                    : "Membership saat ini"}
+                </small>
               </div>
-              <span className="pill">Lv.{SAMPLE.level}</span>
+              <span className="pill">{angka(totalXp)} XP</span>
+            </div>
+            <div className="list-row interactive">
+              <div className="list-icon">↗</div>
+              <div>
+                <b>Kunjungan</b>
+                <small>Total tercatat</small>
+              </div>
+              <span className="pill">{member ? angka(member.visitCount) : "—"}</span>
             </div>
           </div>
         </section>
@@ -376,28 +415,57 @@ export function NoxPortal() {
             </div>
           </div>
           <div className="list">
-            <div className="list-row">
-              <div className="list-icon">A</div>
-              <div>
-                <b>Riwayat transaksi</b>
-                <small>Tersambung ke akun Anda di Fase B</small>
+            {ready && ready.wallet.length === 0 && (
+              <div className="list-row">
+                <div className="list-icon">A</div>
+                <div>
+                  <b>Belum ada transaksi koin</b>
+                  <small>Top-up pertama Anda akan tampil di sini</small>
+                </div>
               </div>
-            </div>
+            )}
+            {ready?.wallet.slice(0, 6).map((txn) => {
+              const kredit = CREDIT_TXN_TYPES.has(txn.type);
+              return (
+                <div className="list-row" key={txn.id}>
+                  <div className="list-icon">{kredit ? "✦" : "A"}</div>
+                  <div>
+                    <b>{TXN_LABELS[txn.type] ?? txn.type}</b>
+                    <small>{tanggal(txn.createdAt)}</small>
+                  </div>
+                  <strong className={`tx-amount ${kredit ? "pos" : "neg"}`}>
+                    {kredit ? "+" : "−"}
+                    {angka(txn.amount)}
+                  </strong>
+                </div>
+              );
+            })}
           </div>
         </section>
 
         <section className={`mode-panel glass card${mode === "history" ? " active" : ""}`} data-panel="history">
           <h2>Citizen History</h2>
-          <p className="sub">Arsip kunjungan dan transaksi Anda.</p>
+          <p className="sub">Arsip transaksi Anda di Wounderland.</p>
           <div className="list">
-            <div className="list-row">
-              <div className="list-icon">↗</div>
-              <div>
-                <b>Riwayat kunjungan</b>
-                <small>Tersambung ke akun Anda di Fase B</small>
+            {ready && ready.orders.length === 0 && (
+              <div className="list-row">
+                <div className="list-icon">↗</div>
+                <div>
+                  <b>Belum ada transaksi</b>
+                  <small>Kunjungan pertama Anda akan tercatat di sini</small>
+                </div>
               </div>
-              <span className="pill">Visit</span>
-            </div>
+            )}
+            {ready?.orders.slice(0, 6).map((order) => (
+              <div className="list-row" key={order.id}>
+                <div className="list-icon">A</div>
+                <div>
+                  <b>{order.orderNumber}</b>
+                  <small>{tanggal(order.createdAt)}</small>
+                </div>
+                <span className="pill">Rp {angka(order.totalAmount)}</span>
+              </div>
+            ))}
           </div>
         </section>
       </main>
@@ -442,6 +510,12 @@ export function NoxPortal() {
         )}
       </div>
 
+      {/* Layar entry merangkap gerbang status data:
+          - loading: tombol menunggu
+          - unauthenticated: arahkan ke login OTP portal klasik (Fase C akan
+            memindahkan OTP ke sini)
+          - error: coba lagi
+          - ready: sapa nama member, tombol masuk */}
       <div className={`entry${entered ? " hide" : ""}`}>
         <div className="entry-inner">
           <Image
@@ -453,18 +527,45 @@ export function NoxPortal() {
             unoptimized
           />
           <div className="entry-kicker">Citizen profile / Nox Lab node</div>
-          <h1>WELCOME, CITIZEN.</h1>
-          <p>Masuk ke Nox Lab untuk melihat profil, XP, dan ARK Coins Anda.</p>
-          <div className="entry-line" />
-          <button
-            className="enter-btn interactive"
-            onClick={() => {
-              setEntered(true);
-              setTimeout(() => showToast("Citizen profile synchronized"), 650);
-            }}
-          >
-            Enter Nox Lab
-          </button>
+          {state.status === "ready" ? (
+            <>
+              <h1>WELCOME BACK, {displayName}.</h1>
+              <p>Profil, XP, dan ARK Coins Anda sudah tersinkron. Masuk untuk menjelajah.</p>
+              <div className="entry-line" />
+              <button
+                className="enter-btn interactive"
+                onClick={() => {
+                  setEntered(true);
+                  setTimeout(() => showToast("Citizen profile synchronized"), 650);
+                }}
+              >
+                Enter Nox Lab
+              </button>
+            </>
+          ) : state.status === "unauthenticated" ? (
+            <>
+              <h1>WELCOME, CITIZEN.</h1>
+              <p>Masuk dulu dengan nomor WhatsApp member Anda untuk membuka Nox Lab.</p>
+              <div className="entry-line" />
+              <a className="enter-btn interactive" href="/member" style={{ textDecoration: "none" }}>
+                Login Member
+              </a>
+            </>
+          ) : state.status === "error" ? (
+            <>
+              <h1>KONEKSI TERPUTUS.</h1>
+              <p>Profil belum bisa dimuat. Coba lagi sebentar.</p>
+              <div className="entry-line" />
+              <button className="enter-btn interactive" onClick={reload}>
+                Coba Lagi
+              </button>
+            </>
+          ) : (
+            <>
+              <h1>MENYAMBUNGKAN…</h1>
+              <p>Memuat profil Citizen Anda dari Wounderland.</p>
+            </>
+          )}
         </div>
       </div>
 
