@@ -3,16 +3,24 @@ import { randomUUID } from "crypto";
 import { z } from "zod";
 import { getPosSession } from "@/lib/api/auth";
 import { checkRateLimit } from "@/lib/rate-limit";
-import { createQrisCode, isXenditConfigured } from "@/lib/xendit/client";
+import { createPgClient } from "@/lib/pg/create-client";
+import {
+  createXenditDynamicQr,
+  loadActiveXenditConfig,
+} from "@/lib/payments/xendit";
 
-// EPIC-024 — QRIS dinamis utk customer display: QR per transaksi dengan
-// nominal terkunci (salah bayar mustahil). MVP: kasir tetap konfirmasi
-// pembayaran manual seperti QRIS statis; auto-confirm via webhook Xendit
-// menyusul bersama key produksi.
+// QRIS dinamis utk customer display: QR per transaksi dengan nominal terkunci.
+// Secret diambil dari Settings → Payment Gateways (configuration.payment_gateways),
+// sama seperti topup — bukan XENDIT_SECRET_KEY di env.
 
 const createSchema = z.object({
   amount: z.number().positive().max(999_999_999),
 });
+
+function isGatewayConfigError(error: unknown) {
+  const message = error instanceof Error ? error.message : "";
+  return /not configured|inactive|secret key is missing/i.test(message);
+}
 
 export async function POST(request: NextRequest) {
   const sessionUserId = await getPosSession();
@@ -32,17 +40,6 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    if (!isXenditConfigured()) {
-      return NextResponse.json(
-        {
-          success: false,
-          error:
-            "QRIS dinamis belum dikonfigurasi (XENDIT_SECRET_KEY) — pakai QRIS statis dulu",
-        },
-        { status: 503 }
-      );
-    }
-
     const parsed = createSchema.safeParse(await request.json());
     if (!parsed.success) {
       return NextResponse.json(
@@ -51,17 +48,39 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const qr = await createQrisCode({
-      externalId: `pos-${randomUUID()}`,
+    const db = createPgClient();
+    let xendit;
+    try {
+      xendit = await loadActiveXenditConfig(db);
+    } catch (err) {
+      if (isGatewayConfigError(err)) {
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              "QRIS belum dikonfigurasi di Settings → Payment Gateways",
+          },
+          { status: 503 }
+        );
+      }
+      throw err;
+    }
+
+    const qr = await createXenditDynamicQr({
+      secretKey: xendit.secretKey,
+      referenceId: `pos-${randomUUID()}`,
       amount: parsed.data.amount,
+      callbackUrl: xendit.callbackUrl,
+      description: `POS ${Math.round(parsed.data.amount)}`,
     });
+
     return NextResponse.json({
       success: true,
       data: {
-        qr_id: qr.qrId,
-        qr_string: qr.qrString,
+        qr_id: qr.id,
+        qr_string: qr.qr_string,
         amount: qr.amount,
-        expires_at: qr.expiresAt.toISOString(),
+        expires_at: qr.expires_at,
       },
     });
   } catch (err) {
