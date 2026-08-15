@@ -32,6 +32,7 @@ import {
   MIXED_SPLIT_UNSUPPORTED_MESSAGE,
   canSellMixedStall,
   isMixedUnsupportedTender,
+  mayConfirmMixedQris,
   resolveAddCatalogItem,
   shouldCreateCheckout,
   shouldDisableSplitBill,
@@ -1109,12 +1110,25 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       return;
     }
 
-    if (mixedCart && method === 'qris' && overrides?.checkoutId) {
+    if (mixedCart && method === 'qris') {
+      const paidCheckoutId = overrides?.checkoutId;
+      if (
+        !paidCheckoutId ||
+        !mayConfirmMixedQris({
+          isMixedCart: true,
+          method: 'qris',
+          qrisPaid: true,
+          checkoutId: paidCheckoutId,
+        })
+      ) {
+        toast.error('Menunggu pembayaran QRIS');
+        return;
+      }
       setProcessingPayment(true);
       try {
-        await completeCheckout(overrides.checkoutId);
+        await completeCheckout(paidCheckoutId);
         const receipt: ReceiptPayload = {
-          orderId: overrides.checkoutId,
+          orderId: paidCheckoutId,
           orderNumber: overrides.checkoutNumber,
           checkoutNumber: overrides.checkoutNumber,
           queueNumber: overrides.queueNumber ?? null,

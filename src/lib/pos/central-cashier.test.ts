@@ -9,7 +9,10 @@ import {
   canSellMixedStall,
   isMixedUnsupportedTender,
   mapPaidSaleToReceiptIds,
+  mayConfirmMixedQris,
+  mixedQrisCheckoutIdForAmount,
   resolveAddCatalogItem,
+  shouldSkipQrisPrepare,
   resolveCheckoutApi,
   resolveSingleStallSellFromAllMode,
   shouldConfirmClearCart,
@@ -104,6 +107,104 @@ describe("mixed cart payment UI", () => {
       amount: 15000,
     });
     expect(buildPosQrisCreateBody({ amount: 15000 })).toEqual({ amount: 15000 });
+  });
+
+  it("never allows mixed QRIS confirm until Xendit is paid and checkoutId exists", () => {
+    expect(
+      mayConfirmMixedQris({
+        isMixedCart: true,
+        method: "qris",
+        qrisPaid: false,
+        checkoutId: "chk-1",
+      })
+    ).toBe(false);
+    expect(
+      mayConfirmMixedQris({
+        isMixedCart: true,
+        method: "qris",
+        qrisPaid: true,
+        checkoutId: null,
+      })
+    ).toBe(false);
+    expect(
+      mayConfirmMixedQris({
+        isMixedCart: true,
+        method: "qris",
+        qrisPaid: false,
+      })
+    ).toBe(false);
+    expect(
+      mayConfirmMixedQris({
+        isMixedCart: true,
+        method: "qris",
+        qrisPaid: true,
+        checkoutId: "chk-1",
+      })
+    ).toBe(true);
+  });
+
+  it("does not block cash or single-stall QRIS confirm", () => {
+    expect(
+      mayConfirmMixedQris({
+        isMixedCart: true,
+        method: "cash",
+        qrisPaid: false,
+      })
+    ).toBe(true);
+    expect(
+      mayConfirmMixedQris({
+        isMixedCart: false,
+        method: "qris",
+        qrisPaid: false,
+      })
+    ).toBe(true);
+  });
+
+  it("drops the old unpaid mixed checkout when ARK/amount changes", () => {
+    expect(
+      mixedQrisCheckoutIdForAmount({
+        checkoutId: "chk-old",
+        boundAmount: 15000,
+        currentAmount: 10000,
+      })
+    ).toBeUndefined();
+    expect(
+      mixedQrisCheckoutIdForAmount({
+        checkoutId: "chk-1",
+        boundAmount: 15000,
+        currentAmount: 15000,
+      })
+    ).toBe("chk-1");
+  });
+
+  it("still prepares mixed QRIS when qrisLoading is stuck true after amount change", () => {
+    expect(
+      shouldSkipQrisPrepare({
+        qrisLoading: true,
+        existingQrAmount: null,
+        currentAmount: 10000,
+        mixedCheckoutId: "chk-old",
+        isMixedCart: true,
+      })
+    ).toBe(false);
+    expect(
+      shouldSkipQrisPrepare({
+        qrisLoading: true,
+        existingQrAmount: 15000,
+        currentAmount: 10000,
+        mixedCheckoutId: "chk-old",
+        isMixedCart: true,
+      })
+    ).toBe(false);
+    expect(
+      shouldSkipQrisPrepare({
+        qrisLoading: false,
+        existingQrAmount: 15000,
+        currentAmount: 15000,
+        mixedCheckoutId: "chk-1",
+        isMixedCart: true,
+      })
+    ).toBe(true);
   });
 
   it("maps mixed checkout response onto one receipt header", () => {

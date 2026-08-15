@@ -39,6 +39,9 @@ import {
   MIXED_NFC_GIFT_UNSUPPORTED_MESSAGE,
   buildPosQrisCreateBody,
   isMixedUnsupportedTender,
+  mayConfirmMixedQris,
+  mixedQrisCheckoutIdForAmount,
+  shouldSkipQrisPrepare,
 } from "@/lib/pos/central-cashier";
 import { DEFAULT_POS_PAYMENT_METHODS } from "@/lib/pos/payment-methods";
 import { usePaymentMethods } from "@/features/pos/payment-methods";
@@ -179,6 +182,7 @@ export function PaymentModal({
     checkout_id: string;
     checkout_number?: string;
     queue_number?: string | null;
+    amount: number;
   } | null>(null);
   const qrisConfirmStarted = useRef(false);
   const qrisWasSubmitting = useRef(false);
@@ -293,6 +297,11 @@ export function PaymentModal({
   useEffect(() => {
     setMixedQrisCheckout(null);
     setQris(null);
+    setQrisLoading(false);
+    setQrisPaid(false);
+    setQrisUnavailable(false);
+    setQrisError(null);
+    qrisConfirmStarted.current = false;
   }, [totalAfterArk]);
 
   useEffect(() => {
@@ -311,7 +320,20 @@ export function PaymentModal({
   // penghalang bayar: kasir bisa lanjut dgn QRIS statis di meja.
   useEffect(() => {
     if (!open || method !== "qris") return;
-    if (qrisLoading || (qris && qris.amount === totalAfterArk && (!isMixedCart || mixedQrisCheckout))) {
+    const reusableCheckoutId = mixedQrisCheckoutIdForAmount({
+      checkoutId: mixedQrisCheckout?.checkout_id,
+      boundAmount: mixedQrisCheckout?.amount,
+      currentAmount: totalAfterArk,
+    });
+    if (
+      shouldSkipQrisPrepare({
+        qrisLoading,
+        existingQrAmount: qris?.amount ?? null,
+        currentAmount: totalAfterArk,
+        mixedCheckoutId: reusableCheckoutId,
+        isMixedCart,
+      })
+    ) {
       return;
     }
     let cancelled = false;
@@ -320,7 +342,11 @@ export function PaymentModal({
     setQrisError(null);
 
     const run = async () => {
-      let checkoutId = mixedQrisCheckout?.checkout_id;
+      let checkoutId = mixedQrisCheckoutIdForAmount({
+        checkoutId: mixedQrisCheckout?.checkout_id,
+        boundAmount: mixedQrisCheckout?.amount,
+        currentAmount: totalAfterArk,
+      });
       if (isMixedCart) {
         if (!onPrepareMixedQrisCheckout) {
           throw new Error("Checkout multi-stall membutuhkan persiapan QRIS");
@@ -329,7 +355,7 @@ export function PaymentModal({
           const prepared = await onPrepareMixedQrisCheckout();
           if (cancelled) return;
           checkoutId = prepared.checkout_id;
-          setMixedQrisCheckout(prepared);
+          setMixedQrisCheckout({ ...prepared, amount: totalAfterArk });
         }
       }
 
@@ -393,6 +419,16 @@ export function PaymentModal({
         const body = await res.json().catch(() => ({}));
         if (cancelled || qrisConfirmStarted.current) return;
         if (res.ok && body?.data?.paid) {
+          if (
+            !mayConfirmMixedQris({
+              isMixedCart,
+              method: "qris",
+              qrisPaid: true,
+              checkoutId: mixedQrisCheckout?.checkout_id,
+            })
+          ) {
+            return;
+          }
           qrisConfirmStarted.current = true;
           setQrisPaid(true);
           void Promise.resolve(
@@ -423,7 +459,7 @@ export function PaymentModal({
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [open, method, qris?.qr_id, qrisUnavailable, submitting, arkToUse, mixedQrisCheckout]);
+  }, [open, method, qris?.qr_id, qrisUnavailable, submitting, arkToUse, mixedQrisCheckout, isMixedCart]);
 
   useEffect(() => {
     if (qrisWasSubmitting.current && !submitting && qrisPaid && open) {
@@ -470,6 +506,16 @@ export function PaymentModal({
     }
     return true;
   })();
+
+  const waitForQris =
+    method === "qris" &&
+    ((Boolean(qris?.qr_id) && !qrisUnavailable) ||
+      !mayConfirmMixedQris({
+        isMixedCart,
+        method: "qris",
+        qrisPaid,
+        checkoutId: mixedQrisCheckout?.checkout_id,
+      }));
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && !submitting && onClose()}>
@@ -809,7 +855,7 @@ export function PaymentModal({
           >
             Cancel
           </Button>
-          {method === "qris" && qris?.qr_id && !qrisUnavailable ? (
+          {waitForQris ? (
             <Button
               type="button"
               className="bg-primary hover:bg-primary/90"
@@ -823,7 +869,17 @@ export function PaymentModal({
               type="button"
               className="bg-primary hover:bg-primary/90"
               disabled={!isValid || submitting}
-              onClick={() =>
+              onClick={() => {
+                if (
+                  !mayConfirmMixedQris({
+                    isMixedCart,
+                    method,
+                    qrisPaid,
+                    checkoutId: mixedQrisCheckout?.checkout_id,
+                  })
+                ) {
+                  return;
+                }
                 void onConfirm({
                   method,
                   cashReceived: String(cashAmount || ""),
@@ -839,8 +895,8 @@ export function PaymentModal({
                   checkoutId: mixedQrisCheckout?.checkout_id,
                   checkoutNumber: mixedQrisCheckout?.checkout_number,
                   queueNumber: mixedQrisCheckout?.queue_number,
-                })
-              }
+                });
+              }}
             >
               {submitting ? (
                 <>

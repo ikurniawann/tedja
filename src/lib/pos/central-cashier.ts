@@ -68,6 +68,56 @@ export function buildPosQrisCreateBody(input: {
   return { amount: input.amount };
 }
 
+/** Mixed QRIS Confirm is allowed only after Xendit poll says paid AND a checkout_id exists. */
+export function mayConfirmMixedQris(input: {
+  isMixedCart: boolean;
+  method: string;
+  qrisPaid: boolean;
+  checkoutId?: string | null;
+}): boolean {
+  if (!input.isMixedCart || input.method !== "qris") return true;
+  return Boolean(input.qrisPaid && input.checkoutId);
+}
+
+/** Drop the previous unpaid checkout when ARK/amount changes so a new QR is not bound to it. */
+export function mixedQrisCheckoutIdForAmount(input: {
+  checkoutId?: string | null;
+  boundAmount?: number | null;
+  currentAmount: number;
+}): string | undefined {
+  if (
+    input.checkoutId &&
+    input.boundAmount != null &&
+    input.boundAmount === input.currentAmount
+  ) {
+    return input.checkoutId;
+  }
+  return undefined;
+}
+
+/**
+ * Whether the QRIS prepare effect may return early.
+ * `qrisLoading` is ignored: a stuck true after amount change must still prepare.
+ */
+export function shouldSkipQrisPrepare(input: {
+  qrisLoading: boolean;
+  existingQrAmount?: number | null;
+  currentAmount: number;
+  mixedCheckoutId?: string | null;
+  isMixedCart: boolean;
+}): boolean {
+  void input.qrisLoading;
+  if (input.existingQrAmount !== input.currentAmount) return false;
+  if (!input.isMixedCart) return true;
+  return Boolean(
+    mixedQrisCheckoutIdForAmount({
+      checkoutId: input.mixedCheckoutId,
+      boundAmount: input.existingQrAmount,
+      currentAmount: input.currentAmount,
+    })
+  );
+}
+
 export function mapPaidSaleToReceiptIds(data: {
   checkout_id?: string;
   checkout_number?: string;
