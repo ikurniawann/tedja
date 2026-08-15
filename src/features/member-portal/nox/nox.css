@@ -154,3 +154,13 @@ button{font:inherit}
  * Overlay fixed inset-0 melepaskan kanvas dari wrapper itu TANPA mengubah
  * layout /member (portal lama tetap memakainya sebagai fallback). */
 #app{position:fixed;inset:0;width:auto;height:auto}
+
+/* ── Form OTP di layar entry (Fase C) ───────────────────────────────────
+ * Gaya mengikuti bahasa entry: glass gelap + aksen pink prototipe. */
+.entry-form{display:flex;flex-direction:column;gap:10px;width:min(320px,80vw);margin:18px auto 0}
+.entry-input{background:var(--glass-strong);border:1px solid var(--line);border-radius:12px;padding:12px 14px;color:var(--text);font:inherit;font-size:15px;text-align:center;letter-spacing:.06em;outline:none;transition:border-color .2s var(--ease)}
+.entry-input:focus{border-color:var(--line-hot)}
+.entry-input::placeholder{color:var(--muted);letter-spacing:normal}
+.entry-error{color:#ff8aa8;font-size:12px;margin-top:2px}
+.entry-alt{color:var(--muted);font-size:12px;margin-top:10px}
+.entry-alt a,.entry-alt button{color:var(--text);background:none;border:none;padding:0;font:inherit;font-size:12px;text-decoration:underline;cursor:pointer}

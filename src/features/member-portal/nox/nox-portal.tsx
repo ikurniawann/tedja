@@ -69,6 +69,16 @@ export function NoxPortal() {
   const [lore, setLore] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
+  /* Login OTP di dalam Nox (Fase C) — memakai endpoint portal member yang
+   * sudah ada: POST /otp {phone} lalu POST /verify {phone, code} yang
+   * menanam cookie member_session. Setelah verifikasi, reload() menarik
+   * profil dan layar entry berubah menjadi sapaan. */
+  const [loginStep, setLoginStep] = useState<"phone" | "code">("phone");
+  const [loginPhone, setLoginPhone] = useState("");
+  const [loginCode, setLoginCode] = useState("");
+  const [loginBusy, setLoginBusy] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
+
   const appRef = useRef<HTMLDivElement>(null);
   const labBgRef = useRef<HTMLDivElement>(null);
   const charWrapRef = useRef<HTMLDivElement>(null);
@@ -113,6 +123,61 @@ export function NoxPortal() {
     },
     [showToast]
   );
+
+  const requestOtp = useCallback(async () => {
+    if (!loginPhone.trim()) return;
+    setLoginBusy(true);
+    setLoginError(null);
+    try {
+      const res = await fetch("/api/member-portal/otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: loginPhone }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) throw new Error(json.error || "Gagal mengirim kode");
+      setLoginStep("code");
+      showToast("Kode OTP dikirim ke WhatsApp Anda");
+    } catch (err) {
+      setLoginError(err instanceof Error ? err.message : "Gagal mengirim kode");
+    } finally {
+      setLoginBusy(false);
+    }
+  }, [loginPhone, showToast]);
+
+  const verifyOtp = useCallback(async () => {
+    if (!/^\d{6}$/.test(loginCode.trim())) {
+      setLoginError("Kode harus 6 digit");
+      return;
+    }
+    setLoginBusy(true);
+    setLoginError(null);
+    try {
+      const res = await fetch("/api/member-portal/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: loginPhone, code: loginCode.trim() }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) throw new Error(json.error || "Kode salah");
+      setLoginCode("");
+      setLoginStep("phone");
+      reload();
+      showToast("Selamat datang, Citizen");
+    } catch (err) {
+      setLoginError(err instanceof Error ? err.message : "Kode salah");
+    } finally {
+      setLoginBusy(false);
+    }
+  }, [loginCode, loginPhone, reload, showToast]);
+
+  const logout = useCallback(async () => {
+    await fetch("/api/member-portal/logout", { method: "POST" }).catch(() => {});
+    setEntered(false);
+    setMode("dashboard");
+    reload();
+    showToast("Sampai jumpa, Citizen");
+  }, [reload, showToast]);
 
   /* Scroll & keyboard memindahkan mode — meniru prototipe, dengan kunci 760ms
    * supaya satu gulungan momentum tidak melompati beberapa mode sekaligus. */
@@ -399,6 +464,19 @@ export function NoxPortal() {
               </div>
               <span className="pill">{member ? angka(member.visitCount) : "—"}</span>
             </div>
+            <div
+              className="list-row interactive"
+              role="button"
+              tabIndex={0}
+              onClick={() => void logout()}
+              onKeyDown={(e) => e.key === "Enter" && void logout()}
+            >
+              <div className="list-icon">×</div>
+              <div>
+                <b>Keluar</b>
+                <small>Akhiri sesi portal ini</small>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -545,11 +623,69 @@ export function NoxPortal() {
           ) : state.status === "unauthenticated" ? (
             <>
               <h1>WELCOME, CITIZEN.</h1>
-              <p>Masuk dulu dengan nomor WhatsApp member Anda untuk membuka Nox Lab.</p>
-              <div className="entry-line" />
-              <a className="enter-btn interactive" href="/member" style={{ textDecoration: "none" }}>
-                Login Member
-              </a>
+              {loginStep === "phone" ? (
+                <>
+                  <p>Masukkan nomor WhatsApp member Anda — kode OTP dikirim ke sana.</p>
+                  <div className="entry-form">
+                    <input
+                      className="entry-input interactive"
+                      type="tel"
+                      inputMode="tel"
+                      autoComplete="tel"
+                      placeholder="08xxxxxxxxxx"
+                      value={loginPhone}
+                      onChange={(e) => {
+                        setLoginPhone(e.target.value);
+                        setLoginError(null);
+                      }}
+                      onKeyDown={(e) => e.key === "Enter" && void requestOtp()}
+                    />
+                    <button
+                      className="enter-btn interactive"
+                      disabled={loginBusy || !loginPhone.trim()}
+                      onClick={() => void requestOtp()}
+                    >
+                      {loginBusy ? "Mengirim…" : "Kirim Kode OTP"}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p>Kode 6 digit sudah dikirim ke WhatsApp {loginPhone}.</p>
+                  <div className="entry-form">
+                    <input
+                      className="entry-input interactive"
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      maxLength={6}
+                      placeholder="······"
+                      value={loginCode}
+                      onChange={(e) => {
+                        setLoginCode(e.target.value.replace(/\D/g, ""));
+                        setLoginError(null);
+                      }}
+                      onKeyDown={(e) => e.key === "Enter" && void verifyOtp()}
+                    />
+                    <button
+                      className="enter-btn interactive"
+                      disabled={loginBusy || loginCode.trim().length !== 6}
+                      onClick={() => void verifyOtp()}
+                    >
+                      {loginBusy ? "Memeriksa…" : "Verifikasi"}
+                    </button>
+                  </div>
+                  <div className="entry-alt">
+                    <button onClick={() => { setLoginStep("phone"); setLoginError(null); }}>
+                      Ganti nomor / kirim ulang
+                    </button>
+                  </div>
+                </>
+              )}
+              {loginError && <div className="entry-error">{loginError}</div>}
+              <div className="entry-alt">
+                Bermasalah? <a href="/member/classic">Pakai portal klasik</a>
+              </div>
             </>
           ) : state.status === "error" ? (
             <>

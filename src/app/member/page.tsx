@@ -1,5 +1,9 @@
-import { MemberPortalPage } from "@/features/member-portal/components/member-portal-page";
+import { NoxPortal } from "@/features/member-portal/nox/nox-portal";
 
+/**
+ * /member — portal member "Nox Lab" (rute utama sejak Fase C).
+ * Portal lama tetap hidup di /member/classic sebagai fallback.
+ */
 export default function Page() {
-  return <MemberPortalPage />;
+  return <NoxPortal />;
 }
