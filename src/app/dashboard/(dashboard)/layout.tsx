@@ -16,13 +16,27 @@ import {
   ESS_HOME_PATH,
 } from "@/lib/iam/access";
 import { AppSidebar } from "@/components/shared";
+import { LayoutLoadError } from "@/components/layout-load-error";
+import { getSafeErrorMessage, isNextControlFlowError } from "@/lib/next-control-flow";
 
 export default async function DashboardGroupLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const user = await requireUser();
+  let user;
+  try {
+    user = await requireUser();
+  } catch (error) {
+    if (isNextControlFlowError(error)) throw error;
+    console.error("[dashboard-layout]", error);
+    return (
+      <LayoutLoadError
+        title="Gagal memuat dashboard"
+        message={getSafeErrorMessage(error, "Tidak bisa memuat sesi pengguna.")}
+      />
+    );
+  }
   // Kebijakan ESS-only ditentukan IAM (permission menu non-ESS), bukan daftar role di kode.
   const essOnly = await isEssOnlyUser(user.id, user.role);
   const allNavItems = await getUserMenus(user.id, user.role);

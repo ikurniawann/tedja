@@ -1,18 +1,35 @@
 import { Toaster } from "sonner";
-import { requireUser } from "@/lib/auth/require-user";
+import { requireUser, type AuthUser } from "@/lib/auth/require-user";
 import { getUserMenus, isEssOnlyUser } from "@/lib/iam/get-user-menus";
+import type { NavItem } from "@/lib/iam/types";
 import { AppSidebar } from "@/components/shared";
+import { LayoutLoadError } from "@/components/layout-load-error";
+import { getSafeErrorMessage, isNextControlFlowError } from "@/lib/next-control-flow";
 
 export default async function PosDashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const user = await requireUser();
-  const [navItems, essOnly] = await Promise.all([
-    getUserMenus(user.id, user.role),
-    isEssOnlyUser(user.id, user.role),
-  ]);
+  let user: AuthUser;
+  let navItems: NavItem[];
+  let essOnly: boolean;
+  try {
+    user = await requireUser();
+    [navItems, essOnly] = await Promise.all([
+      getUserMenus(user.id, user.role),
+      isEssOnlyUser(user.id, user.role),
+    ]);
+  } catch (error) {
+    if (isNextControlFlowError(error)) throw error;
+    console.error("[pos-layout]", error);
+    return (
+      <LayoutLoadError
+        title="Gagal memuat POS"
+        message={getSafeErrorMessage(error, "Tidak bisa memuat sesi atau menu.")}
+      />
+    );
+  }
 
   return (
     <AppSidebar

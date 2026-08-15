@@ -4,6 +4,8 @@
 - Copy "Tim kami telah diberitahu" = `src/components/error-boundary.tsx` (client crash), bukan `dashboard/error.tsx`.
 - Di production `NODE_ENV=production` stack disembunyikan — selalu tampilkan `error.name + message`.
 - Setelah deploy, tab lama sering `ChunkLoadError` / failed dynamic import. Auto-reload sekali (`sessionStorage` guard), jangan loop.
+- Pesan "An error occurred in the Server Components render" = throw di layout/page server. Next menyembunyikan detail. Jangan rethrow — catch di layout + render `LayoutLoadError` (kecuali NEXT_REDIRECT).
+- `sortWarehouses` / `code.trim()` meledak bila warehouse `code`/`name` null → RSC error di `requireUser` → semua halaman dashboard.
 
 
 
