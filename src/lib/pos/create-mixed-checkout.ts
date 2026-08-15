@@ -277,6 +277,12 @@ export function assertCheckoutQrisReadyToComplete(input: {
   return { ok: true };
 }
 
+export function shouldSyncCustomerStatsOnFinalize(input: {
+  alreadyHadChildren: boolean;
+}): boolean {
+  return !input.alreadyHadChildren;
+}
+
 function allocateAmount(total: number, weights: number[]): number[] {
   const sum = weights.reduce((a, b) => a + b, 0);
   if (sum <= 0 || total === 0) return weights.map(() => 0);
@@ -762,6 +768,7 @@ async function finalizePaidChildren(input: {
   sessionUserId: string;
   paymentMethod: string;
   branchId?: string | null;
+  alreadyHadChildren?: boolean;
 }) {
   if (input.orderIds.length === 0) return;
   const db = createPgClient();
@@ -809,7 +816,12 @@ async function finalizePaidChildren(input: {
     }
   }
 
-  if (input.customerId) {
+  if (
+    input.customerId &&
+    shouldSyncCustomerStatsOnFinalize({
+      alreadyHadChildren: Boolean(input.alreadyHadChildren),
+    })
+  ) {
     const total = (orders || []).reduce(
       (sum, order) => sum + toNumber(order.total_amount),
       0
@@ -1178,6 +1190,7 @@ export async function completeMixedCheckout(
       sessionUserId: previewSnapshot?.sessionUserId || String(preview.cashier_id || ""),
       paymentMethod: String(preview.payment_method || "qris"),
       branchId: preview.branch_id,
+      alreadyHadChildren: true,
     });
     return { orderIds: existingIds };
   }
@@ -1203,6 +1216,7 @@ export async function completeMixedCheckout(
           orderIds: already.rows.map((row) => row.id),
           snapshot: parseSnapshot(checkout),
           checkout,
+          reusedExistingChildren: true,
         };
       }
 
@@ -1249,7 +1263,7 @@ export async function completeMixedCheckout(
         merchClaimedIds: new Set(merchClaims.map((claim) => claim.productId)),
         costMap,
       });
-      return { orderIds, snapshot, checkout: settledCheckout };
+      return { orderIds, snapshot, checkout: settledCheckout, reusedExistingChildren: false };
     });
 
     merchClaims = [];
@@ -1259,6 +1273,7 @@ export async function completeMixedCheckout(
       sessionUserId: created.snapshot?.sessionUserId || created.checkout.cashier_id,
       paymentMethod: created.checkout.payment_method || "qris",
       branchId: created.checkout.branch_id,
+      alreadyHadChildren: created.reusedExistingChildren,
     });
     return { orderIds: created.orderIds };
   } catch (error) {

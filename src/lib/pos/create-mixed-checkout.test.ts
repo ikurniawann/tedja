@@ -16,6 +16,7 @@ import {
   settleMixedCheckoutTender,
   shouldInsertCheckoutChildren,
   shouldReuseCheckoutQris,
+  shouldSyncCustomerStatsOnFinalize,
 } from "@/lib/pos/create-mixed-checkout";
 
 describe("guardMixedCheckoutCart", () => {
@@ -299,6 +300,13 @@ describe("guardMixedCheckoutCart uses shouldCreateCheckout", () => {
     });
     expect(mixed.ok && mixed.createCheckout).toBe(shouldCreateCheckout(["w-a", "w-b"]));
     expect(single.ok && single.createCheckout).toBe(shouldCreateCheckout(["w-a"]));
+  });
+});
+
+describe("shouldSyncCustomerStatsOnFinalize", () => {
+  it("syncs stats on first finalize only", () => {
+    expect(shouldSyncCustomerStatsOnFinalize({ alreadyHadChildren: false })).toBe(true);
+    expect(shouldSyncCustomerStatsOnFinalize({ alreadyHadChildren: true })).toBe(false);
   });
 });
 
