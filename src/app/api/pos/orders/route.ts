@@ -21,6 +21,12 @@ import {
   resolveSingleStallSellFromAllMode,
 } from '@/lib/pos/central-cashier';
 import {
+  MixedCheckoutError,
+  createMixedCheckout,
+  guardMixedCheckoutCart,
+  resolveOrderSoldFrom,
+} from '@/lib/pos/create-mixed-checkout';
+import {
   assertOrderItemsMatchSellStall,
   loadCentralCashierGate,
   loadPosProductWarehouseIds,
@@ -252,19 +258,71 @@ export async function POST(request: NextRequest) {
 
     const productIds = items.map((item) => String(item.product_id || ''));
     const warehouseByProduct = await loadPosProductWarehouseIds(productIds);
-    const itemWarehouses = [...warehouseByProduct.values()];
+    const itemWarehouses = productIds.map((id) => warehouseByProduct.get(id) ?? null);
     const scope = await getApiUserScope();
     const gate = await loadCentralCashierGate({
       userId: sessionUserId,
       role: scope?.role ?? null,
     });
+    const canSellMixed = canSellMixedStall({
+      hasCentralMenu: gate.hasCentralMenu,
+      canCentralCheckout: gate.canCentralCheckout,
+      activeMode: gate.activeMode,
+    });
+    const mixedGuard = guardMixedCheckoutCart({
+      productIds,
+      warehouseByProduct,
+      canSellMixed,
+      hasSplits: Array.isArray(body.splits) && body.splits.length > 0,
+    });
+    if (!mixedGuard.ok) {
+      return NextResponse.json({ success: false, error: mixedGuard.message }, { status: 400 });
+    }
+    if (mixedGuard.createCheckout) {
+      const result = await createMixedCheckout({
+        items,
+        warehouseByProduct,
+        orderType: order_type,
+        customerId: customer_id,
+        cashierId: cashier_id || await resolveCashierId(),
+        serverId: server_id,
+        tableId: table_id,
+        guestCount: body.guest_count,
+        discountAmount: discount_amount,
+        discountReason: discount_reason,
+        taxAmount: tax_amount,
+        serviceChargeAmount: service_charge_amount,
+        otherChargesAmount: other_charges_amount,
+        chargesBreakdown: charges_breakdown,
+        totalAmount: total_amount,
+        paymentMethod: payment_method,
+        amountPaid: amount_paid,
+        arkCoinsUsed: ark_coins_used,
+        notes,
+        specialRequests: special_requests,
+        branchId: body.branch_id,
+        shiftId: body.shift_id,
+        sessionUserId,
+      });
+      return NextResponse.json(
+        {
+          success: true,
+          data: {
+            checkout_id: result.checkoutId,
+            checkout_number: result.checkoutNumber,
+            queue_number: result.queueNumber,
+            order_ids: result.orderIds,
+          },
+        },
+        { status: 201 }
+      );
+    }
+    const soldFrom = resolveOrderSoldFrom({
+      isCentralCashier: gate.hasCentralMenu && gate.canCentralCheckout,
+    });
     const singleStallFromAll = resolveSingleStallSellFromAllMode({
       itemWarehouses,
-      canSellMixed: canSellMixedStall({
-        hasCentralMenu: gate.hasCentralMenu,
-        canCentralCheckout: gate.canCentralCheckout,
-        activeMode: gate.activeMode,
-      }),
+      canSellMixed,
     });
 
     let sellWarehouseId: string;
@@ -410,6 +468,7 @@ export async function POST(request: NextRequest) {
           company_id: venueForSplit.companyId,
           branch_id: body.branch_id || venueForSplit.branchId,
           warehouse_id: sellWarehouseId,
+          sold_from: soldFrom,
         })
         .eq('id', result.order_id);
       await ensureQueueNumber(db, {
@@ -761,6 +820,7 @@ export async function POST(request: NextRequest) {
         notes: notes || null,
         special_requests: special_requests || null,
         ordered_at: new Date().toISOString(),
+        sold_from: soldFrom,
       })
       .select()
       .single();
@@ -1208,6 +1268,9 @@ export async function POST(request: NextRequest) {
       { status: 201 }
     );
   } catch (error: unknown) {
+    if (error instanceof MixedCheckoutError) {
+      return NextResponse.json({ success: false, error: error.message }, { status: error.status });
+    }
     if (error instanceof AccountingPostError) {
       return NextResponse.json({ success: false, error: error.message }, { status: 500 });
     }

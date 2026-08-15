@@ -508,6 +508,31 @@ export async function createOrder(order: CreateOrderRequest) {
   });
 }
 
+export interface CreateCheckoutRequest extends CreateOrderRequest {
+  payment_status?: 'paid' | 'unpaid';
+}
+
+export interface CheckoutResponse {
+  checkout_id: string;
+  checkout_number: string;
+  queue_number: string;
+  order_ids: string[];
+}
+
+export async function createCheckout(checkout: CreateCheckoutRequest) {
+  return fetchAPI<{ success: boolean; data: CheckoutResponse; error?: string }>('/checkouts', {
+    method: 'POST',
+    body: JSON.stringify(checkout),
+  });
+}
+
+export async function completeCheckout(checkoutId: string) {
+  return fetchAPI<{ success: boolean; data: { order_ids: string[] }; error?: string }>(
+    `/checkouts/${encodeURIComponent(checkoutId)}/complete`,
+    { method: 'POST' }
+  );
+}
+
 export async function getOrders(params?: {
   status?: string;
   customer_id?: string;

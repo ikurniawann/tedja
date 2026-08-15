@@ -6,15 +6,20 @@ import { checkRateLimit } from "@/lib/rate-limit";
 import { createPgClient } from "@/lib/pg/create-client";
 import {
   createXenditDynamicQr,
+  getXenditQrCode,
   loadActiveXenditConfig,
 } from "@/lib/payments/xendit";
+import { shouldReuseCheckoutQris } from "@/lib/pos/create-mixed-checkout";
 
 // QRIS dinamis utk customer display: QR per transaksi dengan nominal terkunci.
 // Secret diambil dari Settings → Payment Gateways (configuration.payment_gateways),
 // sama seperti topup — bukan XENDIT_SECRET_KEY di env.
 
 const createSchema = z.object({
-  amount: z.number().positive().max(999_999_999),
+  amount: z.number().positive().max(999_999_999).optional(),
+  checkout_id: z.string().uuid().optional(),
+}).refine((value) => value.amount != null || Boolean(value.checkout_id), {
+  message: "Nominal tidak valid",
 });
 
 function isGatewayConfigError(error: unknown) {
@@ -64,13 +69,99 @@ export async function POST(request: NextRequest) {
       throw err;
     }
 
+    let amount = parsed.data.amount;
+    let referenceId = `pos-${randomUUID()}`;
+    const checkoutId = parsed.data.checkout_id;
+
+    if (checkoutId) {
+      const { data: checkout, error: checkoutError } = await db
+        .from("pos_checkouts")
+        .select("id, total_amount, xendit_qr_id, xendit_external_id, payment_status")
+        .eq("id", checkoutId)
+        .maybeSingle();
+      if (checkoutError) throw checkoutError;
+      if (!checkout) {
+        return NextResponse.json(
+          { success: false, error: "Checkout tidak ditemukan" },
+          { status: 404 }
+        );
+      }
+
+      const checkoutTotal = Number(checkout.total_amount) || 0;
+      if (checkoutTotal <= 0) {
+        return NextResponse.json(
+          { success: false, error: "Nominal tidak valid" },
+          { status: 400 }
+        );
+      }
+      if (amount != null && Math.abs(amount - checkoutTotal) > 1) {
+        return NextResponse.json(
+          { success: false, error: "Nominal QRIS harus sama dengan total checkout" },
+          { status: 400 }
+        );
+      }
+      amount = checkoutTotal;
+
+      if (
+        shouldReuseCheckoutQris({
+          xendit_qr_id: checkout.xendit_qr_id,
+          xendit_external_id: checkout.xendit_external_id,
+        })
+      ) {
+        const qrId = String(checkout.xendit_qr_id || "");
+        if (qrId) {
+          const remote = await getXenditQrCode(xendit.secretKey, qrId);
+          return NextResponse.json({
+            success: true,
+            data: {
+              qr_id: String(remote.id || qrId),
+              qr_string: String((remote as { qr_string?: unknown }).qr_string || ""),
+              amount:
+                Number(
+                  (remote as { amount?: unknown }).amount != null
+                    ? (remote as { amount?: unknown }).amount
+                    : amount
+                ) || amount,
+              expires_at: (remote as { expires_at?: unknown }).expires_at
+                ? String((remote as { expires_at?: unknown }).expires_at)
+                : null,
+              checkout_id: checkoutId,
+            },
+          });
+        }
+      }
+
+      referenceId = String(checkout.xendit_external_id || `pos-chk-${checkoutId}`);
+    }
+
+    if (amount == null || amount <= 0) {
+      return NextResponse.json(
+        { success: false, error: "Nominal tidak valid" },
+        { status: 400 }
+      );
+    }
+
     const qr = await createXenditDynamicQr({
       secretKey: xendit.secretKey,
-      referenceId: `pos-${randomUUID()}`,
-      amount: parsed.data.amount,
+      referenceId,
+      amount,
       callbackUrl: xendit.callbackUrl,
-      description: `POS ${Math.round(parsed.data.amount)}`,
+      description: `POS ${Math.round(amount)}`,
     });
+
+    if (checkoutId) {
+      const { error: saveError } = await db
+        .from("pos_checkouts")
+        .update({
+          xendit_qr_id: qr.id,
+          xendit_external_id: qr.reference_id,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", checkoutId);
+      if (saveError) {
+        console.error("[pos] save checkout qris ids:", saveError.message);
+      }
+    }
 
     return NextResponse.json({
       success: true,
@@ -79,6 +170,7 @@ export async function POST(request: NextRequest) {
         qr_string: qr.qr_string,
         amount: qr.amount,
         expires_at: qr.expires_at,
+        ...(checkoutId ? { checkout_id: checkoutId } : {}),
       },
     });
   } catch (err) {
