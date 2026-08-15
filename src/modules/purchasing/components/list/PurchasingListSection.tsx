@@ -22,7 +22,7 @@ export function PurchasingListSection({
       <div className="flex flex-col gap-3 border-b border-gray-100 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
           <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-pink-50 text-pink-600">
-            <Icon className="h-5 w-5" />
+            {Icon ? <Icon className="h-5 w-5" /> : null}
           </span>
           <div>
             <h2 className="text-base font-semibold text-gray-950">{title}</h2>

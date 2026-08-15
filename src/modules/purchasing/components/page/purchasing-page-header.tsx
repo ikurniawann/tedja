@@ -44,7 +44,7 @@ export function PurchasingFormHeader({
         <Link href={backHref}>
           <Button variant="ghost" size="sm" className="h-9 gap-2 text-pink-700">
             <ArrowLeftIcon className="h-4 w-4" />
-            Back
+            Kembali
           </Button>
         </Link>
         <div>
@@ -61,7 +61,7 @@ export function PurchasingFormHeader({
 
 export function PurchasingFormFooter({
   onCancel,
-  submitLabel = "Submit",
+  submitLabel = "Simpan",
   loading = false,
   disabled = false,
   formId,
@@ -81,7 +81,7 @@ export function PurchasingFormFooter({
         onClick={onCancel}
         disabled={loading}
       >
-        Cancel
+        Batal
       </Button>
       <Button
         type="submit"
@@ -89,7 +89,7 @@ export function PurchasingFormFooter({
         disabled={loading || disabled}
         className="purchasing-main-button w-full sm:w-auto"
       >
-        {loading ? "Submitting..." : submitLabel}
+        {loading ? "Memproses..." : submitLabel}
       </Button>
     </div>
   );

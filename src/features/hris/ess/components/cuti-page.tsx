@@ -14,6 +14,8 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { ToastContainer, useToast } from "@/components/ui/toast";
+import { describeLeaveDays, type LeaveDaysBreakdown } from "@/lib/hris/holidays";
+import { fetchHolidayIndex } from "@/lib/hris/holidays-client";
 
 /**
  * ESS → Izin & Cuti (/dashboard/me/cuti): kuota tahunan, riwayat pengajuan,
@@ -81,6 +83,7 @@ export function EssCutiPage() {
   const [leaves, setLeaves] = useState<LeaveRow[]>([]);
   const [leaveDialog, setLeaveDialog] = useState(false);
   const [leaveForm, setLeaveForm] = useState(EMPTY_LEAVE_FORM);
+  const [leaveDays, setLeaveDays] = useState<LeaveDaysBreakdown | null>(null);
   const [attachment, setAttachment] = useState<{ name: string; dataUrl: string } | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -108,6 +111,27 @@ export function EssCutiPage() {
       .then((json) => setLeaves(json?.data ?? []))
       .catch(() => {});
   }, []);
+
+  /**
+   * Pratinjau potongan jatah cuti (EPIC-036 Fase D). Angka yang mengikat tetap
+   * dihitung ulang server saat disimpan — ini supaya karyawan tahu lebih dulu
+   * kenapa cuti 5 hari kalender bisa hanya memotong 3 hari jatah.
+   */
+  const leaveStart = leaveForm.start_date;
+  const leaveEnd = leaveForm.end_date;
+  useEffect(() => {
+    if (!leaveStart || !leaveEnd || leaveEnd < leaveStart) {
+      setLeaveDays(null);
+      return;
+    }
+    let cancelled = false;
+    void fetchHolidayIndex(leaveStart, leaveEnd).then((index) => {
+      if (!cancelled) setLeaveDays(describeLeaveDays(leaveStart, leaveEnd, index));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [leaveStart, leaveEnd]);
 
   useEffect(() => {
     fetch("/api/hris/me")
@@ -301,6 +325,38 @@ export function EssCutiPage() {
                 <p className="mt-1 text-xs text-gray-500">📎 {attachment.name}</p>
               )}
             </div>
+            {/* Pratinjau potongan jatah (EPIC-036 Fase D) — akhir pekan dan
+                tanggal merah tidak memotong, cuti bersama tetap memotong. */}
+            {leaveDays !== null && (
+              <div
+                className={`rounded-lg px-3 py-2 text-xs ${
+                  leaveDays.totalDays === 0
+                    ? "bg-amber-50 text-amber-800"
+                    : "bg-emerald-50 text-emerald-800"
+                }`}
+              >
+                {leaveDays.totalDays === 0 ? (
+                  <p>
+                    Rentang ini sudah libur seluruhnya
+                    {leaveDays.excludedHolidays.length > 0 &&
+                      ` (${leaveDays.excludedHolidays.map((h) => h.name).join(", ")})`}
+                    {" "}— tidak perlu mengajukan cuti.
+                  </p>
+                ) : (
+                  <>
+                    <p className="font-semibold">
+                      Memotong jatah {leaveDays.totalDays} hari
+                    </p>
+                    {leaveDays.excludedHolidays.length > 0 && (
+                      <p className="mt-0.5">
+                        Tidak dipotong:{" "}
+                        {leaveDays.excludedHolidays.map((h) => h.name).join(", ")}
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
             {leaveForm.leave_type === "annual" && balance && (
               <p className="rounded-lg bg-sky-50 px-3 py-2 text-xs text-sky-700">
                 Sisa kuota cuti tahunan Anda: {Number(balance.annual_leave_remaining)} hari.

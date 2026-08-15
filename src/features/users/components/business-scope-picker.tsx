@@ -64,6 +64,7 @@ export function BusinessScopePicker({
       company_id: "",
       branch_id: "",
       warehouse_ids: [],
+      default_warehouse_id: "",
     });
   }
 
@@ -73,6 +74,7 @@ export function BusinessScopePicker({
       company_id: "",
       branch_id: "",
       warehouse_ids: [],
+      default_warehouse_id: "",
     });
   }
 
@@ -81,6 +83,7 @@ export function BusinessScopePicker({
       company_id: value,
       branch_id: "",
       warehouse_ids: [],
+      default_warehouse_id: "",
     });
   }
 
@@ -171,7 +174,13 @@ export function BusinessScopePicker({
                 <Combobox
                   options={branchOptions}
                   value={form.branch_id || ""}
-                  onChange={(value) => onChange({ branch_id: value, warehouse_ids: [] })}
+                  onChange={(value) =>
+                    onChange({
+                      branch_id: value,
+                      warehouse_ids: [],
+                      default_warehouse_id: "",
+                    })
+                  }
                   placeholder="Select branch"
                   searchPlaceholder="Search branch..."
                   emptyMessage="No branch found"

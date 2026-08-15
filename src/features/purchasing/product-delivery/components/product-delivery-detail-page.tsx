@@ -31,11 +31,11 @@ const STATUS_COLORS: Record<ProductDeliveryStatus, string> = {
 };
 
 const STATUS_LABELS: Record<ProductDeliveryStatus, string> = {
-  pending: "Pending Receipt",
-  shipped: "Shipped",
-  in_transit: "In Transit",
-  delivered: "Delivered",
-  cancelled: "Cancelled",
+  pending: "Menunggu Penerimaan",
+  shipped: "Dikirim",
+  in_transit: "Dalam Pengiriman",
+  delivered: "Tiba",
+  cancelled: "Dibatalkan",
 };
 
 export function ProductDeliveryDetailPage() {
@@ -48,7 +48,7 @@ export function ProductDeliveryDetailPage() {
 
   useEffect(() => {
     if (!detailQuery.isError) return;
-    toast.error("Delivery not found");
+    toast.error("Pengiriman tidak ditemukan");
     router.push(PRODUCT_ROUTES.purchasingDelivery);
   }, [detailQuery.isError, router]);
 
@@ -56,7 +56,7 @@ export function ProductDeliveryDetailPage() {
     return (
       <div className="flex h-64 items-center justify-center text-sm text-gray-500">
         <Loader2 className="mr-2 h-6 w-6 animate-spin text-gray-400" />
-        Loading delivery...
+        Memuat pengiriman...
       </div>
     );
   }
@@ -67,10 +67,10 @@ export function ProductDeliveryDetailPage() {
         <Link href={PRODUCT_ROUTES.purchasingDelivery}>
           <Button variant="ghost" size="sm" className="h-9 gap-2 text-pink-700">
             <ArrowLeft className="h-4 w-4" />
-            Back
+            Kembali
           </Button>
         </Link>
-        <div className="py-12 text-center text-gray-500">Delivery not found.</div>
+        <div className="py-12 text-center text-gray-500">Pengiriman tidak ditemukan.</div>
       </div>
     );
   }
@@ -85,13 +85,13 @@ export function ProductDeliveryDetailPage() {
           <Link href={PRODUCT_ROUTES.purchasingDelivery}>
             <Button variant="ghost" size="sm" className="h-9 gap-2 text-pink-700">
               <ArrowLeft className="h-4 w-4" />
-              Back
+              Kembali
             </Button>
           </Link>
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="text-2xl font-bold text-gray-900">
-                {delivery.nomor_resi || "Delivery Detail"}
+                {delivery.nomor_resi || "Detail Pengiriman"}
               </h1>
               <Badge className={STATUS_COLORS[delivery.status]}>
                 {STATUS_LABELS[delivery.status]}
@@ -111,7 +111,7 @@ export function ProductDeliveryDetailPage() {
       <div className="grid gap-3 md:grid-cols-4">
         <Card className="border-gray-200/70 shadow-xs">
           <CardContent className="p-4">
-            <p className="text-xs font-medium text-gray-500">Delivery Status</p>
+            <p className="text-xs font-medium text-gray-500">Status Pengiriman</p>
             <div className="mt-2">
               <Badge className={STATUS_COLORS[delivery.status]}>
                 {STATUS_LABELS[delivery.status]}
@@ -129,13 +129,13 @@ export function ProductDeliveryDetailPage() {
         </Card>
         <Card className="border-gray-200/70 shadow-xs">
           <CardContent className="p-4">
-            <p className="text-xs font-medium text-gray-500">Ship Date</p>
+            <p className="text-xs font-medium text-gray-500">Tanggal Kirim</p>
             <p className="mt-1 font-semibold text-gray-900">{formatDate(delivery.tanggal_kirim)}</p>
           </CardContent>
         </Card>
         <Card className="border-gray-200/70 shadow-xs">
           <CardContent className="p-4">
-            <p className="text-xs font-medium text-gray-500">Estimated Arrival</p>
+            <p className="text-xs font-medium text-gray-500">Estimasi Tiba</p>
             <p className="mt-1 font-semibold text-gray-900">
               {formatDate(delivery.tanggal_estimasi_tiba)}
             </p>
@@ -147,30 +147,30 @@ export function ProductDeliveryDetailPage() {
         <CardContent className="p-4">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
-              <p className="text-sm font-semibold text-gray-900">Delivery flow</p>
+              <p className="text-sm font-semibold text-gray-900">Alur pengiriman</p>
               <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-gray-600">
                 <span className="rounded-full border border-gray-200 bg-white px-3 py-1">
-                  1. Delivery created
+                  1. Pengiriman dibuat
                 </span>
                 <ArrowRight className="h-4 w-4 text-gray-400" />
                 <span className="rounded-full border border-gray-200 bg-white px-3 py-1">
-                  2. Record goods receipt
+                  2. Catat penerimaan barang
                 </span>
                 <ArrowRight className="h-4 w-4 text-gray-400" />
                 <span className="rounded-full border border-gray-200 bg-white px-3 py-1">
-                  3. Stock updated
+                  3. Stok diperbarui
                 </span>
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               {isDelivered && (
                 <Badge variant="outline" className="w-fit border-emerald-200 text-emerald-700">
-                  Receipt recorded
+                  Penerimaan tercatat
                 </Badge>
               )}
               {canReceive && (
                 <Link href={`${RECEIVE_INSERT}?delivery_id=${delivery.id}`}>
-                  <Button className="purchasing-main-button">Record Goods Receipt</Button>
+                  <Button className="purchasing-main-button">Buat GRN</Button>
                 </Link>
               )}
             </div>
@@ -183,35 +183,35 @@ export function ProductDeliveryDetailPage() {
           <CardHeader className="border-b border-gray-200/70 pb-4">
             <CardTitle className="flex items-center gap-2 text-base">
               <Truck className="h-5 w-5" />
-              Delivery Information
+              Informasi Pengiriman
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4 pt-4">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="rounded-lg border border-gray-200/70 bg-gray-50/60 p-3">
-                <p className="text-xs font-medium text-gray-500">Delivery Note Number</p>
+                <p className="text-xs font-medium text-gray-500">No. Surat Jalan</p>
                 <p className="mt-1 font-semibold text-gray-900">{delivery.no_surat_jalan || "-"}</p>
               </div>
               <div className="rounded-lg border border-gray-200/70 bg-gray-50/60 p-3">
-                <p className="text-xs font-medium text-gray-500">Tracking Number</p>
+                <p className="text-xs font-medium text-gray-500">No. Resi</p>
                 <p className="mt-1 font-semibold text-gray-900">{delivery.nomor_resi || "-"}</p>
               </div>
               <div className="rounded-lg border border-gray-200/70 bg-gray-50/60 p-3">
-                <p className="text-xs font-medium text-gray-500">Courier</p>
+                <p className="text-xs font-medium text-gray-500">Ekspedisi</p>
                 <p className="mt-1 font-semibold text-gray-900">{delivery.kurir || "-"}</p>
               </div>
               <div className="rounded-lg border border-gray-200/70 bg-gray-50/60 p-3">
-                <p className="text-xs font-medium text-gray-500">Ship Date</p>
+                <p className="text-xs font-medium text-gray-500">Tanggal Kirim</p>
                 <p className="mt-1 font-semibold text-gray-900">{formatDate(delivery.tanggal_kirim)}</p>
               </div>
               <div className="rounded-lg border border-gray-200/70 bg-gray-50/60 p-3">
-                <p className="text-xs font-medium text-gray-500">Estimated Arrival</p>
+                <p className="text-xs font-medium text-gray-500">Estimasi Tiba</p>
                 <p className="mt-1 font-semibold text-gray-900">
                   {formatDate(delivery.tanggal_estimasi_tiba)}
                 </p>
               </div>
               <div className="rounded-lg border border-gray-200/70 bg-gray-50/60 p-3">
-                <p className="text-xs font-medium text-gray-500">Actual Arrival</p>
+                <p className="text-xs font-medium text-gray-500">Tanggal Tiba Aktual</p>
                 <p className="mt-1 font-semibold text-gray-900">
                   {formatDate(delivery.tanggal_aktual_tiba)}
                 </p>
@@ -219,7 +219,7 @@ export function ProductDeliveryDetailPage() {
             </div>
             {delivery.catatan && (
               <div className="border-t border-gray-200/70 pt-4">
-                <p className="text-xs font-medium text-gray-500">Notes</p>
+                <p className="text-xs font-medium text-gray-500">Catatan</p>
                 <p className="mt-1 text-sm text-gray-700">{delivery.catatan}</p>
               </div>
             )}
@@ -230,12 +230,12 @@ export function ProductDeliveryDetailPage() {
           <CardHeader className="border-b border-gray-200/70 pb-4">
             <CardTitle className="flex items-center gap-2 text-base">
               <ClipboardList className="h-5 w-5" />
-              Purchase Order Information
+              Informasi Purchase Order
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4 pt-4">
             <div className="rounded-lg border border-gray-200/70 bg-gray-50/60 p-3">
-              <p className="text-xs font-medium text-gray-500">Purchase Order Number</p>
+              <p className="text-xs font-medium text-gray-500">Nomor Purchase Order</p>
               <p className="mt-1 text-lg font-semibold text-gray-900">
                 {delivery.purchase_order?.po_number || "-"}
               </p>
@@ -251,12 +251,12 @@ export function ProductDeliveryDetailPage() {
             <div className="flex flex-col gap-2 border-t border-gray-200/70 pt-4">
               <Link href={PRODUCT_ROUTES.purchasingPoDetail(delivery.purchase_order_id)}>
                 <Button variant="outline" className="purchasing-secondary-button w-full">
-                  View Purchase Order
+                  Lihat Purchase Order
                 </Button>
               </Link>
               {canReceive && (
                 <Link href={`${RECEIVE_INSERT}?delivery_id=${delivery.id}`}>
-                  <Button className="purchasing-main-button w-full">Record Goods Receipt</Button>
+                  <Button className="purchasing-main-button w-full">Buat GRN</Button>
                 </Link>
               )}
             </div>

@@ -13,7 +13,7 @@
 
 import { getPool } from "@/lib/db";
 import { getSetting } from "@/lib/settings/app-settings";
-import { readGatewayConfig, sendGatewayText } from "@/lib/whatsapp/gateway";
+import { loadGatewayConfig, sendGatewayText } from "@/lib/whatsapp/gateway";
 import {
   WA_NOTIF_SETTING_KEY,
   parseWaNotifConfig,
@@ -66,7 +66,7 @@ export async function deliverToRecipients(
   config: WaNotifConfig,
   message: string
 ): Promise<{ delivered: number; timedOut: boolean }> {
-  const gateway = readGatewayConfig();
+  const gateway = await loadGatewayConfig();
   if (!gateway) return { delivered: 0, timedOut: false };
 
   let delivered = 0;
@@ -118,7 +118,7 @@ export async function sendOwnerNotification(
   if (config.recipients.length === 0) {
     return { sent: false, reason: "tanpa-penerima" };
   }
-  if (!readGatewayConfig()) {
+  if (!await loadGatewayConfig()) {
     return { sent: false, reason: "gateway-belum-dikonfigurasi" };
   }
 

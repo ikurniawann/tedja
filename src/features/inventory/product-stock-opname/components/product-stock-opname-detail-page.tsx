@@ -21,12 +21,12 @@ import {
 } from "../types";
 
 function formatQty(value: number | null | undefined) {
-  return Number(value || 0).toLocaleString("en-US", { maximumFractionDigits: 4 });
+  return Number(value || 0).toLocaleString("id-ID", { maximumFractionDigits: 4 });
 }
 
 function formatDate(dateStr?: string | null) {
   if (!dateStr) return "—";
-  return new Date(dateStr).toLocaleDateString("en-US", {
+  return new Date(dateStr).toLocaleDateString("id-ID", {
     day: "2-digit",
     month: "long",
     year: "numeric",
@@ -35,7 +35,7 @@ function formatDate(dateStr?: string | null) {
 
 function formatDateTime(dateStr?: string | null) {
   if (!dateStr) return "";
-  return new Date(dateStr).toLocaleString("en-US", {
+  return new Date(dateStr).toLocaleString("id-ID", {
     day: "2-digit",
     month: "short",
     year: "numeric",
@@ -83,7 +83,7 @@ export function ProductStockOpnameDetailPage({ id }: ProductStockOpnameDetailPag
     return (
       <div className="flex items-center justify-center py-16 text-sm text-gray-500">
         <Loader2 className="mr-2 h-5 w-5 animate-spin text-pink-600" />
-        Loading product stock opname history...
+        Memuat riwayat stok opname produk...
       </div>
     );
   }
@@ -91,10 +91,10 @@ export function ProductStockOpnameDetailPage({ id }: ProductStockOpnameDetailPag
   if (!detail) {
     return (
       <div className="space-y-4 py-16 text-center">
-        <p className="text-sm text-gray-500">Product stock opname not found</p>
+        <p className="text-sm text-gray-500">Stok opname produk tidak ditemukan</p>
         <Link href={PRODUCT_ROUTES.inventoryOpname}>
           <Button variant="outline" className="purchasing-secondary-button">
-            Back
+            Kembali
           </Button>
         </Link>
       </div>
@@ -110,7 +110,7 @@ export function ProductStockOpnameDetailPage({ id }: ProductStockOpnameDetailPag
         title={detail.opname_number}
         description={
           <>
-            Product stock opname history · {formatDate(detail.opname_date)}
+            Riwayat stok opname produk · {formatDate(detail.opname_date)}
             {detail.warehouse?.name ? (
               <>
                 {" "}
@@ -123,7 +123,7 @@ export function ProductStockOpnameDetailPage({ id }: ProductStockOpnameDetailPag
           canContinue ? (
             <Link href={PRODUCT_ROUTES.inventoryOpnameContinue(detail.id)}>
               <Button className="purchasing-main-button w-full sm:w-auto">
-                Continue Counting
+                Lanjutkan Perhitungan
               </Button>
             </Link>
           ) : undefined
@@ -139,19 +139,19 @@ export function ProductStockOpnameDetailPage({ id }: ProductStockOpnameDetailPag
       <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
         <Card className="border-gray-200/70 shadow-xs">
           <CardContent className="p-4">
-            <p className="text-xs font-medium text-gray-500">Total Lines</p>
+            <p className="text-xs font-medium text-gray-500">Total Baris</p>
             <p className="mt-1 text-2xl font-bold text-gray-900">{progress.total}</p>
           </CardContent>
         </Card>
         <Card className="border-gray-200/70 shadow-xs">
           <CardContent className="p-4">
-            <p className="text-xs font-medium text-gray-500">Counted</p>
+            <p className="text-xs font-medium text-gray-500">Terhitung</p>
             <p className="mt-1 text-2xl font-bold text-amber-600">{progress.counted}</p>
           </CardContent>
         </Card>
         <Card className="border-gray-200/70 shadow-xs">
           <CardContent className="p-4">
-            <p className="text-xs font-medium text-gray-500">With Variance</p>
+            <p className="text-xs font-medium text-gray-500">Ada Selisih</p>
             <p className="mt-1 text-2xl font-bold text-pink-600">{progress.variance}</p>
           </CardContent>
         </Card>
@@ -172,9 +172,9 @@ export function ProductStockOpnameDetailPage({ id }: ProductStockOpnameDetailPag
         <CardContent className="p-0">
           <div className="flex flex-col gap-3 border-b border-gray-200/70 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h2 className="text-base font-semibold text-gray-900">Product Lines</h2>
+              <h2 className="text-base font-semibold text-gray-900">Baris Produk</h2>
               <p className="text-sm text-gray-500">
-                Physical stock count results (read only)
+                Hasil perhitungan stok fisik (hanya baca)
               </p>
             </div>
             <div className="relative w-full sm:max-w-xs">
@@ -182,7 +182,7 @@ export function ProductStockOpnameDetailPage({ id }: ProductStockOpnameDetailPag
               <Input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search products..."
+                placeholder="Cari produk..."
                 className="h-10 border-gray-200/80 pl-9 text-sm"
               />
             </div>
@@ -192,19 +192,19 @@ export function ProductStockOpnameDetailPage({ id }: ProductStockOpnameDetailPag
             <table className="min-w-full text-sm">
               <thead className="border-b border-gray-100 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
                 <tr>
-                  <th className="px-4 py-3 text-left font-semibold">Code</th>
-                  <th className="px-4 py-3 text-left font-semibold">Product Name</th>
-                  <th className="px-4 py-3 text-left font-semibold">Unit</th>
-                  <th className="px-4 py-3 text-right font-semibold">System Stock</th>
-                  <th className="px-4 py-3 text-right font-semibold">Physical Quantity</th>
-                  <th className="px-4 py-3 text-right font-semibold">Variance</th>
+                  <th className="px-4 py-3 text-left font-semibold">Kode</th>
+                  <th className="px-4 py-3 text-left font-semibold">Nama Produk</th>
+                  <th className="px-4 py-3 text-left font-semibold">Satuan</th>
+                  <th className="px-4 py-3 text-right font-semibold">Stok Sistem</th>
+                  <th className="px-4 py-3 text-right font-semibold">Qty Fisik</th>
+                  <th className="px-4 py-3 text-right font-semibold">Selisih</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {filteredLines.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="px-4 py-10 text-center text-gray-400">
-                      No lines found
+                      Data tidak ditemukan
                     </td>
                   </tr>
                 ) : (
@@ -252,7 +252,7 @@ export function ProductStockOpnameDetailPage({ id }: ProductStockOpnameDetailPag
       {detail.notes && (
         <Card className="border-gray-200/70 shadow-xs">
           <CardContent className="p-4">
-            <p className="text-xs font-medium text-gray-500">Notes</p>
+            <p className="text-xs font-medium text-gray-500">Catatan</p>
             <p className="mt-1 text-sm text-gray-700">{detail.notes}</p>
           </CardContent>
         </Card>
@@ -261,24 +261,24 @@ export function ProductStockOpnameDetailPage({ id }: ProductStockOpnameDetailPag
       {detail.status === "completed" && (
         <div className="flex items-center gap-2 rounded-lg border border-emerald-200/80 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
           <CheckCircleIcon className="h-5 w-5 shrink-0" />
-          Stock opname completed
-          {detail.completed_at ? ` on ${formatDateTime(detail.completed_at)}` : ""}. Stock
-          variances have been posted to inventory.
+          Stok opname produk selesai
+          {detail.completed_at ? ` pada ${formatDateTime(detail.completed_at)}` : ""}. Selisih
+          stok telah diposting ke persediaan.
         </div>
       )}
 
       {detail.status === "cancelled" && (
         <div className="flex items-center gap-2 rounded-lg border border-red-200/80 bg-red-50 px-4 py-3 text-sm text-red-800">
           <XMarkIcon className="h-5 w-5 shrink-0" />
-          This stock opname session has been cancelled.
+          Sesi stok opname produk ini telah dibatalkan.
         </div>
       )}
 
       {canContinue && (
         <div className="rounded-lg border border-amber-200/80 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          This session is still in draft status. Use the{" "}
-          <span className="font-medium">Continue Counting</span> button to resume counting on
-          the opname page.
+          Sesi ini masih berstatus draf. Gunakan tombol{" "}
+          <span className="font-medium">Lanjutkan Perhitungan</span> untuk melanjutkan
+          perhitungan di halaman opname.
         </div>
       )}
     </div>

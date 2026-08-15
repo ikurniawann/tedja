@@ -278,12 +278,10 @@ export function FinanceInvoicesPage() {
   return (
     <div className="space-y-6">
       <div className="border-b border-gray-200/70 pb-4">
-        <h1 className="text-2xl font-bold text-gray-900">
-          Invoice & Pembayaran
-        </h1>
+        <h1 className="text-2xl font-bold text-gray-900">Invoice B2B</h1>
         <p className="mt-1 text-sm text-gray-500">
-          Pengajuan invoice dari sales diterbitkan dan pembayarannya dicatat di
-          sini
+          Pengajuan invoice funnel (sales) diterbitkan dan pembayarannya dicatat
+          di sini
           {pendingCount > 0
             ? ` — ${pendingCount} pengajuan menunggu diproses.`
             : "."}
@@ -412,10 +410,12 @@ export function FinanceInvoicesPage() {
                       type="button"
                       size="sm"
                       variant="outline"
-                      onClick={() => setPaymentInvoice(invoice)}
-                      className="h-8 gap-1.5 rounded-lg"
+                      onClick={() => {
+                        window.location.href = `/dashboard/accounting/receivable/receipts?sales_invoice=${invoice.id}`;
+                      }}
+                      className="h-8 gap-1.5 rounded-lg border-primary/20 text-primary hover:bg-primary/5"
                     >
-                      <Wallet className="h-3.5 w-3.5" /> Catat Bayar
+                      <Wallet className="h-3.5 w-3.5" /> Terima di Accounting
                     </Button>
                   ) : null}
                   {invoice.paid > 0 ? (

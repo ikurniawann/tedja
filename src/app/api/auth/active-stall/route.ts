@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { ApiError, requireApiRole, validateBody } from "@/lib/api/auth";
+import { ApiError, requireApiUser, validateBody } from "@/lib/api/auth";
 import { getApiUserScope } from "@/lib/api/scope";
 import {
   ACTIVE_STALL_ALL,
@@ -15,14 +15,22 @@ const bodySchema = z.object({
   warehouse_id: z.string().uuid().nullable(),
 });
 
-/** Set stall aktif (switcher sidebar) — khusus super_admin & admin. */
+/** Set stall aktif (switcher sidebar) — user dengan akses multi-stall / admin. */
 export async function POST(request: NextRequest) {
   try {
-    const user = await requireApiRole(["super_admin", "admin"]);
+    const user = await requireApiUser();
     const { warehouse_id } = await validateBody(request, bodySchema);
 
     const scope = await getApiUserScope();
     const access = await getStallAccess(user.id, user.role, scope?.branchId ?? null);
+    const canSwitch =
+      user.role === "super_admin" ||
+      user.role === "admin" ||
+      access.allAccess ||
+      access.stalls.length > 1;
+    if (!canSwitch) {
+      throw ApiError.forbidden("Akun ini tidak perlu mengganti stall");
+    }
 
     if (warehouse_id === null) {
       // "Semua Stall" hanya untuk user tanpa pembatasan penempatan.

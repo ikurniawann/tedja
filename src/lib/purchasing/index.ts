@@ -19,8 +19,6 @@ import {
   ProductFormData,
   BOMItem,
   BOMItemFormData,
-  SupplierPriceList,
-  SupplierPriceListFormData,
   PurchaseOrder,
   PurchaseOrderWithStats,
   PurchaseOrderItem,
@@ -219,6 +217,81 @@ export async function getRawMaterial(id: string): Promise<RawMaterialWithStock> 
   return response.data;
 }
 
+export interface RawMaterialPurchaseCost {
+  id: string;
+  jumlah: number;
+  unit_cost: number | null;
+  total_cost: number | null;
+  reference_type: string | null;
+  reference_number: string | null;
+  created_at: string;
+}
+
+export interface RawMaterialPriceHistory {
+  material: {
+    id: string;
+    kode: string;
+    nama: string;
+    harga_beli: number;
+    konversi_factor: number;
+    satuan_besar_id: string | null;
+    satuan_kecil_id: string | null;
+  };
+  purchase_costs: RawMaterialPurchaseCost[];
+  summary: {
+    months: number;
+    purchase_count: number;
+    last_cost: number | null;
+    min_cost: number | null;
+    max_cost: number | null;
+    avg_cost: number | null;
+  };
+}
+
+export async function getRawMaterialPriceHistory(
+  id: string,
+  params: { months?: number } = {}
+): Promise<RawMaterialPriceHistory> {
+  const sp = new URLSearchParams();
+  if (params.months) sp.set("months", String(params.months));
+
+  const query = sp.toString();
+  const response = await fetchApi<{ data: RawMaterialPriceHistory }>(
+    `${BASE}/raw-materials/${id}/price-history${query ? `?${query}` : ""}`
+  );
+  return response.data;
+}
+
+export interface RawMaterialPurchasePrice {
+  raw_material_id: string;
+  satuan_id: string | null;
+  base_unit_cost: number;
+  unit_price: number;
+  source: "supplier_grn" | "any_grn" | "master" | null;
+  reference_number: string | null;
+  purchased_at: string | null;
+}
+
+/**
+ * Suggested buying price for a material, derived from the last GRN cost instead
+ * of a maintained price list. Falls back to the master purchase price.
+ */
+export async function getRawMaterialPurchasePrice(
+  id: string,
+  params: { supplierId?: string | null; satuanId?: string | null; months?: number } = {}
+): Promise<RawMaterialPurchasePrice | null> {
+  const sp = new URLSearchParams();
+  if (params.supplierId) sp.set("supplier_id", params.supplierId);
+  if (params.satuanId) sp.set("satuan_id", params.satuanId);
+  if (params.months) sp.set("months", String(params.months));
+
+  const query = sp.toString();
+  const response = await fetchApi<{ data: RawMaterialPurchasePrice | null }>(
+    `${BASE}/raw-materials/${id}/purchase-price${query ? `?${query}` : ""}`
+  );
+  return response.data ?? null;
+}
+
 export async function createRawMaterial(
   payload: RawMaterialFormData
 ): Promise<RawMaterial> {
@@ -262,15 +335,6 @@ export async function updateRawMaterialStatus(
 
 export async function deleteRawMaterial(id: string): Promise<void> {
   await fetchApi(`${BASE}/raw-materials/${id}`, { method: "DELETE" });
-}
-
-export async function getRawMaterialSuppliers(
-  id: string
-): Promise<SupplierPriceList[]> {
-  const response = await fetchApi<{ data: SupplierPriceList[] }>(
-    `${BASE}/raw-materials/${id}/suppliers`
-  );
-  return response.data;
 }
 
 // ============================================
@@ -323,6 +387,7 @@ export async function listProducts(
     search?: string;
     is_active?: boolean;
     warehouse_id?: string;
+    hpp_review?: boolean;
     page?: number;
     limit?: number;
   } = {}
@@ -331,6 +396,7 @@ export async function listProducts(
   if (params.search) sp.set("search", params.search);
   if (params.is_active !== undefined) sp.set("is_active", String(params.is_active));
   if (params.warehouse_id) sp.set("warehouse_id", params.warehouse_id);
+  if (params.hpp_review) sp.set("hpp_review", "true");
   if (params.page) sp.set("page", String(params.page));
   if (params.limit) sp.set("limit", String(params.limit));
 
@@ -382,6 +448,16 @@ export async function createProduct(
     }
   );
   return response.data;
+}
+
+export async function applyProductRecipeHpp(
+  id: string
+): Promise<{ data: ProductWithCOGS; message?: string }> {
+  const response = await fetchApi<{ data: ProductWithCOGS; message?: string }>(
+    `${BASE}/products/${id}/apply-recipe-hpp`,
+    { method: "POST" }
+  );
+  return response;
 }
 
 export async function updateProduct(
@@ -490,63 +566,6 @@ export async function deleteBOMItem(id: string): Promise<void> {
 }
 
 // ============================================
-// SUPPLIER PRICE LIST API
-// ============================================
-
-export async function listPriceLists(
-  params: { supplier_id?: string; raw_material_id?: string; is_active?: boolean; id?: string } = {}
-): Promise<SupplierPriceList[] | SupplierPriceList> {
-  const sp = new URLSearchParams();
-  if (params.id) sp.set("id", params.id);
-  if (params.supplier_id) sp.set("supplier_id", params.supplier_id);
-  if (params.raw_material_id) sp.set("bahan_baku_id", params.raw_material_id);
-  if (params.is_active !== undefined) sp.set("is_active", String(params.is_active));
-
-  const response = await fetchApi<{ data: SupplierPriceList[] | SupplierPriceList }>(
-    `${BASE}/price-list?${sp.toString()}`
-  );
-  return response.data;
-}
-
-export async function getPriceList(id: string): Promise<SupplierPriceList> {
-  const response = await fetchApi<{ data: SupplierPriceList }>(
-    `${BASE}/price-list?id=${id}`
-  );
-  return response.data;
-}
-
-export async function createPriceList(
-  payload: SupplierPriceListFormData
-): Promise<SupplierPriceList> {
-  const response = await fetchApi<{ data: SupplierPriceList }>(
-    `${BASE}/price-list`,
-    {
-      method: "POST",
-      body: JSON.stringify(payload),
-    }
-  );
-  return response.data;
-}
-
-export async function updatePriceList(
-  id: string,
-  payload: Partial<SupplierPriceListFormData>
-): Promise<SupplierPriceList> {
-  const response = await fetchApi<{ data: SupplierPriceList }>(
-    `${BASE}/price-list/${id}`,
-    {
-      method: "PUT",
-      body: JSON.stringify(payload),
-    }
-  );
-  return response.data;
-}
-
-export async function deletePriceList(id: string): Promise<void> {
-  await fetchApi(`${BASE}/price-list/${id}`, { method: "DELETE" });
-}
-
-// ============================================
 // PURCHASE ORDERS API
 // ============================================
 
@@ -647,6 +666,20 @@ export async function cancelPurchaseOrder(
 ): Promise<PurchaseOrder> {
   const response = await fetchApi<{ data: PurchaseOrder }>(
     `${BASE}/po/${id}/cancel`,
+    {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+    }
+  );
+  return response.data;
+}
+
+export async function closePurchaseOrder(
+  id: string,
+  reason: string
+): Promise<{ id: string; status: string }> {
+  const response = await fetchApi<{ data: { id: string; status: string } }>(
+    `${BASE}/po/${id}/close`,
     {
       method: "POST",
       body: JSON.stringify({ reason }),

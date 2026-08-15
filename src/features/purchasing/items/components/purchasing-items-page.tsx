@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 
 const RAW_MATERIAL_GROUP_ICONS = {
-  "Master Data": Package,
+  "Data Master": Package,
   Inventory: Warehouse,
   Purchasing: ShoppingCart,
   Approval: CheckCircle,
@@ -88,7 +88,7 @@ export function PurchasingItemsPage() {
       <section className="space-y-4">
         <div className="flex items-center gap-2">
           <Package className="h-5 w-5 text-pink-600" />
-          <h2 className="text-lg font-semibold text-gray-900">Raw Material</h2>
+          <h2 className="text-lg font-semibold text-gray-900">Bahan Baku</h2>
         </div>
 
         <NavGroupCards groups={RAW_MATERIAL_NAV_GROUPS} icons={RAW_MATERIAL_GROUP_ICONS} />

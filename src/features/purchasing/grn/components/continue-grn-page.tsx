@@ -109,10 +109,10 @@ type ApiLineItem = {
 };
 
 const GUIDELINES = [
-  "Good quantity is the total accepted on this goods receipt line.",
-  "You can receive up to the PO remaining balance (outstanding qty).",
-  "Any shortfall versus PO remaining is automatically moved to reject.",
-  "Receipt date and notes can be updated before submitting.",
+  "Qty baik adalah total yang diterima pada baris GRN ini.",
+  "Anda dapat menerima maksimal sisa qty PO (qty outstanding).",
+  "Kekurangan vs sisa PO otomatis dipindahkan ke kolom tolak.",
+  "Tanggal penerimaan dan catatan dapat diubah sebelum disimpan.",
 ];
 
 function toNumber(value: unknown) {
@@ -132,7 +132,7 @@ function getUnitName(unit?: ApiUnit, fallback = "pcs") {
   return unit.nama || unit.nama_satuan || unit.kode || fallback;
 }
 
-function getMaterialName(rawMaterial?: ApiRawMaterial, fallback = "Unknown") {
+function getMaterialName(rawMaterial?: ApiRawMaterial, fallback = "Tidak diketahui") {
   if (!rawMaterial) return fallback;
   return rawMaterial.nama || rawMaterial.nama_bahan || fallback;
 }
@@ -149,7 +149,7 @@ function findPoItem(item: GrnItem, poItems: POItem[]) {
   );
 }
 
-/** Max total good on this GRN line after continue (previous + PO hutang/sisa). */
+/** Max total baik pada baris GRN ini setelah continue (sebelumnya + sisa PO). */
 function getMaxTotalGoodQty(item: GrnItem, poItem?: POItem) {
   const ordered = toNumber(poItem?.qty_ordered);
   const poRemaining = getPoRemainingQty(poItem);
@@ -174,10 +174,10 @@ function applyDefaultReceiptQty(items: GrnItem[], poItemsList: POItem[]) {
 function getStatusBadge(status: string) {
   const normalized = status || "pending";
   const labels: Record<string, string> = {
-    pending: "Pending",
-    partially_received: "Partially Received",
-    received: "Received",
-    rejected: "Rejected",
+    pending: "Menunggu",
+    partially_received: "Diterima Sebagian",
+    received: "Diterima",
+    rejected: "Ditolak",
   };
 
   const classes: Record<string, string> = {
@@ -246,6 +246,24 @@ export function ContinueGrnPage({
     try {
       const grn = await getGrn<GRNData>(grnId);
       const poId = grn.purchase_order_id || grn.po_id || "";
+
+      // Satu delivery = satu GRN. Sisa PO tidak di-"continue" di GRN yang sama.
+      if (grn.status && grn.status !== "pending") {
+        toast.error(
+          "GRN ini sudah selesai diterima. Untuk sisa qty, buat Kirim Ulang lalu GRN baru."
+        );
+        if (poId) {
+          router.replace(
+            isProduct
+              ? `${PRODUCT_ROUTES.purchasingDeliveryInsert}?po_id=${poId}`
+              : `${RM_ROUTES.purchasingDelivery}/insert?po_id=${poId}`
+          );
+        } else {
+          router.replace(listRoute);
+        }
+        return;
+      }
+
       setGrnData({ ...grn, po_id: poId });
       setFormData({
         tanggal_penerimaan: grn.tanggal_penerimaan || new Date().toISOString().split("T")[0],
@@ -303,11 +321,11 @@ export function ContinueGrnPage({
       setGrnItems(applyDefaultReceiptQty(mappedItems, poItemsList));
     } catch (error: unknown) {
       console.error("Fetch error:", error);
-      toast.error(error instanceof Error ? error.message : "Failed to load goods receipt.");
+      toast.error(error instanceof Error ? error.message : "Gagal memuat data GRN.");
     } finally {
       setLoading(false);
     }
-  }, [grnId, loadPoItems]);
+  }, [grnId, loadPoItems, isProduct, listRoute, router]);
 
   useEffect(() => {
     if (grnId) {
@@ -382,7 +400,7 @@ export function ContinueGrnPage({
       (item) => item.qty_diterima > 0 || item.qty_ditolak > 0
     );
     if (validItems.length === 0) {
-      toast.error("Enter quantity for at least one item.");
+      toast.error("Isi qty untuk minimal satu item.");
       return;
     }
 
@@ -426,11 +444,11 @@ export function ContinueGrnPage({
       };
 
       await updateMutation.mutateAsync({ id: grnId, payload });
-      toast.success(`Goods receipt ${grnData?.nomor_grn || ""} updated successfully.`);
+      toast.success(`GRN ${grnData?.nomor_grn || ""} berhasil diperbarui.`);
       router.push(listRoute);
       router.refresh();
     } catch (error: unknown) {
-      toast.error(error instanceof Error ? error.message : "Failed to update goods receipt.");
+      toast.error(error instanceof Error ? error.message : "Gagal memperbarui GRN.");
     }
   }
 
@@ -438,14 +456,14 @@ export function ContinueGrnPage({
     return (
       <div className="flex min-h-56 items-center justify-center text-sm text-gray-500">
         <Loader2Icon className="mr-2 h-4 w-4 animate-spin" />
-        Loading goods receipt...
+        Memuat data GRN...
       </div>
     );
   }
 
   if (!grnData) {
     return (
-      <div className="py-12 text-center text-sm text-red-600">Goods receipt not found.</div>
+      <div className="py-12 text-center text-sm text-red-600">GRN tidak ditemukan.</div>
     );
   }
 
@@ -456,13 +474,13 @@ export function ContinueGrnPage({
           <Link href={listRoute}>
             <Button variant="ghost" size="sm" className="h-9 gap-2 text-pink-700">
               <ArrowLeftIcon className="h-4 w-4" />
-              Back
+              Kembali
             </Button>
           </Link>
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Continue Goods Receipt</h1>
+            <h1 className="text-2xl font-bold text-gray-900">Lanjutkan Penerimaan GRN</h1>
             <p className="text-sm text-gray-500">
-              Record additional received quantities for the remaining purchase order items
+              Catat qty tambahan yang diterima untuk sisa item purchase order
             </p>
           </div>
         </div>
@@ -475,13 +493,13 @@ export function ContinueGrnPage({
               <CardHeader className="border-b border-gray-200/70 pb-3">
                 <CardTitle className="flex items-center gap-2 text-base">
                   <TruckIcon className="h-4 w-4" />
-                  Receipt Information
+                  Informasi Penerimaan
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4 pt-4">
                 <div className="grid grid-cols-1 gap-3 rounded-xl border border-gray-200/70 bg-gray-50/60 p-4 text-sm md:grid-cols-2">
                   <div>
-                    <p className="text-xs text-gray-500">Goods Receipt Number</p>
+                    <p className="text-xs text-gray-500">No. GRN</p>
                     <p className="font-medium text-gray-900">{grnData.nomor_grn}</p>
                   </div>
                   <div>
@@ -493,7 +511,7 @@ export function ContinueGrnPage({
                     <p className="font-medium text-gray-900">{grnData.po_number || "-"}</p>
                   </div>
                   <div>
-                    <p className="text-xs text-gray-500">Delivery Note Number</p>
+                    <p className="text-xs text-gray-500">No. Surat Jalan</p>
                     <p className="font-medium text-gray-900">{grnData.no_surat_jalan || "-"}</p>
                   </div>
                   <div className="md:col-span-2">
@@ -504,18 +522,18 @@ export function ContinueGrnPage({
 
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                   <DsDateTimePicker
-                    label="Receipt Date"
+                    label="Tanggal Penerimaan"
                     value={formData.tanggal_penerimaan}
                     onChange={(value) =>
                       setFormData((prev) => ({ ...prev, tanggal_penerimaan: value }))
                     }
-                    placeholder="Select receipt date..."
+                    placeholder="Pilih tanggal penerimaan..."
                     dateOnly
                     required
                   />
                   <div className="min-w-0 space-y-1.5 md:col-span-2">
                     <Label htmlFor="catatan" className="text-xs">
-                      Notes
+                      Catatan
                     </Label>
                     <Textarea
                       id="catatan"
@@ -523,7 +541,7 @@ export function ContinueGrnPage({
                       onChange={(e) =>
                         setFormData((prev) => ({ ...prev, catatan: e.target.value }))
                       }
-                      placeholder="Add notes if needed..."
+                      placeholder="Tambahkan catatan jika perlu..."
                       rows={3}
                       className="resize-none text-sm"
                     />
@@ -536,13 +554,13 @@ export function ContinueGrnPage({
               <CardHeader className="border-b border-gray-200/70 pb-3">
                 <CardTitle className="flex items-center gap-2 text-base">
                   <ClipboardCheck className="h-4 w-4" />
-                  Confirm Received Items
+                  Konfirmasi Item Diterima
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-0">
                 {itemRows.length === 0 ? (
                   <div className="py-12 text-center text-sm text-gray-500">
-                    No goods receipt items found.
+                    Tidak ada item GRN.
                   </div>
                 ) : (
                   <div className="p-4">
@@ -550,12 +568,12 @@ export function ContinueGrnPage({
                       <table className="w-full table-fixed border-collapse text-sm [&_td]:border [&_td]:border-gray-200/70 [&_th]:border [&_th]:border-gray-200/70">
                         <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
                           <tr>
-                            <th className="px-4 py-3 text-left font-semibold">Raw Material</th>
-                            <th className="w-[72px] px-2 py-3 text-center font-semibold">Ordered</th>
-                            <th className="w-[72px] px-2 py-3 text-center font-semibold">Received</th>
-                            <th className="w-[84px] px-2 py-3 text-center font-semibold">Remaining</th>
-                            <th className="w-[104px] px-1.5 py-3 text-center font-semibold">Good</th>
-                            <th className="w-[104px] px-1.5 py-3 text-center font-semibold">Reject</th>
+                            <th className="px-4 py-3 text-left font-semibold">Bahan Baku</th>
+                            <th className="w-[72px] px-2 py-3 text-center font-semibold">Dipesan</th>
+                            <th className="w-[72px] px-2 py-3 text-center font-semibold">Diterima</th>
+                            <th className="w-[84px] px-2 py-3 text-center font-semibold">Sisa</th>
+                            <th className="w-[104px] px-1.5 py-3 text-center font-semibold">Baik</th>
+                            <th className="w-[104px] px-1.5 py-3 text-center font-semibold">Tolak</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -565,19 +583,19 @@ export function ContinueGrnPage({
                                 <div className="font-medium text-gray-900">{item.nama_bahan}</div>
                                 {qtyOrdered > 0 && (
                                   <div className="mt-0.5 text-xs text-gray-500">
-                                    Purchase Order: {formatQty(qtyOrdered)} {satuan}
+                                    PO: {formatQty(qtyOrdered)} {satuan}
                                   </div>
                                 )}
                                 {!poItem && (
                                   <div className="mt-0.5 text-xs text-amber-600">
-                                    Purchase order item data is incomplete.
+                                    Data item purchase order tidak lengkap.
                                   </div>
                                 )}
                                 {(item.previous_qty_diterima > 0 || item.previous_qty_ditolak > 0) && (
                                   <div className="mt-1 text-xs text-gray-500">
-                                    Previous receipt: {formatQty(item.previous_qty_diterima)} good
+                                    Penerimaan sebelumnya: {formatQty(item.previous_qty_diterima)} baik
                                     {item.previous_qty_ditolak > 0
-                                      ? `, ${formatQty(item.previous_qty_ditolak)} reject`
+                                      ? `, ${formatQty(item.previous_qty_ditolak)} tolak`
                                       : ""}
                                   </div>
                                 )}
@@ -627,7 +645,7 @@ export function ContinueGrnPage({
           <div className="xl:col-span-4">
             <Card className="border-gray-200/70 shadow-xs xl:sticky xl:top-6">
               <CardHeader className="border-b border-gray-200/70 pb-3">
-                <CardTitle className="text-base">Summary</CardTitle>
+                <CardTitle className="text-base">Ringkasan</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4 pt-4">
                 <dl className="space-y-3 text-sm">
@@ -644,31 +662,31 @@ export function ContinueGrnPage({
                     </dd>
                   </div>
                   <div className="flex items-start justify-between gap-3">
-                    <dt className="text-gray-500">Items</dt>
+                    <dt className="text-gray-500">Jumlah Item</dt>
                     <dd className="text-right font-medium text-gray-900">{grnItems.length}</dd>
                   </div>
                   <div className="grid grid-cols-3 gap-2 border-t border-gray-200/70 pt-3">
                     <div className="rounded-lg border border-gray-200/70 bg-gray-50 px-3 py-2">
-                      <p className="text-xs text-gray-500">Ordered</p>
+                      <p className="text-xs text-gray-500">Dipesan</p>
                       <p className="mt-1 text-sm font-semibold text-gray-900">
                         {formatQty(totals.ordered)}
                       </p>
                     </div>
                     <div className="rounded-lg border border-pink-100 bg-pink-50 px-3 py-2">
-                      <p className="text-xs text-pink-600">Received</p>
+                      <p className="text-xs text-pink-600">Diterima</p>
                       <p className="mt-1 text-sm font-semibold text-pink-700">
                         {formatQty(totals.received)}
                       </p>
                     </div>
                     <div className="rounded-lg border border-orange-100 bg-orange-50 px-3 py-2">
-                      <p className="text-xs text-orange-600">Remaining</p>
+                      <p className="text-xs text-orange-600">Sisa</p>
                       <p className="mt-1 text-sm font-semibold text-orange-700">
                         {formatQty(totals.remaining)}
                       </p>
                     </div>
                   </div>
                   <div className="flex items-start justify-between gap-3 border-t border-gray-200/70 pt-3">
-                    <dt className="font-medium text-gray-900">Total Reject</dt>
+                    <dt className="font-medium text-gray-900">Total Tolak</dt>
                     <dd
                       className={`text-right font-semibold ${
                         totals.rejected > 0 ? "text-red-600" : "text-gray-900"
@@ -678,7 +696,7 @@ export function ContinueGrnPage({
                     </dd>
                   </div>
                   <div className="flex items-start justify-between gap-3">
-                    <dt className="font-medium text-gray-900">Total Good (this receipt)</dt>
+                    <dt className="font-medium text-gray-900">Total Baik (penerimaan ini)</dt>
                     <dd className="text-right font-semibold text-gray-900">
                       {formatQty(totals.newAccepted)}
                     </dd>
@@ -688,7 +706,7 @@ export function ContinueGrnPage({
                 <div className="rounded-xl border border-gray-200/70 bg-gray-50/60 p-4">
                   <div className="mb-2 flex items-center gap-2 text-sm font-medium text-gray-900">
                     <Info className="h-4 w-4 text-pink-600" />
-                    Guidelines
+                    Panduan
                   </div>
                   <ul className="space-y-2 text-xs leading-5 text-gray-600">
                     {GUIDELINES.map((line) => (
@@ -704,7 +722,7 @@ export function ContinueGrnPage({
                   <div className="rounded-xl border border-gray-200/70 bg-white p-4">
                     <div className="mb-2 flex items-center gap-2 text-sm font-medium text-gray-900">
                       <Package className="h-4 w-4 text-pink-600" />
-                      Item Preview
+                      Pratinjau Item
                     </div>
                     <ul className="space-y-2 text-xs text-gray-600">
                       {grnItems.slice(0, 4).map((item) => (
@@ -716,7 +734,7 @@ export function ContinueGrnPage({
                         </li>
                       ))}
                       {grnItems.length > 4 && (
-                        <li className="text-gray-500">+{grnItems.length - 4} more items</li>
+                        <li className="text-gray-500">+{grnItems.length - 4} item lainnya</li>
                       )}
                     </ul>
                   </div>
@@ -733,7 +751,7 @@ export function ContinueGrnPage({
             className="purchasing-secondary-button w-full sm:w-auto"
             onClick={() => router.push(listRoute)}
           >
-            Cancel
+            Batal
           </Button>
           <Button
             type="submit"
@@ -743,12 +761,12 @@ export function ContinueGrnPage({
             {saving ? (
               <>
                 <Loader2Icon className="mr-2 h-4 w-4 animate-spin" />
-                Submitting...
+                Menyimpan...
               </>
             ) : (
               <>
                 <SaveIcon className="mr-2 h-4 w-4" />
-                Submit
+                Simpan
               </>
             )}
           </Button>

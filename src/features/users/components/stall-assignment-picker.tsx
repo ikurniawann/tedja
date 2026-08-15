@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo } from "react";
-import { Checkbox } from "@/components/ui/checkbox";
-import { FormFieldLabel } from "@/components/layout/form-field";
+import { Combobox } from "@/components/ui/combobox";
+import { Switch } from "@/components/ui/switch";
+import { FormFieldLabel, formComboboxClassName } from "@/components/layout/form-field";
 
 export type StallOption = {
   id: string;
@@ -12,62 +12,70 @@ export type StallOption = {
 
 interface StallAssignmentPickerProps {
   stalls: StallOption[];
-  selectedIds: string[];
+  defaultWarehouseId: string;
+  canSwitchStall: boolean;
   required?: boolean;
-  onChange: (warehouseIds: string[]) => void;
+  onChange: (patch: {
+    default_warehouse_id?: string;
+    warehouse_ids?: string[];
+    can_switch_stall?: boolean;
+  }) => void;
 }
 
 export function StallAssignmentPicker({
   stalls,
-  selectedIds,
+  defaultWarehouseId,
+  canSwitchStall,
   required = false,
   onChange,
 }: StallAssignmentPickerProps) {
-  const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+  const stallOptions = stalls.map((stall) => ({
+    value: stall.id,
+    label: stall.name,
+    description: stall.code,
+  }));
 
-  function toggleStall(warehouseId: string, checked: boolean) {
-    if (checked) {
-      onChange([...selectedIds, warehouseId]);
-      return;
-    }
-    onChange(selectedIds.filter((id) => id !== warehouseId));
+  function setDefaultStall(warehouseId: string) {
+    onChange({
+      default_warehouse_id: warehouseId,
+      warehouse_ids: warehouseId ? [warehouseId] : [],
+    });
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       <div>
-        <FormFieldLabel required={required}>Active Stalls</FormFieldLabel>
-        <p className="mt-1 text-xs text-gray-500">
-          Select stalls where this user can operate data (POS, warehouse, QC, etc.).
+        <FormFieldLabel required={required}>Stall default</FormFieldLabel>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Stall ini dipakai otomatis saat login. Transaksi kasir mengikuti stall aktif.
         </p>
+        <div className="mt-2">
+          <Combobox
+            options={stallOptions}
+            value={defaultWarehouseId}
+            onChange={setDefaultStall}
+            placeholder="Pilih stall default"
+            searchPlaceholder="Cari stall..."
+            emptyMessage="Tidak ada stall di branch ini"
+            className={formComboboxClassName}
+          />
+        </div>
       </div>
 
-      {stalls.length === 0 ? (
-        <p className="rounded-lg border border-dashed border-gray-200/70 py-4 text-center text-xs text-gray-400">
-          No stalls found for this branch
-        </p>
-      ) : (
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          {stalls.map((stall) => {
-            const checked = selectedSet.has(stall.id);
-            return (
-              <label
-                key={stall.id}
-                className="flex cursor-pointer items-start gap-3 rounded-lg border border-gray-200/70 bg-white p-3 transition-colors hover:bg-gray-50/80"
-              >
-                <Checkbox
-                  checked={checked}
-                  onCheckedChange={(value) => toggleStall(stall.id, value === true)}
-                />
-                <span className="min-w-0">
-                  <span className="block text-sm font-medium text-gray-900">{stall.name}</span>
-                  <span className="block font-mono text-[11px] text-gray-400">{stall.code}</span>
-                </span>
-              </label>
-            );
-          })}
+      <div className="flex items-start justify-between gap-4 rounded-lg border border-gray-200/70 bg-card px-4 py-3">
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-foreground">Boleh pindah stall</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Jika aktif, karyawan bisa ganti stall di sidebar dan jualan di stall lain dalam
+            branch yang sama.
+          </p>
         </div>
-      )}
+        <Switch
+          checked={canSwitchStall}
+          onCheckedChange={(checked) => onChange({ can_switch_stall: checked })}
+          className="mt-0.5 border-transparent focus-visible:ring-primary/30"
+        />
+      </div>
     </div>
   );
 }

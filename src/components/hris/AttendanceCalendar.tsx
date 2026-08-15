@@ -14,6 +14,8 @@ import {
   resolveScheduleRowForDate,
   type EmployeeShiftRow,
 } from "@/lib/hris/shifts";
+import { holidaysOn, indexHolidays, type HolidayIndex } from "@/lib/hris/holidays";
+import { fetchHolidayIndex } from "@/lib/hris/holidays-client";
 
 interface AttendanceRecord {
   id: string;
@@ -83,6 +85,7 @@ export function AttendanceCalendar({
   const [currentMonth, setCurrentMonth] = useState(new Date(initialDate));
   const [attendances, setAttendances] = useState<Record<string, AttendanceRecord>>({});
   const [schedule, setSchedule] = useState<ScheduleRow[]>([]);
+  const [holidayIndex, setHolidayIndex] = useState<HolidayIndex>(() => indexHolidays([]));
   const [isLoading, setIsLoading] = useState(false);
   // Popup detail hari (terutama mobile — di layar kecil detail sel disembunyikan)
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
@@ -120,6 +123,20 @@ export function AttendanceCalendar({
   useEffect(() => {
     void fetchAttendances();
   }, [fetchAttendances, refreshKey]);
+
+  /**
+   * Hari libur bulan tampak (EPIC-036). Endpoint mengembalikan holiday_date
+   * sebagai teks "YYYY-MM-DD" sehingga tidak ada geseran timezone — kunci sel
+   * kalender (localDateKey) langsung cocok. Gagal memuat tidak memblokir
+   * kalender: tanggal merah hilang, jadwal & absensi tetap tampil.
+   */
+  useEffect(() => {
+    const first = localDateKey(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
+    const lastDay = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0);
+    const last = localDateKey(lastDay.getFullYear(), lastDay.getMonth(), lastDay.getDate());
+
+    void fetchHolidayIndex(first, last).then(setHolidayIndex);
+  }, [currentMonth]);
 
   // pola jadwal shift — sekali per karyawan (pola mingguan, bukan per bulan)
   useEffect(() => {
@@ -160,7 +177,8 @@ export function AttendanceCalendar({
       month: "long",
       year: "numeric",
     });
-    return { attendance, scheduledShift, isDayOff, label };
+    const holidays = holidaysOn(holidayIndex, selectedDate);
+    return { attendance, scheduledShift, isDayOff, label, holidays };
   })();
 
   const renderDay = (day: number, weekdayIndex: number) => {
@@ -172,6 +190,8 @@ export function AttendanceCalendar({
     const isDayOff = scheduleRow !== null && scheduleRow.shift_id === null;
     const scheduledShift = scheduleRow && scheduleRow.shift_id ? scheduleRow : null;
     const isLate = attendance?.is_late ?? false;
+    const holidays = holidaysOn(holidayIndex, dateStr);
+    const isPublicHoliday = holidays.length > 0;
 
     return (
       <div
@@ -186,9 +206,11 @@ export function AttendanceCalendar({
         className={`group relative flex min-h-16 sm:min-h-24 cursor-pointer flex-col gap-1 p-1.5 sm:p-2 transition-colors ${
           isToday
             ? "bg-blue-50/70"
-            : isDayOff
-              ? "bg-gray-50/80"
-              : "bg-white hover:bg-slate-50"
+            : isPublicHoliday
+              ? "bg-red-50/60"
+              : isDayOff
+                ? "bg-gray-50/80"
+                : "bg-white hover:bg-slate-50"
         }`}
       >
         {/* nomor tanggal */}
@@ -197,17 +219,20 @@ export function AttendanceCalendar({
             className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold ${
               isToday
                 ? "bg-blue-600 text-white shadow-sm"
-                : isSunday
-                  ? "text-red-400"
-                  : isDayOff
-                    ? "text-gray-400"
-                    : "text-gray-700"
+                : isPublicHoliday
+                  ? "text-red-600"
+                  : isSunday
+                    ? "text-red-400"
+                    : isDayOff
+                      ? "text-gray-400"
+                      : "text-gray-700"
             }`}
           >
             {day}
           </span>
           {/* dot ringkas utk layar kecil */}
           <span className="flex gap-1 sm:hidden">
+            {isPublicHoliday && <span className="h-1.5 w-1.5 rounded-full bg-red-500" />}
             {attendance && (
               <span
                 className={`h-1.5 w-1.5 rounded-full ${isLate ? "bg-amber-500" : "bg-emerald-500"}`}
@@ -216,6 +241,21 @@ export function AttendanceCalendar({
             {scheduledShift && <span className="h-1.5 w-1.5 rounded-full bg-indigo-400" />}
           </span>
         </div>
+
+        {/* hari libur — nama liburnya, bukan sekadar warna merah */}
+        {isPublicHoliday && (
+          <div className="hidden sm:block rounded-md border-l-2 border-red-400 bg-red-50 px-1.5 py-0.5">
+            {holidays.map((holiday) => (
+              <p
+                key={holiday.name}
+                title={holiday.name}
+                className="truncate text-[10px] font-semibold leading-tight text-red-700"
+              >
+                {holiday.name}
+              </p>
+            ))}
+          </div>
+        )}
 
         {/* jadwal shift */}
         {scheduledShift && (
@@ -342,6 +382,11 @@ export function AttendanceCalendar({
           <span className="flex items-center gap-1.5">
             <span className="h-2 w-2 rounded-full bg-amber-500" /> Terlambat
           </span>
+          {holidayIndex.size > 0 && (
+            <span className="flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full bg-red-500" /> Hari libur
+            </span>
+          )}
           {schedule.length > 0 && (
             <>
               <span className="flex items-center gap-1.5">
@@ -372,6 +417,25 @@ export function AttendanceCalendar({
           </DialogHeader>
           {selectedInfo && (
             <div className="space-y-3">
+              {/* Hari libur */}
+              {selectedInfo.holidays.length > 0 && (
+                <div className="rounded-lg border border-red-200 bg-red-50/70 p-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-red-400">
+                    Hari Libur
+                  </p>
+                  {selectedInfo.holidays.map((holiday) => (
+                    <p key={holiday.name} className="mt-1 text-sm font-semibold text-red-700">
+                      {holiday.name}
+                      {holiday.deducts_leave && (
+                        <span className="ml-1 text-xs font-normal text-red-400">
+                          (memotong jatah cuti)
+                        </span>
+                      )}
+                    </p>
+                  ))}
+                </div>
+              )}
+
               {/* Jadwal shift */}
               <div className="rounded-lg border border-indigo-100 bg-indigo-50/60 p-3">
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-indigo-400">

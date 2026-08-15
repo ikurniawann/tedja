@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiRole, ApiError } from "@/lib/api/auth";
 import type { UserRole } from "@/types";
-import { getSetting, setSetting } from "@/lib/settings/app-settings";
+import { SETTING_KEYS, getSetting, setSetting } from "@/lib/settings/app-settings";
 import {
   MAX_RECIPIENTS,
   WA_NOTIF_SETTING_KEY,
@@ -24,7 +24,19 @@ export async function GET() {
   try {
     await requireApiRole(ALLOWED_ROLES);
     const config = parseWaNotifConfig(await getSetting(WA_NOTIF_SETTING_KEY));
-    return NextResponse.json({ data: { config, catalog: WA_NOTIF_TYPES } });
+    // Penerima laporan tutup kasir — daftar terpisah dari recipients notifikasi
+    // owner: audiensnya beda (supervisor/finance), tapi diatur di halaman sama.
+    let shiftReportRecipients: string[] = [];
+    try {
+      const raw = await getSetting(SETTING_KEYS.POS_SHIFT_REPORT_WA_RECIPIENTS);
+      const parsed = raw ? JSON.parse(raw) : [];
+      if (Array.isArray(parsed)) shiftReportRecipients = parsed.map(String);
+    } catch {
+      // nilai korup dianggap kosong; PUT berikutnya menimpanya dengan bersih
+    }
+    return NextResponse.json({
+      data: { config, catalog: WA_NOTIF_TYPES, shift_report_recipients: shiftReportRecipients },
+    });
   } catch (error) {
     if (error instanceof ApiError) return error.toResponse();
     console.error("[wa-notif] GET gagal:", error);
@@ -110,6 +122,28 @@ export async function PUT(request: NextRequest) {
         );
       }
       current.omzetAnjlokPct = n;
+    }
+
+    // Penerima laporan tutup kasir (field terpisah dari config EPIC-020).
+    // Validasi longgar di sini — normalisasi ketat (08xx→628xx, buang yang
+    // rusak) terjadi di sisi PEMBACA saat mengirim, jadi nilai lama yang
+    // formatnya beda tidak membuat penyimpanan gagal.
+    const bodyExtra = body as { shift_report_recipients?: unknown };
+    if (bodyExtra.shift_report_recipients !== undefined) {
+      if (!Array.isArray(bodyExtra.shift_report_recipients)) {
+        return NextResponse.json({ error: "shift_report_recipients tidak valid" }, { status: 400 });
+      }
+      const cleaned = [
+        ...new Set(
+          bodyExtra.shift_report_recipients
+            .map((v) => String(v).replace(/[^0-9+]/g, ""))
+            .filter((v) => v.length >= 9)
+        ),
+      ].slice(0, 10);
+      await setSetting(
+        SETTING_KEYS.POS_SHIFT_REPORT_WA_RECIPIENTS,
+        cleaned.length > 0 ? JSON.stringify(cleaned) : null
+      );
     }
 
     await setSetting(WA_NOTIF_SETTING_KEY, JSON.stringify(current));

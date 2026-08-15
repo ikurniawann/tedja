@@ -9,14 +9,14 @@
  */
 
 import { sendWhatsApp as sendViaFonnte } from "@/lib/fonnte";
-import { readGatewayConfig, sendGatewayText } from "./gateway";
+import { loadGatewayConfig, readGatewayConfig, sendGatewayText } from "./gateway";
 import { logOutboundMessage } from "./store";
 import { readMetaConfig, sendMetaTemplate, sendMetaText } from "./meta";
 import type { TemplateMessage, TextMessage, WhatsAppProvider, WhatsAppResult } from "./types";
 
 export * from "./types";
 export { buildTemplatePayload, buildTextPayload, extractMetaError } from "./meta";
-export { getGatewayStatus, readGatewayConfig } from "./gateway";
+export { getGatewayStatus, invalidateGatewayConfigCache, loadGatewayConfig, readGatewayConfig } from "./gateway";
 
 export function resolveProvider(): WhatsAppProvider | null {
   const explicit = process.env.WHATSAPP_PROVIDER?.trim().toLowerCase();
@@ -28,6 +28,24 @@ export function resolveProvider(): WhatsAppProvider | null {
   // sendiri, pihak ketiga paling akhir.
   if (readMetaConfig()) return "meta";
   if (readGatewayConfig()) return "gateway";
+  if (process.env.FONNTE_API_KEY) return "fonnte";
+  return null;
+}
+
+/**
+ * Versi async dari resolveProvider — WAJIB dipakai jalur kirim, karena
+ * konfigurasi gateway kini bisa datang dari database (loadGatewayConfig),
+ * bukan hanya ENV. resolveProvider sync dipertahankan untuk pemakaian lama
+ * berbasis ENV murni.
+ */
+async function resolveProviderAsync(): Promise<WhatsAppProvider | null> {
+  const explicit = process.env.WHATSAPP_PROVIDER?.trim().toLowerCase();
+  if (explicit === "meta") return readMetaConfig() ? "meta" : null;
+  if (explicit === "gateway") return (await loadGatewayConfig()) ? "gateway" : null;
+  if (explicit === "fonnte") return process.env.FONNTE_API_KEY ? "fonnte" : null;
+
+  if (readMetaConfig()) return "meta";
+  if (await loadGatewayConfig()) return "gateway";
   if (process.env.FONNTE_API_KEY) return "fonnte";
   return null;
 }
@@ -60,7 +78,7 @@ export async function sendWhatsAppOtp(options: OtpMessageOptions): Promise<Whats
 }
 
 async function dispatchOtp(options: OtpMessageOptions): Promise<WhatsAppResult> {
-  const provider = resolveProvider();
+  const provider = await resolveProviderAsync();
   if (!provider) return NOT_CONFIGURED;
 
   if (provider === "meta") {
@@ -78,7 +96,7 @@ async function dispatchOtp(options: OtpMessageOptions): Promise<WhatsAppResult> 
   }
 
   if (provider === "gateway") {
-    const config = readGatewayConfig();
+    const config = await loadGatewayConfig();
     if (!config) return NOT_CONFIGURED;
     return sendGatewayText(config, { target: options.target, message: options.fallbackText });
   }
@@ -116,7 +134,7 @@ export async function sendWhatsAppText(
 }
 
 async function dispatchText(message: TextMessage): Promise<WhatsAppResult> {
-  const provider = resolveProvider();
+  const provider = await resolveProviderAsync();
   if (!provider) return NOT_CONFIGURED;
 
   if (provider === "meta") {
@@ -126,7 +144,7 @@ async function dispatchText(message: TextMessage): Promise<WhatsAppResult> {
   }
 
   if (provider === "gateway") {
-    const config = readGatewayConfig();
+    const config = await loadGatewayConfig();
     if (!config) return NOT_CONFIGURED;
     return sendGatewayText(config, message);
   }

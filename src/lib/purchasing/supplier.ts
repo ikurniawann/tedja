@@ -7,7 +7,6 @@ import {
   SupplierDetail,
   SupplierFormData,
   SupplierListParams,
-  SupplierPrice,
   SupplierPOSummary,
   PaginatedResponse,
 } from "@/types/supplier";
@@ -116,21 +115,6 @@ export async function deactivateSupplier(id: string): Promise<void> {
 }
 
 export const deleteSupplier = deactivateSupplier;
-
-// ─── Supplier Materials / Prices ───────────────────────────────
-
-export async function getSupplierPrices(
-  supplierId: string,
-  params: { page?: number; limit?: number } = {}
-): Promise<PaginatedResponse<SupplierPrice>> {
-  const sp = new URLSearchParams();
-  if (params.page) sp.set("page", String(params.page));
-  if (params.limit) sp.set("limit", String(params.limit));
-
-  return fetchApi<PaginatedResponse<SupplierPrice>>(
-    `${BASE}/supplier-prices?supplier_id=${supplierId}&${sp.toString()}`
-  );
-}
 
 // ─── Supplier PO History ───────────────────────────────────────
 

@@ -18,10 +18,12 @@ export interface AuthUser {
   branch_name: string | null;
   warehouse_name: string | null;
   /**
-   * Stall aktif pilihan super_admin/admin (switcher sidebar).
+   * Stall aktif pilihan user (switcher sidebar).
    * null = Semua Stall; bila cookie belum pernah diset, fallback ke penempatan user.
    */
   active_stall_id: string | null;
+  /** true bila user boleh membuka StallSwitcher (multi-stall / admin / allAccess). */
+  can_switch_stall: boolean;
 }
 
 export const getUser = cache(async (): Promise<{
@@ -35,15 +37,19 @@ export const getUser = cache(async (): Promise<{
 
   if (!user) return { user: null, db };
 
-  const { data: profile } = await db
+  const { data: profile, error: profileError } = await db
     .from("users")
-    .select("full_name, role, brand_id, business_scope")
+    .select("full_name, role, brand_id, business_scope, can_switch_stall, default_warehouse_id")
     .eq("id", user.id)
     .single();
 
-  if (!profile) return { user: null, db };
+  // Query gagal (kolom belum ada, dsb.) bukan "tidak login" — jangan hapus sesi.
+  // PGRST116 = tidak ada baris profil; itu yang boleh dianggap unauthenticated.
+  if (profileError && profileError.code !== "PGRST116") {
+    throw new Error(`Gagal memuat profil user: ${profileError.message}`);
+  }
 
-  const canSwitchStall = profile.role === "super_admin" || profile.role === "admin";
+  if (!profile) return { user: null, db };
 
   const [scope, warehouses, resolvedStall] = await Promise.all([
     queryOne<{
@@ -59,25 +65,33 @@ export const getUser = cache(async (): Promise<{
       [user.id]
     ),
     loadUserWarehouses(user.id),
-    canSwitchStall ? resolveActiveStallFromCookies() : Promise.resolve({ mode: "unset" as const }),
+    resolveActiveStallFromCookies(),
   ]);
 
-  // Default penempatan: Main Storage (is_default) jika ada, else stall pertama.
-  const placementDefault = warehouses[0] ?? null;
+  const access = await getStallAccess(
+    user.id,
+    profile.role,
+    scope?.branch_id ?? null
+  );
+  const canSwitchStall =
+    profile.role === "super_admin" ||
+    profile.role === "admin" ||
+    profile.can_switch_stall === true ||
+    access.allAccess ||
+    access.stalls.length > 1;
+
+  const homeStall =
+    warehouses.find((row) => row.warehouse_id === profile.default_warehouse_id) ??
+    warehouses[0] ??
+    null;
 
   let warehouse_name: string | null;
   let active_stall_id: string | null;
 
   if (canSwitchStall) {
-    const access = await getStallAccess(
-      user.id,
-      profile.role,
-      scope?.branch_id ?? null
-    );
     const allowedIds = new Set(access.stalls.map((stall) => stall.id));
-    // Stall default dari penempatan; bila allAccess tanpa penempatan → Semua Stall.
-    const fallbackName = placementDefault?.name ?? (access.allAccess ? "Semua Stall" : null);
-    const fallbackId = placementDefault?.warehouse_id ?? null;
+    const fallbackName = homeStall?.name ?? (access.allAccess ? "Semua Stall" : null);
+    const fallbackId = homeStall?.warehouse_id ?? null;
 
     if (resolvedStall.mode === "stall" && allowedIds.has(resolvedStall.stall.id)) {
       // Cookie valid & masih dalam penempatan / akses user.
@@ -93,9 +107,12 @@ export const getUser = cache(async (): Promise<{
       active_stall_id = fallbackId;
     }
   } else {
-    warehouse_name =
-      warehouses.length > 0 ? warehouses.map((warehouse) => warehouse.name).join(", ") : null;
-    active_stall_id = null;
+    warehouse_name = homeStall
+      ? homeStall.name
+      : warehouses.length > 0
+        ? warehouses.map((warehouse) => warehouse.name).join(", ")
+        : null;
+    active_stall_id = homeStall?.warehouse_id ?? warehouses[0]?.warehouse_id ?? null;
   }
 
   const isUnscoped =
@@ -127,6 +144,7 @@ export const getUser = cache(async (): Promise<{
       branch_name,
       warehouse_name,
       active_stall_id,
+      can_switch_stall: canSwitchStall,
     },
     db,
   };

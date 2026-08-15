@@ -54,6 +54,11 @@ export async function updateSession(request: NextRequest) {
     // bawah /api/public/booking (sudah publik); ini untuk halaman /pass/*.
     // Status pass = capability token 64-hex; pembelian ber-rate-limit + Xendit.
     "/pass",
+    // Storefront e-commerce publik (EPIC-039 Fase D) — katalog, checkout,
+    // status order (capability token), dan webhook Xendit/Biteship. Webhook
+    // diverifikasi token di dalam route; endpoint publik ber-rate-limit.
+    "/shop",
+    "/api/public/shop",
   ];
   const isPublicRoute =
     pathname === "/" ||

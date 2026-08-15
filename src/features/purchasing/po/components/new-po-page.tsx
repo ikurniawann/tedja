@@ -17,8 +17,9 @@ import {
   PurchasingFormHeader,
   PurchasingFormFooter,
 } from "@/modules/purchasing/components/page/purchasing-page-header";
-import { Supplier, RawMaterialWithStock, PurchaseOrderFormData, PurchaseOrderItemFormData, Unit, SupplierPriceList, PurchaseOrderItem } from "@/types/purchasing";
-import { listPriceLists, updatePurchaseOrder } from "../api";
+import { Supplier, RawMaterialWithStock, PurchaseOrderFormData, PurchaseOrderItemFormData, Unit, PurchaseOrderItem } from "@/types/purchasing";
+import { updatePurchaseOrder } from "../api";
+import { getRawMaterialPurchasePrice } from "@/lib/purchasing";
 import { getPurchaseRequest } from "@/features/purchasing/pr/api";
 import { RM_ROUTES } from "@/modules/purchasing/constants/item-routes";
 import { usePOFormData, usePurchaseOrder } from "../queries";
@@ -216,15 +217,6 @@ export function NewPOPage({ poId }: NewPOPageProps = {}) {
   const itemsQtyLocked = isEditMode;
   const canCreateFromPr = isEditMode || Boolean(prId);
 
-  const getConversionFactor = useCallback((materialId: string, unitId?: string) => {
-    if (!unitId) return 1;
-    const material = materials.find((item) => item.id === materialId);
-    const conversion = material?.unit_conversions?.find(
-      (item) => item.satuan_id === unitId && item.is_active !== false
-    );
-    return Number(conversion?.qty_in_base_unit || 1);
-  }, [materials]);
-
   const getUnitName = useCallback((unitId?: string) => {
     return units.find((unit) => unit.id === unitId)?.nama || "";
   }, [units]);
@@ -234,99 +226,59 @@ export function NewPOPage({ poId }: NewPOPageProps = {}) {
     selected?: { unitId?: string; unitName?: string }
   ) => buildMaterialUnitOptions(materialId, materials, units, selected), [materials, units]);
 
-  const findSupplierPrice = useCallback(async (supplierId: string, materialId: string) => {
-    if (!supplierId || !materialId) return null;
-    const response = await listPriceLists({ supplier_id: supplierId, raw_material_id: materialId, is_active: true });
-    const priceLists = (Array.isArray(response) ? response : [response]).filter(Boolean) as SupplierPriceList[];
-
-    return priceLists
-      .filter((price) => Number(price.harga ?? price.price ?? 0) > 0 && (price.satuan_id || price.unit_id))
-      .sort((a, b) => {
-        if (a.is_preferred !== b.is_preferred) return a.is_preferred ? -1 : 1;
-        return Number(a.harga ?? a.price ?? 0) - Number(b.harga ?? b.price ?? 0);
-      })[0] || null;
-  }, []);
-
-  const findSupplierUnitPrice = useCallback(async (
+  /**
+   * Buying prices come from the last GRN cost for the material, so the item keeps
+   * its own unit and only the price is filled in.
+   */
+  const applyPurchasePriceToItem = useCallback(async (
+    item: POItemForm,
     supplierId: string,
-    materialId: string,
-    targetUnitId?: string
-  ) => {
-    if (!supplierId || !materialId || !targetUnitId) return null;
+    unitId?: string
+  ): Promise<POItemForm> => {
+    if (!item.raw_material_id) return item;
 
-    const response = await listPriceLists({ supplier_id: supplierId, raw_material_id: materialId, is_active: true });
-    const priceLists = (Array.isArray(response) ? response : [response])
-      .filter((price) => Number(price?.harga ?? price?.price ?? 0) > 0 && (price?.satuan_id || price?.unit_id)) as SupplierPriceList[];
-
-    const sortedPrices = [...priceLists].sort((a, b) => {
-      if (a.is_preferred !== b.is_preferred) return a.is_preferred ? -1 : 1;
-      return Number(a.harga ?? a.price ?? 0) - Number(b.harga ?? b.price ?? 0);
-    });
-    const exactPrice = sortedPrices.find((price) => (price.satuan_id || price.unit_id) === targetUnitId);
-    const sourcePrice = exactPrice || sortedPrices[0];
-    if (!sourcePrice) return null;
-
-    const sourceUnitId = sourcePrice.satuan_id || sourcePrice.unit_id;
-    const sourceFactor = getConversionFactor(materialId, sourceUnitId);
-    const targetFactor = getConversionFactor(materialId, targetUnitId);
-    const unitPrice = Number(sourcePrice.harga ?? sourcePrice.price ?? 0);
-
-    return {
-      unitPrice: sourceFactor > 0 ? (unitPrice / sourceFactor) * targetFactor : unitPrice,
-      isExact: Boolean(exactPrice),
-    };
-  }, [getConversionFactor]);
-
-  const applySupplierPriceToItem = useCallback(async (item: POItemForm, supplierId: string): Promise<POItemForm> => {
-    if (!supplierId || !item.raw_material_id) return item;
+    const material = materials.find((entry) => entry.id === item.raw_material_id);
+    const targetUnitId =
+      unitId || item.satuan_id || item.requested_satuan_id || material?.satuan_besar_id || undefined;
+    if (!targetUnitId) return item;
 
     try {
-      const price = await findSupplierPrice(supplierId, item.raw_material_id);
-      if (!price) return item;
+      const suggestion = await getRawMaterialPurchasePrice(item.raw_material_id, {
+        supplierId,
+        satuanId: targetUnitId,
+      });
+      if (!suggestion || suggestion.unit_price <= 0) return item;
 
-      const priceUnitId = price.satuan_id || price.unit_id;
-      const targetUnitId = item.source === "pr"
-        ? item.requested_satuan_id || item.satuan_id || priceUnitId
-        : priceUnitId;
-      const requestedQty = Number(item.requested_qty ?? item.qty_ordered ?? 0);
-      const shouldConvertQty = item.source === "prefill";
-      const requestUnitId = item.requested_satuan_id || item.satuan_id || targetUnitId;
-      const requestFactor = getConversionFactor(item.raw_material_id, requestUnitId);
-      const targetFactor = getConversionFactor(item.raw_material_id, targetUnitId);
-      const convertedQty = shouldConvertQty && targetFactor > 0
-        ? (requestedQty * requestFactor) / targetFactor
-        : Math.max(1, Number(item.qty_ordered || requestedQty || 1));
-      const priceFactor = getConversionFactor(item.raw_material_id, priceUnitId);
-      const supplierPrice = Number(price.harga ?? price.price ?? 0);
-      const unitPrice = priceFactor > 0 ? (supplierPrice / priceFactor) * targetFactor : supplierPrice;
+      const unitPrice = Math.round(suggestion.unit_price);
+      const qty = Math.max(1, Number(item.qty_ordered || item.requested_qty || 1));
 
       return {
         ...item,
         satuan_id: targetUnitId,
         raw_material_unit: getUnitName(targetUnitId) || item.raw_material_unit,
-        qty_ordered: convertedQty,
-        harga_satuan: Math.round(unitPrice),
-        subtotal: convertedQty * Math.round(unitPrice),
+        qty_ordered: qty,
+        harga_satuan: unitPrice,
+        subtotal: qty * unitPrice,
       };
     } catch (error) {
-      console.error("Error applying supplier price:", error);
+      console.error("Error applying purchase price:", error);
       return item;
     }
-  }, [findSupplierPrice, getConversionFactor, getUnitName]);
+  }, [getUnitName, materials]);
 
   const applySupplierPrices = useCallback(async (supplierId: string, nextItems = items) => {
     if (!supplierId || nextItems.length === 0) return nextItems;
-    const pricedItems = await Promise.all(nextItems.map((item) => applySupplierPriceToItem(item, supplierId)));
+    const pricedItems = await Promise.all(nextItems.map((item) => applyPurchasePriceToItem(item, supplierId)));
     setItems(pricedItems);
     return pricedItems;
-  }, [applySupplierPriceToItem, items]);
+  }, [applyPurchasePriceToItem, items]);
 
   const applySupplierPricesForItems = useCallback(async (supplierId: string, nextItems: POItemForm[]) => {
     if (!supplierId || nextItems.length === 0) return nextItems;
-    const pricedItems = await Promise.all(nextItems.map((item) => applySupplierPriceToItem(item, supplierId)));
+    const pricedItems = await Promise.all(nextItems.map((item) => applyPurchasePriceToItem(item, supplierId)));
     setItems(pricedItems);
     return pricedItems;
-  }, [applySupplierPriceToItem]);
+  }, [applyPurchasePriceToItem]);
 
   // Auto-fill from approved purchase request (?pr_id=)
   const loadPRForPO = useCallback(async (id: string) => {
@@ -335,7 +287,7 @@ export function NewPOPage({ poId }: NewPOPageProps = {}) {
       const pr = await getPurchaseRequest(id);
 
       if (pr.status !== "approved" || pr.converted_po_id) {
-        toast.error("Purchase request is not approved or already has a purchase order");
+        toast.error("Purchase request belum disetujui atau sudah memiliki purchase order");
         setSelectedPR(null);
         return;
       }
@@ -373,9 +325,9 @@ export function NewPOPage({ poId }: NewPOPageProps = {}) {
         setItems(mappedItems);
       }
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : "Unknown error";
+      const message = error instanceof Error ? error.message : "Kesalahan tidak diketahui";
       console.error("Error loading PR:", error);
-      toast.error(message || "Failed to load purchase request");
+      toast.error(message || "Gagal memuat purchase request");
     } finally {
       setLoadingPR(false);
     }
@@ -428,7 +380,7 @@ export function NewPOPage({ poId }: NewPOPageProps = {}) {
 
   useEffect(() => {
     if (formDataQuery.isError) {
-      toast.error(`Failed to load data: ${getErrorMessage(formDataQuery.error, "Unknown error")}`);
+      toast.error(`Gagal memuat data: ${getErrorMessage(formDataQuery.error, "Kesalahan tidak diketahui")}`);
     }
   }, [formDataQuery.isError, formDataQuery.error]);
 
@@ -438,23 +390,8 @@ export function NewPOPage({ poId }: NewPOPageProps = {}) {
 
   const applyUnitPriceForItem = useCallback(async (item: POItemForm, supplierId: string, unitId?: string) => {
     if (!supplierId || !item.raw_material_id || !unitId) return item;
-
-    try {
-      const price = await findSupplierUnitPrice(supplierId, item.raw_material_id, unitId);
-      if (!price) return item;
-
-      return {
-        ...item,
-        satuan_id: unitId,
-        raw_material_unit: getUnitName(unitId) || item.raw_material_unit,
-        harga_satuan: Math.round(price.unitPrice),
-        subtotal: Number(item.qty_ordered || 0) * Math.round(price.unitPrice),
-      };
-    } catch (error) {
-      console.error("Error applying unit price:", error);
-      return item;
-    }
-  }, [findSupplierUnitPrice, getUnitName]);
+    return applyPurchasePriceToItem(item, supplierId, unitId);
+  }, [applyPurchasePriceToItem]);
 
   const updateItem = (index: number, field: keyof POItemForm, value: POItemForm[keyof POItemForm]) => {
     const newItems = [...items];
@@ -488,7 +425,7 @@ export function NewPOPage({ poId }: NewPOPageProps = {}) {
     setItems(newItems);
 
     if (field === "raw_material_id" && formData.supplier_id && String(value)) {
-      applySupplierPriceToItem(newItems[index], formData.supplier_id).then((pricedItem) => {
+      applyPurchasePriceToItem(newItems[index], formData.supplier_id).then((pricedItem) => {
         setItems((current) => current.map((item, itemIndex) => itemIndex === index ? pricedItem : item));
       });
     }
@@ -515,11 +452,11 @@ export function NewPOPage({ poId }: NewPOPageProps = {}) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isEditMode && !formData.pr_id) {
-      toast.error("Purchase order must be created from an approved purchase request");
+      toast.error("Purchase order harus dibuat dari purchase request yang disetujui");
       return;
     }
     if (!formData.supplier_id) {
-      toast.error("Select a supplier first");
+      toast.error("Pilih supplier terlebih dahulu");
       return;
     }
     if (items.length === 0) {
@@ -580,15 +517,15 @@ export function NewPOPage({ poId }: NewPOPageProps = {}) {
             const errorMessages = Object.entries(errorData.errors)
               .map(([field, messages]) => `${field}: ${(messages as string[]).join(", ")}`)
               .join("\n");
-            toast.error(`Validation failed:\n${errorMessages}`);
+            toast.error(`Validasi gagal:\n${errorMessages}`);
           } else {
-            toast.error(errorData.message || (isEditMode ? "Failed to update purchase order" : "Failed to create purchase order"));
+            toast.error(errorData.message || (isEditMode ? "Gagal memperbarui purchase order" : "Gagal membuat purchase order"));
           }
         } catch {
-          toast.error(isEditMode ? "Failed to update purchase order" : "Failed to create purchase order");
+          toast.error(isEditMode ? "Gagal memperbarui purchase order" : "Gagal membuat purchase order");
         }
       } else {
-        toast.error(getErrorMessage(error, isEditMode ? "Failed to update purchase order" : "Failed to create purchase order"));
+        toast.error(getErrorMessage(error, isEditMode ? "Gagal memperbarui purchase order" : "Gagal membuat purchase order"));
       }
     } finally {
       setIsSaving(false);
@@ -600,7 +537,7 @@ export function NewPOPage({ poId }: NewPOPageProps = {}) {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20 text-sm text-gray-500">
-        Loading purchase order form...
+        Memuat formulir purchase order...
       </div>
     );
   }
@@ -610,8 +547,8 @@ export function NewPOPage({ poId }: NewPOPageProps = {}) {
       <div className="space-y-6">
         <PurchasingFormHeader
           backHref={RM_ROUTES.purchasingPo}
-          title="Create Purchase Order"
-          description="Purchase orders can only be created from an approved purchase request"
+          title="Buat Purchase Order"
+          description="Purchase order hanya bisa dibuat dari purchase request yang sudah disetujui"
         />
 
         <Card className="border-gray-200/70 shadow-xs">
@@ -620,21 +557,21 @@ export function NewPOPage({ poId }: NewPOPageProps = {}) {
               <ClipboardList className="h-6 w-6" />
             </div>
             <div className="space-y-2">
-              <h2 className="text-lg font-semibold text-gray-900">Start from a Purchase Request</h2>
+              <h2 className="text-lg font-semibold text-gray-900">Mulai dari Purchase Request</h2>
               <p className="max-w-md text-sm text-gray-500">
-                Open an approved purchase request and use &quot;Create Purchase Order&quot; to start a new PO.
-                Direct purchase order creation is not available from this page.
+                Buka purchase request yang sudah disetujui lalu gunakan &quot;Buat Purchase Order&quot; untuk memulai PO baru.
+                Pembuatan purchase order secara langsung tidak tersedia di halaman ini.
               </p>
             </div>
             <div className="flex flex-col gap-2 sm:flex-row">
               <Link href={RM_ROUTES.purchasingPo}>
                 <Button variant="outline" className="h-10 w-full sm:w-auto">
-                  Back to Purchase Orders
+                  Kembali ke Purchase Order
                 </Button>
               </Link>
               <Link href={RM_ROUTES.purchasingPr}>
                 <Button className="h-10 w-full bg-pink-600 hover:bg-pink-700 sm:w-auto">
-                  Go to Purchase Requests
+                  Buka Purchase Request
                 </Button>
               </Link>
             </div>
@@ -648,20 +585,20 @@ export function NewPOPage({ poId }: NewPOPageProps = {}) {
     <div className="space-y-6">
       <PurchasingFormHeader
         backHref={isEditMode && poId ? RM_ROUTES.purchasingPoDetail(poId) : RM_ROUTES.purchasingPo}
-        title={isEditMode ? `Edit ${existingPo?.nomor_po || "Purchase Order"}` : "Create Purchase Order"}
+        title={isEditMode ? `Ubah ${existingPo?.nomor_po || "Purchase Order"}` : "Buat Purchase Order"}
         description={
           isEditMode
-            ? "Update draft purchase order information. Items cannot be changed."
+            ? "Perbarui informasi purchase order draf. Item tidak dapat diubah."
             : selectedPR
-              ? `From purchase request ${selectedPR.pr_number} — quantities and prices can be adjusted before submitting`
-              : "Loading purchase request details..."
+              ? `Dari purchase request ${selectedPR.pr_number} — qty dan harga masih bisa disesuaikan sebelum disimpan`
+              : "Memuat detail purchase request..."
         }
       />
 
       {!isEditMode && selectedPR && (
       <Card className="border-gray-200/70 shadow-xs">
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">Purchase Request Source</CardTitle>
+          <CardTitle className="text-base">Sumber Purchase Request</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -677,7 +614,7 @@ export function NewPOPage({ poId }: NewPOPageProps = {}) {
                 </p>
               </div>
               <Button type="button" variant="outline" onClick={() => router.push(RM_ROUTES.purchasingPrDetail(selectedPR.id))}>
-                View Purchase Request
+                Lihat Purchase Request
               </Button>
             </div>
         </CardContent>
@@ -687,7 +624,7 @@ export function NewPOPage({ poId }: NewPOPageProps = {}) {
       {isEditMode && formData.pr_id && selectedPR && (
         <Card className="border-gray-200/70 shadow-xs">
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">Purchase Request Source</CardTitle>
+            <CardTitle className="text-base">Sumber Purchase Request</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -700,7 +637,7 @@ export function NewPOPage({ poId }: NewPOPageProps = {}) {
                 variant="outline"
                 onClick={() => router.push(RM_ROUTES.purchasingPrDetail(selectedPR.id))}
               >
-                View Purchase Request
+                Lihat Purchase Request
               </Button>
             </div>
           </CardContent>
@@ -713,7 +650,7 @@ export function NewPOPage({ poId }: NewPOPageProps = {}) {
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2 text-base">
                 <Package className="h-4 w-4" />
-                Purchase Order Information
+                Informasi Purchase Order
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -734,9 +671,9 @@ export function NewPOPage({ poId }: NewPOPageProps = {}) {
                       applySupplierPrices(value);
                     }
                   }}
-                  placeholder="Select supplier..."
-                  searchPlaceholder="Search supplier..."
-                  emptyMessage="No supplier found"
+                  placeholder="Pilih supplier..."
+                  searchPlaceholder="Cari supplier..."
+                  emptyMessage="Supplier tidak ditemukan"
                   allowClear
                   disabled={loading}
                   className="w-full! h-9 text-sm"
@@ -745,38 +682,38 @@ export function NewPOPage({ poId }: NewPOPageProps = {}) {
 
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <DsDateTimePicker
-                  label="Purchase Order Date"
+                  label="Tanggal PO"
                   value={formData.tanggal_po}
                   onChange={(value) => setFormData((prev) => ({ ...prev, tanggal_po: value }))}
-                  placeholder="Select purchase order date..."
+                  placeholder="Pilih tanggal PO..."
                   dateOnly
                 />
                 <DsDateTimePicker
-                  label="Estimated Delivery Date"
+                  label="Estimasi Tanggal Pengiriman"
                   value={formData.tanggal_kirim_estimasi}
                   onChange={(value) =>
                     setFormData((prev) => ({ ...prev, tanggal_kirim_estimasi: value }))
                   }
-                  placeholder="Select estimated delivery date..."
+                  placeholder="Pilih estimasi tanggal pengiriman..."
                   dateOnly
                 />
               </div>
 
               <div className="min-w-0 space-y-1.5">
-                <Label className="text-xs">Notes</Label>
+                <Label className="text-xs">Catatan</Label>
                 <Textarea
                   value={formData.catatan}
                   onChange={(e) =>
                     setFormData((prev) => ({ ...prev, catatan: e.target.value }))
                   }
-                  placeholder="Notes for supplier..."
+                  placeholder="Catatan untuk supplier..."
                   rows={2}
                   className="resize-none text-sm"
                 />
               </div>
 
               <div className="min-w-0 space-y-1.5">
-                <Label className="text-xs">Delivery Address</Label>
+                <Label className="text-xs">Alamat Pengiriman</Label>
                 <Textarea
                   value={formData.alamat_pengiriman}
                   onChange={(e) =>
@@ -785,7 +722,7 @@ export function NewPOPage({ poId }: NewPOPageProps = {}) {
                       alamat_pengiriman: e.target.value,
                     })
                   }
-                  placeholder="Delivery address..."
+                  placeholder="Alamat pengiriman..."
                   rows={2}
                   className="resize-none text-sm"
                 />
@@ -795,7 +732,7 @@ export function NewPOPage({ poId }: NewPOPageProps = {}) {
 
           <Card className="border-gray-200/70 shadow-xs xl:col-span-4">
             <CardHeader className="pb-3">
-              <CardTitle className="text-base">Summary</CardTitle>
+              <CardTitle className="text-base">Ringkasan</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex justify-between text-sm">
@@ -805,7 +742,7 @@ export function NewPOPage({ poId }: NewPOPageProps = {}) {
                 </span>
               </div>
               <div className="flex justify-between text-sm">
-                <span className="text-gray-500">Discount</span>
+                <span className="text-gray-500">Diskon</span>
                 <span className="font-medium text-gray-900">
                   {formatAmount(diskonNominal)}
                 </span>
@@ -823,7 +760,7 @@ export function NewPOPage({ poId }: NewPOPageProps = {}) {
 
               <div className="grid grid-cols-1 gap-3 border-t border-gray-200/70 pt-4 sm:grid-cols-2 xl:grid-cols-1">
                 <div className="min-w-0 space-y-1.5">
-                  <Label className="text-xs">Discount (%)</Label>
+                  <Label className="text-xs">Diskon (%)</Label>
                   <div className="flex rounded-lg border border-gray-200/80 bg-white focus-within:border-gray-300 focus-within:ring-1 focus-within:ring-gray-200">
                     <NumericInput
                       min="0"
@@ -872,7 +809,7 @@ export function NewPOPage({ poId }: NewPOPageProps = {}) {
 
         <Card className="border-gray-200/70 shadow-xs">
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">Purchase Order Items</CardTitle>
+            <CardTitle className="text-base">Item Purchase Order</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             {items.map((item, index) => (
@@ -891,7 +828,7 @@ export function NewPOPage({ poId }: NewPOPageProps = {}) {
                       className="h-8 text-red-500 hover:text-red-600"
                     >
                       <Trash2 className="mr-1 h-4 w-4" />
-                      Remove
+                      Hapus
                     </Button>
                   )}
                 </div>
@@ -899,7 +836,7 @@ export function NewPOPage({ poId }: NewPOPageProps = {}) {
                 <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
                   <div className="min-w-0 space-y-1.5 lg:col-span-4">
                     <Label className="text-xs">
-                      Raw Material <span className="text-red-500">*</span>
+                      Bahan Baku <span className="text-red-500">*</span>
                     </Label>
                     <Combobox
                       options={materials.map((m) => ({
@@ -909,9 +846,9 @@ export function NewPOPage({ poId }: NewPOPageProps = {}) {
                       }))}
                       value={item.raw_material_id}
                       onChange={(v) => updateItem(index, "raw_material_id", v)}
-                      placeholder="Select raw material..."
-                      searchPlaceholder="Search raw material (name/code)..."
-                      emptyMessage="No raw material found"
+                      placeholder="Pilih bahan baku..."
+                      searchPlaceholder="Cari bahan baku (nama/kode)..."
+                      emptyMessage="Bahan baku tidak ditemukan"
                       allowClear
                       disabled={loading || itemsStructureLocked}
                       className="w-full! h-9 text-sm"
@@ -919,7 +856,7 @@ export function NewPOPage({ poId }: NewPOPageProps = {}) {
                   </div>
 
                   <div className="min-w-0 space-y-1.5 lg:col-span-2">
-                    <Label className="text-xs">Quantity</Label>
+                    <Label className="text-xs">Qty</Label>
                     <NumericInput
                       min="0"
                       value={item.qty_ordered > 0 ? item.qty_ordered : null}
@@ -933,7 +870,7 @@ export function NewPOPage({ poId }: NewPOPageProps = {}) {
                   </div>
 
                   <div className="min-w-0 space-y-1.5 lg:col-span-2">
-                    <Label className="text-xs">Unit</Label>
+                    <Label className="text-xs">Satuan</Label>
                     <Combobox
                       options={getMaterialUnitOptions(item.raw_material_id, {
                         unitId: item.satuan_id,
@@ -941,12 +878,12 @@ export function NewPOPage({ poId }: NewPOPageProps = {}) {
                       })}
                       value={item.satuan_id || ""}
                       onChange={(value) => updateItem(index, "satuan_id", value || undefined)}
-                      placeholder={item.raw_material_id ? "Select unit..." : "Select raw material first"}
-                      searchPlaceholder="Search unit..."
+                      placeholder={item.raw_material_id ? "Pilih satuan..." : "Pilih bahan baku dulu"}
+                      searchPlaceholder="Cari satuan..."
                       emptyMessage={
                         item.raw_material_id
-                          ? "No units configured for this material"
-                          : "Select a raw material first"
+                          ? "Belum ada satuan untuk bahan baku ini"
+                          : "Pilih bahan baku terlebih dahulu"
                       }
                       allowClear={false}
                       disabled={loading || itemsStructureLocked}
@@ -955,7 +892,7 @@ export function NewPOPage({ poId }: NewPOPageProps = {}) {
                   </div>
 
                   <div className="min-w-0 space-y-1.5 lg:col-span-2">
-                    <Label className="text-xs">Unit Price</Label>
+                    <Label className="text-xs">Harga Satuan</Label>
                     <NumericInput
                       min="0"
                       value={item.harga_satuan}
@@ -979,8 +916,8 @@ export function NewPOPage({ poId }: NewPOPageProps = {}) {
             {items.length === 0 && (
               <div className="rounded-xl border border-gray-200/70 bg-gray-50/60 py-10 text-center text-sm text-gray-500">
                 {loadingPR
-                  ? "Loading purchase request items..."
-                  : "No items from the purchase request yet."}
+                  ? "Memuat item purchase request..."
+                  : "Belum ada item dari purchase request."}
               </div>
             )}
           </CardContent>
@@ -990,7 +927,7 @@ export function NewPOPage({ poId }: NewPOPageProps = {}) {
           onCancel={() =>
             router.push(isEditMode && poId ? RM_ROUTES.purchasingPoDetail(poId) : RM_ROUTES.purchasingPo)
           }
-          submitLabel="Submit"
+          submitLabel="Simpan"
           loading={isSubmitting}
           disabled={isSubmitting || (!isEditMode && (loadingPR || !selectedPR))}
           formId="purchase-order-form"

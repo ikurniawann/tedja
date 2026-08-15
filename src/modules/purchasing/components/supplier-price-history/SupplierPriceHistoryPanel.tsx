@@ -5,104 +5,52 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Badge } from "@/components/ui/badge";
 import { Combobox } from "@/components/ui/combobox";
 import { PriceHistoryChart } from "./PriceHistoryChart";
 import { PriceHistoryTable } from "./PriceHistoryTable";
+import type { PurchasePriceHistoryItem } from "./types";
 import { BarChart3, FileText, LineChart, Table as TableIcon, RefreshCw, TrendingUp, TrendingDown, Minus } from "lucide-react";
 import { toast } from "sonner";
-
-interface PriceHistoryData {
-  id: string;
-  supplier_id: string;
-  nama_supplier: string;
-  bahan_baku_id: string;
-  bahan_baku_nama: string;
-  harga: number;
-  previous_price?: number | null;
-  price_change_percent?: number | null;
-  berlaku_dari: string;
-  berlaku_sampai?: string | null;
-  satuan_nama: string;
-  minimum_qty: number;
-  lead_time_days: number;
-  is_preferred: boolean;
-  catatan?: string | null;
-}
-
-interface PriceStats {
-  supplier_id: string;
-  nama_supplier: string;
-  bahan_baku_id: string;
-  bahan_baku_nama: string;
-  total_price_changes: number;
-  min_price: number;
-  max_price: number;
-  avg_price: number;
-  current_price: number;
-  first_price: number;
-  total_price_change_percent: number;
-  first_recorded_date: string;
-  last_updated_date: string;
-}
 
 interface SupplierPriceHistoryPanelProps {
   supplierId: string;
   supplierName?: string;
 }
 
-export function SupplierPriceHistoryPanel({ 
-  supplierId, 
-  supplierName 
+export function SupplierPriceHistoryPanel({
+  supplierId,
+  supplierName
 }: SupplierPriceHistoryPanelProps) {
-  // State
-  const [priceHistory, setPriceHistory] = useState<PriceHistoryData[]>([]);
-  const [priceStats, setPriceStats] = useState<PriceStats[]>([]);
+  const [priceHistory, setPriceHistory] = useState<PurchasePriceHistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedMaterial, setSelectedMaterial] = useState<string>("all");
-  const [timeRange, setTimeRange] = useState<number>(6); // months
+  const [timeRange, setTimeRange] = useState<number>(6); // bulan
   const [activeTab, setActiveTab] = useState<"chart" | "table">("chart");
 
-  // Get unique materials from history
   const materials = Array.from(
     new Map(priceHistory.map(item => [item.bahan_baku_id, item.bahan_baku_nama])).entries()
   ).map(([id, name]) => ({ id, name }));
 
-  // Fetch data
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      // Fetch price history
       const params = new URLSearchParams();
       params.set("months", timeRange.toString());
       if (selectedMaterial !== "all") {
         params.set("material_id", selectedMaterial);
       }
 
-      const historyRes = await fetch(`/api/purchasing/suppliers/${supplierId}/price-history?${params}`);
-      const historyData = await historyRes.json();
-      
-      if (historyData.success) {
-        setPriceHistory(historyData.data);
-      } else {
-        throw new Error(historyData.message);
-      }
+      const response = await fetch(
+        `/api/purchasing/suppliers/${supplierId}/price-history?${params}`
+      );
+      const result = await response.json();
 
-      // Fetch price stats
-      const statsParams = new URLSearchParams();
-      if (selectedMaterial !== "all") {
-        statsParams.set("material_id", selectedMaterial);
-      }
-
-      const statsRes = await fetch(`/api/purchasing/suppliers/${supplierId}/price-stats?${statsParams}`);
-      const statsData = await statsRes.json();
-      
-      if (statsData.success) {
-        setPriceStats(statsData.data);
-      }
-    } catch (error: any) {
+      if (!result.success) throw new Error(result.message);
+      setPriceHistory(result.data || []);
+    } catch (error: unknown) {
       console.error("Error fetching price data:", error);
-      toast.error("Gagal memuat data harga: " + error.message);
+      const message = error instanceof Error ? error.message : "Kesalahan tidak diketahui";
+      toast.error("Gagal memuat data harga pembelian: " + message);
     } finally {
       setLoading(false);
     }
@@ -112,20 +60,21 @@ export function SupplierPriceHistoryPanel({
     fetchData();
   }, [fetchData]);
 
-  // Group history by material for display
   const groupedHistory = priceHistory.reduce((acc, item) => {
     if (!acc[item.bahan_baku_id]) {
       acc[item.bahan_baku_id] = [];
     }
     acc[item.bahan_baku_id].push(item);
     return acc;
-  }, {} as Record<string, PriceHistoryData[]>);
+  }, {} as Record<string, PurchasePriceHistoryItem[]>);
 
-  // Calculate summary stats
   const totalMaterials = materials.length;
-  const totalPriceChanges = priceStats.reduce((sum, stat) => sum + stat.total_price_changes, 0);
-  const avgPriceChange = priceStats.length > 0 
-    ? priceStats.reduce((sum, stat) => sum + stat.total_price_change_percent, 0) / priceStats.length 
+  const totalPurchases = priceHistory.length;
+  const changes = priceHistory
+    .map((item) => item.price_change_percent)
+    .filter((value): value is number => typeof value === "number");
+  const avgPriceChange = changes.length > 0
+    ? changes.reduce((sum, value) => sum + value, 0) / changes.length
     : 0;
   const hasHistory = priceHistory.length > 0;
   const materialOptions = [
@@ -146,10 +95,10 @@ export function SupplierPriceHistoryPanel({
         <div>
           <h2 className="flex items-center gap-2 text-xl font-bold text-gray-900">
             <BarChart3 className="h-5 w-5 text-pink-600" />
-            Riwayat Harga Supplier
+            Riwayat Harga Pembelian
           </h2>
           <p className="text-sm text-gray-500">
-            {supplierName || "Supplier"} - {totalMaterials} bahan baku • {totalPriceChanges} perubahan harga
+            {supplierName || "Supplier"} - {totalMaterials} bahan baku • {totalPurchases} penerimaan
           </p>
         </div>
         <Button
@@ -160,11 +109,11 @@ export function SupplierPriceHistoryPanel({
           className="purchasing-secondary-button w-full sm:w-auto"
         >
           <RefreshCw className={`w-4 h-4 mr-2 ${loading ? "animate-spin" : ""}`} />
-          Refresh
+          Muat Ulang
         </Button>
       </div>
 
-      {/* Summary Stats Cards */}
+      {/* Ringkasan */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <Card className="border-gray-200/70 shadow-sm">
           <CardContent className="p-4">
@@ -184,8 +133,8 @@ export function SupplierPriceHistoryPanel({
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs text-gray-500 font-medium">Total Perubahan Harga</p>
-                <p className="text-2xl font-bold text-purple-600">{totalPriceChanges}</p>
+                <p className="text-xs text-gray-500 font-medium">Total Penerimaan</p>
+                <p className="text-2xl font-bold text-purple-600">{totalPurchases}</p>
               </div>
               <div className="p-2 bg-purple-50 rounded-lg">
                 <TrendingUp className="w-6 h-6 text-purple-600" />
@@ -217,7 +166,7 @@ export function SupplierPriceHistoryPanel({
         </Card>
       </div>
 
-      {/* Filters */}
+      {/* Filter */}
       <Card className="border-gray-200/70 shadow-sm">
         <CardContent className="p-4">
           <div className="grid gap-4 md:grid-cols-2">
@@ -254,7 +203,7 @@ export function SupplierPriceHistoryPanel({
         </CardContent>
       </Card>
 
-      {/* Chart & Table */}
+      {/* Grafik & Tabel */}
       <Tabs
         value={activeTab}
         onValueChange={(v) => setActiveTab(v as "chart" | "table")}
@@ -269,14 +218,14 @@ export function SupplierPriceHistoryPanel({
             className="h-11 flex-none rounded-none border-0 border-b-2 border-transparent bg-transparent px-0 text-sm font-semibold text-gray-500 shadow-none data-active:border-pink-600 data-active:!bg-transparent data-active:text-pink-700 data-active:shadow-none"
           >
             <LineChart className="w-4 h-4 mr-2" />
-            Grafik Trend
+            Grafik Tren
           </TabsTrigger>
           <TabsTrigger
             value="table"
             className="h-11 flex-none rounded-none border-0 border-b-2 border-transparent bg-transparent px-0 text-sm font-semibold text-gray-500 shadow-none data-active:border-pink-600 data-active:!bg-transparent data-active:text-pink-700 data-active:shadow-none"
           >
             <TableIcon className="w-4 h-4 mr-2" />
-            Tabel Histori
+            Tabel Riwayat
           </TabsTrigger>
         </TabsList>
 
@@ -284,7 +233,7 @@ export function SupplierPriceHistoryPanel({
           <Card className="border-gray-200/70 shadow-sm">
             <CardHeader className="border-b border-gray-200/70 px-4 py-3">
               <CardTitle className="text-base">
-                Trend Harga {selectedMaterial === "all" ? "Semua Bahan Baku" : materials.find(m => m.id === selectedMaterial)?.name}
+                Tren Harga {selectedMaterial === "all" ? "Semua Bahan Baku" : materials.find(m => m.id === selectedMaterial)?.name}
               </CardTitle>
             </CardHeader>
             <CardContent className="overflow-hidden p-4">
@@ -294,11 +243,11 @@ export function SupplierPriceHistoryPanel({
                 </div>
               ) : !hasHistory ? (
                 <EmptyPriceHistory
-                  title="Belum ada histori harga"
+                  title="Belum ada riwayat pembelian"
                   description={
                     selectedMaterial === "all"
-                      ? "Supplier ini belum memiliki data daftar harga bahan baku pada periode yang dipilih."
-                      : "Bahan baku yang dipilih belum memiliki histori harga pada periode ini."
+                      ? "Belum ada penerimaan barang dari supplier ini pada periode yang dipilih."
+                      : "Bahan baku yang dipilih belum pernah diterima pada periode ini."
                   }
                 />
               ) : selectedMaterial === "all" ? (
@@ -308,16 +257,16 @@ export function SupplierPriceHistoryPanel({
                       <h4 className="text-sm font-semibold text-gray-700 mb-2">
                         {items[0]?.bahan_baku_nama}
                       </h4>
-                      <PriceHistoryChart 
-                        data={items} 
+                      <PriceHistoryChart
+                        data={items}
                         height={250}
                       />
                     </div>
                   ))}
                 </div>
               ) : (
-                <PriceHistoryChart 
-                  data={priceHistory} 
+                <PriceHistoryChart
+                  data={priceHistory}
                   materialName={materials.find(m => m.id === selectedMaterial)?.name}
                   height={350}
                 />
@@ -330,7 +279,7 @@ export function SupplierPriceHistoryPanel({
           <Card className="border-gray-200/70 shadow-sm">
             <CardHeader className="border-b border-gray-200/70 px-4 py-3">
               <CardTitle className="text-base">
-                Detail Histori Perubahan Harga
+                Detail Penerimaan &amp; Harga
               </CardTitle>
             </CardHeader>
             <CardContent className="p-4">
@@ -339,10 +288,10 @@ export function SupplierPriceHistoryPanel({
               ) : !hasHistory ? (
                 <EmptyPriceHistory
                   title="Belum ada data tabel"
-                  description="Tidak ada histori harga yang bisa ditampilkan untuk filter saat ini."
+                  description="Tidak ada riwayat pembelian yang bisa ditampilkan untuk filter saat ini."
                 />
               ) : (
-                <PriceHistoryTable 
+                <PriceHistoryTable
                   data={priceHistory}
                   showMaterialName={selectedMaterial === "all"}
                 />
@@ -365,7 +314,7 @@ function EmptyPriceHistory({ title, description }: { title: string; description:
         <p className="text-sm font-semibold text-gray-900">{title}</p>
         <p className="mt-1 max-w-md text-sm text-gray-500">{description}</p>
         <p className="mt-3 text-xs text-gray-400">
-          Tambahkan data di menu Daftar Harga agar grafik dan tabel histori muncul.
+          Harga diambil otomatis dari penerimaan barang (GRN) supplier ini.
         </p>
       </div>
     </div>

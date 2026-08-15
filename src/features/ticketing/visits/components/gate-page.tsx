@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CheckCircleIcon, XCircleIcon } from "@heroicons/react/24/solid";
+import { normalizeNfcUid } from "@/features/pos/nfc";
 import { usePosNfcBridge } from "@/features/pos/nfc/use-pos-nfc-bridge";
+import { usePosNfcWebViewIngest } from "@/features/pos/nfc/use-pos-nfc-webview-ingest";
 import { gateTap } from "../api";
 import type { GateTapResponse } from "../types";
 
@@ -32,7 +34,7 @@ export function GatePage() {
   const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleTap = useCallback(async (uid: string) => {
-    const trimmed = uid.trim();
+    const trimmed = normalizeNfcUid(uid);
     if (!trimmed) return;
     const now = Date.now();
     if (now - lastTapRef.current < TAP_DEBOUNCE_MS) return;
@@ -60,6 +62,7 @@ export function GatePage() {
   }, []);
 
   usePosNfcBridge(handleTap);
+  usePosNfcWebViewIngest(handleTap);
 
   // Wedge: jaga fokus di input tersembunyi supaya ketikan reader tertangkap
   useEffect(() => {

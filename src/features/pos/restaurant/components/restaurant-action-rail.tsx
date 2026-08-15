@@ -23,15 +23,12 @@ import { printThermalReceipt, type ReceiptPayload } from "@/components/pos/Print
 import { cashierQueryKeys } from "@/features/pos/cashier/query-keys";
 import type { Order } from "@/features/pos/open-bills/types";
 import { preSettleOrder } from "@/lib/pos-api";
-import type { PosTable } from "@/lib/pos-api";
 import { cn } from "@/lib/utils";
 
 import { orderToPreviewReceipt } from "../order-to-receipt";
-import { billSelection } from "../selection";
-import type { NullableRestaurantSelection, RestaurantSelection } from "../selection";
+import type { NullableRestaurantSelection } from "../selection";
 import { getActiveSplitSummary } from "@/features/pos/open-bills/split-summary";
 import { PreviewBillDialog } from "./preview-bill-dialog";
-import { ViewOrdersDialog } from "./view-orders-dialog";
 
 const LAST_RECEIPT_KEY = "pos:lastReceipt";
 
@@ -39,7 +36,7 @@ function resolvePreviewTableLabel(order: Order, tableId?: string | null) {
   if (order.table?.table_number) return order.table.table_number;
   if (order.table?.qr_code) return order.table.qr_code;
   if (tableId) return `Table ${tableId.slice(0, 8)}`;
-  if (order.table_id) return `Table ${order.table_id.slice(0, 8)}`;
+  if (order.table_id) return "Meja";
   return null;
 }
 
@@ -62,32 +59,32 @@ export interface RestaurantActionRailProps {
   selection: NullableRestaurantSelection;
   selectedOrder: Order | null;
   selectedTableLabel?: string | null;
-  tablesById: Map<string, PosTable>;
   availableCount: number;
   occupiedCount: number;
+  openBillsCount?: number;
   onSplitBill: () => void;
   onPaySplits: () => void;
   onMoveTable: () => void;
   onMoveItems: () => void;
   onMergeTable: () => void;
   onWaitingList: () => void;
-  onSelectBill: (selection: RestaurantSelection) => void;
+  onViewOrders: () => void;
 }
 
 export function RestaurantActionRail({
   selection,
   selectedOrder,
   selectedTableLabel,
-  tablesById,
   availableCount,
   occupiedCount,
+  openBillsCount,
   onSplitBill,
   onPaySplits,
   onMoveTable,
   onMoveItems,
   onMergeTable,
   onWaitingList,
-  onSelectBill,
+  onViewOrders,
 }: RestaurantActionRailProps) {
   const queryClient = useQueryClient();
   const clock = useLiveClock();
@@ -101,7 +98,6 @@ export function RestaurantActionRail({
   const [previewMode, setPreviewMode] = useState<"order-check" | "pre-settlement">(
     "pre-settlement"
   );
-  const [viewOrdersOpen, setViewOrdersOpen] = useState(false);
 
   const buildPreviewPayload = () => {
     if (!selectedOrder) return null;
@@ -265,11 +261,11 @@ export function RestaurantActionRail({
     "h-auto w-full flex-col items-center justify-center gap-1.5 whitespace-normal rounded-lg border-gray-200/70 px-2 py-2.5 text-center text-[11px] font-medium leading-tight text-gray-700 hover:border-primary/30 hover:bg-primary/5 hover:text-primary";
 
   return (
-    <aside className="flex h-fit flex-col gap-2 rounded-xl border border-gray-200/70 bg-white p-2.5 shadow-xs max-lg:grid max-lg:grid-cols-2 sm:max-lg:grid-cols-4">
+    <aside className="flex h-fit flex-col gap-2 rounded-xl border border-gray-200/70 bg-white p-2.5 shadow-xs max-[799px]:grid max-[799px]:grid-cols-2 sm:max-[799px]:grid-cols-4">
       <div
         className={cn(
           "flex flex-col items-center justify-center gap-1 rounded-lg border border-gray-200/70 bg-gray-50/80 px-2 py-2.5",
-          "max-lg:col-span-2 sm:max-lg:col-span-4"
+          "max-[799px]:col-span-2 sm:max-[799px]:col-span-4"
         )}
       >
         <div className="flex items-center justify-center gap-2 text-sm font-semibold tabular-nums text-gray-900">
@@ -305,12 +301,19 @@ export function RestaurantActionRail({
         className={cn(
           actionButtonClass,
           "border-primary/25 text-primary hover:border-primary/40 hover:bg-primary/10 hover:text-primary",
-          "max-lg:col-span-2 sm:max-lg:col-span-4"
+          "max-[799px]:col-span-2 sm:max-[799px]:col-span-4"
         )}
-        onClick={() => setViewOrdersOpen(true)}
+        onClick={onViewOrders}
       >
         <ClipboardList className="size-4 shrink-0" />
-        <span>View Orders</span>
+        <span className="flex min-w-0 items-center gap-1.5">
+          <span className="truncate">View Orders</span>
+          {typeof openBillsCount === "number" ? (
+            <span className="rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-primary">
+              {openBillsCount}
+            </span>
+          ) : null}
+        </span>
       </Button>
 
       <PreviewBillDialog
@@ -326,18 +329,6 @@ export function RestaurantActionRail({
         onOpenChange={(open) => {
           setPreviewOpen(open);
           if (!open) setPreviewPayload(null);
-        }}
-      />
-
-      <ViewOrdersDialog
-        open={viewOrdersOpen}
-        onOpenChange={setViewOrdersOpen}
-        tablesById={tablesById}
-        onSelectOrder={(order) => {
-          onSelectBill(billSelection(order.id, order.table_id ?? undefined));
-          toast.message(
-            `Selected ${order.order_number || order.id.slice(0, 8)}.`
-          );
         }}
       />
     </aside>

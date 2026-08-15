@@ -1,32 +1,51 @@
 import type { DbClient } from "@/lib/pg/types";
 import { toQty } from "@/lib/purchasing/utils";
+import { cancelDraftRejectCreditsForPo } from "@/lib/purchasing/vendor-credit-service";
 
 // ============================================================
 // PO State Machine
-// Valid transitions: DRAFT→APPROVED→SENT→PARTIAL→RECEIVED
-//                  DRAFT/APPROVED→CANCELLED
+// Valid transitions: DRAFT→APPROVED→SENT→PARTIALLY_RECEIVED→RECEIVED
+//                  PARTIALLY_RECEIVED / RECEIVED → CLOSED
+//                  DRAFT/APPROVED/SENT/PARTIALLY_RECEIVED→CANCELLED
+// Legacy alias: "partial" ≡ "partially_received"
 // ============================================================
 
-export type POStatus = "draft" | "approved" | "sent" | "partial" | "received" | "cancelled" | "closed";
+export type POStatus =
+  | "draft"
+  | "approved"
+  | "sent"
+  | "partially_received"
+  | "received"
+  | "cancelled"
+  | "closed";
 
 export const PO_TRANSITIONS: Record<POStatus, POStatus[]> = {
   draft: ["approved", "cancelled"],
   approved: ["sent", "cancelled"],
-  sent: ["partial", "received", "cancelled"],
-  partial: ["received", "cancelled"],
+  sent: ["partially_received", "received", "cancelled"],
+  partially_received: ["received", "cancelled", "closed"],
   received: ["closed"],
   cancelled: [],
   closed: [],
 };
 
-export function canTransition(from: POStatus, to: POStatus): boolean {
-  return PO_TRANSITIONS[from]?.includes(to) ?? false;
+/** Normalize legacy "partial" to canonical DB status. */
+export function normalizePOStatus(status: string | null | undefined): POStatus | string {
+  if (!status) return "";
+  if (status === "partial") return "partially_received";
+  return status;
 }
 
-export function validateTransition(from: POStatus, to: POStatus): void {
-  if (!canTransition(from, to)) {
+export function canTransition(from: string | POStatus, to: POStatus): boolean {
+  const normalized = normalizePOStatus(from) as POStatus;
+  return PO_TRANSITIONS[normalized]?.includes(to) ?? false;
+}
+
+export function validateTransition(from: string | POStatus, to: POStatus): void {
+  const normalized = normalizePOStatus(from) as POStatus;
+  if (!canTransition(normalized, to)) {
     throw new Error(
-      `Invalid state transition: ${from} → ${to}. Allowed: ${PO_TRANSITIONS[from]?.join(", ") || "none"}`
+      `Invalid state transition: ${normalized} → ${to}. Allowed: ${PO_TRANSITIONS[normalized]?.join(", ") || "none"}`
     );
   }
 }
@@ -89,8 +108,7 @@ export interface POCreateInput {
  * Validate PO creation input
  * - supplier must exist and be active
  * - bahan_baku must exist and be active
- * - supplier_price must exist for each item
- * - minimum_qty must be met
+ * - qty and unit price must be usable
  */
 export async function validatePOCreate(
   db: DbClient,
@@ -152,35 +170,12 @@ export async function validatePOCreate(
       }
     }
 
-    // Check supplier price exists
-    const { data: price } = await db
-      .from("supplier_price_lists")
-      .select("id, harga, minimum_qty, berlaku_sampai")
-      .eq("supplier_id", input.supplier_id)
-      .eq("bahan_baku_id", item.bahan_baku_id)
-      .eq("is_active", true)
-      .single();
+    if (!(item.qty > 0)) {
+      errors.push(`Item ${i + 1}: Qty harus lebih dari 0`);
+    }
 
-    if (!price) {
-      errors.push(`Item ${i + 1}: Harga supplier belum ada di master — tambah dulu di Harga Beli`);
-    } else {
-      // Check validity
-      if (price.berlaku_sampai) {
-        const expiry = new Date(price.berlaku_sampai);
-        if (expiry < new Date()) {
-          errors.push(`Item ${i + 1}: Harga supplier sudah expired (${price.berlaku_sampai})`);
-        }
-      }
-
-      // Check minimum qty
-      if (item.qty < price.minimum_qty) {
-        errors.push(`Item ${i + 1}: Qty kurang dari minimum order (${price.minimum_qty})`);
-      }
-
-      // Warn if unit_price differs
-      if (price.harga !== item.unit_price) {
-        // Not an error, just info — allow manual override
-      }
+    if (!(item.unit_price >= 0)) {
+      errors.push(`Item ${i + 1}: Harga satuan tidak valid`);
     }
   }
 
@@ -285,7 +280,7 @@ export async function receivePOItems(
     .eq("id", input.po_id)
     .single();
 
-  if (!po || !canTransition(po.status as POStatus, "partial") && !canTransition(po.status as POStatus, "received")) {
+  if (!po || (!canTransition(po.status as string, "partially_received") && !canTransition(po.status as string, "received"))) {
     throw new Error(`PO tidak dapat diterima — status: ${po?.status}`);
   }
 
@@ -326,7 +321,7 @@ export async function receivePOItems(
   }
 
   // Determine new status
-  const newStatus: POStatus = allFullyReceived ? "received" : "partial";
+  const newStatus: POStatus = allFullyReceived ? "received" : "partially_received";
 
   // Update PO status
   await db
@@ -339,4 +334,59 @@ export async function receivePOItems(
     .eq("id", input.po_id);
 
   return { success: true, newStatus };
+}
+
+/**
+ * Close a PO that still has open quantity (supplier will not replace shortage).
+ * After close, the PO is no longer eligible for new deliveries.
+ */
+export async function closePurchaseOrder(
+  db: DbClient,
+  poId: string,
+  reason: string,
+  userId: string
+): Promise<{ id: string; status: POStatus }> {
+  const trimmed = reason.trim();
+  if (!trimmed) {
+    throw new Error("Alasan penutupan wajib diisi");
+  }
+
+  const { data: po, error } = await db
+    .from("purchase_orders")
+    .select("id, status")
+    .eq("id", poId)
+    .single();
+
+  if (error || !po) {
+    throw new Error("Purchase order tidak ditemukan");
+  }
+
+  const current = normalizePOStatus(po.status) as POStatus;
+  validateTransition(current, "closed");
+
+  try {
+    await cancelDraftRejectCreditsForPo(db, poId);
+  } catch (creditErr) {
+    console.error("[closePurchaseOrder] cancel draft credits (non-fatal):", creditErr);
+  }
+
+  const { data: updated, error: updateError } = await db
+    .from("purchase_orders")
+    .update({
+      status: "closed",
+      closed_at: new Date().toISOString(),
+      closed_by: userId,
+      close_reason: trimmed,
+      updated_at: new Date().toISOString(),
+      updated_by: userId,
+    })
+    .eq("id", poId)
+    .select("id, status")
+    .single();
+
+  if (updateError || !updated) {
+    throw new Error(updateError?.message || "Gagal menutup purchase order");
+  }
+
+  return { id: updated.id as string, status: updated.status as POStatus };
 }

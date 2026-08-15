@@ -1,17 +1,12 @@
--- POS tables seeder: 10 tables per floor (B, GF, 1–5).
+-- POS tables seeder: 10 tables per floor (Lantai 5 & 6 only).
 -- Idempotent on table_number.
 
 WITH floors AS (
   SELECT *
   FROM (
     VALUES
-      (0, 'B'::text,  'Basement'::text,     'Indoor'::text),
-      (1, 'GF',       'Ground Floor',       'Indoor'),
-      (2, '1',        'Floor 1',            'Indoor'),
-      (3, '2',        'Floor 2',            'Outdoor'),
-      (4, '3',        'Floor 3',            'VIP'),
-      (5, '4',        'Floor 4',            'Terrace'),
-      (6, '5',        'Floor 5',            'Rooftop')
+      (0, '5'::text,  'Lantai 5'::text,  'Indoor'::text),
+      (1, '6',        'Lantai 6',        'Indoor')
   ) AS f(floor_idx, floor_code, floor_label, default_area)
 ),
 nums AS (
@@ -75,3 +70,10 @@ ON CONFLICT (table_number) DO UPDATE SET
   pos_x = EXCLUDED.pos_x,
   pos_y = EXCLUDED.pos_y,
   updated_at = now();
+
+-- Soft-deactivate legacy floors (B/GF/1–4) so restaurant/tables only show 5 & 6.
+UPDATE pos.pos_tables
+SET is_active = false,
+    updated_at = now()
+WHERE coalesce(floor, '') NOT IN ('5', '6')
+  AND is_active IS DISTINCT FROM false;

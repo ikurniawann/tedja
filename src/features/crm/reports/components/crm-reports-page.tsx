@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useCrmReports } from "../queries";
 import { CsReportSection } from "./cs-report-section";
+import { ConversationInsightSection } from "./conversation-insight-section";
 import type { CrmReportPeriodInput } from "../types";
 
 const numberFormat = new Intl.NumberFormat("id-ID");
@@ -236,6 +237,8 @@ export function CrmReportsPage() {
         </section>
 
         <CsReportSection period={applied} />
+
+        <ConversationInsightSection period={applied} />
       </div>
     </div>
   );

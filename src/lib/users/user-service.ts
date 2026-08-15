@@ -3,6 +3,10 @@ import { queryOne } from "@/lib/db";
 import type { DbClient } from "@/lib/pg/types";
 import { normalizeBusinessScopePayload } from "@/lib/configuration/business-scope";
 import type { CreateUserEmployeeInput, UpdateUserEmployeeInput } from "./schemas";
+import {
+  resolveDefaultWarehouseId,
+  resolveSavedWarehouseIds,
+} from "./stall-assignment";
 import { mapEmployeeUserRow, type EmployeeUserRow } from "./user-mapper";
 import {
   clearUserWarehouses,
@@ -43,6 +47,7 @@ async function enrichWithAppUser(row: EmployeeUserRow): Promise<EmployeeUserRow>
     .from("users")
     .select(
       `id, role, status, brand_id, business_scope, holding_id, company_id, branch_id,
+       can_switch_stall, default_warehouse_id,
        user_approval_permissions(*)`
     )
     .eq("id", row.user_id)
@@ -210,6 +215,26 @@ async function generateNip(db: DbClient) {
   throw new Error("Unable to generate a unique employee ID");
 }
 
+function stallProfileFields(input: {
+  warehouse_ids?: string[];
+  default_warehouse_id?: string | null;
+  can_switch_stall?: boolean;
+}) {
+  const defaultId = resolveDefaultWarehouseId({
+    defaultWarehouseId: input.default_warehouse_id,
+    warehouseIds: input.warehouse_ids,
+  });
+  return {
+    default_warehouse_id: defaultId,
+    can_switch_stall: input.can_switch_stall === true,
+    warehouse_ids: resolveSavedWarehouseIds({
+      defaultWarehouseId: defaultId,
+      warehouseIds: input.warehouse_ids,
+      canSwitchStall: input.can_switch_stall === true,
+    }),
+  };
+}
+
 function buildUserProfileFields(input: {
   role: string;
   brand_id?: string | null;
@@ -251,6 +276,8 @@ async function provisionAppAccount(
     account_status?: "active" | "inactive";
     approval_permissions?: CreateUserEmployeeInput["approval_permissions"];
     warehouse_ids?: string[];
+    default_warehouse_id?: string | null;
+    can_switch_stall?: boolean;
   }
 ) {
   let authUserId: string | null = null;
@@ -270,12 +297,15 @@ async function provisionAppAccount(
 
     const status = input.account_status ?? "active";
     const scopeFields = buildUserProfileFields(input);
+    const stall = stallProfileFields(input);
     const { error: profileError } = await db.from("users").insert({
       id: authUserId,
       full_name: input.full_name,
       email: input.email,
       role: input.role,
       status,
+      can_switch_stall: stall.can_switch_stall,
+      default_warehouse_id: stall.default_warehouse_id,
       ...scopeFields,
     });
 
@@ -318,11 +348,11 @@ async function provisionAppAccount(
 
     if (linkError) throw linkError;
 
-    if (input.warehouse_ids !== undefined) {
+    if (input.warehouse_ids !== undefined || input.default_warehouse_id !== undefined) {
       await syncUserWarehouses(
         db,
         authUserId,
-        input.warehouse_ids,
+        stall.warehouse_ids,
         input.branch_id ?? null
       );
     }
@@ -402,6 +432,19 @@ async function syncAppAccount(
   }
 
   if (input.account_status) profileUpdates.status = input.account_status;
+  if (input.can_switch_stall !== undefined) {
+    profileUpdates.can_switch_stall = input.can_switch_stall === true;
+  }
+
+  const shouldSyncStalls =
+    input.warehouse_ids !== undefined || input.default_warehouse_id !== undefined;
+  const stall = shouldSyncStalls ? stallProfileFields(input) : null;
+  if (stall) {
+    profileUpdates.default_warehouse_id = stall.default_warehouse_id;
+    if (input.can_switch_stall === undefined) {
+      profileUpdates.can_switch_stall = stall.can_switch_stall;
+    }
+  }
 
   if (Object.keys(profileUpdates).length > 1) {
     const { error: profileError } = await db
@@ -435,7 +478,7 @@ async function syncAppAccount(
     }
   }
 
-  if (input.warehouse_ids !== undefined) {
+  if (stall) {
     const { data: profile } = await db
       .from("users")
       .select("branch_id")
@@ -445,7 +488,7 @@ async function syncAppAccount(
     const branchId =
       input.branch_id !== undefined ? input.branch_id : profile?.branch_id ?? null;
 
-    await syncUserWarehouses(db, userId, input.warehouse_ids, branchId);
+    await syncUserWarehouses(db, userId, stall.warehouse_ids, branchId);
   }
 
   await db.from("admin_user_audit_logs").insert({
@@ -555,6 +598,8 @@ export async function createUserEmployee(
       account_status: input.account_status,
       approval_permissions: input.approval_permissions,
       warehouse_ids: input.warehouse_ids,
+      default_warehouse_id: input.default_warehouse_id,
+      can_switch_stall: input.can_switch_stall,
     });
   }
 
@@ -661,6 +706,8 @@ export async function updateUserEmployee(
       account_status: input.account_status,
       approval_permissions: input.approval_permissions,
       warehouse_ids: input.warehouse_ids,
+      default_warehouse_id: input.default_warehouse_id,
+      can_switch_stall: input.can_switch_stall,
     });
   } else if (existing.user_id && wantsAccess) {
     await syncAppAccount(db, actorId, existing.user_id, {

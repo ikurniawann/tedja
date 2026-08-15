@@ -2,11 +2,12 @@ import { describe, expect, it } from "vitest";
 import { CASHIER_ROUTES } from "@/features/pos/cashier/constants";
 import {
   RESTAURANT_FROM,
-  RESTAURANT_IMMERSIVE_PARAM,
   RESTAURANT_PATH,
+  RESTAURANT_TABLET_PATH,
   buildCashierHandoffUrl,
   isRestaurantImmersive,
   restaurantPath,
+  shouldUseTabletCashierHandoff,
 } from "./nav";
 
 describe("isRestaurantImmersive", () => {
@@ -16,11 +17,18 @@ describe("isRestaurantImmersive", () => {
     ).toBe(true);
   });
 
-  it("is false when missing or not 1", () => {
-    expect(isRestaurantImmersive(new URLSearchParams())).toBe(false);
+  it("is true when tablet=1", () => {
+    expect(isRestaurantImmersive(new URLSearchParams("tablet=1"))).toBe(true);
+  });
+
+  it("is true when immersive=true", () => {
     expect(
       isRestaurantImmersive(new URLSearchParams("immersive=true"))
-    ).toBe(false);
+    ).toBe(true);
+  });
+
+  it("is false when missing", () => {
+    expect(isRestaurantImmersive(new URLSearchParams())).toBe(false);
   });
 });
 
@@ -30,10 +38,28 @@ describe("restaurantPath", () => {
     expect(restaurantPath({})).toBe(RESTAURANT_PATH);
   });
 
-  it("appends immersive=1 when requested", () => {
-    expect(restaurantPath({ immersive: true })).toBe(
-      `${RESTAURANT_PATH}?${RESTAURANT_IMMERSIVE_PARAM}=1`
-    );
+  it("uses dedicated tablet route when immersive requested", () => {
+    expect(restaurantPath({ immersive: true })).toBe(RESTAURANT_TABLET_PATH);
+  });
+});
+
+describe("shouldUseTabletCashierHandoff", () => {
+  it("is true when restaurant shell is immersive", () => {
+    expect(
+      shouldUseTabletCashierHandoff({ immersive: true, handheldClient: false })
+    ).toBe(true);
+  });
+
+  it("is true on handheld even without immersive restaurant URL", () => {
+    expect(
+      shouldUseTabletCashierHandoff({ immersive: false, handheldClient: true })
+    ).toBe(true);
+  });
+
+  it("is false on desktop dashboard restaurant", () => {
+    expect(
+      shouldUseTabletCashierHandoff({ immersive: false, handheldClient: false })
+    ).toBe(false);
   });
 });
 
@@ -68,13 +94,16 @@ describe("buildCashierHandoffUrl", () => {
     expect(buildCashierHandoffUrl({ pay: true })).toContain("pay=1");
   });
 
-  it("includes immersive=1 when requested", () => {
-    expect(buildCashierHandoffUrl({ immersive: true })).toContain(
-      "immersive=1"
-    );
+  it("hands off to cashier fullscreen with tablet flags when immersive", () => {
+    const url = buildCashierHandoffUrl({ immersive: true, tableId: "t1" });
+    expect(url.startsWith(`${CASHIER_ROUTES.fullscreen}?`)).toBe(true);
+    expect(url).toContain("immersive=1");
+    expect(url).toContain("tablet=1");
+    expect(url).toContain("tableId=t1");
   });
 
   it("omits immersive when not requested", () => {
     expect(buildCashierHandoffUrl({})).not.toContain("immersive=");
+    expect(buildCashierHandoffUrl({})).not.toContain("tablet=");
   });
 });

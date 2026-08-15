@@ -37,7 +37,7 @@ export function PRApprovalActions({ prId }: PRApprovalActionsProps) {
   async function submitApproval() {
     if (!action) return;
     if (isReject && !reason.trim()) {
-      toast.error("Rejection reason is required");
+      toast.error("Alasan penolakan wajib diisi");
       return;
     }
 
@@ -53,13 +53,13 @@ export function PRApprovalActions({ prId }: PRApprovalActionsProps) {
       });
       const payload = await response.json();
       if (!response.ok) {
-        throw new Error(payload.error || "Failed to process purchase request approval");
+        throw new Error(payload.error || "Gagal memproses persetujuan purchase request");
       }
 
       toast.success(
         action === "approve"
-          ? "Purchase request approved"
-          : "Purchase request rejected"
+          ? "Purchase request berhasil disetujui"
+          : "Purchase request berhasil ditolak"
       );
       setAction(null);
       setReason("");
@@ -70,7 +70,7 @@ export function PRApprovalActions({ prId }: PRApprovalActionsProps) {
       }
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : "Failed to process purchase request approval"
+        error instanceof Error ? error.message : "Gagal memproses persetujuan purchase request"
       );
     } finally {
       setLoading(false);
@@ -87,7 +87,7 @@ export function PRApprovalActions({ prId }: PRApprovalActionsProps) {
     <>
       <Card className="border-gray-200/70 shadow-xs">
         <CardHeader className="border-b border-gray-200/70 pb-3">
-          <CardTitle className="text-base">Approval Actions</CardTitle>
+          <CardTitle className="text-base">Aksi Persetujuan</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3 pt-4">
           <Button
@@ -96,7 +96,7 @@ export function PRApprovalActions({ prId }: PRApprovalActionsProps) {
             onClick={() => setAction("approve")}
           >
             <CheckCircle className="mr-2 h-4 w-4" />
-            Approve
+            Setujui
           </Button>
           <Button
             type="button"
@@ -105,7 +105,7 @@ export function PRApprovalActions({ prId }: PRApprovalActionsProps) {
             onClick={() => setAction("reject")}
           >
             <XCircle className="mr-2 h-4 w-4" />
-            Reject
+            Tolak
           </Button>
         </CardContent>
       </Card>
@@ -114,12 +114,12 @@ export function PRApprovalActions({ prId }: PRApprovalActionsProps) {
         <DialogPanel size={isReject ? "sm" : "xs"}>
           <DialogPanelHeader>
             <DialogPanelTitle>
-              {isReject ? "Reject Purchase Request" : "Approve Purchase Request?"}
+              {isReject ? "Tolak Purchase Request" : "Setujui Purchase Request?"}
             </DialogPanelTitle>
             <DialogPanelDescription>
               {isReject
-                ? "The request will be rejected. The requester can create a revision if the items are still needed."
-                : "This request will be approved as a valid requirement and can proceed to purchase order creation."}
+                ? "Permintaan ini akan ditolak. Pemohon dapat membuat revisi jika item masih dibutuhkan."
+                : "Permintaan ini akan disetujui sebagai kebutuhan yang valid dan dapat dilanjutkan ke pembuatan purchase order."}
             </DialogPanelDescription>
           </DialogPanelHeader>
 
@@ -127,13 +127,13 @@ export function PRApprovalActions({ prId }: PRApprovalActionsProps) {
             <DialogPanelBody>
               <div className="space-y-1.5">
                 <Label htmlFor="pr-rejection-reason" className="text-xs">
-                  Rejection Reason <span className="text-red-500">*</span>
+                  Alasan Penolakan <span className="text-red-500">*</span>
                 </Label>
                 <Textarea
                   id="pr-rejection-reason"
                   value={reason}
                   onChange={(event) => setReason(event.target.value)}
-                  placeholder="Explain why this request is rejected..."
+                  placeholder="Jelaskan alasan permintaan ini ditolak..."
                   rows={4}
                   className="resize-none text-sm"
                   disabled={loading}
@@ -152,7 +152,7 @@ export function PRApprovalActions({ prId }: PRApprovalActionsProps) {
               onClick={closeDialog}
               disabled={loading}
             >
-              Cancel
+              Batal
             </Button>
             <Button
               type="button"
@@ -168,11 +168,11 @@ export function PRApprovalActions({ prId }: PRApprovalActionsProps) {
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {loading
                 ? isReject
-                  ? "Rejecting..."
-                  : "Approving..."
+                  ? "Menolak..."
+                  : "Menyetujui..."
                 : isReject
-                  ? "Reject"
-                  : "Approve"}
+                  ? "Tolak"
+                  : "Setujui"}
             </Button>
           </DialogFooter>
         </DialogPanel>

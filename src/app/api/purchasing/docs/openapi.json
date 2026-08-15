@@ -36,8 +36,7 @@
     { "name": "Returns", "description": "Retur barang" },
     { "name": "Inventory", "description": "Inventory management" },
     { "name": "COGS", "description": "Cost of Goods Sold & additional costs" },
-    { "name": "Reports", "description": "Reporting endpoints" },
-    { "name": "Vendor Prices", "description": "Harga supplier per produk" }
+    { "name": "Reports", "description": "Reporting endpoints" }
   ],
   "paths": {
     "/suppliers": {
@@ -847,63 +846,6 @@
         }
       }
     },
-    "/supplier-prices": {
-      "get": {
-        "tags": ["Vendor Prices"],
-        "summary": "List supplier prices",
-        "description": "Mengambil daftar harga supplier per produk.",
-        "operationId": "listSupplierPrices",
-        "parameters": [
-          { "$ref": "#/components/parameters/Page" },
-          { "$ref": "#/components/parameters/Limit" },
-          { "$ref": "#/components/parameters/Search" },
-          { "name": "supplier_id", "in": "query", "schema": { "type": "string", "format": "uuid" } },
-          { "name": "product_id", "in": "query", "schema": { "type": "string", "format": "uuid" } }
-        ],
-        "responses": {
-          "200": { "$ref": "#/components/responses/200Paginated" },
-          "400": { "$ref": "#/components/responses/400" },
-          "401": { "$ref": "#/components/responses/401" },
-          "403": { "$ref": "#/components/responses/403" },
-          "500": { "$ref": "#/components/responses/500" }
-        }
-      },
-      "post": {
-        "tags": ["Vendor Prices"],
-        "summary": "Create supplier price",
-        "description": "Menambahkan harga supplier untuk suatu produk.",
-        "operationId": "createSupplierPrice",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": { "$ref": "#/components/schemas/SupplierPriceCreate" },
-              "example": {
-                "supplier_id": "uuid-supplier",
-                "product_id": "uuid-product",
-                "harga": 82000,
-                "min_qty": 10,
-                "lead_time_days": 7,
-                "effective_date": "2025-02-01",
-                "notes": "Harga khusus untuk qty >= 10"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": { "$ref": "#/components/responses/201Created" },
-          "400": { "$ref": "#/components/responses/400" },
-          "401": { "$ref": "#/components/responses/401" },
-          "403": { "$ref": "#/components/responses/403" },
-          "500": { "$ref": "#/components/responses/500" }
-        }
-      }
-    },
-    "/supplier-prices/{id}": {
-      "get": { "tags": ["Vendor Prices"], "summary": "Get supplier price by ID", "operationId": "getSupplierPriceById", "parameters": [{ "$ref": "#/components/parameters/Id" }], "responses": { "200": { "$ref": "#/components/responses/200Success" }, "401": { "$ref": "#/components/responses/401" }, "404": { "$ref": "#/components/responses/404" }, "500": { "$ref": "#/components/responses/500" } } },
-      "put": { "tags": ["Vendor Prices"], "summary": "Update supplier price", "operationId": "updateSupplierPrice", "parameters": [{ "$ref": "#/components/parameters/Id" }], "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SupplierPriceUpdate" } } } }, "responses": { "200": { "$ref": "#/components/responses/200Success" }, "400": { "$ref": "#/components/responses/400" }, "401": { "$ref": "#/components/responses/401" }, "403": { "$ref": "#/components/responses/403" }, "404": { "$ref": "#/components/responses/404" }, "500": { "$ref": "#/components/responses/500" } } },
-      "delete": { "tags": ["Vendor Prices"], "summary": "Delete supplier price", "operationId": "deleteSupplierPrice", "parameters": [{ "$ref": "#/components/parameters/Id" }], "responses": { "204": { "$ref": "#/components/responses/204NoContent" }, "401": { "$ref": "#/components/responses/401" }, "403": { "$ref": "#/components/responses/403" }, "404": { "$ref": "#/components/responses/404" }, "500": { "$ref": "#/components/responses/500" } } }
-    },
     "/cogs/product/{produk_id}": {
       "get": {
         "tags": ["COGS"],
@@ -1366,30 +1308,6 @@
         "type": "object",
         "properties": {
           "status": { "type": "string", "enum": ["pending", "approved", "shipped", "completed", "rejected"] },
-          "notes": { "type": "string" }
-        }
-      },
-      "SupplierPriceCreate": {
-        "type": "object",
-        "required": ["supplier_id", "product_id", "harga"],
-        "properties": {
-          "supplier_id": { "type": "string", "format": "uuid" },
-          "product_id": { "type": "string", "format": "uuid" },
-          "harga": { "type": "number", "minimum": 0 },
-          "min_qty": { "type": "number", "minimum": 1, "default": 1 },
-          "lead_time_days": { "type": "integer", "minimum": 0 },
-          "effective_date": { "type": "string", "format": "date" },
-          "notes": { "type": "string" }
-        }
-      },
-      "SupplierPriceUpdate": {
-        "type": "object",
-        "properties": {
-          "harga": { "type": "number", "minimum": 0 },
-          "min_qty": { "type": "number", "minimum": 1 },
-          "lead_time_days": { "type": "integer", "minimum": 0 },
-          "effective_date": { "type": "string", "format": "date" },
-          "is_active": { "type": "boolean" },
           "notes": { "type": "string" }
         }
       }

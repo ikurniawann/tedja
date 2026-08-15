@@ -7,6 +7,7 @@ import { ChevronDownIcon } from "@heroicons/react/24/outline";
 import { isNavLinkActive } from "@/lib/iam/nav-active";
 import { useNavFrom } from "@/lib/iam/use-nav-from";
 import type { NavItem } from "@/lib/iam/types";
+import { isPosChromeLessPath } from "@/features/pos/tablet-mode";
 import { AppSidebarNavIcon } from "./app-sidebar-nav-icons";
 
 interface AppSidebarNavProps {
@@ -166,8 +167,20 @@ export default function AppSidebarNav({
       "flex w-full items-center rounded-lg text-sm transition-colors",
       collapsed ? "justify-center px-0 py-2.5" : "gap-3 px-3 py-2.5",
       itemActive
-        ? "bg-pink-600 font-semibold text-white shadow-sm shadow-pink-600/25 dark:bg-pink-500 dark:shadow-none"
-        : "text-foreground/90 hover:bg-pink-500/10 hover:text-pink-700 dark:hover:bg-white/10 dark:hover:text-white",
+        ? "bg-[var(--sidebar-active-background)] font-semibold text-[var(--sidebar-active-foreground)] shadow-sm"
+        : "text-[var(--sidebar-foreground)]/90 hover:bg-[color-mix(in_srgb,var(--sidebar-active-background)_10%,transparent)] hover:text-[var(--sidebar-active-background)]",
+      extra,
+    ]
+      .filter(Boolean)
+      .join(" ");
+
+  const topLevelGroupClass = (itemActive: boolean, extra = "") =>
+    [
+      "flex w-full items-center rounded-lg text-sm transition-colors",
+      collapsed ? "justify-center px-0 py-2.5" : "gap-3 px-3 py-2.5",
+      itemActive
+        ? "font-semibold text-[var(--sidebar-active-background)]"
+        : "text-[var(--sidebar-foreground)]/90 hover:bg-[color-mix(in_srgb,var(--sidebar-active-background)_10%,transparent)] hover:text-[var(--sidebar-active-background)]",
       extra,
     ]
       .filter(Boolean)
@@ -188,7 +201,7 @@ export default function AppSidebarNav({
         itemActive
           ? "font-medium text-foreground"
           : "font-normal text-foreground/75",
-        "hover:bg-pink-500/10 hover:text-pink-700 dark:hover:bg-white/10 dark:hover:text-white",
+        "hover:bg-[color-mix(in_srgb,var(--sidebar-active-background)_10%,transparent)] hover:text-[var(--sidebar-active-background)]",
         extra,
       ]
         .filter(Boolean)
@@ -199,12 +212,11 @@ export default function AppSidebarNav({
       base,
       itemActive
         ? [
-            "bg-pink-500/12 font-medium text-pink-700",
+            "bg-[color-mix(in_srgb,var(--sidebar-active-background)_12%,transparent)] font-medium text-[var(--sidebar-active-background)]",
             "before:absolute before:left-0 before:top-1/2 before:h-4 before:w-[3px]",
-            "before:-translate-y-1/2 before:rounded-r-full before:bg-pink-600",
-            "dark:bg-pink-400/12 dark:text-pink-200 dark:before:bg-pink-400",
+            "before:-translate-y-1/2 before:rounded-r-full before:bg-[var(--sidebar-active-background)]",
           ].join(" ")
-        : "font-normal text-foreground/70 hover:bg-pink-500/8 hover:text-pink-700 dark:hover:bg-white/10 dark:hover:text-white",
+        : "font-normal text-[var(--sidebar-foreground)]/70 hover:bg-[color-mix(in_srgb,var(--sidebar-active-background)_8%,transparent)] hover:text-[var(--sidebar-active-background)]",
       extra,
     ]
       .filter(Boolean)
@@ -235,7 +247,7 @@ export default function AppSidebarNav({
     if (hasChildren) {
       const groupShellClass = isSubmenu
         ? submenuItemClass(itemActive, true)
-        : topLevelItemClass(itemActive, collapsed ? "" : "justify-between");
+        : topLevelGroupClass(itemActive, collapsed ? "" : "justify-between");
 
       return (
         <div key={itemKey}>
@@ -247,11 +259,11 @@ export default function AppSidebarNav({
             title={collapsed ? item.label : undefined}
           >
             {collapsed && branchBadgeTotal(item) > 0 && (
-              <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-pink-600" />
+              <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-[var(--sidebar-active-background)]" />
             )}
             {collapsed ? (
               showIcon ? (
-                <AppSidebarNavIcon name={item.icon} isActive={itemActive} />
+                <AppSidebarNavIcon name={item.icon} isActive={false} />
               ) : (
                 <span className="truncate text-xs font-normal">{item.label}</span>
               )
@@ -260,11 +272,11 @@ export default function AppSidebarNav({
                 <span
                   className={`flex min-w-0 flex-1 items-center text-left ${showIcon ? "gap-3" : ""}`}
                 >
-                  {showIcon && <AppSidebarNavIcon name={item.icon} isActive={itemActive} />}
-                  <span>{item.label}</span>
+                  {showIcon && <AppSidebarNavIcon name={item.icon} isActive={false} />}
+                  <span className="truncate">{item.label}</span>
                 </span>
                 {!isExpanded && branchBadgeTotal(item) > 0 && (
-                  <span className="ml-auto mr-1 min-w-5 rounded-full bg-pink-600 px-1.5 text-center text-[11px] font-bold leading-5 text-white">
+                  <span className="ml-auto mr-1 min-w-5 rounded-full bg-[var(--sidebar-active-background)] px-1.5 text-center text-[11px] font-bold leading-5 text-[var(--sidebar-active-foreground)]">
                     {branchBadgeTotal(item) > 99 ? "99+" : branchBadgeTotal(item)}
                   </span>
                 )}
@@ -292,24 +304,47 @@ export default function AppSidebarNav({
         ? badges[item.href]
         : 0;
 
+    const leafClassName = `relative ${leafShellClass}`;
+    const leafTitle = collapsed ? item.label : undefined;
+    const leafInner = (
+      <>
+        {showIcon && <AppSidebarNavIcon name={item.icon} isActive={itemActive} />}
+        {!collapsed && <span className="flex-1">{item.label}</span>}
+        {badgeCount > 0 &&
+          (collapsed ? (
+            <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-[var(--sidebar-active-background)]" />
+          ) : (
+            <span className="ml-auto min-w-5 rounded-full bg-[var(--sidebar-active-background)] px-1.5 text-center text-[11px] font-bold leading-5 text-[var(--sidebar-active-foreground)]">
+              {badgeCount > 99 ? "99+" : badgeCount}
+            </span>
+          ))}
+      </>
+    );
+
+    // /pos/kds, /pos/queue, CFD: beda root layout → <Link> RSC fetch TypeError.
+    if (isPosChromeLessPath(item.href)) {
+      return (
+        <a
+          key={itemKey}
+          href={item.href}
+          onClick={onNavigate}
+          className={leafClassName}
+          title={leafTitle}
+        >
+          {leafInner}
+        </a>
+      );
+    }
+
     return (
       <Link
         key={itemKey}
         href={item.href}
         onClick={onNavigate}
-        className={`relative ${leafShellClass}`}
-        title={collapsed ? item.label : undefined}
+        className={leafClassName}
+        title={leafTitle}
       >
-        {showIcon && <AppSidebarNavIcon name={item.icon} isActive={itemActive} />}
-        {!collapsed && <span className="flex-1">{item.label}</span>}
-        {badgeCount > 0 &&
-          (collapsed ? (
-            <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-pink-600" />
-          ) : (
-            <span className="ml-auto min-w-5 rounded-full bg-pink-600 px-1.5 text-center text-[11px] font-bold leading-5 text-white">
-              {badgeCount > 99 ? "99+" : badgeCount}
-            </span>
-          ))}
+        {leafInner}
       </Link>
     );
   };

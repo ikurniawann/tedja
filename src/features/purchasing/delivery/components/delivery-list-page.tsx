@@ -29,20 +29,20 @@ const STATUS_COLORS: Record<DeliveryStatus, string> = {
 };
 
 const STATUS_LABELS: Record<DeliveryStatus, string> = {
-  pending: "Pending Receipt",
-  shipped: "Shipped",
-  in_transit: "In Transit",
-  delivered: "Delivered",
-  cancelled: "Cancelled",
+  pending: "Menunggu Penerimaan",
+  shipped: "Dikirim",
+  in_transit: "Dalam Pengiriman",
+  delivered: "Tiba",
+  cancelled: "Dibatalkan",
 };
 
 const STATUS_OPTIONS: { value: DeliveryStatus | "all"; label: string }[] = [
-  { value: "all", label: "All Statuses" },
-  { value: "pending", label: "Pending Receipt" },
-  { value: "shipped", label: "Shipped" },
-  { value: "in_transit", label: "In Transit" },
-  { value: "delivered", label: "Delivered" },
-  { value: "cancelled", label: "Cancelled" },
+  { value: "all", label: "Semua Status" },
+  { value: "pending", label: "Menunggu Penerimaan" },
+  { value: "shipped", label: "Dikirim" },
+  { value: "in_transit", label: "Dalam Pengiriman" },
+  { value: "delivered", label: "Tiba" },
+  { value: "cancelled", label: "Dibatalkan" },
 ];
 
 function formatDate(dateStr?: string | null) {
@@ -84,7 +84,7 @@ export function DeliveryListPage() {
   useEffect(() => {
     if (listQuery.isError) {
       console.error(listQuery.error);
-      toast.error(listQuery.error instanceof Error ? listQuery.error.message : "Failed to load deliveries");
+      toast.error(listQuery.error instanceof Error ? listQuery.error.message : "Gagal memuat pengiriman");
     }
   }, [listQuery.isError, listQuery.error]);
 
@@ -115,7 +115,7 @@ export function DeliveryListPage() {
   const isFilterActive = statusFilter !== "all" || poFilter !== "all";
   const activeFilterCount = Number(statusFilter !== "all") + Number(poFilter !== "all");
   const poOptions = [
-    { value: "all", label: "All Purchase Orders" },
+    { value: "all", label: "Semua Purchase Order" },
     ...purchaseOrders.map((po) => ({
       value: po.id,
       label: po.nama_supplier ? `${po.nomor_po} - ${po.nama_supplier}` : po.nomor_po,
@@ -126,29 +126,29 @@ export function DeliveryListPage() {
     <div className="space-y-6">
       <div className="flex flex-col items-start justify-between gap-4 border-b border-gray-200/70 pb-4 sm:flex-row sm:items-center">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Delivery</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Lacak Pengiriman</h1>
           <p className="text-sm text-gray-500">
-            Track delivery notes and supplier shipments by purchase order — {total} total
+            Lacak surat jalan dan pengiriman per purchase order — total {total}
           </p>
         </div>
         <Link href={selectedPoId ? `${RM_ROUTES.purchasingDelivery}/insert?po_id=${selectedPoId}` : `${RM_ROUTES.purchasingDelivery}/insert`}>
           <Button className="h-10 w-full gap-2 rounded-lg bg-pink-600 px-3 text-sm font-semibold text-white shadow-sm hover:bg-pink-700 sm:w-auto">
             <PlusIcon className="w-4 h-4 mr-2" />
-            Create Delivery
+            Tambah Pengiriman
           </Button>
         </Link>
       </div>
 
       <PurchasingListSection
         icon={TruckIcon}
-        title="Delivery List"
-        description="Monitor deliveries by purchase order, delivery note number, courier, tracking number, estimated arrival, and status."
+        title="Daftar Pengiriman"
+        description="Pantau pengiriman berdasarkan purchase order, nomor surat jalan, ekspedisi, nomor resi, estimasi tiba, dan status."
         toolbar={
           <div className="flex w-full flex-col gap-3 sm:w-auto md:flex-row md:items-center">
             <label className="relative w-full md:w-80">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
               <Input
-                placeholder="Search delivery note, tracking number, or courier..."
+                placeholder="Cari surat jalan, nomor resi, atau ekspedisi..."
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
                 className="h-10 bg-white pl-10 pr-10 text-sm focus:border-pink-400 focus:ring-2 focus:ring-pink-100"
@@ -158,7 +158,7 @@ export function DeliveryListPage() {
                   type="button"
                   onClick={() => setSearchQuery("")}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 transition-colors hover:text-gray-700"
-                  aria-label="Clear search"
+                  aria-label="Bersihkan pencarian"
                 >
                   <X className="h-4 w-4" />
                 </button>
@@ -186,7 +186,7 @@ export function DeliveryListPage() {
 
             {(search || isFilterActive || page > 1) && (
               <Button variant="outline" onClick={handleResetFilters} className="h-10 flex-shrink-0 rounded-lg">
-                Reset
+                Atur Ulang
               </Button>
             )}
           </div>
@@ -209,8 +209,8 @@ export function DeliveryListPage() {
                       setPage(1);
                     }}
                     placeholder="Filter status..."
-                    searchPlaceholder="Search status..."
-                    emptyMessage="No status found"
+                    searchPlaceholder="Cari status..."
+                    emptyMessage="Status tidak ditemukan"
                     className="!w-full h-9 text-sm"
                   />
                 </div>
@@ -227,8 +227,8 @@ export function DeliveryListPage() {
                       setPage(1);
                     }}
                     placeholder="Filter purchase order..."
-                    searchPlaceholder="Search purchase order number..."
-                    emptyMessage="No purchase order found"
+                    searchPlaceholder="Cari nomor purchase order..."
+                    emptyMessage="Purchase order tidak ditemukan"
                     className="!w-full h-9 text-sm"
                   />
                 </div>
@@ -239,15 +239,15 @@ export function DeliveryListPage() {
           {loading ? (
             <div className="py-12 text-center">
               <div className="mx-auto h-8 w-8 animate-spin rounded-full border-b-2 border-gray-900" />
-              <p className="mt-2 text-sm text-gray-500">Loading deliveries...</p>
+              <p className="mt-2 text-sm text-gray-500">Memuat pengiriman...</p>
             </div>
           ) : deliveries.length === 0 ? (
             <div className="py-14 text-center">
               <TruckIcon className="mx-auto mb-4 h-12 w-12 text-gray-300" />
-              <p className="text-gray-500">No deliveries match the current filters</p>
+              <p className="text-gray-500">Tidak ada pengiriman yang sesuai dengan filter saat ini</p>
               <Link href={selectedPoId ? `${RM_ROUTES.purchasingDelivery}/insert?po_id=${selectedPoId}` : `${RM_ROUTES.purchasingDelivery}/insert`}>
                 <Button variant="outline" className="mt-4 h-10 gap-2 rounded-lg border-pink-200 bg-white px-3 text-sm font-medium text-pink-700 shadow-sm hover:!border-pink-200 hover:!bg-pink-50 hover:!text-pink-700">
-                  Create First Delivery
+                  Tambah Pengiriman Pertama
                 </Button>
               </Link>
             </div>
@@ -257,14 +257,14 @@ export function DeliveryListPage() {
             <table className="min-w-full text-sm">
               <thead className="border-b border-gray-100 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
                 <tr>
-                  <th className="px-4 py-3 text-left font-semibold">Delivery Note Number</th>
+                  <th className="px-4 py-3 text-left font-semibold">Nomor Surat Jalan</th>
                   <th className="px-4 py-3 text-left font-semibold">Purchase Order</th>
-                  <th className="px-4 py-3 text-left font-semibold">Courier</th>
-                  <th className="px-4 py-3 text-left font-semibold">Tracking Number</th>
-                  <th className="px-4 py-3 text-left font-semibold">Shipment Date</th>
-                  <th className="px-4 py-3 text-left font-semibold">Estimated Arrival</th>
+                  <th className="px-4 py-3 text-left font-semibold">Ekspedisi</th>
+                  <th className="px-4 py-3 text-left font-semibold">Nomor Resi</th>
+                  <th className="px-4 py-3 text-left font-semibold">Tanggal Kirim</th>
+                  <th className="px-4 py-3 text-left font-semibold">Estimasi Tiba</th>
                   <th className="px-4 py-3 text-center font-semibold">Status</th>
-                  <th className="px-4 py-3 text-right font-semibold">Actions</th>
+                  <th className="px-4 py-3 text-right font-semibold">Aksi</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -303,7 +303,7 @@ export function DeliveryListPage() {
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-1">
                         <Link href={`${RM_ROUTES.purchasingDelivery}/${d.id}`}>
-                          <Button size="sm" variant="ghost" title="View detail" className="cursor-pointer">
+                          <Button size="sm" variant="ghost" title="Lihat detail" className="cursor-pointer">
                             <EyeIcon className="w-4 h-4" />
                           </Button>
                         </Link>

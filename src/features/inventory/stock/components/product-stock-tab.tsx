@@ -24,13 +24,13 @@ import { useProductStock } from "../queries";
 import { listStockWarehouses } from "../api";
 
 const STATUS_OPTIONS = [
-  { value: "all", label: "All Statuses" },
-  { value: "in_stock", label: "In Stock" },
-  { value: "out_of_stock", label: "Out of Stock" },
+  { value: "all", label: "Semua Status" },
+  { value: "in_stock", label: "Tersedia" },
+  { value: "out_of_stock", label: "Habis" },
 ];
 
 function formatQty(value: number | string | null | undefined) {
-  return Number(value || 0).toLocaleString("en-US", { maximumFractionDigits: 4 });
+  return Number(value || 0).toLocaleString("id-ID", { maximumFractionDigits: 4 });
 }
 
 export function ProductStockTab() {
@@ -108,19 +108,19 @@ export function ProductStockTab() {
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
         <Card className="border-gray-200/70 shadow-xs">
           <CardContent className="p-4">
-            <p className="text-xs font-medium text-gray-500">Total Products</p>
+            <p className="text-xs font-medium text-gray-500">Total Produk</p>
             <p className="mt-1 text-2xl font-bold text-gray-900">{total}</p>
           </CardContent>
         </Card>
         <Card className="border-gray-200/70 shadow-xs">
           <CardContent className="p-4">
-            <p className="text-xs font-medium text-gray-500">Out of Stock (This Page)</p>
+            <p className="text-xs font-medium text-gray-500">Habis (Halaman Ini)</p>
             <p className="mt-1 text-2xl font-bold text-red-600">{summary.out}</p>
           </CardContent>
         </Card>
         <Card className="border-gray-200/70 shadow-xs">
           <CardContent className="p-4">
-            <p className="text-xs font-medium text-gray-500">Stock Value (This Page)</p>
+            <p className="text-xs font-medium text-gray-500">Nilai Stok (Halaman Ini)</p>
             <p className="mt-1 text-2xl font-bold text-gray-900">
               {formatAmount(summary.totalValue)}
             </p>
@@ -130,8 +130,8 @@ export function ProductStockTab() {
 
       <PurchasingListSection
         icon={Package}
-        title="Product Stock List"
-        description="Review product code, stall, category, on-hand quantity, unit cost, selling price, stock value, and availability."
+        title="Daftar Stok Produk"
+        description="Tinjau kode produk, stall, kategori, qty tersedia, harga pokok, harga jual, nilai stok, dan status ketersediaan."
         toolbar={
           <div className="flex w-full flex-col gap-3 lg:flex-row lg:items-center">
             <Combobox
@@ -150,7 +150,7 @@ export function ProductStockTab() {
             <label className="relative w-full lg:w-80">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
               <Input
-                placeholder="Search product code or name..."
+                placeholder="Cari kode atau nama produk..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="h-10 border-gray-200/80 pl-9 pr-10 text-sm focus:border-pink-400 focus:ring-2 focus:ring-pink-100"
@@ -160,7 +160,7 @@ export function ProductStockTab() {
                   type="button"
                   onClick={() => setSearchQuery("")}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 transition-colors hover:text-gray-700"
-                  aria-label="Clear search"
+                  aria-label="Hapus pencarian"
                 >
                   <X className="h-4 w-4" />
                 </button>
@@ -173,7 +173,7 @@ export function ProductStockTab() {
                 setStatusFilter(v || "all");
                 setPage(1);
               }}
-              placeholder="All Statuses"
+              placeholder="Semua Status"
               className="h-10 w-full lg:w-44"
             />
             {hasActiveFilters && (
@@ -182,7 +182,7 @@ export function ProductStockTab() {
                 onClick={handleResetFilters}
                 className="h-10 shrink-0 rounded-lg"
               >
-                Reset
+                Atur Ulang
               </Button>
             )}
           </div>
@@ -192,33 +192,33 @@ export function ProductStockTab() {
           <table className="min-w-full text-sm">
             <thead className="border-b border-gray-100 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
               <tr>
-                <th className="px-4 py-3 text-left font-semibold">Code</th>
-                <th className="px-4 py-3 text-left font-semibold">Product Name</th>
+                <th className="px-4 py-3 text-left font-semibold">Kode</th>
+                <th className="px-4 py-3 text-left font-semibold">Nama Produk</th>
                 <th className="px-4 py-3 text-left font-semibold">Stall</th>
-                <th className="px-4 py-3 text-left font-semibold">Category</th>
-                <th className="px-4 py-3 text-right font-semibold">On Hand</th>
-                <th className="px-4 py-3 text-left font-semibold">Unit</th>
-                <th className="px-4 py-3 text-right font-semibold">COGS / Unit</th>
-                <th className="px-4 py-3 text-right font-semibold">Selling Price</th>
-                <th className="px-4 py-3 text-right font-semibold">Stock Value</th>
+                <th className="px-4 py-3 text-left font-semibold">Kategori</th>
+                <th className="px-4 py-3 text-right font-semibold">Tersedia</th>
+                <th className="px-4 py-3 text-left font-semibold">Satuan</th>
+                <th className="px-4 py-3 text-right font-semibold">HPP / Satuan</th>
+                <th className="px-4 py-3 text-right font-semibold">Harga Jual</th>
+                <th className="px-4 py-3 text-right font-semibold">Nilai Stok</th>
                 <th className="px-4 py-3 text-center font-semibold">Status</th>
-                <th className="px-4 py-3 text-left font-semibold">Last Update</th>
+                <th className="px-4 py-3 text-left font-semibold">Pembaruan Terakhir</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {loading ? (
                 <tr>
                   <td colSpan={11} className="px-4 py-12 text-center text-gray-400">
-                    Loading product stock...
+                    Memuat stok produk...
                   </td>
                 </tr>
               ) : items.length === 0 ? (
                 <tr>
                   <td colSpan={11} className="px-4 py-16 text-center text-gray-400">
                     <ShoppingBag className="mx-auto mb-3 h-12 w-12 opacity-30" />
-                    <p>No product stock data found</p>
+                    <p>Data stok produk tidak ditemukan</p>
                     <p className="mt-1 text-xs text-gray-500">
-                      Stock appears automatically after production or finished goods completion
+                      Stok muncul otomatis setelah produksi atau penyelesaian barang jadi
                     </p>
                   </td>
                 </tr>
@@ -269,7 +269,7 @@ export function ProductStockTab() {
                             className="border-red-200 bg-red-50 text-red-700"
                           >
                             <XCircle className="mr-1 inline h-3 w-3" />
-                            Out of Stock
+                            Habis
                           </Badge>
                         ) : (
                           <Badge
@@ -277,7 +277,7 @@ export function ProductStockTab() {
                             className="border-emerald-200 bg-emerald-50 text-emerald-700"
                           >
                             <CheckCircle2 className="mr-1 inline h-3 w-3" />
-                            In Stock
+                            Tersedia
                           </Badge>
                         )}
                       </td>

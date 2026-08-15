@@ -61,9 +61,7 @@ function resolveOrderTableLabel(
   }
   if (order.table?.table_number) return order.table.table_number;
   if (order.table?.qr_code) return order.table.qr_code;
-  return order.table_id
-    ? `Table ${order.table_id.slice(0, 8)}`
-    : "Without table";
+  return order.table_id ? "Meja" : "Without table";
 }
 
 function isOpenBill(order: Order) {
@@ -168,14 +166,27 @@ function OrderDetailPanel({
             </span>
           </div>
         ) : null}
-        {payload.taxAmount > 0 ? (
-          <div className="flex justify-between gap-3 text-gray-600">
-            <span>Tax</span>
-            <span className="tabular-nums">
-              {formatCurrency(payload.taxAmount)}
-            </span>
-          </div>
-        ) : null}
+        {payload.chargesBreakdown && payload.chargesBreakdown.length > 0
+          ? payload.chargesBreakdown.map((line) => (
+              <div
+                key={line.code}
+                className="flex justify-between gap-3 text-gray-600"
+              >
+                <span>{line.name}</span>
+                <span className="tabular-nums">
+                  {line.amount < 0 ? "-" : ""}
+                  {formatCurrency(Math.abs(line.amount))}
+                </span>
+              </div>
+            ))
+          : payload.taxAmount > 0 ? (
+              <div className="flex justify-between gap-3 text-gray-600">
+                <span>Tax</span>
+                <span className="tabular-nums">
+                  {formatCurrency(payload.taxAmount)}
+                </span>
+              </div>
+            ) : null}
         <div className="flex justify-between gap-3 font-semibold text-gray-900">
           <span>Total</span>
           <span className="tabular-nums">{formatCurrency(payload.total)}</span>

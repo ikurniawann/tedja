@@ -97,7 +97,7 @@ export function RawMaterialBomEditorPage() {
       toast.error(
         editorQuery.error instanceof Error
           ? editorQuery.error.message
-          : "Failed to load bill of materials"
+          : "Gagal memuat resep (BOM)"
       );
     }
   }, [editorQuery.isError, editorQuery.error]);
@@ -144,8 +144,8 @@ export function RawMaterialBomEditorPage() {
   }
 
   async function saveItem(item: BomDraft, options?: { silent?: boolean }) {
-    if (!item.raw_material_id) throw new Error("Component raw material is required");
-    if (item.qty_required <= 0) throw new Error("Quantity must be greater than 0");
+    if (!item.raw_material_id) throw new Error("Bahan komponen wajib diisi");
+    if (item.qty_required <= 0) throw new Error("Qty harus lebih dari 0");
 
     if (item.persisted) {
       await updateRawMaterialBomItem(item.id, {
@@ -164,7 +164,7 @@ export function RawMaterialBomEditorPage() {
     }
 
     if (!options?.silent) {
-      toast.success("Bill of materials saved");
+      toast.success("Resep (BOM) disimpan");
       await editorQuery.refetch();
     }
   }
@@ -177,7 +177,7 @@ export function RawMaterialBomEditorPage() {
 
     await deleteRawMaterialBomItem(item.id);
     setBomItems((items) => items.filter((current) => current.id !== item.id));
-    toast.success("Component removed");
+    toast.success("Komponen dihapus");
   }
 
   async function saveAll() {
@@ -187,10 +187,10 @@ export function RawMaterialBomEditorPage() {
       for (const item of bomItems) {
         await saveItem(item, { silent: true });
       }
-      toast.success("Bill of materials saved");
+      toast.success("Resep (BOM) disimpan");
       await editorQuery.refetch();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to save bill of materials");
+      toast.error(error instanceof Error ? error.message : "Gagal menyimpan resep (BOM)");
     } finally {
       setSavingAll(false);
     }
@@ -200,7 +200,7 @@ export function RawMaterialBomEditorPage() {
     return (
       <div className="flex min-h-[360px] items-center justify-center text-sm text-gray-500">
         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-        Loading bill of materials...
+        Memuat resep (BOM)...
       </div>
     );
   }
@@ -213,10 +213,10 @@ export function RawMaterialBomEditorPage() {
     <div className="space-y-6">
       <PurchasingFormHeader
         backHref={backHref}
-        title="Raw Material Bill of Materials"
+        title="Resep (BOM) Bahan Baku"
         description={
           <>
-            {displayName(material?.nama)} · Total estimated COGS {formatAmount(totalHpp)}
+            {displayName(material?.nama)} · Total estimasi HPP {formatAmount(totalHpp)}
           </>
         }
         actions={
@@ -228,7 +228,7 @@ export function RawMaterialBomEditorPage() {
             className="purchasing-secondary-button w-full sm:w-auto"
           >
             <RefreshCw className={`mr-2 h-4 w-4 ${editorQuery.isFetching ? "animate-spin" : ""}`} />
-            Refresh
+            Muat Ulang
           </Button>
         }
       />
@@ -236,9 +236,9 @@ export function RawMaterialBomEditorPage() {
       <Card className="border-gray-200/70 shadow-xs">
         <CardHeader className="flex flex-row items-start justify-between border-b border-gray-200/70 pb-3">
           <div>
-            <CardTitle className="text-base">Component Materials</CardTitle>
+            <CardTitle className="text-base">Komponen Bahan</CardTitle>
             <p className="mt-1 text-xs text-gray-500">
-              Define which raw materials are consumed to produce this output material.
+              Tentukan bahan baku yang dikonsumsi untuk memproduksi bahan output ini.
             </p>
           </div>
           <CardAction>
@@ -250,7 +250,7 @@ export function RawMaterialBomEditorPage() {
               className="border-pink-200 text-pink-700 hover:bg-pink-50"
             >
               <Plus className="mr-1 h-4 w-4" />
-              Add Component
+              Tambah Komponen
             </Button>
           </CardAction>
         </CardHeader>
@@ -259,19 +259,19 @@ export function RawMaterialBomEditorPage() {
             <table className="min-w-full text-sm">
               <thead className="border-b border-gray-100 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
                 <tr>
-                  <th className="px-4 py-3 text-left font-semibold">Component</th>
+                  <th className="px-4 py-3 text-left font-semibold">Komponen</th>
                   <th className="w-[170px] px-4 py-3 text-left font-semibold">Qty</th>
-                  <th className="w-[140px] px-4 py-3 text-left font-semibold">Waste (%)</th>
-                  <th className="w-[140px] px-4 py-3 text-right font-semibold">Unit Cost</th>
+                  <th className="w-[140px] px-4 py-3 text-left font-semibold">Susut (%)</th>
+                  <th className="w-[140px] px-4 py-3 text-right font-semibold">Harga Satuan</th>
                   <th className="w-[140px] px-4 py-3 text-right font-semibold">Subtotal</th>
-                  <th className="w-[56px] px-4 py-3" aria-label="Remove" />
+                  <th className="w-[56px] px-4 py-3" aria-label="Hapus" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {bomItems.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="py-10 text-center text-sm text-gray-400">
-                      No components yet. Click &quot;Add Component&quot; to get started.
+                      Belum ada komponen. Klik &quot;Tambah Komponen&quot; untuk memulai.
                     </td>
                   </tr>
                 ) : (
@@ -285,14 +285,14 @@ export function RawMaterialBomEditorPage() {
                       <tr key={item.id} className="hover:bg-gray-50">
                         <td className="px-4 py-3">
                           <div className="space-y-1.5">
-                            <Label className="text-xs text-gray-500">Component</Label>
+                            <Label className="text-xs text-gray-500">Komponen</Label>
                             <Combobox
                               options={options}
                               value={item.raw_material_id}
                               onChange={(value) => updateItem(item.id, { raw_material_id: value })}
-                              placeholder="Select component..."
-                              searchPlaceholder="Search raw material..."
-                              emptyMessage="No raw material found"
+                              placeholder="Pilih komponen..."
+                              searchPlaceholder="Cari bahan baku..."
+                              emptyMessage="Bahan baku tidak ditemukan"
                               className="w-full! h-9 text-sm"
                             />
                           </div>
@@ -351,10 +351,10 @@ export function RawMaterialBomEditorPage() {
               {savingAll ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Saving...
+                  Menyimpan...
                 </>
               ) : (
-                "Save Bill of Materials"
+                "Simpan Resep (BOM)"
               )}
             </Button>
           </div>

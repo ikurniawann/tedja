@@ -26,6 +26,59 @@ export function readGatewayConfig(): GatewayConfig | null {
   };
 }
 
+/* Cache modul untuk konfigurasi dari database. TTL pendek: cukup untuk
+ * mencegah satu query settings per pesan WA, tapi perubahan dari UI tetap
+ * terasa cepat (dan UI memanggil invalidate langsung setelah menyimpan). */
+const CONFIG_CACHE_TTL_MS = 30_000;
+let configCache: { at: number; value: GatewayConfig | null } | null = null;
+
+export function invalidateGatewayConfigCache(): void {
+  configCache = null;
+}
+
+/**
+ * Konfigurasi gateway: database dulu (configuration.app_settings — bisa
+ * diedit dari UI, per-instance), lalu ENV sebagai fallback. Mengikuti pola
+ * DeepSeek/Google BP di app-settings.ts.
+ *
+ * Kegagalan membaca settings TIDAK mematikan jalur WA: jatuh ke ENV. OTP
+ * login tidak boleh mati hanya karena tabel settings sedang bermasalah.
+ */
+export async function loadGatewayConfig(): Promise<GatewayConfig | null> {
+  if (configCache && Date.now() - configCache.at < CONFIG_CACHE_TTL_MS) {
+    return configCache.value;
+  }
+
+  let dbUrl: string | null = null;
+  let dbToken: string | null = null;
+  try {
+    // Import dinamis: modul ini ikut terimpor dari kode yang juga dibundel
+    // untuk klien (lewat barrel whatsapp/index) — jalur DB hanya boleh
+    // tersentuh saat benar-benar dieksekusi di server.
+    const { SETTING_KEYS, getSettings } = await import("@/lib/settings/app-settings");
+    const stored = await getSettings([
+      SETTING_KEYS.WA_GATEWAY_URL,
+      SETTING_KEYS.WA_GATEWAY_TOKEN,
+    ]);
+    dbUrl = stored[SETTING_KEYS.WA_GATEWAY_URL]?.trim() || null;
+    dbToken = stored[SETTING_KEYS.WA_GATEWAY_TOKEN]?.trim() || null;
+  } catch {
+    // settings tidak terbaca → murni ENV
+  }
+
+  const token = dbToken ?? process.env.WA_GATEWAY_TOKEN ?? null;
+  const value: GatewayConfig | null = token
+    ? {
+        baseUrl: dbUrl ?? process.env.WA_GATEWAY_URL ?? "http://127.0.0.1:3471",
+        token,
+        timeoutMs: Number(process.env.WA_GATEWAY_TIMEOUT_MS || 20000),
+      }
+    : null;
+
+  configCache = { at: Date.now(), value };
+  return value;
+}
+
 async function callGateway(
   config: GatewayConfig,
   path: string,

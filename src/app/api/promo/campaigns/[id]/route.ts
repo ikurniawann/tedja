@@ -5,8 +5,8 @@ import { query, queryOne } from "@/lib/db";
 import { isValidCalendarDate } from "@/lib/ticketing/pricing";
 import { requirePromoContext } from "@/lib/promo/server";
 
-// EPIC-032 A3 — edit satu campaign (toggle aktif, window, limit, nilai).
-// Snapshot di redemptions menjaga riwayat: edit tidak mengubah pemakaian lama.
+// EPIC-032 A3 — edit campaign. Toggle aktif selalu boleh.
+// Edit aturan/diskon/kode-terkait hanya jika belum ada redemption captured.
 
 const dateField = z
   .string()
@@ -17,6 +17,7 @@ const dateField = z
 const patchSchema = z.object({
   name: z.string().trim().min(2).max(120).optional(),
   description: z.string().trim().max(1000).nullable().optional(),
+  discount_type: z.enum(["percent", "fixed"]).optional(),
   value: z.number().positive().max(1_000_000_000).optional(),
   max_discount: z.number().positive().max(1_000_000_000).nullable().optional(),
   min_purchase: z.number().min(0).max(1_000_000_000).optional(),
@@ -51,11 +52,15 @@ export async function PATCH(
       value: string;
       valid_from: string | null;
       valid_until: string | null;
+      captured_count: string;
     }>(
-      `SELECT discount_type, value, valid_from::text AS valid_from,
-              valid_until::text AS valid_until
-       FROM promo.promo_campaigns
-       WHERE id = $1 AND branch_id = $2 AND company_id = $3`,
+      `SELECT c.discount_type, c.value,
+              c.valid_from::text AS valid_from,
+              c.valid_until::text AS valid_until,
+              (SELECT COUNT(*)::text FROM promo.promo_redemptions r
+                WHERE r.campaign_id = c.id AND r.status = 'captured') AS captured_count
+       FROM promo.promo_campaigns c
+       WHERE c.id = $1 AND c.branch_id = $2 AND c.company_id = $3`,
       [id, ctx.branchId, ctx.companyId]
     );
     if (!current) {
@@ -65,9 +70,23 @@ export async function PATCH(
       );
     }
 
-    // Validasi pakai nilai FINAL gabungan (pola capacity-dates PATCH)
+    const keys = Object.keys(body);
+    const onlyToggleActive = keys.length === 1 && body.is_active !== undefined;
+    const captured = Number(current.captured_count) || 0;
+    if (!onlyToggleActive && captured > 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "Campaign sudah punya voucher terpakai — hanya status aktif yang boleh diubah",
+        },
+        { status: 409 }
+      );
+    }
+
+    const finalType = body.discount_type ?? current.discount_type;
     const finalValue = body.value ?? Number(current.value);
-    if (current.discount_type === "percent" && finalValue > 100) {
+    if (finalType === "percent" && finalValue > 100) {
       return NextResponse.json(
         { success: false, error: "Diskon persen maksimal 100" },
         { status: 400 }
@@ -92,8 +111,16 @@ export async function PATCH(
     };
     if (body.name !== undefined) add("name", body.name);
     if (body.description !== undefined) add("description", body.description);
+    if (body.discount_type !== undefined) add("discount_type", body.discount_type);
     if (body.value !== undefined) add("value", body.value);
-    if (body.max_discount !== undefined) add("max_discount", body.max_discount);
+    if (body.max_discount !== undefined) {
+      add(
+        "max_discount",
+        finalType === "percent" ? body.max_discount : null
+      );
+    } else if (body.discount_type === "fixed") {
+      add("max_discount", null);
+    }
     if (body.min_purchase !== undefined) add("min_purchase", body.min_purchase);
     if (body.valid_from !== undefined) add("valid_from", body.valid_from);
     if (body.valid_until !== undefined) add("valid_until", body.valid_until);

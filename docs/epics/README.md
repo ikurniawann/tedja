@@ -26,7 +26,7 @@ deploying-dev · ready-for-qa · blocked · done).
 | [EPIC-018](./EPIC-018-lampiran-ocr.md) | Lampiran & OCR — Do Bisa Membaca Dokumen | ready-for-qa | 2026-07-25 |
 | [EPIC-019](./EPIC-019-desktop-owner-monitoring.md) | Desktop Arkiv OS — Pusat Monitoring Owner | ready-for-qa | 2026-07-25 |
 | [EPIC-020](./EPIC-020-notifikasi-wa-owner.md) | Notifikasi WhatsApp untuk Owner | ready-for-qa | 2026-07-23 |
-| [EPIC-021](./EPIC-021-dashboard-eksekutif.md) | /dashboard — Ringkasan Eksekutif Lintas Modul | coding | 2026-07-21 |
+| [EPIC-021](./EPIC-021-dashboard-eksekutif.md) | /dashboard — Ringkasan Eksekutif Lintas Modul | ready-for-qa | 2026-07-26 |
 | [EPIC-022](./EPIC-022-sales-crm-funnel.md) | Sales Funneling — Leads B2B (Corporate, Sekolah & Acara Privat) | ready-for-qa | 2026-07-22 |
 | [EPIC-023](./EPIC-023-ticketing-theme-park.md) | Ticketing Theme Park — NFC Postpaid, Harga Musiman & Channel Manager | ready-for-qa | 2026-07-23 |
 | [EPIC-024](./EPIC-024-pos-customer-display.md) | POS Customer Display — Layar Customer + QRIS Dinamis | ready-for-qa | 2026-07-23 |
@@ -34,9 +34,18 @@ deploying-dev · ready-for-qa · blocked · done).
 | [EPIC-026](./EPIC-026-purchasing-barang-operasional.md) | Purchasing Barang Operasional (Non-F&B, Non-Jual) | ready-for-qa | 2026-07-24 |
 | [EPIC-027](./EPIC-027-items-pos-master-stock.md) | Items & POS — Master Bersih, Stok Akurat, Satu Sumber Kebenaran Katalog | backlog | 2026-07-23 |
 | [EPIC-028](./EPIC-028-ticketing-season-pass.md) | Ticketing — Season Pass & Membership (Pass Masuk Berlaku) | ready-for-qa | 2026-07-24 |
+| [EPIC-029](./EPIC-029-analitik-percakapan.md) | Analitik & Ringkasan Percakapan (AI + Export XLSX) | ready-for-qa | 2026-07-25 |
 | [EPIC-030](./EPIC-030-arkiv-os-native-desktop-app.md) | Arkiv OS Native Desktop App (Ide) | backlog | 2026-07-25 |
 | [EPIC-031](./EPIC-031-ticketing-kapasitas-timed-entry.md) | Ticketing — Kuota Harian, Kapasitas & Timed-Entry | ready-for-qa | 2026-07-25 |
 | [EPIC-032](./EPIC-032-promo-engine.md) | Engine Promosi — Promo Code, Voucher, Diskon & Gifting | ready-for-qa | 2026-07-26 |
+| [EPIC-033](./EPIC-033-crm-lifecycle-campaign.md) | CRM Lifecycle Campaign — Win-back & Kampanye WA Member | backlog | 2026-07-26 |
+| [EPIC-034](./EPIC-034-gift-card-stored-value.md) | Gift Card / Stored Value — Saldo Prepaid Lintas Kanal | ready-for-qa | 2026-07-27 |
+| [EPIC-035](./EPIC-035-habitat-instance-kedua.md) | Habitat — Duplikasi Instance Kedua (Fork Repo, DB Baru) | ready-for-qa | 2026-07-27 |
+| [EPIC-036](./EPIC-036-kalender-hari-libur-nasional.md) | Kalender Hari Libur Nasional — Master Libur, Cuti Bersama & Dampaknya ke Cuti/Lembur | coding | 2026-07-29 |
+
+| [EPIC-035](./EPIC-035-habitat-instance-kedua.md) | Habitat — Duplikasi Instance Kedua (Fork Repo, DB Baru, Deploy GitLab CI) | ready-for-qa | 2026-07-28 |
+| [EPIC-037](./EPIC-037-desktop-owner-insight.md) | Desktop Arkiv OS — Widget Report & Insight Owner | on-progress | 2026-07-29 |
+| [EPIC-039](./EPIC-039-merchandise-ecommerce-omnichannel.md) | Merchandise & E-commerce — Storefront, Kurir, Xendit & Omnichannel Shopee | ready-for-qa | 2026-08-02 |
 
 Aturan:
 - Epic + registry ini adalah sumber kebenaran status pekerjaan (canonical).

@@ -9,16 +9,16 @@ const APPROVAL_CARDS = [
   {
     href: "/dashboard/purchasing/approval/pr",
     icon: ClipboardCheck,
-    title: "Approval PR",
-    description: "Review kebutuhan barang dan qty dari Purchase Request sebelum diproses menjadi PO.",
+    title: "Persetujuan PR",
+    description: "Tinjau kebutuhan barang dan qty dari permintaan pembelian sebelum diproses menjadi PO.",
     accent: "text-pink-600",
     bg: "bg-pink-50",
   },
   {
     href: "/dashboard/purchasing/approval/po",
     icon: FileCheck,
-    title: "Approval PO",
-    description: "Review supplier, harga, pajak, dan total final sebelum Purchase Order dikirim.",
+    title: "Persetujuan PO",
+    description: "Tinjau supplier, harga, pajak, dan total final sebelum PO dikirim.",
     accent: "text-blue-600",
     bg: "bg-blue-50",
   },
@@ -28,8 +28,8 @@ export function ApprovalHubPage() {
   return (
     <div className="space-y-6">
       <div className="border-b border-gray-200/70 pb-4">
-        <h1 className="text-2xl font-bold text-gray-900">Approval Purchasing</h1>
-        <p className="mt-1 text-sm text-gray-500">Pilih approval yang perlu direview</p>
+        <h1 className="text-2xl font-bold text-gray-900">Persetujuan Pembelian</h1>
+        <p className="mt-1 text-sm text-gray-500">Pilih persetujuan yang perlu ditinjau</p>
       </div>
 
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2">

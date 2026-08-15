@@ -137,11 +137,11 @@ export function PurchaseInvoicePayDialog({ row, open, onOpenChange }: PayDialogP
     if (!row) return;
     const paymentAmount = Number(amount || 0);
     if (!paymentDate || paymentAmount <= 0) {
-      toast.error("Enter a payment date and amount");
+      toast.error("Tanggal bayar dan nominal pembayaran wajib diisi");
       return;
     }
     if (paymentAmount > outstanding + 0.01) {
-      toast.error(`Payment amount cannot exceed outstanding balance (${formatAmount(outstanding)})`);
+      toast.error(`Nominal pembayaran tidak boleh melebihi sisa tagihan (${formatAmount(outstanding)})`);
       return;
     }
 
@@ -159,11 +159,13 @@ export function PurchaseInvoicePayDialog({ row, open, onOpenChange }: PayDialogP
         },
       });
       toast.success(
-        paymentPreviewType === "full" ? "Full payment recorded" : "Payment recorded successfully"
+        paymentPreviewType === "full"
+          ? "Pembayaran penuh berhasil dicatat"
+          : "Pembayaran berhasil dicatat"
       );
       onOpenChange(false);
     } catch (error: unknown) {
-      toast.error(error instanceof Error ? error.message : "Failed to record payment");
+      toast.error(error instanceof Error ? error.message : "Gagal mencatat pembayaran");
     }
   };
 
@@ -172,26 +174,26 @@ export function PurchaseInvoicePayDialog({ row, open, onOpenChange }: PayDialogP
       <DialogContent className="gap-0 overflow-hidden rounded-2xl border border-gray-200/70 p-0 shadow-xl ring-1 ring-gray-200/60 sm:max-w-[620px]">
         <DialogHeader className="border-b border-gray-200/70 px-5 py-4">
           <DialogTitle className="text-base font-semibold text-gray-900">
-            Pay {row?.nomor_po || "Purchase Order"}
+            Bayar {row?.nomor_po || "Purchase Order"}
           </DialogTitle>
           <DialogDescription className="mt-1 text-sm leading-5 text-gray-500">
-            Record a vendor payment for this purchase order invoice.
+            Catat pembayaran supplier untuk invoice purchase order ini.
           </DialogDescription>
         </DialogHeader>
         {row && (
           <div className="grid gap-4 px-5 py-4">
             <div className="rounded-xl border border-pink-100 bg-pink-50 p-3">
-              <div className="text-xs font-semibold text-pink-700">Outstanding balance</div>
+              <div className="text-xs font-semibold text-pink-700">Sisa Tagihan</div>
               <div className="mt-1 text-lg font-bold text-pink-700">{formatAmount(outstanding)}</div>
               <div className="mt-1 text-xs text-pink-700/80">
-                PO total {formatAmount(row.gross_payable_amount)}
+                Total PO {formatAmount(row.gross_payable_amount)}
                 {row.return_credit_amount > 0 && (
-                  <> · Returns -{formatAmount(row.return_credit_amount)}</>
+                  <> · Retur -{formatAmount(row.return_credit_amount)}</>
                 )}
                 {row.reject_credit_amount > 0 && (
-                  <> · Reject credits -{formatAmount(row.reject_credit_amount)}</>
+                  <> · Nota kredit reject -{formatAmount(row.reject_credit_amount)}</>
                 )}
-                {" · "}Paid {formatAmount(row.paid_amount)}
+                {" · "}Dibayar {formatAmount(row.paid_amount)}
               </div>
             </div>
 
@@ -272,30 +274,30 @@ export function PurchaseInvoicePayDialog({ row, open, onOpenChange }: PayDialogP
                 }`}
               >
                 {paymentPreviewType === "full"
-                  ? "This payment will be recorded as Paid in Full."
-                  : "This payment will be recorded as an installment."}
+                  ? "Pembayaran ini akan dicatat sebagai Lunas."
+                  : "Pembayaran ini akan dicatat sebagai angsuran."}
               </div>
             )}
 
             <div className="grid gap-4 sm:grid-cols-2">
               <DsDateTimePicker
-                label="Payment Date"
+                label="Tanggal Bayar"
                 value={paymentDate}
                 onChange={setPaymentDate}
-                placeholder="Select payment date..."
+                placeholder="Pilih tanggal bayar..."
                 dateOnly
                 required
               />
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between gap-2">
-                  <Label className="text-xs">Payment Amount</Label>
+                  <Label className="text-xs">Nominal Pembayaran</Label>
                   {outstanding > 0 && (
                     <button
                       type="button"
                       className="text-xs font-medium text-pink-600 hover:underline"
                       onClick={() => setAmount(outstanding)}
                     >
-                      Pay full amount
+                      Bayar seluruh sisa tagihan
                     </button>
                   )}
                 </div>
@@ -311,40 +313,40 @@ export function PurchaseInvoicePayDialog({ row, open, onOpenChange }: PayDialogP
 
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-1.5">
-                <Label className="text-xs">Method</Label>
+                <Label className="text-xs">Metode Pembayaran</Label>
                 <Combobox
                   options={[
-                    { value: "bank_transfer", label: "Bank Transfer" },
-                    { value: "cash", label: "Cash" },
+                    { value: "bank_transfer", label: "Transfer Bank" },
+                    { value: "cash", label: "Tunai" },
                     { value: "giro", label: "Giro" },
                     { value: "qris", label: "QRIS" },
-                    { value: "other", label: "Other" },
+                    { value: "other", label: "Lainnya" },
                   ]}
                   value={method}
                   onChange={(value) => setMethod(value as VendorPayment["method"])}
-                  placeholder="Select method..."
-                  searchPlaceholder="Search method..."
-                  emptyMessage="No method found"
+                  placeholder="Pilih metode..."
+                  searchPlaceholder="Cari metode..."
+                  emptyMessage="Metode tidak ditemukan"
                   className="h-9 text-sm"
                 />
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs">Reference Number</Label>
+                <Label className="text-xs">Nomor Referensi</Label>
                 <Input
                   value={referenceNumber}
                   onChange={(event) => setReferenceNumber(event.target.value)}
-                  placeholder="Transfer number / payment proof"
+                  placeholder="Nomor transfer / bukti pembayaran"
                   className="h-9 text-sm"
                 />
               </div>
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-xs">Notes</Label>
+              <Label className="text-xs">Catatan</Label>
               <Input
                 value={notes}
                 onChange={(event) => setNotes(event.target.value)}
-                placeholder="Optional"
+                placeholder="Opsional"
                 className="h-9 text-sm"
               />
             </div>
@@ -357,14 +359,14 @@ export function PurchaseInvoicePayDialog({ row, open, onOpenChange }: PayDialogP
             disabled={payMutation.isPending || scanning}
             className="purchasing-secondary-button"
           >
-            Cancel
+            Batal
           </Button>
           <Button
             onClick={handleSubmit}
             disabled={payMutation.isPending || scanning || !row?.can_pay}
             className="purchasing-main-button"
           >
-            {payMutation.isPending ? "Processing..." : "Submit Payment"}
+            {payMutation.isPending ? "Memproses..." : "Simpan Pembayaran"}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -1,4 +1,5 @@
 import type { DbClient } from "@/lib/pg/types";
+import { updateRawMaterialLastPurchasePrice } from "@/lib/purchasing/purchase-price";
 
 export interface InventoryLocation {
   branch_id: string | null;
@@ -192,8 +193,9 @@ export async function addInventoryFromGrn(
       jumlah: qty,
       qty_before: qtyBefore,
       qty_after: totalQty,
-      unit_cost: newUnitCost,
-      total_cost: qty * newUnitCost,
+      // Movement line = transaction cost (PO); inventory.unit_cost stays weighted avg.
+      unit_cost: cost,
+      total_cost: qty * cost,
       branch_id: location.branch_id,
       warehouse_id: location.warehouse_id,
       reference_type: "grn",
@@ -201,6 +203,12 @@ export async function addInventoryFromGrn(
       reference_number: grnNumber,
       alasan: `Penerimaan barang dari GRN ${grnNumber}`,
       created_by: userId,
+    });
+
+    await updateRawMaterialLastPurchasePrice(db, {
+      rawMaterialId,
+      baseUnitCost: cost,
+      userId,
     });
     return;
   }
@@ -232,6 +240,12 @@ export async function addInventoryFromGrn(
     reference_number: grnNumber,
     alasan: `Penerimaan barang dari GRN ${grnNumber}`,
     created_by: userId,
+  });
+
+  await updateRawMaterialLastPurchasePrice(db, {
+    rawMaterialId,
+    baseUnitCost: cost,
+    userId,
   });
 }
 

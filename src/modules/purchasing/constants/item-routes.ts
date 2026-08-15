@@ -31,7 +31,6 @@ export const RM_ROUTES = {
   purchasingSuppliersImport: `${RM_BASE}/purchasing/suppliers/import`,
   purchasingSuppliersDetail: (id: string) => `${RM_BASE}/purchasing/suppliers/${id}`,
   purchasingSuppliersEdit: (id: string) => `${RM_BASE}/purchasing/suppliers/edit/${id}`,
-  purchasingPriceList: `${RM_BASE}/purchasing/price-list`,
   purchasingPr: `${RM_BASE}/purchasing/pr`,
   purchasingPrInsert: `${RM_BASE}/purchasing/pr/insert`,
   purchasingPrDetail: (id: string) => `${RM_BASE}/purchasing/pr/${id}`,
@@ -49,8 +48,10 @@ export const RM_ROUTES = {
   purchasingReturnsInsert: `${RM_BASE}/purchasing/returns/insert`,
   purchasingReturnsDetail: (id: string) => `${RM_BASE}/purchasing/returns/${id}`,
   purchasingReturnsEdit: (id: string) => `${RM_BASE}/purchasing/returns/edit/${id}`,
-  purchasingInvoice: `${RM_BASE}/purchasing/invoice`,
-  purchasingInvoicePoDetail: (id: string) => `${RM_BASE}/purchasing/invoice/po/${id}`,
+  /** Account Payable (Accounting) — ex RM purchasing invoice */
+  purchasingInvoice: `/dashboard/accounting/accounts-payable`,
+  purchasingInvoicePoDetail: (id: string) =>
+    `/dashboard/accounting/accounts-payable/po/${id}`,
   approvalPr: `${RM_BASE}/approval/pr`,
   approvalPo: `${RM_BASE}/approval/po`,
   productionRecipes: `${RM_BASE}/production/recipes`,

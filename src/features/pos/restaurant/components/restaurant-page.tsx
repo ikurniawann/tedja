@@ -1,18 +1,21 @@
 "use client";
 
 import { Suspense, useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
-import {
-  ArrowsPointingInIcon,
-  ArrowsPointingOutIcon,
-} from "@heroicons/react/24/outline";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { PageTransition } from "@/components/motion";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { cashierQueryKeys } from "@/features/pos/cashier/query-keys";
 import { useCashierTables } from "@/features/pos/cashier/queries";
 import { useOpenBills } from "@/features/pos/open-bills/queries";
@@ -28,6 +31,8 @@ import {
   type PosTable,
 } from "@/lib/pos-api";
 import { cn } from "@/lib/utils";
+import { PosTabletChromeControls } from "@/features/pos/components/pos-tablet-chrome-controls";
+import { useHandheldClient } from "@/features/pos/use-handheld-client";
 
 import { MoveItemsDialog, type MoveItemsSelection } from "./move-items-dialog";
 import { RestaurantActionRail } from "./restaurant-action-rail";
@@ -39,8 +44,11 @@ import {
 import { WaitingListDialog } from "./waiting-list-dialog";
 import {
   isRestaurantImmersive,
+  isRestaurantTabletPath,
   restaurantPath,
+  shouldUseTabletCashierHandoff,
 } from "../nav";
+import { restaurantWorkspaceClass } from "../restaurant-workspace-layout";
 import {
   isTableSelected,
   tableSelection,
@@ -98,9 +106,16 @@ export function RestaurantPage() {
 
 function RestaurantPageContent() {
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
-  const immersive = isRestaurantImmersive(searchParams);
+  const immersive =
+    isRestaurantTabletPath(pathname) || isRestaurantImmersive(searchParams);
+  const handheldClient = useHandheldClient();
+  const tabletHandoff = shouldUseTabletCashierHandoff({
+    immersive,
+    handheldClient,
+  });
   const { data: tables = [], isLoading, error } = useCashierTables();
   const { data: orders = [], refetch: refetchOrders } = useOpenBills({ limit: 200 });
   const createSplitsMutation = useCreateOrderSplits();
@@ -115,6 +130,7 @@ function RestaurantPageContent() {
   const [seatingId, setSeatingId] = useState<string | null>(null);
   const [showSplitModal, setShowSplitModal] = useState(false);
   const [splitPaymentOrder, setSplitPaymentOrder] = useState<Order | null>(null);
+  const [billsDrawerOpen, setBillsDrawerOpen] = useState(false);
 
   const waitingDate = todayIsoDate();
   const {
@@ -146,6 +162,18 @@ function RestaurantPageContent() {
     if (!selection?.orderId) return null;
     return orders.find((order) => order.id === selection.orderId) ?? null;
   }, [orders, selection]);
+
+  const openBillsCount = useMemo(
+    () =>
+      orders.filter((order) => {
+        const status = order.status || "";
+        return (
+          !["completed", "cancelled", "voided", "merged"].includes(status) &&
+          (order.payment_status || "unpaid") !== "paid"
+        );
+      }).length,
+    [orders]
+  );
 
   const selectedTableLabel = useMemo(() => {
     if (!selection?.tableId) return null;
@@ -442,10 +470,6 @@ function RestaurantPageContent() {
     }
   };
 
-  const toggleImmersive = () => {
-    router.replace(restaurantPath({ immersive: !immersive }));
-  };
-
   const handleConfirmSplit = async (config: SplitConfig) => {
     if (!selectedOrder) return;
 
@@ -477,33 +501,18 @@ function RestaurantPageContent() {
     <PageTransition
       className={cn("space-y-3", immersive ? "p-3 sm:p-4" : "space-y-4")}
     >
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
           <h1 className="text-base font-semibold text-foreground">Restaurant</h1>
-          {immersive ? (
-            <p className="text-xs text-muted-foreground">
-              Immersive mode — dashboard chrome hidden
-            </p>
-          ) : null}
         </div>
-        <Button
-          type="button"
-          variant="outline"
-          className="shrink-0 border-gray-200/80 text-gray-700 hover:border-primary/30 hover:bg-primary/10 hover:text-primary"
-          onClick={toggleImmersive}
-        >
-          {immersive ? (
-            <>
-              <ArrowsPointingInIcon className="mr-2 h-4 w-4" />
-              Exit Fullscreen
-            </>
-          ) : (
-            <>
-              <ArrowsPointingOutIcon className="mr-2 h-4 w-4" />
-              Fullscreen
-            </>
-          )}
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <PosTabletChromeControls
+            immersive={immersive}
+            onToggleImmersive={(next) => {
+              router.replace(restaurantPath({ immersive: next }));
+            }}
+          />
+        </div>
       </div>
 
       {boardMode === "seat" && seatingReservation ? (
@@ -574,21 +583,14 @@ function RestaurantPageContent() {
         </div>
       ) : null}
 
-      <div
-        className={cn(
-          "grid gap-3 lg:grid-cols-[184px_1fr_280px]",
-          immersive
-            ? "h-[calc(100dvh-4.5rem)] min-h-[560px]"
-            : "min-h-[70vh]"
-        )}
-      >
+      <div className={restaurantWorkspaceClass(immersive)}>
         <RestaurantActionRail
           selection={selection}
           selectedOrder={selectedOrder}
           selectedTableLabel={selectedTableLabel}
-          tablesById={tablesById}
           availableCount={availableCount}
           occupiedCount={occupiedCount}
+          openBillsCount={openBillsCount}
           onSplitBill={() => setShowSplitModal(true)}
           onPaySplits={() => {
             if (!selectedOrder) {
@@ -605,7 +607,7 @@ function RestaurantPageContent() {
             setShowWaitingList(true);
             void refetchWaitingList();
           }}
-          onSelectBill={handleSelectBill}
+          onViewOrders={() => setBillsDrawerOpen(true)}
         />
 
         <Card className="min-h-0 min-w-0 overflow-auto border-gray-200/70 shadow-xs">
@@ -615,7 +617,7 @@ function RestaurantPageContent() {
               isLoading={isLoading}
               error={tableError}
               selectedTableId={selection?.tableId ?? null}
-              immersive={immersive}
+              immersive={tabletHandoff}
               boardMode={boardMode}
               busy={boardBusy}
               sourceTableId={selection?.tableId ?? null}
@@ -624,15 +626,35 @@ function RestaurantPageContent() {
             />
           </CardContent>
         </Card>
-
-        <RestaurantBillsRail
-          tablesById={tablesById}
-          selection={selection}
-          immersive={immersive}
-          onSelect={handleSelectBill}
-          onPaySplits={(order) => setSplitPaymentOrder(order)}
-        />
       </div>
+
+      <Sheet open={billsDrawerOpen} onOpenChange={setBillsDrawerOpen}>
+        <SheetContent
+          side="right"
+          className="h-full w-full gap-0 border-l border-gray-200/70 p-0 sm:max-w-md"
+        >
+          <SheetHeader className="sr-only">
+            <SheetTitle>Open Bills</SheetTitle>
+            <SheetDescription>
+              Select a bill to use restaurant actions.
+            </SheetDescription>
+          </SheetHeader>
+          <RestaurantBillsRail
+            variant="drawer"
+            tablesById={tablesById}
+            selection={selection}
+            immersive={tabletHandoff}
+            onSelect={(next) => {
+              handleSelectBill(next);
+              toast.message("Bill selected.");
+            }}
+            onPaySplits={(order) => {
+              setBillsDrawerOpen(false);
+              setSplitPaymentOrder(order);
+            }}
+          />
+        </SheetContent>
+      </Sheet>
 
       <MoveItemsDialog
         open={showMoveItemsDialog}

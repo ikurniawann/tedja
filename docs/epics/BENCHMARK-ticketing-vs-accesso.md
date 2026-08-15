@@ -52,12 +52,14 @@ belum punya — ini kekuatan yang sudah dimiliki.
 
 6. **Engine promosi**: promo code, voucher tiket, diskon, gifting ("kirim
    sebagai hadiah"). Tak ada di ticketing (POS punya voucher sendiri, terpisah).
-   **→ Direncanakan di [EPIC-032](./EPIC-032-promo-engine.md) (backlog,
-   25 Jul). Koreksi audit: `pos_vouchers` ternyata legacy MATI — rencana =
-   satu engine bersama, bukan jembatan.**
+   **→ SELESAI di [EPIC-032](./EPIC-032-promo-engine.md) (ready-for-qa,
+   26 Jul): engine bersama booking online + kasir POS F&B + voucher batch +
+   gifting. Koreksi audit: `pos_vouchers` legacy MATI.**
 7. **Upsell/cross-sell + keranjang multi-produk** saat checkout (tambah parkir,
    F&B, merch, loker, add-on). Sengaja 1 produk/transaksi saat ini.
 8. **Gift card / stored value / e-gift**. Belum ada.
+   **→ Direncanakan di [EPIC-034](./EPIC-034-gift-card-stored-value.md)
+   (backlog, 26 Jul).**
 9. **Group sales / B2B / reseller & distribusi OTA** (Klook, GetYourGuide,
    Viator). Baru channel internal, belum konektivitas OTA/wholesale.
 10. **Reserved/assigned seating** (accesso ShoWare) — peta kursi untuk
@@ -74,6 +76,8 @@ belum punya — ini kekuatan yang sudah dimiliki.
 14. **CRM/marketing automation & loyalty tersambung ke lifecycle tamu taman**
     (win-back, personalisasi, kampanye email/SMS). CRM ada tapi belum terjahit
     ke ticketing.
+    **→ Direncanakan di [EPIC-033](./EPIC-033-crm-lifecycle-campaign.md)
+    (backlog, 26 Jul).**
 15. **Ride photo / PhotoPass**, **donasi/fundraising** (untuk kebun binatang/
     nonprofit).
 

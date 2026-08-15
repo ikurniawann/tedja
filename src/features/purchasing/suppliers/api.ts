@@ -8,7 +8,6 @@ export {
   updateSupplierStatus,
   deactivateSupplier,
   deleteSupplier,
-  getSupplierPrices,
   getSupplierPOHistory,
   exportSuppliersCSV,
 } from "@/lib/purchasing/supplier";

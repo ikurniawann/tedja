@@ -90,6 +90,41 @@ describe("createUserEmployeeSchema", () => {
     expect(result.success).toBe(false);
   });
 
+  it("requires default stall for branch scope", () => {
+    const result = createUserEmployeeSchema.safeParse({
+      ...baseEmployee,
+      is_access_app: true,
+      password: "SecurePass1",
+      role: "pos",
+      business_scope: "branch",
+      holding_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      company_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567891",
+      branch_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567892",
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some((issue) => issue.path.includes("default_warehouse_id"))).toBe(
+        true
+      );
+    }
+  });
+
+  it("accepts branch scope with default stall", () => {
+    const result = createUserEmployeeSchema.safeParse({
+      ...baseEmployee,
+      is_access_app: true,
+      password: "SecurePass1",
+      role: "pos",
+      business_scope: "branch",
+      holding_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      company_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567891",
+      branch_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567892",
+      default_warehouse_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567893",
+      can_switch_stall: true,
+    });
+    expect(result.success).toBe(true);
+  });
+
   it("rejects mismatched approval workflow for module", () => {
     const result = createUserEmployeeSchema.safeParse({
       ...baseEmployee,

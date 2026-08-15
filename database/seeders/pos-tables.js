@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Seeder: POS tables — 10 tables per floor (B, GF, 1–5).
+ * Seeder: POS tables — 10 tables per floor (Lantai 5 & 6).
  *
  * Usage:
  *   npm run db:seed:pos-tables

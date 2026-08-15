@@ -29,9 +29,10 @@ const MODULE_STATS = [
   { label: "Quality Control", href: "/dashboard/purchasing/qc", icon: CheckBadgeIcon, color: "bg-yellow-100 text-yellow-600", desc: "Inspeksi &amp; QC barang" },
   { label: "Retur", href: RM_ROUTES.purchasingReturns, icon: ArrowUturnLeftIcon, color: "bg-red-100 text-red-600", desc: "Pengelolaan retur" },
   { label: "Inventori", href: "/dashboard/purchasing/inventory", icon: ArchiveBoxIcon, color: "bg-cyan-100 text-cyan-600", desc: "Stok &amp; mutasi bahan" },
-  { label: "Valuasi Stok", href: "/dashboard/purchasing/reports/inventory-valuation", icon: ChartBarIcon, color: "bg-blue-100 text-blue-600", desc: "Nilai stok per periode" },
-  { label: "Summary PO", href: "/dashboard/purchasing/reports/po-summary", icon: DocumentChartBarIcon, color: "bg-emerald-100 text-emerald-600", desc: "Ringkasan PO per periode" },
-  { label: "Performa Supplier", href: "/dashboard/purchasing/reports/supplier-performance", icon: UserGroupIcon, color: "bg-violet-100 text-violet-600", desc: "Evaluasi vendor" },
+  { label: "Stock Card", href: "/dashboard/purchasing/reports/stock-card", icon: ClipboardDocumentListIcon, color: "bg-violet-100 text-violet-600", desc: "Kartu stok BB & produk" },
+  { label: "Inventory Valuation", href: "/dashboard/purchasing/reports/inventory-valuation", icon: ChartBarIcon, color: "bg-blue-100 text-blue-600", desc: "Nilai stok per periode" },
+  { label: "PO Summary", href: "/dashboard/purchasing/reports/po-summary", icon: DocumentChartBarIcon, color: "bg-emerald-100 text-emerald-600", desc: "Ringkasan PO per periode" },
+  { label: "Supplier Performance", href: "/dashboard/purchasing/reports/supplier-performance", icon: UserGroupIcon, color: "bg-violet-100 text-violet-600", desc: "Evaluasi vendor" },
   { label: "HPP Produk", href: "/dashboard/purchasing/reports/hpp-breakdown", icon: CalculatorIcon, color: "bg-pink-100 text-pink-600", desc: "Kalkulasi HPP &amp; margin" },
 ];
 

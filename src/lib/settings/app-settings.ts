@@ -36,6 +36,18 @@ export const SETTING_KEYS = {
   GOOGLE_BP_REFRESH_TOKEN: "google_bp_refresh_token",
   GOOGLE_BP_ACCOUNT_ID: "google_bp_account_id",
   GOOGLE_BP_LOCATION_ID: "google_bp_location_id",
+  // Gateway WhatsApp mandiri (services/wa-gateway) — diisi Super Admin lewat
+  // UI Settings → WhatsApp Gateway. DB menang atas ENV supaya tiap instance
+  // (arkiv/habitat/royal-oriental) bisa menunjuk gateway & nomor berbeda
+  // tanpa menyentuh CI variable. Nomor pengirimnya sendiri TIDAK di sini —
+  // ditentukan oleh akun yang memindai QR saat pairing.
+  WA_GATEWAY_URL: "wa_gateway_url",
+  WA_GATEWAY_TOKEN: "wa_gateway_token",
+  // Penerima laporan tutup kasir via WA — JSON array nomor `628xx`, boleh
+  // lebih dari satu. Terpisah dari recipients notifikasi owner (EPIC-020)
+  // karena audiensnya beda: laporan shift sering ke supervisor/finance,
+  // bukan (hanya) owner.
+  POS_SHIFT_REPORT_WA_RECIPIENTS: "pos_shift_report_wa_recipients",
   // Instagram Messaging (EPIC-013 Fase C) — diisi Super Admin lewat UI.
   // Rahasia tidak pernah dikirim balik ke browser, hanya versi tersamar.
   IG_APP_SECRET: "ig_app_secret",

@@ -1,14 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
+  AlertTriangle,
   Banknote,
   CreditCard,
   Coins,
+  Gift,
   Loader2,
   QrCode,
   Ticket,
   Wifi,
+  type LucideIcon,
 } from "lucide-react";
 
 import {
@@ -26,8 +29,16 @@ import { cn } from "@/lib/utils";
 
 import { formatIdrInput, parseIdrDigits } from "./idr-input";
 import type { CfdPayment } from "@/lib/pos/cfd";
+import { DEFAULT_POS_PAYMENT_METHODS } from "@/lib/pos/payment-methods";
+import { usePaymentMethods } from "@/features/pos/payment-methods";
 
-export type PaymentMethod = "cash" | "qris" | "credit_card" | "ark_coin" | "nfc_tab";
+export type PaymentMethod =
+  | "cash"
+  | "qris"
+  | "credit_card"
+  | "ark_coin"
+  | "nfc_tab"
+  | "gift_card";
 
 /** Hasil pratinjau tab ticketing (EPIC-023 Fase C) utk metode NFC Tab. */
 export interface NfcTabCheckResult {
@@ -38,18 +49,33 @@ export interface NfcTabCheckResult {
   available?: number | null;
 }
 
-const PAYMENT_OPTIONS: Array<{
-  key: PaymentMethod;
-  title: string;
-  desc: string;
-  icon: typeof Banknote;
-}> = [
-  { key: "cash", title: "Cash", desc: "Pay with cash", icon: Banknote },
-  { key: "qris", title: "QRIS", desc: "Scan QR code", icon: QrCode },
-  { key: "credit_card", title: "Credit Card", desc: "Visa / Mastercard", icon: CreditCard },
-  { key: "ark_coin", title: "ARK Coin", desc: "Member balance", icon: Coins },
-  { key: "nfc_tab", title: "NFC Tab", desc: "Gelang ticketing", icon: Ticket },
-];
+/**
+ * Hasil pratinjau gift card (EPIC-034 Fase C). INDIKATIF — saldo final tetap
+ * ditegakkan server saat debit ber-lock.
+ */
+export interface GiftCardCheckResult {
+  ok: boolean;
+  reason?: string;
+  balance?: number;
+  /** Saldo menutup SELURUH total (keputusan owner: full-cover only). */
+  covers?: boolean;
+  expiresAt?: string | null;
+}
+
+const ICON_BY_KEY: Record<string, LucideIcon> = {
+  banknote: Banknote,
+  "qr-code": QrCode,
+  "credit-card": CreditCard,
+  coins: Coins,
+  ticket: Ticket,
+  gift: Gift,
+  cash: Banknote,
+  qris: QrCode,
+  credit_card: CreditCard,
+  ark_coin: Coins,
+  nfc_tab: Ticket,
+  gift_card: Gift,
+};
 
 interface Props {
   open: boolean;
@@ -67,6 +93,8 @@ interface Props {
     arkToUse: number;
     /** UID gelang ticketing — terisi saat method 'nfc_tab' */
     nfcTabUid?: string;
+    /** Kode gift card — terisi saat method 'gift_card' (EPIC-034 Fase C) */
+    giftCardCode?: string;
   }) => void | Promise<void>;
   submitting?: boolean;
   formatCurrency: (v: number) => string;
@@ -77,6 +105,11 @@ interface Props {
    * opsi NFC Tab disembunyikan, mis. dipakai di luar kasir venue ticketing).
    */
   onCheckNfcTab?: (uid: string) => Promise<NfcTabCheckResult>;
+  /**
+   * EPIC-034 Fase C — pratinjau saldo gift card (opsional; tanpa prop ini
+   * opsi Gift Card disembunyikan, pola yang sama dgn NFC Tab).
+   */
+  onCheckGiftCard?: (code: string) => Promise<GiftCardCheckResult>;
   /**
    * EPIC-024 — sinkron state pembayaran ke customer display (opsional).
    * Bila diberikan: perubahan metode/tunai/QR dipancarkan; metode QRIS
@@ -97,8 +130,10 @@ export function PaymentModal({
   formatArk,
   onTapNFC,
   onCheckNfcTab,
+  onCheckGiftCard,
   onCfdPayment,
 }: Props) {
+  const methodsQuery = usePaymentMethods(true);
   const [method, setMethod] = useState<PaymentMethod>("cash");
   const [cashReceived, setCashReceived] = useState("");
   const [arkToUse, setArkToUse] = useState(0);
@@ -112,7 +147,55 @@ export function PaymentModal({
     null
   );
   const [qrisLoading, setQrisLoading] = useState(false);
-  const [qrisError, setQrisError] = useState<string | null>(null);
+  const [qrisUnavailable, setQrisUnavailable] = useState(false);
+
+  // EPIC-034 Fase C — kode gift card diketik/di-scan kasir
+  const [giftCodeInput, setGiftCodeInput] = useState("");
+  const [giftChecking, setGiftChecking] = useState(false);
+  const [giftResult, setGiftResult] = useState<
+    (GiftCardCheckResult & { code: string }) | null
+  >(null);
+
+  const paymentOptions = useMemo(() => {
+    const source =
+      methodsQuery.data && methodsQuery.data.length > 0
+        ? methodsQuery.data
+        : DEFAULT_POS_PAYMENT_METHODS.filter((m) => m.is_active);
+    return source
+      .filter((option) => {
+        if (option.code === "nfc_tab") return Boolean(onCheckNfcTab);
+        if (option.code === "gift_card") return Boolean(onCheckGiftCard);
+        return true;
+      })
+      .map((option) => ({
+        key: option.code as PaymentMethod,
+        title: option.name,
+        desc: option.description,
+        icon:
+          ICON_BY_KEY[option.icon] ||
+          ICON_BY_KEY[option.code] ||
+          Banknote,
+        requiresCashInput: option.requires_cash_input,
+      }));
+  }, [methodsQuery.data, onCheckGiftCard, onCheckNfcTab]);
+
+  const checkGiftCode = async (rawCode: string) => {
+    const code = rawCode.trim().toUpperCase();
+    if (!code || !onCheckGiftCard || giftChecking) return;
+    setGiftChecking(true);
+    try {
+      const result = await onCheckGiftCard(code);
+      setGiftResult({ ...result, code });
+    } catch (err) {
+      setGiftResult({
+        ok: false,
+        reason: err instanceof Error ? err.message : "Gagal memeriksa gift card",
+        code,
+      });
+    } finally {
+      setGiftChecking(false);
+    }
+  };
 
   const checkTabUid = async (rawUid: string) => {
     const uid = rawUid.trim();
@@ -151,11 +234,25 @@ export function PaymentModal({
       setArkToUse(0);
       setTabUidInput("");
       setTabResult(null);
+      setGiftCodeInput("");
+      setGiftResult(null);
       setQris(null);
-      setQrisError(null);
+      setQrisUnavailable(false);
     }
   }, [open]);
 
+  useEffect(() => {
+    if (!open || paymentOptions.length === 0) return;
+    if (!paymentOptions.some((option) => option.key === method)) {
+      setMethod(paymentOptions[0].key);
+    }
+  }, [open, paymentOptions, method]);
+
+  // Total berubah (item ditambah/dihapus) → hasil cek lama basi: saldo yang
+  // tadinya menutup bisa jadi kurang. Paksa kasir cek ulang.
+  useEffect(() => {
+    setGiftResult(null);
+  }, [total]);
   // Buat QR dinamis saat QRIS dipilih (sekali per nominal) — gagal bukan
   // penghalang bayar: kasir bisa lanjut dgn QRIS statis di meja.
   useEffect(() => {
@@ -163,7 +260,7 @@ export function PaymentModal({
     if (qrisLoading || (qris && qris.amount === totalAfterArk)) return;
     let cancelled = false;
     setQrisLoading(true);
-    setQrisError(null);
+    setQrisUnavailable(false);
     fetch("/api/pos/qris", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -173,13 +270,13 @@ export function PaymentModal({
         const body = await res.json();
         if (cancelled) return;
         if (!res.ok) {
-          setQrisError(body.error || "Gagal membuat QR dinamis");
+          setQrisUnavailable(true);
           return;
         }
         setQris({ amount: body.data.amount, qr_string: body.data.qr_string });
       })
       .catch(() => {
-        if (!cancelled) setQrisError("Gagal membuat QR dinamis");
+        if (!cancelled) setQrisUnavailable(true);
       })
       .finally(() => {
         if (!cancelled) setQrisLoading(false);
@@ -220,12 +317,13 @@ export function PaymentModal({
     if (method === "nfc_tab") {
       return tabResult?.ok === true;
     }
+    if (method === "gift_card") {
+      // Full-cover only (keputusan owner): saldo kurang → kasir minta metode
+      // lain, tidak ada bayar sebagian.
+      return giftResult?.ok === true && giftResult.covers === true;
+    }
     return true;
   })();
-
-  const paymentOptions = PAYMENT_OPTIONS.filter(
-    (option) => option.key !== "nfc_tab" || Boolean(onCheckNfcTab)
-  );
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && !submitting && onClose()}>
@@ -287,9 +385,21 @@ export function PaymentModal({
 
           {method === "cash" && (
             <div className="space-y-3 rounded-xl border border-gray-200/70 bg-muted/30 p-4">
-              <label className="text-sm font-medium text-foreground">
-                Amount received
-              </label>
+              <div className="flex items-center justify-between gap-2">
+                <label className="text-sm font-medium text-foreground">
+                  Amount received
+                </label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={submitting || totalAfterArk <= 0}
+                  onClick={() => setCashReceived(String(Math.round(totalAfterArk)))}
+                  className="h-8 border-primary/20 text-primary hover:bg-primary/5"
+                >
+                  Uang Pas
+                </Button>
+              </div>
               <Input
                 type="text"
                 inputMode="numeric"
@@ -324,16 +434,16 @@ export function PaymentModal({
                   <Loader2 className="h-4 w-4 animate-spin" />
                   Membuat QR dinamis…
                 </span>
-              ) : qris ? (
+              ) : qrisUnavailable || !qris ? (
+                <span className="inline-flex items-center gap-2 text-amber-700">
+                  <AlertTriangle className="h-4 w-4 shrink-0" />
+                  Warning: QR belum dikonfigurasi
+                </span>
+              ) : (
                 <span className="inline-flex items-center gap-2 font-medium text-emerald-700">
                   <QrCode className="h-4 w-4" />
                   QR tampil di layar customer — nominal terkunci{" "}
                   {formatCurrency(qris.amount)}
-                </span>
-              ) : (
-                <span className="text-amber-700">
-                  {qrisError ?? "QR dinamis tidak tersedia"} — lanjutkan dengan
-                  QRIS statis di meja.
                 </span>
               )}
             </div>
@@ -387,6 +497,80 @@ export function PaymentModal({
                 ) : (
                   <p className="text-sm font-medium text-red-600">
                     {tabResult.reason || "Gelang tidak bisa dipakai"}
+                  </p>
+                )
+              )}
+            </div>
+          )}
+
+          {method === "gift_card" && (
+            <div className="space-y-3 rounded-xl border border-violet-200/80 bg-violet-50 p-4">
+              <div className="flex items-center gap-2 text-sm font-semibold text-violet-800">
+                <Gift className="h-4 w-4" />
+                Masukkan kode gift card
+              </div>
+              <div className="flex gap-2">
+                <Input
+                  autoFocus
+                  placeholder="Contoh: ABCD2345EFGH"
+                  value={giftCodeInput}
+                  onChange={(e) => {
+                    setGiftCodeInput(e.target.value.toUpperCase());
+                    // Kode diubah → hasil cek sebelumnya tidak berlaku lagi
+                    if (giftResult) setGiftResult(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      void checkGiftCode(giftCodeInput);
+                    }
+                  }}
+                  disabled={submitting || giftChecking}
+                  className="h-11 border-violet-200/80 bg-white font-mono text-sm tracking-wider"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => void checkGiftCode(giftCodeInput)}
+                  disabled={submitting || giftChecking || !giftCodeInput.trim()}
+                  className="h-11 border-violet-200/80"
+                >
+                  Cek
+                </Button>
+              </div>
+              {giftChecking && (
+                <p className="text-xs text-violet-700/80">Memeriksa kartu…</p>
+              )}
+              {giftResult && !giftChecking && (
+                giftResult.ok ? (
+                  <div className="space-y-1 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Saldo kartu</span>
+                      <span className="font-semibold text-violet-700">
+                        {formatCurrency(giftResult.balance ?? 0)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Total tagihan</span>
+                      <span className="font-semibold text-foreground">
+                        {formatCurrency(total)}
+                      </span>
+                    </div>
+                    {giftResult.covers ? (
+                      <p className="text-sm font-medium text-emerald-600">
+                        Saldo menutup seluruh tagihan — sisa{" "}
+                        {formatCurrency(Math.max(0, (giftResult.balance ?? 0) - total))}
+                      </p>
+                    ) : (
+                      <p className="text-sm font-medium text-red-600">
+                        Saldo kurang {formatCurrency(total - (giftResult.balance ?? 0))} —
+                        gift card harus menutup seluruh tagihan, minta metode lain
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-sm font-medium text-red-600">
+                    {giftResult.reason || "Gift card tidak bisa dipakai"}
                   </p>
                 )
               )}
@@ -465,13 +649,17 @@ export function PaymentModal({
             className="bg-primary hover:bg-primary/90"
             disabled={!isValid || submitting}
             onClick={() =>
-              onConfirm({
+              void onConfirm({
                 method,
                 cashReceived: String(cashAmount || ""),
                 arkToUse,
                 nfcTabUid:
                   method === "nfc_tab" && tabResult?.ok
                     ? tabResult.uid
+                    : undefined,
+                giftCardCode:
+                  method === "gift_card" && giftResult?.ok
+                    ? giftResult.code
                     : undefined,
               })
             }

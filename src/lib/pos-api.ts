@@ -40,8 +40,26 @@ export interface Product {
   image_url?: string;
   xp?: number;
   station?: string;
+  /**
+   * EPIC-034 Fase B — 'gift_card' = penjualan saldo titipan: nominal diketik
+   * kasir (bukan harga katalog) dan kartu terbit saat order lunas.
+   * EPIC-039 — 'merchandise' = barang beli-jadi-jual ber-stok (Fase A/B).
+   */
+  product_kind?: 'regular' | 'gift_card' | 'merchandise';
   variants?: ProductVariant[];
+  /** EPIC-039 Fase B — varian merchandise ber-stok per SKU */
+  skus?: ProductSku[];
   modifiers?: ProductModifier[];
+};
+
+export interface ProductSku {
+  id: string;
+  sku: string;
+  name: string;
+  barcode?: string | null;
+  price_override?: number | null;
+  stock_quantity?: number | null;
+  is_active?: boolean;
 };
 
 export interface ProductVariant {
@@ -70,7 +88,16 @@ export interface ProductModifier {
 
 export async function getProducts(params?: { category?: string; search?: string }) {
   const queryString = params ? new URLSearchParams(params as any).toString() : '';
-  return fetchAPI<{ success: boolean; data: Product[] }>(`/products${queryString ? '?' + queryString : ''}`);
+  return fetchAPI<{
+    success: boolean;
+    data: Product[];
+    meta?: {
+      stall_scoped?: boolean;
+      warehouse_ids?: string[];
+      reason?: string;
+      product_count?: number;
+    };
+  }>(`/products${queryString ? '?' + queryString : ''}`);
 }
 
 // ============ CUSTOMERS ============
@@ -125,6 +152,8 @@ export interface SplitBillRequest {
   cashier_id: string;
   server_id?: string;
   table_id?: string;
+  /** Jumlah tamu yang duduk (EPIC-038). Kosong → 1 orang, ditegakkan server. */
+  guest_count?: number;
   shift_id?: string;
   items: OrderItem[];
   subtotal: number;
@@ -132,6 +161,13 @@ export interface SplitBillRequest {
   discount_reason?: string;
   tax_amount?: number;
   service_charge_amount?: number;
+  other_charges_amount?: number;
+  charges_breakdown?: Array<{
+    code: string;
+    name: string;
+    kind: string;
+    amount: number;
+  }>;
   total_amount: number;
   notes?: string;
   special_requests?: string;
@@ -288,17 +324,30 @@ export interface OpenBillRequest {
   cashier_id?: string;
   server_id?: string;
   table_id?: string;
+  /** Jumlah tamu yang duduk (EPIC-038). Kosong → 1 orang, ditegakkan server. */
+  guest_count?: number;
   shift_id?: string;
   items: OrderItem[];
   subtotal: number;
   discount_amount?: number;
   discount_reason?: string;
+  manual_discount_type?: 'percent' | 'fixed' | null;
+  manual_discount_value?: number | null;
   tax_amount?: number;
   service_charge_amount?: number;
+  other_charges_amount?: number;
+  charges_breakdown?: Array<{
+    code: string;
+    name: string;
+    kind: string;
+    amount: number;
+  }>;
   total_amount: number;
   notes?: string;
   special_requests?: string;
   membership_discount_pct?: number;
+  promo_discount?: number;
+  promo_code?: string;
 }
 
 export async function openBill(payload: OpenBillRequest) {
@@ -324,19 +373,27 @@ export async function preSettleOrder(orderId: string) {
 
 export interface OrderItem {
   product_id: string;
+  sku_id?: string;
   product_name: string;
   product_sku: string;
   variants?: Array<{ name: string; group: string; price: number }>;
   modifiers?: Array<{ name: string; group: string }>;
   quantity: number;
   unit_price: number;
+  variant_price_adjustment?: number;
+  modifier_price_adjustment?: number;
   subtotal: number;
   total_amount: number;
+  station?: string;
+  discount_type?: 'percent' | 'fixed' | null;
+  discount_value?: number | null;
+  discount_amount?: number;
 }
 
 export interface Order {
   id: string;
   order_number?: string;
+  queue_number?: string | null;
   order_type?: string;
   status?: string;
   payment_status?: string;
@@ -347,10 +404,22 @@ export interface Order {
   cashier_id?: string;
   server_id?: string;
   table_id?: string;
+  /** Jumlah tamu yang duduk (EPIC-038). Kosong → 1 orang, ditegakkan server. */
+  guest_count?: number;
   subtotal?: number;
   discount_amount?: number;
+  discount_reason?: string;
+  manual_discount_type?: 'percent' | 'fixed' | null;
+  manual_discount_value?: number | null;
   tax_amount?: number;
   service_charge_amount?: number;
+  other_charges_amount?: number;
+  charges_breakdown?: Array<{
+    code: string;
+    name: string;
+    kind: string;
+    amount: number;
+  }> | null;
   total_amount?: number;
   amount_paid?: number;
   change_amount?: number;
@@ -376,20 +445,36 @@ export interface CreateOrderRequest {
   cashier_id: string;
   server_id?: string;
   table_id?: string;
+  /** Jumlah tamu yang duduk (EPIC-038). Kosong → 1 orang, ditegakkan server. */
+  guest_count?: number;
   items: OrderItem[];
   subtotal: number;
   discount_amount?: number;
   discount_reason?: string;
+  manual_discount_type?: 'percent' | 'fixed' | null;
+  manual_discount_value?: number | null;
   tax_amount?: number;
   service_charge_amount?: number;
+  other_charges_amount?: number;
+  charges_breakdown?: Array<{
+    code: string;
+    name: string;
+    kind: string;
+    amount: number;
+  }>;
   total_amount: number;
-  payment_method?: 'cash' | 'qris' | 'debit' | 'credit' | 'ark_coin' | 'nfc_tab';
+  payment_method?: 'cash' | 'qris' | 'debit' | 'credit' | 'ark_coin' | 'nfc_tab' | 'gift_card';
   amount_paid?: number;
   notes?: string;
   special_requests?: string;
   ark_coins_used?: number;
   /** UID gelang ticketing — wajib saat payment_method 'nfc_tab' (EPIC-023) */
   nfc_tab_uid?: string;
+  /** Kode kartu — wajib saat payment_method 'gift_card' (EPIC-034 Fase C) */
+  gift_card_code?: string;
+  /** Pembeli gift card — nomor dipakai kirim kode via WA (EPIC-034 Fase B) */
+  gift_card_buyer_name?: string;
+  gift_card_buyer_phone?: string;
   /** Server-side recalculation flag (client sends for audit only) */
   include_tax?: boolean;
   /** Membership discount percentage sent for server validation */
@@ -400,8 +485,21 @@ export interface CreateOrderRequest {
   shift_id?: string;
 }
 
+export interface IssuedGiftCardResponse {
+  code: string;
+  initial_value: number;
+  expires_at: string | null;
+}
+
 export async function createOrder(order: CreateOrderRequest) {
-  return fetchAPI<{ success: boolean; data: any; error?: string }>('/orders', {
+  return fetchAPI<{
+    success: boolean;
+    data: any;
+    error?: string;
+    /** EPIC-034 Fase B — kartu yang terbit dari penjualan gift card. */
+    gift_cards?: IssuedGiftCardResponse[];
+    gift_card_error?: string | null;
+  }>('/orders', {
     method: 'POST',
     body: JSON.stringify(order),
   });

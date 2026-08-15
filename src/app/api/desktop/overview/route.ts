@@ -1,10 +1,11 @@
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { requireApiRole, ApiError } from "@/lib/api/auth";
 import {
   DESKTOP_OVERVIEW_ROLES,
   buildDesktopOverview,
   type DesktopOverview,
 } from "@/lib/desktop/overview";
+import { PERIOD_KINDS, type PeriodKind } from "@/lib/desktop/period";
 
 /**
  * GET /api/desktop/overview — data papan monitoring desktop (EPIC-019).
@@ -17,21 +18,33 @@ import {
  */
 
 const CACHE_TTL_MS = 60_000;
-let cached: { at: number; data: DesktopOverview } | null = null;
+// Cache DI-KUNCI per periode (EPIC-037 Fase A). Satu slot bersama akan membuat
+// pengguna yang memilih MTD menerima angka YTD milik pengguna lain selama 60
+// detik — kesalahan yang tidak terlihat karena angkanya tetap "masuk akal".
+const cached = new Map<PeriodKind, { at: number; data: DesktopOverview }>();
 
-export async function GET() {
+function parsePeriod(value: string | null): PeriodKind {
+  return (PERIOD_KINDS as readonly string[]).includes(value ?? "")
+    ? (value as PeriodKind)
+    : "today";
+}
+
+export async function GET(request: NextRequest) {
   try {
     await requireApiRole([...DESKTOP_OVERVIEW_ROLES]);
 
-    if (cached && Date.now() - cached.at < CACHE_TTL_MS) {
-      return NextResponse.json({ data: cached.data, cached: true });
+    const periode = parsePeriod(request.nextUrl.searchParams.get("periode"));
+
+    const hit = cached.get(periode);
+    if (hit && Date.now() - hit.at < CACHE_TTL_MS) {
+      return NextResponse.json({ data: hit.data, cached: true });
     }
 
-    const data = await buildDesktopOverview();
+    const data = await buildDesktopOverview(periode);
     // Hasil dengan seksi gagal tidak di-cache: biarkan percobaan berikutnya
     // mencoba lagi, daripada mengunci kartu error selama 60 detik.
     if (data.gagal.length === 0) {
-      cached = { at: Date.now(), data };
+      cached.set(periode, { at: Date.now(), data });
     }
 
     return NextResponse.json({ data, cached: false });

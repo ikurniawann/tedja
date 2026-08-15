@@ -28,14 +28,15 @@ import { PurchasingTablePagination } from "@/modules/purchasing/components/pagin
 import { RM_ROUTES, PRODUCT_ROUTES, GENERAL_ROUTES } from "@/modules/purchasing/constants/item-routes";
 import { formatAmount, formatDate } from "@/lib/purchasing/utils";
 import { usePurchaseInvoiceList } from "../queries";
-import { PurchaseInvoicePayDialog } from "./purchase-invoice-pay-dialog";
 import type { PurchaseInvoicePaymentStatus, PurchaseInvoiceRow } from "../types";
 
+const AP_PAYMENTS_HREF = "/dashboard/accounting/accounts-payable/payments";
+
 const PAYMENT_STATUS_LABELS: Record<PurchaseInvoicePaymentStatus, string> = {
-  unpaid: "Unpaid",
-  partial: "Partially Paid",
-  paid: "Paid",
-  overdue: "Overdue",
+  unpaid: "Belum Dibayar",
+  partial: "Dibayar Sebagian",
+  paid: "Lunas",
+  overdue: "Lewat Jatuh Tempo",
 };
 
 const PAYMENT_STATUS_STYLES: Record<PurchaseInvoicePaymentStatus, string> = {
@@ -46,11 +47,11 @@ const PAYMENT_STATUS_STYLES: Record<PurchaseInvoicePaymentStatus, string> = {
 };
 
 const STATUS_OPTIONS = [
-  { value: "all", label: "All Payment Statuses" },
-  { value: "unpaid", label: "Unpaid" },
-  { value: "partial", label: "Partially Paid" },
-  { value: "paid", label: "Paid" },
-  { value: "overdue", label: "Overdue" },
+  { value: "all", label: "Semua Status Pembayaran" },
+  { value: "unpaid", label: "Belum Dibayar" },
+  { value: "partial", label: "Dibayar Sebagian" },
+  { value: "paid", label: "Lunas" },
+  { value: "overdue", label: "Lewat Jatuh Tempo" },
 ];
 
 function formatPct(value: number) {
@@ -59,8 +60,12 @@ function formatPct(value: number) {
 
 export function PurchaseInvoicesPage({
   moduleType = "raw_material",
+  title = "Invoice Pembelian",
+  listTitle = "Daftar Invoice & Tagihan",
 }: {
   moduleType?: "raw_material" | "product" | "general";
+  title?: string;
+  listTitle?: string;
 }) {
   const routes =
     moduleType === "general"
@@ -77,7 +82,6 @@ export function PurchaseInvoicesPage({
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<PurchaseInvoicePaymentStatus | "all">("all");
   const [filterOpen, setFilterOpen] = useState(false);
-  const [payRow, setPayRow] = useState<PurchaseInvoiceRow | null>(null);
 
   const listQuery = usePurchaseInvoiceList(
     {
@@ -94,7 +98,7 @@ export function PurchaseInvoicesPage({
       toast.error(
         listQuery.error instanceof Error
           ? listQuery.error.message
-          : "Failed to load purchase invoices"
+          : "Gagal memuat invoice pembelian"
       );
     }
   }, [listQuery.isError, listQuery.error]);
@@ -137,11 +141,11 @@ export function PurchaseInvoicesPage({
   return (
     <div className="space-y-6">
       <PurchasingPageHeader
-        title="Purchase Invoices"
+        title={title}
         description={
           <>
-            Track vendor payables, payment terms, due dates, and settlement progress — {total}{" "}
-            purchase orders
+            Pantau tagihan supplier, termin pembayaran, jatuh tempo, dan progres pelunasan — {total}{" "}
+            purchase order
           </>
         }
       />
@@ -154,7 +158,7 @@ export function PurchaseInvoicesPage({
                 <WalletCards className="h-5 w-5" />
               </span>
               <div>
-                <p className="text-xs font-medium text-gray-500">Total Payable</p>
+                <p className="text-xs font-medium text-gray-500">Total Tagihan</p>
                 <p className="text-lg font-bold text-gray-900">{formatAmount(summary.payable)}</p>
               </div>
             </div>
@@ -167,7 +171,7 @@ export function PurchaseInvoicesPage({
                 <CheckCircle2 className="h-5 w-5" />
               </span>
               <div>
-                <p className="text-xs font-medium text-gray-500">Paid</p>
+                <p className="text-xs font-medium text-gray-500">Nominal Dibayar</p>
                 <p className="text-lg font-bold text-emerald-700">{formatAmount(summary.paid)}</p>
               </div>
             </div>
@@ -180,7 +184,7 @@ export function PurchaseInvoicesPage({
                 <CreditCard className="h-5 w-5" />
               </span>
               <div>
-                <p className="text-xs font-medium text-gray-500">Outstanding</p>
+                <p className="text-xs font-medium text-gray-500">Sisa Tagihan</p>
                 <p className="text-lg font-bold text-gray-900">
                   {formatAmount(summary.outstanding)}
                 </p>
@@ -195,7 +199,7 @@ export function PurchaseInvoicesPage({
                 <AlertTriangle className="h-5 w-5" />
               </span>
               <div>
-                <p className="text-xs font-medium text-gray-500">Overdue POs</p>
+                <p className="text-xs font-medium text-gray-500">PO Lewat Jatuh Tempo</p>
                 <p className="text-lg font-bold text-red-600">{summary.overdue}</p>
               </div>
             </div>
@@ -205,8 +209,8 @@ export function PurchaseInvoicesPage({
 
       <PurchasingListSection
         icon={FileText}
-        title="Invoice & Payable List"
-        description="Monitor purchase order payables, approved return credits, due dates, and settlement status."
+        title={listTitle}
+        description="Pantau tagihan purchase order, nota kredit retur yang disetujui, jatuh tempo, dan status pelunasan."
         toolbar={
           <div className="flex w-full flex-col gap-3 sm:w-auto md:flex-row md:items-center">
             <label className="relative w-full md:w-80">
@@ -214,7 +218,7 @@ export function PurchaseInvoicesPage({
               <Input
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder={`Search PO number or ${partyLabel.toLowerCase()}...`}
+                placeholder={`Cari nomor PO atau ${partyLabel.toLowerCase()}...`}
                 className="h-10 bg-white pl-10 pr-10 text-sm focus:border-pink-400 focus:ring-2 focus:ring-pink-100"
               />
               {searchQuery && (
@@ -222,7 +226,7 @@ export function PurchaseInvoicesPage({
                   type="button"
                   onClick={() => setSearchQuery("")}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 transition-colors hover:text-gray-700"
-                  aria-label="Clear search"
+                  aria-label="Hapus pencarian"
                 >
                   <X className="h-4 w-4" />
                 </button>
@@ -252,7 +256,7 @@ export function PurchaseInvoicesPage({
                 onClick={handleResetFilters}
                 className="h-10 flex-shrink-0 rounded-lg"
               >
-                Reset
+                Atur Ulang
               </Button>
             )}
           </div>
@@ -264,7 +268,7 @@ export function PurchaseInvoicesPage({
               <div className="space-y-1.5">
                 <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
                   <Filter className="h-3.5 w-3.5 text-pink-500" />
-                  Payment Status
+                  Status Pembayaran
                 </div>
                 <Combobox
                   options={STATUS_OPTIONS}
@@ -273,9 +277,9 @@ export function PurchaseInvoicesPage({
                     setStatusFilter(value as PurchaseInvoicePaymentStatus | "all");
                     setPage(1);
                   }}
-                  placeholder="All payment statuses"
-                  searchPlaceholder="Search status..."
-                  emptyMessage="No status found"
+                  placeholder="Semua status pembayaran"
+                  searchPlaceholder="Cari status..."
+                  emptyMessage="Status tidak ditemukan"
                   className="w-full! h-9 text-sm"
                 />
               </div>
@@ -285,14 +289,14 @@ export function PurchaseInvoicesPage({
 
         <div className="px-4">
           {loading ? (
-            <div className="py-14 text-center text-sm text-gray-500">Loading purchase invoices...</div>
+            <div className="py-14 text-center text-sm text-gray-500">Memuat invoice pembelian...</div>
           ) : rows.length === 0 ? (
             <div className="flex flex-col items-center py-14 text-center">
               <Banknote className="mb-3 h-10 w-10 text-gray-300" />
-              <p className="text-sm text-gray-600">No purchase invoices found</p>
+              <p className="text-sm text-gray-600">Invoice pembelian tidak ditemukan</p>
               <p className="mt-1 max-w-md text-xs text-gray-500">
-                Approved or sent purchase orders with a payable amount will appear here once payment
-                terms are scheduled on the PO.
+                Purchase order yang sudah disetujui atau dikirim dan memiliki nominal tagihan akan
+                muncul di sini setelah termin pembayaran dijadwalkan di PO.
               </p>
             </div>
           ) : (
@@ -301,21 +305,21 @@ export function PurchaseInvoicesPage({
                 <table className="min-w-full text-sm">
                   <thead className="border-b border-gray-100 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
                     <tr>
-                      <th className="px-4 py-3 text-left font-semibold">PO Number</th>
-                      <th className="px-4 py-3 text-left font-semibold">PO Date</th>
+                      <th className="px-4 py-3 text-left font-semibold">Nomor PO</th>
+                      <th className="px-4 py-3 text-left font-semibold">Tanggal PO</th>
                       <th className="px-4 py-3 text-left font-semibold">{partyLabel}</th>
-                      <th className="px-4 py-3 text-right font-semibold">PO Total</th>
-                      <th className="px-4 py-3 text-right font-semibold">Returns</th>
-                      <th className="px-4 py-3 text-right font-semibold">Reject Credits</th>
-                      <th className="px-4 py-3 text-right font-semibold">Net Payable</th>
-                      <th className="px-4 py-3 text-right font-semibold">Paid</th>
-                      <th className="px-4 py-3 text-right font-semibold">Outstanding</th>
-                      <th className="px-4 py-3 text-center font-semibold">Terms</th>
-                      <th className="px-4 py-3 text-center font-semibold">Receipt</th>
-                      <th className="px-4 py-3 text-center font-semibold">Payment</th>
-                      <th className="px-4 py-3 text-left font-semibold">Next Due</th>
+                      <th className="px-4 py-3 text-right font-semibold">Total PO</th>
+                      <th className="px-4 py-3 text-right font-semibold">Retur</th>
+                      <th className="px-4 py-3 text-right font-semibold">Nota Kredit Reject</th>
+                      <th className="px-4 py-3 text-right font-semibold">Tagihan Bersih</th>
+                      <th className="px-4 py-3 text-right font-semibold">Nominal Dibayar</th>
+                      <th className="px-4 py-3 text-right font-semibold">Sisa Tagihan</th>
+                      <th className="px-4 py-3 text-center font-semibold">Termin</th>
+                      <th className="px-4 py-3 text-center font-semibold">Penerimaan</th>
+                      <th className="px-4 py-3 text-center font-semibold">Pembayaran</th>
+                      <th className="px-4 py-3 text-left font-semibold">Jatuh Tempo Berikutnya</th>
                       <th className="px-4 py-3 text-center font-semibold">Status</th>
-                      <th className="px-4 py-3 text-right font-semibold">Actions</th>
+                      <th className="px-4 py-3 text-right font-semibold">Aksi</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
@@ -327,7 +331,7 @@ export function PurchaseInvoicesPage({
                         onOpen={() =>
                           router.push(routes.purchasingInvoicePoDetail(row.purchase_order_id))
                         }
-                        onPay={() => setPayRow(row)}
+                        onPay={() => router.push(AP_PAYMENTS_HREF)}
                       />
                     ))}
                   </tbody>
@@ -345,14 +349,6 @@ export function PurchaseInvoicesPage({
           )}
         </div>
       </PurchasingListSection>
-
-      <PurchaseInvoicePayDialog
-        row={payRow}
-        open={Boolean(payRow)}
-        onOpenChange={(open) => {
-          if (!open) setPayRow(null);
-        }}
-      />
     </div>
   );
 }
@@ -423,16 +419,16 @@ function InvoiceTableRow({
             <Button
               variant="outline"
               size="sm"
-              title="Pay purchase order"
-              className="h-8 rounded-lg border-pink-200 px-3 text-xs font-medium text-pink-700 hover:bg-pink-50"
+              title="Bayar di Accounting AP Payment"
+              className="h-8 rounded-lg border-primary/20 px-3 text-xs font-medium text-primary hover:bg-primary/5"
               onClick={onPay}
             >
               <Banknote className="mr-1.5 h-3.5 w-3.5" />
-              Pay
+              Bayar di Accounting
             </Button>
           )}
           <Link href={poDetailRoute}>
-            <Button variant="ghost" size="sm" title="View invoice detail" className="cursor-pointer">
+            <Button variant="ghost" size="sm" title="Lihat detail invoice" className="cursor-pointer">
               <Eye className="h-4 w-4" />
             </Button>
           </Link>

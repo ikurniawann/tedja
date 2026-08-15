@@ -97,22 +97,8 @@ export function ProductPOForm({
     const product = products.find((p) => p.id === productId);
     if (!product) return;
 
-    let price = Number(product.harga_modal || 0);
-    if (vendorId) {
-      try {
-        const res = await fetch(
-          `/api/purchasing/vendor-price-list?vendor_id=${vendorId}&product_id=${productId}&status=active&limit=5`
-        );
-        const json = await res.json();
-        const rows = (json.data || []) as Array<{ harga?: number; is_preferred?: boolean }>;
-        const best = rows
-          .filter((row) => Number(row.harga || 0) > 0)
-          .sort((a, b) => (a.is_preferred === b.is_preferred ? 0 : a.is_preferred ? -1 : 1))[0];
-        if (best?.harga) price = Number(best.harga);
-      } catch {
-        /* keep fallback */
-      }
-    }
+    // Sama seperti RM: harga acuan dari master, bukan price list vendor.
+    const price = Number(product.harga_modal || 0);
 
     setItems((prev) =>
       prev.map((row, i) =>

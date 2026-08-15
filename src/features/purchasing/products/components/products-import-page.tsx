@@ -38,19 +38,19 @@ export function ProductsImportPage() {
     if (imported > 0 || updated > 0) {
       const parts: string[] = [];
       if (imported > 0) {
-        parts.push(`${imported} new record${imported === 1 ? "" : "s"}`);
+        parts.push(`${imported} data baru`);
       }
       if (updated > 0) {
-        parts.push(`${updated} updated record${updated === 1 ? "" : "s"}`);
+        parts.push(`${updated} data diperbarui`);
       }
-      toast.success(`Import completed: ${parts.join(", ")}.`);
+      toast.success(`Impor selesai: ${parts.join(", ")}.`);
     } else {
-      toast.success("Import completed with no changes.");
+      toast.success("Impor selesai tanpa perubahan.");
     }
 
     if (skipped > 0) {
       toast.warning(
-        `${skipped} row${skipped === 1 ? "" : "s"} skipped. Review the results below before leaving.`
+        `${skipped} baris dilewati. Periksa hasil di bawah sebelum meninggalkan halaman.`
       );
       return;
     }
@@ -69,8 +69,8 @@ export function ProductsImportPage() {
     <div className="space-y-6">
       <PurchasingFormHeader
         backHref={PRODUCT_ROUTES.products}
-        title="Import Products"
-        description="Upload CSV or Excel to add products, or re-import an exported file to update existing records."
+        title="Impor Produk"
+        description="Unggah CSV atau Excel untuk menambah produk, atau impor ulang file hasil ekspor untuk memperbarui data yang sudah ada."
         actions={
           <Button
             type="button"
@@ -79,7 +79,7 @@ export function ProductsImportPage() {
             onClick={() => importerRef.current?.downloadTemplate()}
           >
             <Download className="mr-2 h-4 w-4" />
-            Download Template
+            Unduh Template
           </Button>
         }
       />
@@ -93,21 +93,21 @@ export function ProductsImportPage() {
           <CardHeader className="shrink-0 border-b border-gray-200/70 pb-3">
             <CardTitle className="flex items-center gap-2 text-base">
               <Upload className="h-4 w-4 text-pink-600" />
-              Upload Spreadsheet
+              Unggah Spreadsheet
             </CardTitle>
           </CardHeader>
           <CardContent className="flex min-h-0 flex-1 flex-col space-y-4 p-4">
             <div className="flex shrink-0 items-start gap-3 rounded-lg border border-gray-200/70 bg-gray-50/80 p-4">
               <FileSpreadsheet className="mt-0.5 h-5 w-5 shrink-0 text-pink-600" />
               <div className="text-sm text-gray-600">
-                <p className="font-medium text-gray-900">Before you import</p>
+                <p className="font-medium text-gray-900">Sebelum mengimpor</p>
                 <ul className="mt-2 list-disc space-y-1 pl-4">
-                  <li>Export from the product list, edit fields, then re-import the same file.</li>
-                  <li>Existing codes are updated per stall; empty code creates a new product.</li>
-                  <li>Supported formats: CSV and Excel (.xlsx).</li>
+                  <li>Ekspor dari daftar produk, ubah kolom, lalu impor ulang file yang sama.</li>
+                  <li>Kode yang sudah ada diperbarui per stall; kode kosong membuat produk baru.</li>
+                  <li>Format yang didukung: CSV dan Excel (.xlsx).</li>
                   <li>
-                    Required columns: product name (<strong>nama</strong>), stall code (
-                    <strong>stall_code</strong>), and unit code (<strong>satuan_kode</strong>).
+                    Kolom wajib: nama produk (<strong>nama</strong>), kode stall (
+                    <strong>stall_code</strong>), dan kode satuan (<strong>satuan_kode</strong>).
                   </li>
                 </ul>
               </div>
@@ -121,8 +121,8 @@ export function ProductsImportPage() {
                 hideHeader
                 hideActions
                 suppressSuccessToast
-                title="Import Products"
-                description="Upload CSV or Excel to add products in bulk."
+                title="Impor Produk"
+                description="Unggah CSV atau Excel untuk menambah produk secara massal."
                 templateName="template-products.csv"
                 apiEndpoint="/api/purchasing/import/products"
                 sampleRows={PRODUCT_IMPORT_SAMPLE_ROWS}
@@ -140,8 +140,8 @@ export function ProductsImportPage() {
             onCancel={() => router.push(PRODUCT_ROUTES.products)}
             submitLabel={
               importState.validCount > 0
-                ? `Import ${importState.validCount} Record${importState.validCount === 1 ? "" : "s"}`
-                : "Import"
+                ? `Impor ${importState.validCount} Data`
+                : "Impor"
             }
             loading={importState.isImporting}
             disabled={!importState.canImport}

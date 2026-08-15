@@ -15,19 +15,18 @@ import { NumericInput } from "@/components/ui/numeric-input";
 import { DsDateTimePicker } from "@/components/design-system";
 import { formatAmount } from "@/lib/purchasing/utils";
 import { parseLocaleNumber } from "@/lib/purchasing/parse-locale-number";
-import { listPriceLists } from "@/lib/purchasing";
-import { SupplierPriceList } from "@/types/purchasing";
+import { getRawMaterialPurchasePrice } from "@/lib/purchasing";
 import { toast } from "sonner";
 
 const prItemSchema = z.object({
-  raw_material_id: z.string().min(1, "Raw material is required"),
+  raw_material_id: z.string().min(1, "Bahan baku wajib diisi"),
   satuan_id: z.string().optional(),
-  description: z.string().min(1, "Description is required"),
+  description: z.string().min(1, "Deskripsi wajib diisi"),
   qty: z.preprocess(
     (value) => parseLocaleNumber(value) ?? value,
-    z.number().min(1, "Minimum quantity is 1")
+    z.number().min(1, "Qty minimal 1")
   ),
-  unit: z.string().min(1, "Unit is required"),
+  unit: z.string().min(1, "Satuan wajib diisi"),
   estimated_price: z.preprocess(
     (value) => parseLocaleNumber(value) ?? 0,
     z.number().min(0)
@@ -35,11 +34,11 @@ const prItemSchema = z.object({
 });
 
 const prSchema = z.object({
-  department_id: z.string().min(1, "Department is required"),
+  department_id: z.string().min(1, "Departemen wajib diisi"),
   priority: z.enum(["low", "medium", "high", "urgent"]),
   required_date: z.string().optional(),
   notes: z.string().optional(),
-  items: z.array(prItemSchema).min(1, "At least one item is required"),
+  items: z.array(prItemSchema).min(1, "Minimal satu item wajib diisi"),
 });
 
 type PRFormData = z.infer<typeof prSchema>;
@@ -131,15 +130,6 @@ export function PRForm({
     0
   );
 
-  function getConversionFactor(materialId: string, unitId?: string) {
-    if (!unitId) return 1;
-    const material = materials.find((item) => item.id === materialId);
-    const conversion = material?.unit_conversions?.find(
-      (item) => item.satuan_id === unitId && item.is_active !== false
-    );
-    return Number(conversion?.qty_in_base_unit || 1);
-  }
-
   function getUnitName(unitId?: string) {
     return units.find((unit) => unit.id === unitId)?.nama || "";
   }
@@ -161,35 +151,6 @@ export function PRForm({
       .filter(Boolean) as { value: string; label: string }[];
   }
 
-  function getEstimatedPriceFromPriceLists(
-    materialId: string,
-    targetUnitId?: string,
-    priceLists: SupplierPriceList[] = []
-  ) {
-    const targetFactor = getConversionFactor(materialId, targetUnitId);
-    const validPrices = priceLists
-      .filter((price) => {
-        const materialMatch = (price.bahan_baku_id || price.raw_material_id) === materialId;
-        const unitId = price.satuan_id || price.unit_id;
-        return materialMatch && unitId && Number(price.harga ?? price.price ?? 0) > 0;
-      })
-      .map((price) => {
-        const unitId = price.satuan_id || price.unit_id;
-        const sourceFactor = getConversionFactor(materialId, unitId);
-        const unitPrice = Number(price.harga ?? price.price ?? 0);
-        return {
-          price,
-          estimatedPrice: sourceFactor > 0 ? (unitPrice / sourceFactor) * targetFactor : unitPrice,
-        };
-      })
-      .sort((a, b) => {
-        if (a.price.is_preferred !== b.price.is_preferred) return a.price.is_preferred ? -1 : 1;
-        return a.estimatedPrice - b.estimatedPrice;
-      });
-
-    return validPrices[0]?.estimatedPrice;
-  }
-
   async function applyEstimatedPrice(
     index: number,
     materialId: string,
@@ -207,11 +168,9 @@ export function PRForm({
     if (!materialId) return;
 
     try {
-      const response = await listPriceLists({ raw_material_id: materialId, is_active: true });
-      const priceLists = Array.isArray(response) ? response : [response];
-      const estimatedPrice = getEstimatedPriceFromPriceLists(materialId, unitId, priceLists);
-      if (estimatedPrice !== undefined) {
-        setValue(`items.${index}.estimated_price`, Math.round(estimatedPrice), {
+      const suggestion = await getRawMaterialPurchasePrice(materialId, { satuanId: unitId });
+      if (suggestion && suggestion.unit_price > 0) {
+        setValue(`items.${index}.estimated_price`, Math.round(suggestion.unit_price), {
           shouldDirty: true,
           shouldValidate: true,
         });
@@ -249,7 +208,7 @@ export function PRForm({
         try {
           await onSubmit(data, action);
         } catch (error) {
-          const message = error instanceof Error ? error.message : "Failed to save purchase request";
+          const message = error instanceof Error ? error.message : "Gagal menyimpan purchase request";
           if (!message.includes("NEXT_REDIRECT")) {
             toast.error(message);
           }
@@ -262,8 +221,8 @@ export function PRForm({
         const message = firstErrorMessage(formErrors);
         toast.error(
           message
-            ? `Complete the form: ${message}`
-            : "Please review the form — required fields are still missing"
+            ? `Lengkapi formulir: ${message}`
+            : "Periksa kembali formulir — masih ada field wajib yang belum diisi"
         );
       }
     )();
@@ -284,7 +243,7 @@ export function PRForm({
             <CardHeader className="border-b border-gray-200/70 pb-3">
               <CardTitle className="flex items-center gap-2 text-base">
                 <FileText className="h-4 w-4" />
-                Request Information
+                Informasi Permintaan
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4 pt-4">
@@ -292,7 +251,7 @@ export function PRForm({
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div className="min-w-0 space-y-1.5">
                   <Label htmlFor="department_id" className="text-xs">
-                    Department <span className="text-red-500">*</span>
+                    Departemen <span className="text-red-500">*</span>
                   </Label>
                   <Combobox
                     options={departments.map((dept) => ({
@@ -301,9 +260,9 @@ export function PRForm({
                     }))}
                     value={selectedDepartment}
                     onChange={(value) => setValue("department_id", value, { shouldValidate: true })}
-                    placeholder="Select department..."
-                    searchPlaceholder="Search department..."
-                    emptyMessage="No department found"
+                    placeholder="Pilih departemen..."
+                    searchPlaceholder="Cari departemen..."
+                    emptyMessage="Departemen tidak ditemukan"
                     allowClear
                     className="!w-full h-9 text-sm"
                   />
@@ -314,30 +273,30 @@ export function PRForm({
 
                 <div className="min-w-0 space-y-1.5">
                   <Label htmlFor="priority" className="text-xs">
-                    Priority <span className="text-red-500">*</span>
+                    Prioritas <span className="text-red-500">*</span>
                   </Label>
                   <Combobox
                     options={[
-                      { value: "low", label: "Low" },
-                      { value: "medium", label: "Medium" },
-                      { value: "high", label: "High" },
-                      { value: "urgent", label: "Urgent" },
+                      { value: "low", label: "Rendah" },
+                      { value: "medium", label: "Sedang" },
+                      { value: "high", label: "Tinggi" },
+                      { value: "urgent", label: "Mendesak" },
                     ]}
                     value={watch("priority")}
                     onChange={(value) => setValue("priority", value as PRFormData["priority"])}
-                    placeholder="Select priority..."
-                    searchPlaceholder="Search priority..."
-                    emptyMessage="No priority found"
+                    placeholder="Pilih prioritas..."
+                    searchPlaceholder="Cari prioritas..."
+                    emptyMessage="Prioritas tidak ditemukan"
                     className="!w-full h-9 text-sm"
                   />
                 </div>
               </div>
 
               <DsDateTimePicker
-                label="Required Date"
+                label="Tanggal Dibutuhkan"
                 value={requiredDate || ""}
                 onChange={(value) => setValue("required_date", value)}
-                placeholder="Select required date..."
+                placeholder="Pilih tanggal dibutuhkan..."
                 dateOnly
               />
             </CardContent>
@@ -348,10 +307,10 @@ export function PRForm({
               <div>
                 <CardTitle className="flex items-center gap-2 text-base">
                   <ShoppingBasket className="h-4 w-4" />
-                  Request Items
+                  Item Diminta
                 </CardTitle>
                 <p className="mt-1 text-xs text-gray-500">
-                  Select raw materials from master data so they can be converted to a purchase order.
+                  Pilih bahan baku dari data master agar bisa dikonversi menjadi purchase order.
                 </p>
               </div>
               <Button
@@ -370,7 +329,7 @@ export function PRForm({
                 }
                 className="purchasing-secondary-button w-full sm:w-auto"
               >
-                <Plus className="mr-1 h-4 w-4" /> Add Item
+                <Plus className="mr-1 h-4 w-4" /> Tambah Item
               </Button>
             </CardHeader>
             <CardContent className="space-y-3 pt-4">
@@ -387,14 +346,14 @@ export function PRForm({
                       className="h-8 text-red-500 hover:text-red-600"
                     >
                       <Trash2 className="mr-1 h-4 w-4" />
-                      Remove
+                      Hapus
                     </Button>
                   </div>
 
                   <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
                     <div className="min-w-0 space-y-1.5 lg:col-span-4">
                       <Label className="text-xs">
-                        Raw Material <span className="text-red-500">*</span>
+                        Bahan Baku <span className="text-red-500">*</span>
                       </Label>
                       <Combobox
                         options={materials.map((material) => ({
@@ -404,9 +363,9 @@ export function PRForm({
                         }))}
                         value={items[index]?.raw_material_id || ""}
                         onChange={(value) => handleSelectMaterial(index, value)}
-                        placeholder="Select raw material..."
-                        searchPlaceholder="Search raw material..."
-                        emptyMessage="No raw material found"
+                        placeholder="Pilih bahan baku..."
+                        searchPlaceholder="Cari bahan baku..."
+                        emptyMessage="Bahan baku tidak ditemukan"
                         allowClear
                         className="!w-full h-9 text-sm"
                       />
@@ -418,15 +377,15 @@ export function PRForm({
                     </div>
 
                     <div className="min-w-0 space-y-1.5 lg:col-span-4">
-                      <Label className="text-xs">Description</Label>
+                      <Label className="text-xs">Deskripsi</Label>
                       <input type="hidden" {...register(`items.${index}.description`)} />
                       <div className="flex h-9 w-full items-center rounded-lg border border-gray-200/80 bg-gray-50 px-2.5 text-sm text-gray-700">
-                        {items[index]?.description || "Select a raw material first"}
+                        {items[index]?.description || "Pilih bahan baku terlebih dahulu"}
                       </div>
                     </div>
 
                     <div className="min-w-0 space-y-1.5 lg:col-span-2">
-                      <Label className="text-xs">Quantity</Label>
+                      <Label className="text-xs">Qty</Label>
                       <NumericInput
                         value={items[index]?.qty || 0}
                         onValueChange={(value) =>
@@ -441,19 +400,19 @@ export function PRForm({
                     </div>
 
                     <div className="min-w-0 space-y-1.5 lg:col-span-2">
-                      <Label className="text-xs">Unit</Label>
+                      <Label className="text-xs">Satuan</Label>
                       <input type="hidden" {...register(`items.${index}.unit`)} />
                       <input type="hidden" {...register(`items.${index}.satuan_id`)} />
                       <Combobox
                         options={getMaterialUnitOptions(items[index]?.raw_material_id)}
                         value={items[index]?.satuan_id || ""}
                         onChange={(value) => handleSelectUnit(index, value)}
-                        placeholder="Select unit..."
-                        searchPlaceholder="Search unit..."
+                        placeholder="Pilih satuan..."
+                        searchPlaceholder="Cari satuan..."
                         emptyMessage={
                           items[index]?.raw_material_id
-                            ? "No units configured for this material"
-                            : "Select a raw material first"
+                            ? "Belum ada satuan untuk bahan baku ini"
+                            : "Pilih bahan baku terlebih dahulu"
                         }
                         allowClear={false}
                         disabled={!items[index]?.raw_material_id}
@@ -465,7 +424,7 @@ export function PRForm({
                       <>
                         <div className="min-w-0 space-y-1.5 lg:col-span-3">
                           <Label className="text-xs">
-                            Estimated Price <span className="text-gray-400">(optional)</span>
+                            Est. Harga Satuan <span className="text-gray-400">(opsional)</span>
                           </Label>
                           <NumericInput
                             value={items[index]?.estimated_price || 0}
@@ -476,7 +435,7 @@ export function PRForm({
                               })
                             }
                             decimalScale={0}
-                            placeholder="Leave blank if unknown"
+                            placeholder="Biarkan kosong jika belum diketahui"
                             className="h-9 text-sm"
                           />
                         </div>
@@ -506,17 +465,17 @@ export function PRForm({
             <CardHeader className="border-b border-gray-200/70 pb-3">
               <CardTitle className="flex items-center gap-2 text-base">
                 <StickyNote className="h-4 w-4" />
-                Notes & Summary
+                Catatan & Ringkasan
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4 pt-4">
               <div className="min-w-0 space-y-1.5">
                 <Label htmlFor="notes" className="text-xs">
-                  Notes
+                  Catatan
                 </Label>
                 <Textarea
                   {...register("notes")}
-                  placeholder="Additional notes..."
+                  placeholder="Catatan tambahan..."
                   rows={4}
                   className="resize-none text-sm"
                 />
@@ -524,14 +483,14 @@ export function PRForm({
 
               {!hideItemPricing && (
                 <div className="rounded-xl border border-gray-200/70 bg-gray-50/70 p-4">
-                  <p className="text-sm text-gray-500">Estimated Total</p>
+                  <p className="text-sm text-gray-500">Estimasi Total</p>
                   <p className="mt-1 text-2xl font-bold text-gray-900">{formatAmount(totalAmount)}</p>
                   <div className="mt-4 rounded-lg bg-white p-3 text-left">
-                    <p className="text-xs font-medium text-gray-500">Approval Required</p>
-                    <p className="mt-1 text-sm font-medium text-gray-900">Head Department</p>
+                    <p className="text-xs font-medium text-gray-500">Perlu Persetujuan</p>
+                    <p className="mt-1 text-sm font-medium text-gray-900">Head Departemen</p>
                     <p className="mt-1 text-xs text-gray-500">
-                      Every submitted purchase request requires requirement approval. Final amount approval
-                      happens on the purchase order.
+                      Setiap purchase request yang diajukan memerlukan persetujuan kebutuhan. Persetujuan
+                      nilai akhir dilakukan pada purchase order.
                     </p>
                   </div>
                 </div>
@@ -539,11 +498,11 @@ export function PRForm({
               {hideItemPricing && (
                 <div className="rounded-xl border border-gray-200/70 bg-gray-50/70 p-4">
                   <div className="rounded-lg bg-white p-3 text-left">
-                    <p className="text-xs font-medium text-gray-500">Approval Required</p>
-                    <p className="mt-1 text-sm font-medium text-gray-900">Head Department</p>
+                    <p className="text-xs font-medium text-gray-500">Perlu Persetujuan</p>
+                    <p className="mt-1 text-sm font-medium text-gray-900">Head Departemen</p>
                     <p className="mt-1 text-xs text-gray-500">
-                      Every submitted purchase request requires requirement approval. Final amount approval
-                      happens on the purchase order.
+                      Setiap purchase request yang diajukan memerlukan persetujuan kebutuhan. Persetujuan
+                      nilai akhir dilakukan pada purchase order.
                     </p>
                   </div>
                 </div>
@@ -561,7 +520,7 @@ export function PRForm({
           onClick={() => router.push(cancelHref)}
           className="purchasing-secondary-button w-full sm:w-auto"
         >
-          Cancel
+          Batal
         </Button>
         <Button
           type="button"
@@ -572,10 +531,10 @@ export function PRForm({
         >
           {submitAction === "draft" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
           {submitAction === "draft"
-            ? "Saving..."
+            ? "Menyimpan..."
             : mode === "edit"
-              ? "Save Changes"
-              : "Save as Draft"}
+              ? "Simpan Perubahan"
+              : "Simpan Draf"}
         </Button>
         <Button
           type="submit"
@@ -583,7 +542,7 @@ export function PRForm({
           className="purchasing-main-button w-full sm:w-auto"
         >
           {submitAction === "submit" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          {submitAction === "submit" ? "Submitting..." : "Submit"}
+          {submitAction === "submit" ? "Mengirim..." : "Ajukan"}
         </Button>
       </div>
     </form>

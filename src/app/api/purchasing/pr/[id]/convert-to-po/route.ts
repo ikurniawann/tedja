@@ -3,6 +3,7 @@ import { z } from "zod";
 import { createPgClient } from "@/lib/pg/create-client";
 import { ApiError, requireApiRole } from "@/lib/api/auth";
 import { generatePONumber } from "@/lib/purchasing/utils";
+import { getPurchasePriceSuggestions } from "@/lib/purchasing/purchase-price";
 import {
   effectiveBranchId,
   effectiveCompanyId,
@@ -33,40 +34,6 @@ type PRItemRow = {
   estimated_price: number | null;
   description: string | null;
 };
-
-type ConversionRow = {
-  raw_material_id: string;
-  satuan_id: string;
-  qty_in_base_unit: number;
-};
-
-type PriceRow = {
-  bahan_baku_id: string;
-  satuan_id: string | null;
-  harga: number | null;
-  is_preferred: boolean | null;
-};
-
-function getConversionFactor(conversions: ConversionRow[], materialId: string, unitId?: string | null) {
-  if (!unitId) return 1;
-  const conversion = conversions.find(
-    (item) => item.raw_material_id === materialId && item.satuan_id === unitId
-  );
-  return Number(conversion?.qty_in_base_unit || 1);
-}
-
-function findSupplierPrice(prItem: PRItemRow, prices: PriceRow[]) {
-  return prices
-    .filter((price) =>
-      price.bahan_baku_id === prItem.raw_material_id &&
-      price.satuan_id &&
-      Number(price.harga || 0) > 0
-    )
-    .sort((a, b) => {
-      if (Boolean(a.is_preferred) !== Boolean(b.is_preferred)) return a.is_preferred ? -1 : 1;
-      return Number(a.harga || 0) - Number(b.harga || 0);
-    })[0] || null;
-}
 
 export async function POST(
   request: NextRequest,
@@ -109,24 +76,20 @@ export async function POST(
     if (prItemsError) throw prItemsError;
     if (!prItems || prItems.length === 0) throw ApiError.badRequest("PR tidak memiliki item");
 
-    const materialIds = [...new Set((prItems as PRItemRow[]).map((item) => item.raw_material_id).filter(Boolean))] as string[];
+    const priceSuggestions = await getPurchasePriceSuggestions(
+      db,
+      (prItems as PRItemRow[])
+        .filter((item) => item.raw_material_id)
+        .map((item) => ({
+          raw_material_id: item.raw_material_id as string,
+          satuan_id: item.satuan_id,
+        })),
+      { supplierId: payload.supplier_id }
+    );
 
-    const [{ data: prices, error: pricesError }, { data: conversions, error: conversionsError }] = await Promise.all([
-      db
-        .from("supplier_price_lists")
-        .select("bahan_baku_id,satuan_id,harga,is_preferred")
-        .eq("supplier_id", payload.supplier_id)
-        .in("bahan_baku_id", materialIds)
-        .eq("is_active", true),
-      db
-        .from("raw_material_unit_conversions")
-        .select("raw_material_id,satuan_id,qty_in_base_unit")
-        .in("raw_material_id", materialIds)
-        .eq("is_active", true),
-    ]);
-
-    if (pricesError) throw pricesError;
-    if (conversionsError) throw conversionsError;
+    const priceByMaterial = new Map(
+      priceSuggestions.map((suggestion) => [suggestion.raw_material_id, suggestion])
+    );
 
     const poNumber = await generatePONumber(db);
     const { data: insertedPo, error: poInsertError } = await db
@@ -160,24 +123,18 @@ export async function POST(
         throw ApiError.badRequest("Item PR belum terhubung ke master bahan baku");
       }
 
-      const price = findSupplierPrice(item, (prices || []) as PriceRow[]);
-      const targetUnitId = item.satuan_id || price?.satuan_id;
-      const priceUnitId = price?.satuan_id || targetUnitId;
-      const priceFactor = getConversionFactor((conversions || []) as ConversionRow[], item.raw_material_id, priceUnitId);
-      const targetFactor = getConversionFactor((conversions || []) as ConversionRow[], item.raw_material_id, targetUnitId);
-      const requestedQty = Number(item.qty || 0);
-      const qtyOrdered = requestedQty;
-      const supplierPrice = Number(price?.harga ?? item.estimated_price ?? 0);
-      const unitPrice = price && priceFactor > 0
-        ? Math.round((supplierPrice / priceFactor) * targetFactor)
-        : supplierPrice;
+      const suggestion = priceByMaterial.get(item.raw_material_id);
+      const qtyOrdered = Number(item.qty || 0);
+      const unitPrice = suggestion && suggestion.unit_price > 0
+        ? Math.round(suggestion.unit_price)
+        : Number(item.estimated_price ?? 0);
 
       return {
         purchase_order_id: insertedPo.id,
         pr_item_id: item.id,
         raw_material_id: item.raw_material_id,
         qty_ordered: qtyOrdered,
-        satuan_id: targetUnitId,
+        satuan_id: item.satuan_id,
         harga_satuan: unitPrice,
         diskon_item: 0,
         catatan: item.description,
@@ -229,8 +186,8 @@ export async function POST(
 
     if (poError) throw poError;
 
-    if ((prices || []).length === 0) {
-      console.warn("PO created from PR without matching supplier price list; PR estimates were used.");
+    if (priceSuggestions.every((suggestion) => suggestion.unit_price <= 0)) {
+      console.warn("PO dibuat dari PR tanpa riwayat harga pembelian; estimasi PR yang dipakai.");
     }
 
     return NextResponse.json(

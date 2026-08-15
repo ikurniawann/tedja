@@ -62,6 +62,52 @@ describe("deriveRosterStatus", () => {
   });
 });
 
+// EPIC-036 Fase C — prioritas: hadir > cuti > libur_nasional > libur > absen
+describe("deriveRosterStatus — hari libur nasional", () => {
+  test("libur_nasional bila terjadwal tapi tanggalnya hari libur", () => {
+    expect(deriveRosterStatus({ ...base, isPublicHoliday: true })).toBe("libur_nasional");
+  });
+
+  test("karyawan terjadwal TIDAK dihitung mangkir di hari libur yang sudah lewat", () => {
+    expect(
+      deriveRosterStatus({ ...base, isPublicHoliday: true, isPastDate: true })
+    ).toBe("libur_nasional");
+  });
+
+  test("absensi menang atas hari libur (karyawan tetap masuk)", () => {
+    expect(
+      deriveRosterStatus({ ...base, isPublicHoliday: true, hasAttendance: true })
+    ).toBe("hadir");
+  });
+
+  test("cuti approved menang atas hari libur", () => {
+    expect(
+      deriveRosterStatus({ ...base, isPublicHoliday: true, onApprovedLeave: true })
+    ).toBe("cuti");
+  });
+
+  test("libur_nasional menang atas libur pola shift", () => {
+    expect(
+      deriveRosterStatus({ ...base, isPublicHoliday: true, shiftId: null })
+    ).toBe("libur_nasional");
+  });
+
+  test("libur_nasional menang atas tanpa_jadwal", () => {
+    expect(
+      deriveRosterStatus({
+        ...base,
+        isPublicHoliday: true,
+        hasSchedule: false,
+        shiftId: null,
+      })
+    ).toBe("libur_nasional");
+  });
+
+  test("tanpa flag hari libur, perilaku lama tidak berubah", () => {
+    expect(deriveRosterStatus({ ...base, isPastDate: true })).toBe("absen");
+  });
+});
+
 describe("isOverdue", () => {
   // Shift Pagi 08:00 WIB = 01:00 UTC; toleransi 10 menit
   const shift = {

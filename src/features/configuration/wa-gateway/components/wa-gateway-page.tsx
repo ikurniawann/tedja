@@ -35,6 +35,11 @@ interface GatewayState {
     lastDisconnectReason: string | null;
   } | null;
   qr: string | null;
+  settings?: {
+    url: string;
+    token_masked: string | null;
+    token_from_env: boolean;
+  };
 }
 
 const POLL_PAIRING_MS = 4000;
@@ -104,9 +109,9 @@ export function WaGatewayPage() {
             WhatsApp Gateway
           </h1>
           <p className="mt-1 text-sm text-slate-500">
-            Koneksi nomor pengirim OTP portal member ({""}
-            <span className="font-medium">+62 858-8097-4659</span>). Pindai QR di bawah
-            dari HP nomor tersebut untuk menautkan.
+            Koneksi nomor pengirim OTP portal member &amp; notifikasi WhatsApp.
+            Pindai QR di bawah dari HP yang ingin dijadikan nomor pengirim untuk
+            menautkan.
           </p>
         </div>
 
@@ -146,19 +151,25 @@ export function WaGatewayPage() {
             <Loader2 className="size-8 animate-spin text-slate-400" />
           </div>
         ) : !state?.configured ? (
-          <StatusCard
-            icon={ShieldAlert}
-            tone="amber"
-            title="Gateway belum dikonfigurasi"
-            description="WA_GATEWAY_TOKEN belum diisi di environment aplikasi. Lihat docs/crm/RUNBOOK-WA-GATEWAY-MANDIRI.md."
-          />
+          <>
+            <StatusCard
+              icon={ShieldAlert}
+              tone="amber"
+              title="Gateway belum dikonfigurasi"
+              description="Isi alamat gateway dan token di bawah — tersimpan di database, berlaku tanpa deploy ulang. Nomor pengirim ditentukan saat pairing QR, bukan di sini."
+            />
+            <GatewayConfigForm settings={state?.settings} onSaved={load} />
+          </>
         ) : state.reachable === false ? (
-          <StatusCard
-            icon={WifiOff}
-            tone="red"
-            title="Gateway tidak merespons"
-            description="Proses wa-gateway kemungkinan mati. Jalankan: pm2 restart wa-gateway, lalu muat ulang halaman ini."
-          />
+          <>
+            <StatusCard
+              icon={WifiOff}
+              tone="red"
+              title="Gateway tidak merespons"
+              description="Proses wa-gateway mati, atau alamat gateway di bawah salah. Cek pm2 restart wa-gateway, atau perbaiki alamatnya."
+            />
+            <GatewayConfigForm settings={state.settings} onSaved={load} />
+          </>
         ) : connected ? (
           <StatusCard
             icon={CheckCircle2}
@@ -175,7 +186,7 @@ export function WaGatewayPage() {
                   Menunggu pairing
                 </h2>
                 <ol className="mt-2 list-decimal space-y-1 pl-4 text-sm text-slate-600">
-                  <li>Buka WhatsApp di HP nomor <strong>+62 858-8097-4659</strong></li>
+                  <li>Buka WhatsApp di HP yang ingin dijadikan nomor pengirim bisnis ini</li>
                   <li>Setelan → <strong>Perangkat Tertaut</strong> → <strong>Tautkan Perangkat</strong></li>
                   <li>Pindai QR di bawah</li>
                 </ol>
@@ -266,6 +277,104 @@ function StatusCard({
         <h2 className="text-base font-semibold">{title}</h2>
         <p className="mt-1 text-sm opacity-80">{description}</p>
       </div>
+    </div>
+  );
+}
+
+
+/**
+ * Form konfigurasi gateway — tersimpan di configuration.app_settings (EPIC
+ * pola DeepSeek/Google BP), jadi tiap instance bisa menunjuk gateway berbeda
+ * tanpa menyentuh ENV/CI. Token tampil hanya sebagai versi tersamar; field
+ * yang dikosongkan berarti "biarkan nilai lama".
+ */
+function GatewayConfigForm({
+  settings,
+  onSaved,
+}: {
+  settings?: GatewayState["settings"];
+  onSaved: () => Promise<void> | void;
+}) {
+  const [url, setUrl] = useState(settings?.url ?? "");
+  const [token, setToken] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const submit = async () => {
+    try {
+      setSaving(true);
+      setMessage(null);
+      const response = await fetch("/api/settings/wa-gateway", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url, ...(token ? { token } : {}) }),
+      });
+      const json = await response.json();
+      if (!response.ok || !json.success) throw new Error(json.error || "Gagal menyimpan");
+      setToken("");
+      setMessage(
+        json.data.reachable
+          ? "Tersimpan — gateway merespons."
+          : "Tersimpan, tapi gateway belum merespons di alamat itu."
+      );
+      await onSaved();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Gagal menyimpan");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+      <h2 className="text-base font-semibold text-slate-950">Konfigurasi Gateway</h2>
+      <p className="mt-1 text-sm text-slate-600">
+        Alamat service wa-gateway dan token aksesnya (header{" "}
+        <code className="rounded bg-slate-100 px-1">x-gateway-token</code>). Dari
+        aplikasi yang berjalan di Docker, alamat host biasanya{" "}
+        <code className="rounded bg-slate-100 px-1">http://host.docker.internal:3471</code>.
+      </p>
+
+      <div className="mt-4 space-y-3">
+        <label className="block">
+          <span className="text-sm font-medium text-slate-700">Alamat gateway</span>
+          <input
+            type="url"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            placeholder="http://host.docker.internal:3471"
+            className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
+          />
+        </label>
+        <label className="block">
+          <span className="text-sm font-medium text-slate-700">Token</span>
+          <input
+            type="password"
+            value={token}
+            onChange={(e) => setToken(e.target.value)}
+            placeholder={
+              settings?.token_masked
+                ? `Tersimpan: ${settings.token_masked} — isi hanya untuk mengganti`
+                : settings?.token_from_env
+                  ? "Sedang memakai token dari ENV — isi untuk pindah ke database"
+                  : "Token dari services/wa-gateway/.env"
+            }
+            className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
+          />
+        </label>
+      </div>
+
+      {message && <p className="mt-3 text-sm text-slate-600">{message}</p>}
+
+      <button
+        type="button"
+        onClick={() => void submit()}
+        disabled={saving}
+        className="mt-4 inline-flex items-center gap-2 rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
+      >
+        {saving && <Loader2 className="size-4 animate-spin" />}
+        Simpan & cek koneksi
+      </button>
     </div>
   );
 }

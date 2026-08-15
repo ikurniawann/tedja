@@ -5,6 +5,9 @@
 import { NextRequest } from "next/server";
 import { createServerPgClient } from "@/lib/pg/create-client";
 import { getApiUserScope, isRowInBusinessScope, validateProductWarehouseScope } from "@/lib/api/scope";
+import { syncPurchasingProductToPos } from "@/lib/pos/purchasing-sync";
+import { resolvePosStation } from "@/lib/pos/kitchen-station";
+import { withProductHppReview } from "@/lib/purchasing/product-hpp-review";
 import { z } from "zod";
 
 const productSchema = z.object({
@@ -13,11 +16,15 @@ const productSchema = z.object({
   kategori: z.string().optional().nullable(),
   satuan_id: z.string().uuid().optional().nullable(),
   warehouse_id: z.string().uuid().optional(),
-  harga_jual: z.number().min(0).optional(),
-  harga_modal: z.number().min(0).optional(),
-  markup_persen: z.number().optional(),
+  harga_jual: z.coerce.number().min(0).optional(),
+  harga_modal: z.coerce.number().min(0).optional(),
+  markup_persen: z.coerce.number().optional(),
   is_active: z.boolean().optional(),
   production_output_type: z.enum(["FINISHED_GOOD", "WIP"]).optional(),
+  station: z
+    .enum(["kitchen", "bar", "bakery", "dessert", "merchandise", "photobooth"])
+    .optional()
+    .nullable(),
 });
 
 type BomItemRow = {
@@ -135,7 +142,7 @@ export async function GET(
     return Response.json({
       success: true,
       data: {
-        ...product,
+        ...withProductHppReview(product),
         bom_items: bomWithCost,
         hpp_calculated: totalHPP,
       },
@@ -190,6 +197,10 @@ export async function PUT(
 
     const updatePayload: Record<string, unknown> = {
       ...validated,
+      station: resolvePosStation(
+        validated.station ?? existingProduct.station,
+        validated.kategori ?? existingProduct.kategori
+      ),
       updated_at: new Date().toISOString(),
     };
 
@@ -213,10 +224,33 @@ export async function PUT(
 
     if (error) throw error;
 
+    const outputType =
+      (data as { production_output_type?: string | null }).production_output_type ||
+      existingProduct.production_output_type ||
+      "FINISHED_GOOD";
+
+    let posSync = null;
+    if (outputType === "FINISHED_GOOD") {
+      const row = data as { kategori?: string | null; station?: string | null };
+      try {
+        posSync = await syncPurchasingProductToPos(db, id, {
+          station: resolvePosStation(
+            row.station ?? existingProduct.station,
+            row.kategori ?? existingProduct.kategori
+          ),
+        });
+      } catch (syncError) {
+        console.warn("POS sync after product update failed:", syncError);
+      }
+    }
+
     return Response.json({
       success: true,
       data,
-      message: "Produk berhasil diupdate",
+      pos_sync: posSync,
+      message: posSync
+        ? "Produk berhasil diupdate dan tersinkron ke POS"
+        : "Produk berhasil diupdate",
     });
   } catch (error: unknown) {
     console.error("Error updating product:", error);

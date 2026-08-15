@@ -65,5 +65,13 @@ export function orderToPreviewReceipt(
     customerName,
     discountAmount: Number(order.discount_amount) || 0,
     taxAmount: Number(order.tax_amount) || 0,
+    chargesBreakdown: Array.isArray(order.charges_breakdown)
+      ? order.charges_breakdown.map((line) => ({
+          code: String(line.code || ""),
+          name: String(line.name || line.code || "Charge"),
+          kind: String(line.kind || "fee"),
+          amount: Number(line.amount) || 0,
+        }))
+      : undefined,
   };
 }

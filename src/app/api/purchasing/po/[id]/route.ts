@@ -5,12 +5,14 @@
 import { NextRequest } from "next/server";
 import { createPgClient } from "@/lib/pg/create-client";
 import { adjustInventoryOnOrder } from "@/lib/inventory";
+import { createBaseUnitResolver } from "@/lib/purchasing/raw-material-units";
 import { recalculatePurchaseOrderTotals } from "@/lib/purchasing/po-totals";
 import {
   computePoInvoiceAmounts,
   getPoCreditBreakdown,
 } from "@/lib/purchasing/po-payments";
 import { computePoFulfillmentProgress } from "@/lib/purchasing/po-fulfillment-progress";
+import { findOpenDelivery } from "@/lib/purchasing/delivery";
 import { z } from "zod";
 
 const poSchema = z.object({
@@ -119,17 +121,19 @@ export async function GET(
       }
     }
 
-    const { data: activeDelivery, error: deliveryError } = await db
+    const { data: deliveries, error: deliveryError } = await db
       .from("deliveries")
-      .select("id, nomor_resi, no_surat_jalan, status")
+      .select("id, nomor_resi, no_surat_jalan, status, created_at")
       .eq("purchase_order_id", id)
       .eq("is_active", true)
       .neq("status", "cancelled")
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .order("created_at", { ascending: false });
 
     if (deliveryError) throw deliveryError;
+
+    const openDelivery = findOpenDelivery(deliveries || []);
+    const latestDelivery = deliveries?.[0] ?? null;
+    const activeDelivery = openDelivery ?? null;
 
     const creditBreakdown = await getPoCreditBreakdown(db, id);
     const invoiceAmounts = computePoInvoiceAmounts({
@@ -168,8 +172,13 @@ export async function GET(
         total_qty_qc_posted: fulfillmentProgress.total_qty_qc_posted,
         total_qty_returned: fulfillmentProgress.total_qty_returned,
         active_delivery_id: activeDelivery?.id || null,
-        active_delivery_number: activeDelivery?.nomor_resi || activeDelivery?.no_surat_jalan || null,
-        active_delivery_status: activeDelivery?.status || null,
+        active_delivery_number:
+          activeDelivery?.nomor_resi ||
+          activeDelivery?.no_surat_jalan ||
+          latestDelivery?.nomor_resi ||
+          latestDelivery?.no_surat_jalan ||
+          null,
+        active_delivery_status: activeDelivery?.status || latestDelivery?.status || null,
         items: items || [],
       },
     });
@@ -299,7 +308,7 @@ export async function DELETE(
     const { data: items, error: itemsError } = shouldReleaseOnOrder
       ? await db
           .from("purchase_order_items")
-          .select("raw_material_id, qty_ordered, qty_received")
+          .select("raw_material_id, satuan_id, qty_ordered, qty_received")
           .eq("purchase_order_id", id)
           .eq("is_active", true)
       : { data: [], error: null };
@@ -319,10 +328,19 @@ export async function DELETE(
     if (error) throw error;
 
     if (shouldReleaseOnOrder) {
+      const resolveBaseUnit = await createBaseUnitResolver(
+        db,
+        (items || []).map((item: { raw_material_id?: string | null }) => item.raw_material_id)
+      );
+
       for (const item of items || []) {
         const remainingQty = Math.max(0, Number(item.qty_ordered || 0) - Number(item.qty_received || 0));
         if (item.raw_material_id && remainingQty > 0) {
-          await adjustInventoryOnOrder(db, item.raw_material_id, -remainingQty);
+          await adjustInventoryOnOrder(
+            db,
+            item.raw_material_id,
+            -remainingQty * resolveBaseUnit(item.raw_material_id, item.satuan_id)
+          );
         }
       }
     }

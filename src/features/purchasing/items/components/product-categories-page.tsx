@@ -4,9 +4,9 @@ export function ProductCategoriesPage() {
   return (
     <ItemsLookupPage
       lookupType="product-categories"
-      listTitle="Product Category List"
-      listDescription="Review category code, name, description, and active status."
-      addButtonLabel="Add Category"
+      listTitle="Daftar Kategori"
+      listDescription="Tinjau kode, nama, deskripsi, dan status aktif kategori."
+      addButtonLabel="Tambah Kategori"
     />
   );
 }

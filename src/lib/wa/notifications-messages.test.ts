@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { DesktopOverview } from "@/lib/desktop/overview";
+import { emptyDesktopOverview, type DesktopOverview } from "@/lib/desktop/overview";
 import {
   buildApprovalMenginapMessage,
   buildDigestMessage,
@@ -22,12 +22,8 @@ import {
 } from "./notifications-messages";
 
 const overviewKosong: DesktopOverview = {
+  ...emptyDesktopOverview(),
   dibuatPada: "2026-07-22T15:00:00.000Z",
-  pulsaBisnis: null,
-  timHariIni: null,
-  perluKeputusan: null,
-  stokMenipis: null,
-  member: null,
   gagal: ["pulsaBisnis"],
 };
 

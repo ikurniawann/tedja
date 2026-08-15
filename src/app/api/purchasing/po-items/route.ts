@@ -25,9 +25,9 @@ export async function GET(request: NextRequest) {
       .from("purchase_order_items")
       .select(`
         *,
-        raw_material:raw_material_id(id, nama, kode),
-        product:product_id(id, nama, kode),
-        satuan:satuan_id(id, nama, nama_satuan)
+        raw_material:raw_materials!raw_material_id(id, nama, kode),
+        product:products!product_id(id, nama, kode),
+        satuan:units!satuan_id(id, nama, kode)
       `)
       .eq("purchase_order_id", poId)
       .eq("is_active", true)

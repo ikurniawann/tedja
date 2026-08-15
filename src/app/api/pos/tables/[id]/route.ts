@@ -28,7 +28,10 @@ function toNumber(value: unknown) {
 }
 
 function normalizeTable(table: TableRow) {
-  const tableNumber = table.table_number || table.qr_code || table.id;
+  const tableNumber = String(table.table_number || "").trim()
+    || String(table.qr_code || "").trim()
+    || String(table.name || "").trim()
+    || "Meja";
   return {
     id: table.id,
     table_number: tableNumber,

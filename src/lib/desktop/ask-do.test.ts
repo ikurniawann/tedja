@@ -1,15 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { buildAskDoPrompt } from "./ask-do";
-import type { DesktopOverview } from "./overview";
+import { emptyDesktopOverview, type DesktopOverview } from "./overview";
 
 const kosong: DesktopOverview = {
+  ...emptyDesktopOverview(),
   dibuatPada: "2026-07-25T02:00:00.000Z",
-  pulsaBisnis: null,
-  timHariIni: null,
-  perluKeputusan: null,
-  stokMenipis: null,
-  member: null,
-  gagal: [],
 };
 
 function withPulsa(hariIni: number, kemarin: number, mingguLalu = 0): DesktopOverview {

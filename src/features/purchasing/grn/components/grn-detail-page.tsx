@@ -2,10 +2,8 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { toast } from "sonner";
 import { useGrn, useGrnQC, useGrnVendorCredits } from "../queries";
-import { useApproveVendorCredit } from "../mutations";
-import type { VendorCreditRow, PurchasingModuleType } from "../api";
+import type { PurchasingModuleType } from "../api";
 import { RM_ROUTES, PRODUCT_ROUTES } from "@/modules/purchasing/constants/item-routes";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -28,6 +26,10 @@ type GrnDetailItem = {
     nama?: string | null;
     kode?: string | null;
     satuan_besar?: { nama?: string | null; kode?: string | null } | null;
+  } | null;
+  product?: {
+    nama?: string | null;
+    kode?: string | null;
   } | null;
   satuan?: { nama?: string | null; kode?: string | null } | null;
   purchase_order_item?: {
@@ -106,15 +108,23 @@ const STATUS_STYLES: Record<string, string> = {
 };
 
 const STATUS_LABELS: Record<string, string> = {
-  pending: "Awaiting QC",
-  partially_received: "Partially Received",
-  received: "Fully Received",
-  rejected: "Rejected",
+  pending: "Menunggu QC",
+  partially_received: "Diterima Sebagian",
+  received: "Diterima Penuh",
+  rejected: "Ditolak",
 };
 
 const CREDIT_SOURCE_LABELS: Record<string, string> = {
-  receive_reject: "Receipt Reject",
-  qc_reject: "QC Reject",
+  receive_reject: "Tolak Penerimaan",
+  qc_reject: "Tolak QC",
+};
+
+const CREDIT_STATUS_LABELS: Record<string, string> = {
+  draft: "Draft",
+  pending_approval: "Menunggu Persetujuan",
+  approved: "Disetujui",
+  rejected: "Ditolak",
+  cancelled: "Dibatalkan",
 };
 
 const CREDIT_STATUS_STYLES: Record<string, string> = {
@@ -125,9 +135,16 @@ const CREDIT_STATUS_STYLES: Record<string, string> = {
   cancelled: "border-gray-200 bg-gray-50 text-gray-600",
 };
 
+const QC_STATUS_LABELS: Record<string, string> = {
+  approved: "Disetujui",
+  partial: "Sebagian",
+  rejected: "Ditolak",
+  pending: "Menunggu",
+};
+
 function formatDate(value?: string | null) {
   if (!value) return "-";
-  return new Intl.DateTimeFormat("en-US", {
+  return new Intl.DateTimeFormat("id-ID", {
     day: "2-digit",
     month: "short",
     year: "numeric",
@@ -135,7 +152,7 @@ function formatDate(value?: string | null) {
 }
 
 function formatNumber(value?: number | null) {
-  return Number(value || 0).toLocaleString("en-US", { maximumFractionDigits: 4 });
+  return Number(value || 0).toLocaleString("id-ID", { maximumFractionDigits: 4 });
 }
 
 function formatCurrency(value?: number | null) {
@@ -190,6 +207,7 @@ export function GRNDetailPage({
   const isProduct = moduleType === "product";
   const listRoute = isProduct ? PRODUCT_ROUTES.purchasingReceive : RM_ROUTES.purchasingGrn;
   const supplierLabel = isProduct ? "Vendor" : "Supplier";
+  const itemColumnLabel = isProduct ? "Produk" : "Bahan Baku";
 
   const params = useParams();
   const grnId = params.id as string;
@@ -197,20 +215,10 @@ export function GRNDetailPage({
   const grnQuery = useGrn<GrnDetail>(grnId);
   const qcQuery = useGrnQC<QcInspection>(grnId);
   const creditsQuery = useGrnVendorCredits(grnId);
-  const approveCreditMutation = useApproveVendorCredit();
   const grn = grnQuery.data;
   const qc = qcQuery.data ?? null;
   const vendorCredits = creditsQuery.data ?? [];
   const loading = grnQuery.isLoading;
-
-  const handleApproveCredit = async (credit: VendorCreditRow) => {
-    try {
-      await approveCreditMutation.mutateAsync({ creditId: credit.id, grnId });
-      toast.success(`${credit.credit_number} approved — invoice payable reduced`);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to approve vendor credit");
-    }
-  };
 
   const handlePrint = () => {
     window.print();
@@ -220,7 +228,7 @@ export function GRNDetailPage({
     return (
       <div className="flex min-h-56 items-center justify-center text-sm text-gray-500">
         <Loader2Icon className="mr-2 h-4 w-4 animate-spin" />
-        Loading goods receipt...
+        Memuat detail GRN...
       </div>
     );
   }
@@ -231,14 +239,14 @@ export function GRNDetailPage({
         <Link href={listRoute}>
           <Button variant="ghost" size="sm" className="h-9 gap-2 text-pink-700">
             <ArrowLeftIcon className="h-4 w-4" />
-            Back
+            Kembali
           </Button>
         </Link>
         <Card className="border-red-100">
           <CardContent className="py-12 text-center">
-            <p className="font-medium text-red-700">Failed to load goods receipt</p>
+            <p className="font-medium text-red-700">Gagal memuat detail GRN</p>
             <p className="mt-2 text-sm text-red-600">
-              {grnQuery.error instanceof Error ? grnQuery.error.message : "An error occurred"}
+              {grnQuery.error instanceof Error ? grnQuery.error.message : "Terjadi kesalahan"}
             </p>
           </CardContent>
         </Card>
@@ -252,11 +260,11 @@ export function GRNDetailPage({
         <Link href={listRoute}>
           <Button variant="ghost" size="sm" className="h-9 gap-2 text-pink-700">
             <ArrowLeftIcon className="h-4 w-4" />
-            Back
+            Kembali
           </Button>
         </Link>
         <Card className="border-gray-200/70">
-          <CardContent className="py-12 text-center text-gray-500">Goods receipt not found.</CardContent>
+          <CardContent className="py-12 text-center text-gray-500">GRN tidak ditemukan.</CardContent>
         </Card>
       </div>
     );
@@ -270,7 +278,9 @@ export function GRNDetailPage({
   const acceptedPct = totalChecked > 0 ? Math.round((totalAccepted / totalChecked) * 100) : 0;
   const qcStatus = String(qc?.status || qc?.hasil || "").toLowerCase();
   const canRunQc = grn.status === "pending" && !qc?.inventory_posted;
-  const canContinueReceive = grn.status === "partially_received";
+  // Sisa PO tidak dilanjutkan di GRN yang sama — buat pengiriman baru.
+  const canReshipRemaining =
+    grn.status === "partially_received" && !!poId;
 
   return (
     <div className="space-y-6">
@@ -279,7 +289,7 @@ export function GRNDetailPage({
           <Link href={listRoute}>
             <Button variant="ghost" size="sm" className="h-9 gap-2 text-pink-700">
               <ArrowLeftIcon className="h-4 w-4" />
-              Back
+              Kembali
             </Button>
           </Link>
           <div>
@@ -301,7 +311,7 @@ export function GRNDetailPage({
             className="purchasing-secondary-button w-full sm:w-auto"
           >
             <Printer className="mr-2 h-4 w-4" />
-            Print
+            Cetak
           </Button>
           {canRunQc && (
             <Link
@@ -313,21 +323,21 @@ export function GRNDetailPage({
             >
               <Button className="purchasing-main-button w-full sm:w-auto">
                 <ClipboardCheck className="mr-2 h-4 w-4" />
-                Run Quality Control
+                Jalankan QC
               </Button>
             </Link>
           )}
-          {canContinueReceive && (
+          {canReshipRemaining && (
             <Link
               href={
                 isProduct
-                  ? PRODUCT_ROUTES.purchasingReceiveContinue(grn.id)
-                  : RM_ROUTES.purchasingGrnContinue(grn.id)
+                  ? `${PRODUCT_ROUTES.purchasingDeliveryInsert}?po_id=${poId}`
+                  : `${RM_ROUTES.purchasingDelivery}/insert?po_id=${poId}`
               }
             >
               <Button className="purchasing-main-button w-full sm:w-auto">
-                <Package className="mr-2 h-4 w-4" />
-                Continue Receipt
+                <TruckIcon className="mr-2 h-4 w-4" />
+                Kirim Ulang
               </Button>
             </Link>
           )}
@@ -340,27 +350,27 @@ export function GRNDetailPage({
             <CardHeader className="border-b border-gray-200/70 pb-3">
               <CardTitle className="flex items-center gap-2 text-base">
                 <FileText className="h-4 w-4 text-pink-600" />
-                Receipt Information
+                Informasi Penerimaan
               </CardTitle>
             </CardHeader>
             <CardContent className="grid gap-4 p-4 md:grid-cols-2">
-              <DetailField label="Goods Receipt Number" value={grn.nomor_grn || "-"} />
-              <DetailField label="Receipt Date" value={formatDate(grn.tanggal_penerimaan)} />
+              <DetailField label="No. GRN" value={grn.nomor_grn || "-"} />
+              <DetailField label="Tanggal Penerimaan" value={formatDate(grn.tanggal_penerimaan)} />
               <DetailField
                 label="Purchase Order"
                 value={poNumber}
                 href={poId ? (isProduct ? PRODUCT_ROUTES.purchasingPoDetail(poId) : `/dashboard/purchasing/po/${poId}`) : undefined}
               />
               <DetailField
-                label="Delivery Note Number"
+                label="No. Surat Jalan"
                 value={grn.no_surat_jalan || grn.delivery?.no_surat_jalan || "-"}
               />
               <DetailField
                 label={supplierLabel}
                 value={grn.supplier_name || grn.supplier?.nama_supplier || "-"}
               />
-              <DetailField label={`${supplierLabel} Code`} value={grn.supplier?.kode || "-"} />
-              <DetailField label="Notes" value={grn.catatan || "-"} className="md:col-span-2" />
+              <DetailField label={`Kode ${supplierLabel}`} value={grn.supplier?.kode || "-"} />
+              <DetailField label="Catatan" value={grn.catatan || "-"} className="md:col-span-2" />
             </CardContent>
           </Card>
 
@@ -369,12 +379,12 @@ export function GRNDetailPage({
               <CardHeader className="border-b border-gray-200/70 pb-3">
                 <CardTitle className="flex items-center gap-2 text-base">
                   <TruckIcon className="h-4 w-4 text-pink-600" />
-                  Delivery Information
+                  Informasi Pengiriman
                 </CardTitle>
               </CardHeader>
               <CardContent className="grid gap-4 p-4 md:grid-cols-2">
                 <DetailField
-                  label="Delivery Number"
+                  label="No. Pengiriman"
                   value={grn.delivery_number || grn.delivery?.nomor_resi || "-"}
                   href={
                     isProduct
@@ -382,9 +392,9 @@ export function GRNDetailPage({
                       : `/dashboard/purchasing/delivery/${grn.delivery_id}`
                   }
                 />
-                <DetailField label="Courier" value={grn.delivery?.kurir || "-"} />
-                <DetailField label="Shipment Date" value={formatDate(grn.delivery?.tanggal_kirim)} />
-                <DetailField label="Actual Arrival" value={formatDate(grn.delivery?.tanggal_aktual_tiba)} />
+                <DetailField label="Kurir" value={grn.delivery?.kurir || "-"} />
+                <DetailField label="Tanggal Kirim" value={formatDate(grn.delivery?.tanggal_kirim)} />
+                <DetailField label="Tanggal Tiba Aktual" value={formatDate(grn.delivery?.tanggal_aktual_tiba)} />
               </CardContent>
             </Card>
           )}
@@ -393,7 +403,7 @@ export function GRNDetailPage({
             <CardHeader className="border-b border-gray-200/70 pb-3">
               <CardTitle className="flex items-center gap-2 text-base">
                 <Package className="h-4 w-4 text-pink-600" />
-                Received Items
+                Item Diterima
               </CardTitle>
             </CardHeader>
             <CardContent className="p-0">
@@ -402,28 +412,32 @@ export function GRNDetailPage({
                   <table className="w-full table-fixed border-collapse text-sm [&_td]:border [&_td]:border-gray-200/70 [&_th]:border [&_th]:border-gray-200/70">
                     <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
                       <tr>
-                        <th className="px-4 py-3 text-left font-semibold">Raw Material</th>
-                        <th className="w-[72px] px-2 py-3 text-center font-semibold">Unit</th>
-                        <th className="w-[84px] px-2 py-3 text-center font-semibold">Ordered</th>
-                        <th className="w-[84px] px-2 py-3 text-center font-semibold">Good</th>
-                        <th className="w-[84px] px-2 py-3 text-center font-semibold">Reject</th>
-                        <th className="w-[120px] px-2 py-3 text-right font-semibold">Unit Price</th>
-                        <th className="px-4 py-3 text-left font-semibold">Notes</th>
+                        <th className="px-4 py-3 text-left font-semibold">{itemColumnLabel}</th>
+                        <th className="w-[72px] px-2 py-3 text-center font-semibold">Satuan</th>
+                        <th className="w-[84px] px-2 py-3 text-center font-semibold">Dipesan</th>
+                        <th className="w-[84px] px-2 py-3 text-center font-semibold">Baik</th>
+                        <th className="w-[84px] px-2 py-3 text-center font-semibold">Tolak</th>
+                        <th className="w-[120px] px-2 py-3 text-right font-semibold">Harga Satuan</th>
+                        <th className="px-4 py-3 text-left font-semibold">Catatan</th>
                       </tr>
                     </thead>
                     <tbody>
                       {(grn.items || []).length === 0 ? (
                         <tr>
                           <td colSpan={7} className="px-4 py-10 text-center text-gray-500">
-                            No receipt items found.
+                            Tidak ada item penerimaan.
                           </td>
                         </tr>
                       ) : (
                         grn.items?.map((item) => (
                           <tr key={item.id} className="bg-white hover:bg-gray-50/80">
                             <td className="px-4 py-3 align-top">
-                              <div className="font-medium text-gray-900">{item.raw_material?.nama || "-"}</div>
-                              <div className="text-xs text-gray-500">{item.raw_material?.kode || "-"}</div>
+                              <div className="font-medium text-gray-900">
+                                {item.raw_material?.nama || item.product?.nama || "-"}
+                              </div>
+                              <div className="text-xs text-gray-500">
+                                {item.raw_material?.kode || item.product?.kode || "-"}
+                              </div>
                             </td>
                             <td className="px-2 py-3 text-center align-middle text-gray-700">
                               {item.satuan?.nama ||
@@ -459,17 +473,19 @@ export function GRNDetailPage({
               <CardHeader className="border-b border-gray-200/70 pb-3">
                 <CardTitle className="flex items-center gap-2 text-base">
                   <Banknote className="h-4 w-4 text-pink-600" />
-                  Vendor Credits
+                  Vendor Credit
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3 p-4">
                 <p className="text-xs leading-5 text-gray-600">
-                  Auto-generated from receipt or QC reject quantities. Approve each credit to reduce
-                  the purchase invoice net payable (no stock movement).
+                  Catatan otomatis dari qty tolak pintu atau QC. Kredit ini tidak
+                  disetujui dari sini — tagihan memakai sisa qty PO (qty pesan − qty
+                  lolos QC). Tutup PO jika supplier tidak mengganti kekurangan.
                 </p>
                 {vendorCredits.map((credit) => {
-                  const canApprove =
-                    credit.status === "draft" || credit.status === "pending_approval";
+                  const isRejectCredit =
+                    credit.source_type === "receive_reject" ||
+                    credit.source_type === "qc_reject";
                   return (
                     <div
                       key={credit.id}
@@ -490,7 +506,8 @@ export function GRNDetailPage({
                               "border-gray-200 bg-gray-50 text-gray-700"
                             }
                           >
-                            {credit.status.replace(/_/g, " ")}
+                            {CREDIT_STATUS_LABELS[credit.status] ||
+                              credit.status.replace(/_/g, " ")}
                           </Badge>
                           <span className="text-sm font-semibold text-gray-900">
                             {formatCurrency(credit.total_amount)}
@@ -512,20 +529,12 @@ export function GRNDetailPage({
                           ))}
                         </ul>
                       )}
-                      {canApprove && (
-                        <div className="mt-3 flex justify-end">
-                          <Button
-                            size="sm"
-                            className="purchasing-main-button h-8"
-                            disabled={approveCreditMutation.isPending}
-                            onClick={() => handleApproveCredit(credit)}
-                          >
-                            {approveCreditMutation.isPending ? (
-                              <Loader2Icon className="mr-2 h-3.5 w-3.5 animate-spin" />
-                            ) : null}
-                            Approve Credit
-                          </Button>
-                        </div>
+                      {isRejectCredit &&
+                        (credit.status === "draft" || credit.status === "pending_approval") && (
+                        <p className="mt-3 text-xs text-muted-foreground">
+                          Persetujuan kredit reject dinonaktifkan. Kekurangan otomatis
+                          mengurangi tagihan lewat sisa qty PO.
+                        </p>
                       )}
                     </div>
                   );
@@ -538,7 +547,7 @@ export function GRNDetailPage({
         <div className="xl:col-span-4">
           <Card className="border-gray-200/70 shadow-xs xl:sticky xl:top-6">
             <CardHeader className="border-b border-gray-200/70 pb-3">
-              <CardTitle className="text-base">Summary</CardTitle>
+              <CardTitle className="text-base">Ringkasan</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4 pt-4">
               <dl className="space-y-3 text-sm">
@@ -553,21 +562,21 @@ export function GRNDetailPage({
                   </dd>
                 </div>
                 <div className="flex items-start justify-between gap-3">
-                  <dt className="text-gray-500">Items</dt>
+                  <dt className="text-gray-500">Jumlah Item</dt>
                   <dd className="text-right font-medium text-gray-900">{grn.items?.length || 0}</dd>
                 </div>
                 <div className="grid grid-cols-2 gap-2 border-t border-gray-200/70 pt-3">
                   <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2">
-                    <p className="text-xs text-emerald-700">Good</p>
+                    <p className="text-xs text-emerald-700">Baik</p>
                     <p className="mt-1 text-sm font-semibold text-emerald-800">{formatNumber(totalAccepted)}</p>
                   </div>
                   <div className="rounded-lg border border-red-100 bg-red-50 px-3 py-2">
-                    <p className="text-xs text-red-700">Reject</p>
+                    <p className="text-xs text-red-700">Tolak</p>
                     <p className="mt-1 text-sm font-semibold text-red-700">{formatNumber(totalRejected)}</p>
                   </div>
                 </div>
                 <div className="flex items-start justify-between gap-3 border-t border-gray-200/70 pt-3">
-                  <dt className="font-medium text-gray-900">Acceptance Rate</dt>
+                  <dt className="font-medium text-gray-900">Tingkat Penerimaan</dt>
                   <dd className="text-right font-semibold text-gray-900">{acceptedPct}%</dd>
                 </div>
               </dl>
@@ -580,8 +589,7 @@ export function GRNDetailPage({
                 {!qc ? (
                   <div className="space-y-3">
                     <p className="text-xs leading-5 text-gray-600">
-                      No quality inspection recorded yet. Complete QC to post accepted quantities to
-                      inventory stock.
+                      Belum ada inspeksi QC. Selesaikan QC untuk memposting qty lolos ke stok.
                     </p>
                     {canRunQc && (
                       <Link
@@ -593,7 +601,7 @@ export function GRNDetailPage({
                       >
                         <Button size="sm" className="purchasing-main-button h-8">
                           <ClipboardCheck className="mr-2 h-3.5 w-3.5" />
-                          Start Inspection
+                          Mulai Inspeksi
                         </Button>
                       </Link>
                     )}
@@ -602,23 +610,28 @@ export function GRNDetailPage({
                   <dl className="space-y-2 text-xs text-gray-600">
                     <div className="flex items-start justify-between gap-3">
                       <dt>Status</dt>
-                      <dd className="text-right font-medium text-gray-900">{qc.status || qc.hasil || "-"}</dd>
+                      <dd className="text-right font-medium text-gray-900">
+                        {QC_STATUS_LABELS[String(qc.status || qc.hasil || "").toLowerCase()] ||
+                          qc.status ||
+                          qc.hasil ||
+                          "-"}
+                      </dd>
                     </div>
                     <div className="flex items-start justify-between gap-3">
-                      <dt>Inspector</dt>
+                      <dt>Inspektor</dt>
                       <dd className="text-right font-medium text-gray-900">
                         {qc.inspected_by_user?.email || qc.inspector?.email || qc.inspector?.name || "-"}
                       </dd>
                     </div>
                     <div className="flex items-start justify-between gap-3">
-                      <dt>Inspection Date</dt>
+                      <dt>Tanggal Inspeksi</dt>
                       <dd className="text-right font-medium text-gray-900">
                         {formatDate(qc.inspected_at || qc.tanggal_inspeksi)}
                       </dd>
                     </div>
                     {(qc.catatan_qc || qc.catatan) && (
                       <div>
-                        <dt className="mb-1">Notes</dt>
+                        <dt className="mb-1">Catatan</dt>
                         <dd className="rounded-lg border border-gray-200/70 bg-white px-3 py-2 text-gray-700">
                           {qc.catatan_qc || qc.catatan}
                         </dd>
@@ -629,7 +642,7 @@ export function GRNDetailPage({
                         qcStatus.includes("reject") ? "text-red-600" : "text-emerald-600"
                       }`}
                     >
-                      {qcStatus.includes("reject") ? "QC flagged issues" : "QC completed"}
+                      {qcStatus.includes("reject") ? "QC menemukan masalah" : "QC selesai"}
                     </p>
                   </dl>
                 )}
@@ -638,7 +651,7 @@ export function GRNDetailPage({
               <div className="rounded-xl border border-gray-200/70 bg-gray-50/60 p-4">
                 <div className="mb-2 flex items-center gap-2 text-sm font-medium text-gray-900">
                   <Info className="h-4 w-4 text-pink-600" />
-                  {supplierLabel} Contact
+                  Kontak {supplierLabel}
                 </div>
                 <dl className="space-y-2 text-xs text-gray-600">
                   <div className="flex items-start justify-between gap-3">
@@ -646,7 +659,7 @@ export function GRNDetailPage({
                     <dd className="text-right font-medium text-gray-900">{grn.supplier?.email || "-"}</dd>
                   </div>
                   <div className="flex items-start justify-between gap-3">
-                    <dt>Phone</dt>
+                    <dt>Telepon</dt>
                     <dd className="text-right font-medium text-gray-900">{grn.supplier?.telepon || "-"}</dd>
                   </div>
                 </dl>

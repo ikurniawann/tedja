@@ -1,6 +1,6 @@
 # EPIC-021: /dashboard — Ringkasan Eksekutif Lintas Modul
 
-status: coding
+status: ready-for-qa
 environment: dev
 retries: 0
 
@@ -87,6 +87,28 @@ dan ber-deep-link. Analisis dalam tetap di dashboard modul masing-masing.
 - Manual: login super_admin → /dashboard; login hrd → terlempar ke
   /dashboard/rekrutmen dengan konten lama.
 
+## QA Checklist (step-by-step)
+
+Prasyarat: **buat akun role `direksi` dulu** — dev belum punya satu pun
+(diverifikasi 26 Jul). Buat via Manajemen User (role "Executive" ada di
+dropdown), lengkapi scope bisnis company+branch.
+
+1. Login **super_admin** → `/dashboard` → Ringkasan Eksekutif tampil:
+   KPI omzet berpembanding ganda, tren 14 hari, Per Outlet 7 hari,
+   Bulan Berjalan + target, Perlu Keputusan, produk terlaris, inventori,
+   purchasing, payroll & kontrak, CRM.
+2. Klik "Atur target ›" di kartu Bulan Berjalan → isi target → progress
+   bar berubah; coba input sampah ("abc") → ditolak, target TIDAK terhapus.
+3. Login **direksi** → `/dashboard` → Ringkasan Eksekutif yang sama
+   (bukan terlempar ke ESS/rekrutmen).
+4. Login **hrd** → `/dashboard` → mendarat di `/dashboard/rekrutmen`
+   dengan konten dashboard rekrutmen lama.
+5. Login **purchasing_admin/staff** → mendarat di `/dashboard/purchasing`;
+   **pos/pos_supervisor** → `/dashboard/pos`; **finance_staff** →
+   `/dashboard/hris/payroll`.
+6. Setiap kartu eksekutif ber-deep-link ke modulnya (klik beberapa sampel).
+7. Biarkan tab terbuka >60 dtk → angka menyegarkan sendiri.
+
 ## Automation Log
 
 - 2026-07-21 — **Fase B selesai**: per-outlet + bulan berjalan + target omzet
@@ -102,3 +124,19 @@ dan ber-deep-link. Analisis dalam tetap di dashboard modul masing-masing.
   pos_orders) padahal purchase_orders memakai `total` — persis jenis bug yang
   ditangkap pola gagal-aman + smoke data sungguhan sebelum sampai ke user.
   Status → coding (sisa QA login direksi).
+- 2026-07-26 — **Audit penutupan → ready-for-qa.** Latar: epic menggantung
+  di `coding` 5 hari; satu-satunya sisa = QA manual. Hasil audit hari ini:
+  (1) **Interaksi dgn fix security H1 EPIC-032 A4** (guard path layout kini
+  berlaku utk SEMUA role non-full-access) diverifikasi AMAN — `direksi`
+  punya grant menu root `dashboard` (guard exact-match meloloskan
+  /dashboard), dan SEMUA target landing role-aware tercakup grant menu
+  masing-masing (purchasing→/dashboard/purchasing, pos→/dashboard/pos
+  [layout terpisah, guard tak berlaku], finance→/dashboard/hris/payroll,
+  hiring_manager→rekrutmen — dicek per-role ke iam.role_menu_permissions).
+  (2) Route hidup: /dashboard & /dashboard/rekrutmen 307 tanpa login,
+  /api/dashboard/executive 401 — normal. (3) 11 unit test
+  (executive+sales-target) hijau. (4) TEMUAN: dev belum punya SATU PUN
+  user `direksi` — inilah blocker QA sesungguhnya; role sudah tersedia di
+  dropdown Manajemen User, tinggal dibuat owner (masuk prasyarat QA
+  Checklist). Tidak ada perubahan kode diperlukan. Status →
+  **ready-for-qa**.

@@ -52,7 +52,7 @@ function formatQty(value: number | null | undefined) {
 
 function formatDateTime(dateStr?: string | null) {
   if (!dateStr) return "—";
-  return new Date(dateStr).toLocaleString("en-US", {
+  return new Date(dateStr).toLocaleString("id-ID", {
     day: "2-digit",
     month: "short",
     year: "numeric",
@@ -125,7 +125,7 @@ export function InventoryTransfersPage() {
     toast.error(
       sourceStockQuery.error instanceof Error
         ? sourceStockQuery.error.message
-        : "Failed to load raw materials"
+        : "Gagal memuat bahan baku"
     );
   }, [sourceStockQuery.isError, sourceStockQuery.error, sourceWarehouseId]);
 
@@ -219,15 +219,15 @@ export function InventoryTransfersPage() {
 
   const validateInputs = () => {
     if (!sourceWarehouseId) {
-      toast.error("Please select a source stall");
+      toast.error("Silakan pilih stall asal");
       return false;
     }
     if (!destWarehouseId) {
-      toast.error("Please select a destination stall");
+      toast.error("Silakan pilih stall tujuan");
       return false;
     }
     if (sourceWarehouseId === destWarehouseId) {
-      toast.error("Source and destination must be different");
+      toast.error("Stall asal dan stall tujuan harus berbeda");
       return false;
     }
 
@@ -237,7 +237,7 @@ export function InventoryTransfersPage() {
     });
 
     if (toTransfer.length === 0) {
-      toast.error("Enter transfer quantity greater than zero for at least one raw material");
+      toast.error("Isi qty transfer lebih dari nol untuk minimal satu bahan baku");
       return false;
     }
 
@@ -252,10 +252,10 @@ export function InventoryTransfersPage() {
     if (invalid) {
       if (Number(invalid.qty_transfer_input) > invalid.qty_available) {
         toast.error(
-          `${invalid.material_kode}: quantity exceeds available stock (${formatQty(invalid.qty_available)})`
+          `${invalid.material_kode}: qty melebihi stok tersedia (${formatQty(invalid.qty_available)})`
         );
       } else {
-        toast.error("Transfer quantity must be a valid number greater than or equal to zero");
+        toast.error("Qty transfer harus berupa angka valid yang lebih besar atau sama dengan nol");
       }
       return false;
     }
@@ -308,11 +308,11 @@ export function InventoryTransfersPage() {
       }
 
       if (saved > 0 && failed === 0) {
-        toast.success(`${saved} raw material(s) transferred successfully`);
+        toast.success(`${saved} bahan baku berhasil ditransfer`);
       } else if (saved > 0) {
-        toast.warning(`${saved} line(s) transferred, ${failed} failed`);
+        toast.warning(`${saved} baris berhasil ditransfer, ${failed} gagal`);
       } else {
-        toast.error("Failed to transfer stock");
+        toast.error("Gagal melakukan transfer stok");
       }
     } finally {
       setSubmitting(false);
@@ -328,8 +328,8 @@ export function InventoryTransfersPage() {
     <div className="space-y-6">
       <PurchasingFormHeader
         backHref={RM_ROUTES.inventoryStock}
-        title="Stock Transfer"
-        description="Move raw material stock between Main Storage and stalls"
+        title="Transfer Stok"
+        description="Pindahkan stok bahan baku antara Main Storage dan stall"
         actions={
           canSubmit ? (
             <Button
@@ -338,7 +338,7 @@ export function InventoryTransfersPage() {
               onClick={handleSubmit}
               disabled={submitting}
             >
-              {submitting ? "Transferring..." : "Transfer Stock"}
+              {submitting ? "Menyimpan..." : "Transfer Stok"}
             </Button>
           ) : undefined
         }
@@ -346,11 +346,11 @@ export function InventoryTransfersPage() {
 
       <Card className="border-gray-200/70 shadow-xs">
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">Transfer Information</CardTitle>
+          <CardTitle className="text-base">Informasi Transfer</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <Label className="text-xs">Transfer Type</Label>
+            <Label className="text-xs">Jenis Transfer</Label>
             <div className="flex flex-wrap gap-2">
               {TRANSFER_KIND_OPTIONS.map((option) => (
                 <Button
@@ -375,14 +375,14 @@ export function InventoryTransfersPage() {
           <div className="grid grid-cols-1 gap-4 md:grid-cols-12">
             <div className="min-w-0 space-y-1.5 md:col-span-4">
               <Label className="text-xs">
-                Source Stall <span className="text-red-500">*</span>
+                Stall Asal <span className="text-red-500">*</span>
               </Label>
               <Combobox
                 value={sourceWarehouseId}
                 onChange={handleSourceChange}
                 options={sourceOptions}
                 placeholder={
-                  warehousesQuery.isLoading ? "Loading stalls..." : "Select source stall"
+                  warehousesQuery.isLoading ? "Memuat stall..." : "Pilih stall asal"
                 }
                 disabled={sourceDisabled}
                 className="w-full! h-9 border-gray-200/80 text-sm"
@@ -391,14 +391,14 @@ export function InventoryTransfersPage() {
 
             <div className="min-w-0 space-y-1.5 md:col-span-4">
               <Label className="text-xs">
-                Destination Stall <span className="text-red-500">*</span>
+                Stall Tujuan <span className="text-red-500">*</span>
               </Label>
               <Combobox
                 value={destWarehouseId}
                 onChange={handleDestChange}
                 options={destOptions}
                 placeholder={
-                  warehousesQuery.isLoading ? "Loading stalls..." : "Select destination stall"
+                  warehousesQuery.isLoading ? "Memuat stall..." : "Pilih stall tujuan"
                 }
                 disabled={destDisabled}
                 className="w-full! h-9 border-gray-200/80 text-sm"
@@ -407,13 +407,13 @@ export function InventoryTransfersPage() {
 
             <div className="min-w-0 space-y-1.5 md:col-span-4">
               <Label htmlFor="transfer-notes" className="text-xs">
-                Notes
+                Catatan
               </Label>
               <Input
                 id="transfer-notes"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                placeholder="Optional transfer notes..."
+                placeholder="Catatan transfer (opsional)..."
                 disabled={submitting}
                 className="h-9 border-gray-200/80 text-sm"
               />
@@ -423,15 +423,15 @@ export function InventoryTransfersPage() {
           {hasItems && (
             <div className="grid grid-cols-3 gap-3 border-t border-gray-200/70 pt-4">
               <div className="rounded-lg border border-gray-200/70 bg-gray-50/50 px-3 py-2">
-                <p className="text-xs font-medium text-gray-500">Total Lines</p>
+                <p className="text-xs font-medium text-gray-500">Total Baris</p>
                 <p className="text-lg font-bold text-gray-900">{progress.total}</p>
               </div>
               <div className="rounded-lg border border-gray-200/70 bg-gray-50/50 px-3 py-2">
-                <p className="text-xs font-medium text-gray-500">Filled</p>
+                <p className="text-xs font-medium text-gray-500">Terisi</p>
                 <p className="text-lg font-bold text-amber-600">{progress.filled}</p>
               </div>
               <div className="rounded-lg border border-gray-200/70 bg-gray-50/50 px-3 py-2">
-                <p className="text-xs font-medium text-gray-500">To Transfer</p>
+                <p className="text-xs font-medium text-gray-500">Akan Ditransfer</p>
                 <p className="text-lg font-bold text-pink-600">{progress.toTransfer}</p>
               </div>
             </div>
@@ -443,17 +443,17 @@ export function InventoryTransfersPage() {
         <CardContent className="p-0">
           <div className="flex flex-col gap-3 border-b border-gray-200/70 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h2 className="text-base font-semibold text-gray-900">Transfer Items</h2>
+              <h2 className="text-base font-semibold text-gray-900">Item Transfer</h2>
               <p className="text-sm text-gray-500">
                 {!sourceWarehouseId
-                  ? "Select a source stall to load raw materials"
+                  ? "Pilih stall asal untuk memuat bahan baku"
                   : loading
-                    ? "Loading raw materials..."
+                    ? "Memuat bahan baku..."
                     : hasItems
-                      ? `Enter transfer qty (leave empty to skip)${
+                      ? `Isi qty transfer (kosongkan untuk melewati)${
                           selectedSource ? ` — ${selectedSource.label}` : ""
                         }`
-                      : "No active raw materials in this stall"}
+                      : "Tidak ada bahan baku aktif di stall ini"}
               </p>
             </div>
             {hasItems && (
@@ -462,7 +462,7 @@ export function InventoryTransfersPage() {
                 <Input
                   value={itemSearch}
                   onChange={(e) => setItemSearch(e.target.value)}
-                  placeholder="Search raw materials..."
+                  placeholder="Cari bahan baku..."
                   className="h-10 border-gray-200/80 pl-9"
                   disabled={submitting}
                 />
@@ -474,38 +474,38 @@ export function InventoryTransfersPage() {
             <table className="w-full min-w-[800px] text-sm">
               <thead>
                 <tr className="border-b border-gray-200/70 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
-                  <th className="px-3 py-3">Code</th>
-                  <th className="px-3 py-3">Material Name</th>
-                  <th className="px-3 py-3">Unit</th>
-                  <th className="px-3 py-3 text-right">Available Stock</th>
-                  <th className="px-3 py-3 text-right">Transfer Qty</th>
+                  <th className="px-3 py-3">Kode</th>
+                  <th className="px-3 py-3">Nama Bahan Baku</th>
+                  <th className="px-3 py-3">Satuan</th>
+                  <th className="px-3 py-3 text-right">Stok Tersedia</th>
+                  <th className="px-3 py-3 text-right">Qty Transfer</th>
                 </tr>
               </thead>
               <tbody>
                 {!sourceWarehouseId ? (
                   <tr>
                     <td colSpan={5} className="px-3 py-10 text-center text-gray-400">
-                      Please select a source stall first
+                      Silakan pilih stall asal terlebih dahulu
                     </td>
                   </tr>
                 ) : loading ? (
                   <tr>
                     <td colSpan={5} className="px-3 py-10 text-center text-gray-400">
-                      Loading items...
+                      Memuat item...
                     </td>
                   </tr>
                 ) : sourceStockQuery.isError ? (
                   <tr>
                     <td colSpan={5} className="px-3 py-10 text-center text-red-500">
-                      Failed to load raw materials
+                      Gagal memuat bahan baku
                     </td>
                   </tr>
                 ) : filteredLines.length === 0 ? (
                   <tr>
                     <td colSpan={5} className="px-3 py-10 text-center text-gray-400">
                       {hasItems
-                        ? "No items match your search"
-                        : "No active raw materials found"}
+                        ? "Tidak ada item yang cocok dengan pencarian"
+                        : "Bahan baku aktif tidak ditemukan"}
                     </td>
                   </tr>
                 ) : (
@@ -556,8 +556,8 @@ export function InventoryTransfersPage() {
 
       <PurchasingListSection
         icon={ArrowsRightLeftIcon}
-        title="Transfer History"
-        description={`${total} transfer record(s)`}
+        title="Riwayat Transfer"
+        description={`${total} data transfer`}
         toolbar={
           <Button
             type="button"
@@ -570,7 +570,7 @@ export function InventoryTransfersPage() {
             <ArrowPathIcon
               className={`mr-2 h-4 w-4 ${listQuery.isFetching ? "animate-spin" : ""}`}
             />
-            Refresh
+            Muat Ulang
           </Button>
         }
       >
@@ -578,27 +578,27 @@ export function InventoryTransfersPage() {
           <table className="w-full min-w-[960px] text-sm">
             <thead>
               <tr className="border-b border-gray-200/70 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
-                <th className="px-3 py-3">Transfer No.</th>
-                <th className="px-3 py-3">Date</th>
-                <th className="px-3 py-3">Type</th>
-                <th className="px-3 py-3">Material</th>
+                <th className="px-3 py-3">No. Transfer</th>
+                <th className="px-3 py-3">Tanggal</th>
+                <th className="px-3 py-3">Jenis</th>
+                <th className="px-3 py-3">Bahan Baku</th>
                 <th className="px-3 py-3 text-right">Qty</th>
-                <th className="px-3 py-3">From</th>
-                <th className="px-3 py-3">To</th>
-                <th className="px-3 py-3">By</th>
+                      <th className="px-3 py-3">Stall Asal</th>
+                      <th className="px-3 py-3">Stall Tujuan</th>
+                <th className="px-3 py-3">Dibuat Oleh</th>
               </tr>
             </thead>
             <tbody>
               {listQuery.isLoading ? (
                 <tr>
                   <td colSpan={8} className="px-3 py-10 text-center text-gray-400">
-                    Loading transfer history...
+                    Memuat riwayat transfer...
                   </td>
                 </tr>
               ) : historyItems.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="px-3 py-10 text-center text-gray-400">
-                    No transfers recorded yet
+                    Belum ada transfer yang tercatat
                   </td>
                 </tr>
               ) : (

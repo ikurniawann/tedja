@@ -15,6 +15,7 @@ import { getReturnsModuleConfig } from "../returns-module";
 import type { PurchasingModuleType } from "@/lib/purchasing/module-scope";
 import {
   RETURN_STATUS_COLORS,
+  RETURN_STATUS_LABELS,
   RETURN_REASON_LABELS,
   ReturnStatus,
   ReturnReasonType,
@@ -23,42 +24,24 @@ import { formatAmount, formatDate } from "@/lib/purchasing/utils";
 import { Plus, Search, Filter, RotateCcw, Eye, Pencil, X } from "lucide-react";
 import { toast } from "sonner";
 
-const RETURN_STATUS_LABELS_EN: Record<ReturnStatus, string> = {
-  draft: "Draft",
-  pending_approval: "Pending Approval",
-  approved: "Approved",
-  rejected: "Rejected",
-  completed: "Completed",
-  cancelled: "Cancelled",
-};
-
-const RETURN_REASON_LABELS_EN: Record<ReturnReasonType, string> = {
-  damaged: "Damaged Goods",
-  wrong_item: "Wrong Item",
-  expired: "Expired",
-  overstock: "Overstock",
-  specification_mismatch: "Specification Mismatch",
-  other: "Other",
-};
-
 const STATUS_OPTIONS = [
-  { value: "all", label: "All Statuses" },
-  { value: "draft", label: "Draft" },
-  { value: "pending_approval", label: "Pending Approval" },
-  { value: "approved", label: "Approved" },
-  { value: "rejected", label: "Rejected" },
-  { value: "completed", label: "Completed" },
-  { value: "cancelled", label: "Cancelled" },
+  { value: "all", label: "Semua Status" },
+  { value: "draft", label: "Draf" },
+  { value: "pending_approval", label: "Menunggu Persetujuan" },
+  { value: "approved", label: "Disetujui" },
+  { value: "rejected", label: "Ditolak" },
+  { value: "completed", label: "Selesai" },
+  { value: "cancelled", label: "Dibatalkan" },
 ];
 
 const REASON_OPTIONS = [
-  { value: "all", label: "All Reasons" },
-  { value: "damaged", label: "Damaged Goods" },
-  { value: "wrong_item", label: "Wrong Item" },
-  { value: "expired", label: "Expired" },
-  { value: "overstock", label: "Overstock" },
-  { value: "specification_mismatch", label: "Specification Mismatch" },
-  { value: "other", label: "Other" },
+  { value: "all", label: "Semua Alasan" },
+  { value: "damaged", label: "Barang Rusak" },
+  { value: "wrong_item", label: "Barang Salah" },
+  { value: "expired", label: "Kedaluwarsa" },
+  { value: "overstock", label: "Kelebihan Stok" },
+  { value: "specification_mismatch", label: "Tidak Sesuai Spesifikasi" },
+  { value: "other", label: "Lainnya" },
 ];
 
 function getGrnNumber(ret: {
@@ -109,7 +92,7 @@ export function PurchaseReturnsPage({
   useEffect(() => {
     if (listQuery.isError) {
       console.error("Error loading returns:", listQuery.error);
-      toast.error("Failed to load purchase returns");
+      toast.error("Gagal memuat retur pembelian");
     }
   }, [listQuery.isError, listQuery.error]);
 
@@ -136,17 +119,17 @@ export function PurchaseReturnsPage({
   return (
     <div className="space-y-6">
       <PurchasingPageHeader
-        title="Purchase Returns"
+        title="Retur Pembelian"
         description={
           <>
-            Manage returns to {config.partyLabel.toLowerCase()}s for QC-completed goods receipts — {total} total
+            Kelola retur ke {config.partyLabel.toLowerCase()} untuk penerimaan barang yang sudah selesai QC — total {total}
           </>
         }
         actions={
           <Link href={config.insertRoute}>
             <Button className="h-10 w-full gap-2 rounded-lg bg-pink-600 px-3 text-sm font-semibold text-white shadow-sm hover:bg-pink-700 sm:w-auto">
               <Plus className="mr-2 h-4 w-4" />
-              Create Return
+              Tambah Retur
             </Button>
           </Link>
         }
@@ -154,14 +137,14 @@ export function PurchaseReturnsPage({
 
       <PurchasingListSection
         icon={RotateCcw}
-        title="Purchase Return List"
-        description="Only goods receipts that have completed quality control are eligible for returns."
+        title="Daftar Retur Pembelian"
+        description="Hanya penerimaan barang yang sudah menyelesaikan quality control yang dapat diretur."
         toolbar={
           <div className="flex w-full flex-col gap-3 sm:w-auto md:flex-row md:items-center">
             <label className="relative w-full md:w-80">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
               <Input
-                placeholder="Search return number, GRN number, or notes..."
+                placeholder="Cari nomor retur, nomor GRN, atau catatan..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="h-10 bg-white pl-10 pr-10 text-sm focus:border-pink-400 focus:ring-2 focus:ring-pink-100"
@@ -171,7 +154,7 @@ export function PurchaseReturnsPage({
                   type="button"
                   onClick={() => setSearchQuery("")}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 transition-colors hover:text-gray-700"
-                  aria-label="Clear search"
+                  aria-label="Hapus pencarian"
                 >
                   <X className="h-4 w-4" />
                 </button>
@@ -201,7 +184,7 @@ export function PurchaseReturnsPage({
                 onClick={handleResetFilters}
                 className="h-10 flex-shrink-0 rounded-lg"
               >
-                Reset
+                Atur Ulang
               </Button>
             )}
           </div>
@@ -224,8 +207,8 @@ export function PurchaseReturnsPage({
                       setPage(1);
                     }}
                     placeholder="Filter status..."
-                    searchPlaceholder="Search status..."
-                    emptyMessage="No status found"
+                    searchPlaceholder="Cari status..."
+                    emptyMessage="Status tidak ditemukan"
                     className="!w-full h-9 text-sm"
                   />
                 </div>
@@ -233,7 +216,7 @@ export function PurchaseReturnsPage({
                 <div className="space-y-1.5">
                   <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
                     <Filter className="h-3.5 w-3.5 text-pink-500" />
-                    Reason
+                    Alasan
                   </div>
                   <Combobox
                     options={REASON_OPTIONS}
@@ -242,9 +225,9 @@ export function PurchaseReturnsPage({
                       setReasonFilter(value as ReturnReasonType | "all");
                       setPage(1);
                     }}
-                    placeholder="Filter reason..."
-                    searchPlaceholder="Search reason..."
-                    emptyMessage="No reason found"
+                    placeholder="Filter alasan..."
+                    searchPlaceholder="Cari alasan..."
+                    emptyMessage="Alasan tidak ditemukan"
                     className="!w-full h-9 text-sm"
                   />
                 </div>
@@ -255,21 +238,21 @@ export function PurchaseReturnsPage({
           {loading ? (
             <div className="py-12 text-center">
               <div className="mx-auto h-8 w-8 animate-spin rounded-full border-b-2 border-gray-900" />
-              <p className="mt-2 text-sm text-gray-500">Loading purchase returns...</p>
+              <p className="mt-2 text-sm text-gray-500">Memuat retur pembelian...</p>
             </div>
           ) : returns.length === 0 ? (
             <div className="py-14 text-center">
               <RotateCcw className="mx-auto mb-4 h-12 w-12 text-gray-300" />
-              <p className="text-gray-500">No purchase returns found</p>
+              <p className="text-gray-500">Retur pembelian tidak ditemukan</p>
               <p className="mt-1 text-sm text-gray-400">
-                Returns are available only after goods receipt quality control is completed.
+                Retur hanya tersedia setelah quality control penerimaan barang selesai.
               </p>
               <Link href={config.insertRoute}>
                 <Button
                   variant="outline"
                   className="mt-4 h-10 gap-2 rounded-lg border-pink-200 bg-white px-3 text-sm font-medium text-pink-700 shadow-sm hover:!border-pink-200 hover:!bg-pink-50 hover:!text-pink-700"
                 >
-                  Create Return
+                  Tambah Retur
                 </Button>
               </Link>
             </div>
@@ -279,24 +262,23 @@ export function PurchaseReturnsPage({
                 <table className="min-w-full text-sm">
                   <thead className="border-b border-gray-100 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
                     <tr>
-                      <th className="px-4 py-3 text-left font-semibold">Return No.</th>
-                      <th className="px-4 py-3 text-left font-semibold">Date</th>
+                      <th className="px-4 py-3 text-left font-semibold">No. Retur</th>
+                      <th className="px-4 py-3 text-left font-semibold">Tanggal</th>
                       <th className="px-4 py-3 text-left font-semibold">{config.partyLabel}</th>
-                      <th className="px-4 py-3 text-left font-semibold">Reason</th>
-                      <th className="px-4 py-3 text-left font-semibold">GRN Number</th>
+                      <th className="px-4 py-3 text-left font-semibold">Alasan</th>
+                      <th className="px-4 py-3 text-left font-semibold">Nomor GRN</th>
                       <th className="px-4 py-3 text-right font-semibold">Total</th>
                       <th className="px-4 py-3 text-center font-semibold">Status</th>
-                      <th className="px-4 py-3 text-right font-semibold">Actions</th>
+                      <th className="px-4 py-3 text-right font-semibold">Aksi</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {returns.map((ret) => {
                       const statusLabel =
-                        RETURN_STATUS_LABELS_EN[ret.status as ReturnStatus] ||
-                        RETURN_STATUS_LABELS[ret.status as ReturnStatus];
+                        RETURN_STATUS_LABELS[ret.status as ReturnStatus] || ret.status;
                       const reasonLabel =
-                        RETURN_REASON_LABELS_EN[ret.reason_type as ReturnReasonType] ||
-                        RETURN_REASON_LABELS[ret.reason_type as ReturnReasonType];
+                        RETURN_REASON_LABELS[ret.reason_type as ReturnReasonType] ||
+                        ret.reason_type;
                       const grnNumber = getGrnNumber(ret);
                       const grnId = getGrnId(ret);
 
@@ -356,7 +338,7 @@ export function PurchaseReturnsPage({
                                   <Button
                                     variant="ghost"
                                     size="sm"
-                                    title="Edit return"
+                                    title="Ubah retur"
                                     className="cursor-pointer"
                                   >
                                     <Pencil className="h-4 w-4" />
@@ -367,7 +349,7 @@ export function PurchaseReturnsPage({
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  title="View detail"
+                                  title="Lihat detail"
                                   className="cursor-pointer"
                                 >
                                   <Eye className="h-4 w-4" />

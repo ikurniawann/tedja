@@ -63,9 +63,12 @@ export type PurchasingRoute =
   | "inventory.movements"
   | "inventory.adjustment"
   // ── Reports ────────────────────────────────────────────────
+  | "reports.stock-card"
   | "reports.inventory-valuation"
   | "reports.po-summary"
+  | "reports.po-detail"
   | "reports.supplier-performance"
+  | "reports.production-in-house"
   | "reports.hpp-breakdown";
 
 export interface RouteDefinition {
@@ -145,7 +148,7 @@ export const ROUTES: RouteDefinition[] = [
   {
     route: "products.bom",
     path: "/dashboard/product/products/bom/[id]",
-    meta: { label: "BOM Editor", icon: "CubeTransparentIcon" },
+    meta: { label: "Editor Resep (BOM)", icon: "CubeTransparentIcon" },
   },
 
   // ── Purchase Orders ────────────────────────────────────────
@@ -252,19 +255,34 @@ export const ROUTES: RouteDefinition[] = [
 
   // ── Reports ────────────────────────────────────────────────
   {
+    route: "reports.stock-card",
+    path: "/dashboard/purchasing/reports/stock-card",
+    meta: { label: "Stock Card", icon: "ClipboardDocumentListIcon" },
+  },
+  {
     route: "reports.inventory-valuation",
     path: "/dashboard/purchasing/reports/inventory-valuation",
-    meta: { label: "Valuasi Stok", icon: "ChartBarIcon" },
+    meta: { label: "Inventory Valuation", icon: "ChartBarIcon" },
   },
   {
     route: "reports.po-summary",
     path: "/dashboard/purchasing/reports/po-summary",
-    meta: { label: "Summary PO", icon: "DocumentChartBarIcon" },
+    meta: { label: "PO Summary", icon: "DocumentChartBarIcon" },
+  },
+  {
+    route: "reports.po-detail",
+    path: "/dashboard/purchasing/reports/po-detail",
+    meta: { label: "PO Detail", icon: "DocumentTextIcon" },
   },
   {
     route: "reports.supplier-performance",
     path: "/dashboard/purchasing/reports/supplier-performance",
-    meta: { label: "Performa Supplier", icon: "UserGroupIcon" },
+    meta: { label: "Supplier Performance", icon: "UserGroupIcon" },
+  },
+  {
+    route: "reports.production-in-house",
+    path: "/dashboard/purchasing/reports/production-in-house",
+    meta: { label: "Produksi Internal", icon: "CubeIcon" },
   },
   {
     route: "reports.hpp-breakdown",
@@ -319,7 +337,7 @@ export function getSectionLabel(route: PurchasingRoute): string {
   if (route.startsWith("qc")) return "Transaksi";
   if (route.startsWith("returns")) return "Transaksi";
   if (route.startsWith("inventory")) return "Inventori";
-  if (route.startsWith("reports")) return "Laporan";
+  if (route.startsWith("reports")) return "Reports";
   return "Purchasing";
 }
 
@@ -340,7 +358,7 @@ export const SIDEBAR_SECTIONS: { label: string; routes: PurchasingRoute[] }[] = 
     routes: ["inventory.list", "inventory.adjustment"],
   },
   {
-    label: "Laporan",
-    routes: ["reports.inventory-valuation", "reports.po-summary", "reports.supplier-performance", "reports.hpp-breakdown"],
+    label: "Reports",
+    routes: ["reports.stock-card", "reports.inventory-valuation", "reports.po-summary", "reports.po-detail", "reports.supplier-performance", "reports.production-in-house", "reports.hpp-breakdown"],
   },
 ];

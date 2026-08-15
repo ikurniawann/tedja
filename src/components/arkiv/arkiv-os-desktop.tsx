@@ -5,11 +5,18 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { extractSseData, splitSseEvents } from "@/lib/assistant/sse";
 import {
+  DragDropContext,
+  Draggable,
+  Droppable,
+  type DropResult,
+} from "@hello-pangea/dnd";
+import {
   DesktopMonitorBoard,
   MONITOR_WIDGETS,
   NotificationPopups,
   normalizeWidgetOrder,
   useDesktopOverview,
+  usePeriodPreference,
   type MonitorWidgetKey,
 } from "./desktop-monitor";
 import type { DesktopOverview as DesktopOverviewData } from "@/lib/desktop/overview";
@@ -42,6 +49,7 @@ import {
   ExternalLink,
   Folder,
   Gamepad2,
+  GripVertical,
   Grid3X3,
   History,
   Landmark,
@@ -153,6 +161,9 @@ const wallpapers = [
 
 const defaultWidgetVisibility: WidgetVisibility = {
   calendar: false,
+  omzet: true,
+  promo: true,
+  tamu: true,
   pulsa: true,
   tim: true,
   keputusan: true,
@@ -217,7 +228,8 @@ export default function ArkivOsDesktop() {
   } as CSSProperties;
 
   const isLoggedIn = Boolean(userAccount);
-  const overview = useDesktopOverview(isLoggedIn);
+  const [periode, pilihPeriode] = usePeriodPreference();
+  const overview = useDesktopOverview(isLoggedIn, periode);
   // Notifikasi aktivitas: snapshot overview dibandingkan tiap poll; kenaikan
   // melahirkan popup + masuk riwayat Notification Center.
   const [notifHistory, setNotifHistory] = useState<ActivityNotification[]>([]);
@@ -342,14 +354,28 @@ export default function ArkivOsDesktop() {
   };
 
   /** Geser widget monitoring satu langkah ke atas/bawah (Fase C). */
+  const simpanUrutan = (next: MonitorWidgetKey[]) => {
+    setWidgetOrder(next);
+    window.localStorage.setItem("arkiv-widget-order", JSON.stringify(next));
+  };
+
   const moveWidget = (key: MonitorWidgetKey, direction: -1 | 1) => {
     const index = widgetOrder.indexOf(key);
     const target = index + direction;
     if (index < 0 || target < 0 || target >= widgetOrder.length) return;
     const next = [...widgetOrder];
     [next[index], next[target]] = [next[target], next[index]];
-    setWidgetOrder(next);
-    window.localStorage.setItem("arkiv-widget-order", JSON.stringify(next));
+    simpanUrutan(next);
+  };
+
+  /** Pindah satu widget ke posisi baru — dipakai drag & drop di panel Widgets. */
+  const reorderWidget = (from: number, to: number) => {
+    if (from === to || from < 0 || to < 0) return;
+    if (from >= widgetOrder.length || to >= widgetOrder.length) return;
+    const next = [...widgetOrder];
+    const [dipindah] = next.splice(from, 1);
+    next.splice(to, 0, dipindah);
+    simpanUrutan(next);
   };
 
   const updateSoundEnabled = (value: boolean) => {
@@ -568,7 +594,14 @@ export default function ArkivOsDesktop() {
       <section className="relative z-10 min-h-dvh px-6 pb-28 pt-14">
         {now && widgetVisibility.calendar && <CalendarWidget date={now} onClose={() => updateWidgetVisibility("calendar", false)} />}
         {isLoggedIn && (
-          <DesktopMonitorBoard state={overview} visibility={widgetVisibility} order={widgetOrder} onAskDo={askDoFromWidget} />
+          <DesktopMonitorBoard
+            state={overview}
+            visibility={widgetVisibility}
+            order={widgetOrder}
+            onAskDo={askDoFromWidget}
+            periode={periode}
+            onPilihPeriode={pilihPeriode}
+          />
         )}
       </section>
 
@@ -666,7 +699,7 @@ export default function ArkivOsDesktop() {
       <NotificationPopups popups={notifPopups} onDismiss={dismissPopup} onOpen={openNotification} />
       {showFiles && <FileExplorer onClose={() => setShowFiles(false)} isLoggedIn={isLoggedIn} />}
       {showWallpaperPicker && <WallpaperPicker selected={wallpaper.id} onSelect={(item) => { setWallpaper(item); window.localStorage.setItem("arkiv-wallpaper", item.id); }} onClose={() => setShowWallpaperPicker(false)} />}
-      {showWidgetSettings && <WidgetSettings visibility={widgetVisibility} order={widgetOrder} onChange={updateWidgetVisibility} onMove={moveWidget} onClose={() => setShowWidgetSettings(false)} />}
+      {showWidgetSettings && <WidgetSettings visibility={widgetVisibility} order={widgetOrder} onChange={updateWidgetVisibility} onMove={moveWidget} onReorder={reorderWidget} onClose={() => setShowWidgetSettings(false)} />}
       {showSettings && (
         <SystemSettings
           onOpenWaNotif={() => { setShowSettings(false); setShowWaNotif(true); }}
@@ -2570,12 +2603,14 @@ function WidgetSettings({
   order,
   onChange,
   onMove,
+  onReorder,
   onClose,
 }: {
   visibility: WidgetVisibility;
   order: MonitorWidgetKey[];
   onChange: (key: keyof WidgetVisibility, value: boolean) => void;
   onMove: (key: MonitorWidgetKey, direction: -1 | 1) => void;
+  onReorder: (from: number, to: number) => void;
   onClose: () => void;
 }) {
   // Baris widget monitoring mengikuti urutan pilihan user (Fase C); Calendar
@@ -2586,7 +2621,12 @@ function WidgetSettings({
   const calendar = { key: "calendar" as const, title: "Calendar Widget", description: "Kalender bulanan yang bisa dipindahkan dan di-resize." };
 
   return (
-    <WindowShell title="Widgets" onClose={onClose} className="left-1/2 top-24 w-[min(460px,calc(100vw-32px))] -translate-x-1/2">
+    /* Dipusatkan lewat `inset-x-0 mx-auto`, BUKAN `left-1/2 -translate-x-1/2`.
+       @hello-pangea/dnd menghitung posisi drag relatif terhadap containing
+       block; `transform` pada leluhur membuat item yang diseret melompat atau
+       tidak mengikuti kursor sama sekali. Panel ini memuat daftar drag & drop,
+       jadi transform tidak boleh dipakai untuk memusatkannya. */
+    <WindowShell title="Widgets" onClose={onClose} className="inset-x-0 top-24 mx-auto w-[min(460px,calc(100vw-32px))]">
       <div className="space-y-3 p-5">
         <div className="rounded-3xl border border-white/10 bg-white/8 p-4">
           <div className="text-sm font-semibold">Desktop Widgets</div>
@@ -2600,36 +2640,75 @@ function WidgetSettings({
           </div>
           <ToggleSwitch enabled={visibility.calendar} onChange={(value) => onChange("calendar", value)} label={`Toggle ${calendar.title}`} />
         </div>
-        {monitorItems.map((item, index) => (
-          <div key={item.key} className="flex items-center gap-3 rounded-3xl border border-white/10 bg-white/8 p-4">
-            <div className="flex shrink-0 flex-col gap-0.5">
-              <button
-                type="button"
-                disabled={index === 0}
-                onClick={() => onMove(item.key, -1)}
-                aria-label={`Naikkan urutan ${item.title}`}
-                className="rounded-lg p-1 text-white/50 transition hover:bg-white/10 hover:text-white disabled:opacity-25"
+        {/* Drag & drop untuk mouse, tombol panah tetap ada untuk keyboard dan
+            penyesuaian presisi. Handle dipisah dari baris: baris ini memuat
+            toggle dan dua tombol panah, dan menjadikan seluruh baris draggable
+            membuat klik pada tombol-tombol itu tertelan oleh gestur drag. */}
+        <DragDropContext
+          onDragEnd={(hasil: DropResult) => {
+            if (!hasil.destination) return;
+            onReorder(hasil.source.index, hasil.destination.index);
+          }}
+        >
+          <Droppable droppableId="widget-monitoring">
+            {(dropProvided) => (
+              <div
+                ref={dropProvided.innerRef}
+                {...dropProvided.droppableProps}
+                className="space-y-3"
               >
-                <ChevronUp className="size-4" />
-              </button>
-              <button
-                type="button"
-                disabled={index === monitorItems.length - 1}
-                onClick={() => onMove(item.key, 1)}
-                aria-label={`Turunkan urutan ${item.title}`}
-                className="rounded-lg p-1 text-white/50 transition hover:bg-white/10 hover:text-white disabled:opacity-25"
-              >
-                <ChevronDown className="size-4" />
-              </button>
-            </div>
-            <div className={`grid size-11 shrink-0 place-items-center rounded-2xl bg-gradient-to-br ${pinkAccent}`}><Activity className="size-5" /></div>
-            <div className="min-w-0 flex-1">
-              <div className="text-sm font-semibold">{item.title}</div>
-              <div className="text-xs leading-5 text-white/45">{item.description}</div>
-            </div>
-            <ToggleSwitch enabled={visibility[item.key]} onChange={(value) => onChange(item.key, value)} label={`Toggle ${item.title}`} />
-          </div>
-        ))}
+                {monitorItems.map((item, index) => (
+                  <Draggable draggableId={item.key} index={index} key={item.key}>
+                    {(dragProvided, dragSnapshot) => (
+                      <div
+                        ref={dragProvided.innerRef}
+                        {...dragProvided.draggableProps}
+                        className={`flex items-center gap-3 rounded-3xl border border-white/10 bg-white/8 p-4 ${
+                          dragSnapshot.isDragging ? "border-white/30 shadow-2xl" : ""
+                        }`}
+                      >
+                        <div
+                          {...dragProvided.dragHandleProps}
+                          aria-label={`Seret untuk memindahkan ${item.title}`}
+                          className="shrink-0 cursor-grab rounded-lg p-1 text-white/35 transition hover:text-white active:cursor-grabbing"
+                        >
+                          <GripVertical className="size-4" />
+                        </div>
+                        <div className="flex shrink-0 flex-col gap-0.5">
+                          <button
+                            type="button"
+                            disabled={index === 0}
+                            onClick={() => onMove(item.key, -1)}
+                            aria-label={`Naikkan urutan ${item.title}`}
+                            className="rounded-lg p-1 text-white/50 transition hover:bg-white/10 hover:text-white disabled:opacity-25"
+                          >
+                            <ChevronUp className="size-4" />
+                          </button>
+                          <button
+                            type="button"
+                            disabled={index === monitorItems.length - 1}
+                            onClick={() => onMove(item.key, 1)}
+                            aria-label={`Turunkan urutan ${item.title}`}
+                            className="rounded-lg p-1 text-white/50 transition hover:bg-white/10 hover:text-white disabled:opacity-25"
+                          >
+                            <ChevronDown className="size-4" />
+                          </button>
+                        </div>
+                        <div className={`grid size-11 shrink-0 place-items-center rounded-2xl bg-gradient-to-br ${pinkAccent}`}><Activity className="size-5" /></div>
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm font-semibold">{item.title}</div>
+                          <div className="text-xs leading-5 text-white/45">{item.description}</div>
+                        </div>
+                        <ToggleSwitch enabled={visibility[item.key]} onChange={(value) => onChange(item.key, value)} label={`Toggle ${item.title}`} />
+                      </div>
+                    )}
+                  </Draggable>
+                ))}
+                {dropProvided.placeholder}
+              </div>
+            )}
+          </Droppable>
+        </DragDropContext>
       </div>
     </WindowShell>
   );

@@ -46,7 +46,7 @@ export const PURCHASING_ROUTES: RouteGroup = {
         { path: "products/insert", label: "Tambah Produk" },
         { path: "products/[id]", label: "Detail Produk" },
         { path: "products/edit/[id]", label: "Edit Produk" },
-        { path: "products/bom/[id]", label: "BOM Editor" },
+        { path: "products/bom/[id]", label: "Editor Resep (BOM)" },
       ],
     },
 
@@ -110,16 +110,16 @@ export const PURCHASING_ROUTES: RouteGroup = {
     // ── Reports ──────────────────────────────────────────────
     {
       path: "reports",
-      label: "Laporan",
+      label: "Reports",
       icon: "DocumentChartBarIcon",
       badge: null,
       children: [
-        { path: "reports/inventory-valuation", label: "Valuasi Stok" },
-        { path: "reports/po-summary", label: "Summary PO" },
-        {
-          path: "reports/supplier-performance",
-          label: "Performa Supplier",
-        },
+        { path: "reports/stock-card", label: "Stock Card" },
+        { path: "reports/inventory-valuation", label: "Inventory Valuation" },
+        { path: "reports/po-summary", label: "PO Summary" },
+        { path: "reports/po-detail", label: "PO Detail" },
+        { path: "reports/supplier-performance", label: "Supplier Performance" },
+        { path: "reports/production-in-house", label: "Produksi Internal" },
         { path: "reports/hpp-breakdown", label: "HPP Produk" },
       ],
     },

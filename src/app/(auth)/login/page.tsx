@@ -7,39 +7,50 @@ import { createBrowserClient } from "@/lib/pg/browser-client";
 import { useRouter } from "next/navigation";
 import { Eye, EyeOff, Lock, Mail } from "lucide-react";
 
-const DEMO_ACCOUNTS = [
-  {
-    label: "Super Admin",
-    email: "super@arkivworld.com",
-    password: "Arkiv2026*#",
-  },
-] as const;
-
-const DEFAULT_ACCOUNT = DEMO_ACCOUNTS[0];
-
 export default function LoginPage() {
   const router = useRouter();
   const db = createBrowserClient();
 
-  const [email, setEmail] = useState<string>(DEFAULT_ACCOUNT.email);
-  const [password, setPassword] = useState<string>(DEFAULT_ACCOUNT.password);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [transitioning, setTransitioning] = useState(false);
-  const [now, setNow] = useState(new Date());
+  // null sampai mount — hindari hydration mismatch jam/locale SSR vs client
+  const [now, setNow] = useState<Date | null>(null);
   const [wallpaper, setWallpaper] = useState("/bg.png");
+  const [requestedRedirect, setRequestedRedirect] = useState<string | null>(null);
+  const [requestedModule, setRequestedModule] = useState<string | null>(null);
 
   const formattedTime = useMemo(
-    () => now.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }).replace(".", ":"),
+    () =>
+      now
+        ? now
+            .toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })
+            .replace(".", ":")
+        : "--:--",
     [now]
   );
   const formattedDate = useMemo(
-    () => now.toLocaleDateString("id-ID", { weekday: "long", day: "numeric", month: "long" }),
+    () =>
+      now
+        ? now.toLocaleDateString("id-ID", {
+            weekday: "long",
+            day: "numeric",
+            month: "long",
+          })
+        : "\u00a0",
     [now]
   );
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const redirect = params.get("redirect");
+    setRequestedRedirect(redirect?.startsWith("/dashboard") ? redirect : null);
+    setRequestedModule(params.get("module"));
+
+    setNow(new Date());
     const interval = window.setInterval(() => setNow(new Date()), 1000);
     const wallpapers = {
       arkiv: "/bg.png",
@@ -51,16 +62,6 @@ export default function LoginPage() {
     if (saved && wallpapers[saved]) setWallpaper(wallpapers[saved]);
     return () => window.clearInterval(interval);
   }, []);
-
-  const [requestedRedirect] = useState<string | null>(() => {
-    if (typeof window === "undefined") return null;
-    const redirect = new URLSearchParams(window.location.search).get("redirect");
-    return redirect?.startsWith("/dashboard") ? redirect : null;
-  });
-  const [requestedModule] = useState<string | null>(() => {
-    if (typeof window === "undefined") return null;
-    return new URLSearchParams(window.location.search).get("module");
-  });
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -178,61 +179,6 @@ export default function LoginPage() {
               {loading ? "Memverifikasi..." : "Log In"}
             </button>
           </form>
-
-          <div
-            className="mt-4 w-full rounded-[20px] border border-white/15 px-4 py-3 text-left text-xs text-white/80 shadow-lg"
-            style={{
-              background: "rgba(10, 10, 18, 0.22)",
-              backdropFilter: "blur(20px) saturate(140%)",
-              WebkitBackdropFilter: "blur(20px) saturate(140%)",
-            }}
-          >
-            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-white/55">
-              Akun demo
-            </p>
-            <div className="space-y-3">
-              <div>
-                <p className="text-[11px] font-medium text-white/50">Email</p>
-                <div className="mt-1 space-y-1">
-                  {DEMO_ACCOUNTS.map((account) => (
-                    <button
-                      key={account.email}
-                      type="button"
-                      onClick={() => {
-                        setEmail(account.email);
-                        setPassword(account.password);
-                        setError("");
-                      }}
-                      className="block w-full rounded-lg border border-transparent px-2 py-1 text-left font-mono text-[11px] text-white/90 transition hover:border-white/15 hover:bg-white/10"
-                      title={`Gunakan ${account.label}`}
-                    >
-                      {account.email}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <p className="text-[11px] font-medium text-white/50">Password</p>
-                <div className="mt-1 space-y-1">
-                  {DEMO_ACCOUNTS.map((account) => (
-                    <button
-                      key={`${account.email}-password`}
-                      type="button"
-                      onClick={() => {
-                        setEmail(account.email);
-                        setPassword(account.password);
-                        setError("");
-                      }}
-                      className="block w-full rounded-lg border border-transparent px-2 py-1 text-left font-mono text-[11px] text-white/90 transition hover:border-white/15 hover:bg-white/10"
-                      title={`Gunakan ${account.label}`}
-                    >
-                      {account.password}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
         </div>
 
         <div className="flex w-full items-center justify-between text-xs text-white/55">

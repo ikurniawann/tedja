@@ -75,6 +75,7 @@ const settingsSchema = z.object({
   thr_prorate: z.boolean().optional(),
   payroll_day: z.coerce.number().int().min(1).max(31).optional(),
   overtime_multiplier: z.coerce.number().min(0).max(10).optional(),
+  overtime_multiplier_holiday: z.coerce.number().min(0).max(10).optional(),
   overtime_hourly_divisor: z.coerce.number().positive().max(1000).optional(),
   late_deduction_mode: z.enum(["off", "per_minute", "flat"]).optional(),
   late_deduction_amount: rupiah.optional(),

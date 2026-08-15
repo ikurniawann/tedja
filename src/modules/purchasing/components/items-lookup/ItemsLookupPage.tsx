@@ -46,7 +46,7 @@ export function ItemsLookupPage({
   breadcrumbs = [],
   listTitle,
   listDescription,
-  addButtonLabel = "Add Record",
+  addButtonLabel = "Tambah Data",
 }: ItemsLookupPageProps) {
   const config = ITEMS_LOOKUP_CONFIG[lookupType];
   const Icon = LOOKUP_ICONS[lookupType] ?? Search;
@@ -72,7 +72,7 @@ export function ItemsLookupPage({
   useEffect(() => {
     if (listQuery.isError) {
       toast.error(
-        listQuery.error instanceof Error ? listQuery.error.message : "Failed to load records"
+        listQuery.error instanceof Error ? listQuery.error.message : "Gagal memuat data"
       );
     }
   }, [listQuery.isError, listQuery.error]);
@@ -107,10 +107,10 @@ export function ItemsLookupPage({
     if (isSubmitting) return;
     try {
       const json = await saveMutation.mutateAsync({ payload: formData, id: editing?.id });
-      toast.success(json.message || "Record saved successfully");
+      toast.success(json.message || "Data berhasil disimpan");
       setIsDialogOpen(false);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to save record");
+      toast.error(error instanceof Error ? error.message : "Gagal menyimpan data");
     }
   };
 
@@ -118,11 +118,11 @@ export function ItemsLookupPage({
     if (!deleting || isDeleting) return;
     try {
       const json = await deleteMutation.mutateAsync(deleting.id);
-      toast.success(json.message || "Record deleted successfully");
+      toast.success(json.message || "Data berhasil dihapus");
       setIsDeleteDialogOpen(false);
       setDeleting(null);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to delete record");
+      toast.error(error instanceof Error ? error.message : "Gagal menghapus data");
     }
   };
 
@@ -137,7 +137,7 @@ export function ItemsLookupPage({
 
       <PurchasingPageHeader
         title={config.title}
-        description={`${config.description} — ${total} total`}
+        description={`${config.description} — ${total} data`}
         actions={
           <Button onClick={handleOpenAdd} className="purchasing-main-button w-full sm:w-auto">
             <Plus className="mr-2 h-4 w-4" />
@@ -148,10 +148,10 @@ export function ItemsLookupPage({
 
       <PurchasingListSection
         icon={Icon}
-        title={listTitle || `${config.title} List`}
+        title={listTitle || `Daftar ${config.title}`}
         description={
           listDescription ||
-          "Review code, name, description, and active status for each record."
+          "Tinjau kode, nama, deskripsi, dan status aktif setiap data."
         }
         toolbar={
           <div className="flex w-full flex-col gap-3 sm:w-auto md:flex-row md:items-center">
@@ -160,7 +160,7 @@ export function ItemsLookupPage({
               <Input
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search code or name..."
+                placeholder="Cari kode atau nama..."
                 className="h-10 bg-white pl-10 pr-10 text-sm focus:border-pink-400 focus:ring-2 focus:ring-pink-100"
               />
               {searchQuery && (
@@ -168,7 +168,7 @@ export function ItemsLookupPage({
                   type="button"
                   onClick={() => setSearchQuery("")}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 transition-colors hover:text-gray-700"
-                  aria-label="Clear search"
+                  aria-label="Hapus pencarian"
                 >
                   <X className="h-4 w-4" />
                 </button>
@@ -176,7 +176,7 @@ export function ItemsLookupPage({
             </label>
             {search && (
               <Button variant="outline" onClick={handleResetSearch} className="h-10 shrink-0 rounded-lg">
-                Reset
+                Atur Ulang
               </Button>
             )}
           </div>
@@ -186,13 +186,13 @@ export function ItemsLookupPage({
           {loading ? (
             <div className="flex items-center justify-center py-12 text-sm text-gray-500">
               <Loader2 className="mr-2 h-5 w-5 animate-spin text-pink-600" />
-              Loading records...
+              Memuat data...
             </div>
           ) : records.length === 0 ? (
             <div className="py-14 text-center">
               <Icon className="mx-auto mb-4 h-12 w-12 text-gray-300" />
               <p className="text-gray-500">
-                {search ? "No records match the current search" : "No records yet"}
+                {search ? "Tidak ada data yang cocok dengan pencarian" : "Belum ada data"}
               </p>
               {!search && (
                 <Button variant="outline" onClick={handleOpenAdd} className="purchasing-secondary-button mt-4">
@@ -205,11 +205,11 @@ export function ItemsLookupPage({
               <table className="min-w-full text-sm">
                 <thead className="border-b border-gray-100 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
                   <tr>
-                    <th className="px-4 py-3 text-left font-semibold">Code</th>
-                    <th className="px-4 py-3 text-left font-semibold">Name</th>
-                    <th className="px-4 py-3 text-left font-semibold">Description</th>
+                    <th className="px-4 py-3 text-left font-semibold">Kode</th>
+                    <th className="px-4 py-3 text-left font-semibold">Nama</th>
+                    <th className="px-4 py-3 text-left font-semibold">Deskripsi</th>
                     <th className="px-4 py-3 text-center font-semibold">Status</th>
-                    <th className="px-4 py-3 text-right font-semibold">Actions</th>
+                    <th className="px-4 py-3 text-right font-semibold">Aksi</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -227,7 +227,7 @@ export function ItemsLookupPage({
                               : "border-gray-200 bg-gray-50 text-gray-600"
                           }
                         >
-                          {record.is_active ? "Active" : "Inactive"}
+                          {record.is_active ? "Aktif" : "Nonaktif"}
                         </Badge>
                       </td>
                       <td className="px-4 py-3 text-right">
@@ -236,7 +236,7 @@ export function ItemsLookupPage({
                             variant="ghost"
                             size="sm"
                             className="cursor-pointer"
-                            title="Edit"
+                            title="Ubah"
                             onClick={() => handleOpenEdit(record)}
                           >
                             <Pencil className="h-4 w-4 text-gray-600" />
@@ -245,7 +245,7 @@ export function ItemsLookupPage({
                             variant="ghost"
                             size="sm"
                             className="cursor-pointer text-red-500 hover:text-red-600"
-                            title="Delete"
+                            title="Hapus"
                             onClick={() => {
                               setDeleting(record);
                               setIsDeleteDialogOpen(true);
@@ -267,24 +267,24 @@ export function ItemsLookupPage({
       <FormModal
         open={isDialogOpen}
         onOpenChange={setIsDialogOpen}
-        title={editing ? `Edit ${config.title}` : `Add ${config.title}`}
-        description={editing ? "Update the selected record" : "Complete the information below"}
+        title={editing ? `Ubah ${config.title}` : `Tambah ${config.title}`}
+        description={editing ? "Perbarui data yang dipilih" : "Lengkapi informasi di bawah"}
         onSubmit={handleSubmit}
         loading={isSubmitting}
         submitDisabled={!formData.code || !formData.nama}
-        submitLabel={editing ? "Save Changes" : "Save"}
-        cancelLabel="Cancel"
-        loadingLabel="Saving..."
+        submitLabel={editing ? "Simpan Perubahan" : "Simpan"}
+        cancelLabel="Batal"
+        loadingLabel="Menyimpan..."
       >
         <div>
           <FormFieldLabel htmlFor="code" required>
-            Code
+            Kode
           </FormFieldLabel>
           <Input
             id="code"
             value={formData.code}
             onChange={(e) => setFormData({ ...formData, code: e.target.value.toUpperCase() })}
-            placeholder="EXAMPLE_CODE"
+            placeholder="CONTOH_KODE"
             maxLength={30}
             required
             className={formInputClassName}
@@ -292,32 +292,32 @@ export function ItemsLookupPage({
         </div>
         <div>
           <FormFieldLabel htmlFor="nama" required>
-            Name
+            Nama
           </FormFieldLabel>
           <Input
             id="nama"
             value={formData.nama}
             onChange={(e) => setFormData({ ...formData, nama: e.target.value })}
-            placeholder="Name"
+            placeholder="Nama"
             maxLength={100}
             required
             className={formInputClassName}
           />
         </div>
         <div>
-          <FormFieldLabel htmlFor="deskripsi">Description</FormFieldLabel>
+          <FormFieldLabel htmlFor="deskripsi">Deskripsi</FormFieldLabel>
           <Textarea
             id="deskripsi"
             value={formData.deskripsi}
             onChange={(e) => setFormData({ ...formData, deskripsi: e.target.value })}
-            placeholder="Optional description"
+            placeholder="Deskripsi opsional"
             rows={3}
             className="min-h-24 resize-none bg-white text-sm focus:border-pink-400 focus:ring-2 focus:ring-pink-100"
           />
         </div>
         <div className="flex items-center justify-between rounded-lg border border-gray-200/70 px-3 py-2.5">
           <FormFieldLabel htmlFor="is_active" className="mb-0">
-            Active status
+            Status aktif
           </FormFieldLabel>
           <Switch
             id="is_active"
@@ -330,11 +330,11 @@ export function ItemsLookupPage({
       <ConfirmDialog
         open={isDeleteDialogOpen}
         onOpenChange={setIsDeleteDialogOpen}
-        title="Delete Record?"
-        description={`Are you sure you want to delete "${deleting?.nama ?? ""}"? This action cannot be undone.`}
-        confirmLabel="Delete"
-        cancelLabel="Cancel"
-        loadingLabel="Deleting..."
+        title="Hapus Data?"
+        description={`Yakin ingin menghapus "${deleting?.nama ?? ""}"? Tindakan ini tidak dapat dibatalkan.`}
+        confirmLabel="Hapus"
+        cancelLabel="Batal"
+        loadingLabel="Menghapus..."
         loading={isDeleting}
         onConfirm={handleDelete}
       />

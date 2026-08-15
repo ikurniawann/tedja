@@ -27,11 +27,11 @@ import {
 } from "../types";
 
 const STATUS_OPTIONS = [
-  { value: "all", label: "All Statuses" },
-  { value: "draft", label: "Draft" },
-  { value: "in_progress", label: "Counting in Progress" },
-  { value: "completed", label: "Completed" },
-  { value: "cancelled", label: "Cancelled" },
+  { value: "all", label: "Semua Status" },
+  { value: "draft", label: "Draf" },
+  { value: "in_progress", label: "Perhitungan Berjalan" },
+  { value: "completed", label: "Selesai" },
+  { value: "cancelled", label: "Dibatalkan" },
 ];
 
 function formatQty(value: number) {
@@ -40,7 +40,7 @@ function formatQty(value: number) {
 
 function formatDate(dateStr?: string | null) {
   if (!dateStr) return "—";
-  return new Date(dateStr).toLocaleDateString("en-US", {
+  return new Date(dateStr).toLocaleDateString("id-ID", {
     day: "2-digit",
     month: "short",
     year: "numeric",
@@ -78,19 +78,19 @@ export function StockOpnameListPage() {
   return (
     <div className="space-y-6">
       <PurchasingPageHeader
-        title="Stock Opname"
-        description={`Count physical raw material stock and reconcile variances — ${total} sessions`}
+        title="Stok Opname"
+        description={`Hitung stok fisik bahan baku dan rekonsiliasi selisih — ${total} sesi`}
         actions={
           <>
             <Link href={RM_ROUTES.inventoryOpnameInsert}>
               <Button className="purchasing-main-button w-full sm:w-auto">
                 <PlusIcon className="mr-2 h-4 w-4" />
-                Create Stock Opname
+                Buat Stok Opname
               </Button>
             </Link>
             <Link href={RM_ROUTES.inventoryStock}>
               <Button variant="outline" className="purchasing-secondary-button w-full sm:w-auto">
-                View Stock
+                Lihat Stok
               </Button>
             </Link>
           </>
@@ -100,13 +100,13 @@ export function StockOpnameListPage() {
       <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
         <Card className="border-gray-200/70 shadow-xs">
           <CardContent className="p-4">
-            <p className="text-xs font-medium text-gray-500">Total Sessions</p>
+            <p className="text-xs font-medium text-gray-500">Total Sesi</p>
             <p className="mt-1 text-2xl font-bold text-gray-900">{total}</p>
           </CardContent>
         </Card>
         <Card className="border-gray-200/70 shadow-xs">
           <CardContent className="p-4">
-            <p className="text-xs font-medium text-gray-500">Counting in Progress</p>
+            <p className="text-xs font-medium text-gray-500">Perhitungan Berjalan</p>
             <p className="mt-1 text-2xl font-bold text-amber-600">
               {items.filter((item) => item.status === "in_progress").length}
             </p>
@@ -114,7 +114,7 @@ export function StockOpnameListPage() {
         </Card>
         <Card className="border-gray-200/70 shadow-xs">
           <CardContent className="p-4">
-            <p className="text-xs font-medium text-gray-500">Completed</p>
+            <p className="text-xs font-medium text-gray-500">Selesai</p>
             <p className="mt-1 text-2xl font-bold text-emerald-600">
               {items.filter((item) => item.status === "completed").length}
             </p>
@@ -122,7 +122,7 @@ export function StockOpnameListPage() {
         </Card>
         <Card className="border-gray-200/70 shadow-xs">
           <CardContent className="p-4">
-            <p className="text-xs font-medium text-gray-500">Draft</p>
+            <p className="text-xs font-medium text-gray-500">Draf</p>
             <p className="mt-1 text-2xl font-bold text-gray-700">
               {items.filter((item) => item.status === "draft").length}
             </p>
@@ -132,8 +132,8 @@ export function StockOpnameListPage() {
 
       <PurchasingListSection
         icon={ClipboardDocumentListIcon}
-        title="Stock Opname List"
-        description="Physical stock counting sessions by stall"
+        title="Daftar Stok Opname"
+        description="Sesi perhitungan stok fisik per stall"
         toolbar={
           <div className="flex w-full flex-col gap-3 lg:flex-row lg:items-center">
             <label className="relative flex-1 lg:w-80">
@@ -141,7 +141,7 @@ export function StockOpnameListPage() {
               <Input
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search opname number..."
+                placeholder="Cari nomor opname..."
                 className="h-10 border-gray-200/80 pl-9"
               />
             </label>
@@ -162,7 +162,7 @@ export function StockOpnameListPage() {
               disabled={loading}
             >
               <ArrowPathIcon className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-              Refresh
+              Muat Ulang
             </Button>
           </div>
         }
@@ -171,28 +171,28 @@ export function StockOpnameListPage() {
           <table className="w-full min-w-[900px] text-sm">
             <thead>
               <tr className="border-b border-gray-200/70 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
-                <th className="px-3 py-3">Number</th>
-                <th className="px-3 py-3">Date</th>
+                <th className="px-3 py-3">Nomor</th>
+                <th className="px-3 py-3">Tanggal</th>
                 <th className="px-3 py-3">Stall</th>
-                <th className="px-3 py-3 text-right">Lines</th>
-                <th className="px-3 py-3 text-right">Counted</th>
-                <th className="px-3 py-3 text-right">Variance</th>
+                <th className="px-3 py-3 text-right">Baris</th>
+                <th className="px-3 py-3 text-right">Terhitung</th>
+                <th className="px-3 py-3 text-right">Selisih</th>
                 <th className="px-3 py-3">Status</th>
-                <th className="px-3 py-3 text-right">Actions</th>
+                <th className="px-3 py-3 text-right">Aksi</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
                   <td colSpan={8} className="px-3 py-12 text-center text-gray-400">
-                    Loading stock opname sessions...
+                    Memuat sesi stok opname...
                   </td>
                 </tr>
               ) : items.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="px-3 py-12 text-center text-gray-400">
                     <ClipboardDocumentListIcon className="mx-auto mb-2 h-8 w-8 text-gray-300" />
-                    No stock opname sessions yet
+                    Belum ada sesi stok opname
                   </td>
                 </tr>
               ) : (
@@ -232,14 +232,14 @@ export function StockOpnameListPage() {
                         <Link href={RM_ROUTES.inventoryOpnameContinue(item.id)}>
                           <Button variant="ghost" size="sm" className="h-8 gap-1 text-pink-700">
                             <PencilSquareIcon className="h-4 w-4" />
-                            Continue
+                            Lanjutkan
                           </Button>
                         </Link>
                       ) : (
                         <Link href={RM_ROUTES.inventoryOpnameDetail(item.id)}>
                           <Button variant="ghost" size="sm" className="h-8 gap-1 text-pink-700">
                             <EyeIcon className="h-4 w-4" />
-                            View
+                            Detail
                           </Button>
                         </Link>
                       )}

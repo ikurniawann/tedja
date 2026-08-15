@@ -14,6 +14,7 @@ type StockRow = {
   source_product_id?: string | null;
   konversi_factor?: number | string | null;
   satuan_kecil_id?: string | null;
+  satuan_besar_id?: string | null;
   satuan_kecil_nama?: string | null;
   satuan_besar_nama?: string | null;
 };
@@ -23,14 +24,26 @@ function toNumber(value: unknown) {
   return Number.isFinite(numeric) ? numeric : 0;
 }
 
-function normalizeToSmallUnit(
+/** Unit cost aligned to the BOM line's unit (besar vs kecil). */
+function unitCostForBomLine(
   baseCost: number,
-  konversiFactor?: number | string | null,
-  satuanKecilId?: string | null
+  bomSatuanId: string | null | undefined,
+  stock?: StockRow | null
 ) {
-  const factor = toNumber(konversiFactor);
-  if (satuanKecilId && factor > 0) return baseCost / factor;
-  return baseCost;
+  const avgCost = toNumber(baseCost);
+  if (!stock) return avgCost;
+
+  if (
+    bomSatuanId &&
+    stock.satuan_besar_id &&
+    bomSatuanId === stock.satuan_besar_id
+  ) {
+    return avgCost;
+  }
+
+  const factor = toNumber(stock.konversi_factor);
+  if (stock.satuan_kecil_id && factor > 0) return avgCost / factor;
+  return avgCost;
 }
 
 // GET /api/purchasing/cogs/product/:produk_id
@@ -106,7 +119,7 @@ export async function GET(
       ? await db
           .from("v_raw_materials_stock")
           .select(
-            "id, qty_onhand, qty_on_order, avg_cost, material_type, source_product_id, konversi_factor, satuan_kecil_id, satuan_kecil_nama, satuan_besar_nama"
+            "id, qty_onhand, qty_on_order, avg_cost, material_type, source_product_id, konversi_factor, satuan_kecil_id, satuan_besar_id, satuan_kecil_nama, satuan_besar_nama"
           )
           .in("id", materialIds)
       : { data: [], error: null };
@@ -131,10 +144,10 @@ export async function GET(
       const qtyRequired = toNumber(bom.qty_required);
       const wasteFactor = toNumber(bom.waste_factor);
       const effectiveQty = qtyRequired * (1 + wasteFactor);
-      const unitCost = normalizeToSmallUnit(
+      const unitCost = unitCostForBomLine(
         toNumber(stock?.avg_cost),
-        stock?.konversi_factor,
-        stock?.satuan_kecil_id
+        bom.satuan_id,
+        stock
       );
       const subtotal = effectiveQty * unitCost;
       totalBomCost += subtotal;

@@ -50,18 +50,20 @@ export function EditPRPage({ params }: EditPRPageProps) {
     try {
       await updateMutation.mutateAsync({ id, payload: { ...data, action } });
       toast.success(
-        action === "submit" ? "Purchase request submitted" : "Purchase request changes saved"
+        action === "submit"
+          ? "Purchase request berhasil diajukan"
+          : "Perubahan purchase request berhasil disimpan"
       );
       router.push(`/dashboard/purchasing/pr/${id}?updated=${action}`);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to save purchase request");
+      toast.error(err instanceof Error ? err.message : "Gagal menyimpan purchase request");
     }
   }
 
   if (prLoading || formLoading) {
     return (
       <div className="flex items-center justify-center py-20 text-sm text-gray-500">
-        Loading purchase request...
+        Memuat purchase request...
       </div>
     );
   }
@@ -69,7 +71,7 @@ export function EditPRPage({ params }: EditPRPageProps) {
   if (prError || !pr || !formData || !initialData) {
     return (
       <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-        {prError instanceof Error ? prError.message : "Purchase request not found"}
+        {prError instanceof Error ? prError.message : "Purchase request tidak ditemukan"}
       </div>
     );
   }
@@ -79,8 +81,8 @@ export function EditPRPage({ params }: EditPRPageProps) {
       <PRDetailToast />
       <PurchasingFormHeader
         backHref={`/dashboard/purchasing/pr/${id}`}
-        title="Edit Purchase Request"
-        description="Changes are only allowed while the purchase request is still a draft"
+        title="Ubah Purchase Request"
+        description="Perubahan hanya dapat dilakukan selama purchase request masih berstatus draf"
       />
 
       <PRForm

@@ -44,7 +44,9 @@ const TAPERA_FIELDS: FieldDef[] = [
 ];
 
 const LAINNYA_FIELDS: FieldDef[] = [
-  { key: "overtime_multiplier", label: "Pengali Lembur", suffix: "×" },
+  { key: "overtime_multiplier", label: "Pengali Lembur (hari kerja)", suffix: "×" },
+  // EPIC-036 Fase F — PP 35/2021 membedakan tarif lembur hari libur resmi.
+  { key: "overtime_multiplier_holiday", label: "Pengali Lembur (hari libur)", suffix: "×" },
   { key: "overtime_hourly_divisor", label: "Pembagi Upah/Jam Lembur", suffix: "std 173" },
   { key: "payroll_day", label: "Tanggal Gajian", suffix: "tgl" },
   { key: "thr_eligible_months", label: "Min. Bulan Kerja THR", suffix: "bln" },

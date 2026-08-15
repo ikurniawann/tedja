@@ -28,18 +28,6 @@ import { useAuth } from "@/hooks/use-auth";
 import { usePurchaseRequestList } from "../queries";
 import type { PRStatusFilter as PRStatus } from "../types";
 
-const PR_STATUS_LABEL_OVERRIDES: Record<string, string> = {
-  rejected: "Rejected",
-  converted: "Purchase Order Created",
-};
-
-const PRIORITY_LABEL_OVERRIDES: Record<string, string> = {
-  low: "Low",
-  medium: "Medium",
-  high: "High",
-  urgent: "Urgent",
-};
-
 function canCreatePurchaseOrder(
   pr: { status: string; converted_po_id?: string | null },
   role?: string
@@ -79,7 +67,7 @@ export function PRListPage() {
   useEffect(() => {
     if (listQuery.isError) {
       console.error("Error fetching purchase requests:", listQuery.error);
-      toast.error("Failed to load purchase requests");
+      toast.error("Gagal memuat purchase request");
     }
   }, [listQuery.isError, listQuery.error]);
 
@@ -99,7 +87,9 @@ export function PRListPage() {
     handledCreatedToast.current = created;
 
     toast.success(
-      created === "draft" ? "Draft purchase request saved" : "Purchase request submitted"
+      created === "draft"
+        ? "Draf purchase request berhasil disimpan"
+        : "Purchase request berhasil diajukan"
     );
     router.replace("/dashboard/purchasing/pr");
   }, [router, searchParams]);
@@ -112,14 +102,14 @@ export function PRListPage() {
   }
 
   const statusOptions = [
-    { value: "all", label: "All Statuses" },
-    { value: "draft", label: "Draft" },
-    { value: "pending_head", label: "Pending Head Department" },
-    { value: "pending_finance", label: "Pending Finance" },
-    { value: "pending_direksi", label: "Pending Director" },
-    { value: "approved", label: "Approved" },
-    { value: "rejected", label: "Rejected" },
-    { value: "converted", label: "Purchase Order Created" },
+    { value: "all", label: "Semua Status" },
+    { value: "draft", label: "Draf" },
+    { value: "pending_head", label: "Menunggu Persetujuan Head Departemen" },
+    { value: "pending_finance", label: "Menunggu Persetujuan Finance" },
+    { value: "pending_direksi", label: "Menunggu Persetujuan Direktur" },
+    { value: "approved", label: "Disetujui" },
+    { value: "rejected", label: "Ditolak" },
+    { value: "converted", label: "Purchase Order Dibuat" },
   ];
   const isFilterActive = statusFilter !== "all";
 
@@ -127,12 +117,12 @@ export function PRListPage() {
     <div className="space-y-6">
       <PurchasingPageHeader
         title="Purchase Request"
-        description={`Manage purchase requests — ${total} total`}
+        description={`Kelola purchase request — total ${total}`}
         actions={
           <Link href="/dashboard/purchasing/pr/insert">
             <Button className="h-10 w-full gap-2 rounded-lg bg-pink-600 px-3 text-sm font-semibold text-white shadow-sm hover:bg-pink-700 sm:w-auto">
               <Plus className="mr-2 h-4 w-4" />
-              Create Purchase Request
+              Tambah Purchase Request
             </Button>
           </Link>
         }
@@ -140,14 +130,14 @@ export function PRListPage() {
 
       <PurchasingListSection
         icon={FileText}
-        title="Purchase Request List"
-        description="Track purchase requests by document number, status, and priority."
+        title="Daftar Purchase Request"
+        description="Pantau purchase request berdasarkan nomor dokumen, status, dan prioritas."
         toolbar={
           <div className="flex w-full flex-col gap-3 sm:w-auto md:flex-row md:items-center">
             <label className="relative w-full md:w-80">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
               <Input
-                placeholder="Search purchase request number..."
+                placeholder="Cari nomor purchase request..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="h-10 bg-white pl-10 pr-10 text-sm focus:border-pink-400 focus:ring-2 focus:ring-pink-100"
@@ -157,7 +147,7 @@ export function PRListPage() {
                   type="button"
                   onClick={() => setSearchQuery("")}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 transition-colors hover:text-gray-700"
-                  aria-label="Clear search"
+                  aria-label="Hapus pencarian"
                 >
                   <X className="h-4 w-4" />
                 </button>
@@ -185,7 +175,7 @@ export function PRListPage() {
 
             {(search || isFilterActive || page > 1) && (
               <Button variant="outline" onClick={handleResetFilters} className="h-10 flex-shrink-0 rounded-lg">
-                Reset
+                Atur Ulang
               </Button>
             )}
           </div>
@@ -208,8 +198,8 @@ export function PRListPage() {
                       setPage(1);
                     }}
                     placeholder="Filter status..."
-                    searchPlaceholder="Search status..."
-                    emptyMessage="No status found"
+                    searchPlaceholder="Cari status..."
+                    emptyMessage="Status tidak ditemukan"
                     className="!w-full h-9 text-sm"
                   />
                 </div>
@@ -220,18 +210,18 @@ export function PRListPage() {
           {loading ? (
             <div className="py-12 text-center">
               <div className="mx-auto h-8 w-8 animate-spin rounded-full border-b-2 border-gray-900" />
-              <p className="mt-2 text-sm text-gray-500">Loading purchase requests...</p>
+              <p className="mt-2 text-sm text-gray-500">Memuat purchase request...</p>
             </div>
           ) : prs.length === 0 ? (
             <div className="py-14 text-center">
               <FileText className="mx-auto mb-4 h-12 w-12 text-gray-300" />
-              <p className="text-gray-500">No purchase requests found</p>
+              <p className="text-gray-500">Purchase request tidak ditemukan</p>
               <Link href="/dashboard/purchasing/pr/insert">
                 <Button
                   variant="outline"
                   className="mt-4 h-10 gap-2 rounded-lg border-pink-200 bg-white px-3 text-sm font-medium text-pink-700 shadow-sm hover:!border-pink-200 hover:!bg-pink-50 hover:!text-pink-700"
                 >
-                  Create First Purchase Request
+                  Tambah Purchase Request Pertama
                 </Button>
               </Link>
             </div>
@@ -241,21 +231,21 @@ export function PRListPage() {
                 <table className="min-w-full text-sm">
                   <thead className="border-b border-gray-100 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
                     <tr>
-                      <th className="px-4 py-3 text-left font-semibold">Number</th>
-                      <th className="px-4 py-3 text-left font-semibold">Date</th>
-                      <th className="px-4 py-3 text-left font-semibold">Department</th>
-                      <th className="px-4 py-3 text-left font-semibold">Requester</th>
-                      <th className="px-4 py-3 text-center font-semibold">Priority</th>
+                      <th className="px-4 py-3 text-left font-semibold">Nomor</th>
+                      <th className="px-4 py-3 text-left font-semibold">Tanggal</th>
+                      <th className="px-4 py-3 text-left font-semibold">Departemen</th>
+                      <th className="px-4 py-3 text-left font-semibold">Diminta Oleh</th>
+                      <th className="px-4 py-3 text-center font-semibold">Prioritas</th>
                       <th className="px-4 py-3 text-center font-semibold">Status</th>
-                      <th className="px-4 py-3 text-right font-semibold">Actions</th>
+                      <th className="px-4 py-3 text-right font-semibold">Aksi</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {prs.map((pr) => {
                       const statusBadge = getPRStatusLabel(pr.status);
                       const priorityBadge = getPriorityBadge(pr.priority);
-                      const statusLabel = PR_STATUS_LABEL_OVERRIDES[pr.status] ?? statusBadge.label;
-                      const priorityLabel = PRIORITY_LABEL_OVERRIDES[pr.priority] ?? priorityBadge.label;
+                      const statusLabel = statusBadge.label;
+                      const priorityLabel = priorityBadge.label;
 
                       return (
                         <tr
@@ -278,19 +268,19 @@ export function PRListPage() {
                           <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                             <div className="flex items-center justify-end gap-2">
                               <Link href={`/dashboard/purchasing/pr/${pr.id}`}>
-                                <Button variant="ghost" size="sm" title="View detail" className="cursor-pointer">
+                                <Button variant="ghost" size="sm" title="Detail" className="cursor-pointer">
                                   <Eye className="h-4 w-4" />
                                 </Button>
                               </Link>
                               {pr.status === "draft" && (
                                 <Link href={`/dashboard/purchasing/pr/edit/${pr.id}`}>
-                                  <Button variant="ghost" size="sm" title="Edit" className="cursor-pointer">
+                                  <Button variant="ghost" size="sm" title="Ubah" className="cursor-pointer">
                                     <Pencil className="h-4 w-4" />
                                   </Button>
                                 </Link>
                               )}
                               <Link href={`/dashboard/purchasing/print/pr/${pr.id}`} target="_blank">
-                                <Button variant="ghost" size="sm" title="Print" className="cursor-pointer">
+                                <Button variant="ghost" size="sm" title="Cetak" className="cursor-pointer">
                                   <Printer className="h-4 w-4" />
                                 </Button>
                               </Link>
@@ -299,7 +289,7 @@ export function PRListPage() {
                                   <Button
                                     variant="ghost"
                                     size="sm"
-                                    title="Create Purchase Order"
+                                    title="Buat Purchase Order"
                                     className="cursor-pointer"
                                   >
                                     <FileText className="h-4 w-4 text-pink-600" />
@@ -311,7 +301,7 @@ export function PRListPage() {
                                   <Button
                                     variant="ghost"
                                     size="sm"
-                                    title="View Purchase Order"
+                                    title="Lihat Purchase Order"
                                     className="cursor-pointer"
                                   >
                                     <FileText className="h-4 w-4 text-blue-600" />

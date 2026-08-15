@@ -27,11 +27,6 @@ import { useNavFrom } from "@/lib/iam/use-nav-from";
 import { usePurchaseRequest } from "../queries";
 import type { PRDetailItem } from "../types";
 
-const PR_STATUS_LABEL_OVERRIDES: Record<string, string> = {
-  rejected: "Rejected",
-  converted: "Purchase Order Created",
-};
-
 const PR_STATUS_STYLES: Record<string, string> = {
   draft: "border-gray-200 bg-gray-50 text-gray-700",
   pending_head: "border-amber-200 bg-amber-50 text-amber-700",
@@ -91,7 +86,7 @@ export function PRDetailPage({ params }: PRDetailPageProps) {
   const navFrom = useNavFrom();
   const fromApproval = navFrom === NAV_FROM_APPROVAL_PR;
   const backHref = fromApproval ? RM_ROUTES.approvalPr : RM_ROUTES.purchasingPr;
-  const backLabel = fromApproval ? "Back to Approvals" : "Back";
+  const backLabel = fromApproval ? "Kembali ke Persetujuan" : "Kembali";
   const editHref = fromApproval
     ? appendNavFrom(RM_ROUTES.purchasingPrEdit(id), NAV_FROM_APPROVAL_PR)
     : RM_ROUTES.purchasingPrEdit(id);
@@ -101,7 +96,7 @@ export function PRDetailPage({ params }: PRDetailPageProps) {
     return (
       <div className="flex min-h-56 items-center justify-center text-sm text-gray-500">
         <Loader2 className="mr-2 h-4 w-4 animate-spin text-pink-600" />
-        Loading purchase request...
+        Memuat purchase request...
       </div>
     );
   }
@@ -117,7 +112,7 @@ export function PRDetailPage({ params }: PRDetailPageProps) {
         </Link>
         <Card className="border-gray-200/70 shadow-xs">
           <CardContent className="py-12 text-center text-sm text-gray-500">
-            {error instanceof Error ? error.message : "Purchase request not found or could not be loaded."}
+            {error instanceof Error ? error.message : "Purchase request tidak ditemukan atau gagal dimuat."}
           </CardContent>
         </Card>
       </div>
@@ -126,7 +121,7 @@ export function PRDetailPage({ params }: PRDetailPageProps) {
 
   const statusBadge = getPRStatusLabel(pr.status);
   const priorityBadge = getPriorityBadge(pr.priority);
-  const statusLabel = PR_STATUS_LABEL_OVERRIDES[pr.status] ?? statusBadge.label;
+  const statusLabel = statusBadge.label;
   const priorityLabel = priorityBadge.label;
   const statusStyle = PR_STATUS_STYLES[pr.status] ?? "border-gray-200 bg-gray-50 text-gray-700";
   const priorityStyle = PRIORITY_STYLES[pr.priority] ?? "border-gray-200 bg-gray-50 text-gray-700";
@@ -155,7 +150,7 @@ export function PRDetailPage({ params }: PRDetailPageProps) {
               </Badge>
             </div>
             <p className="mt-1 text-sm text-gray-500">
-              {formatDate(pr.created_at)} · {requesterName} · Priority {priorityLabel}
+              {formatDate(pr.created_at)} · {requesterName} · Prioritas {priorityLabel}
             </p>
           </div>
         </div>
@@ -165,7 +160,7 @@ export function PRDetailPage({ params }: PRDetailPageProps) {
             <Link href={editHref}>
               <Button variant="outline" className="purchasing-secondary-button w-full sm:w-auto">
                 <Pencil className="mr-2 h-4 w-4" />
-                Edit
+                Ubah
               </Button>
             </Link>
           )}
@@ -173,14 +168,14 @@ export function PRDetailPage({ params }: PRDetailPageProps) {
           <Link href={`/dashboard/purchasing/print/pr/${id}`} target="_blank">
             <Button variant="outline" className="purchasing-secondary-button w-full cursor-pointer sm:w-auto">
               <Printer className="mr-2 h-4 w-4" />
-              Print
+              Cetak
             </Button>
           </Link>
           {canCreatePO && (
             <Link href={`${RM_ROUTES.purchasingPoInsert}?pr_id=${id}`}>
               <Button className="purchasing-main-button w-full sm:w-auto">
                 <FileText className="mr-2 h-4 w-4" />
-                Create Purchase Order
+                Buat Purchase Order
               </Button>
             </Link>
           )}
@@ -188,7 +183,7 @@ export function PRDetailPage({ params }: PRDetailPageProps) {
             <Link href={RM_ROUTES.purchasingPoDetail(pr.converted_po_id)}>
               <Button className="purchasing-main-button w-full sm:w-auto">
                 <FileText className="mr-2 h-4 w-4" />
-                View Purchase Order
+                Lihat Purchase Order
               </Button>
             </Link>
           )}
@@ -201,18 +196,18 @@ export function PRDetailPage({ params }: PRDetailPageProps) {
             <CardHeader className="border-b border-gray-200/70 pb-3">
               <CardTitle className="flex items-center gap-2 text-base">
                 <ClipboardList className="h-4 w-4 text-pink-600" />
-                Request Information
+                Informasi Permintaan
               </CardTitle>
             </CardHeader>
             <CardContent className="grid gap-4 p-4 md:grid-cols-2">
-              <DetailField label="Department" value={pr.department?.name || pr.department_name || "-"} />
-              <DetailField label="Requester" value={requesterName} />
+              <DetailField label="Departemen" value={pr.department?.name || pr.department_name || "-"} />
+              <DetailField label="Diminta Oleh" value={requesterName} />
               <DetailField
-                label="Required Date"
+                label="Tanggal Dibutuhkan"
                 value={pr.required_date ? formatDate(pr.required_date) : "-"}
               />
               <div>
-                <dt className="text-xs text-gray-500">Priority</dt>
+                <dt className="text-xs text-gray-500">Prioritas</dt>
                 <dd className="mt-1">
                   <Badge variant="outline" className={priorityStyle}>
                     {priorityLabel}
@@ -221,13 +216,13 @@ export function PRDetailPage({ params }: PRDetailPageProps) {
               </div>
               {pr.notes && (
                 <div className="md:col-span-2 border-t border-gray-200/70 pt-4">
-                  <p className="text-xs font-medium text-gray-500">Notes</p>
+                  <p className="text-xs font-medium text-gray-500">Catatan</p>
                   <p className="mt-1 text-sm text-gray-700">{pr.notes}</p>
                 </div>
               )}
               {pr.status === "rejected" && pr.rejection_reason && (
                 <div className="md:col-span-2 rounded-xl border border-red-200/80 bg-red-50/60 p-4 text-sm text-red-800">
-                  <p className="font-medium">Rejection Reason</p>
+                  <p className="font-medium">Alasan Penolakan</p>
                   <p className="mt-1">{pr.rejection_reason}</p>
                 </div>
               )}
@@ -238,23 +233,23 @@ export function PRDetailPage({ params }: PRDetailPageProps) {
             <CardHeader className="border-b border-gray-200/70 pb-3">
               <CardTitle className="flex items-center gap-2 text-base">
                 <FileText className="h-4 w-4 text-pink-600" />
-                Requested Items
+                Item Diminta
               </CardTitle>
             </CardHeader>
             <CardContent className="p-0">
               {!pr.items?.length ? (
-                <div className="py-12 text-center text-sm text-gray-500">No line items found.</div>
+                <div className="py-12 text-center text-sm text-gray-500">Item tidak ditemukan.</div>
               ) : (
                 <div className="overflow-x-auto p-4">
                   <table className="min-w-full text-sm">
                     <thead className="border-b border-gray-100 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
                       <tr>
                         <th className="px-4 py-3 text-left font-semibold">#</th>
-                        <th className="px-4 py-3 text-left font-semibold">Raw Material</th>
+                        <th className="px-4 py-3 text-left font-semibold">Bahan Baku</th>
                         <th className="px-4 py-3 text-right font-semibold">Qty</th>
-                        <th className="px-4 py-3 text-center font-semibold">Unit</th>
-                        <th className="px-4 py-3 text-right font-semibold">Est. Unit Price</th>
-                        <th className="px-4 py-3 text-right font-semibold">Line Total</th>
+                        <th className="px-4 py-3 text-center font-semibold">Satuan</th>
+                        <th className="px-4 py-3 text-right font-semibold">Est. Harga Satuan</th>
+                        <th className="px-4 py-3 text-right font-semibold">Subtotal</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
@@ -293,7 +288,7 @@ export function PRDetailPage({ params }: PRDetailPageProps) {
 
           <Card className="border-gray-200/70 shadow-xs">
             <CardHeader className="border-b border-gray-200/70 pb-3">
-              <CardTitle className="text-base">Approval Timeline</CardTitle>
+              <CardTitle className="text-base">Riwayat Persetujuan</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4 pt-4">
               <div className="flex items-start gap-3">
@@ -301,7 +296,7 @@ export function PRDetailPage({ params }: PRDetailPageProps) {
                   <User className="h-4 w-4 text-pink-600" />
                 </div>
                 <div>
-                  <p className="font-medium text-gray-900">Submitted by {requesterName}</p>
+                  <p className="font-medium text-gray-900">Diajukan oleh {requesterName}</p>
                   <p className="text-sm text-gray-500">{formatDate(pr.created_at)}</p>
                 </div>
               </div>
@@ -313,7 +308,7 @@ export function PRDetailPage({ params }: PRDetailPageProps) {
                   </div>
                   <div>
                     <p className="font-medium text-gray-900">
-                      Approved by Head of Department
+                      Disetujui oleh Head Departemen
                       {pr.approved_head_name ? ` (${pr.approved_head_name})` : ""}
                     </p>
                     <p className="text-sm text-gray-500">{formatDate(pr.approved_at_head)}</p>
@@ -328,7 +323,7 @@ export function PRDetailPage({ params }: PRDetailPageProps) {
                   </div>
                   <div>
                     <p className="font-medium text-gray-900">
-                      Approved by Finance
+                      Disetujui oleh Finance
                       {pr.approved_finance_name ? ` (${pr.approved_finance_name})` : ""}
                     </p>
                     <p className="text-sm text-gray-500">{formatDate(pr.approved_at_finance)}</p>
@@ -343,7 +338,7 @@ export function PRDetailPage({ params }: PRDetailPageProps) {
                   </div>
                   <div>
                     <p className="font-medium text-gray-900">
-                      Approved by Director
+                      Disetujui oleh Direktur
                       {pr.approved_direksi_name ? ` (${pr.approved_direksi_name})` : ""}
                     </p>
                     <p className="text-sm text-gray-500">{formatDate(pr.approved_at_direksi)}</p>
@@ -358,7 +353,7 @@ export function PRDetailPage({ params }: PRDetailPageProps) {
                   </div>
                   <div>
                     <p className="font-medium text-gray-900">
-                      Rejected{pr.rejected_by_name ? ` by ${pr.rejected_by_name}` : ""}
+                      Ditolak{pr.rejected_by_name ? ` oleh ${pr.rejected_by_name}` : ""}
                     </p>
                     <p className="text-sm text-gray-500">{formatDate(pr.rejected_at)}</p>
                   </div>
@@ -373,40 +368,40 @@ export function PRDetailPage({ params }: PRDetailPageProps) {
 
           <Card className="border-gray-200/70 shadow-xs xl:sticky xl:top-6">
             <CardHeader className="border-b border-gray-200/70 pb-3">
-              <CardTitle className="text-base">Summary</CardTitle>
+              <CardTitle className="text-base">Ringkasan</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4 pt-4">
               <dl className="space-y-3 text-sm">
                 <div className="flex items-start justify-between gap-3">
-                  <dt className="text-gray-500">Line Items</dt>
+                  <dt className="text-gray-500">Jumlah Item</dt>
                   <dd className="font-medium text-gray-900">{itemCount}</dd>
                 </div>
                 <div className="flex items-start justify-between gap-3">
-                  <dt className="text-gray-500">Total Quantity</dt>
+                  <dt className="text-gray-500">Total Qty</dt>
                   <dd className="font-medium text-gray-900">{formatQty(totalQty)}</dd>
                 </div>
                 <div className="flex items-start justify-between gap-3 border-t border-gray-200/70 pt-3">
-                  <dt className="font-medium text-gray-900">Estimated Total</dt>
+                  <dt className="font-medium text-gray-900">Estimasi Total</dt>
                   <dd className="font-semibold text-pink-700">{formatAmount(pr.total_amount)}</dd>
                 </div>
               </dl>
 
               {pr.status === "pending_head" && (
                 <div className="rounded-xl border border-blue-200/80 bg-blue-50/60 p-4 text-sm text-blue-900">
-                  <p className="font-medium">Requirement approval</p>
+                  <p className="font-medium">Persetujuan kebutuhan</p>
                   <p className="mt-1 text-blue-800/90">
-                    This request is waiting for item and quantity approval. Final amount approval
-                    happens on the purchase order.
+                    Permintaan ini menunggu persetujuan item dan qty. Persetujuan nilai akhir
+                    dilakukan pada purchase order.
                   </p>
                 </div>
               )}
 
               {pr.status === "approved" && canCreatePO && (
                 <div className="rounded-xl border border-emerald-200/80 bg-emerald-50/60 p-4 text-sm text-emerald-900">
-                  <p className="font-medium">Ready for procurement</p>
+                  <p className="font-medium">Siap diproses pengadaan</p>
                   <p className="mt-1 text-emerald-800/90">
-                    All approvals are complete. Create a purchase order to proceed with vendor
-                    ordering.
+                    Semua persetujuan telah selesai. Buat purchase order untuk melanjutkan
+                    pemesanan ke supplier.
                   </p>
                 </div>
               )}

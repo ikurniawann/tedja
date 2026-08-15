@@ -7,6 +7,7 @@ import {
 import {
   inferAccountTypeCode,
   inferCashFlowCategory,
+  inferIsCashBank,
   inferIsContra,
   isCashFlowCategory,
   type AccountTypeCode,
@@ -20,6 +21,7 @@ export interface ParsedCoaRow {
   account_type_code: AccountTypeCode;
   level: 1 | 2 | 3 | 4;
   is_contra: boolean;
+  is_cash_bank: boolean;
   cash_flow_category: CashFlowCategory | null;
   description: string | null;
   source_row: number;
@@ -46,6 +48,10 @@ const HEADER_ALIASES: Record<string, string> = {
   tipe: "account_type_code",
   contra: "is_contra",
   is_contra_account: "is_contra",
+  cash_bank: "is_cash_bank",
+  is_cash: "is_cash_bank",
+  is_bank: "is_cash_bank",
+  kas_bank: "is_cash_bank",
   cashflow: "cash_flow_category",
   cash_flow: "cash_flow_category",
   deskripsi: "description",
@@ -156,6 +162,7 @@ export function parseSuluCoaSheet(rows: unknown[][]): {
       account_type_code: inferAccountTypeCode(r.code),
       level,
       is_contra: inferIsContra(r.name),
+      is_cash_bank: inferIsCashBank(r.name, r.code, level),
       cash_flow_category: inferCashFlowCategory(r.code, r.name, level),
       description: null,
       source_row: r.source_row,
@@ -187,6 +194,7 @@ export function parseStandardCoaSheet(matrix: unknown[][]): {
   const parentIdx = headers.indexOf("parent_code");
   const typeIdx = headers.indexOf("account_type_code");
   const contraIdx = headers.indexOf("is_contra");
+  const cashBankIdx = headers.indexOf("is_cash_bank");
   const cfIdx = headers.indexOf("cash_flow_category");
   const descIdx = headers.indexOf("description");
 
@@ -260,6 +268,10 @@ export function parseStandardCoaSheet(matrix: unknown[][]): {
         contraIdx >= 0
           ? parseBool(cell(row[contraIdx]), inferIsContra(name))
           : inferIsContra(name),
+      is_cash_bank:
+        cashBankIdx >= 0
+          ? parseBool(cell(row[cashBankIdx]), inferIsCashBank(name, code, level))
+          : inferIsCashBank(name, code, level),
       cash_flow_category,
       description: descIdx >= 0 ? cell(row[descIdx]) || null : null,
       source_row,
@@ -308,6 +320,7 @@ export function buildCoaImportTemplateWorkbook() {
     "parent_code",
     "account_type_code",
     "is_contra",
+    "is_cash_bank",
     "cash_flow_category",
     "description",
   ];
@@ -316,6 +329,7 @@ export function buildCoaImportTemplateWorkbook() {
     "CURRENT ASSETS",
     "",
     "ASSET",
+    "false",
     "false",
     "",
     "",

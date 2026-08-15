@@ -11,7 +11,8 @@ export type POStatus =
   | 'partially_received'
   | 'received'
   | 'rejected'
-  | 'cancelled';
+  | 'cancelled'
+  | 'closed';
 
 export interface Supplier {
   id: string;
@@ -246,6 +247,7 @@ export interface ProductFormData {
   harga_jual?: number;
   notes?: string;
   production_output_type?: ProductOutputType;
+  station?: string;
   // Legacy fields for compatibility
   nama?: string;
   kategori?: string;
@@ -279,9 +281,16 @@ export interface ProductWithCOGS {
   markup_persen?: number;
   is_active?: boolean;
   hpp_estimasi?: number;
+  harga_modal?: number;
+  total_bahan_baku?: number;
+  hpp_tersimpan?: number;
+  hpp_resep?: number;
+  hpp_selisih?: number;
+  hpp_perlu_review?: boolean;
   satuan_id?: string | null;
   satuan_nama?: string | null;
   production_output_type?: ProductOutputType;
+  station?: string | null;
   warehouse_id?: string;
   warehouse_name?: string | null;
   warehouse_code?: string | null;
@@ -828,15 +837,15 @@ export interface ReturnSummary {
 export const RETURN_REASON_LABELS: Record<ReturnReasonType, string> = {
   damaged: 'Barang Rusak',
   wrong_item: 'Barang Salah',
-  expired: 'Expired Date',
-  overstock: 'Overstock',
+  expired: 'Kedaluwarsa',
+  overstock: 'Kelebihan Stok',
   specification_mismatch: 'Tidak Sesuai Spesifikasi',
   other: 'Lainnya',
 };
 
 // Status labels for UI
 export const RETURN_STATUS_LABELS: Record<ReturnStatus, string> = {
-  draft: 'Draft',
+  draft: 'Draf',
   pending_approval: 'Menunggu Persetujuan',
   approved: 'Disetujui',
   rejected: 'Ditolak',

@@ -8,11 +8,13 @@ import {
   dateColToIso,
   addDaysIso,
   realizedOvertimeHours,
+  splitOvertimeHours,
   computeLateStats,
   overtimeHoursFromTimes,
   type AttendancePeriodRow,
 } from "./period";
 import type { EmployeeShiftRow } from "@/lib/hris/shifts";
+import { indexHolidays } from "@/lib/hris/holidays";
 
 const SHIFT_ID = "shift-1";
 
@@ -136,6 +138,78 @@ describe("realizedOvertimeHours", () => {
       [att({ date: "2026-06-10" }), att({ date: "2026-06-11" })]
     );
     expect(total).toBe(3.5);
+  });
+});
+
+// EPIC-036 Fase F — lembur pada hari libur resmi dibayar dengan multiplier
+// terpisah, jadi jamnya harus dipisah lebih dulu.
+describe("splitOvertimeHours", () => {
+  // 17 Agustus 2026 (Senin) libur nasional; 18 Agustus hari kerja biasa.
+  const holidays = indexHolidays([
+    {
+      holiday_date: "2026-08-17",
+      name: "Hari Kemerdekaan Republik Indonesia",
+      type: "nasional",
+      deducts_leave: false,
+    },
+  ]);
+
+  it("memisahkan jam lembur hari libur dari hari kerja", () => {
+    const split = splitOvertimeHours(
+      [
+        { date: "2026-08-17", hours: 3 },
+        { date: "2026-08-18", hours: 2 },
+      ],
+      [att({ date: "2026-08-17" }), att({ date: "2026-08-18" })],
+      holidays
+    );
+    expect(split).toEqual({ regularHours: 2, holidayHours: 3, totalHours: 5 });
+  });
+
+  it("cuti bersama tetap hari libur untuk lembur, meski memotong jatah cuti", () => {
+    const cutiBersama = indexHolidays([
+      {
+        holiday_date: "2026-03-20",
+        name: "Cuti Bersama Idul Fitri",
+        type: "cuti_bersama",
+        deducts_leave: true,
+      },
+    ]);
+    const split = splitOvertimeHours(
+      [{ date: "2026-03-20", hours: 4 }],
+      [att({ date: "2026-03-20" })],
+      cutiBersama
+    );
+    expect(split).toEqual({ regularHours: 0, holidayHours: 4, totalHours: 4 });
+  });
+
+  it("tanpa hari libur, seluruh jam masuk tarif hari kerja", () => {
+    const split = splitOvertimeHours(
+      [{ date: "2026-06-10", hours: 2 }],
+      [att({ date: "2026-06-10" })],
+      indexHolidays([])
+    );
+    expect(split).toEqual({ regularHours: 2, holidayHours: 0, totalHours: 2 });
+  });
+
+  it("aturan realisasi tetap berlaku: tanpa clock_out tidak dibayar", () => {
+    const split = splitOvertimeHours(
+      [{ date: "2026-08-17", hours: 3 }],
+      [att({ date: "2026-08-17", clock_out: null })],
+      holidays
+    );
+    expect(split).toEqual({ regularHours: 0, holidayHours: 0, totalHours: 0 });
+  });
+
+  it("totalHours selalu sama dengan realizedOvertimeHours", () => {
+    const requests = [
+      { date: "2026-08-17", hours: 3 },
+      { date: "2026-08-18", hours: 1.5 },
+    ];
+    const rows = [att({ date: "2026-08-17" }), att({ date: "2026-08-18" })];
+    expect(splitOvertimeHours(requests, rows, holidays).totalHours).toBe(
+      realizedOvertimeHours(requests, rows)
+    );
   });
 });
 

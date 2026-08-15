@@ -5,13 +5,13 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 
 const TOAST_MESSAGES: Record<string, string> = {
-  "created:draft": "Purchase request draft saved",
-  "created:submit": "Purchase request submitted",
-  "updated:draft": "Purchase request changes saved",
-  "updated:submit": "Purchase request submitted",
-  "approval:approved": "Purchase request approved",
-  "approval:rejected": "Purchase request rejected",
-  "revision:created": "Revision draft created",
+  "created:draft": "Draf purchase request berhasil disimpan",
+  "created:submit": "Purchase request berhasil diajukan",
+  "updated:draft": "Perubahan purchase request berhasil disimpan",
+  "updated:submit": "Purchase request berhasil diajukan",
+  "approval:approved": "Purchase request berhasil disetujui",
+  "approval:rejected": "Purchase request berhasil ditolak",
+  "revision:created": "Draf revisi berhasil dibuat",
 };
 
 export function PRDetailToast() {

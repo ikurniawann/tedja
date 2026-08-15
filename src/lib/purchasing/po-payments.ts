@@ -1,11 +1,45 @@
 import type { DbClient } from "@/lib/pg/types";
-import { getPoVendorCreditAmount } from "@/lib/purchasing/vendor-credit-service";
+import { toQty } from "@/lib/purchasing/utils";
 
 const QTY_EPSILON = 0.01;
 
 function toAmount(value: unknown) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function roundAmount(value: number) {
+  return Math.round(value * 100) / 100;
+}
+
+/**
+ * Unfulfilled PO value: Σ max(0, ordered − received) × unit price.
+ * Source of truth for invoice reject/shortage credit (not per-GRN vendor credit approvals).
+ */
+export function computePoShortageAmount(
+  items: Array<{
+    qty_ordered?: number | null;
+    qty_received?: number | null;
+    harga_satuan?: number | null;
+  }>
+): number {
+  return roundAmount(
+    items.reduce((sum, item) => {
+      const shortage = Math.max(0, toQty(item.qty_ordered) - toQty(item.qty_received));
+      return sum + shortage * toAmount(item.harga_satuan);
+    }, 0)
+  );
+}
+
+export async function getPoShortageAmount(db: DbClient, poId: string): Promise<number> {
+  const { data, error } = await db
+    .from("purchase_order_items")
+    .select("qty_ordered, qty_received, harga_satuan")
+    .eq("purchase_order_id", poId)
+    .eq("is_active", true);
+
+  if (error) throw error;
+  return computePoShortageAmount(data || []);
 }
 
 export type PoPayableContext = {
@@ -169,15 +203,15 @@ export async function getReturnCreditsByPoIds(
 
 export async function getPoCreditBreakdown(db: DbClient, poId: string) {
   try {
-    const [returnCredit, rejectCredit] = await Promise.all([
+    const [returnCredit, shortageCredit] = await Promise.all([
       getPoReturnCreditAmount(db, poId),
-      getPoVendorCreditAmount(db, poId),
+      getPoShortageAmount(db, poId),
     ]);
 
     return {
       return_credit_amount: returnCredit,
-      reject_credit_amount: rejectCredit,
-      total_credit_amount: returnCredit + rejectCredit,
+      reject_credit_amount: shortageCredit,
+      total_credit_amount: returnCredit + shortageCredit,
     };
   } catch (error) {
     console.error("[getPoCreditBreakdown] falling back to return credits only:", error);

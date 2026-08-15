@@ -145,6 +145,8 @@ interface GrnItem {
   nama_bahan: string;
   qty_diterima: number;
   qty_ditolak: number;
+  qty_accepted: number;
+  qty_rejected: number;
   catatan: string;
 }
 
@@ -153,17 +155,18 @@ type CreateGrnPageProps = {
 };
 
 const GUIDELINES = [
-  "Select a delivery that has not been received yet.",
-  "Destination stall and receipt date are required.",
-  "Accepted quantity cannot exceed the remaining purchase order quantity.",
-  "Any shortfall is automatically moved to the reject column.",
+  "Pilih pengiriman yang belum pernah diterima.",
+  "Gudang tujuan dan tanggal penerimaan wajib diisi.",
+  "Qty Diterima / QC tidak boleh melebihi sisa qty PO.",
+  "Kekurangan vs sisa PO otomatis masuk kolom Tolak / QC Gagal.",
+  "Stok diposting dari qty Diterima / QC.",
 ];
 
 export function CreateGrnPage({ moduleType = "raw_material" }: CreateGrnPageProps) {
   const isProduct = moduleType === "product";
   const listRoute = isProduct ? PRODUCT_ROUTES.purchasingReceive : RM_ROUTES.purchasingGrn;
   const supplierLabel = isProduct ? "Vendor" : "Supplier";
-  const itemColumnLabel = isProduct ? "Product" : "Raw Material";
+  const itemColumnLabel = isProduct ? "Produk" : "Bahan Baku";
 
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -174,6 +177,7 @@ export function CreateGrnPage({ moduleType = "raw_material" }: CreateGrnPageProp
   const [selectedDelivery, setSelectedDelivery] = useState<Delivery | null>(null);
   const [poItems, setPoItems] = useState<POItem[]>([]);
   const [grnItems, setGrnItems] = useState<GrnItem[]>([]);
+  const [fetchingPoItems, setFetchingPoItems] = useState(false);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [fetchingWarehouses, setFetchingWarehouses] = useState(false);
   const [resolvedBranchId, setResolvedBranchId] = useState<string | null>(null);
@@ -217,7 +221,7 @@ export function CreateGrnPage({ moduleType = "raw_material" }: CreateGrnPageProp
       }
     } catch (error) {
       console.error(error);
-      toast.error("Failed to load deliveries.");
+      toast.error("Gagal memuat data pengiriman.");
     } finally {
       setFetchingDeliveries(false);
     }
@@ -232,7 +236,7 @@ export function CreateGrnPage({ moduleType = "raw_material" }: CreateGrnPageProp
       .then(setUserScope)
       .catch((error) => {
         console.error("Error fetching user scope:", error);
-        toast.error("Failed to load user branch scope.");
+        toast.error("Gagal memuat scope cabang pengguna.");
       });
   }, []);
 
@@ -258,11 +262,12 @@ export function CreateGrnPage({ moduleType = "raw_material" }: CreateGrnPageProp
     }
 
     if (deliveries.length > 0 || !fetchingDeliveries) {
-      toast.error("This delivery already has a goods receipt or is not eligible.");
+      toast.error("Pengiriman ini sudah punya GRN atau tidak memenuhi syarat.");
     }
   }, [deliveries, searchParams, fetchingDeliveries]);
 
   const fetchPOItems = useCallback(async (poId: string) => {
+    setFetchingPoItems(true);
     try {
       const data = await getGrnPOItems<POItemApiRow>(poId);
       const rows = Array.isArray(data) && data.length > 0
@@ -277,24 +282,34 @@ export function CreateGrnPage({ moduleType = "raw_material" }: CreateGrnPageProp
 
       const simplifiedPoItems = rows.map((item) => mapPOItem(item, moduleType));
       setPoItems(simplifiedPoItems);
+      // Hanya item yang masih punya sisa — yang sudah terpenuhi tidak perlu di GRN.
       setGrnItems(
-        simplifiedPoItems.map((item) => {
-          const remaining = Math.max(0, item.qty_ordered - item.qty_received);
-          return {
-            id: crypto.randomUUID(),
-            purchase_order_item_id: item.id,
-            raw_material_id: item.raw_material_id,
-            product_id: item.product_id,
-            nama_bahan: item.nama_bahan,
-            qty_diterima: remaining,
-            qty_ditolak: 0,
-            catatan: "",
-          };
-        })
+        simplifiedPoItems
+          .map((item) => {
+            const remaining = Math.max(0, item.qty_ordered - item.qty_received);
+            if (remaining <= 0) return null;
+            return {
+              id: crypto.randomUUID(),
+              purchase_order_item_id: item.id,
+              raw_material_id: item.raw_material_id,
+              product_id: item.product_id,
+              nama_bahan: item.nama_bahan,
+              qty_diterima: remaining,
+              qty_ditolak: 0,
+              qty_accepted: remaining,
+              qty_rejected: 0,
+              catatan: "",
+            };
+          })
+          .filter((item): item is GrnItem => item !== null)
       );
     } catch (error) {
       console.error(error);
-      toast.error("Failed to load purchase order items.");
+      toast.error("Gagal memuat item purchase order.");
+      setPoItems([]);
+      setGrnItems([]);
+    } finally {
+      setFetchingPoItems(false);
     }
   }, [moduleType]);
 
@@ -305,6 +320,7 @@ export function CreateGrnPage({ moduleType = "raw_material" }: CreateGrnPageProp
     } else {
       setPoItems([]);
       setGrnItems([]);
+      setFetchingPoItems(false);
     }
   }, [fetchPOItems, selectedDelivery]);
 
@@ -387,7 +403,7 @@ export function CreateGrnPage({ moduleType = "raw_material" }: CreateGrnPageProp
       })
       .catch((error) => {
         console.error("Error fetching warehouses:", error);
-        toast.error("Failed to load stalls.");
+        toast.error("Gagal memuat data gudang.");
       })
       .finally(() => setFetchingWarehouses(false));
   }, [selectedDelivery, userScope, warehouseBranchId, contextBranchResolved]);
@@ -399,7 +415,13 @@ export function CreateGrnPage({ moduleType = "raw_material" }: CreateGrnPageProp
         const poItem = poItems.find((p) => p.id === item.purchase_order_item_id);
         const remaining = getRemainingQty(poItem);
         const { accept, reject } = calculateReceiptQuantities(acceptQty, remaining);
-        return { ...item, qty_diterima: accept, qty_ditolak: reject };
+        return {
+          ...item,
+          qty_diterima: accept,
+          qty_ditolak: reject,
+          qty_accepted: accept,
+          qty_rejected: 0,
+        };
       })
     );
   };
@@ -410,7 +432,11 @@ export function CreateGrnPage({ moduleType = "raw_material" }: CreateGrnPageProp
   );
 
   const totalRejected = useMemo(
-    () => grnItems.reduce((sum, item) => sum + Number(item.qty_ditolak || 0), 0),
+    () =>
+      grnItems.reduce(
+        (sum, item) => sum + Number(item.qty_ditolak || 0) + Number(item.qty_rejected || 0),
+        0
+      ),
     [grnItems]
   );
 
@@ -424,28 +450,40 @@ export function CreateGrnPage({ moduleType = "raw_material" }: CreateGrnPageProp
     e.preventDefault();
 
     if (!formData.delivery_id) {
-      toast.error("Please select a delivery first.");
+      toast.error("Pilih pengiriman terlebih dahulu.");
       return;
     }
 
     if (!formData.warehouse_id) {
-      toast.error("Please select a destination stall.");
+      toast.error("Pilih gudang tujuan.");
       return;
     }
 
     if (!formData.tanggal_penerimaan) {
-      toast.error("Receipt date is required.");
+      toast.error("Tanggal penerimaan wajib diisi.");
       return;
     }
 
     if (grnItems.length === 0) {
-      toast.error("At least one item is required.");
+      toast.error("Minimal satu item wajib diisi.");
       return;
     }
 
     const hasAcceptedQty = grnItems.some((item) => Number(item.qty_diterima || 0) > 0);
     if (!hasAcceptedQty) {
-      toast.error("Enter accepted quantity for at least one item.");
+      toast.error("Isi qty Diterima / QC untuk minimal satu item.");
+      return;
+    }
+
+    const invalidQc = grnItems.some((item) => {
+      const received = Number(item.qty_diterima || 0);
+      if (received <= 0) return false;
+      const accepted = Number(item.qty_accepted || 0);
+      const rejected = Number(item.qty_rejected || 0);
+      return Math.abs(accepted + rejected - received) > 0.0001;
+    });
+    if (invalidQc) {
+      toast.error("Qty Diterima / QC tidak konsisten untuk salah satu item.");
       return;
     }
 
@@ -463,24 +501,26 @@ export function CreateGrnPage({ moduleType = "raw_material" }: CreateGrnPageProp
             : { raw_material_id: item.raw_material_id }),
           qty_diterima: Number(item.qty_diterima) || 0,
           qty_ditolak: Number(item.qty_ditolak) || 0,
+          qty_accepted: Number(item.qty_accepted) || 0,
+          qty_rejected: Number(item.qty_rejected) || 0,
           kondisi: "baik" as const,
           catatan: item.catatan || undefined,
         })),
       })) as { data?: { id?: string } };
 
       const createdId = result?.data?.id;
-      toast.success("Goods receipt created. Proceed to quality control.");
+      toast.success("GRN berhasil dibuat. QC selesai dan stok sudah diposting.");
       if (createdId) {
         router.push(
           isProduct
-            ? PRODUCT_ROUTES.purchasingReceiveQc(createdId)
-            : RM_ROUTES.purchasingGrnQc(createdId)
+            ? PRODUCT_ROUTES.purchasingReceiveDetail(createdId)
+            : RM_ROUTES.purchasingGrnDetail(createdId)
         );
       } else {
         router.push(listRoute);
       }
     } catch (error: unknown) {
-      toast.error(error instanceof Error ? error.message : "Failed to create goods receipt.");
+      toast.error(error instanceof Error ? error.message : "Gagal membuat GRN.");
     }
   };
 
@@ -491,13 +531,13 @@ export function CreateGrnPage({ moduleType = "raw_material" }: CreateGrnPageProp
           <Link href={listRoute}>
             <Button variant="ghost" size="sm" className="h-9 gap-2 text-pink-700">
               <ArrowLeftIcon className="h-4 w-4" />
-              Back
+              Kembali
             </Button>
           </Link>
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Record Goods Receipt</h1>
+            <h1 className="text-2xl font-bold text-gray-900">Buat GRN</h1>
             <p className="text-sm text-gray-500">
-              Confirm received items from the selected delivery. Stock is posted after quality control.
+              Catat penerimaan fisik dan QC dalam satu langkah. Stok diposting dari qty Diterima / QC.
             </p>
           </div>
         </div>
@@ -510,13 +550,13 @@ export function CreateGrnPage({ moduleType = "raw_material" }: CreateGrnPageProp
               <CardHeader className="border-b border-gray-200/70 pb-3">
                 <CardTitle className="flex items-center gap-2 text-base">
                   <TruckIcon className="h-4 w-4" />
-                  Receipt Information
+                  Informasi Penerimaan
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4 pt-4">
                 <div className="min-w-0 space-y-1.5">
                   <Label className="text-xs">
-                    Delivery <span className="text-red-500">*</span>
+                    Pengiriman <span className="text-red-500">*</span>
                   </Label>
                   <Combobox
                     options={deliveries.map((delivery) => ({
@@ -530,9 +570,9 @@ export function CreateGrnPage({ moduleType = "raw_material" }: CreateGrnPageProp
                       setSelectedDelivery(delivery);
                       setFormData((prev) => ({ ...prev, delivery_id: value, warehouse_id: "" }));
                     }}
-                    placeholder={fetchingDeliveries ? "Loading deliveries..." : "Select delivery"}
-                    searchPlaceholder="Search tracking number or delivery note..."
-                    emptyMessage="No eligible deliveries found"
+                    placeholder={fetchingDeliveries ? "Memuat pengiriman..." : "Pilih pengiriman"}
+                    searchPlaceholder="Cari no. resi atau surat jalan..."
+                    emptyMessage="Tidak ada pengiriman yang memenuhi syarat"
                     allowClear
                     disabled={fetchingDeliveries}
                     className="w-full! h-9 text-sm"
@@ -542,15 +582,15 @@ export function CreateGrnPage({ moduleType = "raw_material" }: CreateGrnPageProp
                 {selectedDelivery && (
                   <div className="grid grid-cols-1 gap-3 rounded-xl border border-gray-200/70 bg-gray-50/60 p-4 text-sm md:grid-cols-2">
                     <div>
-                      <p className="text-xs text-gray-500">Tracking Number</p>
+                      <p className="text-xs text-gray-500">No. Resi</p>
                       <p className="font-medium text-gray-900">{selectedDelivery.no_resi || "-"}</p>
                     </div>
                     <div>
-                      <p className="text-xs text-gray-500">Delivery Note Number</p>
+                      <p className="text-xs text-gray-500">No. Surat Jalan</p>
                       <p className="font-medium text-gray-900">{selectedDelivery.no_surat_jalan || "-"}</p>
                     </div>
                     <div>
-                      <p className="text-xs text-gray-500">Courier</p>
+                      <p className="text-xs text-gray-500">Kurir</p>
                       <p className="font-medium text-gray-900">{selectedDelivery.kurir || "-"}</p>
                     </div>
                     <div>
@@ -565,7 +605,7 @@ export function CreateGrnPage({ moduleType = "raw_material" }: CreateGrnPageProp
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                   <div className="min-w-0 space-y-1.5">
                     <Label className="text-xs">
-                      Destination Stall <span className="text-red-500">*</span>
+                      Gudang Tujuan <span className="text-red-500">*</span>
                     </Label>
                     <Combobox
                       options={warehouses.map((warehouse) => ({
@@ -577,9 +617,9 @@ export function CreateGrnPage({ moduleType = "raw_material" }: CreateGrnPageProp
                       onChange={(value) =>
                         setFormData((prev) => ({ ...prev, warehouse_id: value }))
                       }
-                      placeholder={fetchingWarehouses ? "Loading stalls..." : "Select destination stall"}
-                      searchPlaceholder="Search stall..."
-                      emptyMessage={fetchingWarehouses ? "Loading..." : "No stall found"}
+                      placeholder={fetchingWarehouses ? "Memuat gudang..." : "Pilih gudang tujuan"}
+                      searchPlaceholder="Cari gudang..."
+                      emptyMessage={fetchingWarehouses ? "Memuat..." : "Gudang tidak ditemukan"}
                       allowClear
                       disabled={!selectedDelivery || fetchingWarehouses}
                       className="w-full! h-9 text-sm"
@@ -587,12 +627,12 @@ export function CreateGrnPage({ moduleType = "raw_material" }: CreateGrnPageProp
                   </div>
 
                   <DsDateTimePicker
-                    label="Receipt Date"
+                    label="Tanggal Penerimaan"
                     value={formData.tanggal_penerimaan}
                     onChange={(value) =>
                       setFormData((prev) => ({ ...prev, tanggal_penerimaan: value }))
                     }
-                    placeholder="Select receipt date..."
+                    placeholder="Pilih tanggal penerimaan..."
                     dateOnly
                     required
                     disabled={!selectedDelivery}
@@ -601,13 +641,13 @@ export function CreateGrnPage({ moduleType = "raw_material" }: CreateGrnPageProp
 
                 <div className="min-w-0 space-y-1.5">
                   <Label htmlFor="catatan" className="text-xs">
-                    Notes
+                    Catatan
                   </Label>
                   <Textarea
                     id="catatan"
                     value={formData.catatan || ""}
                     onChange={(e) => setFormData((prev) => ({ ...prev, catatan: e.target.value }))}
-                    placeholder="Add notes if needed..."
+                    placeholder="Tambahkan catatan jika perlu..."
                     rows={3}
                     className="resize-none text-sm"
                     disabled={!selectedDelivery}
@@ -615,102 +655,12 @@ export function CreateGrnPage({ moduleType = "raw_material" }: CreateGrnPageProp
                 </div>
               </CardContent>
             </Card>
-
-            <Card className="border-gray-200/70 shadow-xs">
-              <CardHeader className="border-b border-gray-200/70 pb-3">
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <ClipboardCheck className="h-4 w-4" />
-                  Confirm Received Items
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-0">
-                {!selectedDelivery ? (
-                  <div className="py-12 text-center text-sm text-gray-500">
-                    Select a delivery to load purchase order items automatically.
-                  </div>
-                ) : grnItems.length === 0 ? (
-                  <div className="flex items-center justify-center py-12 text-sm text-gray-500">
-                    <Loader2Icon className="mr-2 h-4 w-4 animate-spin" />
-                    Loading purchase order items...
-                  </div>
-                ) : (
-                  <div className="p-4">
-                    <div className="overflow-x-auto rounded-xl border border-gray-200/70">
-                      <table className="w-full table-fixed border-collapse text-sm [&_td]:border [&_td]:border-gray-200/70 [&_th]:border [&_th]:border-gray-200/70">
-                        <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
-                          <tr>
-                            <th className="px-4 py-3 text-left font-semibold">{itemColumnLabel}</th>
-                            <th className="w-[72px] px-2 py-3 text-center font-semibold">Ordered</th>
-                            <th className="w-[72px] px-2 py-3 text-center font-semibold">Received</th>
-                            <th className="w-[84px] px-2 py-3 text-center font-semibold">Remaining</th>
-                            <th className="w-[104px] px-1.5 py-3 text-center font-semibold">Accept</th>
-                            <th className="w-[104px] px-1.5 py-3 text-center font-semibold">Reject</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {grnItems.map((item) => {
-                            const poItem = poItems.find((p) => p.id === item.purchase_order_item_id);
-                            const qtyOrdered = toNumber(poItem?.qty_ordered);
-                            const qtyReceived = toNumber(poItem?.qty_received);
-                            const qtyRemaining = getRemainingQty(poItem);
-                            const satuan = poItem?.satuan || "pcs";
-
-                            return (
-                              <tr key={item.id} className="bg-white hover:bg-gray-50/80">
-                                <td className="px-4 py-3 align-top">
-                                  <div className="font-medium text-gray-900">{item.nama_bahan}</div>
-                                  {qtyOrdered > 0 && (
-                                    <div className="mt-0.5 text-xs text-gray-500">
-                                      Purchase Order: {qtyOrdered} {satuan}
-                                    </div>
-                                  )}
-                                </td>
-                                <td className="px-2 py-3 text-center align-middle text-gray-700">
-                                  {qtyOrdered}
-                                </td>
-                                <td className="px-2 py-3 text-center align-middle text-gray-700">
-                                  {qtyReceived}
-                                </td>
-                                <td className="px-2 py-3 text-center align-middle font-semibold text-pink-700">
-                                  {qtyRemaining}
-                                </td>
-                                <td className="px-1.5 py-1.5 align-middle">
-                                  <NumericInput
-                                    min="0"
-                                    max={qtyRemaining || undefined}
-                                    value={item.qty_diterima}
-                                    onValueChange={(value) =>
-                                      handleUpdateAcceptedQty(item.id, value || 0)
-                                    }
-                                    decimalScale={4}
-                                    className="h-9 w-full border-gray-200/80 bg-white px-2 text-center text-sm focus-visible:border-pink-300 focus-visible:ring-1 focus-visible:ring-pink-200/80"
-                                  />
-                                </td>
-                                <td className="px-1.5 py-1.5 align-middle">
-                                  <div
-                                    className={`flex h-9 w-full items-center justify-center rounded-lg border border-gray-200/80 bg-gray-50 px-2 text-sm font-medium ${
-                                      item.qty_ditolak > 0 ? "text-red-600" : "text-gray-700"
-                                    }`}
-                                  >
-                                    {item.qty_ditolak}
-                                  </div>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
           </div>
 
           <div className="xl:col-span-4">
             <Card className="border-gray-200/70 shadow-xs xl:sticky xl:top-6">
               <CardHeader className="border-b border-gray-200/70 pb-3">
-                <CardTitle className="text-base">Summary</CardTitle>
+                <CardTitle className="text-base">Ringkasan</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4 pt-4">
                 {selectedDelivery ? (
@@ -728,30 +678,24 @@ export function CreateGrnPage({ moduleType = "raw_material" }: CreateGrnPageProp
                       </dd>
                     </div>
                     <div className="flex items-start justify-between gap-3">
-                      <dt className="text-gray-500">Items</dt>
-                      <dd className="text-right font-medium text-gray-900">{grnItems.length}</dd>
-                    </div>
-                    <div className="flex items-start justify-between gap-3 border-t border-gray-200/70 pt-3">
-                      <dt className="font-medium text-gray-900">Total Rejected</dt>
-                      <dd className={`text-right font-semibold ${totalRejected > 0 ? "text-red-600" : "text-gray-900"}`}>
-                        {totalRejected}
-                      </dd>
+                      <dt className="font-medium text-gray-900">Diterima / QC</dt>
+                      <dd className="text-right font-semibold text-gray-900">{totalAccepted}</dd>
                     </div>
                     <div className="flex items-start justify-between gap-3">
-                      <dt className="font-medium text-gray-900">Total Accepted</dt>
-                      <dd className="text-right font-semibold text-gray-900">{totalAccepted}</dd>
+                      <dt className="text-gray-500">Tolak / QC Gagal</dt>
+                      <dd className="text-right text-gray-900">{totalRejected}</dd>
                     </div>
                   </dl>
                 ) : (
                   <p className="text-sm text-gray-500">
-                    Select a delivery to preview receipt details.
+                    Pilih pengiriman untuk melihat ringkasan penerimaan.
                   </p>
                 )}
 
                 <div className="rounded-xl border border-gray-200/70 bg-gray-50/60 p-4">
                   <div className="mb-2 flex items-center gap-2 text-sm font-medium text-gray-900">
                     <Info className="h-4 w-4 text-pink-600" />
-                    Guidelines
+                    Panduan
                   </div>
                   <ul className="space-y-2 text-xs leading-5 text-gray-600">
                     {GUIDELINES.map((line) => (
@@ -767,7 +711,7 @@ export function CreateGrnPage({ moduleType = "raw_material" }: CreateGrnPageProp
                   <div className="rounded-xl border border-gray-200/70 bg-white p-4">
                     <div className="mb-2 flex items-center gap-2 text-sm font-medium text-gray-900">
                       <Package className="h-4 w-4 text-pink-600" />
-                      Item Preview
+                      Pratinjau Item
                     </div>
                     <ul className="space-y-2 text-xs text-gray-600">
                       {grnItems.slice(0, 4).map((item) => (
@@ -779,7 +723,7 @@ export function CreateGrnPage({ moduleType = "raw_material" }: CreateGrnPageProp
                         </li>
                       ))}
                       {grnItems.length > 4 && (
-                        <li className="text-gray-500">+{grnItems.length - 4} more items</li>
+                        <li className="text-gray-500">+{grnItems.length - 4} item lainnya</li>
                       )}
                     </ul>
                   </div>
@@ -789,6 +733,118 @@ export function CreateGrnPage({ moduleType = "raw_material" }: CreateGrnPageProp
           </div>
         </div>
 
+        <Card className="border-gray-200/70 shadow-xs">
+          <CardHeader className="border-b border-gray-200/70 pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <ClipboardCheck className="h-4 w-4" />
+              Konfirmasi Item Diterima
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            {!selectedDelivery ? (
+              <div className="py-12 text-center text-sm text-gray-500">
+                Pilih pengiriman untuk memuat item purchase order secara otomatis.
+              </div>
+            ) : fetchingPoItems ? (
+              <div className="flex items-center justify-center py-12 text-sm text-gray-500">
+                <Loader2Icon className="mr-2 h-4 w-4 animate-spin" />
+                Memuat item purchase order...
+              </div>
+            ) : grnItems.length === 0 ? (
+              <div className="py-12 text-center text-sm text-gray-500">
+                {poItems.length > 0
+                  ? "Semua item PO sudah terpenuhi — tidak ada sisa untuk diterima."
+                  : "Tidak ada item purchase order untuk pengiriman ini."}
+              </div>
+            ) : (
+              <div className="px-4 pb-4 pt-3">
+                <div className="overflow-x-auto rounded-xl border border-gray-200/70">
+                  <table className="min-w-[720px] w-full border-collapse text-sm">
+                    <thead>
+                      <tr className="bg-gray-50/80 text-xs uppercase tracking-wide text-gray-500">
+                        <th className="min-w-[180px] border-b border-r border-gray-200/70 px-4 py-3 text-left font-semibold">
+                          {itemColumnLabel}
+                        </th>
+                        <th className="whitespace-nowrap border-b border-r border-gray-200/70 px-3 py-3 text-right font-semibold">
+                          Dipesan
+                        </th>
+                        <th className="whitespace-nowrap border-b border-r border-gray-200/70 px-3 py-3 text-right font-semibold">
+                          Sebelumnya
+                        </th>
+                        <th className="whitespace-nowrap border-b border-r border-gray-200/70 px-3 py-3 text-right font-semibold">
+                          Sisa
+                        </th>
+                        <th className="min-w-[160px] w-[18%] whitespace-nowrap border-b border-r border-gray-200/70 px-3 py-3 text-center font-semibold">
+                          Diterima / QC
+                        </th>
+                        <th className="min-w-[160px] w-[18%] whitespace-nowrap border-b border-gray-200/70 px-3 py-3 text-center font-semibold">
+                          Tolak / QC Gagal
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {grnItems.map((item, index) => {
+                        const poItem = poItems.find((p) => p.id === item.purchase_order_item_id);
+                        const qtyOrdered = toNumber(poItem?.qty_ordered);
+                        const qtyReceived = toNumber(poItem?.qty_received);
+                        const qtyRemaining = getRemainingQty(poItem);
+                        const satuan = poItem?.satuan || "pcs";
+                        const isLast = index === grnItems.length - 1;
+                        const rowBorder = isLast ? "" : "border-b border-gray-200/70";
+                        const totalTolak =
+                          Number(item.qty_ditolak || 0) + Number(item.qty_rejected || 0);
+
+                        return (
+                          <tr key={item.id} className="hover:bg-gray-50/80">
+                            <td className={`border-r border-gray-200/70 px-4 py-3 align-top ${rowBorder}`}>
+                              <div className="font-medium text-gray-900">{item.nama_bahan}</div>
+                              {qtyOrdered > 0 && (
+                                <div className="mt-0.5 text-xs text-gray-500">
+                                  PO: {qtyOrdered} {satuan}
+                                </div>
+                              )}
+                            </td>
+                            <td className={`border-r border-gray-200/70 px-3 py-3 text-right align-middle text-gray-700 ${rowBorder}`}>
+                              {qtyOrdered}
+                            </td>
+                            <td className={`border-r border-gray-200/70 px-3 py-3 text-right align-middle text-gray-700 ${rowBorder}`}>
+                              {qtyReceived}
+                            </td>
+                            <td className={`border-r border-gray-200/70 px-3 py-3 text-right align-middle font-semibold text-primary ${rowBorder}`}>
+                              {qtyRemaining}
+                            </td>
+                            <td className={`border-r border-gray-200/70 px-3 py-2 align-middle ${rowBorder}`}>
+                              <NumericInput
+                                min="0"
+                                max={qtyRemaining || undefined}
+                                value={item.qty_diterima}
+                                onValueChange={(value) =>
+                                  handleUpdateAcceptedQty(item.id, value || 0)
+                                }
+                                decimalScale={4}
+                                className="h-10 w-full border-gray-200/80 bg-white px-3 text-center text-sm focus-visible:border-primary/40 focus-visible:ring-1 focus-visible:ring-primary/30"
+                              />
+                            </td>
+                            <td className={`px-3 py-2 align-middle ${rowBorder}`}>
+                              <div
+                                className={`flex h-10 w-full items-center justify-center rounded-lg border border-gray-200/80 bg-gray-50 px-3 text-sm font-medium ${
+                                  totalTolak > 0 ? "text-red-600" : "text-gray-700"
+                                }`}
+                              >
+                                {totalTolak}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
         <div className="flex flex-col-reverse gap-3 border-t border-gray-200/70 pt-4 sm:flex-row sm:justify-end">
           <Button
             type="button"
@@ -796,7 +852,7 @@ export function CreateGrnPage({ moduleType = "raw_material" }: CreateGrnPageProp
             className="purchasing-secondary-button w-full sm:w-auto"
             onClick={() => router.push(listRoute)}
           >
-            Cancel
+            Batal
           </Button>
           <Button
             type="submit"
@@ -806,12 +862,12 @@ export function CreateGrnPage({ moduleType = "raw_material" }: CreateGrnPageProp
             {loading ? (
               <>
                 <Loader2Icon className="mr-2 h-4 w-4 animate-spin" />
-                Submitting...
+                Menyimpan...
               </>
             ) : (
               <>
                 <SaveIcon className="mr-2 h-4 w-4" />
-                Submit
+                Simpan GRN
               </>
             )}
           </Button>

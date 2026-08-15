@@ -34,17 +34,17 @@ function getErrorMessage(error: unknown, fallback: string) {
 
 function formatQuantity(value?: number | string | null) {
   const num = Number(value ?? 0);
-  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 4 }).format(
+  return new Intl.NumberFormat("id-ID", { maximumFractionDigits: 4 }).format(
     Number.isFinite(num) ? num : 0
   );
 }
 
 const GUIDELINES = [
-  "Select a purchase order that is approved, sent, or partially received.",
-  "Purchase orders with a completed delivery can still receive additional shipments.",
-  "Purchase orders with an open delivery in progress are hidden from this list.",
-  "Delivery note number, shipment date, and estimated arrival date are required.",
-  "Initial status will be pending receipt.",
+  "Pilih purchase order yang sudah disetujui, dikirim, atau diterima sebagian.",
+  "Purchase order yang pengirimannya sudah selesai tetap bisa menerima pengiriman tambahan.",
+  "Purchase order yang masih memiliki pengiriman berjalan disembunyikan dari daftar ini.",
+  "Nomor surat jalan, tanggal kirim, dan estimasi tanggal tiba wajib diisi.",
+  "Status awal adalah menunggu penerimaan.",
 ];
 
 export function NewProductDeliveryPage() {
@@ -82,7 +82,7 @@ export function NewProductDeliveryPage() {
     }
 
     if (poList.length > 0 || !poOptionsQuery.isLoading) {
-      toast.error("This purchase order already has a delivery or is not eligible.");
+      toast.error("Purchase order ini sudah memiliki pengiriman atau tidak memenuhi syarat.");
     }
   }, [searchParams, poList, fetchingPOs, poOptionsQuery.isLoading]);
 
@@ -90,27 +90,27 @@ export function NewProductDeliveryPage() {
     e.preventDefault();
 
     if (!formData.po_id || !formData.no_surat_jalan.trim()) {
-      toast.error("Purchase order and delivery note number are required.");
+      toast.error("Purchase order dan nomor surat jalan wajib diisi.");
       return;
     }
 
     if (!formData.tanggal_kirim) {
-      toast.error("Shipment date is required.");
+      toast.error("Tanggal kirim wajib diisi.");
       return;
     }
 
     if (!formData.tanggal_estimasi_tiba) {
-      toast.error("Estimated arrival date is required.");
+      toast.error("Estimasi tanggal tiba wajib diisi.");
       return;
     }
 
     try {
       const data = await createMutation.mutateAsync(formData);
-      toast.success(`Delivery ${data.nomor_resi || ""} created successfully.`);
+      toast.success(`Pengiriman ${data.nomor_resi || ""} berhasil dibuat.`);
       router.push(data.id ? `${DELIVERY_LIST}/${data.id}` : DELIVERY_LIST);
       router.refresh();
     } catch (error: unknown) {
-      toast.error(getErrorMessage(error, "Failed to create delivery."));
+      toast.error(getErrorMessage(error, "Gagal membuat pengiriman."));
     }
   }
 
@@ -138,13 +138,13 @@ export function NewProductDeliveryPage() {
           <Link href={DELIVERY_LIST}>
             <Button variant="ghost" size="sm" className="h-9 gap-2 text-pink-700">
               <ArrowLeft className="h-4 w-4" />
-              Back
+              Kembali
             </Button>
           </Link>
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Create Delivery</h1>
+            <h1 className="text-2xl font-bold text-gray-900">Tambah Pengiriman</h1>
             <p className="text-sm text-gray-500">
-              Record a shipment from the vendor against a purchase order
+              Catat pengiriman dari vendor berdasarkan purchase order
             </p>
           </div>
         </div>
@@ -157,7 +157,7 @@ export function NewProductDeliveryPage() {
               <CardHeader className="border-b border-gray-200/70 pb-3">
                 <CardTitle className="flex items-center gap-2 text-base">
                   <Truck className="h-4 w-4" />
-                  Delivery Information
+                  Informasi Pengiriman
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4 pt-4">
@@ -180,9 +180,9 @@ export function NewProductDeliveryPage() {
                         vendor_id: po?.vendor_id || "",
                       }));
                     }}
-                    placeholder={fetchingPOs ? "Loading purchase orders..." : "Select purchase order"}
-                    searchPlaceholder="Search purchase order or vendor..."
-                    emptyMessage="No eligible purchase orders found"
+                    placeholder={fetchingPOs ? "Memuat purchase order..." : "Pilih purchase order"}
+                    searchPlaceholder="Cari purchase order atau vendor..."
+                    emptyMessage="Tidak ada purchase order yang memenuhi syarat"
                     allowClear
                     disabled={fetchingPOs}
                     className="w-full! h-9 text-sm"
@@ -192,11 +192,11 @@ export function NewProductDeliveryPage() {
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                   <div className="min-w-0 space-y-1.5">
                     <Label htmlFor="no_surat_jalan" className="text-xs">
-                      Delivery Note Number <span className="text-red-500">*</span>
+                      No. Surat Jalan <span className="text-red-500">*</span>
                     </Label>
                     <Input
                       id="no_surat_jalan"
-                      placeholder="Example: DN-2025-0001"
+                      placeholder="Contoh: DN-2025-0001"
                       value={formData.no_surat_jalan}
                       onChange={(e) =>
                         setFormData((prev) => ({ ...prev, no_surat_jalan: e.target.value }))
@@ -207,11 +207,11 @@ export function NewProductDeliveryPage() {
 
                   <div className="min-w-0 space-y-1.5">
                     <Label htmlFor="no_resi" className="text-xs">
-                      Tracking Number
+                      No. Resi
                     </Label>
                     <Input
                       id="no_resi"
-                      placeholder="Example: JNE123456789"
+                      placeholder="Contoh: JNE123456789"
                       value={formData.no_resi}
                       onChange={(e) =>
                         setFormData((prev) => ({ ...prev, no_resi: e.target.value }))
@@ -223,11 +223,11 @@ export function NewProductDeliveryPage() {
 
                 <div className="min-w-0 space-y-1.5">
                   <Label htmlFor="kurir" className="text-xs">
-                    Courier / Shipping Company
+                    Ekspedisi / Perusahaan Pengiriman
                   </Label>
                   <Input
                     id="kurir"
-                    placeholder="Example: JNE, J&T, SiCepat"
+                    placeholder="Contoh: JNE, J&T, SiCepat"
                     value={formData.kurir}
                     onChange={(e) => setFormData((prev) => ({ ...prev, kurir: e.target.value }))}
                     className="h-9 text-sm"
@@ -236,18 +236,18 @@ export function NewProductDeliveryPage() {
 
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                   <DsDateTimePicker
-                    label="Shipment Date"
+                    label="Tanggal Kirim"
                     value={formData.tanggal_kirim}
                     onChange={(v) => setFormData((prev) => ({ ...prev, tanggal_kirim: v }))}
-                    placeholder="Select shipment date..."
+                    placeholder="Pilih tanggal kirim..."
                     dateOnly
                     required
                   />
                   <DsDateTimePicker
-                    label="Estimated Arrival Date"
+                    label="Estimasi Tanggal Tiba"
                     value={formData.tanggal_estimasi_tiba}
                     onChange={(v) => setFormData((prev) => ({ ...prev, tanggal_estimasi_tiba: v }))}
-                    placeholder="Select estimated arrival date..."
+                    placeholder="Pilih estimasi tanggal tiba..."
                     dateOnly
                     required
                   />
@@ -255,11 +255,11 @@ export function NewProductDeliveryPage() {
 
                 <div className="min-w-0 space-y-1.5">
                   <Label htmlFor="catatan" className="text-xs">
-                    Notes
+                    Catatan
                   </Label>
                   <Textarea
                     id="catatan"
-                    placeholder="Add notes if needed..."
+                    placeholder="Tambahkan catatan bila diperlukan..."
                     value={formData.catatan}
                     onChange={(e) => setFormData((prev) => ({ ...prev, catatan: e.target.value }))}
                     rows={3}
@@ -274,28 +274,28 @@ export function NewProductDeliveryPage() {
                 <CardHeader className="border-b border-gray-200/70 pb-3">
                   <CardTitle className="flex items-center gap-2 text-base">
                     <Package className="h-4 w-4" />
-                    Purchase Order Items
+                    Item Purchase Order
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="p-0">
                   {fetchingPOItems ? (
                     <div className="flex items-center justify-center py-10 text-sm text-gray-500">
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Loading purchase order items...
+                      Memuat item purchase order...
                     </div>
                   ) : poItems.length === 0 ? (
                     <div className="py-10 text-center text-sm text-gray-500">
-                      No items found for this purchase order
+                      Tidak ada item untuk purchase order ini
                     </div>
                   ) : (
                     <div className="overflow-x-auto px-4">
                       <table className="min-w-full text-sm">
                         <thead>
                           <tr className="border-b border-gray-200/70 text-xs uppercase tracking-wide text-gray-500">
-                            <th className="py-3 pr-4 text-left font-semibold">Product</th>
-                            <th className="px-4 py-3 text-right font-semibold">Quantity</th>
-                            <th className="px-4 py-3 text-left font-semibold">Unit</th>
-                            <th className="px-4 py-3 text-right font-semibold">Unit Price</th>
+                            <th className="py-3 pr-4 text-left font-semibold">Produk</th>
+                            <th className="px-4 py-3 text-right font-semibold">Qty</th>
+                            <th className="px-4 py-3 text-left font-semibold">Satuan</th>
+                            <th className="px-4 py-3 text-right font-semibold">Harga Satuan</th>
                             <th className="py-3 pl-4 text-right font-semibold">Subtotal</th>
                           </tr>
                         </thead>
@@ -334,7 +334,7 @@ export function NewProductDeliveryPage() {
           <div className="xl:col-span-4">
             <Card className="border-gray-200/70 shadow-xs xl:sticky xl:top-6">
               <CardHeader className="border-b border-gray-200/70 pb-3">
-                <CardTitle className="text-base">Summary</CardTitle>
+                <CardTitle className="text-base">Ringkasan</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4 pt-4">
                 {selectedPO ? (
@@ -350,14 +350,14 @@ export function NewProductDeliveryPage() {
                       </dd>
                     </div>
                     <div className="flex items-start justify-between gap-3">
-                      <dt className="text-gray-500">Items</dt>
+                      <dt className="text-gray-500">Item</dt>
                       <dd className="text-right font-medium text-gray-900">
                         {fetchingPOItems ? "..." : poItems.length}
                       </dd>
                     </div>
                     {poItems.length > 0 && (
                       <div className="flex items-start justify-between gap-3 border-t border-gray-200/70 pt-3">
-                        <dt className="font-medium text-gray-900">Estimated Total</dt>
+                        <dt className="font-medium text-gray-900">Estimasi Total</dt>
                         <dd className="text-right font-semibold text-gray-900">
                           {formatAmount(itemsSubtotal)}
                         </dd>
@@ -366,14 +366,14 @@ export function NewProductDeliveryPage() {
                   </dl>
                 ) : (
                   <p className="text-sm text-gray-500">
-                    Select a purchase order to preview shipment details.
+                    Pilih purchase order untuk melihat pratinjau detail pengiriman.
                   </p>
                 )}
 
                 <div className="rounded-xl border border-gray-200/70 bg-gray-50/60 p-4">
                   <div className="mb-2 flex items-center gap-2 text-sm font-medium text-gray-900">
                     <Info className="h-4 w-4 text-pink-600" />
-                    Guidelines
+                    Panduan
                   </div>
                   <ul className="space-y-2 text-xs leading-5 text-gray-600">
                     {GUIDELINES.map((line) => (
@@ -397,7 +397,7 @@ export function NewProductDeliveryPage() {
             onClick={() => router.push(DELIVERY_LIST)}
             disabled={loading}
           >
-            Cancel
+            Batal
           </Button>
           <Button
             type="submit"
@@ -407,12 +407,12 @@ export function NewProductDeliveryPage() {
             {loading ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Submitting...
+                Menyimpan...
               </>
             ) : (
               <>
                 <Save className="mr-2 h-4 w-4" />
-                Submit
+                Simpan
               </>
             )}
           </Button>

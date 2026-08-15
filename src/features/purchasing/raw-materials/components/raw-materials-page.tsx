@@ -29,6 +29,7 @@ import { toast } from "sonner";
 import { RawMaterialWithStock, MaterialCategory } from "@/types/purchasing";
 import { useRawMaterialList, useRawMaterialCategoryOptions } from "../queries";
 import { useDeleteRawMaterial, useUpdateRawMaterialStatus } from "../mutations";
+import { getRawMaterialUnitInfo, largeToBaseUnit } from "../unit-math";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   buildLookupLabelMap,
@@ -38,8 +39,8 @@ import {
 import { formatAmount } from "@/lib/purchasing/utils";
 
 const STATUS_OPTIONS = [
-  { value: "all", label: "All Stock Statuses" },
-  { value: "below_minimum", label: "Low or Out of Stock" },
+  { value: "all", label: "Semua Status Stok" },
+  { value: "below_minimum", label: "Stok Menipis atau Habis" },
 ];
 
 const STOCK_STATUS_STYLES: Record<string, string> = {
@@ -49,9 +50,9 @@ const STOCK_STATUS_STYLES: Record<string, string> = {
 };
 
 const STOCK_STATUS_LABELS: Record<string, string> = {
-  AMAN: "Safe",
-  MENIPIS: "Low Stock",
-  HABIS: "Out of Stock",
+  AMAN: "Aman",
+  MENIPIS: "Stok Menipis",
+  HABIS: "Stok Habis",
 };
 
 function getErrorMessage(error: unknown, fallback: string) {
@@ -95,7 +96,7 @@ export function RawMaterialsPage() {
   const categoriesQuery = useRawMaterialCategoryOptions();
   const categoryMap = buildLookupLabelMap(categoriesQuery.data);
   const categoryFilterOptions = [
-    { value: "all", label: "All Categories" },
+    { value: "all", label: "Semua Kategori" },
     ...toLookupOptions(categoriesQuery.data),
   ];
   const materials = listQuery.data?.data ?? [];
@@ -125,7 +126,7 @@ export function RawMaterialsPage() {
   useEffect(() => {
     if (listQuery.isError) {
       console.error("Error loading materials:", listQuery.error);
-      toast.error(`Failed to load raw materials: ${getErrorMessage(listQuery.error, "Unknown error")}`);
+      toast.error(`Gagal memuat bahan baku: ${getErrorMessage(listQuery.error, "Kesalahan tidak diketahui")}`);
     }
   }, [listQuery.isError, listQuery.error]);
 
@@ -170,11 +171,11 @@ export function RawMaterialsPage() {
 
     try {
       await statusMutation.mutateAsync({ id: material.id, isActive: statusDialog.nextStatus });
-      toast.success(`Raw material ${statusDialog.nextStatus ? "activated" : "deactivated"} successfully.`);
+      toast.success(`Bahan baku berhasil ${statusDialog.nextStatus ? "diaktifkan" : "dinonaktifkan"}.`);
       setStatusDialog({ open: false, material: null, nextStatus: true });
     } catch (error: unknown) {
       console.error("Error updating raw material status:", error);
-      toast.error(`Failed to update status: ${getErrorMessage(error, "Unknown error")}`);
+      toast.error(`Gagal memperbarui status: ${getErrorMessage(error, "Kesalahan tidak diketahui")}`);
     }
   };
 
@@ -188,12 +189,12 @@ export function RawMaterialsPage() {
 
     try {
       await deleteMutation.mutateAsync(deletingMaterial.id);
-      toast.success("Raw material deleted successfully.");
+      toast.success("Bahan baku berhasil dihapus.");
       setDeleteDialogOpen(false);
       setDeletingMaterial(null);
     } catch (error: unknown) {
       console.error("Error deleting raw material:", error);
-      toast.error(`Failed to delete raw material: ${getErrorMessage(error, "Unknown error")}`);
+      toast.error(`Gagal menghapus bahan baku: ${getErrorMessage(error, "Kesalahan tidak diketahui")}`);
     }
   };
 
@@ -205,7 +206,7 @@ export function RawMaterialsPage() {
       const response = await fetch("/api/purchasing/export/raw-materials");
       if (!response.ok) {
         const payload = (await response.json().catch(() => null)) as { message?: string } | null;
-        throw new Error(payload?.message || "Export failed");
+        throw new Error(payload?.message || "Ekspor gagal");
       }
 
       const blob = await response.blob();
@@ -221,10 +222,10 @@ export function RawMaterialsPage() {
       link.click();
       URL.revokeObjectURL(url);
 
-      toast.success("Raw materials exported to Excel.");
+      toast.success("Bahan baku berhasil diekspor ke Excel.");
     } catch (error: unknown) {
       console.error("Error exporting raw materials:", error);
-      toast.error(`Failed to export: ${getErrorMessage(error, "Unknown error")}`);
+      toast.error(`Gagal mengekspor: ${getErrorMessage(error, "Kesalahan tidak diketahui")}`);
     } finally {
       setExporting(false);
     }
@@ -234,9 +235,9 @@ export function RawMaterialsPage() {
     <div className="space-y-6">
       <div className="flex flex-col items-start justify-between gap-4 border-b border-gray-200/70 pb-4 sm:flex-row sm:items-center">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Raw Material Master Data</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Data Master Bahan Baku</h1>
           <p className="mt-1 text-sm text-gray-500">
-            Manage raw material records, categories, chart of accounts, and stock indicators — {total} total
+            Kelola data bahan baku, kategori, pemetaan COA, dan indikator stok — {total} data
           </p>
         </div>
         <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
@@ -246,13 +247,13 @@ export function RawMaterialsPage() {
               className="purchasing-secondary-button w-full sm:w-auto"
             >
               <Upload className="mr-2 h-4 w-4" />
-              Import
+              Impor
             </Button>
           </Link>
           <Link href={`${ITEMS_RAW_MATERIALS_PATH}/insert`}>
             <Button className="purchasing-main-button w-full sm:w-auto">
               <Plus className="mr-2 h-4 w-4" />
-              Add Raw Material
+              Tambah Bahan Baku
             </Button>
           </Link>
         </div>
@@ -260,10 +261,10 @@ export function RawMaterialsPage() {
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         {[
-          { label: "Total Materials", value: total, className: "text-gray-900" },
-          { label: "Safe Stock", value: stockSummary.safe, className: "text-emerald-700" },
-          { label: "Low Stock", value: stockSummary.low, className: "text-amber-700" },
-          { label: "Out of Stock", value: stockSummary.out, className: "text-red-700" },
+          { label: "Total Bahan", value: total, className: "text-gray-900" },
+          { label: "Stok Aman", value: stockSummary.safe, className: "text-emerald-700" },
+          { label: "Stok Menipis", value: stockSummary.low, className: "text-amber-700" },
+          { label: "Stok Habis", value: stockSummary.out, className: "text-red-700" },
         ].map((stat) => (
           <Card key={stat.label} className="border-gray-200/70 shadow-xs">
             <CardContent className="p-4">
@@ -276,14 +277,14 @@ export function RawMaterialsPage() {
 
       <PurchasingListSection
         icon={Package}
-        title="Raw Material List"
-        description="Review material code, category, chart of accounts mapping, available stock, average cost, and active status."
+        title="Daftar Bahan Baku"
+        description="Tinjau kode bahan, kategori, pemetaan COA, stok tersedia, harga rata-rata, dan status aktif."
         toolbar={
           <div className="flex w-full flex-col gap-3 sm:w-auto md:flex-row md:items-center">
             <label className="relative w-full md:w-96">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
               <Input
-                placeholder="Search code, name, or category..."
+                placeholder="Cari kode, nama, atau kategori..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="h-10 bg-white pl-10 pr-10 text-sm focus:border-pink-400 focus:ring-2 focus:ring-pink-100"
@@ -293,7 +294,7 @@ export function RawMaterialsPage() {
                   type="button"
                   onClick={() => setSearchQuery("")}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 transition-colors hover:text-gray-700"
-                  aria-label="Clear search"
+                  aria-label="Hapus pencarian"
                 >
                   <X className="h-4 w-4" />
                 </button>
@@ -324,7 +325,7 @@ export function RawMaterialsPage() {
               variant="outline"
               onClick={handleExport}
               disabled={exporting}
-              title="Export Excel"
+              title="Ekspor Excel"
               className="purchasing-secondary-button w-full sm:w-auto"
             >
               {exporting ? (
@@ -332,12 +333,12 @@ export function RawMaterialsPage() {
               ) : (
                 <Download className="mr-2 h-4 w-4" />
               )}
-              Export
+              Ekspor
             </Button>
 
             {(search || isFilterActive || page > 1) && (
               <Button variant="outline" onClick={handleResetFilters} className="h-10 shrink-0 rounded-lg">
-                Reset
+                Atur Ulang
               </Button>
             )}
           </div>
@@ -350,7 +351,7 @@ export function RawMaterialsPage() {
                 <div className="space-y-1.5">
                   <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
                     <Filter className="h-3.5 w-3.5 text-pink-500" />
-                    Category
+                    Kategori
                   </div>
                   <Combobox
                     options={categoryFilterOptions}
@@ -359,9 +360,9 @@ export function RawMaterialsPage() {
                       setCategoryFilter(value as MaterialCategory | "all");
                       setPage(1);
                     }}
-                    placeholder="Filter category..."
-                    searchPlaceholder="Search category..."
-                    emptyMessage="No category found"
+                    placeholder="Filter kategori..."
+                    searchPlaceholder="Cari kategori..."
+                    emptyMessage="Kategori tidak ditemukan"
                     className="w-full! h-9 text-sm"
                   />
                 </div>
@@ -369,7 +370,7 @@ export function RawMaterialsPage() {
                 <div className="space-y-1.5">
                   <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
                     <AlertCircle className="h-3.5 w-3.5 text-pink-500" />
-                    Stock Status
+                    Status Stok
                   </div>
                   <Combobox
                     options={STATUS_OPTIONS}
@@ -378,9 +379,9 @@ export function RawMaterialsPage() {
                       setStatusFilter(value);
                       setPage(1);
                     }}
-                    placeholder="Filter stock status..."
-                    searchPlaceholder="Search stock status..."
-                    emptyMessage="No stock status found"
+                    placeholder="Filter status stok..."
+                    searchPlaceholder="Cari status stok..."
+                    emptyMessage="Status stok tidak ditemukan"
                     className="w-full! h-9 text-sm"
                   />
                 </div>
@@ -391,20 +392,20 @@ export function RawMaterialsPage() {
           {loading ? (
             <div className="flex items-center justify-center py-12 text-sm text-gray-500">
               <Loader2 className="mr-2 h-5 w-5 animate-spin text-pink-600" />
-              Loading raw materials...
+              Memuat bahan baku...
             </div>
           ) : materials.length === 0 ? (
             <div className="py-14 text-center">
               <Package className="mx-auto mb-4 h-12 w-12 text-gray-300" />
               <p className="text-gray-500">
                 {search || isFilterActive
-                  ? "No raw materials match the current filters"
-                  : "No raw materials yet"}
+                  ? "Tidak ada bahan baku yang cocok dengan filter"
+                  : "Belum ada bahan baku"}
               </p>
               {!search && !isFilterActive && (
                 <Link href={`${ITEMS_RAW_MATERIALS_PATH}/insert`}>
                   <Button variant="outline" className="purchasing-secondary-button mt-4">
-                    Add First Raw Material
+                    Tambah Bahan Baku Pertama
                   </Button>
                 </Link>
               )}
@@ -415,24 +416,27 @@ export function RawMaterialsPage() {
                 <table className="min-w-full text-sm">
                   <thead>
                     <tr className="border-b border-gray-200/70 text-xs uppercase tracking-wide text-gray-500">
-                      <th className="py-3 pr-4 text-left font-semibold">Code</th>
-                      <th className="px-3 py-3 text-left font-semibold">Material Name</th>
-                      <th className="px-3 py-3 text-left font-semibold">Category</th>
-                      <th className="px-3 py-3 text-left font-semibold">Chart of Accounts</th>
-                      <th className="px-3 py-3 text-right font-semibold">Available Stock</th>
-                      <th className="px-3 py-3 text-right font-semibold">Minimum Stock</th>
-                      <th className="px-3 py-3 text-right font-semibold">Average Cost</th>
-                      <th className="px-3 py-3 text-center font-semibold">Stock Status</th>
-                      <th className="px-3 py-3 text-center font-semibold">Active</th>
-                      <th className="py-3 pl-3 text-right font-semibold">Actions</th>
+                      <th className="py-3 pr-4 text-left font-semibold">Kode</th>
+                      <th className="px-3 py-3 text-left font-semibold">Nama Bahan</th>
+                      <th className="px-3 py-3 text-left font-semibold">Kategori</th>
+                      <th className="px-3 py-3 text-left font-semibold">COA</th>
+                      <th className="px-3 py-3 text-right font-semibold">Stok Tersedia</th>
+                      <th className="px-3 py-3 text-right font-semibold">Stok Minimum</th>
+                      <th className="px-3 py-3 text-right font-semibold">Harga Rata-rata</th>
+                      <th className="px-3 py-3 text-center font-semibold">Status Stok</th>
+                      <th className="px-3 py-3 text-center font-semibold">Aktif</th>
+                      <th className="py-3 pl-3 text-right font-semibold">Aksi</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200/70">
                     {materials.map((material) => {
+                      const unitInfo = getRawMaterialUnitInfo(material);
                       const qtyOnHand = material.qty_onhand ?? 0;
-                      const minStock = material.stok_minimum ?? 0;
-                      const unitLabel =
-                        material.satuan_besar_nama || material.satuan_besar?.nama || "-";
+                      const minStock = largeToBaseUnit(
+                        material.stok_minimum ?? 0,
+                        unitInfo.konversiFactor
+                      );
+                      const unitLabel = unitInfo.baseUnitName;
 
                       return (
                         <tr key={material.id} className="transition-colors hover:bg-gray-50/80">
@@ -454,17 +458,17 @@ export function RawMaterialsPage() {
                             <div className="flex flex-wrap gap-1">
                               {material.coa_production && (
                                 <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-700">
-                                  Production
+                                  Produksi
                                 </Badge>
                               )}
                               {material.coa_rnd && (
                                 <Badge variant="outline" className="border-sky-200 bg-sky-50 text-sky-700">
-                                  Research and Development
+                                  Riset & Pengembangan
                                 </Badge>
                               )}
                               {material.coa_asset && (
                                 <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700">
-                                  Asset
+                                  Aset
                                 </Badge>
                               )}
                               {!material.coa_production && !material.coa_rnd && !material.coa_asset && (
@@ -486,7 +490,10 @@ export function RawMaterialsPage() {
                             </span>
                             <span className="ml-1 text-xs text-gray-500">{unitLabel}</span>
                           </td>
-                          <td className="px-3 py-3 text-right text-gray-700">{formatQty(minStock)}</td>
+                          <td className="px-3 py-3 text-right text-gray-700">
+                            {formatQty(minStock)}
+                            <span className="ml-1 text-xs text-gray-500">{unitLabel}</span>
+                          </td>
                           <td className="px-3 py-3 text-right text-gray-700">
                             {(material.avg_cost ?? 0) > 0 ? formatAmount(material.avg_cost) : "-"}
                           </td>
@@ -501,19 +508,19 @@ export function RawMaterialsPage() {
                                 onCheckedChange={(checked) =>
                                   setStatusDialog({ open: true, material, nextStatus: checked })
                                 }
-                                aria-label={`Toggle active status for ${material.nama}`}
+                                aria-label={`Ubah status aktif ${material.nama}`}
                               />
                             </div>
                           </td>
                           <td className="py-3 pl-3 text-right">
                             <div className="flex items-center justify-end gap-1">
                               <Link href={`${ITEMS_RAW_MATERIALS_PATH}/${material.id}`}>
-                                <Button variant="ghost" size="sm" className="cursor-pointer" title="View Detail">
+                                <Button variant="ghost" size="sm" className="cursor-pointer" title="Lihat Detail">
                                   <Eye className="h-4 w-4 text-pink-600" />
                                 </Button>
                               </Link>
                               <Link href={`${ITEMS_RAW_MATERIALS_PATH}/edit/${material.id}`}>
-                                <Button variant="ghost" size="sm" className="cursor-pointer" title="Edit">
+                                <Button variant="ghost" size="sm" className="cursor-pointer" title="Ubah">
                                   <Pencil className="h-4 w-4 text-gray-600" />
                                 </Button>
                               </Link>
@@ -521,7 +528,7 @@ export function RawMaterialsPage() {
                                 variant="ghost"
                                 size="sm"
                                 className="cursor-pointer text-red-500 hover:text-red-600"
-                                title="Delete"
+                                title="Hapus"
                                 onClick={() => handleOpenDelete(material)}
                               >
                                 <Trash2 className="h-4 w-4" />
@@ -555,12 +562,12 @@ export function RawMaterialsPage() {
           }
         }}
         variant="default"
-        title={statusDialog.nextStatus ? "Activate Raw Material?" : "Deactivate Raw Material?"}
-        description={`Are you sure you want to ${
-          statusDialog.nextStatus ? "activate" : "deactivate"
+        title={statusDialog.nextStatus ? "Aktifkan Bahan Baku?" : "Nonaktifkan Bahan Baku?"}
+        description={`Yakin ingin ${
+          statusDialog.nextStatus ? "mengaktifkan" : "menonaktifkan"
         } "${statusDialog.material?.nama ?? ""}"?`}
-        confirmLabel={statusDialog.nextStatus ? "Activate" : "Deactivate"}
-        cancelLabel="Cancel"
+        confirmLabel={statusDialog.nextStatus ? "Aktifkan" : "Nonaktifkan"}
+        cancelLabel="Batal"
         loading={Boolean(statusUpdatingId)}
         onConfirm={handleConfirmToggleStatus}
       />
@@ -568,11 +575,11 @@ export function RawMaterialsPage() {
       <ConfirmDialog
         open={deleteDialogOpen}
         onOpenChange={setDeleteDialogOpen}
-        title="Delete Raw Material?"
-        description={`Are you sure you want to delete "${deletingMaterial?.nama ?? ""}"? The record will be hidden from the list. Materials with stock or active bill of materials usage cannot be deleted.`}
-        confirmLabel="Delete"
-        cancelLabel="Cancel"
-        loadingLabel="Deleting..."
+        title="Hapus Bahan Baku?"
+        description={`Yakin ingin menghapus "${deletingMaterial?.nama ?? ""}"? Data akan disembunyikan dari daftar. Bahan yang masih punya stok atau dipakai di Bill of Materials tidak dapat dihapus.`}
+        confirmLabel="Hapus"
+        cancelLabel="Batal"
+        loadingLabel="Menghapus..."
         loading={isDeleting}
         onConfirm={handleDelete}
       />

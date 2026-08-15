@@ -1,8 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Loader2 } from "lucide-react";
+import { Loader2, Users } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -16,6 +17,7 @@ import {
   canPickSeatDestination,
   canPickTransferDestination,
 } from "@/features/pos/restaurant/move-destination";
+import { capacityWarning, normalizeGuestCount } from "@/lib/pos/guest-count";
 import type { PosTable } from "@/lib/pos-api";
 
 export type RestaurantBoardMode =
@@ -137,6 +139,20 @@ export function RestaurantTableBoard({
   const isBusy = busy || moving;
   const inBoardMode = mode != null;
 
+  /**
+   * Meja yang menunggu jumlah tamu (EPIC-038). Pramusaji mengisi saat
+   * mendudukkan — di sinilah angkanya paling akurat, karena tamunya ada di
+   * depan mata. Masih bisa dikoreksi di kasir saat bayar.
+   */
+  const [tableMenungguPax, setTableMenungguPax] = useState<PosTable | null>(null);
+  const [paxInput, setPaxInput] = useState("");
+
+  const lanjutKeKasir = (table: PosTable, pax: number) => {
+    setTableMenungguPax(null);
+    setPaxInput("");
+    router.push(buildCashierHandoffUrl({ tableId: table.id, immersive, pax }));
+  };
+
   const handlePick = (table: PosTable) => {
     if (!inBoardMode || isBusy) return;
     if (!canPickForMode(mode, table, sourceTableId)) {
@@ -152,7 +168,8 @@ export function RestaurantTableBoard({
       return;
     }
     onOpenAvailable?.(table);
-    router.push(buildCashierHandoffUrl({ tableId: table.id, immersive }));
+    setPaxInput("");
+    setTableMenungguPax(table);
   };
 
   const handleOccupiedDoubleClick = (table: PosTable) => {
@@ -282,6 +299,96 @@ export function RestaurantTableBoard({
           ))}
         </div>
       )}
+
+      {/* Jumlah tamu saat mendudukkan (EPIC-038). Tombol cepat menutupi mayoritas
+          kasus; input bebas untuk rombongan. Lewati = 1 orang, sesuai default
+          yang ditegakkan di database — jadi pramusaji yang buru-buru tidak
+          terhalang. */}
+      {tableMenungguPax && (
+        <div
+          className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Jumlah tamu"
+          onClick={() => setTableMenungguPax(null)}
+        >
+          <div
+            className="w-full max-w-xs rounded-2xl bg-white p-5 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-2 text-gray-900">
+              <Users className="h-4 w-4" />
+              <span className="font-semibold">
+                Berapa tamu di {tableMenungguPax.table_number || "meja ini"}?
+              </span>
+            </div>
+            {tableMenungguPax.capacity ? (
+              <p className="mt-1 text-xs text-gray-500">
+                Kapasitas {tableMenungguPax.capacity} kursi
+              </p>
+            ) : null}
+
+            <div className="mt-3 flex flex-wrap gap-2">
+              {[1, 2, 4, 6].map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => lanjutKeKasir(tableMenungguPax, n)}
+                  className="min-w-11 rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:border-primary hover:text-primary"
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
+
+            <input
+              type="number"
+              min={1}
+              inputMode="numeric"
+              autoFocus
+              value={paxInput}
+              onChange={(e) => setPaxInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  lanjutKeKasir(tableMenungguPax, normalizeGuestCount(paxInput));
+                }
+              }}
+              placeholder="Jumlah lain"
+              aria-label="Jumlah tamu lain"
+              className="mt-3 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary focus:outline-none"
+            />
+
+            {(() => {
+              const peringatan = capacityWarning(
+                normalizeGuestCount(paxInput),
+                tableMenungguPax.capacity ?? null
+              );
+              return peringatan && paxInput.trim() !== "" ? (
+                <p className="mt-2 text-xs text-amber-700">{peringatan}</p>
+              ) : null;
+            })()}
+
+            <div className="mt-4 flex gap-2">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => lanjutKeKasir(tableMenungguPax, 1)}
+              >
+                Lewati (1 orang)
+              </Button>
+              <Button
+                className="flex-1"
+                onClick={() =>
+                  lanjutKeKasir(tableMenungguPax, normalizeGuestCount(paxInput))
+                }
+              >
+                Lanjut
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

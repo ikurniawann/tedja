@@ -2,9 +2,6 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Package, Calculator, Plus, Trash2, Loader2 } from "lucide-react";
@@ -21,9 +18,9 @@ import { formatAmount } from "@/lib/purchasing/utils";
 import { useProductFormData, useProductCategoryOptions, useProductWarehouses } from "../queries";
 import { useCreateProduct, useCreateBOMItem } from "../mutations";
 import { mapUnitComboboxOptions } from "../product-unit";
-import { ProductOutputTypeField } from "./product-output-type-field";
+import { ProductInfoFields } from "./product-info-fields";
+import { ProductPriceFields } from "./product-price-fields";
 import { STALL_LABELS } from "@/lib/configuration/stall-labels";
-import type { ProductOutputType } from "@/types/purchasing";
 
 interface BOMFormItem extends Partial<BOMItemFormData> {
   id: string;
@@ -42,10 +39,6 @@ function getMaterialCost(material?: RawMaterialWithStock) {
   const factor = Number(material?.konversi_factor ?? 0);
   if (hasSmallUnit && factor > 0) return baseCost / factor;
   return baseCost;
-}
-
-function calculatePriceFromMarkup(hpp: number, markup: number) {
-  return Math.round(hpp * (1 + markup / 100));
 }
 
 function calculateMarkupFromPrice(hpp: number, price: number) {
@@ -81,22 +74,22 @@ export function NewProductPage() {
     warehouse_id: "",
     deskripsi: "",
     harga_jual: 0,
-    markup_persen: 30,
+    markup_persen: 0,
     is_active: true,
     production_output_type: "FINISHED_GOOD",
+    station: "kitchen",
   });
   const stallOptions = (warehousesQuery.data ?? []).map((w) => ({
     value: w.id,
     label: w.name,
     description: w.code,
   }));
-  const [pricingSource, setPricingSource] = useState<"markup" | "price">("markup");
   const [bomItems, setBomItems] = useState<BOMFormItem[]>([]);
 
   useEffect(() => {
     if (formDataQuery.isError) {
       console.error("Error loading data:", formDataQuery.error);
-      toast.error(getErrorMessage(formDataQuery.error, "Failed to load form data"));
+      toast.error(getErrorMessage(formDataQuery.error, "Gagal memuat data formulir"));
     }
   }, [formDataQuery.isError, formDataQuery.error]);
 
@@ -145,27 +138,12 @@ export function NewProductPage() {
 
   useEffect(() => {
     setFormData((prev) => {
-      if (pricingSource === "markup") {
-        const nextPrice = calculatePriceFromMarkup(totalCost, prev.markup_persen || 0);
-        return prev.harga_jual === nextPrice ? prev : { ...prev, harga_jual: nextPrice };
-      }
-
       const nextMarkup = calculateMarkupFromPrice(totalCost, prev.harga_jual || 0);
       return prev.markup_persen === nextMarkup ? prev : { ...prev, markup_persen: nextMarkup };
     });
-  }, [pricingSource, totalCost]);
-
-  const handleMarkupChange = (value: number) => {
-    setPricingSource("markup");
-    setFormData((prev) => ({
-      ...prev,
-      markup_persen: value,
-      harga_jual: calculatePriceFromMarkup(totalCost, value),
-    }));
-  };
+  }, [totalCost]);
 
   const handlePriceChange = (value: number) => {
-    setPricingSource("price");
     setFormData((prev) => ({
       ...prev,
       harga_jual: value,
@@ -174,22 +152,26 @@ export function NewProductPage() {
   };
 
   const getMaterialSmallUnitLabel = (material?: RawMaterialWithStock) => {
-    return material?.satuan_kecil_nama || material?.satuan || "Unit";
+    return material?.satuan_kecil_nama || material?.satuan || "Satuan";
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!formData.nama) {
-      toast.error("Product name is required");
+      toast.error("Nama produk wajib diisi");
       return;
     }
     if (!formData.satuan_id) {
-      toast.error("Unit is required");
+      toast.error("Satuan wajib diisi");
       return;
     }
     if (!formData.warehouse_id) {
-      toast.error(`${STALL_LABELS.singular} is required`);
+      toast.error(`${STALL_LABELS.singular} wajib dipilih`);
+      return;
+    }
+    if (!formData.station) {
+      toast.error("Station wajib dipilih");
       return;
     }
 
@@ -213,19 +195,19 @@ export function NewProductPage() {
         }
       }
 
-      toast.success("Product created successfully");
+      toast.success("Produk berhasil ditambahkan");
       router.push(PRODUCT_ROUTES.products);
     } catch (error: unknown) {
       console.error("Error creating product:", error);
-      toast.error(getErrorMessage(error, "Failed to create product"));
+      toast.error(getErrorMessage(error, "Gagal menambahkan produk"));
     }
   };
 
   if (loading) {
     return (
       <div className="flex items-center justify-center py-16 text-sm text-gray-500">
-        <Loader2 className="mr-2 h-5 w-5 animate-spin text-pink-600" />
-        Loading form data...
+        <Loader2 className="mr-2 h-5 w-5 animate-spin text-primary" />
+        Memuat data formulir...
       </div>
     );
   }
@@ -234,290 +216,187 @@ export function NewProductPage() {
     <div className="space-y-6">
       <PurchasingFormHeader
         backHref={PRODUCT_ROUTES.products}
-        title="Create Product"
-        description="Enter product details and bill of materials"
+        title="Tambah Produk"
+        description="Isi detail produk dan resep (BOM)"
       />
 
       <form id="new-product-form" onSubmit={handleSubmit} className="space-y-6">
-        <Card className="border-gray-200/70 shadow-xs">
-          <CardHeader className="border-b border-gray-200/70 pb-3">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Package className="h-4 w-4 text-pink-600" />
-              Product Information
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4 p-4">
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
-              <div className="space-y-1.5">
-                <Label htmlFor="nama" className="text-xs">
-                  Product Name <span className="text-red-500">*</span>
-                </Label>
-                <Input
-                  id="nama"
-                  value={formData.nama}
-                  onChange={(e) => setFormData({ ...formData, nama: e.target.value })}
-                  placeholder="Example: Chocolate Lava Bread"
-                  required
-                  className="h-9 text-sm"
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+          <div className="space-y-6 lg:col-span-8">
+            <Card className="border-gray-200/70 shadow-xs">
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Package className="h-4 w-4" />
+                  Informasi Produk
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ProductInfoFields
+                  formData={formData}
+                  onChange={(patch) => setFormData((prev) => ({ ...prev, ...patch }))}
+                  stallOptions={stallOptions}
+                  categoryOptions={categoryOptions}
+                  unitOptions={unitOptions}
+                  warehousesLoading={warehousesQuery.isLoading}
+                  categoriesLoading={categoriesQuery.isLoading}
+                  unitsLoading={loading}
                 />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="warehouse_id" className="text-xs">
-                  Stall <span className="text-red-500">*</span>
-                </Label>
-                <Combobox
-                  options={stallOptions}
-                  value={formData.warehouse_id || ""}
-                  onChange={(v) => setFormData({ ...formData, warehouse_id: v })}
-                  placeholder={
-                    warehousesQuery.isLoading ? STALL_LABELS.loading : STALL_LABELS.selectPlaceholder
-                  }
-                  searchPlaceholder={STALL_LABELS.search}
-                  emptyMessage={STALL_LABELS.empty}
-                  disabled={warehousesQuery.isLoading}
-                  className="h-9 text-sm"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="kategori" className="text-xs">
-                  Category <span className="text-red-500">*</span>
-                </Label>
-                <Combobox
-                  options={categoryOptions}
-                  value={formData.kategori}
-                  onChange={(v) => setFormData({ ...formData, kategori: v })}
-                  placeholder={categoriesQuery.isLoading ? "Loading categories..." : "Select category..."}
-                  searchPlaceholder="Search category..."
-                  emptyMessage="No category found"
-                  disabled={categoriesQuery.isLoading}
-                  allowClear
-                  className="h-9 text-sm"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="satuan_id" className="text-xs">
-                  Unit <span className="text-red-500">*</span>
-                </Label>
-                <Combobox
-                  options={unitOptions}
-                  value={formData.satuan_id || ""}
-                  onChange={(v) => setFormData({ ...formData, satuan_id: v })}
-                  placeholder={loading ? "Loading units..." : "Select unit..."}
-                  searchPlaceholder="Search unit..."
-                  emptyMessage="No unit found"
-                  disabled={loading}
-                  className="h-9 text-sm"
-                />
-              </div>
-            </div>
+              </CardContent>
+            </Card>
 
-            <ProductOutputTypeField
-              value={(formData.production_output_type as ProductOutputType) || "FINISHED_GOOD"}
-              onChange={(production_output_type) =>
-                setFormData({ ...formData, production_output_type })
-              }
-            />
-
-            <div className="space-y-1.5">
-              <Label htmlFor="deskripsi" className="text-xs">
-                Description
-              </Label>
-              <Textarea
-                id="deskripsi"
-                value={formData.deskripsi}
-                onChange={(e) => setFormData({ ...formData, deskripsi: e.target.value })}
-                placeholder="Product description..."
-                rows={2}
-                className="resize-none text-sm"
-              />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="border-gray-200/70 shadow-xs">
-          <CardHeader className="border-b border-gray-200/70 pb-3">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Calculator className="h-4 w-4 text-pink-600" />
-              Pricing & Estimated COGS
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4 p-4">
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="harga_modal" className="text-xs">
-                  Estimated COGS
-                </Label>
-                <div className="flex rounded-lg border border-gray-200/70 bg-gray-50">
-                  <NumericInput
-                    id="harga_modal"
-                    value={totalCost}
-                    onValueChange={() => undefined}
-                    decimalScale={0}
-                    disabled
-                    className="h-9 border-0 bg-gray-50 text-sm font-mono shadow-none focus-visible:ring-0"
-                  />
-                </div>
-                <p className="text-xs text-gray-500">Calculated from bill of materials</p>
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="markup" className="text-xs">
-                  Markup (%)
-                </Label>
-                <div className="flex rounded-lg border border-gray-200/70 bg-white focus-within:border-pink-300 focus-within:ring-2 focus-within:ring-pink-100">
-                  <NumericInput
-                    id="markup"
-                    min="0"
-                    max="1000"
-                    value={formData.markup_persen}
-                    onValueChange={handleMarkupChange}
-                    decimalScale={2}
-                    className="h-9 rounded-r-none border-0 text-sm shadow-none focus-visible:ring-0"
-                  />
-                  <div className="flex min-w-12 items-center justify-center rounded-r-lg border-l border-gray-200/70 bg-gray-50 px-3 text-xs font-semibold text-gray-500">
-                    %
+            <Card className="border-gray-200/70 shadow-xs">
+              <CardHeader className="flex flex-row items-center justify-between pb-3">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Package className="h-4 w-4" />
+                  Resep (BOM)
+                </CardTitle>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={addBOMItem}
+                  className="h-8 border-primary/20 text-xs text-primary hover:bg-primary/5"
+                >
+                  <Plus className="mr-1 h-3 w-3" />
+                  Tambah Bahan
+                </Button>
+              </CardHeader>
+              {bomItems.length === 0 ? (
+                <CardContent>
+                  <div className="py-8 text-center text-sm text-muted-foreground">
+                    Belum ada bahan baku. Klik &quot;Tambah Bahan&quot; untuk memulai.
                   </div>
-                </div>
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="harga_jual" className="text-xs">
-                  Selling Price
-                </Label>
-                <div className="flex rounded-lg border border-gray-200/70 bg-white focus-within:border-pink-300 focus-within:ring-2 focus-within:ring-pink-100">
-                  <NumericInput
-                    id="harga_jual"
-                    value={formData.harga_jual}
-                    onValueChange={handlePriceChange}
-                    decimalScale={0}
-                    placeholder="Customer selling price"
-                    className="h-9 border-0 text-sm font-mono shadow-none focus-visible:ring-0"
-                  />
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+                </CardContent>
+              ) : (
+                <CardContent className="p-0">
+                  <div className="overflow-x-auto px-4">
+                    <table className="w-full min-w-180 text-sm">
+                      <thead>
+                        <tr className="border-b border-gray-200/70 text-left text-xs text-muted-foreground">
+                          <th className="py-2.5 pr-3 font-medium">Bahan Baku</th>
+                          <th className="w-44 py-2.5 pr-3 font-medium">Qty</th>
+                          <th className="w-32 py-2.5 pr-3 font-medium">Susut</th>
+                          <th className="w-36 py-2.5 pr-3 text-right font-medium">Subtotal</th>
+                          <th className="w-12 py-2.5 text-right font-medium">
+                            <span className="sr-only">Aksi</span>
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {bomItems.map((item) => {
+                          const selectedMaterial = materials.find(
+                            (material) => material.id === item.raw_material_id
+                          );
+                          const smallUnitLabel = getMaterialSmallUnitLabel(selectedMaterial);
 
-        <Card className="border-gray-200/70 shadow-xs">
-          <CardHeader className="flex flex-row items-center justify-between border-b border-gray-200/70 pb-3">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Package className="h-4 w-4 text-pink-600" />
-              Bill of Materials
-            </CardTitle>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={addBOMItem}
-              className="h-8 border-pink-200 text-xs text-pink-700 hover:bg-pink-50"
-            >
-              <Plus className="mr-1 h-3 w-3" />
-              Add Material
-            </Button>
-          </CardHeader>
-          <CardContent className="space-y-3 p-4">
-            {bomItems.length === 0 ? (
-              <div className="py-8 text-center text-sm text-gray-500">
-                No raw materials yet. Click &quot;Add Material&quot; to get started.
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {bomItems.map((item) => {
-                  const selectedMaterial = materials.find(
-                    (material) => material.id === item.raw_material_id
-                  );
-                  const smallUnitLabel = getMaterialSmallUnitLabel(selectedMaterial);
-
-                  return (
-                    <div
-                      key={item.id}
-                      className="grid grid-cols-12 items-end gap-3 rounded-lg border border-gray-200/70 bg-white p-3"
-                    >
-                      <div className="col-span-4 space-y-1.5">
-                        <Label className="text-xs">Raw Material</Label>
-                        <Combobox
-                          options={materials.map((m) => ({
-                            value: m.id,
-                            label: m.nama,
-                            description: m.kode,
-                          }))}
-                          value={item.raw_material_id}
-                          onChange={(v) => updateBOMItem(item.id, { raw_material_id: v })}
-                          placeholder="Select material..."
-                          searchPlaceholder="Search..."
-                          emptyMessage="No material found"
-                          allowClear
-                          className="h-9 text-sm"
-                        />
-                      </div>
-                      <div className="col-span-2 space-y-1.5">
-                        <Label className="text-xs">Qty</Label>
-                        <div className="flex rounded-lg border border-gray-200/70 bg-white focus-within:border-pink-300 focus-within:ring-2 focus-within:ring-pink-100">
-                          <NumericInput
-                            step="0.01"
-                            min="0"
-                            value={item.qty_needed}
-                            onValueChange={(value) => updateBOMItem(item.id, { qty_needed: value })}
-                            decimalScale={4}
-                            className="h-9 rounded-r-none border-0 text-sm shadow-none focus-visible:ring-0"
-                          />
-                          <div className="flex min-w-14 items-center justify-center rounded-r-lg border-l border-gray-200/70 bg-gray-50 px-3 text-xs font-semibold uppercase text-gray-500">
-                            {smallUnitLabel}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="col-span-2 space-y-1.5">
-                        <Label className="text-xs">Waste (%)</Label>
-                        <div className="flex rounded-lg border border-gray-200/70 bg-white focus-within:border-pink-300 focus-within:ring-2 focus-within:ring-pink-100">
-                          <NumericInput
-                            min="0"
-                            max="100"
-                            value={item.waste_persen}
-                            onValueChange={(value) => updateBOMItem(item.id, { waste_persen: value })}
-                            decimalScale={2}
-                            className="h-9 rounded-r-none border-0 text-sm shadow-none focus-visible:ring-0"
-                          />
-                          <div className="flex min-w-10 items-center justify-center rounded-r-lg border-l border-gray-200/70 bg-gray-50 px-3 text-xs font-semibold text-gray-500">
-                            %
-                          </div>
-                        </div>
-                      </div>
-                      <div className="col-span-3 space-y-1.5">
-                        <Label className="text-xs">Subtotal</Label>
-                        <div className="flex h-9 items-center rounded-lg border border-gray-200/70 bg-gray-50 px-3 font-mono text-sm text-gray-900">
-                          {formatAmount(item.subtotal)}
-                        </div>
-                      </div>
-                      <div className="col-span-1 space-y-1.5">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => removeBOMItem(item.id)}
-                          title="Remove material"
-                          className="h-9 w-9 text-red-500 hover:text-red-700"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
+                          return (
+                            <tr key={item.id} className="border-b border-gray-200/70 last:border-0">
+                              <td className="py-2.5 pr-3 align-middle">
+                                <Combobox
+                                  options={materials.map((m) => ({
+                                    value: m.id,
+                                    label: m.nama,
+                                    description: m.kode,
+                                  }))}
+                                  value={item.raw_material_id}
+                                  onChange={(v) => updateBOMItem(item.id, { raw_material_id: v })}
+                                  placeholder="Pilih bahan..."
+                                  searchPlaceholder="Cari..."
+                                  emptyMessage="Bahan tidak ditemukan"
+                                  allowClear
+                                  className="h-9 text-sm"
+                                />
+                              </td>
+                              <td className="py-2.5 pr-3 align-middle">
+                                <div className="flex rounded-lg border border-gray-200/70 bg-card focus-within:border-border focus-within:ring-1 focus-within:ring-primary/30">
+                                  <NumericInput
+                                    step="0.01"
+                                    min="0"
+                                    value={item.qty_needed}
+                                    onValueChange={(value) =>
+                                      updateBOMItem(item.id, { qty_needed: value })
+                                    }
+                                    decimalScale={4}
+                                    className="h-9 rounded-r-none border-0 text-sm shadow-none focus-visible:ring-0"
+                                  />
+                                  <div className="flex min-w-14 items-center justify-center rounded-r-lg border-l border-gray-200/70 bg-muted/50 px-3 text-xs font-semibold uppercase text-muted-foreground">
+                                    {smallUnitLabel}
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="py-2.5 pr-3 align-middle">
+                                <div className="flex rounded-lg border border-gray-200/70 bg-card focus-within:border-border focus-within:ring-1 focus-within:ring-primary/30">
+                                  <NumericInput
+                                    min="0"
+                                    max="100"
+                                    value={item.waste_persen}
+                                    onValueChange={(value) =>
+                                      updateBOMItem(item.id, { waste_persen: value })
+                                    }
+                                    decimalScale={2}
+                                    className="h-9 rounded-r-none border-0 text-sm shadow-none focus-visible:ring-0"
+                                  />
+                                  <div className="flex min-w-10 items-center justify-center rounded-r-lg border-l border-gray-200/70 bg-muted/50 px-3 text-xs font-semibold text-muted-foreground">
+                                    %
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="py-2.5 pr-3 align-middle">
+                                <div className="flex h-9 items-center justify-end rounded-lg border border-gray-200/70 bg-muted/50 px-3 font-mono text-sm">
+                                  {formatAmount(item.subtotal)}
+                                </div>
+                              </td>
+                              <td className="py-2.5 text-right align-middle">
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => removeBOMItem(item.id)}
+                                  title="Hapus bahan"
+                                  className="h-9 w-9 text-red-600 hover:bg-red-50 hover:text-red-700"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="flex justify-end border-t border-gray-200/70 px-4 py-3">
+                    <div className="text-right">
+                      <p className="text-xs text-muted-foreground">Total Estimasi HPP</p>
+                      <p className="text-lg font-semibold text-foreground">{formatAmount(totalCost)}</p>
                     </div>
-                  );
-                })}
-
-                <div className="flex justify-end border-t border-gray-200/70 pt-3">
-                  <div className="text-right">
-                    <p className="text-xs text-gray-500">Total Estimated COGS</p>
-                    <p className="text-lg font-bold text-gray-900">{formatAmount(totalCost)}</p>
                   </div>
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                </CardContent>
+              )}
+            </Card>
+          </div>
+
+          <Card className="h-fit border-gray-200/70 shadow-xs lg:col-span-4">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Calculator className="h-4 w-4" />
+                Harga &amp; HPP
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ProductPriceFields
+                totalCost={totalCost}
+                markupPersen={formData.markup_persen}
+                hargaJual={formData.harga_jual}
+                onHargaJualChange={handlePriceChange}
+              />
+            </CardContent>
+          </Card>
+        </div>
 
         <PurchasingFormFooter
           formId="new-product-form"
           onCancel={() => router.back()}
-          submitLabel="Save Product"
+          submitLabel="Simpan Produk"
           loading={isSubmitting}
         />
       </form>

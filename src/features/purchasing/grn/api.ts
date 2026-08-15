@@ -251,7 +251,8 @@ export type SubmitGrnQcPayload = {
   rekomendasi?: string | null;
   items: {
     grn_item_id: string;
-    raw_material_id: string;
+    raw_material_id?: string | null;
+    product_id?: string | null;
     qty_inspected: number;
     qty_accepted: number;
     qty_rejected: number;

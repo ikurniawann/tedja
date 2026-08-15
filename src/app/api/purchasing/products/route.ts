@@ -11,6 +11,9 @@ import {
   branchScopeOr,
   validateProductWarehouseScope,
 } from "@/lib/api/scope";
+import { syncPurchasingProductToPos } from "@/lib/pos/purchasing-sync";
+import { resolvePosStation } from "@/lib/pos/kitchen-station";
+import { withProductHppReview } from "@/lib/purchasing/product-hpp-review";
 
 const productSchema = z.object({
   kode: z.string().max(20).optional(),
@@ -19,10 +22,14 @@ const productSchema = z.object({
   kategori: z.string().optional(),
   satuan_id: z.string().uuid().optional(),
   warehouse_id: z.string().uuid("Stall wajib dipilih"),
-  harga_jual: z.number().min(0).default(0),
-  harga_modal: z.number().min(0).optional(),
-  markup_persen: z.number().optional(),
+  harga_jual: z.coerce.number().min(0).default(0),
+  harga_modal: z.coerce.number().min(0).optional(),
+  markup_persen: z.coerce.number().optional(),
   production_output_type: z.enum(["FINISHED_GOOD", "WIP"]).default("FINISHED_GOOD").optional(),
+  station: z
+    .enum(["kitchen", "bar", "bakery", "dessert", "merchandise", "photobooth"])
+    .default("kitchen")
+    .optional(),
 });
 
 function getErrorMessage(error: unknown, fallback: string) {
@@ -67,6 +74,7 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get("search");
     const isActive = searchParams.get("is_active");
     const warehouseId = searchParams.get("warehouse_id");
+    const hppReview = searchParams.get("hpp_review") === "true";
     const page = parseInt(searchParams.get("page") || "1");
     const limit = parseInt(searchParams.get("limit") || "20");
 
@@ -90,9 +98,36 @@ export async function GET(request: NextRequest) {
     if (isActive !== null) {
       query = query.eq("is_active", isActive === "true");
     }
+    if (hppReview) {
+      query = query.gt("total_bahan_baku", 0);
+    }
 
     const from = (page - 1) * limit;
     const to = from + limit - 1;
+
+    if (hppReview) {
+      const { data, error } = await query
+        .order("nama", { ascending: true })
+        .limit(1000);
+
+      if (error) throw error;
+
+      const reviewed = (data || [])
+        .map((row) => withProductHppReview(row))
+        .filter((row) => row.hpp_perlu_review);
+      const total = reviewed.length;
+
+      return Response.json({
+        success: true,
+        data: reviewed.slice(from, to + 1),
+        pagination: {
+          page,
+          limit,
+          total,
+          total_pages: Math.max(1, Math.ceil(total / limit)),
+        },
+      });
+    }
 
     const { data, error, count } = await query
       .order("nama", { ascending: true })
@@ -102,7 +137,7 @@ export async function GET(request: NextRequest) {
 
     return Response.json({
       success: true,
-      data,
+      data: (data || []).map((row) => withProductHppReview(row)),
       pagination: {
         page,
         limit,
@@ -173,6 +208,7 @@ export async function POST(request: NextRequest) {
         harga_modal: validated.harga_modal,
         markup_persen: validated.markup_persen,
         production_output_type: validated.production_output_type,
+        station: resolvePosStation(validated.station, validated.kategori),
         kode,
         company_id: companyId,
         branch_id: branchId,
@@ -184,8 +220,31 @@ export async function POST(request: NextRequest) {
 
     if (error) throw error;
 
+    const outputType =
+      (data as { production_output_type?: string | null }).production_output_type ||
+      "FINISHED_GOOD";
+
+    let posSync = null;
+    if (outputType === "FINISHED_GOOD") {
+      const row = data as { id: string; kategori?: string | null; station?: string | null };
+      try {
+        posSync = await syncPurchasingProductToPos(db, row.id, {
+          station: resolvePosStation(row.station, row.kategori),
+        });
+      } catch (syncError) {
+        console.warn("POS sync after product create failed:", syncError);
+      }
+    }
+
     return Response.json(
-      { success: true, data, message: "Produk berhasil ditambahkan" },
+      {
+        success: true,
+        data,
+        pos_sync: posSync,
+        message: posSync
+          ? "Produk berhasil ditambahkan dan tersinkron ke POS"
+          : "Produk berhasil ditambahkan",
+      },
       { status: 201 }
     );
   } catch (error: unknown) {

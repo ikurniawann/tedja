@@ -25,6 +25,7 @@ export default async function PosDashboardLayout({
         branch_name: user.branch_name,
         warehouse_name: user.warehouse_name,
         active_stall_id: user.active_stall_id,
+        can_switch_stall: user.can_switch_stall,
       }}
       navItems={navItems}
       essOnly={essOnly}

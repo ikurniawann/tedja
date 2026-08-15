@@ -29,11 +29,6 @@ import { usePendingPRApprovals } from "../queries";
 import { useApprovePRApproval, useRejectPRApproval } from "../mutations";
 import type { ApprovalPR } from "../types";
 
-const PR_STATUS_LABEL_OVERRIDES: Record<string, string> = {
-  rejected: "Rejected",
-  converted: "Purchase Order Created",
-};
-
 const PR_STATUS_STYLES: Record<string, string> = {
   draft: "border-gray-200 bg-gray-50 text-gray-700",
   pending_head: "border-amber-200 bg-amber-50 text-amber-700",
@@ -81,7 +76,7 @@ export function PRApprovalPage({ moduleType = "raw_material" }: PRApprovalPagePr
       toast.error(
         listQuery.error instanceof Error
           ? listQuery.error.message
-          : "Failed to load purchase request approvals"
+          : "Gagal memuat persetujuan permintaan pembelian"
       );
     }
   }, [listQuery.isError, listQuery.error]);
@@ -91,10 +86,10 @@ export function PRApprovalPage({ moduleType = "raw_material" }: PRApprovalPagePr
     setProcessing({ id: confirmingPR.id, action: "approve" });
     try {
       await approveMutation.mutateAsync(confirmingPR.id);
-      toast.success("Purchase request approved");
+      toast.success("Permintaan pembelian berhasil disetujui");
       setConfirmingPR(null);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to approve purchase request");
+      toast.error(error instanceof Error ? error.message : "Gagal menyetujui permintaan pembelian");
     } finally {
       setProcessing(null);
     }
@@ -103,18 +98,18 @@ export function PRApprovalPage({ moduleType = "raw_material" }: PRApprovalPagePr
   async function rejectPR() {
     if (!rejectingPR) return;
     if (!rejectionReason.trim()) {
-      toast.error("Rejection reason is required");
+      toast.error("Alasan penolakan wajib diisi");
       return;
     }
 
     setProcessing({ id: rejectingPR.id, action: "reject" });
     try {
       await rejectMutation.mutateAsync({ id: rejectingPR.id, reason: rejectionReason.trim() });
-      toast.success("Purchase request rejected");
+      toast.success("Permintaan pembelian berhasil ditolak");
       setRejectingPR(null);
       setRejectionReason("");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to reject purchase request");
+      toast.error(error instanceof Error ? error.message : "Gagal menolak permintaan pembelian");
     } finally {
       setProcessing(null);
     }
@@ -139,12 +134,12 @@ export function PRApprovalPage({ moduleType = "raw_material" }: PRApprovalPagePr
   return (
     <div className="space-y-6">
       <PurchasingPageHeader
-        title="Purchase Request Approval"
-        description="Review and approve item requirements before procurement proceeds."
+        title="Persetujuan PR"
+        description="Tinjau dan setujui kebutuhan barang sebelum proses pembelian berjalan."
         actions={
           <Link href={config.purchasingPrRoute}>
             <Button variant="outline" className="purchasing-secondary-button w-full sm:w-auto">
-              View All Purchase Requests
+              Lihat Semua PR
             </Button>
           </Link>
         }
@@ -152,19 +147,19 @@ export function PRApprovalPage({ moduleType = "raw_material" }: PRApprovalPagePr
 
       <PurchasingListSection
         icon={FileText}
-        title="Pending Approvals"
-        description="Purchase requests waiting for your approval at the current workflow step."
+        title="Menunggu Persetujuan"
+        description="Permintaan pembelian yang menunggu persetujuan Anda pada tahap alur kerja saat ini."
       >
         {loading ? (
           <div className="flex items-center justify-center py-12 text-sm text-gray-500">
             <Loader2 className="mr-2 h-4 w-4 animate-spin text-pink-600" />
-            Loading approvals...
+            Memuat persetujuan...
           </div>
         ) : prs.length === 0 ? (
           <div className="py-14 text-center">
             <CheckCircle className="mx-auto mb-3 h-12 w-12 text-emerald-300" />
-            <p className="text-gray-500">No purchase requests pending approval</p>
-            <p className="mt-1 text-sm text-gray-400">You&apos;re all caught up.</p>
+            <p className="text-gray-500">Tidak ada permintaan pembelian yang menunggu persetujuan</p>
+            <p className="mt-1 text-sm text-gray-400">Semua sudah ditindaklanjuti.</p>
           </div>
         ) : (
           <>
@@ -172,21 +167,21 @@ export function PRApprovalPage({ moduleType = "raw_material" }: PRApprovalPagePr
               <table className="min-w-full text-sm">
                 <thead className="border-b border-gray-100 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
                   <tr>
-                    <th className="px-4 py-3 text-left font-semibold">Number</th>
-                    <th className="px-4 py-3 text-left font-semibold">Date</th>
-                    <th className="px-4 py-3 text-left font-semibold">Department</th>
-                    <th className="px-4 py-3 text-left font-semibold">Requester</th>
-                    <th className="px-4 py-3 text-right font-semibold">Estimated Total</th>
-                    <th className="px-4 py-3 text-center font-semibold">Priority</th>
+                    <th className="px-4 py-3 text-left font-semibold">Nomor</th>
+                    <th className="px-4 py-3 text-left font-semibold">Tanggal</th>
+                    <th className="px-4 py-3 text-left font-semibold">Departemen</th>
+                    <th className="px-4 py-3 text-left font-semibold">Pemohon</th>
+                    <th className="px-4 py-3 text-right font-semibold">Estimasi Total</th>
+                    <th className="px-4 py-3 text-center font-semibold">Prioritas</th>
                     <th className="px-4 py-3 text-center font-semibold">Status</th>
-                    <th className="px-4 py-3 text-right font-semibold">Actions</th>
+                    <th className="px-4 py-3 text-right font-semibold">Aksi</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {prs.map((pr) => {
                     const priorityBadge = getPriorityBadge(pr.priority);
                     const statusBadge = getPRStatusLabel(pr.status);
-                    const statusLabel = PR_STATUS_LABEL_OVERRIDES[pr.status] ?? statusBadge.label;
+                    const statusLabel = statusBadge.label;
                     const statusStyle =
                       PR_STATUS_STYLES[pr.status] ?? "border-gray-200 bg-gray-50 text-gray-700";
                     const priorityStyle =
@@ -231,7 +226,7 @@ export function PRApprovalPage({ moduleType = "raw_material" }: PRApprovalPagePr
                             <Button
                               variant="ghost"
                               size="sm"
-                              title="Approve"
+                              title="Setujui"
                               className="cursor-pointer"
                               onClick={() => setConfirmingPR(pr)}
                               disabled={Boolean(rowProcessing)}
@@ -245,7 +240,7 @@ export function PRApprovalPage({ moduleType = "raw_material" }: PRApprovalPagePr
                             <Button
                               variant="ghost"
                               size="sm"
-                              title="Reject"
+                              title="Tolak"
                               className="cursor-pointer"
                               onClick={() => {
                                 setRejectingPR(pr);
@@ -268,7 +263,7 @@ export function PRApprovalPage({ moduleType = "raw_material" }: PRApprovalPagePr
               </table>
             </div>
             <div className="border-t border-gray-200/70 px-4 py-3 text-sm text-gray-500">
-              Showing {prs.length} pending purchase request{prs.length === 1 ? "" : "s"}
+              Menampilkan {prs.length} permintaan pembelian yang menunggu persetujuan
             </div>
           </>
         )}
@@ -277,11 +272,11 @@ export function PRApprovalPage({ moduleType = "raw_material" }: PRApprovalPagePr
       <Dialog open={confirmingPR !== null} onOpenChange={(open) => !open && closeApproveDialog()}>
         <DialogPanel size="xs">
           <DialogPanelHeader>
-            <DialogPanelTitle>Approve Purchase Request?</DialogPanelTitle>
+            <DialogPanelTitle>Setujui Permintaan Pembelian?</DialogPanelTitle>
             <DialogPanelDescription>
               {confirmingPR
-                ? `${confirmingPR.pr_number} will be approved as a valid requirement and can proceed to purchase order creation.`
-                : "This request will be approved as a valid requirement."}
+                ? `${confirmingPR.pr_number} akan disetujui sebagai kebutuhan yang sah dan dapat dilanjutkan ke pembuatan PO.`
+                : "Permintaan ini akan disetujui sebagai kebutuhan yang sah."}
             </DialogPanelDescription>
           </DialogPanelHeader>
           <DialogPanelBody />
@@ -293,7 +288,7 @@ export function PRApprovalPage({ moduleType = "raw_material" }: PRApprovalPagePr
               onClick={closeApproveDialog}
               disabled={isProcessing}
             >
-              Cancel
+              Batal
             </Button>
             <Button
               type="button"
@@ -302,7 +297,7 @@ export function PRApprovalPage({ moduleType = "raw_material" }: PRApprovalPagePr
               disabled={isProcessing}
             >
               {processing?.action === "approve" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {processing?.action === "approve" ? "Approving..." : "Approve"}
+              {processing?.action === "approve" ? "Menyetujui..." : "Setujui"}
             </Button>
           </DialogFooter>
         </DialogPanel>
@@ -311,23 +306,23 @@ export function PRApprovalPage({ moduleType = "raw_material" }: PRApprovalPagePr
       <Dialog open={rejectingPR !== null} onOpenChange={(open) => !open && closeRejectDialog()}>
         <DialogPanel size="sm">
           <DialogPanelHeader>
-            <DialogPanelTitle>Reject Purchase Request</DialogPanelTitle>
+            <DialogPanelTitle>Tolak Permintaan Pembelian</DialogPanelTitle>
             <DialogPanelDescription>
               {rejectingPR
-                ? `Provide a reason for rejecting ${rejectingPR.pr_number}. The requester can create a revision if needed.`
-                : "Provide a reason for rejecting this request."}
+                ? `Berikan alasan penolakan untuk ${rejectingPR.pr_number}. Pemohon dapat membuat revisi bila diperlukan.`
+                : "Berikan alasan penolakan untuk permintaan ini."}
             </DialogPanelDescription>
           </DialogPanelHeader>
           <DialogPanelBody>
             <div className="space-y-1.5">
               <Label htmlFor="pr-list-rejection-reason" className="text-xs">
-                Rejection Reason <span className="text-red-500">*</span>
+                Alasan Penolakan <span className="text-red-500">*</span>
               </Label>
               <Textarea
                 id="pr-list-rejection-reason"
                 value={rejectionReason}
                 onChange={(event) => setRejectionReason(event.target.value)}
-                placeholder="Explain why this request is rejected..."
+                placeholder="Jelaskan alasan permintaan ini ditolak..."
                 rows={4}
                 className="resize-none text-sm"
                 disabled={isProcessing}
@@ -342,7 +337,7 @@ export function PRApprovalPage({ moduleType = "raw_material" }: PRApprovalPagePr
               onClick={closeRejectDialog}
               disabled={isProcessing}
             >
-              Cancel
+              Batal
             </Button>
             <Button
               type="button"
@@ -352,7 +347,7 @@ export function PRApprovalPage({ moduleType = "raw_material" }: PRApprovalPagePr
               disabled={isProcessing || !rejectionReason.trim()}
             >
               {processing?.action === "reject" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {processing?.action === "reject" ? "Rejecting..." : "Reject"}
+              {processing?.action === "reject" ? "Menolak..." : "Tolak"}
             </Button>
           </DialogFooter>
         </DialogPanel>

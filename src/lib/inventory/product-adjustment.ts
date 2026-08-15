@@ -1,6 +1,7 @@
-import { queryOne } from "@/lib/db";
 import type { UserScope } from "@/lib/api/scope";
 import { isRowInBusinessScope } from "@/lib/api/scope";
+import { queryOne } from "@/lib/db";
+import { recordFinishedGoodsMovement } from "@/lib/inventory/finished-goods-movements";
 import { ensureProductInventoryId } from "@/lib/inventory/product-stock-opname";
 
 type PgClient = Awaited<
@@ -89,6 +90,20 @@ export async function adjustProductStock(params: {
     .single();
 
   if (updateError || !updated) throw updateError ?? new Error("Gagal memperbarui stok produk");
+
+  await recordFinishedGoodsMovement(params.db, {
+    inventoryId,
+    productId: params.productId,
+    tipe: "adjustment",
+    qtyBefore,
+    qtyAfter: params.qtyActual,
+    unitCost: toNumber(current.unit_cost) || unitCost,
+    referenceType: "manual_adjustment",
+    referenceNumber: product.kode,
+    alasan: "Manual stock adjustment",
+    catatan: params.notes ?? null,
+    userId: params.userId,
+  });
 
   return {
     data: updated,

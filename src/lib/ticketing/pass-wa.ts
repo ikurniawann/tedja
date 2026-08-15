@@ -1,7 +1,7 @@
 // EPIC-028 B2 — kirim WA saat pass online terbayar. Best-effort: gagal WA
 // tidak menggagalkan webhook (pemanggil memutus sendiri). Meniru booking-wa.
 
-import { readGatewayConfig, sendGatewayText } from "@/lib/whatsapp/gateway";
+import { loadGatewayConfig, sendGatewayText } from "@/lib/whatsapp/gateway";
 
 export interface PaidPassWaInput {
   pass_code: string;
@@ -15,7 +15,7 @@ export async function sendPassPaidWa(
   pass: PaidPassWaInput
 ): Promise<{ success: boolean; reason?: string }> {
   if (!pass.holder_phone) return { success: false, reason: "tanpa-nomor" };
-  const config = readGatewayConfig();
+  const config = await loadGatewayConfig();
   if (!config) {
     console.error("[pass] WA gateway belum dikonfigurasi — QR tidak terkirim");
     return { success: false, reason: "gateway-belum-dikonfigurasi" };

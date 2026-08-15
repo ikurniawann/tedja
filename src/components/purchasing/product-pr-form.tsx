@@ -118,35 +118,12 @@ export function ProductPRForm({
   }
 
   async function applyEstimatedPrice(index: number, productId: string, fallbackPrice = 0) {
-    setValue(`items.${index}.estimated_price`, fallbackPrice);
-
-    if (!productId) return;
-
-    try {
-      const res = await fetch(
-        `/api/purchasing/vendor-price-list?product_id=${productId}&status=active&limit=20`
-      );
-      const json = await res.json();
-      if (!res.ok) return;
-
-      const priceLists = (json.data || []) as Array<{ harga?: number; is_preferred?: boolean }>;
-      const sorted = priceLists
-        .filter((row) => Number(row.harga || 0) > 0)
-        .sort((a, b) => {
-          if (a.is_preferred !== b.is_preferred) return a.is_preferred ? -1 : 1;
-          return Number(a.harga || 0) - Number(b.harga || 0);
-        });
-
-      const estimatedPrice = sorted[0]?.harga;
-      if (estimatedPrice !== undefined) {
-        setValue(`items.${index}.estimated_price`, Math.round(estimatedPrice), {
-          shouldDirty: true,
-          shouldValidate: true,
-        });
-      }
-    } catch (error) {
-      console.error("Error loading estimated price:", error);
-    }
+    // Sama seperti RM / general: estimasi dari harga master, bukan price list vendor.
+    void productId;
+    setValue(`items.${index}.estimated_price`, Math.round(Number(fallbackPrice || 0)), {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
   }
 
   async function handleSelectProduct(index: number, productId: string) {

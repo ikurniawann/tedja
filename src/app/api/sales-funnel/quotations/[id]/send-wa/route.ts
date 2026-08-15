@@ -7,7 +7,7 @@ import {
   normalizePhone,
   requireSalesFunnelRole,
 } from "@/lib/sales-funnel/server";
-import { readGatewayConfig, sendGatewayText } from "@/lib/whatsapp/gateway";
+import { loadGatewayConfig, sendGatewayText } from "@/lib/whatsapp/gateway";
 
 function rupiah(value: number): string {
   return "Rp " + Math.round(value || 0).toLocaleString("id-ID");
@@ -94,7 +94,7 @@ export async function POST(
       );
     }
 
-    const config = readGatewayConfig();
+    const config = await loadGatewayConfig();
     if (!config) {
       return NextResponse.json(
         { success: false, error: "WA gateway belum dikonfigurasi" },

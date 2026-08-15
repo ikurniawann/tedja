@@ -12,7 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { AlertTriangle, Camera, Clock, RefreshCw, Users } from "lucide-react";
+import { AlertTriangle, CalendarOff, Camera, Clock, RefreshCw, Users } from "lucide-react";
 import { LEAVE_TYPE_LABELS } from "@/types/hris";
 import { fetchDailyRoster } from "../api";
 import type { DailyRosterData, RosterEmployee, RosterStatus } from "../types";
@@ -29,6 +29,7 @@ const STATUS_META: Record<RosterStatus, { label: string; className: string }> = 
   belum_absen: { label: "Belum Absen", className: "bg-gray-100 text-gray-600" },
   absen: { label: "Tidak Hadir", className: "bg-red-100 text-red-700" },
   cuti: { label: "Cuti/Izin", className: "bg-blue-100 text-blue-700" },
+  libur_nasional: { label: "Libur Nasional", className: "bg-red-100 text-red-600" },
   libur: { label: "Libur", className: "bg-slate-100 text-slate-500" },
   tanpa_jadwal: { label: "Tanpa Jadwal", className: "bg-orange-100 text-orange-700" },
 };
@@ -261,6 +262,19 @@ export function AttendanceMonitoringTab() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Hari libur — jelaskan kenapa roster hari ini sepi (EPIC-036) */}
+      {data && data.holidays.length > 0 && (
+        <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          <CalendarOff className="mt-0.5 h-4 w-4 shrink-0" />
+          <p>
+            <span className="font-semibold">
+              {data.holidays.map((holiday) => holiday.name).join(" · ")}
+            </span>{" "}
+            — hari libur, karyawan terjadwal tidak dihitung mangkir.
+          </p>
+        </div>
+      )}
 
       {/* Ringkasan */}
       {data && (

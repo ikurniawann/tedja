@@ -20,7 +20,9 @@ import {
   XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
-
+import {
+  printThermalReceipt,
+} from "@/components/pos/PrintReceipt";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -38,6 +40,7 @@ import { VoidModal } from "@/components/pos/VoidModal";
 import { cn } from "@/lib/utils";
 
 import type { Order } from "../types";
+import { orderToReceiptPayload } from "../order-to-receipt";
 import { useOrderList } from "../queries";
 import { useLoyaltySettings } from "@/features/pos/loyalty-settings";
 import { formatArkAmount } from "@/lib/pos/loyalty-settings";
@@ -170,66 +173,8 @@ function PaymentBadge({ method }: { method?: string | null }) {
   );
 }
 
-function printReceiptPreview(order: Order) {
-  const printWindow = window.open("", "_blank");
-  if (!printWindow) {
-    toast.error("Could not open print window");
-    return;
-  }
-  printWindow.document.write(`
-    <html>
-      <head>
-        <title>Receipt - ${order.order_number}</title>
-        <style>
-          body { font-family: monospace; width: 58mm; padding: 10px; margin: 0; }
-          .header { text-align: center; margin-bottom: 10px; }
-          .divider { border-bottom: 1px dashed #000; margin: 5px 0; }
-          .row { display: flex; justify-content: space-between; margin: 3px 0; }
-          .total { font-weight: bold; font-size: 1.2em; }
-          @media print { @page { margin: 0; } }
-        </style>
-      </head>
-      <body>
-        <div class="header">
-          <h3>Arkiv OS POS</h3>
-          <p>${order.order_number}</p>
-          <p>${new Date(order.ordered_at || Date.now()).toLocaleString("en-GB")}</p>
-        </div>
-        <div class="divider"></div>
-        ${(order.items || [])
-          .map(
-            (item: {
-              product_name?: string;
-              quantity?: number;
-              total_amount?: number;
-            }) => `
-          <div class="row">
-            <span>${item.product_name} x${item.quantity}</span>
-            <span>${(Number(item.total_amount) || 0).toLocaleString("id-ID")}</span>
-          </div>
-        `
-          )
-          .join("")}
-        <div class="divider"></div>
-        <div class="row total">
-          <span>Total</span>
-          <span>${(Number(order.total_amount) || 0).toLocaleString("id-ID")}</span>
-        </div>
-        <div class="row">
-          <span>Payment</span>
-          <span>${(order.payment_method || "unpaid").toUpperCase()}</span>
-        </div>
-        <div class="divider"></div>
-        <p style="text-align: center; font-size: 0.8em;">Thank you!</p>
-      </body>
-    </html>
-  `);
-  printWindow.document.close();
-  printWindow.focus();
-  setTimeout(() => {
-    printWindow.print();
-    printWindow.close();
-  }, 250);
+function printOrderReceipt(order: Order) {
+  void printThermalReceipt(orderToReceiptPayload(order), "CUSTOMER");
 }
 
 const STATUS_FILTERS = [
@@ -252,13 +197,16 @@ export function OrdersPage() {
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showVoidModal, setShowVoidModal] = useState(false);
 
+  const isPaid = (order: Order) =>
+    order.payment_status === "paid" || order.status === "completed";
+
   const statusCounts = useMemo(
     () => ({
       all: orders.length,
       pending: orders.filter((o) => o.status === "pending").length,
       preparing: orders.filter((o) => o.status === "preparing").length,
       ready: orders.filter((o) => o.status === "ready").length,
-      completed: orders.filter((o) => o.status === "completed").length,
+      completed: orders.filter((o) => isPaid(o)).length,
     }),
     [orders]
   );
@@ -272,7 +220,10 @@ export function OrdersPage() {
         order.customer?.name?.toLowerCase().includes(q) ||
         order.cashier_id?.toLowerCase().includes(q);
       const matchesStatus =
-        statusFilter === "all" || order.status === statusFilter;
+        statusFilter === "all" ||
+        (statusFilter === "completed"
+          ? isPaid(order)
+          : order.status === statusFilter);
       return matchesSearch && matchesStatus;
     });
   }, [orders, searchTerm, statusFilter]);
@@ -282,8 +233,10 @@ export function OrdersPage() {
     setShowDetailModal(true);
   };
 
-  const isActiveOrder = (status?: string | null) =>
-    !!status && !["completed", "cancelled", "voided", "merged"].includes(status);
+  const isActiveOrder = (order: Order) =>
+    !!order.status &&
+    !["completed", "cancelled", "voided", "merged"].includes(order.status) &&
+    order.payment_status !== "paid";
 
   return (
     <div className="space-y-4">
@@ -301,7 +254,7 @@ export function OrdersPage() {
             ["pending", "Pending", statusCounts.pending, "text-amber-700"],
             ["preparing", "Preparing", statusCounts.preparing, "text-sky-700"],
             ["ready", "Ready", statusCounts.ready, "text-violet-700"],
-            ["completed", "Completed", statusCounts.completed, "text-emerald-700"],
+            ["completed", "Lunas", statusCounts.completed, "text-emerald-700"],
           ] as const
         ).map(([key, label, count, tone]) => (
           <button
@@ -354,7 +307,7 @@ export function OrdersPage() {
               <table className="w-full min-w-[780px] text-sm">
                 <thead>
                   <tr className="border-b border-gray-200/70 bg-muted/30 text-left text-muted-foreground">
-                    <th className="px-4 py-3 font-semibold">Order</th>
+                    <th className="px-4 py-3 font-semibold">Order / Antrian</th>
                     <th className="px-4 py-3 font-semibold">Date</th>
                     <th className="px-4 py-3 font-semibold">Customer</th>
                     <th className="px-4 py-3 font-semibold">Type</th>
@@ -374,7 +327,12 @@ export function OrdersPage() {
                       className="border-b border-gray-200/70 last:border-0 hover:bg-muted/20"
                     >
                       <td className="px-4 py-3 font-mono text-xs font-semibold text-foreground">
-                        {order.order_number}
+                        <div>{order.order_number}</div>
+                        {order.queue_number ? (
+                          <div className="mt-0.5 text-[11px] font-bold text-primary">
+                            Antrian {order.queue_number}
+                          </div>
+                        ) : null}
                       </td>
                       <td className="px-4 py-3 text-muted-foreground">
                         {order.ordered_at ? formatDate(order.ordered_at) : "—"}
@@ -400,7 +358,24 @@ export function OrdersPage() {
                         {formatCurrency(order.total_amount || 0)}
                       </td>
                       <td className="px-4 py-3">
-                        <StatusBadge status={order.status} />
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <StatusBadge status={order.status} />
+                          {isPaid(order) ? (
+                            <Badge
+                              variant="secondary"
+                              className="bg-emerald-50 font-medium text-emerald-800"
+                            >
+                              Lunas
+                            </Badge>
+                          ) : (
+                            <Badge
+                              variant="secondary"
+                              className="bg-amber-50 font-medium text-amber-800"
+                            >
+                              Belum bayar
+                            </Badge>
+                          )}
+                        </div>
                       </td>
                       <td
                         className="w-px whitespace-nowrap px-3 py-3"
@@ -432,7 +407,7 @@ export function OrdersPage() {
                           >
                             <Eye className="h-3.5 w-3.5" />
                           </Button>
-                          {isActiveOrder(order.status) ? (
+                          {isActiveOrder(order) ? (
                             <Button
                               type="button"
                               variant="outline"
@@ -485,7 +460,7 @@ export function OrdersPage() {
               className="border-gray-200/80"
               onClick={() => {
                 if (!selectedOrder) return;
-                printReceiptPreview(selectedOrder);
+                printOrderReceipt(selectedOrder);
               }}
             >
               <Printer className="mr-2 h-4 w-4" />
@@ -527,6 +502,7 @@ function OrderDetail({ order }: { order: Order }) {
     <div className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <InfoTile label="Order" value={order.order_number || "—"} mono />
+        <InfoTile label="Antrian" value={order.queue_number || "—"} mono />
         <InfoTile
           label="Date"
           value={order.ordered_at ? formatDate(order.ordered_at) : "—"}

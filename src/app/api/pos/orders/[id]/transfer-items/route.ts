@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { createPgClient } from "@/lib/pg/create-client";
 import { getPosSession } from "@/lib/api/auth";
+import { allocateQueueNumber } from "@/lib/pos/queue-number";
 
 const ACTIVE_STATUSES = ["pending", "confirmed", "preparing", "ready", "served"];
 
@@ -138,7 +139,7 @@ export async function POST(
 
     const { data: source, error: sourceErr } = await db
       .from("pos_orders")
-      .select("id, status, table_id, discount_amount, tax_amount")
+      .select("id, status, table_id, discount_amount, tax_amount, company_id, branch_id")
       .eq("id", sourceOrderId)
       .single();
 
@@ -230,14 +231,22 @@ export async function POST(
         typeof orderNumData === "string"
           ? orderNumData
           : String(orderNumData);
+      const queueNumber = await allocateQueueNumber(
+        db,
+        (source as { company_id?: string | null }).company_id,
+        (source as { branch_id?: string | null }).branch_id
+      );
 
       const { data: newOrder, error: newOrderErr } = await db
         .from("pos_orders")
         .insert({
           order_number: orderNumber,
+          queue_number: queueNumber,
           order_type: "dine_in",
           status: "pending",
           payment_status: "unpaid",
+          company_id: (source as { company_id?: string | null }).company_id || null,
+          branch_id: (source as { branch_id?: string | null }).branch_id || null,
           cashier_id: sessionUserId,
           table_id: target_table_id,
           subtotal: 0,

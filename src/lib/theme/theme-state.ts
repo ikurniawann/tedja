@@ -1,5 +1,5 @@
 // src/lib/theme/theme-state.ts
-import { buildBrandVars, normalizeHex } from "./palette";
+import { normalizeHex } from "./palette";
 import { DEFAULT_PRESET_ID, getPreset } from "./presets";
 
 export type ThemeMode = "light" | "dark" | "auto";
@@ -70,9 +70,4 @@ export function serializeThemeState(state: ThemeState): string {
 
 export function applyThemeState(root: HTMLElement, state: ThemeState): void {
   root.setAttribute("data-theme", state.mode);
-  const { primary, secondary } = resolveBrand(state);
-  const vars = buildBrandVars(primary, secondary);
-  for (const [key, value] of Object.entries(vars)) {
-    root.style.setProperty(key, value);
-  }
 }

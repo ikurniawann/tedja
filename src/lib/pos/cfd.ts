@@ -22,7 +22,7 @@ export interface CfdItem {
 }
 
 export interface CfdPayment {
-  method: "cash" | "qris" | "credit_card" | "ark_coin" | "nfc_tab";
+  method: "cash" | "qris" | "credit_card" | "ark_coin" | "nfc_tab" | "gift_card";
   /** Nominal yang harus dibayar (setelah ARK Coin). */
   amount: number;
   cash_received?: number;

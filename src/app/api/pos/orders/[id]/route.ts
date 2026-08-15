@@ -2,9 +2,16 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createPgClient } from "@/lib/pg/create-client";
 import { getPosSession } from '@/lib/api/auth';
 import { awardCrmXpForPosOrder, syncPosCustomerOrderStats } from '@/lib/crm/loyalty-engine';
+import { restoreMerchandiseStockForOrder } from '@/lib/pos/merchandise-stock';
 import { checkRateLimit } from '@/lib/rate-limit';
 import { isValidNfcUid, normalizeNfcUid } from '@/lib/ticketing/server';
 import { chargeFnbOrderToTab } from '@/lib/ticketing/tab-server';
+import {
+  redeemGiftCardForPosOrder,
+  refundGiftCardForPosOrder,
+} from '@/lib/giftcard/giftcard-server';
+import { ensureQueueNumber } from '@/lib/pos/queue-number';
+import { AccountingPostError } from '@/lib/pos/accounting-posting';
 
 type OrderPatchBody = {
   status?: string;
@@ -17,6 +24,8 @@ type OrderPatchBody = {
   status_notes?: string;
   /** UID gelang ticketing — wajib saat bayar open bill via 'nfc_tab' */
   nfc_tab_uid?: string;
+  /** Kode gift card — wajib saat bayar open bill via 'gift_card' (EPIC-034) */
+  gift_card_code?: string;
 };
 
 function getErrorMessage(error: unknown) {
@@ -43,22 +52,22 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     const numericArkUsed = Number(ark_coins_used) || 0;
 
     const updateData: Record<string, string | number> = {};
-    if (status) updateData.status = status;
+    if (status && status !== 'completed') updateData.status = status;
     if (payment_status) updateData.payment_status = payment_status;
     if (payment_method) updateData.payment_method = payment_method;
     if (amount_paid !== undefined) updateData.amount_paid = numericAmountPaid;
     if (ark_coins_used !== undefined) updateData.ark_coins_used = numericArkUsed;
     if (notes) updateData.notes = notes;
 
-    // Add timestamps based on status
-    if (status === 'completed') {
-      updateData.completed_at = new Date().toISOString();
+    // Payment no longer drives kitchen status. Client may still send
+    // status=completed when paying; treat it as paid only.
+    if (status === 'completed' || payment_status === 'paid') {
       updateData.payment_status = 'paid';
     }
 
     const { data: existing, error: fetchErr } = await db
       .from('pos_orders')
-      .select('customer_id, payment_status, payment_method, total_amount, order_number, company_id, branch_id')
+      .select('customer_id, payment_status, payment_method, total_amount, order_number, company_id, branch_id, queue_number, status')
       .eq('id', orderId)
       .single();
 
@@ -155,6 +164,69 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       updateData.amount_paid = 0;
     }
 
+    // EPIC-034 Fase C — bayar open bill dengan saldo gift card. Pola persis
+    // NFC Tab di atas: debit ber-lock dulu (idempoten per order), baru order
+    // ditandai lunas oleh update generik di bawah. Full-cover only —
+    // saldo kurang ditolak, kasir minta metode lain.
+    const paysWithGiftCard =
+      effectiveMethod === 'gift_card' &&
+      (updateData.payment_status === 'paid' || payment_status === 'paid') &&
+      existing.payment_status !== 'paid';
+    if (paysWithGiftCard) {
+      const rate = checkRateLimit(`pos-gift-card:${sessionUserId}`, 30);
+      if (!rate.allowed) {
+        return NextResponse.json(
+          { success: false, error: 'Terlalu banyak percobaan gift card — tunggu sebentar' },
+          { status: 429 }
+        );
+      }
+      // Order partial sudah menerima uang sebagian — debit full total bakal
+      // menagih dobel (alasan sama dgn NFC Tab).
+      if (existing.payment_status === 'partial') {
+        return NextResponse.json(
+          { success: false, error: 'Order sudah terbayar sebagian — gift card hanya untuk order yang belum terbayar' },
+          { status: 400 }
+        );
+      }
+      const giftCardCode = String(body.gift_card_code || '').trim().toUpperCase();
+      if (!giftCardCode) {
+        return NextResponse.json(
+          { success: false, error: 'Pembayaran gift card membutuhkan kode kartu' },
+          { status: 400 }
+        );
+      }
+      if (numericArkUsed > 0) {
+        return NextResponse.json(
+          { success: false, error: 'Gift card tidak bisa dicampur ARK Coin — 1 transaksi 1 metode' },
+          { status: 400 }
+        );
+      }
+      if (!existing.company_id || !existing.branch_id) {
+        return NextResponse.json(
+          { success: false, error: 'Order tanpa venue — gift card tidak bisa dipakai' },
+          { status: 400 }
+        );
+      }
+      const redeem = await redeemGiftCardForPosOrder({
+        scope: { companyId: existing.company_id, branchId: existing.branch_id },
+        code: giftCardCode,
+        amount: orderTotal,
+        orderId,
+        createdBy: sessionUserId,
+      });
+      if (!redeem.ok) {
+        console.error(
+          `[pos] gift_card debit rejected: order=${orderId} user=${sessionUserId} reason=${redeem.reason}`
+        );
+        return NextResponse.json(
+          { success: false, error: redeem.reason },
+          { status: redeem.status }
+        );
+      }
+      // Uang masuk lewat saldo kartu, bukan laci kasir
+      updateData.amount_paid = 0;
+    }
+
     // Deduct ARK coins atomically BEFORE marking the order paid. The RPC locks
     // the customer row and rejects an insufficient balance in-transaction, so a
     // failed/insufficient deduction never leaves a paid order without the
@@ -185,7 +257,27 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) {
+      // EPIC-034 Fase C — saldo sudah terpotong tapi order gagal ditandai
+      // lunas → kembalikan saldo tamu (kompensasi otomatis, idempoten).
+      if (paysWithGiftCard) {
+        await refundGiftCardForPosOrder({
+          scope: { companyId: existing.company_id, branchId: existing.branch_id },
+          orderId,
+          createdBy: sessionUserId,
+          note: 'Pengembalian saldo — order gagal ditandai lunas',
+        }).catch((refundErr) =>
+          console.error(`[pos] gift_card refund failed: order=${orderId}:`, refundErr)
+        );
+      }
+      throw error;
+    }
+
+    // EPIC-039 Fase A — order batal → kembalikan stok merchandise yang
+    // sudah terpotong (idempoten via flag inventory_deducted per item).
+    if (status === 'cancelled') {
+      await restoreMerchandiseStockForOrder(db, orderId);
+    }
 
     // Log status change
     if (status) {
@@ -198,12 +290,46 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       });
     }
 
+    const nowPaid =
+      (updateData.payment_status === 'paid' || payment_status === 'paid') &&
+      existing.payment_status !== 'paid';
+
+    if (nowPaid) {
+      const queueNumber = await ensureQueueNumber(db, {
+        id: orderId,
+        queue_number: existing.queue_number as string | null,
+        company_id: existing.company_id as string | null,
+        branch_id: existing.branch_id as string | null,
+      });
+      if (queueNumber && data) {
+        (data as { queue_number?: string | null }).queue_number = queueNumber;
+      }
+    }
+
+    let accountingNote: string | null = null;
+    if (nowPaid) {
+      try {
+        const { postPosSaleAccountingJournals } = await import('@/lib/pos/accounting-posting');
+        const accounting = await postPosSaleAccountingJournals({
+          db,
+          orderId,
+          userId: sessionUserId,
+          paymentMethod: effectiveMethod,
+        });
+        accountingNote = accounting.note;
+      } catch (err) {
+        if (err instanceof AccountingPostError) {
+          return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+        }
+        throw err;
+      }
+    }
+
     let crmXp = null;
     if (data.customer_id && (status === 'completed' || payment_status === 'paid')) {
       // Statistik kunjungan/belanja untuk SEMUA metode; hanya sekali per order
       // (saat transisi ke paid), agar visit_count tidak dobel.
-      const nowPaid = updateData.payment_status === 'paid' || payment_status === 'paid';
-      if (nowPaid && existing.payment_status !== 'paid') {
+      if (nowPaid) {
         await syncPosCustomerOrderStats(db, data.customer_id, Number(data.total_amount || 0));
       }
 
@@ -222,7 +348,12 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       });
     }
 
-    return NextResponse.json({ success: true, data, crm_xp: crmXp });
+    return NextResponse.json({
+      success: true,
+      data,
+      crm_xp: crmXp,
+      message: accountingNote || undefined,
+    });
   } catch (error: unknown) {
     console.error('Error updating order:', error);
     return NextResponse.json(

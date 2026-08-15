@@ -71,6 +71,29 @@ export function mapApiPosProduct(product: ApiPosProduct): PosCatalogProduct {
       product.min_xp === null || product.min_xp === undefined
         ? null
         : toNumber(product.min_xp) || null,
+    productKind: product.product_kind || "regular",
+    sourceProductId: product.source_product_id || null,
+    inventoryTracking: product.inventory_tracking === true,
+    inventoryQuantity: toNumber(product.inventory_quantity),
+    weightGram:
+      product.weight_gram === null || product.weight_gram === undefined
+        ? null
+        : toNumber(product.weight_gram),
+    webDistributed: (product.channels ?? []).some(
+      (channel) => channel.channel_code === "web" && channel.is_distributed !== false
+    ),
+    merchSkus: (product.skus ?? []).map((sku) => ({
+      id: sku.id,
+      sku: sku.sku || "",
+      name: sku.name || "",
+      barcode: sku.barcode || null,
+      priceOverride:
+        sku.price_override === null || sku.price_override === undefined
+          ? null
+          : toNumber(sku.price_override),
+      stock: toNumber(sku.stock_quantity),
+      active: sku.is_active !== false,
+    })),
   };
 }
 
@@ -86,6 +109,45 @@ export async function listPosCatalogProducts(): Promise<PosCatalogProduct[]> {
   const response = await fetch("/api/pos/products?include_inactive=true", { cache: "no-store" });
   const json = await parsePosResponse<{ data: ApiPosProduct[] }>(response, "Gagal memuat produk");
   return (json.data ?? []).map(mapApiPosProduct);
+}
+
+// EPIC-039 Fase B — CRUD varian SKU merchandise
+export type SkuWritePayload = {
+  sku?: string;
+  name?: string;
+  barcode?: string | null;
+  price_override?: number | null;
+  stock_quantity?: number;
+  is_active?: boolean;
+};
+
+export async function createProductSku(productId: string, payload: SkuWritePayload) {
+  const response = await fetch(`/api/pos/products/${productId}/skus`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  await parsePosResponse(response, "Gagal membuat varian");
+}
+
+export async function patchProductSku(
+  productId: string,
+  skuId: string,
+  payload: SkuWritePayload
+) {
+  const response = await fetch(`/api/pos/products/${productId}/skus/${skuId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  await parsePosResponse(response, "Gagal menyimpan varian");
+}
+
+export async function deleteProductSku(productId: string, skuId: string) {
+  const response = await fetch(`/api/pos/products/${productId}/skus/${skuId}`, {
+    method: "DELETE",
+  });
+  await parsePosResponse(response, "Gagal menghapus varian");
 }
 
 export async function patchPosProduct(

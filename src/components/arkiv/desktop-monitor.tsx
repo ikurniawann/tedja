@@ -1,10 +1,18 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { useRouter } from "next/navigation";
 import type { DesktopOverview } from "@/lib/desktop/overview";
 import type { ActivityNotification } from "@/lib/desktop/notifications";
 import { buildAskDoPrompt } from "@/lib/desktop/ask-do";
+import { PERIOD_KINDS, PERIOD_LABELS, type PeriodKind } from "@/lib/desktop/period";
 
 /**
  * Papan widget monitoring owner di desktop Arkiv OS (EPIC-019 Fase B).
@@ -19,9 +27,20 @@ const REFRESH_MS = 60_000; // keputusan owner: 60 detik
 /** Permukaan kartu — identik dengan WindowShell/Calendar Widget. */
 const CARD = "rounded-3xl border border-white/18 bg-slate-950/55 shadow-2xl backdrop-blur-2xl";
 
-export type MonitorWidgetKey = "pulsa" | "tim" | "keputusan" | "stok" | "member";
+export type MonitorWidgetKey =
+  | "omzet"
+  | "promo"
+  | "tamu"
+  | "pulsa"
+  | "tim"
+  | "keputusan"
+  | "stok"
+  | "member";
 
 export const MONITOR_WIDGETS: Array<{ key: MonitorWidgetKey; title: string; description: string }> = [
+  { key: "omzet", title: "Pendapatan", description: "Total per periode, komposisi sumber & proyeksi." },
+  { key: "promo", title: "Dampak Promo", description: "Diskon yang keluar vs omzet yang dibawanya." },
+  { key: "tamu", title: "Tamu di Meja", description: "Jumlah tamu yang sedang duduk saat ini." },
   { key: "pulsa", title: "Pulsa Bisnis", description: "Omzet & pesanan hari ini vs kemarin." },
   { key: "tim", title: "Tim Hari Ini", description: "Hadir, terlambat, belum absen, dan cuti." },
   { key: "keputusan", title: "Perlu Keputusan", description: "Pengajuan & dokumen yang menunggu approval." },
@@ -49,17 +68,139 @@ export interface OverviewState {
   data: DesktopOverview | null;
 }
 
+const PERIOD_STORAGE_KEY = "arkiv-desktop-period";
+
+/** Pendengar lokal: `storage` hanya menyala di TAB LAIN, tab sendiri perlu ini. */
+const periodListeners = new Set<() => void>();
+
+function subscribePeriod(callback: () => void): () => void {
+  periodListeners.add(callback);
+  window.addEventListener("storage", callback);
+  return () => {
+    periodListeners.delete(callback);
+    window.removeEventListener("storage", callback);
+  };
+}
+
+function readPeriod(): PeriodKind {
+  try {
+    const saved = window.localStorage.getItem(PERIOD_STORAGE_KEY);
+    return (PERIOD_KINDS as readonly string[]).includes(saved ?? "")
+      ? (saved as PeriodKind)
+      : "today";
+  } catch {
+    return "today"; // mode privat / storage diblokir
+  }
+}
+
+/**
+ * Pilihan periode papan, bertahan antar sesi (EPIC-037 Fase A).
+ *
+ * Memakai `useSyncExternalStore`, bukan useEffect + setState: snapshot server
+ * dikunci ke `today` sehingga tidak ada hydration mismatch, dan tidak ada
+ * render berantai. Efek sampingnya berguna — membuka papan di dua tab membuat
+ * pilihan periodenya ikut serempak lewat event `storage`.
+ */
+export function usePeriodPreference(): [PeriodKind, (next: PeriodKind) => void] {
+  const periode = useSyncExternalStore<PeriodKind>(
+    subscribePeriod,
+    readPeriod,
+    () => "today"
+  );
+
+  const pilih = useCallback((next: PeriodKind) => {
+    try {
+      window.localStorage.setItem(PERIOD_STORAGE_KEY, next);
+    } catch {
+      // Mode privat/kuota penuh: preferensi tidak tersimpan, papan tetap jalan.
+    }
+    periodListeners.forEach((notify) => notify());
+  }, []);
+
+  return [periode, pilih];
+}
+
+function formatTanggalPendek(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const bulan = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Ags", "Sep", "Okt", "Nov", "Des"];
+  return `${d} ${bulan[m - 1]} ${String(y).slice(2)}`;
+}
+
+/**
+ * Switcher periode di level papan — satu kontrol untuk semua widget, bukan
+ * tombol per kartu. Baris ringkasannya menunjukkan jendela pembanding yang
+ * dipakai, karena "naik 12%" tanpa keterangan dibanding apa tidak bisa
+ * ditindaklanjuti.
+ */
+function PeriodSwitcher({
+  periode,
+  onPilih,
+  state,
+}: {
+  periode: PeriodKind;
+  onPilih: (next: PeriodKind) => void;
+  state: OverviewState;
+}) {
+  const meta = state.data?.periode;
+
+  return (
+    <div className={`${CARD} col-span-full p-3`}>
+      <div className="flex flex-wrap gap-1">
+        {PERIOD_KINDS.map((kind) => {
+          const aktif = kind === periode;
+          return (
+            <button
+              key={kind}
+              type="button"
+              onClick={() => onPilih(kind)}
+              aria-pressed={aktif}
+              className={`rounded-full px-3 py-1.5 text-[11px] font-bold transition ${
+                aktif
+                  ? "bg-white text-slate-950"
+                  : "border border-white/18 text-white/70 hover:text-white"
+              }`}
+            >
+              {PERIOD_LABELS[kind]}
+            </button>
+          );
+        })}
+      </div>
+
+      {meta && (
+        <div className="mt-2.5 text-[10px] leading-relaxed text-white/40">
+          {formatTanggalPendek(meta.periode.mulai)}–
+          {formatTanggalPendek(meta.periode.selesai)} · dibanding{" "}
+          {formatTanggalPendek(meta.banding.mulai)}–
+          {formatTanggalPendek(meta.banding.selesai)}
+          {/* Jendela pembanding lebih pendek (mis. 31 Mar vs Feb) — harus
+              dikatakan, bukan disembunyikan di balik satu angka persen. */}
+          {!meta.banding.penuh && (
+            <span className="text-amber-300/80">
+              {" "}
+              · pembanding hanya {meta.banding.hariBanding} hari, periode ini{" "}
+              {meta.periode.hariBerjalan} hari
+            </span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /**
  * Fetch + auto-refresh 60 dtk (berhenti saat tab tersembunyi). 401/403 →
  * `forbidden`, papan tidak dirender dan polling berhenti total.
  */
-export function useDesktopOverview(enabled: boolean): OverviewState {
+export function useDesktopOverview(
+  enabled: boolean,
+  periode: PeriodKind = "today"
+): OverviewState {
   const [state, setState] = useState<OverviewState>({ status: "loading", data: null });
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch("/api/desktop/overview");
+      const res = await fetch(`/api/desktop/overview?periode=${periode}`);
       if (res.status === 401 || res.status === 403) {
         setState({ status: "forbidden", data: null });
         return false;
@@ -72,7 +213,7 @@ export function useDesktopOverview(enabled: boolean): OverviewState {
       setState((prev) => (prev.data ? prev : { status: "error", data: null }));
       return true; // error jaringan sementara: coba lagi di poll berikutnya
     }
-  }, []);
+  }, [periode]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -259,12 +400,17 @@ export function DesktopMonitorBoard({
   visibility,
   order,
   onAskDo,
+  periode = "today",
+  onPilihPeriode,
 }: {
   state: OverviewState;
   visibility: Record<MonitorWidgetKey, boolean>;
   /** Urutan render widget pilihan user; key hilang jatuh ke urutan default. */
   order?: MonitorWidgetKey[];
   onAskDo: (prompt: string) => void;
+  /** Periode papan aktif (EPIC-037 Fase A). */
+  periode?: PeriodKind;
+  onPilihPeriode?: (next: PeriodKind) => void;
 }) {
   const router = useRouter();
   const go = useCallback((href: string) => router.push(href), [router]);
@@ -279,6 +425,166 @@ export function DesktopMonitorBoard({
 
   /** Kartu per widget — urutan render mengikuti preferensi user (Fase C). */
   const cardNodes: Record<MonitorWidgetKey, React.ReactNode> = {
+    omzet: d && visibility.omzet && (
+      <Card
+        wide
+        title="Pendapatan"
+        subtitle={`${PERIOD_LABELS[periode]} · F&B + B2B`}
+        href="/dashboard/pos"
+        onGo={go}
+        onAskDo={onAskDo}
+        askDoPrompt={buildAskDoPrompt("omzet", d)}
+        failed={failedSet.has("omzetPeriode")}
+      >
+        {d.omzetPeriode &&
+          (d.omzetPeriode.adaData ? (
+            <div>
+              <div className="text-[28px] font-extrabold leading-tight tracking-tight">
+                {formatRupiah(d.omzetPeriode.omzet)}
+                {(() => {
+                  const pct = deltaPct(d.omzetPeriode.omzet, d.omzetPeriode.banding.omzet);
+                  if (pct === null) return null;
+                  return (
+                    <span
+                      className={`ml-2 align-middle text-[11px] font-bold ${
+                        pct >= 0 ? "text-emerald-300" : "text-rose-300"
+                      }`}
+                    >
+                      {pct >= 0 ? "+" : ""}
+                      {pct}%
+                    </span>
+                  );
+                })()}
+              </div>
+
+              {/* Komposisi sumber: batang tunggal, karena yang dicari owner
+                  adalah proporsi — bukan nilai absolut per sumber. */}
+              <div className="mt-3 flex h-1.5 overflow-hidden rounded-full bg-white/10">
+                {d.omzetPeriode.sumber.map((s) => (
+                  <div
+                    key={s.kunci}
+                    style={{ width: `${s.porsi}%` }}
+                    className={s.kunci === "fnb" ? "bg-sky-400" : "bg-violet-400"}
+                  />
+                ))}
+              </div>
+              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+                {d.omzetPeriode.sumber.map((s) => (
+                  <span key={s.kunci} className="text-[10px] text-white/50">
+                    <span
+                      className={`mr-1.5 inline-block h-2 w-2 rounded-full align-middle ${
+                        s.kunci === "fnb" ? "bg-sky-400" : "bg-violet-400"
+                      }`}
+                    />
+                    {s.label} {s.porsi}% · {formatRupiah(s.nilai)}
+                  </span>
+                ))}
+              </div>
+
+              {periode !== "today" && (
+                <div className="mt-2 text-[10px] text-white/40">
+                  Proyeksi akhir periode {formatRupiah(d.omzetPeriode.proyeksi)}
+                </div>
+              )}
+            </div>
+          ) : (
+            /* Tegas dibedakan dari "Rp 0": belum ada transaksi tercatat sama
+               sekali. Dua hal berbeda dengan tindak lanjut berbeda. */
+            <div className="text-[11px] text-white/40">
+              Belum ada transaksi tercatat pada periode ini.
+            </div>
+          ))}
+      </Card>
+    ),
+
+    promo: d && visibility.promo && (
+      <Card
+        title="Dampak Promo"
+        subtitle={PERIOD_LABELS[periode]}
+        href="/dashboard/promo"
+        onGo={go}
+        onAskDo={onAskDo}
+        askDoPrompt={buildAskDoPrompt("promo", d)}
+        failed={failedSet.has("dampakPromo")}
+      >
+        {d.dampakPromo &&
+          (d.dampakPromo.adaData ? (
+            <div>
+              <div className="text-[11px] text-white/40">Diskon diberikan</div>
+              <div className="text-[22px] font-extrabold leading-tight tracking-tight">
+                {formatRupiah(d.dampakPromo.diskon)}
+              </div>
+              <div className="mt-1 text-[10px] leading-relaxed text-white/50">
+                membawa {formatRupiah(d.dampakPromo.omzetTerbawa)} omzet dari{" "}
+                {d.dampakPromo.redemption}× pemakaian
+                {d.dampakPromo.efisiensi !== null && (
+                  <>
+                    {" "}
+                    ·{" "}
+                    <span
+                      className={
+                        d.dampakPromo.efisiensi >= 1 ? "text-emerald-300" : "text-rose-300"
+                      }
+                    >
+                      {d.dampakPromo.efisiensi}× lipat
+                    </span>
+                  </>
+                )}
+              </div>
+              {d.dampakPromo.teratas.length > 1 && (
+                <ul className="mt-2 space-y-1 border-t border-white/10 pt-2">
+                  {d.dampakPromo.teratas.slice(0, 3).map((k) => (
+                    <li key={k.kampanye} className="flex justify-between text-[10px] text-white/50">
+                      <span className="truncate pr-2">{k.kampanye}</span>
+                      <span className="shrink-0">{formatRupiah(k.diskon)}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          ) : (
+            <div className="text-[11px] text-white/40">
+              Belum ada promo dipakai pada periode ini.
+            </div>
+          ))}
+      </Card>
+    ),
+
+    tamu: d && visibility.tamu && (
+      <Card
+        title="Tamu di Meja"
+        subtitle="Sedang duduk saat ini"
+        href="/dashboard/pos/restaurant"
+        onGo={go}
+        onAskDo={onAskDo}
+        askDoPrompt={buildAskDoPrompt("tamu", d)}
+        failed={failedSet.has("tamuDiMeja")}
+      >
+        {d.tamuDiMeja && (
+          <div>
+            <div className="text-[28px] font-extrabold leading-tight tracking-tight">
+              {d.tamuDiMeja.tamu}
+              <span className="ml-1.5 align-middle text-[11px] font-bold text-white/40">
+                tamu
+              </span>
+            </div>
+            <div className="mt-1 text-[10px] leading-relaxed text-white/50">
+              {d.tamuDiMeja.meja === 0 ? (
+                "Belum ada meja terisi"
+              ) : (
+                <>
+                  di {d.tamuDiMeja.meja} meja
+                  {d.tamuDiMeja.kapasitas > 0 && (
+                    <> · kapasitas terpakai {d.tamuDiMeja.kapasitas} kursi</>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        )}
+      </Card>
+    ),
+
     pulsa: d && visibility.pulsa && (
         <Card
           wide
@@ -514,6 +820,10 @@ export function DesktopMonitorBoard({
 
   const cards = (
     <>
+      {onPilihPeriode && (
+        <PeriodSwitcher periode={periode} onPilih={onPilihPeriode} state={state} />
+      )}
+
       {state.status === "loading" && (
         <>
           <Skeleton wide />

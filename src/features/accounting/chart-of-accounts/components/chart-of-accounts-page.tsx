@@ -22,11 +22,14 @@ import {
   DialogPanelTitle,
   DialogPanelToolbar,
 } from "@/components/ui/dialog";
+import { Combobox } from "@/components/ui/combobox";
 import { Input } from "@/components/ui/input";
 import { TableRow } from "@/components/ui/table";
 import { ToastContainer, useToast } from "@/components/ui/toast";
 import {
   FormFieldLabel,
+  filterComboboxClassName,
+  formComboboxClassName,
   formInputClassName,
 } from "@/components/layout/form-field";
 import { PurchasingListSection } from "@/modules/purchasing/components/list/PurchasingListSection";
@@ -55,6 +58,7 @@ const EMPTY_FORM = {
   parent_id: "" as string,
   account_type_id: "",
   is_contra: false,
+  is_cash_bank: false,
   cash_flow_category: "" as string,
   description: "",
   is_active: true,
@@ -85,6 +89,7 @@ export function ChartOfAccountsPage() {
   );
 
   const { data, isLoading } = useCoaList(filters);
+  const { data: allCoaData } = useCoaList();
   const { data: accountTypes } = useAccountTypeList();
   const createMutation = useCreateCoaAccount();
   const updateMutation = useUpdateCoaAccount();
@@ -92,6 +97,7 @@ export function ChartOfAccountsPage() {
   const importMutation = useImportCoa();
 
   const rows = useMemo(() => data ?? [], [data]);
+  const allRows = useMemo(() => allCoaData ?? [], [allCoaData]);
   const isSaving = createMutation.isPending || updateMutation.isPending;
   const isDeleting = deleteMutation.isPending;
   const isImporting = importMutation.isPending;
@@ -150,6 +156,7 @@ export function ChartOfAccountsPage() {
       parent_id: item.parent_id ?? "",
       account_type_id: item.account_type_id,
       is_contra: item.is_contra,
+      is_cash_bank: item.is_cash_bank,
       cash_flow_category: item.cash_flow_category ?? "",
       description: item.description ?? "",
       is_active: item.is_active,
@@ -170,6 +177,7 @@ export function ChartOfAccountsPage() {
       parent_id: form.parent_id || null,
       account_type_id: form.account_type_id,
       is_contra: form.is_contra,
+      is_cash_bank: form.is_cash_bank,
       cash_flow_category: (form.cash_flow_category || null) as
         | "OPERATING"
         | "INVESTING"
@@ -223,9 +231,81 @@ export function ChartOfAccountsPage() {
     }
   }
 
-  const parentOptions = useMemo(
-    () => rows.filter((r) => !r.is_postable || r.level < 4),
-    [rows]
+  /** Parent harus satu company_id dengan akun yang dibuat/diedit (Sulu). */
+  const formCompanyId = useMemo(() => {
+    if (dialog === "edit" && selected) return selected.company_id ?? null;
+    if (form.parent_id) {
+      const parent = allRows.find((r) => r.id === form.parent_id);
+      if (parent) return parent.company_id ?? null;
+    }
+    // Create: pakai company dari COA yang tampil (Sulu)
+    return allRows.find((r) => r.company_id)?.company_id ?? null;
+  }, [dialog, selected, form.parent_id, allRows]);
+
+  const accountTypeFilterOptions = useMemo(
+    () =>
+      (accountTypes ?? []).map((t) => ({
+        value: t.id,
+        label: t.code,
+        description: t.name,
+      })),
+    [accountTypes]
+  );
+
+  const accountTypeFormOptions = useMemo(
+    () =>
+      (accountTypes ?? []).map((t) => ({
+        value: t.id,
+        label: `${t.code} — ${t.name}`,
+      })),
+    [accountTypes]
+  );
+
+  const parentFormOptions = useMemo(() => {
+    const excludeIds = new Set<string>();
+    if (selected?.id) {
+      excludeIds.add(selected.id);
+      const queue = [selected.id];
+      while (queue.length > 0) {
+        const id = queue.shift()!;
+        for (const row of allRows) {
+          if (row.parent_id === id && !excludeIds.has(row.id)) {
+            excludeIds.add(row.id);
+            queue.push(row.id);
+          }
+        }
+      }
+    }
+
+    return allRows
+      .filter((p) => {
+        if (excludeIds.has(p.id)) return false;
+        if ((p.company_id ?? null) !== formCompanyId) return false;
+        // Hanya kandidat parent (bukan leaf level 4)
+        if (p.level >= 4) return false;
+        return true;
+      })
+      .map((p) => ({
+        value: p.id,
+        label: `${p.code_display || p.code} — ${p.name}`,
+      }));
+  }, [allRows, selected?.id, formCompanyId]);
+
+  const cashFlowOptions = useMemo(
+    () =>
+      CASH_FLOW_CATEGORIES.map((c) => ({
+        value: c,
+        label: c,
+      })),
+    []
+  );
+
+  const postableFilterOptions = useMemo(
+    () => [
+      { value: "true", label: "Postable" },
+      { value: "false", label: "Header" },
+    ],
+    []
   );
 
   return (
@@ -291,27 +371,26 @@ export function ChartOfAccountsPage() {
                 </button>
               ) : null}
             </label>
-            <select
+            <Combobox
+              options={accountTypeFilterOptions}
               value={typeFilter}
-              onChange={(e) => setTypeFilter(e.target.value)}
-              className="h-10 rounded-lg border border-gray-200/80 bg-card px-3 text-sm focus:border-primary/40 focus:outline-none focus:ring-1 focus:ring-primary/30"
-            >
-              <option value="">Semua type</option>
-              {(accountTypes ?? []).map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.code}
-                </option>
-              ))}
-            </select>
-            <select
+              onChange={setTypeFilter}
+              placeholder="Semua type"
+              searchPlaceholder="Cari type..."
+              emptyMessage="Type tidak ditemukan"
+              allowClear
+              className={`${filterComboboxClassName} h-10 w-[180px] shrink-0 bg-card`}
+            />
+            <Combobox
+              options={postableFilterOptions}
               value={postableFilter}
-              onChange={(e) => setPostableFilter(e.target.value)}
-              className="h-10 rounded-lg border border-gray-200/80 bg-card px-3 text-sm focus:border-primary/40 focus:outline-none focus:ring-1 focus:ring-primary/30"
-            >
-              <option value="">Semua</option>
-              <option value="true">Postable</option>
-              <option value="false">Header</option>
-            </select>
+              onChange={setPostableFilter}
+              placeholder="Semua"
+              searchPlaceholder="Cari..."
+              emptyMessage="Tidak ditemukan"
+              allowClear
+              className={`${filterComboboxClassName} h-10 w-[150px] shrink-0 bg-card`}
+            />
             <Button
               type="button"
               variant="outline"
@@ -431,6 +510,14 @@ export function ChartOfAccountsPage() {
                             Contra
                           </Badge>
                         ) : null}
+                        {item.is_cash_bank ? (
+                          <Badge
+                            variant="outline"
+                            className="border-sky-200/80 text-sky-700"
+                          >
+                            Kas/Bank
+                          </Badge>
+                        ) : null}
                         {!item.is_active ? (
                           <Badge
                             variant="outline"
@@ -495,24 +582,17 @@ export function ChartOfAccountsPage() {
               </div>
               <div className="space-y-1.5 sm:col-span-1">
                 <FormFieldLabel required>Account Type</FormFieldLabel>
-                <select
+                <Combobox
+                  options={accountTypeFormOptions}
                   value={form.account_type_id}
-                  onChange={(e) =>
-                    setForm((f) => ({
-                      ...f,
-                      account_type_id: e.target.value,
-                    }))
+                  onChange={(value) =>
+                    setForm((f) => ({ ...f, account_type_id: value }))
                   }
-                  className={formInputClassName}
-                  required
-                >
-                  <option value="">Pilih type</option>
-                  {(accountTypes ?? []).map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.code} — {t.name}
-                    </option>
-                  ))}
-                </select>
+                  placeholder="Pilih type"
+                  searchPlaceholder="Cari type..."
+                  emptyMessage="Type tidak ditemukan"
+                  className={formComboboxClassName}
+                />
               </div>
               <div className="space-y-1.5 sm:col-span-2">
                 <FormFieldLabel required>Nama</FormFieldLabel>
@@ -527,42 +607,33 @@ export function ChartOfAccountsPage() {
               </div>
               <div className="space-y-1.5 sm:col-span-2">
                 <FormFieldLabel>Parent</FormFieldLabel>
-                <select
+                <Combobox
+                  options={parentFormOptions}
                   value={form.parent_id}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, parent_id: e.target.value }))
+                  onChange={(value) =>
+                    setForm((f) => ({ ...f, parent_id: value }))
                   }
-                  className={formInputClassName}
-                >
-                  <option value="">— Root —</option>
-                  {parentOptions
-                    .filter((p) => p.id !== selected?.id)
-                    .map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.code_display || p.code} — {p.name}
-                      </option>
-                    ))}
-                </select>
+                  placeholder="— Root —"
+                  searchPlaceholder="Cari parent..."
+                  emptyMessage="Parent tidak ditemukan"
+                  allowClear
+                  className={formComboboxClassName}
+                />
               </div>
               <div className="space-y-1.5">
                 <FormFieldLabel>Cash Flow Category</FormFieldLabel>
-                <select
+                <Combobox
+                  options={cashFlowOptions}
                   value={form.cash_flow_category}
-                  onChange={(e) =>
-                    setForm((f) => ({
-                      ...f,
-                      cash_flow_category: e.target.value,
-                    }))
+                  onChange={(value) =>
+                    setForm((f) => ({ ...f, cash_flow_category: value }))
                   }
-                  className={formInputClassName}
-                >
-                  <option value="">—</option>
-                  {CASH_FLOW_CATEGORIES.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
+                  placeholder="—"
+                  searchPlaceholder="Cari kategori..."
+                  emptyMessage="Kategori tidak ditemukan"
+                  allowClear
+                  className={formComboboxClassName}
+                />
               </div>
               <div className="space-y-1.5">
                 <FormFieldLabel>Deskripsi</FormFieldLabel>
@@ -582,6 +653,15 @@ export function ChartOfAccountsPage() {
                   }
                 />
                 Contra account
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <Checkbox
+                  checked={form.is_cash_bank}
+                  onCheckedChange={(v) =>
+                    setForm((f) => ({ ...f, is_cash_bank: Boolean(v) }))
+                  }
+                />
+                Kas / Bank
               </label>
               <label className="flex items-center gap-2 text-sm">
                 <Checkbox

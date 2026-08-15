@@ -20,14 +20,25 @@ const QC_ROLES: UserRole[] = [
   "super_admin",
 ];
 
-const qcItemSchema = z.object({
-  grn_item_id: z.string().uuid(),
-  raw_material_id: z.string().uuid(),
-  qty_inspected: z.number().min(0),
-  qty_accepted: z.number().min(0),
-  qty_rejected: z.number().min(0),
-  catatan: z.string().optional().nullable(),
-});
+const qcItemSchema = z
+  .object({
+    grn_item_id: z.string().uuid(),
+    raw_material_id: z.string().uuid().optional().nullable(),
+    product_id: z.string().uuid().optional().nullable(),
+    qty_inspected: z.number().min(0),
+    qty_accepted: z.number().min(0),
+    qty_rejected: z.number().min(0),
+    catatan: z.string().optional().nullable(),
+  })
+  .superRefine((item, ctx) => {
+    if (!item.raw_material_id && !item.product_id) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Item QC wajib memiliki raw material atau product",
+        path: ["raw_material_id"],
+      });
+    }
+  });
 
 const createQcSchema = z.object({
   status: z.enum(["approved", "rejected", "partial"]).optional(),
@@ -102,6 +113,7 @@ export async function POST(
       userId: user.id,
     });
 
+    const baseMessage = "Quality control completed and stock updated";
     return createdResponse(
       {
         grn_id: id,
@@ -112,7 +124,7 @@ export async function POST(
           rejected: result.totalRejected,
         },
       },
-      "Quality control completed and stock updated"
+      result.accountingNote ? `${baseMessage} (${result.accountingNote})` : baseMessage
     );
   } catch (error) {
     if (error instanceof ApiError) return error.toResponse();

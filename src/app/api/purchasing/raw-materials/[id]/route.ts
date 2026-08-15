@@ -75,24 +75,6 @@ export async function GET(
       );
     }
 
-    // Get suppliers dengan harga
-    const { data: suppliers, error: suppliersError } = await db
-      .from("supplier_price_lists")
-      .select(`
-        *,
-        supplier:suppliers!supplier_id (
-          id,
-          kode,
-          nama_supplier
-        ),
-        satuan:units!satuan_id (*)
-      `)
-      .eq("bahan_baku_id", id)
-      .eq("is_active", true)
-      .order("is_preferred", { ascending: false });
-
-    if (suppliersError) throwIfDbError(suppliersError);
-
     // Get inventory movements terakhir
     const { data: movements, error: movementsError } = await db
       .from("inventory_movements")
@@ -129,7 +111,6 @@ export async function GET(
       success: true,
       data: {
         ...data,
-        suppliers: suppliers || [],
         movements: movements || [],
         products: products || [],
         unit_conversions: unitConversions || [],

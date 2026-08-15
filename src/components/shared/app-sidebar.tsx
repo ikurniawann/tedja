@@ -17,7 +17,7 @@ import {
 import { toast } from "sonner";
 import { ActivityLogBell } from "@/components/layout/ActivityLogBell";
 import { NotificationBell } from "@/components/hris/NotificationBell";
-import { useTheme } from "@/components/providers/theme-provider";
+import { useThemeOrNull } from "@/components/providers/theme-provider";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -38,13 +38,15 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
-import {
-  RESTAURANT_PATH,
-  isRestaurantImmersive,
-} from "@/features/pos/restaurant/nav";
 import { PosNfcShell } from "@/features/pos/nfc";
+import { isPosImmersiveShell } from "@/features/pos/tablet-mode";
+import { PosTabletManifestLink } from "@/features/pos/components/pos-tablet-manifest-link";
 import type { NavItem } from "@/lib/iam/types";
 import { isEssOnlyRole } from "@/lib/iam/access";
+import {
+  POS_CART_STORAGE_KEY,
+  posCartHasItems,
+} from "@/lib/pos/pos-sell-stall";
 import AppSidebarNav from "./app-sidebar-nav";
 import { DashboardBreadcrumbs } from "./dashboard-breadcrumbs";
 
@@ -57,6 +59,7 @@ export interface SidebarUser {
   branch_name?: string | null;
   warehouse_name?: string | null;
   active_stall_id?: string | null;
+  can_switch_stall?: boolean;
 }
 
 export interface AppSidebarProps {
@@ -74,9 +77,9 @@ function AppSidebarContent({
   user,
   navItems,
   children,
-  restaurantImmersive,
+  posImmersive,
   essOnly: essOnlyProp,
-}: AppSidebarProps & { restaurantImmersive: boolean }) {
+}: AppSidebarProps & { posImmersive: boolean }) {
   const pathname = usePathname();
   // ESS-only: sembunyikan seluruh jalan menuju desktop Arkiv OS.
   // Nilai dari server (IAM) diutamakan; fallback kebijakan role di kode.
@@ -88,14 +91,15 @@ function AppSidebarContent({
 
   const closeMobile = () => setMobileOpen(false);
 
-  if (restaurantImmersive) {
+  if (posImmersive) {
     return (
       <PosNfcShell>
+        <PosTabletManifestLink />
         <div
           className="arkiv-dashboard-theme min-h-screen"
           style={{ background: "var(--page-mesh)" }}
         >
-          <main className="min-h-screen overflow-auto p-0">{children}</main>
+          <main className="min-h-[100dvh] overflow-auto p-2 sm:p-3 md:p-4">{children}</main>
         </div>
       </PosNfcShell>
     );
@@ -116,9 +120,14 @@ function AppSidebarContent({
       )}
 
       <aside
-        className={`fixed inset-y-0 left-0 z-40 flex transform flex-col bg-linear-to-br from-pink-50 to-white shadow-xl transition-all duration-200 ease-in-out lg:relative lg:z-0 lg:flex lg:shrink-0 lg:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-40 flex transform flex-col shadow-xl transition-all duration-200 ease-in-out lg:relative lg:z-0 lg:flex lg:shrink-0 lg:translate-x-0 ${
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         } ${collapsed ? "lg:w-20" : "lg:w-64"}`}
+        style={{
+          background: "var(--sidebar-background)",
+          color: "var(--sidebar-foreground)",
+          borderRight: "1px solid var(--sidebar-border)",
+        }}
       >
         <SidebarHeader
           collapsed={collapsed}
@@ -126,7 +135,7 @@ function AppSidebarContent({
           companyName={user.company_name}
           branchName={user.branch_name}
           warehouseName={user.warehouse_name}
-          canSwitchStall={user.role === "super_admin" || user.role === "admin"}
+          canSwitchStall={user.can_switch_stall === true}
           activeStallId={user.active_stall_id ?? null}
         />
 
@@ -143,7 +152,12 @@ function AppSidebarContent({
         />
 
         <div
-          className={`hidden items-center justify-between gap-4 border-b border-gray-100 bg-white/50 px-6 py-3 backdrop-blur-sm lg:flex ${DESKTOP_TOP_BAR_HEIGHT} lg:py-0`}
+          className={`hidden items-center justify-between gap-4 px-6 py-3 backdrop-blur-sm lg:flex ${DESKTOP_TOP_BAR_HEIGHT} lg:py-0`}
+          style={{
+            background: "var(--navbar-background)",
+            color: "var(--navbar-foreground)",
+            borderBottom: "1px solid var(--navbar-border)",
+          }}
         >
           <DashboardBreadcrumbs navItems={navItems} className="max-w-[55%]" />
           <div className="flex shrink-0 items-center gap-3">
@@ -153,11 +167,11 @@ function AppSidebarContent({
             <button
               type="button"
               onClick={() => setAccountOpen(true)}
-              className="inline-flex cursor-pointer items-center gap-3 rounded-xl border border-pink-100 bg-white px-3 py-2 text-left shadow-sm transition-colors hover:border-pink-200 hover:bg-pink-50"
+              className="inline-flex cursor-pointer items-center gap-3 rounded-xl border border-primary/20 bg-card px-3 py-2 text-left shadow-sm transition-colors hover:border-primary/30 hover:bg-primary/5"
               title="Klik untuk melihat akun login"
               aria-label="Buka popup akun login"
             >
-              <span className="grid h-9 w-9 place-items-center rounded-full bg-pink-600 text-sm font-bold text-white">
+              <span className="grid h-9 w-9 place-items-center rounded-full bg-primary text-sm font-bold text-primary-foreground">
                 {user.full_name?.slice(0, 1).toUpperCase() || "A"}
               </span>
               <span className="min-w-0">
@@ -188,18 +202,21 @@ function AppSidebarContent({
 function AppSidebarWithSearch(props: AppSidebarProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const restaurantImmersive =
-    pathname === RESTAURANT_PATH && isRestaurantImmersive(searchParams);
+  const posImmersive = isPosImmersiveShell(pathname, searchParams);
 
-  return (
-    <AppSidebarContent {...props} restaurantImmersive={restaurantImmersive} />
-  );
+  return <AppSidebarContent {...props} posImmersive={posImmersive} />;
 }
 
 export default function AppSidebar(props: AppSidebarProps) {
   return (
     <Suspense
-      fallback={<AppSidebarContent {...props} restaurantImmersive={false} />}
+      fallback={
+        <div
+          className="min-h-dvh w-full"
+          style={{ background: "var(--page-mesh)" }}
+          aria-hidden
+        />
+      }
     >
       <AppSidebarWithSearch {...props} />
     </Suspense>
@@ -225,9 +242,10 @@ function SidebarHeader({
 }) {
   return (
     <div
-      className={`group/header relative flex shrink-0 items-center border-b border-gray-100 bg-white/50 backdrop-blur-sm ${
+      className={`group/header relative flex shrink-0 items-center backdrop-blur-sm ${
         collapsed ? "justify-center px-2 py-3.5" : "px-3 py-4"
       } ${DESKTOP_TOP_BAR_HEIGHT} lg:py-0`}
+      style={{ borderBottom: "1px solid var(--sidebar-border)" }}
     >
 
       {collapsed ? (
@@ -325,7 +343,9 @@ const THEME_MODES = [
 ];
 
 function ThemeToggle() {
-  const { state, setMode } = useTheme();
+  const theme = useThemeOrNull();
+  if (!theme) return null;
+  const { state, setMode } = theme;
   const currentIdx = THEME_MODES.findIndex((m) => m.value === state.mode);
   const current = THEME_MODES[currentIdx] ?? THEME_MODES[0];
   const next = THEME_MODES[(currentIdx + 1) % THEME_MODES.length];
@@ -359,6 +379,9 @@ function StallSwitcher({
   activeStallId: string | null;
   children: React.ReactNode;
 }) {
+  const pathname = usePathname();
+  const hideAllStallsOption =
+    pathname.includes("/cashier") || pathname.includes("/restaurant");
   const [stalls, setStalls] = useState<StallOption[] | null>(null);
   const [allAccess, setAllAccess] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -387,6 +410,16 @@ function StallSwitcher({
 
   async function selectStall(warehouseId: string | null) {
     if (switching || warehouseId === activeStallId) return;
+    try {
+      if (posCartHasItems(localStorage.getItem(POS_CART_STORAGE_KEY))) {
+        toast.error(
+          "Kosongkan atau selesaikan keranjang sebelum ganti stall"
+        );
+        return;
+      }
+    } catch {
+      /* localStorage may be unavailable */
+    }
     setSwitching(true);
     try {
       const res = await fetch("/api/auth/active-stall", {
@@ -425,7 +458,7 @@ function StallSwitcher({
           <DropdownMenuLabel className="px-2 pb-1.5 pt-1 text-xs font-medium text-gray-400">
             Stall
           </DropdownMenuLabel>
-          {allAccess && (
+          {allAccess && !hideAllStallsOption && (
             <DropdownMenuItem
               disabled={switching}
               onClick={() => selectStall(null)}
@@ -439,6 +472,11 @@ function StallSwitcher({
               </span>
               {activeStallId === null && <Check className="h-4 w-4 shrink-0 text-pink-600" />}
             </DropdownMenuItem>
+          )}
+          {hideAllStallsOption && (
+            <p className="px-2 pb-1.5 text-[11px] leading-snug text-amber-700/90">
+              Di kasir/restaurant wajib pilih satu stall (bukan Semua Stall).
+            </p>
           )}
           {stalls === null ? (
             <div className="flex justify-center py-3">

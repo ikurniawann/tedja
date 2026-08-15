@@ -18,6 +18,7 @@ import type {
   ReplyTemplate,
 } from "../types";
 import { STATUS_LABELS, STATUS_STYLES } from "../types";
+import { ConversationInsightCard } from "./conversation-insight-card";
 
 /** Panel tengah — thread chat + komposer balasan + aksi status/assign. */
 
@@ -141,6 +142,9 @@ export function ChatPanel({
           </div>
         </div>
       </div>
+
+      {/* EPIC-029 — ringkasan AI percakapan ini (hanya baca cache saat dibuka). */}
+      <ConversationInsightCard conversationId={conversation.id} />
 
       <div className="flex-1 space-y-2 overflow-y-auto bg-slate-50 p-4">
         {messages.map((message) => {

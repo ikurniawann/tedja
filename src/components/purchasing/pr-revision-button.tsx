@@ -33,14 +33,14 @@ export function PRRevisionButton({ prId }: PRRevisionButtonProps) {
       });
       const payload = await response.json();
       if (!response.ok) {
-        throw new Error(payload.error || "Failed to create purchase request revision");
+        throw new Error(payload.error || "Gagal membuat revisi purchase request");
       }
 
       setOpen(false);
       router.push(`${RM_ROUTES.purchasingPrEdit(payload.data.id)}?revision=created`);
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : "Failed to create purchase request revision"
+        error instanceof Error ? error.message : "Gagal membuat revisi purchase request"
       );
     } finally {
       setLoading(false);
@@ -56,16 +56,16 @@ export function PRRevisionButton({ prId }: PRRevisionButtonProps) {
         onClick={() => setOpen(true)}
       >
         <FileText className="mr-2 h-4 w-4" />
-        Create Revision
+        Buat Revisi
       </Button>
 
       <Dialog open={open} onOpenChange={(open) => !loading && setOpen(open)}>
         <DialogPanel size="xs">
           <DialogPanelHeader>
-            <DialogPanelTitle>Create Revision?</DialogPanelTitle>
+            <DialogPanelTitle>Buat Revisi?</DialogPanelTitle>
             <DialogPanelDescription>
-              A new draft purchase request will be created from this rejected request. The
-              original request remains in history.
+              Draf purchase request baru akan dibuat dari permintaan yang ditolak ini. Permintaan
+              asli tetap tersimpan di riwayat.
             </DialogPanelDescription>
           </DialogPanelHeader>
           <DialogPanelBody />
@@ -77,7 +77,7 @@ export function PRRevisionButton({ prId }: PRRevisionButtonProps) {
               onClick={() => setOpen(false)}
               disabled={loading}
             >
-              Cancel
+              Batal
             </Button>
             <Button
               type="button"
@@ -86,7 +86,7 @@ export function PRRevisionButton({ prId }: PRRevisionButtonProps) {
               disabled={loading}
             >
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {loading ? "Creating..." : "Create Revision"}
+              {loading ? "Membuat..." : "Buat Revisi"}
             </Button>
           </DialogFooter>
         </DialogPanel>

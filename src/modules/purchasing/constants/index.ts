@@ -116,12 +116,12 @@ export const PR_STATUS = {
 export type PRStatus = typeof PR_STATUS[keyof typeof PR_STATUS];
 
 export const PR_STATUS_LABELS: Record<PRStatus, string> = {
-  draft: "Draft",
-  pending_head: "Menunggu Approval Kepala",
-  pending_finance: "Menunggu Approval Finance",
-  pending_direksi: "Menunggu Approval Direksi",
+  draft: "Draf",
+  pending_head: "Menunggu Kepala Departemen",
+  pending_finance: "Menunggu Finance",
+  pending_direksi: "Menunggu Direktur",
   approved: "Disetujui",
-  converted: "Sudah jadi PO",
+  converted: "Purchase Order Dibuat",
   rejected: "Ditolak",
   cancelled: "Dibatalkan",
 };
@@ -148,7 +148,7 @@ export type PRPriority = typeof PR_PRIORITY[keyof typeof PR_PRIORITY];
 export const PR_PRIORITY_LABELS: Record<PRPriority, string> = {
   low: "Rendah",
   normal: "Normal",
-  urgent: "Urgent",
+  urgent: "Mendesak",
   critical: "Kritis",
 };
 
@@ -253,7 +253,7 @@ export const ADJUSTMENT_REASONS = {
 export type AdjustmentReason = typeof ADJUSTMENT_REASONS[keyof typeof ADJUSTMENT_REASONS];
 
 export const ADJUSTMENT_REASON_LABELS: Record<AdjustmentReason, string> = {
-  stock_opname: "Stock Opname",
+  stock_opname: "Stok Opname",
   damaged: "Barang Rusak",
   expired: "Barang Kadaluarsa",
   theft: "Pencurian / Kehilangan",

@@ -41,8 +41,8 @@ export function isEssPath(pathname: string): boolean {
  */
 export const ROLE_MODULE_PATHS: Record<string, readonly string[]> = {
   sales: ["/dashboard/sales-funnel"],
-  // EPIC-025: finance memproses invoice & pembayaran AR
-  finance_staff: ["/dashboard/finance"],
+  // EPIC-025: finance memproses invoice B2B + accounting
+  finance_staff: ["/dashboard/accounting", "/dashboard/finance"],
   // EPIC-032: marketing mengelola campaign promo, kode & voucher
   marketing: ["/dashboard/promo"],
 };

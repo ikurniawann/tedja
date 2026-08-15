@@ -28,23 +28,23 @@ const STATUS_STYLES: Record<string, string> = {
 };
 
 const STATUS_LABELS: Record<string, string> = {
-  AMAN: "Safe",
-  MENIPIS: "Low Stock",
-  HABIS: "Out of Stock",
+  AMAN: "Aman",
+  MENIPIS: "Stok Menipis",
+  HABIS: "Stok Habis",
 };
 
 type UnitMode = "besar" | "kecil";
 
 const UNIT_OPTIONS = [
-  { value: "besar", label: "Large Unit" },
-  { value: "kecil", label: "Small Unit" },
+  { value: "besar", label: "Satuan Besar" },
+  { value: "kecil", label: "Satuan Kecil" },
 ];
 
 const STATUS_OPTIONS = [
-  { value: "all", label: "All Statuses" },
-  { value: "normal", label: "Safe" },
-  { value: "low_stock", label: "Low Stock" },
-  { value: "out_of_stock", label: "Out of Stock" },
+  { value: "all", label: "Semua Status" },
+  { value: "normal", label: "Aman" },
+  { value: "low_stock", label: "Stok Menipis" },
+  { value: "out_of_stock", label: "Stok Habis" },
 ];
 
 function formatQty(value: number | string | null | undefined) {
@@ -114,7 +114,7 @@ export function RawMaterialStockTab() {
 
   const warehouseOptions = useMemo(
     () => [
-      { value: "all", label: "All Stalls (Branch Total)" },
+      { value: "all", label: "Semua Stall (Total Cabang)" },
       ...warehouses.map((w) => ({
         value: w.id,
         label: w.name,
@@ -125,7 +125,7 @@ export function RawMaterialStockTab() {
   );
 
   const selectedWarehouseLabel = useMemo(() => {
-    if (warehouseFilter === "all") return "All Stalls (Branch Total)";
+    if (warehouseFilter === "all") return "Semua Stall (Total Cabang)";
     return warehouses.find((w) => w.id === warehouseFilter)?.name || "Stall";
   }, [warehouseFilter, warehouses]);
 
@@ -170,19 +170,19 @@ export function RawMaterialStockTab() {
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
         <Card className="border-gray-200/70 shadow-xs">
           <CardContent className="p-4">
-            <p className="text-xs font-medium text-gray-500">Total Raw Materials</p>
+            <p className="text-xs font-medium text-gray-500">Total Bahan Baku</p>
             <p className="mt-1 text-2xl font-bold text-gray-900">{total}</p>
           </CardContent>
         </Card>
         <Card className="border-gray-200/70 shadow-xs">
           <CardContent className="p-4">
-            <p className="text-xs font-medium text-gray-500">Needs Attention (This Page)</p>
+            <p className="text-xs font-medium text-gray-500">Perlu Perhatian (Halaman Ini)</p>
             <p className="mt-1 text-2xl font-bold text-amber-700">{summary.attention}</p>
           </CardContent>
         </Card>
         <Card className="border-gray-200/70 shadow-xs">
           <CardContent className="p-4">
-            <p className="text-xs font-medium text-gray-500">Stock Value (This Page)</p>
+            <p className="text-xs font-medium text-gray-500">Nilai Stok (Halaman Ini)</p>
             <p className="mt-1 text-2xl font-bold text-gray-900">
               {formatAmount(summary.totalValue)}
             </p>
@@ -192,14 +192,14 @@ export function RawMaterialStockTab() {
 
       <PurchasingListSection
         icon={Package}
-        title="Raw Material Stock List"
-        description="Review material code, category, on-hand quantity, minimum stock, unit cost, stock value, and stock status."
+        title="Daftar Stok Bahan Baku"
+        description="Tinjau kode bahan, kategori, jumlah tersedia, stok minimum, harga satuan, nilai stok, dan status stok."
         toolbar={
           <div className="flex w-full flex-col gap-3 lg:flex-row lg:items-center">
             <label className="relative w-full lg:w-80">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
               <Input
-                placeholder="Search code or material name..."
+                placeholder="Cari kode atau nama bahan..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="h-10 border-gray-200/80 pl-9"
@@ -209,7 +209,7 @@ export function RawMaterialStockTab() {
               options={UNIT_OPTIONS}
               value={unitMode}
               onChange={(v) => setUnitMode((v || "besar") as UnitMode)}
-              placeholder="Unit"
+              placeholder="Satuan"
               className="h-10 w-full lg:w-40"
             />
             <Combobox
@@ -219,7 +219,7 @@ export function RawMaterialStockTab() {
                 setStatusFilter(v || "all");
                 setPage(1);
               }}
-              placeholder="All Statuses"
+              placeholder="Semua Status"
               className="h-10 w-full lg:w-44"
             />
             <Combobox
@@ -229,9 +229,9 @@ export function RawMaterialStockTab() {
                 setWarehouseFilter(v || "all");
                 setPage(1);
               }}
-              placeholder={loadingWarehouses ? "Loading stalls..." : "All Stalls"}
-              searchPlaceholder="Search stall..."
-              emptyMessage={loadingWarehouses ? "Loading..." : "No stall found"}
+              placeholder={loadingWarehouses ? "Memuat stall..." : "Semua Stall"}
+              searchPlaceholder="Cari stall..."
+              emptyMessage={loadingWarehouses ? "Memuat..." : "Stall tidak ditemukan"}
               disabled={loadingWarehouses}
               className="h-10 w-full lg:w-52"
             />
@@ -240,11 +240,11 @@ export function RawMaterialStockTab() {
       >
         {warehouseFilter === "all" ? (
           <p className="border-b border-gray-200/70 px-5 py-2 text-xs text-gray-500">
-            Showing total stock across all stalls in your branch (not per location).
+            Menampilkan total stok dari seluruh stall di cabang Anda (bukan per lokasi).
           </p>
         ) : (
           <p className="border-b border-gray-200/70 px-5 py-2 text-xs text-gray-500">
-            Showing stock per stall location:{" "}
+            Menampilkan stok per lokasi stall:{" "}
             <span className="font-medium text-gray-700">{selectedWarehouseLabel}</span>
           </p>
         )}
@@ -253,30 +253,30 @@ export function RawMaterialStockTab() {
           <table className="min-w-full text-sm">
             <thead>
               <tr className="border-b border-gray-200/70 text-xs uppercase tracking-wide text-gray-500">
-                <th className="py-3 pr-4 text-left font-semibold">Code</th>
-                <th className="px-3 py-3 text-left font-semibold">Material Name</th>
-                <th className="px-3 py-3 text-left font-semibold">Category</th>
-                <th className="px-3 py-3 text-right font-semibold">On Hand</th>
+                <th className="py-3 pr-4 text-left font-semibold">Kode</th>
+                <th className="px-3 py-3 text-left font-semibold">Nama Bahan</th>
+                <th className="px-3 py-3 text-left font-semibold">Kategori</th>
+                <th className="px-3 py-3 text-right font-semibold">Tersedia</th>
                 <th className="px-3 py-3 text-right font-semibold">Minimum</th>
-                <th className="px-3 py-3 text-left font-semibold">Unit</th>
-                <th className="px-3 py-3 text-right font-semibold">Unit Cost</th>
-                <th className="px-3 py-3 text-right font-semibold">Stock Value</th>
-                <th className="px-3 py-3 text-center font-semibold">Stock Status</th>
-                <th className="py-3 pl-3 text-right font-semibold">Actions</th>
+                <th className="px-3 py-3 text-left font-semibold">Satuan</th>
+                <th className="px-3 py-3 text-right font-semibold">Harga Satuan</th>
+                <th className="px-3 py-3 text-right font-semibold">Nilai Stok</th>
+                <th className="px-3 py-3 text-center font-semibold">Status Stok</th>
+                <th className="py-3 pl-3 text-right font-semibold">Aksi</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200/70">
               {loading ? (
                 <tr>
                   <td colSpan={10} className="py-12 text-center text-gray-400">
-                    Loading raw material stock...
+                    Memuat stok bahan baku...
                   </td>
                 </tr>
               ) : items.length === 0 ? (
                 <tr>
                   <td colSpan={10} className="py-16 text-center text-gray-400">
                     <Package className="mx-auto mb-3 h-12 w-12 opacity-30" />
-                    <p>No raw material stock data found</p>
+                    <p>Data stok bahan baku tidak ditemukan</p>
                   </td>
                 </tr>
               ) : (
@@ -309,7 +309,7 @@ export function RawMaterialStockTab() {
                       </td>
                       <td className="py-3 pl-3 text-right">
                         <Link href={RM_ROUTES.materialsDetail(item.id)}>
-                          <Button variant="ghost" size="sm" className="cursor-pointer" title="View Detail">
+                          <Button variant="ghost" size="sm" className="cursor-pointer" title="Lihat Detail">
                             <Eye className="h-4 w-4 text-pink-600" />
                           </Button>
                         </Link>

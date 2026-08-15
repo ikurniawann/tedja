@@ -4,12 +4,28 @@ import { Suspense, useState, useEffect, useMemo, useCallback, useRef } from 'rea
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Search, Utensils, ShoppingBag, Table as TableIcon,
-  User, X, Sparkles, Printer, CheckCircle, AlertCircle, Loader2, ArrowLeft,
+  User, Users, X, Sparkles, Printer, CheckCircle, AlertCircle, Loader2, ArrowLeft,
+  MessageCircle,
   Monitor as MonitorIcon,
 } from 'lucide-react';
-import { ArrowsPointingInIcon, ArrowsPointingOutIcon } from '@heroicons/react/24/outline';
 import { toast } from 'sonner';
 import { RESTAURANT_FROM, isRestaurantImmersive, restaurantPath } from '@/features/pos/restaurant/nav';
+import {
+  cashierDesktopRoute,
+  cashierTabletRoute,
+  isPosTabletQuery,
+  shouldShowSecondaryPosDisplays,
+} from '@/features/pos/tablet-mode';
+import { useHandheldClient } from '@/features/pos/use-handheld-client';
+import {
+  cashierCartPanelClass,
+  cashierLeftPanelClass,
+  cashierProductGridClass,
+  cashierProductScrollClass,
+  cashierSplitRowClass,
+} from '@/features/pos/cashier/cashier-workspace-layout';
+import { PosTabletChromeControls } from '@/features/pos/components/pos-tablet-chrome-controls';
+import { CashierStallGate } from '@/features/pos/cashier/components/cashier-stall-gate';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -22,6 +38,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { formatAmount } from '@/lib/purchasing/utils';
+import { capacityWarning, normalizeGuestCount } from '@/lib/pos/guest-count';
 import {
   type Customer,
   type Product,
@@ -30,6 +47,8 @@ import {
   saveCustomer,
   createSplitOrder,
 } from '../api';
+import type { ProductSku } from '@/lib/pos-api';
+import { MerchSkuPickerDialog } from '@/components/pos/MerchSkuPickerDialog';
 import { useCashierOrder, useCashierTables, useCustomerFavoriteProducts } from '../queries';
 import { usePayOpenOrder } from '../mutations';
 import { usePosCart } from '@/hooks/use-pos-cart';
@@ -40,6 +59,21 @@ import { usePosShift } from '@/hooks/use-pos-shift';
 import { usePosOnline } from '@/hooks/use-pos-online';
 import { usePosOfflineQueue } from '@/hooks/use-pos-offline';
 import { POS_SHIFT_MANAGEMENT_ENABLED } from '@/lib/pos/feature-flags';
+import {
+  calculateBillCharges,
+  DEFAULT_BILLING_CHARGES,
+  resolveEnabledOptionalCodes,
+  taxToggleLabel,
+  serviceToggleLabel,
+} from '@/lib/pos/billing-settings';
+import { useResolvedBillingProfile } from '@/features/pos/billing-settings';
+import {
+  planOfferQuickAdd,
+  usePosActiveOffers,
+  type PosActiveOffer,
+} from '@/features/pos/cashier/offers';
+import { evaluateOfferRules } from '@/lib/promo/offer-evaluate';
+import { PosOfferBanners } from '@/components/pos/PosOfferBanners';
 import { ShiftModal } from '@/components/pos/ShiftModal';
 import { PosProductThumbnail } from '@/components/pos/PosProductThumbnail';
 
@@ -47,6 +81,10 @@ const CASHIER_ID = '00000000-0000-0000-0000-000000000001';
 import { CartPanel } from '@/components/pos/CartPanel';
 import { CustomizationModal, type SelectedCustomization } from '@/components/pos/CustomizationModal';
 import { PaymentModal, type PaymentMethod } from '@/components/pos/PaymentModal';
+import {
+  GiftCardSaleDialog,
+  type GiftCardSaleValues,
+} from '@/components/pos/GiftCardSaleDialog';
 import {
   firstNameOnly,
   idleCfdState,
@@ -125,7 +163,13 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
   const { data: loyaltySettings } = useLoyaltySettings();
   const formatArk = (value: number) =>
     formatArkAmount(value, loyaltySettings?.ark_rate || 1000);
-  const isFullscreen = variant === 'fullscreen';
+  const isTabletMode =
+    variant === 'fullscreen' || isPosTabletQuery(searchParams);
+  const handheldClient = useHandheldClient();
+  const showSecondaryDisplays = shouldShowSecondaryPosDisplays({
+    immersiveTablet: isTabletMode,
+    handheldClient,
+  });
   const homeRoute = cashierRoute(variant, searchParams);
   const paymentOrderId = searchParams.get('orderId');
   const loadedPaymentOrderRef = useRef<string | null>(null);
@@ -136,10 +180,21 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     immersive: isRestaurantImmersive(searchParams),
   });
   const handoffTableId = searchParams.get('tableId');
+  /**
+   * Jumlah tamu (EPIC-038). Diisi pramusaji saat mendudukkan di halaman
+   * Restaurant lalu dioper lewat ?pax=, dan MASIH bisa dikoreksi di sini —
+   * tamu sering menyusul atau pergi antara duduk dan bayar.
+   * String, bukan number: input kosong harus tetap bisa dibedakan dari 0.
+   */
+  const [guestCount, setGuestCount] = useState<string>(searchParams.get('pax') ?? '');
+  const [showGuestModal, setShowGuestModal] = useState(false);
+  /** Nilai sementara di dalam dialog — baru disimpan saat ditekan Simpan,
+   *  supaya batal tidak mengubah angka yang sudah benar. */
+  const [guestDraft, setGuestDraft] = useState('');
   const handoffOrderType = searchParams.get('orderType');
   const handoffKeyRef = useRef<string | null>(null);
   const pendingRestaurantReturnRef = useRef(false);
-  const { products, categories, loading, error } = usePosProducts();
+  const { products, categories, loading, error, stallBlockedReason } = usePosProducts();
   const { customers, findCustomer, refetch: refetchCustomers } = usePosCustomers();
   const cart = usePosCart();
   const { checkout, submitting } = usePosCheckout();
@@ -197,8 +252,14 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
 
   /* Result */
   const [resultPayload, setResultPayload] = useState<ReceiptPayload | null>(null);
+  /* Kirim struk via WA dari modal sukses (fitur WA struk). Member → nomor
+   * profil dipakai otomatis; non-member → kasir mengetik nomor dulu. */
+  const [waPhoneInput, setWaPhoneInput] = useState("");
+  const [waSending, setWaSending] = useState(false);
+  const [waSentTo, setWaSentTo] = useState<string | null>(null);
+  const [waError, setWaError] = useState<string | null>(null);
+  const receiptRevealTimerRef = useRef<number | null>(null);
   const storeResultPayload = useCallback((payload: ReceiptPayload) => {
-    setResultPayload(payload);
     window.sessionStorage.setItem(LAST_RECEIPT_KEY, JSON.stringify(payload));
     // EPIC-024: layar customer merayakan transaksi selesai + kembalian.
     // Semua jalur sukses bayar (online/offline/open-bill) lewat sini —
@@ -210,10 +271,38 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       done_change: payload.change > 0 ? payload.change : 0,
       updated_at: Date.now(),
     });
+    // Base UI Dialog tidak bisa close+open di tick yang sama — tutup payment
+    // dulu, baru buka modal Print Struk setelah overlay unmount.
+    setShowPayment(false);
+    if (receiptRevealTimerRef.current) {
+      window.clearTimeout(receiptRevealTimerRef.current);
+    }
+    receiptRevealTimerRef.current = window.setTimeout(() => {
+      setResultPayload(payload);
+      receiptRevealTimerRef.current = null;
+    }, 120);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (receiptRevealTimerRef.current) {
+        window.clearTimeout(receiptRevealTimerRef.current);
+      }
+    };
   }, []);
 
   /* EPIC-024 — state pembayaran dari PaymentModal utk customer display */
   const [cfdPayment, setCfdPayment] = useState<CfdPayment | null>(null);
+
+  /* EPIC-034 Fase B — jual gift card: produk yang sedang dijual + data
+     pembeli (nomor WA dipakai mengirim kode setelah lunas). */
+  const [giftCardProduct, setGiftCardProduct] = useState<Product | null>(null);
+  // EPIC-039 Fase B — produk merchandise ber-varian: pilih SKU dulu
+  const [merchSkuProduct, setMerchSkuProduct] = useState<Product | null>(null);
+  const [giftCardBuyer, setGiftCardBuyer] = useState<{
+    name: string | null;
+    phone: string | null;
+  } | null>(null);
 
   /* Offline */
   const { isOnline } = usePosOnline();
@@ -230,6 +319,12 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
   /* Shift */
   const { shift, isActive: hasShift, loading: loadingShift, openShift, closeShift } = usePosShift(CASHIER_ID);
   const [showShiftModal, setShowShiftModal] = useState(false);
+
+  /* Billing config — resolve from session branch/stall (API falls back to cookies) */
+  const billingQuery = useResolvedBillingProfile({});
+  const billingCharges = billingQuery.data?.charges?.length
+    ? billingQuery.data.charges
+    : DEFAULT_BILLING_CHARGES;
 
   const canTransact = hasShift && !loadingShift;
 
@@ -288,8 +383,20 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
   const selectedTableDisplay = useMemo(() => {
     if (!effectiveTableId) return null;
     const selected = tableById.get(effectiveTableId);
-    return selected ? getTableDisplayName(selected) : effectiveTableId;
+    if (selected) return getTableDisplayName(selected);
+    // Jangan tampilkan UUID mentah bila daftar meja belum match.
+    return "Meja";
   }, [effectiveTableId, tableById]);
+
+  const selectedTableCapacity = useMemo(() => {
+    if (!effectiveTableId) return null;
+    return tableById.get(effectiveTableId)?.capacity ?? null;
+  }, [effectiveTableId, tableById]);
+
+  const guestCapacityWarning = useMemo(
+    () => capacityWarning(normalizeGuestCount(guestCount), selectedTableCapacity),
+    [guestCount, selectedTableCapacity]
+  );
 
   /* Load existing open bill when redirected from Orders */
   useEffect(() => {
@@ -372,8 +479,36 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     return true;
   }, [fromRestaurant]);
 
+  const sendReceiptWa = useCallback(async (phoneOverride?: string) => {
+    const orderId = resultPayload?.orderId;
+    if (!orderId) {
+      setWaError("Order offline belum tersinkron — kirim WA setelah online.");
+      return;
+    }
+    try {
+      setWaSending(true);
+      setWaError(null);
+      const res = await fetch(`/api/pos/orders/${orderId}/send-wa`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(phoneOverride ? { phone: phoneOverride } : {}),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) throw new Error(json.error || "Gagal mengirim WA");
+      setWaSentTo(json.data?.phone ?? "nomor tujuan");
+      toast.success(`Struk terkirim ke ${json.data?.phone ?? "WA pelanggan"}`);
+    } catch (err) {
+      setWaError(err instanceof Error ? err.message : "Gagal mengirim WA");
+    } finally {
+      setWaSending(false);
+    }
+  }, [resultPayload?.orderId]);
+
   const closeResultModal = useCallback(() => {
     setResultPayload(null);
+    setWaPhoneInput("");
+    setWaSentTo(null);
+    setWaError(null);
     if (pendingRestaurantReturnRef.current) {
       pendingRestaurantReturnRef.current = false;
       router.push(returnToRestaurantPath);
@@ -392,29 +527,95 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
   const [promoInput, setPromoInput] = useState('');
   const [promoBusy, setPromoBusy] = useState(false);
   const [promoError, setPromoError] = useState<string | null>(null);
+  const activeOffersQuery = usePosActiveOffers(true);
 
-  /* Financials */
+  const offerEval = useMemo(() => {
+    const rules = (activeOffersQuery.data ?? []).map((o) => o.eval).filter(Boolean);
+    if (rules.length === 0 || cart.items.length === 0) {
+      return { offer_discount: 0, applied: [] as ReturnType<typeof evaluateOfferRules>['applied'] };
+    }
+    return evaluateOfferRules(
+      cart.items.map((item) => ({
+        productId: item.productId,
+        quantity: item.quantity,
+        unitPrice: item.price,
+      })),
+      rules
+    );
+  }, [activeOffersQuery.data, cart.items]);
+
+  /* Financials — item → offer → membership → promo → manual transaksi */
   const membershipDiscount = selectedCustomer ? selectedCustomer.discount : 0;
-  const membershipDiscountAmount =
-    membershipDiscount > 0 ? Math.floor(cart.subtotal * membershipDiscount / 100) : 0;
-  // EPIC-032 C2 — promo kasir: menumpuk di atas membership, dicap ≥ 0.
-  // Rumus identik dgn server & use-pos-checkout — selisih ditolak server.
-  const promoDiscount = promoApplied
-    ? Math.min(promoApplied.discount, Math.max(0, cart.subtotal - membershipDiscountAmount))
-    : 0;
-  const discountAmount = membershipDiscountAmount + promoDiscount;
-  const afterDiscount = cart.subtotal - discountAmount;
-  const taxAmount = cart.includeTax ? Math.round(afterDiscount * 0.1) : 0;
-  const total = afterDiscount + taxAmount;
+  const discountStack = useMemo(
+    () =>
+      cart.buildDiscountStack(
+        membershipDiscount,
+        promoApplied?.discount ?? 0,
+        offerEval.offer_discount
+      ),
+    [
+      cart.items,
+      cart.manual_discount_type,
+      cart.manual_discount_value,
+      cart.buildDiscountStack,
+      membershipDiscount,
+      promoApplied,
+      offerEval.offer_discount,
+    ]
+  );
+  const membershipDiscountAmount = discountStack.membership_amount;
+  const promoDiscount = discountStack.promo_amount;
+  const offerDiscount = discountStack.offer_amount;
+  const itemDiscountTotal = discountStack.line_discount_total;
+  const manualDiscountAmount = discountStack.manual_amount;
+  const manualDiscountBasis = Math.max(
+    0,
+    discountStack.items_subtotal -
+      offerDiscount -
+      membershipDiscountAmount -
+      promoDiscount
+  );
+  const discountAmount = discountStack.discount_amount;
+  const afterDiscount = discountStack.after_discount;
+  const billCharges = useMemo(
+    () =>
+      calculateBillCharges({
+        subtotalAfterDiscount: afterDiscount,
+        charges: billingCharges,
+        enabledOptionalCodes: resolveEnabledOptionalCodes(
+          billingCharges,
+          cart.includeTax,
+          cart.includeService
+        ),
+      }),
+    [afterDiscount, billingCharges, cart.includeTax, cart.includeService]
+  );
+  const taxAmount = billCharges.tax_amount;
+  const serviceChargeAmount = billCharges.service_charge_amount;
+  const otherChargesAmount = billCharges.other_charges_amount;
+  const total = billCharges.total;
+  const taxLabel = taxToggleLabel(billingCharges);
+  const serviceLabel = serviceToggleLabel(billingCharges);
+  const otherChargeLines = useMemo(
+    () =>
+      billCharges.breakdown
+        .filter((line) => line.kind !== 'tax' && line.kind !== 'service')
+        .map((line) => ({
+          code: line.code,
+          name: line.name,
+          amount: line.amount,
+        })),
+    [billCharges.breakdown]
+  );
   const maxArkUsable = selectedCustomer ? Math.min(selectedCustomer.ark_coin_balance, total) : 0;
   const arkToUseCapped = Math.min(currentArkToUse, maxArkUsable);
   const totalAfterArk = total - arkToUseCapped;
 
-  /* Promo basi saat cart berubah (nilai preview terikat subtotal) */
+  /* Promo basi saat cart / diskon item berubah (basis = setelah line discount) */
   useEffect(() => {
     setPromoApplied(null);
     setPromoError(null);
-  }, [cart.subtotal]);
+  }, [cart.itemsSubtotal]);
 
   const applyPromo = useCallback(async () => {
     const code = promoInput.trim();
@@ -429,7 +630,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       const res = await fetch('/api/pos/promo-check', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code, subtotal: cart.subtotal }),
+        body: JSON.stringify({ code, subtotal: cart.itemsSubtotal }),
       });
       const body = await res.json();
       if (!res.ok || !body.success) {
@@ -447,7 +648,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     } finally {
       setPromoBusy(false);
     }
-  }, [promoInput, promoBusy, isOnline, cart.subtotal]);
+  }, [promoInput, promoBusy, isOnline, cart.itemsSubtotal]);
 
   /* EPIC-024 — pancarkan state cart/pembayaran ke customer display
      (BroadcastChannel, satu arah). Publish adalah sinkronisasi ke sistem
@@ -509,6 +710,23 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
   const openCustomization = useCallback((product: Product) => {
     if (!requireActiveShift()) return;
 
+    // EPIC-034 Fase B — gift card bukan produk biasa: harganya TIDAK dari
+    // katalog, kasir memilih nominal dulu di dialog khusus.
+    if (product.product_kind === 'gift_card') {
+      setGiftCardProduct(product);
+      return;
+    }
+
+    // EPIC-039 Fase B — merchandise ber-varian wajib pilih SKU (stok per
+    // varian; server menolak order tanpa sku_id utk produk ber-SKU)
+    if (
+      product.product_kind === 'merchandise' &&
+      (product.skus ?? []).some((sku) => sku.is_active !== false)
+    ) {
+      setMerchSkuProduct(product);
+      return;
+    }
+
     if ((product.variants && product.variants.length > 0) || (product.modifiers && product.modifiers.length > 0)) {
       const firstVariant = product.variants?.[0]?.id ?? null;
       const defaultModifiers: Record<string, string[]> = {};
@@ -538,12 +756,160 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     }
   }, [cart, requireActiveShift]);
 
+  const applyOfferToCart = useCallback(
+    (offer: PosActiveOffer) => {
+      if (!requireActiveShift()) return;
+
+      const plan = planOfferQuickAdd(offer);
+      if (plan.length === 0) {
+        toast.error(
+          offer.offer_type === "volume" && offer.volume_basis === "spend"
+            ? "Promo volume belanja: pilih produk eligible lalu tambah sampai min tercapai"
+            : "Promo ini belum punya produk yang bisa ditambahkan otomatis"
+        );
+        return;
+      }
+
+      const byId = new Map(products.map((p) => [p.id, p]));
+      let added = 0;
+      const skipped: string[] = [];
+      const missing: string[] = [];
+
+      for (const row of plan) {
+        const product = byId.get(row.productId);
+        if (!product) {
+          missing.push(row.label);
+          continue;
+        }
+        if (product.product_kind === "gift_card") {
+          skipped.push(product.name);
+          continue;
+        }
+        if (
+          product.product_kind === "merchandise" &&
+          (product.skus ?? []).some((sku) => sku.is_active !== false)
+        ) {
+          skipped.push(product.name);
+          continue;
+        }
+        if (
+          (product.variants && product.variants.length > 0) ||
+          (product.modifiers && product.modifiers.length > 0)
+        ) {
+          skipped.push(product.name);
+          continue;
+        }
+
+        cart.addItem({
+          id: product.id,
+          productId: product.id,
+          name: product.name,
+          price: product.base_price,
+          quantity: row.qty,
+          imageUrl: product.image_url,
+          station: product.station,
+        });
+        added += 1;
+      }
+
+      if (added > 0) {
+        toast.success(`Promo “${offer.name}” ditambahkan ke keranjang`);
+      }
+      if (skipped.length > 0) {
+        toast.message(
+          `Perlu pilih varian/opsi: ${skipped.slice(0, 3).join(", ")}${
+            skipped.length > 3 ? "…" : ""
+          }`
+        );
+      }
+      if (missing.length > 0) {
+        toast.error(
+          `Produk tidak tersedia di stall: ${missing.slice(0, 3).join(", ")}`
+        );
+      }
+      if (added === 0 && skipped.length === 0 && missing.length === 0) {
+        toast.error("Tidak ada produk yang bisa ditambahkan");
+      } else if (
+        added > 0 &&
+        offer.offer_type === "volume" &&
+        offer.volume_basis === "spend"
+      ) {
+        toast.message("Tambah qty sampai min belanja promo tercapai");
+      }
+    },
+    [cart, products, requireActiveShift]
+  );
+
+  /* EPIC-034 Fase B — nominal gift card dikonfirmasi → masuk keranjang.
+     Harga baris = nominal yang dipilih; server memvalidasi ulang. */
+  const handleConfirmGiftCardSale = useCallback((values: GiftCardSaleValues) => {
+    const product = giftCardProduct;
+    if (!product) return;
+    cart.addItem({
+      // id unik per nominal supaya dua nominal berbeda tidak digabung jadi
+      // satu baris keranjang (kartu berbeda, saldo berbeda)
+      id: `${product.id}-${values.nominal}`,
+      productId: product.id,
+      name: `${product.name} ${formatCurrency(values.nominal)}`,
+      price: values.nominal,
+      quantity: values.quantity,
+      imageUrl: product.image_url,
+      station: product.station,
+    });
+    setGiftCardBuyer(
+      values.buyerName || values.buyerPhone
+        ? { name: values.buyerName, phone: values.buyerPhone }
+        : null
+    );
+    setGiftCardProduct(null);
+  }, [cart, giftCardProduct]);
+
   const selectProductFromSearch = useCallback((product: Product) => {
     openCustomization(product);
     setSearchTerm('');
     setShowProductSuggestions(false);
     setActiveProductSuggestion(0);
   }, [openCustomization]);
+
+  /* EPIC-039 Fase B — varian dipilih → masuk keranjang (id komposit per SKU
+     supaya dua varian berbeda tidak digabung; harga = override ?? produk) */
+  const handleSelectMerchSku = useCallback((product: Product, sku: ProductSku) => {
+    if (!requireActiveShift()) return;
+    cart.addItem({
+      id: `${product.id}::sku:${sku.id}`,
+      productId: product.id,
+      skuId: sku.id,
+      skuCode: sku.sku,
+      name: `${product.name} — ${sku.name}`,
+      price: sku.price_override ?? product.base_price,
+      quantity: 1,
+      imageUrl: product.image_url,
+      station: product.station,
+    });
+    setMerchSkuProduct(null);
+  }, [cart, requireActiveShift]);
+
+  /* EPIC-039 Fase B — scan barcode: input search yang persis cocok dengan
+     barcode/kode SKU varian langsung menambahkan varian itu ke keranjang
+     (scanner mengetik kode utuh; tidak mengganggu pencarian nama biasa) */
+  useEffect(() => {
+    const code = searchTerm.trim().toLowerCase();
+    if (!code || code.length < 4) return;
+    for (const product of products) {
+      const sku = (product.skus ?? []).find(
+        (candidate) =>
+          candidate.is_active !== false &&
+          ((candidate.barcode || '').toLowerCase() === code ||
+            candidate.sku.toLowerCase() === code)
+      );
+      if (sku) {
+        handleSelectMerchSku(product, sku);
+        setSearchTerm('');
+        setShowProductSuggestions(false);
+        return;
+      }
+    }
+  }, [searchTerm, products, handleSelectMerchSku]);
 
   const handleConfirmCustomization = useCallback(() => {
     if (!custom || !customizingProduct) return;
@@ -643,10 +1009,119 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
   const handleCreateOrder = useCallback(async (overrides?: {
     method?: PaymentMethod;
     nfcTabUid?: string;
+    giftCardCode?: string;
+    cashReceived?: string;
+    arkToUse?: number;
   }) => {
     if (processingPayment) return;
     if (cart.items.length === 0) return;
     if (!requireActiveShift()) return;
+
+    const method = overrides?.method ?? paymentMethod;
+    const cashValue = overrides?.cashReceived ?? cashReceived;
+    const arkValue = overrides?.arkToUse ?? currentArkToUse;
+    const arkCapped = Math.min(arkValue, maxArkUsable);
+    const payTotal = total - (method === 'ark_coin' ? arkCapped : arkToUseCapped);
+
+    // EPIC-034 Fase C — bayar dgn saldo gift card. Kode dioper eksplisit dari
+    // PaymentModal (state paymentMethod belum ter-flush di tick yang sama),
+    // alasan yang sama dgn NFC Tab di bawah. Debit-nya server-authoritative:
+    // saldo kurang / kartu mati ditolak di sana, bukan di klien.
+    if (overrides?.method === 'gift_card') {
+      const giftCardCode = overrides.giftCardCode?.trim().toUpperCase() || '';
+      if (!giftCardCode) { toast.error('Masukkan kode gift card dulu'); return; }
+      if (!isOnline) {
+        toast.error('Pembayaran gift card membutuhkan koneksi — gunakan metode lain saat offline');
+        return;
+      }
+
+      setProcessingPayment(true);
+      try {
+        let orderId: string;
+        let orderNumber: string;
+        let queueNumber: string | null = null;
+        const cTotal = total;
+
+        if (paymentOrderId) {
+          const data = await payOpenOrderMutation.mutateAsync({
+            orderId: paymentOrderId,
+            payload: {
+              payment_status: 'paid',
+              payment_method: 'gift_card',
+              amount_paid: 0,
+              ark_coins_used: 0,
+              gift_card_code: giftCardCode,
+            },
+          });
+          orderId = paymentOrderId;
+          orderNumber = payingOrderNumber || data.data?.order_number || paymentOrderId;
+          queueNumber = data.data?.queue_number || null;
+        } else {
+          const res = await checkout({
+            cart: cart.items,
+            orderType: cart.orderType,
+            selectedTable: effectiveTableId,
+            selectedCustomer,
+            paymentMethod: 'gift_card',
+            cashReceived: '',
+            includeTax: cart.includeTax,
+            notes: cart.notes,
+            arkToUse: 0,
+            shiftId: shift?.id || null,
+            giftCardCode,
+            promo: promoApplied,
+            billCharges,
+            manualDiscountType: cart.manual_discount_type,
+            manualDiscountValue: cart.manual_discount_value,
+            offerDiscount,
+            offerLabels: offerEval.applied.map((a) => a.name),
+          });
+          if (!res.success) {
+            toast.error(res.error || 'Pembayaran gift card gagal');
+            setProcessingPayment(false);
+            return;
+          }
+          orderId = res.orderId || '';
+          orderNumber = res.orderNumber || '';
+          queueNumber = res.queueNumber || null;
+        }
+
+        const receipt: ReceiptPayload = {
+          orderId,
+          orderNumber,
+          queueNumber,
+          orderType: cart.orderType,
+          table: selectedTableDisplay,
+          items: [...cart.items],
+          notes: cart.notes,
+          total: cTotal,
+          change: 0,
+          paymentMethod: 'gift_card',
+          customerName: selectedCustomer?.name,
+          discountAmount,
+          taxAmount,
+          chargesBreakdown: billCharges.breakdown,
+        };
+        storeResultPayload(receipt);
+        setShowPayment(false);
+        setLastResultType('standard');
+        cart.clearCart();
+        setCashReceived('');
+        setPaymentMethod('cash');
+        setCurrentArkToUse(0);
+        loadedPaymentOrderRef.current = null;
+        if (paymentOrderId && !deferReturnToRestaurant()) {
+          router.replace(homeRoute);
+        } else if (!paymentOrderId) {
+          deferReturnToRestaurant();
+        }
+      } catch (e: unknown) {
+        toast.error(e instanceof Error ? e.message : 'Pembayaran gift card gagal');
+      } finally {
+        setProcessingPayment(false);
+      }
+      return;
+    }
 
     // NFC Tab (EPIC-023 Fase C): nilai dioper eksplisit dari PaymentModal —
     // state paymentMethod belum ter-flush di tick yang sama (stale closure).
@@ -662,13 +1137,13 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       try {
         let orderId: string;
         let orderNumber: string;
-        const cTotal = cart.total;
+        let queueNumber: string | null = null;
+        const cTotal = total;
 
         if (paymentOrderId) {
           const data = await payOpenOrderMutation.mutateAsync({
             orderId: paymentOrderId,
             payload: {
-              status: 'completed',
               payment_status: 'paid',
               payment_method: 'nfc_tab',
               amount_paid: 0,
@@ -678,6 +1153,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
           });
           orderId = paymentOrderId;
           orderNumber = payingOrderNumber || data.data?.order_number || paymentOrderId;
+          queueNumber = data.data?.queue_number || null;
         } else {
           const res = await checkout({
             cart: cart.items,
@@ -692,6 +1168,11 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
             shiftId: shift?.id || null,
             nfcTabUid,
             promo: promoApplied,
+            billCharges,
+            manualDiscountType: cart.manual_discount_type,
+            manualDiscountValue: cart.manual_discount_value,
+            offerDiscount,
+            offerLabels: offerEval.applied.map((a) => a.name),
           });
           if (!res.success) {
             toast.error(res.error || 'Charge ke tab gagal');
@@ -700,11 +1181,13 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
           }
           orderId = res.orderId || '';
           orderNumber = res.orderNumber || '';
+          queueNumber = res.queueNumber || null;
         }
 
         const receipt: ReceiptPayload = {
           orderId,
           orderNumber,
+          queueNumber,
           orderType: cart.orderType,
           table: selectedTableDisplay,
           items: [...cart.items],
@@ -715,6 +1198,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
           customerName: selectedCustomer?.name,
           discountAmount,
           taxAmount,
+          chargesBreakdown: billCharges.breakdown,
         };
         storeResultPayload(receipt);
         setShowPayment(false);
@@ -737,8 +1221,11 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       return;
     }
 
-    if (paymentMethod === 'ark_coin' && !selectedCustomer) { setShowNFC(true); return; }
-    if (paymentMethod === 'cash' && (parseFloat(cashReceived) || 0) < totalAfterArk) return;
+    if (method === 'ark_coin' && !selectedCustomer) { setShowNFC(true); return; }
+    if (method === 'cash' && (parseFloat(cashValue) || 0) < payTotal) {
+      toast.error('Nominal tunai kurang dari total tagihan');
+      return;
+    }
 
     setProcessingPayment(true);
 
@@ -748,30 +1235,30 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         setProcessingPayment(false);
         return;
       }
-      const paymentMethodForApi = paymentMethod === 'credit_card' ? 'credit' : paymentMethod;
-      const paidAmount = paymentMethod === 'cash' ? (parseFloat(cashReceived) || totalAfterArk) : totalAfterArk;
+      const paymentMethodForApi = method === 'credit_card' ? 'credit' : method;
+      const paidAmount = method === 'cash' ? (parseFloat(cashValue) || payTotal) : payTotal;
       try {
         const data = await payOpenOrderMutation.mutateAsync({
           orderId: paymentOrderId,
           payload: {
-            status: 'completed',
             payment_status: 'paid',
             payment_method: paymentMethodForApi,
             amount_paid: paidAmount,
-            ark_coins_used: paymentMethod === 'ark_coin' ? arkToUseCapped : 0,
+            ark_coins_used: method === 'ark_coin' ? arkCapped : 0,
           },
         });
 
         const receipt: ReceiptPayload = {
           orderId: paymentOrderId,
           orderNumber: payingOrderNumber || data.data?.order_number || paymentOrderId,
+          queueNumber: data.data?.queue_number || null,
           orderType: cart.orderType,
           table: selectedTableDisplay,
           items: [...cart.items],
           notes: cart.notes,
-          total: totalAfterArk,
-          change: paymentMethod === 'cash' ? (parseFloat(cashReceived) || 0) - totalAfterArk : 0,
-          paymentMethod,
+          total: payTotal,
+          change: method === 'cash' ? (parseFloat(cashValue) || 0) - payTotal : 0,
+          paymentMethod: method,
           customerName: selectedCustomer?.name,
           discountAmount,
           taxAmount,
@@ -805,16 +1292,18 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         return;
       }
       const cSubtotal = cart.subtotal;
-      const cTotal = cart.total;
+      const cTotal = total;
       const payload = {
         order_type: cart.orderType,
         customer_id: selectedCustomer?.id,
         cashier_id: CASHIER_ID,
         table_id: effectiveTableId || undefined,
+        guest_count: normalizeGuestCount(guestCount),
         items: cart.items.map(item => ({
           product_id: item.productId,
+          sku_id: item.skuId,
           product_name: item.name,
-          product_sku: item.productId,
+          product_sku: item.skuCode || item.productId,
           quantity: item.quantity,
           unit_price: item.price,
           subtotal: item.price * item.quantity,
@@ -823,13 +1312,16 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         subtotal: cSubtotal,
         discount_amount: discountAmount,
         tax_amount: taxAmount,
+        service_charge_amount: serviceChargeAmount,
+        other_charges_amount: otherChargesAmount,
+        charges_breakdown: billCharges.breakdown,
         total_amount: cTotal,
-        payment_method: paymentMethod === 'qris' ? 'qris' : paymentMethod === 'credit_card' ? 'credit' : paymentMethod === 'ark_coin' ? 'ark_coin' : 'cash',
-        amount_paid: paymentMethod === 'cash' ? (parseFloat(cashReceived) || cTotal) : cTotal,
+        payment_method: method === 'qris' ? 'qris' : method === 'credit_card' ? 'credit' : method === 'ark_coin' ? 'ark_coin' : 'cash',
+        amount_paid: method === 'cash' ? (parseFloat(cashValue) || cTotal) : cTotal,
         include_tax: cart.includeTax,
         membership_discount_pct: membershipDiscount,
         notes: cart.notes,
-        ark_coins_used: paymentMethod === 'ark_coin' ? arkToUseCapped : 0,
+        ark_coins_used: method === 'ark_coin' ? arkCapped : 0,
         shift_id: shift?.id || undefined,
       };
       await enqueue(payload, 'order');
@@ -841,11 +1333,12 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         items: [...cart.items],
         notes: cart.notes,
         total: cTotal,
-        change: paymentMethod === 'cash' ? (parseFloat(cashReceived) || 0) - cTotal : 0,
-        paymentMethod,
+        change: method === 'cash' ? (parseFloat(cashValue) || 0) - cTotal : 0,
+        paymentMethod: method,
         customerName: selectedCustomer?.name,
         discountAmount,
         taxAmount,
+        chargesBreakdown: billCharges.breakdown,
       };
       storeResultPayload(receipt);
       setShowPayment(false);
@@ -865,31 +1358,51 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       orderType: cart.orderType,
       selectedTable: effectiveTableId,
       selectedCustomer,
-      paymentMethod,
-      cashReceived,
+      paymentMethod: method,
+      cashReceived: cashValue,
       includeTax: cart.includeTax,
       notes: cart.notes,
-      arkToUse: paymentMethod === 'ark_coin' ? arkToUseCapped : 0,
+      arkToUse: method === 'ark_coin' ? arkCapped : 0,
       shiftId: shift?.id || null,
+      giftCardBuyer,
       promo: promoApplied,
+      billCharges,
+      manualDiscountType: cart.manual_discount_type,
+      manualDiscountValue: cart.manual_discount_value,
+      offerDiscount,
+      offerLabels: offerEval.applied.map((a) => a.name),
     });
 
     if (res.success) {
+      // EPIC-034 Fase B — order lunas tapi kartu gagal terbit: uang sudah
+      // diterima, jadi jangan diam — kasir wajib melihat peringatannya.
+      if (res.giftCardError) {
+        toast.error(res.giftCardError, { duration: 15000 });
+      }
       const receipt: ReceiptPayload = {
         orderId: res.orderId,
         orderNumber: res.orderNumber,
+        queueNumber: res.queueNumber || null,
         orderType: cart.orderType,
         table: selectedTableDisplay,
         items: [...cart.items],
         notes: cart.notes,
         total: res.total,
         change: res.change,
-        paymentMethod,
+        paymentMethod: method,
         customerName: selectedCustomer?.name,
         discountAmount,
         taxAmount,
+        chargesBreakdown: billCharges.breakdown,
+        giftCards: res.giftCards,
       };
       storeResultPayload(receipt);
+      toast.success(
+        res.queueNumber
+          ? `Pembayaran berhasil — Antrian ${res.queueNumber}`
+          : 'Pembayaran berhasil'
+      );
+      setGiftCardBuyer(null);
       // Saldo ARK/XP customer berubah di server — segarkan cache kasir
       if (selectedCustomer) void refetchCustomers();
       setShowPayment(false);
@@ -903,7 +1416,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       toast.error(res.error || 'Payment failed');
     }
     setProcessingPayment(false);
-  }, [cart, paymentMethod, selectedCustomer, cashReceived, totalAfterArk, checkout, discountAmount, taxAmount, arkToUseCapped, isOnline, enqueue, membershipDiscount, shift, refreshCount, paymentOrderId, payingOrderNumber, router, processingPayment, selectedTableDisplay, effectiveTableId, requireActiveShift, payOpenOrderMutation, deferReturnToRestaurant, storeResultPayload, refetchCustomers, promoApplied]);
+  }, [cart, paymentMethod, selectedCustomer, cashReceived, currentArkToUse, maxArkUsable, totalAfterArk, arkToUseCapped, checkout, discountAmount, taxAmount, isOnline, enqueue, membershipDiscount, shift, refreshCount, paymentOrderId, payingOrderNumber, router, processingPayment, selectedTableDisplay, effectiveTableId, requireActiveShift, payOpenOrderMutation, deferReturnToRestaurant, storeResultPayload, refetchCustomers, promoApplied, giftCardBuyer, billCharges, serviceChargeAmount, otherChargesAmount, total, homeRoute, guestCount, offerDiscount, offerEval]);
 
   /* Split Bill */
   const handleConfirmSplit = useCallback(async (config: SplitConfig) => {
@@ -924,11 +1437,13 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         cashier_id: CASHIER_ID,
         server_id: undefined,
         table_id: effectiveTableId || undefined,
+        guest_count: normalizeGuestCount(guestCount),
         shift_id: shift?.id,
         items: cart.items.map(item => ({
           product_id: item.productId,
+          sku_id: item.skuId,
           product_name: item.name,
-          product_sku: item.productId,
+          product_sku: item.skuCode || item.productId,
           quantity: item.quantity,
           unit_price: item.price,
           subtotal: item.price * item.quantity,
@@ -937,6 +1452,9 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         subtotal: cart.subtotal,
         discount_amount: discountAmount,
         tax_amount: taxAmount,
+        service_charge_amount: serviceChargeAmount,
+        other_charges_amount: otherChargesAmount,
+        charges_breakdown: billCharges.breakdown,
         total_amount: total,
         notes: cart.notes,
         include_tax: cart.includeTax,
@@ -965,6 +1483,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         customerName: selectedCustomer?.name,
         discountAmount,
         taxAmount,
+        chargesBreakdown: billCharges.breakdown,
       };
       storeResultPayload(receipt);
       setLastResultType('offlined');
@@ -980,11 +1499,13 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         cashier_id: CASHIER_ID,
         server_id: undefined,
         table_id: effectiveTableId || undefined,
+        guest_count: normalizeGuestCount(guestCount),
         shift_id: shift?.id,
         items: cart.items.map(item => ({
           product_id: item.productId,
+          sku_id: item.skuId,
           product_name: item.name,
-          product_sku: item.productId,
+          product_sku: item.skuCode || item.productId,
           quantity: item.quantity,
           unit_price: item.price,
           subtotal: item.price * item.quantity,
@@ -993,6 +1514,9 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         subtotal: cart.subtotal,
         discount_amount: discountAmount,
         tax_amount: taxAmount,
+        service_charge_amount: serviceChargeAmount,
+        other_charges_amount: otherChargesAmount,
+        charges_breakdown: billCharges.breakdown,
         total_amount: total,
         notes: cart.notes,
         include_tax: cart.includeTax,
@@ -1018,7 +1542,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     } catch (e: any) {
       toast.error(e.message || 'Failed to create split order');
     }
-  }, [cart, selectedCustomer, discountAmount, taxAmount, total, membershipDiscount, isOnline, enqueue, paymentMethod, shift, refreshCount, selectedTableDisplay, effectiveTableId, requireActiveShift, storeResultPayload, promoApplied]);
+  }, [cart, selectedCustomer, discountAmount, taxAmount, total, membershipDiscount, isOnline, enqueue, paymentMethod, shift, refreshCount, selectedTableDisplay, effectiveTableId, requireActiveShift, storeResultPayload, promoApplied, serviceChargeAmount, otherChargesAmount, billCharges, guestCount]);
 
   const handleSplitComplete = useCallback(() => {
     setShowSplitPayment(false);
@@ -1040,32 +1564,64 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         cashier_id: CASHIER_ID,
         server_id: undefined,
         table_id: effectiveTableId || undefined,
+        guest_count: normalizeGuestCount(guestCount),
         shift_id: shift?.id || undefined,
-        items: cart.items.map(item => ({
-          product_id: item.productId,
-          product_name: item.name,
-          product_sku: item.productId,
-          variants: item.variantName ? [{ name: item.variantName, group: 'Size', price: item.variantPriceAdj || 0 }] : [],
-          modifiers: item.modifierNames?.map((name, idx) => ({ name, group: `Option-${idx}` })) || [],
-          quantity: Number(item.quantity),
-          unit_price: Number(item.price - (item.variantPriceAdj || 0) - (item.modifierPriceAdj || 0)),
-          variant_price_adjustment: item.variantPriceAdj || 0,
-          modifier_price_adjustment: item.modifierPriceAdj || 0,
-          subtotal: Number(item.price * item.quantity),
-          total_amount: Number(item.price * item.quantity),
-          station: item.station,
-          kitchen_notes: item.notes,
-        })),
+        items: cart.items.map((item, index) => {
+          const line = discountStack.line_results[index];
+          return {
+            product_id: item.productId,
+            sku_id: item.skuId,
+            product_name: item.name,
+            product_sku: item.skuCode || item.productId,
+            variants: item.variantName ? [{ name: item.variantName, group: 'Size', price: item.variantPriceAdj || 0 }] : [],
+            modifiers: item.modifierNames?.map((name, idx) => ({ name, group: `Option-${idx}` })) || [],
+            quantity: Number(item.quantity),
+            unit_price: Number(item.price - (item.variantPriceAdj || 0) - (item.modifierPriceAdj || 0)),
+            variant_price_adjustment: item.variantPriceAdj || 0,
+            modifier_price_adjustment: item.modifierPriceAdj || 0,
+            subtotal: Number(item.price * item.quantity),
+            discount_type: item.discount_type ?? null,
+            discount_value: item.discount_value ?? null,
+            discount_amount: line?.discount_amount ?? 0,
+            total_amount: line?.total_amount ?? Number(item.price * item.quantity),
+            station: item.station,
+            kitchen_notes: item.notes,
+          };
+        }),
         subtotal: cart.subtotal,
         discount_amount: discountAmount,
+        discount_reason: [
+          itemDiscountTotal > 0 ? 'ITEM line discounts' : null,
+          ...offerEval.applied.map((a) => `OFFER ${a.name}`),
+          membershipDiscount > 0 ? `MEMBER ${membershipDiscount}%` : null,
+          promoApplied ? `PROMO ${promoApplied.code}` : null,
+          cart.manual_discount_type && cart.manual_discount_value
+            ? cart.manual_discount_type === 'percent'
+              ? `MANUAL ${cart.manual_discount_value}%`
+              : `MANUAL Rp ${Math.floor(cart.manual_discount_value)}`
+            : null,
+        ]
+          .filter(Boolean)
+          .join('; ') || undefined,
+        manual_discount_type: cart.manual_discount_type,
+        manual_discount_value: cart.manual_discount_value,
+        membership_discount_pct: selectedCustomer?.discount || 0,
+        promo_discount: promoApplied?.discount ?? 0,
+        promo_code: promoApplied?.code,
         tax_amount: taxAmount,
+        service_charge_amount: serviceChargeAmount,
+        other_charges_amount: otherChargesAmount,
+        charges_breakdown: billCharges.breakdown,
         total_amount: total,
         notes: cart.notes,
-        membership_discount_pct: selectedCustomer?.discount || 0,
       });
 
       if (res.success && res.data) {
-        toast.success(`Open bill saved — Order ${res.data.order_number}`);
+        toast.success(
+          res.data.queue_number
+            ? `Open bill tersimpan — Antrian ${res.data.queue_number}`
+            : `Open bill tersimpan — Order ${res.data.order_number}`
+        );
         cart.clearCart();
         maybeReturnToRestaurant();
       } else {
@@ -1076,26 +1632,50 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     } finally {
       setSavingBill(false);
     }
-  }, [cart, selectedCustomer, discountAmount, taxAmount, total, requireActiveShift, shift, maybeReturnToRestaurant, effectiveTableId]);
+  }, [cart, selectedCustomer, discountAmount, taxAmount, total, requireActiveShift, shift, maybeReturnToRestaurant, effectiveTableId, serviceChargeAmount, otherChargesAmount, billCharges, guestCount, discountStack, itemDiscountTotal, membershipDiscount, promoApplied, offerEval]);
 
   /* Print helpers */
-  const handlePrint = useCallback((label: 'KITCHEN' | 'BAR' | 'CUSTOMER') => {
-    if (!resultPayload) return;
-    printThermalReceipt(resultPayload, label);
-  }, [resultPayload]);
+  const [printingReceipt, setPrintingReceipt] = useState(false);
+  const handlePrint = useCallback(async (label: 'KITCHEN' | 'BAR' | 'CUSTOMER') => {
+    if (!resultPayload || printingReceipt) return;
+    setPrintingReceipt(true);
+    try {
+      await printThermalReceipt(resultPayload, label);
+    } finally {
+      setPrintingReceipt(false);
+    }
+  }, [resultPayload, printingReceipt]);
 
   /* ─── Render ───────────────────────────────────────────────────── */
-  const shellHeight = isFullscreen
-    ? 'h-[calc(100dvh-11rem)] min-h-[560px]'
+  const shellHeight = isTabletMode
+    ? 'h-[calc(100dvh-7rem)] min-h-[520px]'
     : 'h-[calc(100dvh-14rem)] min-h-[480px]';
 
   return (
     <TooltipProvider>
-    <PageTransition>
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <PageTransition
+      className={
+        isTabletMode
+          ? 'flex h-[calc(100dvh-1rem)] min-h-0 flex-col sm:h-[calc(100dvh-1.5rem)] md:h-[calc(100dvh-2rem)]'
+          : undefined
+      }
+    >
+    <div className={`flex flex-col ${isTabletMode ? 'min-h-0 flex-1 gap-2 touch-manipulation' : 'gap-4'}`}>
+      <div className={`flex shrink-0 flex-wrap items-center justify-between ${isTabletMode ? 'gap-2' : 'gap-3'}`}>
         <div className="min-w-0">
-          <h1 className="text-xl font-semibold text-gray-900">POS Cashier</h1>
+          <h1 className={`font-semibold text-gray-900 ${isTabletMode ? 'text-base' : 'text-xl'}`}>POS Cashier</h1>
+          {isTabletMode ? (
+            <p className="truncate text-xs text-muted-foreground">
+              {selectedTableDisplay
+                ? `Meja ${selectedTableDisplay}`
+                : cart.orderType === 'takeaway'
+                  ? 'Take Away'
+                  : 'Without Table'}
+              {selectedTableDisplay || cart.orderType === 'dine_in'
+                ? ` · ${normalizeGuestCount(guestCount)} tamu`
+                : null}
+            </p>
+          ) : (
           <p className="text-sm text-gray-500">
             {cart.orderType === 'dine_in' ||
             cart.orderType === 'takeaway' ||
@@ -1121,6 +1701,31 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
                   <>
                     <span className="text-gray-300">·</span>
                     <span>Dine-in</span>
+                    {/* Jumlah tamu (EPIC-038). Placeholder "1" bukan nilai
+                        default yang tersimpan diam-diam — field kosong memang
+                        berarti 1 orang, dan itu ditegakkan di server. */}
+                    <span className="text-gray-300">·</span>
+                    {/* Tombol → dialog, bukan input kecil di header: angkanya
+                        jadi terbaca jelas dan tidak mudah terlewat kasir. */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setGuestDraft(guestCount);
+                        setShowGuestModal(true);
+                      }}
+                      className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 px-2 py-0.5 font-medium text-gray-700 hover:border-primary hover:text-primary"
+                    >
+                      <Users className="h-3.5 w-3.5" />
+                      {normalizeGuestCount(guestCount)} tamu
+                    </button>
+                    {/* Peringatan, BUKAN blokir — keputusan owner. Kasir tetap
+                        bisa lanjut; memblokir hanya memancing angka palsu. */}
+                    {guestCapacityWarning && (
+                      <span className="inline-flex items-center gap-1 text-amber-700">
+                        <AlertCircle className="h-3.5 w-3.5" />
+                        {guestCapacityWarning}
+                      </span>
+                    )}
                   </>
                 ) : null}
                 {fromRestaurant ? (
@@ -1130,12 +1735,11 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
                   </>
                 ) : null}
               </span>
-            ) : isFullscreen ? (
-              'Fullscreen mode — optimized for checkout'
             ) : (
               'Process orders with the dashboard sidebar available'
             )}
           </p>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {fromRestaurant && (
@@ -1149,49 +1753,55 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
               Back to Restaurant
             </Button>
           )}
-          {/* EPIC-024: buka layar customer sebagai window baru — drag ke
-              monitor kedua lalu F11 (BroadcastChannel sesama browser) */}
-          <Button
-            type="button"
-            variant="outline"
-            title="Buka layar customer di window baru — drag ke monitor kedua, lalu F11"
-            className="border-gray-200/80 text-gray-700 hover:border-primary/30 hover:bg-primary/10 hover:text-primary"
-            onClick={() =>
-              window.open(
-                '/pos/customer-display',
-                'pos-customer-display',
-                'popup=yes,width=1024,height=640'
-              )
-            }
-          >
-            <MonitorIcon className="mr-2 h-4 w-4" />
-            Layar Customer
-          </Button>
-          {isFullscreen ? (
-            <Button
-              type="button"
-              variant="outline"
-              className="border-gray-200/80 text-gray-700 hover:border-primary/30 hover:bg-primary/10 hover:text-primary"
-              onClick={() => router.push(cashierRoute('embedded', searchParams))}
-            >
-              <ArrowsPointingInIcon className="mr-2 h-4 w-4" />
-              Exit Fullscreen
-            </Button>
-          ) : (
-            <Button
-              type="button"
-              variant="outline"
-              className="border-gray-200/80 text-gray-700 hover:border-primary/30 hover:bg-primary/10 hover:text-primary"
-              onClick={() => router.push(cashierRoute('fullscreen', searchParams))}
-            >
-              <ArrowsPointingOutIcon className="mr-2 h-4 w-4" />
-              Fullscreen
-            </Button>
-          )}
+          {showSecondaryDisplays ? (
+            <div className="hidden [@media(hover:hover)_and_(pointer:fine)]:contents">
+              {/* EPIC-024: buka layar customer sebagai window baru — drag ke
+                  monitor kedua lalu F11 (BroadcastChannel sesama browser) */}
+              <Button
+                type="button"
+                variant="outline"
+                title="Buka layar customer di window baru — drag ke monitor kedua, lalu F11"
+                className="border-gray-200/80 text-gray-700 hover:border-primary/30 hover:bg-primary/10 hover:text-primary"
+                onClick={() =>
+                  window.open(
+                    '/pos/customer-display',
+                    'pos-customer-display',
+                    'popup=yes,width=1024,height=640'
+                  )
+                }
+              >
+                <MonitorIcon className="mr-2 h-4 w-4" />
+                Layar Customer
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                title="Buka TV antrian customer — drag ke TV/monitor tamu, lalu F11"
+                className="border-gray-200/80 text-gray-700 hover:border-primary/30 hover:bg-primary/10 hover:text-primary"
+                onClick={() =>
+                  window.open(
+                    "/pos/queue",
+                    "pos-queue-board",
+                    "popup=yes,width=1440,height=900"
+                  )
+                }
+              >
+                <MonitorIcon className="mr-2 h-4 w-4" />
+                TV Antrian
+              </Button>
+            </div>
+          ) : null}
+          <PosTabletChromeControls
+            immersive={isTabletMode}
+            onToggleImmersive={(next) => {
+              if (next) router.push(cashierTabletRoute(searchParams));
+              else router.replace(cashierDesktopRoute(searchParams));
+            }}
+          />
         </div>
       </div>
 
-      <div className={`flex flex-col lg:flex-row ${shellHeight} gap-4`}>
+      <div className={cashierSplitRowClass({ isTabletMode, shellHeight })}>
       {loading && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="flex items-center gap-3 rounded-xl border border-gray-200/70 bg-white p-6 shadow-xs">
@@ -1208,9 +1818,11 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
           </div>
         </div>
       )}
-
       {/* LEFT PANEL */}
-      <div className="flex-1 flex flex-col gap-4 overflow-hidden">
+      <div className={`relative ${cashierLeftPanelClass(isTabletMode)}`}>
+        {stallBlockedReason && !loading && (
+          <CashierStallGate reason={stallBlockedReason} />
+        )}
         {/* Offline Status Bar */}
         {!isOnline && (
           <div className="flex items-center justify-between rounded-lg border border-amber-200/80 bg-amber-50/80 px-4 py-2 text-sm text-amber-800">
@@ -1248,7 +1860,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
           </div>
         )}
 
-        <div className="rounded-xl border border-gray-200/70 bg-white p-4 shadow-xs">
+        <div className={`rounded-xl border border-gray-200/70 bg-white shadow-xs ${isTabletMode ? 'p-2.5' : 'p-4'}`}>
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
@@ -1289,7 +1901,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
             </button>
             <button
               onClick={() => setShowCustomerModal(true)}
-              className={`flex min-w-[150px] items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition-all ${
+              className={`flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition-all ${isTabletMode ? 'min-w-0' : 'min-w-[150px]'} ${
                 selectedCustomer
                   ? 'border-violet-500 bg-violet-500 text-white shadow-sm hover:bg-violet-600'
                   : 'border-violet-200/80 bg-violet-50 text-violet-700 hover:border-violet-400 hover:bg-violet-100'
@@ -1300,7 +1912,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
                 {selectedCustomer?.name ? selectedCustomer.name.split(' ')[0] : 'Find Customer'}
               </span>
             </button>
-            <div className="relative min-w-[220px] flex-1">
+            <div className={`relative flex-1 ${isTabletMode ? 'min-w-32' : 'min-w-[220px]'}`}>
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
               <Input
                 type="text"
@@ -1413,7 +2025,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
               </span>
               <span className="text-xs text-amber-600">({favorites.length} items)</span>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+            <div className={isTabletMode ? 'grid grid-cols-2 gap-2 @min-[22rem]:grid-cols-3 @min-[36rem]:grid-cols-4' : 'grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4'}>
               {favorites.map(product => (
                 <button key={product.id} onClick={() => openCustomization(product)} className="flex items-center gap-2 rounded-lg border border-amber-200/80 bg-white p-2 text-left transition-all hover:border-amber-400 hover:bg-amber-50">
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-gray-100">
@@ -1451,9 +2063,17 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
           ))}
         </div>
 
+        {(activeOffersQuery.data?.length ?? 0) > 0 && (
+          <PosOfferBanners
+            offers={activeOffersQuery.data ?? []}
+            className="pb-1"
+            onApplyOffer={applyOfferToCart}
+          />
+        )}
+
         {/* Product Grid */}
-        <div className="flex-1 overflow-y-auto">
-          <div className="grid grid-cols-4 gap-2 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-7 xl:grid-cols-8 2xl:grid-cols-9">
+        <div className={cashierProductScrollClass()}>
+          <div className={cashierProductGridClass()}>
             {filteredProducts.map(product => {
               const xp = product.xp ?? ((Math.abs(product.id.split('').reduce((a, c) => a + c.charCodeAt(0), 0)) % 100) + 1);
               // Produk privilege member (EPIC-011 Fase C): terkunci bila
@@ -1491,18 +2111,18 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
                       {isLocked ? '🔒 ' : '★ '}{minXp} XP
                     </span>
                   )}
-                  <div className="aspect-[5/4] w-full overflow-hidden bg-gray-100">
+                  <div className={`${isTabletMode ? 'aspect-[4/3]' : 'aspect-[5/4]'} w-full overflow-hidden bg-gray-100`}>
                     <PosProductThumbnail src={product.image_url} alt={product.name} />
                   </div>
-                  <div className="flex flex-col gap-0.5 p-1.5">
-                    <div className="line-clamp-2 text-[11px] font-medium leading-tight text-gray-900">
+                  <div className={`flex flex-col ${isTabletMode ? 'gap-0.5 p-2 @min-[40rem]:gap-1 @min-[40rem]:p-2.5' : 'gap-0.5 p-1.5'}`}>
+                    <div className={`line-clamp-2 font-medium leading-snug text-gray-900 ${isTabletMode ? 'text-[11px] @min-[40rem]:text-xs' : 'text-[11px] leading-tight'}`}>
                       {product.name}
                     </div>
-                    <div className="text-[11px] font-bold text-primary">{formatCurrency(product.base_price)}</div>
+                    <div className={`font-bold text-primary ${isTabletMode ? 'text-xs @min-[40rem]:text-sm' : 'text-[11px]'}`}>{formatCurrency(product.base_price)}</div>
                     <div className="flex items-center justify-between gap-1">
-                      <span className="text-[9px] font-medium text-amber-600">{formatArk(product.base_price)}</span>
-                      <span className="inline-flex items-center gap-0.5 text-[9px] font-semibold text-purple-600">
-                        <Sparkles className="h-2.5 w-2.5" />
+                      <span className={`font-medium text-amber-600 ${isTabletMode ? 'text-[11px]' : 'text-[9px]'}`}>{formatArk(product.base_price)}</span>
+                      <span className={`inline-flex items-center gap-0.5 font-semibold text-purple-600 ${isTabletMode ? 'text-[11px]' : 'text-[9px]'}`}>
+                        <Sparkles className={isTabletMode ? 'h-3 w-3' : 'h-2.5 w-2.5'} />
                         +{xp}
                       </span>
                     </div>
@@ -1516,6 +2136,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
 
       {/* RIGHT PANEL — Cart */}
       <CartPanel
+        className={cashierCartPanelClass(isTabletMode)}
         cart={cart.items}
         orderType={cart.orderType}
         selectedTable={selectedTableDisplay}
@@ -1537,9 +2158,23 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
           setPromoApplied(null);
           setPromoError(null);
         }}
+        itemDiscountTotal={itemDiscountTotal}
+        offerDiscount={offerDiscount}
+        offerApplied={offerEval.applied}
+        manualDiscountAmount={manualDiscountAmount}
+        manualDiscountType={cart.manual_discount_type}
+        manualDiscountValue={cart.manual_discount_value}
+        manualDiscountBasis={manualDiscountBasis}
+        onSetItemDiscount={cart.setItemDiscount}
+        onSetManualDiscount={cart.setManualDiscount}
         selectedCustomer={selectedCustomer}
         includeTax={cart.includeTax}
+        includeService={cart.includeService}
         tax={taxAmount}
+        serviceCharge={serviceChargeAmount}
+        taxToggleLabel={taxLabel}
+        serviceToggleLabel={serviceLabel}
+        otherChargeLines={otherChargeLines}
         arkToUseCapped={arkToUseCapped}
         paymentMethod={paymentMethod}
         totalAfterArk={totalAfterArk}
@@ -1547,6 +2182,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         formatCurrency={formatCurrency}
         formatArk={formatArk}
         setIncludeTax={cart.setIncludeTax}
+        setIncludeService={cart.setIncludeService}
         setShowPaymentModal={openPaymentModal}
         onOpenBill={handleOpenBill}
         isSavingBill={savingBill}
@@ -1554,6 +2190,14 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         onOpenShift={POS_SHIFT_MANAGEMENT_ENABLED ? () => setShowShiftModal(true) : undefined}
         updateQuantity={cart.updateQty}
         removeFromCart={cart.removeItem}
+        onClearCart={() => {
+          if (cart.items.length === 0) return;
+          cart.clearItems();
+          setPromoApplied(null);
+          setPromoError(null);
+          setPromoInput('');
+          toast.success('Keranjang dikosongkan');
+        }}
       />
 
       {/* ── Customer Modal ── */}
@@ -1565,7 +2209,6 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         onSearchChange={setCustomerSearch}
         onCreateCustomer={handleCreateCustomer}
         initialNfcUid={pendingNfcUid}
-        onInitialNfcUidConsumed={() => setPendingNfcUid(null)}
         onSelect={(c) => {
           cart.setCustomer(c?.id ?? null);
           setShowCustomerModal(false);
@@ -1580,6 +2223,90 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       />
 
       {/* ── Table Modal ── */}
+      {/* Jumlah tamu (EPIC-038) — tombol cepat untuk kasus umum, kotak isian
+          untuk rombongan. Peringatan kapasitas memberi tahu, tidak memblokir. */}
+      <Dialog open={showGuestModal} onOpenChange={setShowGuestModal}>
+        <DialogPanel size="sm">
+          <DialogPanelHeader>
+            <DialogPanelTitle>Jumlah Tamu</DialogPanelTitle>
+            <DialogPanelDescription>
+              {selectedTableDisplay
+                ? `Meja ${selectedTableDisplay}${selectedTableCapacity ? ` · kapasitas ${selectedTableCapacity} kursi` : ''}`
+                : 'Berapa orang untuk pesanan ini?'}
+            </DialogPanelDescription>
+          </DialogPanelHeader>
+          <DialogPanelBody>
+            <div className="flex flex-wrap gap-2">
+              {[1, 2, 4, 6].map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => setGuestDraft(String(n))}
+                  className={`min-w-11 rounded-lg border px-3 py-2 text-sm font-semibold ${
+                    normalizeGuestCount(guestDraft) === n
+                      ? 'border-primary bg-primary/10 text-primary'
+                      : 'border-gray-300 text-gray-700 hover:border-primary hover:text-primary'
+                  }`}
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
+
+            <Input
+              type="number"
+              min={1}
+              inputMode="numeric"
+              autoFocus
+              value={guestDraft}
+              onChange={(e) => setGuestDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  setGuestCount(guestDraft);
+                  setShowGuestModal(false);
+                }
+              }}
+              placeholder="Jumlah lain"
+              aria-label="Jumlah tamu"
+              className="mt-3"
+            />
+
+            {(() => {
+              const peringatan = capacityWarning(
+                normalizeGuestCount(guestDraft),
+                selectedTableCapacity
+              );
+              return peringatan ? (
+                <p className="mt-2 text-xs text-amber-700">{peringatan}</p>
+              ) : null;
+            })()}
+
+            <p className="mt-2 text-xs text-gray-500">
+              Dikosongkan berarti 1 orang.
+            </p>
+
+            <div className="mt-4 flex gap-2">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => setShowGuestModal(false)}
+              >
+                Batal
+              </Button>
+              <Button
+                className="flex-1"
+                onClick={() => {
+                  setGuestCount(guestDraft);
+                  setShowGuestModal(false);
+                }}
+              >
+                Simpan
+              </Button>
+            </div>
+          </DialogPanelBody>
+        </DialogPanel>
+      </Dialog>
+
       <Dialog open={showTableModal} onOpenChange={setShowTableModal}>
         <DialogPanel size="lg" className="max-h-[80vh]">
           <DialogPanelHeader>
@@ -1735,18 +2462,41 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         selectedCustomer={selectedCustomer}
         onClose={() => setShowPayment(false)}
         submitting={processingPayment || submitting}
-        onConfirm={async ({ method, cashReceived, arkToUse, nfcTabUid }) => {
+        onConfirm={async ({ method, cashReceived, arkToUse, nfcTabUid, giftCardCode }) => {
           setPaymentMethod(method);
           setCashReceived(cashReceived);
           setCurrentArkToUse(arkToUse);
-          await handleCreateOrder(
-            method === 'nfc_tab' ? { method, nfcTabUid } : undefined
-          );
+          await handleCreateOrder({
+            method,
+            cashReceived,
+            arkToUse,
+            nfcTabUid,
+            giftCardCode,
+          });
         }}
         formatCurrency={formatCurrency}
         formatArk={formatArk}
         onTapNFC={() => setShowNFC(true)}
         onCfdPayment={setCfdPayment}
+        onCheckGiftCard={async (code) => {
+          const res = await fetch('/api/pos/gift-card-check', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code, total }),
+          });
+          const body = await res.json();
+          if (!res.ok) {
+            return { ok: false, reason: body.error || 'Gagal memeriksa gift card' };
+          }
+          const data = body.data || {};
+          return {
+            ok: Boolean(data.ok),
+            reason: data.reason,
+            balance: data.balance,
+            covers: data.covers,
+            expiresAt: data.expires_at,
+          };
+        }}
         onCheckNfcTab={async (uid) => {
           const res = await fetch('/api/ticketing/tab/check', {
             method: 'POST',
@@ -1767,6 +2517,27 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
           };
         }}
       />
+
+      {/* ── EPIC-039 Fase B — pilih varian merchandise ber-SKU ── */}
+      {merchSkuProduct && (
+        <MerchSkuPickerDialog
+          product={merchSkuProduct}
+          onSelect={handleSelectMerchSku}
+          onClose={() => setMerchSkuProduct(null)}
+          formatCurrency={formatCurrency}
+        />
+      )}
+
+      {/* ── EPIC-034 Fase B — jual gift card (nominal diketik kasir) ── */}
+      {giftCardProduct && (
+        <GiftCardSaleDialog
+          open
+          productName={giftCardProduct.name}
+          onClose={() => setGiftCardProduct(null)}
+          onConfirm={handleConfirmGiftCardSale}
+          formatCurrency={formatCurrency}
+        />
+      )}
 
       {/* ── NFC Modal ── */}
       <NFCModal
@@ -1790,7 +2561,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
             <AlertDialogTitle>Card ID has no member</AlertDialogTitle>
             <AlertDialogDescription>
               This card ID ({createMemberPromptUid}) is not linked to a member yet.
-              Would you like to create a new member?
+              Link it to an existing customer or create a new one.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -1804,7 +2575,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
                 setShowCustomerModal(true);
               }}
             >
-              Yes, create member
+              Continue
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -1843,11 +2614,19 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* ── Result Modal ── */}
+      {/* ── Result Modal / Print Struk ── */}
       <Dialog open={!!resultPayload} onOpenChange={(open) => { if (!open) closeResultModal(); }}>
         <DialogPanel size="sm" showCloseButton={false}>
           {resultPayload ? (
             <>
+              <DialogPanelHeader>
+                <DialogPanelTitle>Print Struk</DialogPanelTitle>
+                <DialogPanelDescription>
+                  {lastResultType === "offlined"
+                    ? "Order tersimpan offline. Cetak struk bila perlu."
+                    : "Pembayaran berhasil. Cetak struk untuk pelanggan."}
+                </DialogPanelDescription>
+              </DialogPanelHeader>
               <DialogPanelBody className="space-y-5">
                 {lastResultType === "offlined" ? (
                   <>
@@ -1886,10 +2665,18 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
                       <h2 className="text-xl font-bold text-foreground">
                         Payment successful
                       </h2>
+                      {resultPayload.queueNumber ? (
+                        <p className="text-4xl font-black tabular-nums text-foreground">
+                          {resultPayload.queueNumber}
+                        </p>
+                      ) : null}
                       <p className="text-sm text-muted-foreground">
-                        Order #
-                        {resultPayload.orderNumber?.slice(-8).toUpperCase() ||
-                          resultPayload.orderId?.slice(-8).toUpperCase()}
+                        {resultPayload.queueNumber
+                          ? `Nomor Antrian · Order ${resultPayload.orderNumber || ""}`
+                          : `Order #${
+                              resultPayload.orderNumber?.slice(-8).toUpperCase() ||
+                              resultPayload.orderId?.slice(-8).toUpperCase()
+                            }`}
                       </p>
                     </div>
 
@@ -1920,19 +2707,19 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
                   </>
                 )}
 
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 gap-2">
                   {(
                     [
                       ["KITCHEN", "Kitchen"],
                       ["BAR", "Bar"],
-                      ["CUSTOMER", "Receipt"],
                     ] as const
                   ).map(([label, text]) => (
                     <Button
                       key={label}
                       type="button"
                       variant="outline"
-                      onClick={() => handlePrint(label)}
+                      onClick={() => void handlePrint(label)}
+                      disabled={printingReceipt}
                       className="h-auto flex-col gap-1 border-gray-200/80 px-2 py-2.5 text-xs font-semibold text-foreground hover:border-primary/30 hover:bg-primary/5 hover:text-primary"
                     >
                       <Printer className="h-4 w-4" />
@@ -1940,15 +2727,70 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
                     </Button>
                   ))}
                 </div>
-              </DialogPanelBody>
-
-              <DialogFooter className="sm:justify-stretch">
                 <Button
                   type="button"
-                  onClick={closeResultModal}
-                  className="w-full bg-primary hover:bg-primary/90"
+                  onClick={() => void handlePrint("CUSTOMER")}
+                  disabled={printingReceipt}
+                  className="h-11 w-full gap-2 bg-primary hover:bg-primary/90"
                 >
-                  New transaction
+                  {printingReceipt ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
+                  Print Struk
+                </Button>
+
+                {/* Kirim struk via WA. Member → langsung ke nomor profil;
+                    non-member → kasir isi nomor dulu. Setelah terkirim tombol
+                    berubah jadi penanda, bukan bisa dispam. */}
+                {waSentTo ? (
+                  <div className="flex items-center justify-center gap-2 rounded-xl border border-emerald-200/70 bg-emerald-50/60 px-4 py-2.5 text-sm text-emerald-700">
+                    <CheckCircle className="h-4 w-4" />
+                    Struk terkirim ke {waSentTo}
+                  </div>
+                ) : selectedCustomer?.phone ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => void sendReceiptWa()}
+                    disabled={waSending}
+                    className="h-11 w-full gap-2 border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                  >
+                    {waSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageCircle className="h-4 w-4" />}
+                    Kirim WA ke {selectedCustomer.phone}
+                  </Button>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="flex gap-2">
+                      <Input
+                        type="tel"
+                        inputMode="tel"
+                        value={waPhoneInput}
+                        onChange={(e) => { setWaPhoneInput(e.target.value); setWaError(null); }}
+                        placeholder="Nomor WA pelanggan (08…)"
+                        className="h-11"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => void sendReceiptWa(waPhoneInput)}
+                        disabled={waSending || !waPhoneInput.trim()}
+                        className="h-11 shrink-0 gap-2 border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                      >
+                        {waSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageCircle className="h-4 w-4" />}
+                        Kirim WA
+                      </Button>
+                    </div>
+                  </div>
+                )}
+                {waError && <p className="text-center text-xs text-red-600">{waError}</p>}
+              </DialogPanelBody>
+
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={closeResultModal}
+                  className="w-full border-gray-200/80 sm:w-auto"
+                >
+                  Transaksi baru
                 </Button>
               </DialogFooter>
             </>

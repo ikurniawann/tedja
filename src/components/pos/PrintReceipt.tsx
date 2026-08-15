@@ -1,10 +1,18 @@
 "use client";
 
+import { toast } from "sonner";
 import type { PosCartItem } from "@/hooks/use-pos-cart";
+import {
+  canUseRawBtPrint,
+  printBytesViaRawBt,
+} from "@/lib/pos/rawbt-print";
+import { encodeEscPosLines, formatReceiptRow } from "@/lib/pos/thermal-escpos";
+import { printBytesToPairedThermal } from "@/lib/pos/thermal-serial";
 
 export interface ReceiptPayload {
   orderId?: string;
   orderNumber?: string;
+  queueNumber?: string | null;
   orderType: string;
   table: string | null;
   items: PosCartItem[];
@@ -15,14 +23,184 @@ export interface ReceiptPayload {
   customerName?: string;
   discountAmount: number;
   taxAmount: number;
+  /** Snapshot charge lines (service / fee / rounding / tax) for receipt */
+  chargesBreakdown?: Array<{
+    code: string;
+    name: string;
+    kind: string;
+    amount: number;
+  }>;
+  /**
+   * EPIC-034 Fase B — kartu yang terbit dari transaksi ini. Kode dicetak di
+   * struk pelanggan (keputusan owner: struk adalah jalur utama, WA tambahan).
+   * Tidak pernah dicetak di copy dapur/bar — kode = uang.
+   */
+  giftCards?: Array<{ code: string; initial_value: number; expires_at: string | null }>;
 }
 
 export type ThermalPrintLabel = "KITCHEN" | "BAR" | "CUSTOMER" | "PREVIEW_BILL";
 
-export function printThermalReceipt(payload: ReceiptPayload, label: ThermalPrintLabel) {
+function formatCurrency(n: number) {
+  return "Rp " + new Intl.NumberFormat("id-ID", { minimumFractionDigits: 0 }).format(Math.abs(n));
+}
+
+export function buildReceiptLines(payload: ReceiptPayload, label: ThermalPrintLabel): string[] {
+  return buildReceiptEscPosLayout(payload, label).map((line) => line.text);
+}
+
+/** Layout matching HTML receipt: centered header / footer, left items + totals. */
+export function buildReceiptEscPosLayout(
+  payload: ReceiptPayload,
+  label: ThermalPrintLabel,
+): Array<{ text: string; align: "left" | "center" }> {
+  const isKitchen = label === "KITCHEN";
+  const isBar = label === "BAR";
+  const isPreviewBill = label === "PREVIEW_BILL";
+  const heading = isPreviewBill ? "PREVIEW BILL" : label;
+  const lines: Array<{ text: string; align: "left" | "center" }> = [
+    { text: `--- ${heading} ---`, align: "center" },
+    { text: payload.orderType.replace(/_/g, "-").toUpperCase(), align: "center" },
+  ];
+  if (payload.table) lines.push({ text: payload.table, align: "center" });
+  if (payload.queueNumber) {
+    lines.push({ text: `ANTRIAN ${payload.queueNumber}`, align: "center" });
+  }
+  lines.push({
+    text: `Order #${(payload.orderNumber || "").slice(-8).toUpperCase() || (payload.orderId || "").slice(-8).toUpperCase()}`,
+    align: "center",
+  });
+  lines.push({ text: new Date().toLocaleTimeString("id-ID"), align: "center" });
+  if (payload.customerName) {
+    lines.push({ text: `Customer: ${payload.customerName}`, align: "center" });
+  }
+  if (isPreviewBill) {
+    lines.push({ text: "PRE-SETTLEMENT - UNPAID", align: "center" });
+  }
+  lines.push({ text: "--------------------------------", align: "left" });
+
+  for (const item of payload.items) {
+    lines.push({ text: `${item.quantity}x ${item.name}`, align: "left" });
+    if (item.variantName) lines.push({ text: `  ${item.variantName}`, align: "left" });
+    if (item.modifierNames?.length) {
+      lines.push({ text: `  ${item.modifierNames.join(", ")}`, align: "left" });
+    }
+    if (item.notes) lines.push({ text: `  * ${item.notes}`, align: "left" });
+  }
+
+  if (!isKitchen && !isBar) {
+    lines.push({ text: "--------------------------------", align: "left" });
+    if (payload.discountAmount > 0) {
+      lines.push({
+        text: formatReceiptRow("Diskon", `-${formatCurrency(payload.discountAmount)}`),
+        align: "left",
+      });
+    }
+    if (payload.chargesBreakdown?.length) {
+      for (const line of payload.chargesBreakdown) {
+        const amountLabel =
+          line.amount < 0 ? `-${formatCurrency(Math.abs(line.amount))}` : formatCurrency(line.amount);
+        lines.push({ text: formatReceiptRow(line.name, amountLabel), align: "left" });
+      }
+    } else if (payload.taxAmount > 0) {
+      lines.push({
+        text: formatReceiptRow("PPN", formatCurrency(payload.taxAmount)),
+        align: "left",
+      });
+    }
+    lines.push({
+      text: formatReceiptRow("TOTAL", formatCurrency(payload.total)),
+      align: "left",
+    });
+    if (isPreviewBill) {
+      lines.push({ text: formatReceiptRow("Status", "UNPAID"), align: "left" });
+    } else {
+      lines.push({
+        text: formatReceiptRow(
+          `Bayar (${payload.paymentMethod.toUpperCase()})`,
+          formatCurrency(payload.total + payload.change),
+        ),
+        align: "left",
+      });
+      if (payload.change > 0) {
+        lines.push({
+          text: formatReceiptRow("Kembalian", formatCurrency(payload.change)),
+          align: "left",
+        });
+      }
+    }
+  }
+
+  if (!isKitchen && !isBar && !isPreviewBill && payload.giftCards?.length) {
+    lines.push({ text: "--------------------------------", align: "left" });
+    lines.push({ text: "GIFT CARD", align: "center" });
+    for (const card of payload.giftCards) {
+      lines.push({ text: card.code, align: "center" });
+      lines.push({ text: `Saldo ${formatCurrency(card.initial_value)}`, align: "center" });
+    }
+  }
+
+  if (payload.notes) {
+    lines.push({ text: "--------------------------------", align: "left" });
+    lines.push({ text: `Catatan: ${payload.notes}`, align: "left" });
+  }
+  lines.push({ text: "--------------------------------", align: "left" });
+  lines.push({ text: `--- ${heading} COPY ---`, align: "center" });
+  return lines;
+}
+
+/** ESC/POS bytes for RawBT — same layout as desktop thermal / Chrome tablet HTML. */
+export function buildReceiptEscPosBytes(
+  payload: ReceiptPayload,
+  label: ThermalPrintLabel,
+): Uint8Array {
+  return encodeEscPosLines(buildReceiptEscPosLayout(payload, label));
+}
+
+/**
+ * Visible receipt tab — Android Chrome often captures the parent page when
+ * printing from a 0×0 hidden iframe (cashier "screenshot dialog" bug).
+ * Do not close until afterprint; early close breaks RawBT PDF handoff.
+ */
+function printViaPopupWindow(html: string) {
+  const win = window.open("", "_blank");
+  if (!win) {
+    toast.error("Gagal membuka jendela print. Izinkan popup di browser.");
+    return;
+  }
+  win.document.open();
+  win.document.write(html);
+  win.document.close();
+
+  let closed = false;
+  const cleanup = () => {
+    if (closed) return;
+    closed = true;
+    try {
+      win.close();
+    } catch {
+      // ignore
+    }
+  };
+
+  win.addEventListener("afterprint", cleanup);
+  window.setTimeout(() => {
+    try {
+      win.focus();
+      win.print();
+    } catch {
+      cleanup();
+      return;
+    }
+    // Safety net if afterprint never fires (some Android browsers)
+    window.setTimeout(cleanup, 60_000);
+  }, 300);
+}
+
+function buildReceiptHtml(payload: ReceiptPayload, label: ThermalPrintLabel): string {
   const {
     orderId,
     orderNumber,
+    queueNumber,
     orderType,
     table,
     items,
@@ -33,26 +211,9 @@ export function printThermalReceipt(payload: ReceiptPayload, label: ThermalPrint
     customerName,
     discountAmount,
     taxAmount,
+    chargesBreakdown,
+    giftCards,
   } = payload;
-
-  // Wider popup so the browser print dialog has room for settings + preview.
-  // Receipt content stays 72mm for thermal printers.
-  const popupWidth = Math.min(720, Math.max(480, window.screen.availWidth - 80));
-  const popupHeight = Math.min(900, Math.max(640, window.screen.availHeight - 80));
-  const left = Math.max(0, Math.round((window.screen.availWidth - popupWidth) / 2));
-  const top = Math.max(0, Math.round((window.screen.availHeight - popupHeight) / 2));
-  const win = window.open(
-    "",
-    "_blank",
-    `width=${popupWidth},height=${popupHeight},left=${left},top=${top},scrollbars=yes,resizable=yes`
-  );
-  if (!win) {
-    alert("Izinkan popup untuk print.");
-    return;
-  }
-
-  const formatCurrency = (n: number) =>
-    "Rp " + new Intl.NumberFormat("id-ID", { minimumFractionDigits: 0 }).format(Math.abs(n));
 
   const itemsHtml = items
     .map(
@@ -77,7 +238,22 @@ export function printThermalReceipt(payload: ReceiptPayload, label: ThermalPrint
   const heading = isPreviewBill ? "PREVIEW BILL" : label;
   const title = isPreviewBill ? "PREVIEW BILL" : label;
 
-  win.document.write(`<!DOCTYPE html>
+  const chargeRowsHtml =
+    chargesBreakdown && chargesBreakdown.length > 0
+      ? chargesBreakdown
+          .map((line) => {
+            const amountLabel =
+              line.amount < 0
+                ? `-${formatCurrency(Math.abs(line.amount))}`
+                : formatCurrency(line.amount);
+            return `<div class="row"><span>${line.name}</span><span>${amountLabel}</span></div>`;
+          })
+          .join("")
+      : taxAmount > 0
+        ? `<div class="row"><span>PPN</span><span>${formatCurrency(taxAmount)}</span></div>`
+        : "";
+
+  return `<!DOCTYPE html>
 <html>
   <head>
     <meta charset="utf-8">
@@ -88,17 +264,14 @@ export function printThermalReceipt(payload: ReceiptPayload, label: ThermalPrint
       body {
         font-family: 'Courier New', monospace;
         font-size: 12px;
-        background: #f3f4f6;
-        padding: 24px 16px;
-        display: flex;
-        justify-content: center;
+        background: #fff;
+        padding: 8px;
       }
       .ticket {
         width: 72mm;
         max-width: 100%;
         background: #fff;
-        padding: 6mm 4mm;
-        box-shadow: 0 8px 24px rgba(0,0,0,0.08);
+        padding: 4mm 2mm;
       }
       h1 { font-size:15px; text-align:center; letter-spacing:2px; margin-bottom:4px; }
       .center { text-align:center; }
@@ -108,8 +281,8 @@ export function printThermalReceipt(payload: ReceiptPayload, label: ThermalPrint
       .row.total { font-weight:bold; font-size:14px; margin-top:4px; }
       table { width:100%; border-collapse:collapse; }
       @media print {
-        body { background: #fff; padding: 0; display: block; }
-        .ticket { width: 72mm; box-shadow: none; padding: 6mm 4mm; }
+        body { background: #fff; padding: 0; }
+        .ticket { width: 72mm; padding: 2mm; }
         @page { margin: 0; size: 72mm auto; }
       }
     </style>
@@ -119,6 +292,7 @@ export function printThermalReceipt(payload: ReceiptPayload, label: ThermalPrint
     <h1>--- ${heading} ---</h1>
     <div class="big">${orderType.replace(/_/g, "-").toUpperCase()}</div>
     ${table ? `<div class="center">${table}</div>` : ""}
+    ${queueNumber ? `<div class="big">ANTRIAN ${queueNumber}</div>` : ""}
     <div class="center">Order #${(orderNumber || "").slice(-8).toUpperCase() || (orderId || "").slice(-8).toUpperCase()}</div>
     <div class="center">${new Date().toLocaleTimeString("id-ID")}</div>
     ${customerName ? `<div class="center">Customer: ${customerName}</div>` : ""}
@@ -129,7 +303,7 @@ export function printThermalReceipt(payload: ReceiptPayload, label: ThermalPrint
       <table>${itemsHtml}</table>
       <div class="divider"></div>
       ${discountAmount > 0 ? `<div class="row"><span>Diskon</span><span>-${formatCurrency(discountAmount)}</span></div>` : ""}
-      ${taxAmount > 0 ? `<div class="row"><span>PPN</span><span>${formatCurrency(taxAmount)}</span></div>` : ""}
+      ${chargeRowsHtml}
       <div class="row total"><span>TOTAL</span><span>${formatCurrency(total)}</span></div>
       ${
         isPreviewBill
@@ -141,18 +315,58 @@ export function printThermalReceipt(payload: ReceiptPayload, label: ThermalPrint
       <table>${itemsHtml}</table>
     `}
 
+    ${
+      !isKitchen && !isBar && !isPreviewBill && giftCards && giftCards.length > 0
+        ? `<div class="divider"></div>
+    <div class="center"><strong>GIFT CARD</strong></div>
+    ${giftCards
+      .map(
+        (card) => `<div class="center" style="margin:4px 0">
+      <div style="font-size:15px;font-weight:700;letter-spacing:2px">${card.code}</div>
+      <div>Saldo ${formatCurrency(card.initial_value)}</div>
+      <div style="font-size:11px">${
+        card.expires_at
+          ? `Berlaku s/d ${new Date(card.expires_at).toLocaleDateString("id-ID")}`
+          : "Tanpa batas waktu"
+      }</div>
+    </div>`
+      )
+      .join("")}
+    <div class="center" style="font-size:11px">Simpan struk ini — kode berlaku sebagai saldo.</div>`
+        : ""
+    }
+
     ${notes ? `<div class="divider"></div>
     <div><strong>Catatan:</strong> ${notes}</div>` : ""}
     <div class="divider"></div>
     <div class="center">--- ${heading} COPY ---</div>
     </div>
   </body>
-</html>`);
+</html>`;
+}
 
-  win.document.close();
-  win.focus();
-  setTimeout(() => {
-    win.print();
-    win.close();
-  }, 400);
+export async function printThermalReceipt(payload: ReceiptPayload, label: ThermalPrintLabel) {
+  const escPos = buildReceiptEscPosBytes(payload, label);
+
+  // 1) Android Chrome → RawBT ESC/POS intent
+  if (canUseRawBtPrint()) {
+    if (printBytesViaRawBt(escPos)) {
+      toast.success("Print dikirim ke RawBT");
+      return;
+    }
+  }
+
+  // 2) Desktop / paired Web Serial thermal
+  try {
+    const sent = await printBytesToPairedThermal(escPos);
+    if (sent) {
+      toast.success("Print");
+      return;
+    }
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : "Print langsung gagal, coba jalur lain");
+  }
+
+  // 3) Browser print dialog
+  printViaPopupWindow(buildReceiptHtml(payload, label));
 }

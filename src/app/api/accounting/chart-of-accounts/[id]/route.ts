@@ -19,7 +19,7 @@ import {
 
 const SELECT = `
   id, company_id, code, name, parent_id, account_type_id, level,
-  is_postable, is_contra, cash_flow_category, description, is_active,
+  is_postable, is_contra, is_cash_bank, cash_flow_category, description, is_active,
   created_at, updated_at,
   account_types ( id, code, name, normal_balance )
 `.replace(/\s+/g, " ");
@@ -30,6 +30,7 @@ const payloadSchema = z.object({
   parent_id: z.string().uuid().nullable().optional(),
   account_type_id: z.string().uuid(),
   is_contra: z.boolean().optional(),
+  is_cash_bank: z.boolean().optional(),
   cash_flow_category: z
     .enum([...CASH_FLOW_CATEGORIES])
     .nullable()
@@ -65,6 +66,7 @@ function mapRow(row: Record<string, unknown>) {
     level: row.level,
     is_postable: row.is_postable,
     is_contra: row.is_contra,
+    is_cash_bank: row.is_cash_bank,
     cash_flow_category: row.cash_flow_category,
     description: row.description,
     is_active: row.is_active,
@@ -114,6 +116,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         account_type_id: body.account_type_id,
         level,
         is_contra: body.is_contra ?? false,
+        is_cash_bank: body.is_cash_bank ?? false,
         cash_flow_category: body.cash_flow_category ?? null,
         description: body.description?.trim() || null,
         is_active: body.is_active ?? true,
