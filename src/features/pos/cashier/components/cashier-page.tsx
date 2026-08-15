@@ -612,6 +612,77 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
   const arkToUseCapped = Math.min(currentArkToUse, maxArkUsable);
   const totalAfterArk = total - arkToUseCapped;
 
+  /* Nama stall aktif untuk header struk (permintaan owner: struk memuat
+   * asal stall). Sekali fetch per mount — stall hanya berubah lewat reload. */
+  const [receiptStallName, setReceiptStallName] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/auth/stall-options')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json) => {
+        if (!cancelled) setReceiptStallName(json?.data?.active?.name ?? null);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  /* Blok tambahan struk (redesign struk, owner 2026-08-16): Subtotal kotor,
+   * rincian diskon per jenis, dan stall — di-spread ke semua ReceiptPayload. */
+  const receiptExtras = useMemo(() => {
+    const discountLines: Array<{ label: string; amount: number }> = [];
+    if (discountStack.line_discount_total > 0) {
+      discountLines.push({ label: 'Diskon Item', amount: discountStack.line_discount_total });
+    }
+    if (offerDiscount > 0) {
+      discountLines.push({
+        label:
+          offerEval.applied.length === 1 ? `Promo ${offerEval.applied[0].name}` : 'Penawaran',
+        amount: offerDiscount,
+      });
+    }
+    if (membershipDiscountAmount > 0) {
+      discountLines.push({
+        label: `Diskon Member (${membershipDiscount}%)`,
+        amount: membershipDiscountAmount,
+      });
+    }
+    if (promoDiscount > 0) {
+      discountLines.push({
+        label: promoApplied?.code ? `Promo ${promoApplied.code}` : 'Promo',
+        amount: promoDiscount,
+      });
+    }
+    if (manualDiscountAmount > 0) {
+      discountLines.push({
+        label:
+          cart.manual_discount_type === 'percent'
+            ? `Diskon Manual (${cart.manual_discount_value}%)`
+            : 'Diskon Manual',
+        amount: manualDiscountAmount,
+      });
+    }
+    return {
+      subtotal: discountStack.gross_subtotal,
+      discountLines,
+      stallName: receiptStallName,
+    };
+  }, [
+    discountStack.line_discount_total,
+    discountStack.gross_subtotal,
+    offerDiscount,
+    offerEval.applied,
+    membershipDiscountAmount,
+    membershipDiscount,
+    promoDiscount,
+    promoApplied,
+    manualDiscountAmount,
+    cart.manual_discount_type,
+    cart.manual_discount_value,
+    receiptStallName,
+  ]);
+
   /* Promo basi saat cart / diskon item berubah (basis = setelah line discount) */
   useEffect(() => {
     setPromoApplied(null);
@@ -1102,6 +1173,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
           discountAmount,
           taxAmount,
           chargesBreakdown: billCharges.breakdown,
+          ...receiptExtras,
         };
         storeResultPayload(receipt);
         setShowPayment(false);
@@ -1200,6 +1272,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
           discountAmount,
           taxAmount,
           chargesBreakdown: billCharges.breakdown,
+          ...receiptExtras,
         };
         storeResultPayload(receipt);
         setShowPayment(false);
@@ -1263,6 +1336,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
           customerName: selectedCustomer?.name,
           discountAmount,
           taxAmount,
+          ...receiptExtras,
         };
         storeResultPayload(receipt);
         // Saldo ARK/XP customer berubah di server — segarkan cache kasir
@@ -1340,6 +1414,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         discountAmount,
         taxAmount,
         chargesBreakdown: billCharges.breakdown,
+        ...receiptExtras,
       };
       storeResultPayload(receipt);
       setShowPayment(false);
@@ -1396,6 +1471,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         taxAmount,
         chargesBreakdown: billCharges.breakdown,
         giftCards: res.giftCards,
+        ...receiptExtras,
       };
       storeResultPayload(receipt);
       toast.success(
@@ -1485,6 +1561,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         discountAmount,
         taxAmount,
         chargesBreakdown: billCharges.breakdown,
+        ...receiptExtras,
       };
       storeResultPayload(receipt);
       setLastResultType('offlined');
@@ -1543,7 +1620,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     } catch (e: any) {
       toast.error(e.message || 'Failed to create split order');
     }
-  }, [cart, selectedCustomer, discountAmount, taxAmount, total, membershipDiscount, isOnline, enqueue, paymentMethod, shift, refreshCount, selectedTableDisplay, effectiveTableId, requireActiveShift, storeResultPayload, promoApplied, serviceChargeAmount, otherChargesAmount, billCharges, guestCount]);
+  }, [cart, selectedCustomer, discountAmount, taxAmount, total, membershipDiscount, isOnline, enqueue, paymentMethod, shift, refreshCount, selectedTableDisplay, effectiveTableId, requireActiveShift, storeResultPayload, promoApplied, serviceChargeAmount, otherChargesAmount, billCharges, guestCount, receiptExtras]);
 
   const handleSplitComplete = useCallback(() => {
     setShowSplitPayment(false);

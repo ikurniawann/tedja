@@ -8,9 +8,9 @@ import {
 } from "@/lib/pos/thermal-escpos";
 
 describe("formatReceiptRow", () => {
-  it("aligns left and right within 32 columns", () => {
-    expect(formatReceiptRow("TOTAL", "Rp 128.000")).toBe(`TOTAL${" ".repeat(17)}Rp 128.000`);
-    expect(formatReceiptRow("TOTAL", "Rp 128.000").length).toBe(32);
+  it("aligns left and right within the 80mm width (48 columns)", () => {
+    expect(formatReceiptRow("TOTAL", "Rp 128.000")).toBe(`TOTAL${" ".repeat(33)}Rp 128.000`);
+    expect(formatReceiptRow("TOTAL", "Rp 128.000").length).toBe(THERMAL_WIDTH);
   });
 });
 

@@ -53,7 +53,8 @@ export function StallSwitchButton() {
           return;
         }
         const json = await res.json();
-        setAllowed(true);
+        // API kini 200 utk semua user login; izin pindah ada di can_switch.
+        setAllowed(Boolean(json.data?.can_switch));
         setActive(json.data?.active ?? null);
         setStalls(json.data?.stalls ?? []);
       } catch {

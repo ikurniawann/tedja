@@ -6,7 +6,7 @@ import {
   canUseRawBtPrint,
   printBytesViaRawBt,
 } from "@/lib/pos/rawbt-print";
-import { encodeEscPosLines, formatReceiptRow } from "@/lib/pos/thermal-escpos";
+import { encodeEscPosLines, formatReceiptRow, RECEIPT_DIVIDER } from "@/lib/pos/thermal-escpos";
 import { printBytesToPairedThermal } from "@/lib/pos/thermal-serial";
 
 export interface ReceiptPayload {
@@ -21,7 +21,16 @@ export interface ReceiptPayload {
   change: number;
   paymentMethod: string;
   customerName?: string;
+  /** Stall asal order — dicetak di header semua copy (dapur perlu tahu asal). */
+  stallName?: string | null;
+  /** Σ harga item SEBELUM diskon apa pun; bila absen dihitung dari items. */
+  subtotal?: number;
   discountAmount: number;
+  /**
+   * Rincian diskon per jenis (item/member/promo/manual) utk struk customer.
+   * Bila absen, fallback satu baris "Diskon" dari discountAmount (payload lama).
+   */
+  discountLines?: Array<{ label: string; amount: number }>;
   taxAmount: number;
   /** Snapshot charge lines (service / fee / rounding / tax) for receipt */
   chargesBreakdown?: Array<{
@@ -29,6 +38,8 @@ export interface ReceiptPayload {
     name: string;
     kind: string;
     amount: number;
+    rate?: number;
+    calc_method?: string;
   }>;
   /**
    * EPIC-034 Fase B — kartu yang terbit dari transaksi ini. Kode dicetak di
@@ -42,6 +53,17 @@ export type ThermalPrintLabel = "KITCHEN" | "BAR" | "CUSTOMER" | "PREVIEW_BILL";
 
 function formatCurrency(n: number) {
   return "Rp " + new Intl.NumberFormat("id-ID", { minimumFractionDigits: 0 }).format(Math.abs(n));
+}
+
+/** "Tax" + rate percent → "Tax (10%)" supaya pembeli tahu tarifnya. */
+function chargeLabel(line: { name: string; rate?: number; calc_method?: string }) {
+  return line.calc_method === "percent" && Number(line.rate) > 0
+    ? `${line.name} (${line.rate}%)`
+    : line.name;
+}
+
+function itemsSubtotal(items: PosCartItem[]) {
+  return items.reduce((sum, item) => sum + (Number(item.price) || 0) * (Number(item.quantity) || 0), 0);
 }
 
 export function buildReceiptLines(payload: ReceiptPayload, label: ThermalPrintLabel): string[] {
@@ -73,13 +95,31 @@ export function buildReceiptEscPosLayout(
   if (payload.customerName) {
     lines.push({ text: `Customer: ${payload.customerName}`, align: "center" });
   }
+  if (payload.stallName) {
+    lines.push({ text: `Stall: ${payload.stallName}`, align: "center" });
+  }
   if (isPreviewBill) {
     lines.push({ text: "PRE-SETTLEMENT - UNPAID", align: "center" });
   }
-  lines.push({ text: "--------------------------------", align: "left" });
+  lines.push({ text: RECEIPT_DIVIDER, align: "left" });
 
+  const withPrices = !isKitchen && !isBar;
   for (const item of payload.items) {
-    lines.push({ text: `${item.quantity}x ${item.name}`, align: "left" });
+    const qty = Number(item.quantity) || 0;
+    if (withPrices) {
+      lines.push({
+        text: formatReceiptRow(
+          `${item.quantity}x ${item.name}`,
+          formatCurrency((Number(item.price) || 0) * qty),
+        ),
+        align: "left",
+      });
+      if (qty > 1) {
+        lines.push({ text: `  @ ${formatCurrency(Number(item.price) || 0)}`, align: "left" });
+      }
+    } else {
+      lines.push({ text: `${item.quantity}x ${item.name}`, align: "left" });
+    }
     if (item.variantName) lines.push({ text: `  ${item.variantName}`, align: "left" });
     if (item.modifierNames?.length) {
       lines.push({ text: `  ${item.modifierNames.join(", ")}`, align: "left" });
@@ -88,8 +128,24 @@ export function buildReceiptEscPosLayout(
   }
 
   if (!isKitchen && !isBar) {
-    lines.push({ text: "--------------------------------", align: "left" });
-    if (payload.discountAmount > 0) {
+    lines.push({ text: RECEIPT_DIVIDER, align: "left" });
+    const subtotal = payload.subtotal ?? itemsSubtotal(payload.items);
+    lines.push({ text: formatReceiptRow("Subtotal", formatCurrency(subtotal)), align: "left" });
+    const discountLines = (payload.discountLines ?? []).filter((d) => d.amount > 0);
+    if (discountLines.length > 0) {
+      for (const d of discountLines) {
+        lines.push({
+          text: formatReceiptRow(d.label, `-${formatCurrency(d.amount)}`),
+          align: "left",
+        });
+      }
+      if (discountLines.length > 1) {
+        lines.push({
+          text: formatReceiptRow("Total Diskon", `-${formatCurrency(payload.discountAmount)}`),
+          align: "left",
+        });
+      }
+    } else if (payload.discountAmount > 0) {
       lines.push({
         text: formatReceiptRow("Diskon", `-${formatCurrency(payload.discountAmount)}`),
         align: "left",
@@ -99,7 +155,7 @@ export function buildReceiptEscPosLayout(
       for (const line of payload.chargesBreakdown) {
         const amountLabel =
           line.amount < 0 ? `-${formatCurrency(Math.abs(line.amount))}` : formatCurrency(line.amount);
-        lines.push({ text: formatReceiptRow(line.name, amountLabel), align: "left" });
+        lines.push({ text: formatReceiptRow(chargeLabel(line), amountLabel), align: "left" });
       }
     } else if (payload.taxAmount > 0) {
       lines.push({
@@ -131,7 +187,7 @@ export function buildReceiptEscPosLayout(
   }
 
   if (!isKitchen && !isBar && !isPreviewBill && payload.giftCards?.length) {
-    lines.push({ text: "--------------------------------", align: "left" });
+    lines.push({ text: RECEIPT_DIVIDER, align: "left" });
     lines.push({ text: "GIFT CARD", align: "center" });
     for (const card of payload.giftCards) {
       lines.push({ text: card.code, align: "center" });
@@ -140,10 +196,10 @@ export function buildReceiptEscPosLayout(
   }
 
   if (payload.notes) {
-    lines.push({ text: "--------------------------------", align: "left" });
+    lines.push({ text: RECEIPT_DIVIDER, align: "left" });
     lines.push({ text: `Catatan: ${payload.notes}`, align: "left" });
   }
-  lines.push({ text: "--------------------------------", align: "left" });
+  lines.push({ text: RECEIPT_DIVIDER, align: "left" });
   lines.push({ text: `--- ${heading} COPY ---`, align: "center" });
   return lines;
 }
@@ -196,7 +252,7 @@ function printViaPopupWindow(html: string) {
   }, 300);
 }
 
-function buildReceiptHtml(payload: ReceiptPayload, label: ThermalPrintLabel): string {
+export function buildReceiptHtml(payload: ReceiptPayload, label: ThermalPrintLabel): string {
   const {
     orderId,
     orderNumber,
@@ -209,26 +265,34 @@ function buildReceiptHtml(payload: ReceiptPayload, label: ThermalPrintLabel): st
     change,
     paymentMethod,
     customerName,
+    stallName,
     discountAmount,
     taxAmount,
     chargesBreakdown,
     giftCards,
   } = payload;
 
+  const isKitchenCopy = label === "KITCHEN" || label === "BAR";
   const itemsHtml = items
     .map(
-      (item) => `
+      (item) => {
+        const qty = Number(item.quantity) || 0;
+        const lineTotal = (Number(item.price) || 0) * qty;
+        return `
     <tr>
       <td style="width:28px;vertical-align:top;font-weight:bold;padding:3px 2px">${item.quantity}x</td>
       <td style="padding:3px 2px">
         <strong>${item.name}</strong>
+        ${!isKitchenCopy && qty > 1 ? `<br><small style="color:#555">@ ${formatCurrency(Number(item.price) || 0)}</small>` : ""}
         ${item.variantName ? `<br><small style="color:#555">${item.variantName}</small>` : ""}
         ${item.modifierNames?.length ? `<br><small style="color:#555">${item.modifierNames.join(", ")}</small>` : ""}
         ${item.notes ? `<br><em style="color:#555">* ${item.notes}</em>` : ""}
       </td>
+      ${!isKitchenCopy ? `<td style="vertical-align:top;text-align:right;white-space:nowrap;padding:3px 2px">${formatCurrency(lineTotal)}</td>` : ""}
     </tr>
-    <tr><td colspan="2"><div style="border-top:1px dashed #ccc;margin:2px 0"></div></td></tr>
-  `
+    <tr><td colspan="${isKitchenCopy ? 2 : 3}"><div style="border-top:1px dashed #ccc;margin:2px 0"></div></td></tr>
+  `;
+      }
     )
     .join("");
 
@@ -238,6 +302,20 @@ function buildReceiptHtml(payload: ReceiptPayload, label: ThermalPrintLabel): st
   const heading = isPreviewBill ? "PREVIEW BILL" : label;
   const title = isPreviewBill ? "PREVIEW BILL" : label;
 
+  const receiptSubtotal = payload.subtotal ?? itemsSubtotal(items);
+  const visibleDiscountLines = (payload.discountLines ?? []).filter((d) => d.amount > 0);
+  const discountRowsHtml =
+    visibleDiscountLines.length > 0
+      ? visibleDiscountLines
+          .map((d) => `<div class="row"><span>${d.label}</span><span>-${formatCurrency(d.amount)}</span></div>`)
+          .join("") +
+        (visibleDiscountLines.length > 1
+          ? `<div class="row"><span>Total Diskon</span><span>-${formatCurrency(discountAmount)}</span></div>`
+          : "")
+      : discountAmount > 0
+        ? `<div class="row"><span>Diskon</span><span>-${formatCurrency(discountAmount)}</span></div>`
+        : "";
+
   const chargeRowsHtml =
     chargesBreakdown && chargesBreakdown.length > 0
       ? chargesBreakdown
@@ -246,7 +324,7 @@ function buildReceiptHtml(payload: ReceiptPayload, label: ThermalPrintLabel): st
               line.amount < 0
                 ? `-${formatCurrency(Math.abs(line.amount))}`
                 : formatCurrency(line.amount);
-            return `<div class="row"><span>${line.name}</span><span>${amountLabel}</span></div>`;
+            return `<div class="row"><span>${chargeLabel(line)}</span><span>${amountLabel}</span></div>`;
           })
           .join("")
       : taxAmount > 0
@@ -268,7 +346,7 @@ function buildReceiptHtml(payload: ReceiptPayload, label: ThermalPrintLabel): st
         padding: 8px;
       }
       .ticket {
-        width: 72mm;
+        width: 76mm; /* kertas 80mm, area cetak efektif */
         max-width: 100%;
         background: #fff;
         padding: 4mm 2mm;
@@ -282,8 +360,8 @@ function buildReceiptHtml(payload: ReceiptPayload, label: ThermalPrintLabel): st
       table { width:100%; border-collapse:collapse; }
       @media print {
         body { background: #fff; padding: 0; }
-        .ticket { width: 72mm; padding: 2mm; }
-        @page { margin: 0; size: 72mm auto; }
+        .ticket { width: 76mm; padding: 2mm; }
+        @page { margin: 0; size: 80mm auto; }
       }
     </style>
   </head>
@@ -296,13 +374,15 @@ function buildReceiptHtml(payload: ReceiptPayload, label: ThermalPrintLabel): st
     <div class="center">Order #${(orderNumber || "").slice(-8).toUpperCase() || (orderId || "").slice(-8).toUpperCase()}</div>
     <div class="center">${new Date().toLocaleTimeString("id-ID")}</div>
     ${customerName ? `<div class="center">Customer: ${customerName}</div>` : ""}
+    ${stallName ? `<div class="center">Stall: ${stallName}</div>` : ""}
     ${isPreviewBill ? `<div class="center">PRE-SETTLEMENT · UNPAID</div>` : ""}
     <div class="divider"></div>
 
     ${!isKitchen && !isBar ? `
       <table>${itemsHtml}</table>
       <div class="divider"></div>
-      ${discountAmount > 0 ? `<div class="row"><span>Diskon</span><span>-${formatCurrency(discountAmount)}</span></div>` : ""}
+      <div class="row"><span>Subtotal</span><span>${formatCurrency(receiptSubtotal)}</span></div>
+      ${discountRowsHtml}
       ${chargeRowsHtml}
       <div class="row total"><span>TOTAL</span><span>${formatCurrency(total)}</span></div>
       ${

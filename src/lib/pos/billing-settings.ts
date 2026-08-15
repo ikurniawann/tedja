@@ -31,6 +31,9 @@ export type ChargeBreakdownLine = {
   name: string;
   kind: ChargeKind;
   amount: number;
+  /** Utk label struk "Tax (10%)" — hanya terisi bila charge percent. */
+  rate?: number;
+  calc_method?: CalcMethod;
 };
 
 export type BillChargesResult = {
@@ -259,6 +262,7 @@ export function calculateBillCharges(input: {
         name: charge.name,
         kind: "rounding",
         amount,
+        calc_method: charge.calc_method,
       });
       continue;
     }
@@ -276,6 +280,8 @@ export function calculateBillCharges(input: {
       name: charge.name,
       kind: charge.charge_kind,
       amount,
+      rate: charge.calc_method === "percent" ? charge.rate : undefined,
+      calc_method: charge.calc_method,
     });
   }
 

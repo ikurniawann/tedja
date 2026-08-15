@@ -7,6 +7,10 @@ import { resolveActiveStallFromCookies } from "@/lib/auth/active-stall";
 /**
  * Daftar stall yang boleh dipilih user di switcher / kasir gate.
  * all_access=false → "Semua Stall" tidak tersedia; pilihan terbatas penempatan.
+ *
+ * Semua user login boleh membaca stall AKTIF-nya (dipakai struk POS untuk
+ * mencetak asal stall); daftar pilihan hanya dikirim bila user memang boleh
+ * pindah (can_switch) — POST /api/auth/active-stall tetap penjaga izinnya.
  */
 export async function GET() {
   try {
@@ -18,9 +22,6 @@ export async function GET() {
       user.role === "admin" ||
       access.allAccess ||
       access.stalls.length > 1;
-    if (!canSwitch) {
-      throw ApiError.forbidden("Akun ini tidak perlu mengganti stall");
-    }
 
     // Stall aktif ikut dikirim supaya tombol switcher di kasir bisa
     // menandai posisi sekarang tanpa endpoint tambahan. Cookie kosong =
@@ -39,8 +40,11 @@ export async function GET() {
       success: true,
       data: {
         all_access: access.allAccess,
+        can_switch: canSwitch,
         active,
-        stalls: access.stalls.map(({ id, name, code }) => ({ id, name, code })),
+        stalls: canSwitch
+          ? access.stalls.map(({ id, name, code }) => ({ id, name, code }))
+          : [],
       },
     });
   } catch (error) {
