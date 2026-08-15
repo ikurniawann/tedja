@@ -528,10 +528,13 @@ export async function createCheckout(checkout: CreateCheckoutRequest) {
   });
 }
 
-export async function completeCheckout(checkoutId: string) {
+export async function completeCheckout(
+  checkoutId: string,
+  tender: { payment_method: string; amount_paid: number }
+) {
   return fetchAPI<{ success: boolean; data: { order_ids: string[] }; error?: string }>(
     `/checkouts/${encodeURIComponent(checkoutId)}/complete`,
-    { method: 'POST' }
+    { method: 'POST', body: JSON.stringify(tender) }
   );
 }
 

@@ -10,6 +10,7 @@ import {
   groupItemsByStall,
   guardMixedCheckoutCart,
   rejectUnsupportedMixedTender,
+  resolveCheckoutBillTender,
   resolveCheckoutQrisAction,
   resolveLineWarehouse,
   resolveOrderSoldFrom,
@@ -247,6 +248,84 @@ describe("settleMixedCheckoutTender", () => {
       amountPaid: 30000,
       changeAmount: 3000,
     });
+  });
+});
+
+describe("resolveCheckoutBillTender", () => {
+  it("requires payment_method and amount_paid for cash/card/QRIS", () => {
+    expect(
+      resolveCheckoutBillTender({ totalAmount: 27000 })
+    ).toMatchObject({ ok: false, message: expect.stringMatching(/metode/i) });
+    expect(
+      resolveCheckoutBillTender({
+        paymentMethod: "cash",
+        totalAmount: 27000,
+      })
+    ).toMatchObject({ ok: false, message: expect.stringMatching(/nominal/i) });
+    expect(
+      resolveCheckoutBillTender({
+        paymentMethod: "cash",
+        amountPaid: 30000,
+        totalAmount: 27000,
+      })
+    ).toEqual({
+      ok: true,
+      paymentMethod: "cash",
+      amountPaid: 30000,
+      changeAmount: 3000,
+    });
+    expect(
+      resolveCheckoutBillTender({
+        paymentMethod: "credit_card",
+        amountPaid: 27000,
+        totalAmount: 27000,
+      })
+    ).toEqual({
+      ok: true,
+      paymentMethod: "credit",
+      amountPaid: 27000,
+      changeAmount: 0,
+    });
+    expect(
+      resolveCheckoutBillTender({
+        paymentMethod: "qris",
+        amountPaid: 27000,
+        totalAmount: 27000,
+      })
+    ).toEqual({
+      ok: true,
+      paymentMethod: "qris",
+      amountPaid: 27000,
+      changeAmount: 0,
+    });
+  });
+
+  it("rejects NFC, gift card, and ARK on checkout-bill pay", () => {
+    expect(resolveCheckoutBillTender({
+      paymentMethod: "nfc_tab",
+      amountPaid: 27000,
+      totalAmount: 27000,
+    })).toEqual({
+      ok: false,
+      message: MIXED_NFC_GIFT_UNSUPPORTED_MESSAGE,
+    });
+    expect(resolveCheckoutBillTender({
+      paymentMethod: "gift_card",
+      amountPaid: 27000,
+      totalAmount: 27000,
+    })).toEqual({
+      ok: false,
+      message: MIXED_NFC_GIFT_UNSUPPORTED_MESSAGE,
+    });
+    const ark = resolveCheckoutBillTender({
+      paymentMethod: "ark_coin",
+      amountPaid: 27000,
+      totalAmount: 27000,
+    });
+    expect(ark.ok).toBe(false);
+    if (!ark.ok) {
+      expect(ark.message).toMatch(/ARK/i);
+    }
   });
 });
 

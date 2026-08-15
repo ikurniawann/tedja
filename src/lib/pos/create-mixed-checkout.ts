@@ -6,6 +6,7 @@ import { getCrmDefaultVenue } from "@/lib/crm/server";
 import { awardCrmXpForPosOrder, syncPosCustomerOrderStats } from "@/lib/crm/loyalty-engine";
 import { AccountingPostError } from "@/lib/pos/accounting-posting";
 import {
+  MIXED_ARK_UNSUPPORTED_MESSAGE,
   MIXED_NFC_GIFT_UNSUPPORTED_MESSAGE,
   MIXED_SPLIT_UNSUPPORTED_MESSAGE,
   allocateCheckoutCharges,
@@ -37,6 +38,7 @@ import {
 import { buildCostSnapshot, loadPosProductCostMap } from "@/lib/pos/purchasing-sync";
 
 export {
+  MIXED_ARK_UNSUPPORTED_MESSAGE,
   MIXED_NFC_GIFT_UNSUPPORTED_MESSAGE,
   MIXED_SPLIT_UNSUPPORTED_MESSAGE,
 } from "@/lib/pos/central-cashier";
@@ -273,6 +275,41 @@ export function settleMixedCheckoutTender(input: {
     amountPaid,
     changeAmount: Math.max(0, amountPaid - input.totalAmount),
   };
+}
+
+const CHECKOUT_BILL_METHODS = new Set(["cash", "qris", "credit", "debit", "credit_card"]);
+
+export function resolveCheckoutBillTender(input: {
+  paymentMethod?: string | null;
+  amountPaid?: number | null;
+  totalAmount: number;
+}):
+  | { ok: true; paymentMethod: string; amountPaid: number; changeAmount: number }
+  | { ok: false; message: string } {
+  const raw = String(input.paymentMethod || "").trim();
+  if (!raw) {
+    return { ok: false, message: "Metode pembayaran wajib" };
+  }
+  const unsupported = rejectUnsupportedMixedTender(raw);
+  if (!unsupported.ok) return unsupported;
+  if (raw === "ark_coin") {
+    return { ok: false, message: MIXED_ARK_UNSUPPORTED_MESSAGE };
+  }
+  const paymentMethod = raw === "credit_card" ? "credit" : raw;
+  if (!CHECKOUT_BILL_METHODS.has(raw) && !CHECKOUT_BILL_METHODS.has(paymentMethod)) {
+    return { ok: false, message: "Metode pembayaran tidak didukung untuk tagihan checkout" };
+  }
+  if (input.amountPaid == null || !Number.isFinite(Number(input.amountPaid))) {
+    return { ok: false, message: "Nominal pembayaran wajib" };
+  }
+  const settled = settleMixedCheckoutTender({
+    totalAmount: input.totalAmount,
+    amountPaid: Number(input.amountPaid),
+  });
+  if (settled.amountPaid < input.totalAmount) {
+    return { ok: false, message: "Nominal tunai kurang dari total tagihan" };
+  }
+  return { ok: true, paymentMethod, ...settled };
 }
 
 export function assertCheckoutQrisReadyToComplete(input: {
@@ -1433,29 +1470,51 @@ async function confirmStoredCheckoutQrisPaid(input: {
   }
 }
 
+export type CompleteMixedCheckoutTender = {
+  paymentMethod?: string | null;
+  amountPaid?: number | null;
+};
+
 export async function completeMixedCheckout(
-  checkoutId: string
+  checkoutId: string,
+  tender: CompleteMixedCheckoutTender = {}
 ): Promise<{ orderIds: string[] }> {
   const db = createPgClient();
 
   const existing = await db
     .from("pos_orders")
-    .select("id")
+    .select("id, total_amount")
     .eq("checkout_id", checkoutId);
-  const existingIds = ((existing.data || []) as Array<{ id: string }>).map((row) =>
-    String(row.id)
-  );
+  const existingChildren = ((existing.data || []) as Array<{
+    id: string;
+    total_amount?: string | number | null;
+  }>).map((row) => ({
+    id: String(row.id),
+    total: toNumber(row.total_amount),
+  }));
+  const existingIds = existingChildren.map((row) => row.id);
 
   const { data: preview, error: previewError } = await db
     .from("pos_checkouts")
     .select(
-      "id, customer_id, cashier_id, payment_method, branch_id, cart_snapshot, xendit_qr_id, xendit_external_id"
+      "id, customer_id, cashier_id, payment_method, branch_id, cart_snapshot, xendit_qr_id, xendit_external_id, total_amount"
     )
     .eq("id", checkoutId)
     .maybeSingle();
   if (previewError) throw previewError;
   if (!preview) {
     throw new MixedCheckoutError("Checkout tidak ditemukan", 404);
+  }
+
+  const childTotal = existingChildren.reduce((sum, row) => sum + row.total, 0);
+  const totalAmount = toNumber(preview.total_amount) || childTotal;
+  const resolved = resolveCheckoutBillTender({
+    paymentMethod: tender.paymentMethod,
+    amountPaid: tender.amountPaid,
+    totalAmount,
+  });
+  if (!resolved.ok) {
+    throw new MixedCheckoutError(resolved.message);
   }
 
   const previewSnapshot = parseSnapshot(preview as CheckoutRow);
@@ -1466,27 +1525,41 @@ export async function completeMixedCheckout(
       .from("pos_checkouts")
       .update({
         payment_status: "paid",
+        payment_method: resolved.paymentMethod,
+        amount_paid: resolved.amountPaid,
+        change_amount: resolved.changeAmount,
         updated_at: now,
       })
       .eq("id", checkoutId)
       .neq("payment_status", "paid");
     if (payCheckoutErr) throw payCheckoutErr;
 
-    const { error: payChildrenErr } = await db
-      .from("pos_orders")
-      .update({
-        payment_status: "paid",
-        updated_at: now,
-      })
-      .eq("checkout_id", checkoutId)
-      .neq("payment_status", "paid");
-    if (payChildrenErr) throw payChildrenErr;
+    const paidParts = allocateCheckoutTender(
+      resolved.amountPaid,
+      existingChildren.map((row) => row.total)
+    );
+    for (let index = 0; index < existingChildren.length; index += 1) {
+      const child = existingChildren[index];
+      if (!child) continue;
+      const { error: payChildErr } = await db
+        .from("pos_orders")
+        .update({
+          payment_status: "paid",
+          payment_method: resolved.paymentMethod,
+          amount_paid: paidParts[index] ?? 0,
+          change_amount: index === 0 ? resolved.changeAmount : 0,
+          updated_at: now,
+        })
+        .eq("id", child.id)
+        .neq("payment_status", "paid");
+      if (payChildErr) throw payChildErr;
+    }
 
     await finalizePaidChildren({
       orderIds: existingIds,
       customerId: preview.customer_id,
       sessionUserId: previewSnapshot?.sessionUserId || String(preview.cashier_id || ""),
-      paymentMethod: String(preview.payment_method || "qris"),
+      paymentMethod: resolved.paymentMethod,
       branchId: preview.branch_id,
       alreadyHadChildren: true,
     });
@@ -1523,17 +1596,15 @@ export async function completeMixedCheckout(
         throw new MixedCheckoutError("Checkout tidak punya item untuk diselesaikan", 409);
       }
 
-      const settled = settleMixedCheckoutTender({
-        totalAmount: toNumber(checkout.total_amount),
-      });
       await client.query(
         `UPDATE pos.pos_checkouts
          SET payment_status = 'paid',
-             amount_paid = $2,
-             change_amount = $3,
+             payment_method = $2::pos_payment_method,
+             amount_paid = $3,
+             change_amount = $4,
              updated_at = now()
          WHERE id = $1`,
-        [checkoutId, settled.amountPaid, settled.changeAmount]
+        [checkoutId, resolved.paymentMethod, resolved.amountPaid, resolved.changeAmount]
       );
 
       const warehouseByProduct = new Map(
@@ -1551,8 +1622,9 @@ export async function completeMixedCheckout(
       const settledCheckout = {
         ...checkout,
         payment_status: "paid",
-        amount_paid: settled.amountPaid,
-        change_amount: settled.changeAmount,
+        payment_method: resolved.paymentMethod,
+        amount_paid: resolved.amountPaid,
+        change_amount: resolved.changeAmount,
       };
       const orderIds = await insertChildrenForCheckout(client, {
         checkout: settledCheckout,
@@ -1569,7 +1641,7 @@ export async function completeMixedCheckout(
       orderIds: created.orderIds,
       customerId: created.checkout.customer_id,
       sessionUserId: created.snapshot?.sessionUserId || created.checkout.cashier_id,
-      paymentMethod: created.checkout.payment_method || "qris",
+      paymentMethod: created.checkout.payment_method || resolved.paymentMethod,
       branchId: created.checkout.branch_id,
       alreadyHadChildren: created.reusedExistingChildren,
     });

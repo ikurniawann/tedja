@@ -28,9 +28,12 @@ import { PosTabletChromeControls } from '@/features/pos/components/pos-tablet-ch
 import { useCanUseCentralCashier } from '@/components/pos/confirm-stall-switch-dialog';
 import { CashierStallGate } from '@/features/pos/cashier/components/cashier-stall-gate';
 import {
+  MIXED_ARK_UNSUPPORTED_MESSAGE,
   MIXED_NFC_GIFT_UNSUPPORTED_MESSAGE,
   MIXED_SPLIT_UNSUPPORTED_MESSAGE,
+  buildCheckoutBillPayBody,
   canSellMixedStall,
+  isCheckoutBillUnsupportedTender,
   isMixedUnsupportedTender,
   mayConfirmMixedQris,
   resolveAddCatalogItem,
@@ -1152,6 +1155,14 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       toast.error(MIXED_NFC_GIFT_UNSUPPORTED_MESSAGE);
       return;
     }
+    if (paymentCheckoutId && isCheckoutBillUnsupportedTender(method)) {
+      toast.error(
+        method === 'ark_coin'
+          ? MIXED_ARK_UNSUPPORTED_MESSAGE
+          : MIXED_NFC_GIFT_UNSUPPORTED_MESSAGE
+      );
+      return;
+    }
     if (mixedCart && !isOnline && !overrides?.checkoutId) {
       toast.error('Checkout multi-stall membutuhkan koneksi');
       return;
@@ -1173,7 +1184,10 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       }
       setProcessingPayment(true);
       try {
-        await completeCheckout(paidCheckoutId);
+        await completeCheckout(paidCheckoutId, {
+          payment_method: 'qris',
+          amount_paid: total,
+        });
         const receipt: ReceiptPayload = {
           orderId: paidCheckoutId,
           orderNumber: overrides.checkoutNumber,
@@ -1237,10 +1251,9 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         const cTotal = total;
 
         if (paymentCheckoutId) {
-          await completeCheckout(paymentCheckoutId);
-          orderId = paymentCheckoutId;
-          orderNumber = payingOrderNumber || paymentCheckoutId;
-          queueNumber = null;
+          toast.error(MIXED_NFC_GIFT_UNSUPPORTED_MESSAGE);
+          setProcessingPayment(false);
+          return;
         } else if (paymentOrderId) {
           const data = await payOpenOrderMutation.mutateAsync({
             orderId: paymentOrderId,
@@ -1340,10 +1353,9 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         const cTotal = total;
 
         if (paymentCheckoutId) {
-          await completeCheckout(paymentCheckoutId);
-          orderId = paymentCheckoutId;
-          orderNumber = payingOrderNumber || paymentCheckoutId;
-          queueNumber = null;
+          toast.error(MIXED_NFC_GIFT_UNSUPPORTED_MESSAGE);
+          setProcessingPayment(false);
+          return;
         } else if (paymentOrderId) {
           const data = await payOpenOrderMutation.mutateAsync({
             orderId: paymentOrderId,
@@ -1440,7 +1452,17 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         return;
       }
       try {
-        await completeCheckout(paymentCheckoutId);
+        if (method === 'ark_coin') {
+          toast.error(MIXED_ARK_UNSUPPORTED_MESSAGE);
+          setProcessingPayment(false);
+          return;
+        }
+        const tender = buildCheckoutBillPayBody({
+          method,
+          cashReceived: cashValue,
+          total: payTotal,
+        });
+        await completeCheckout(paymentCheckoutId, tender);
         const receipt: ReceiptPayload = {
           orderId: paymentCheckoutId,
           orderNumber: payingOrderNumber || paymentCheckoutId,
@@ -2737,6 +2759,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         onClose={() => setShowPayment(false)}
         submitting={processingPayment || submitting}
         isMixedCart={isMixedCart}
+        isCheckoutBill={Boolean(paymentCheckoutId)}
         onPrepareMixedQrisCheckout={
           isMixedCart
             ? async () => {

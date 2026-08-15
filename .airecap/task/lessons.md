@@ -2,6 +2,8 @@
 
 ## POS checkout = one bill
 - Collapsed kasir-pusat bill must handoff `checkoutId`, never `children[0]`. Cashier pays via `completeCheckout`.
+- Never call bare `completeCheckout(id)` — persist tender (`payment_method` + `amount_paid` + change). NFC/gift/ARK on checkout-bill pay → 400 until debit is wired.
+- Bills rail badge uses `soldFrom === "central"`, not `kind === "checkout"` (1-stall kasir pusat is `kind: order`).
 - Move-table on a checkout child must move every unpaid sibling **and** `pos_checkouts.table_id`.
 - Merge/transfer use the same family gate (`canAppendTransferItems`). Stall must not merge into a central child; disable merge on mixed-family destinations.
 - Pay-now mixed while an unpaid central checkout exists → 400 “lanjutkan open bill”, not a second checkout.

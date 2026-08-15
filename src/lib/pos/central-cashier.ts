@@ -31,6 +31,8 @@ export const MIXED_SPLIT_UNSUPPORTED_MESSAGE =
   "Split bill belum didukung untuk checkout multi-stall";
 export const MIXED_NFC_GIFT_UNSUPPORTED_MESSAGE =
   "Pembayaran NFC Tab / Gift Card belum didukung untuk checkout multi-stall";
+export const MIXED_ARK_UNSUPPORTED_MESSAGE =
+  "Pembayaran ARK Coin belum didukung untuk tagihan checkout — gunakan tunai, kartu, atau QRIS";
 
 export function resolveAddCatalogItem(input: {
   canSellMixed: boolean;
@@ -56,6 +58,24 @@ export function shouldDisableSplitBill(stallIds: string[]): boolean {
 
 export function isMixedUnsupportedTender(method: string): boolean {
   return method === "nfc_tab" || method === "gift_card";
+}
+
+export function isCheckoutBillUnsupportedTender(method: string): boolean {
+  return isMixedUnsupportedTender(method) || method === "ark_coin";
+}
+
+export function buildCheckoutBillPayBody(input: {
+  method: string;
+  cashReceived?: string;
+  total: number;
+}): { payment_method: string; amount_paid: number } {
+  const payment_method = input.method === "credit_card" ? "credit" : input.method;
+  const parsedCash = Number.parseFloat(input.cashReceived || "");
+  const amount_paid =
+    input.method === "cash" && Number.isFinite(parsedCash) && parsedCash > 0
+      ? parsedCash
+      : input.total;
+  return { payment_method, amount_paid };
 }
 
 export function buildPosQrisCreateBody(input: {

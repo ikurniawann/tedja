@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { cashierHandoffFromBill, listTableBoardBills } from "./table-board-bills";
+import {
+  cashierHandoffFromBill,
+  listTableBoardBills,
+  tableBillSourceLabel,
+} from "./table-board-bills";
 
 describe("listTableBoardBills", () => {
   it("lists every unpaid stall order on the same table", () => {
@@ -102,6 +106,10 @@ describe("listTableBoardBills", () => {
       orderId: "s1",
       tableId: "t5",
     });
+    expect(tableBillSourceLabel(bills[0].soldFrom)).toBe("Kasir pusat");
+    expect(tableBillSourceLabel(bills[1].soldFrom)).toBe("Stall");
+    expect(tableBillSourceLabel("central")).toBe("Kasir pusat");
+    expect(tableBillSourceLabel("stall")).toBe("Stall");
   });
 
   it("keeps an unpaid checkout with no children", () => {

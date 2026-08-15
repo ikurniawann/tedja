@@ -9,8 +9,13 @@ function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Unknown error";
 }
 
+type CompleteCheckoutBody = {
+  payment_method?: string;
+  amount_paid?: number | string;
+};
+
 export async function POST(
-  _request: NextRequest,
+  request: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
   const sessionUserId = await getPosSession();
@@ -25,7 +30,22 @@ export async function POST(
       return NextResponse.json({ success: false, error: "Checkout tidak valid" }, { status: 400 });
     }
 
-    const result = await completeMixedCheckout(checkoutId);
+    let body: CompleteCheckoutBody = {};
+    try {
+      body = (await request.json()) as CompleteCheckoutBody;
+    } catch {
+      body = {};
+    }
+
+    const amountPaid =
+      body.amount_paid === undefined || body.amount_paid === null
+        ? null
+        : Number(body.amount_paid);
+
+    const result = await completeMixedCheckout(checkoutId, {
+      paymentMethod: body.payment_method,
+      amountPaid,
+    });
     return NextResponse.json({
       success: true,
       data: { order_ids: result.orderIds },

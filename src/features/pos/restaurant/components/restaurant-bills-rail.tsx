@@ -17,6 +17,7 @@ import { getActiveSplitSummary } from "@/features/pos/open-bills/split-summary";
 import {
   cashierHandoffFromBill,
   listTableBoardBills,
+  tableBillSourceLabel,
   type TableBoardBill,
 } from "../table-board-bills";
 import {
@@ -256,7 +257,7 @@ export function RestaurantBillsRail({
                     variant="outline"
                     className="mt-2 border-gray-200/80 bg-gray-50 text-[10px] text-muted-foreground"
                   >
-                    {bill.kind === "checkout" ? "Kasir pusat" : "Stall"}
+                    {tableBillSourceLabel(bill.soldFrom)}
                   </Badge>
                   {splitSummary ? (
                     <Badge

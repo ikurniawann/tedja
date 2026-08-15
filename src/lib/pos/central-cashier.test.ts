@@ -7,7 +7,10 @@ import {
   buildPosQrisCreateBody,
   canAddItemToSingleStallCart,
   canSellMixedStall,
+  isCheckoutBillUnsupportedTender,
   isMixedUnsupportedTender,
+  MIXED_ARK_UNSUPPORTED_MESSAGE,
+  buildCheckoutBillPayBody,
   mapPaidSaleToReceiptIds,
   mayConfirmMixedQris,
   mixedQrisCheckoutIdForAmount,
@@ -93,6 +96,23 @@ describe("mixed cart payment UI", () => {
     expect(isMixedUnsupportedTender("nfc_tab")).toBe(true);
     expect(isMixedUnsupportedTender("gift_card")).toBe(true);
     expect(isMixedUnsupportedTender("cash")).toBe(false);
+    expect(isCheckoutBillUnsupportedTender("ark_coin")).toBe(true);
+    expect(isCheckoutBillUnsupportedTender("nfc_tab")).toBe(true);
+    expect(isCheckoutBillUnsupportedTender("cash")).toBe(false);
+    expect(MIXED_ARK_UNSUPPORTED_MESSAGE).toMatch(/ARK/i);
+    expect(
+      buildCheckoutBillPayBody({
+        method: "credit_card",
+        total: 27000,
+      })
+    ).toEqual({ payment_method: "credit", amount_paid: 27000 });
+    expect(
+      buildCheckoutBillPayBody({
+        method: "cash",
+        cashReceived: "30000",
+        total: 27000,
+      })
+    ).toEqual({ payment_method: "cash", amount_paid: 30000 });
     expect(MIXED_SPLIT_UNSUPPORTED_MESSAGE).toBe(
       "Split bill belum didukung untuk checkout multi-stall"
     );

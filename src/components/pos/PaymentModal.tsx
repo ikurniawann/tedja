@@ -36,8 +36,10 @@ const QRCodeSVG = dynamic(
 import { formatIdrInput, parseIdrDigits } from "./idr-input";
 import type { CfdPayment } from "@/lib/pos/cfd";
 import {
+  MIXED_ARK_UNSUPPORTED_MESSAGE,
   MIXED_NFC_GIFT_UNSUPPORTED_MESSAGE,
   buildPosQrisCreateBody,
+  isCheckoutBillUnsupportedTender,
   isMixedUnsupportedTender,
   mayConfirmMixedQris,
   mixedQrisCheckoutIdForAmount,
@@ -135,6 +137,8 @@ interface Props {
   onCfdPayment?: (payment: CfdPayment | null) => void;
   /** Cart has items from 2+ stalls — QRIS must bind to checkout_id. */
   isMixedCart?: boolean;
+  /** Paying an existing table/central checkout — ARK/NFC/gift are not wired. */
+  isCheckoutBill?: boolean;
   onPrepareMixedQrisCheckout?: () => Promise<{
     checkout_id: string;
     checkout_number?: string;
@@ -157,6 +161,7 @@ export function PaymentModal({
   onCheckGiftCard,
   onCfdPayment,
   isMixedCart = false,
+  isCheckoutBill = false,
   onPrepareMixedQrisCheckout,
 }: Props) {
   const methodsQuery = usePaymentMethods(true);
@@ -289,10 +294,13 @@ export function PaymentModal({
     if (isMixedCart && isMixedUnsupportedTender(method)) {
       setMethod("cash");
     }
+    if (isCheckoutBill && isCheckoutBillUnsupportedTender(method)) {
+      setMethod("cash");
+    }
     if (method !== "qris") {
       setMixedQrisCheckout(null);
     }
-  }, [isMixedCart, method]);
+  }, [isMixedCart, isCheckoutBill, method]);
 
   useEffect(() => {
     setMixedQrisCheckout(null);
@@ -533,7 +541,12 @@ export function PaymentModal({
               const Icon = option.icon;
               const selected = method === option.key;
               const mixedBlocked = isMixedCart && isMixedUnsupportedTender(option.key);
-              const desc = mixedBlocked
+              const checkoutBlocked =
+                isCheckoutBill && isCheckoutBillUnsupportedTender(option.key);
+              const blocked = mixedBlocked || checkoutBlocked;
+              const desc = checkoutBlocked && option.key === "ark_coin"
+                ? MIXED_ARK_UNSUPPORTED_MESSAGE
+                : mixedBlocked || checkoutBlocked
                 ? MIXED_NFC_GIFT_UNSUPPORTED_MESSAGE
                 : option.key === "ark_coin"
                   ? formatArk(selectedCustomer?.ark_coin_balance || 0)
@@ -543,9 +556,9 @@ export function PaymentModal({
                 <button
                   key={option.key}
                   type="button"
-                  disabled={submitting || mixedBlocked}
+                  disabled={submitting || blocked}
                   onClick={() => {
-                    if (mixedBlocked) return;
+                    if (blocked) return;
                     setMethod(option.key);
                     if (option.key === "ark_coin" && !selectedCustomer) {
                       onTapNFC();
@@ -556,7 +569,7 @@ export function PaymentModal({
                     selected
                       ? "border-primary/40 bg-primary/10 ring-1 ring-primary/30"
                       : "border-gray-200/70 bg-white hover:border-primary/30 hover:bg-primary/5",
-                    (submitting || mixedBlocked) && "cursor-not-allowed opacity-60"
+                    (submitting || blocked) && "cursor-not-allowed opacity-60"
                   )}
                 >
                   <Icon

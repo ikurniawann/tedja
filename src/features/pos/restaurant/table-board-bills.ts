@@ -140,6 +140,12 @@ export function listTableBoardBills(input: {
   return bills;
 }
 
+export function tableBillSourceLabel(
+  soldFrom: "central" | "stall"
+): "Kasir pusat" | "Stall" {
+  return soldFrom === "central" ? "Kasir pusat" : "Stall";
+}
+
 /** Cashier must load a checkout as one bill — never a single child order. */
 export function cashierHandoffFromBill(bill: TableBoardBill): {
   checkoutId?: string;
