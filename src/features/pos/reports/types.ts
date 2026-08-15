@@ -130,6 +130,9 @@ export interface TransactionReportRow {
   warehouse_id: string | null;
   stall_code: string | null;
   stall_name: string | null;
+  checkout_id?: string | null;
+  checkout_number?: string | null;
+  sold_from?: string | null;
 }
 
 export interface TransactionReport {

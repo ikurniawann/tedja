@@ -260,7 +260,13 @@ export function TransactionReportPage() {
                   rows.map((row) => (
                     <tr key={row.id} className="hover:bg-muted/30">
                       <td className="px-3 py-3 font-medium text-foreground">
-                        {row.order_number || row.id.slice(0, 8)}
+                        <div>{row.order_number || row.id.slice(0, 8)}</div>
+                        {row.checkout_number ? (
+                          <div className="text-xs font-normal text-muted-foreground">
+                            {row.checkout_number}
+                            {row.sold_from === "central" ? " · Pusat" : ""}
+                          </div>
+                        ) : null}
                       </td>
                       <td className="px-3 py-3 text-muted-foreground">{formatDateTime(row.ordered_at)}</td>
                       <td className="px-3 py-3 text-muted-foreground">

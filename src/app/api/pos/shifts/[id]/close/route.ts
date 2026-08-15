@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createPgClient } from "@/lib/pg/create-client";
 import { getPosSession } from '@/lib/api/auth';
+import { isRevenueOrder } from '@/lib/pos/revenue-order';
 
 /** PATCH /api/pos/shifts/{id}/close
  *  Body: { closing_cash: number, notes?: string }
@@ -43,7 +44,7 @@ export async function PATCH(
     return NextResponse.json({ success: false, error: 'Shift is not active' }, { status: 400 });
   }
 
-  // Recalculate expected cash from all orders in this shift
+  // Recalculate expected cash from pos_orders only — never pos_checkouts totals.
   const { data: agg, error: aggError } = await db
     .from('pos_orders')
     .select('total_amount, amount_paid, ark_coins_used, payment_method')
@@ -55,7 +56,7 @@ export async function PATCH(
     return NextResponse.json({ success: false, error: aggError.message }, { status: 500 });
   }
 
-  const rows = agg || [];
+  const rows = (agg || []).filter(isRevenueOrder);
   let totalCash = 0;
   let totalQris = 0;
   let totalDebit = 0;

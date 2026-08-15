@@ -6,6 +6,7 @@ import {
   parseReportDateRange,
   resolveReportStallFilter,
 } from "@/lib/pos/report-stall-filter";
+import { isRevenueOrder } from "@/lib/pos/revenue-order";
 
 type TransactionRow = {
   id: string;
@@ -20,6 +21,9 @@ type TransactionRow = {
   warehouse_id: string | null;
   stall_code: string | null;
   stall_name: string | null;
+  checkout_id: string | null;
+  checkout_number: string | null;
+  sold_from: string | null;
 };
 
 function toNumber(value: unknown) {
@@ -83,8 +87,12 @@ export async function GET(request: NextRequest) {
          o.cashier_id,
          COALESCE(o.warehouse_id, stall_from_item.warehouse_id) AS warehouse_id,
          COALESCE(w_order.code, stall_from_item.stall_code) AS stall_code,
-         COALESCE(w_order.name, stall_from_item.stall_name) AS stall_name
+         COALESCE(w_order.name, stall_from_item.stall_name) AS stall_name,
+         o.checkout_id,
+         o.sold_from,
+         chk.checkout_number
        FROM pos.pos_orders o
+       LEFT JOIN pos.pos_checkouts chk ON chk.id = o.checkout_id
        LEFT JOIN configuration.warehouses w_order ON w_order.id = o.warehouse_id
        LEFT JOIN LATERAL (
          SELECT
@@ -122,7 +130,8 @@ export async function GET(request: NextRequest) {
       [range.startIso, range.endIso, stallFilter.warehouseIds]
     );
 
-    const summary = rows.reduce(
+    const revenueRows = rows.filter(isRevenueOrder);
+    const summary = revenueRows.reduce(
       (acc, row) => {
         acc.transactions += 1;
         acc.total_sales += toNumber(row.total_amount);
@@ -147,7 +156,7 @@ export async function GET(request: NextRequest) {
           total_sales: Math.round(summary.total_sales * 100) / 100,
           total_ark_used: Math.round(summary.total_ark_used * 100) / 100,
         },
-        rows: rows.map((row) => ({
+        rows: revenueRows.map((row) => ({
           id: row.id,
           order_number: row.order_number,
           ordered_at: row.ordered_at,
@@ -160,6 +169,9 @@ export async function GET(request: NextRequest) {
           warehouse_id: row.warehouse_id,
           stall_code: row.stall_code,
           stall_name: row.stall_name,
+          checkout_id: row.checkout_id,
+          checkout_number: row.checkout_number,
+          sold_from: row.sold_from,
         })),
       },
     });
