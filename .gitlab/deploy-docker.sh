@@ -4,7 +4,29 @@ set -euo pipefail
 DB_HOST="${DB_HOST:-host.docker.internal}"
 DB_PORT="${DB_PORT:-5432}"
 DB_USER="${DB_USER:-postgres}"
-DB_PASS_URLENCODED="${DB_PASS_URLENCODED:-}"
+encode_db_pass() {
+  if command -v python3 >/dev/null 2>&1; then
+    python3 -c 'import urllib.parse,os; print(urllib.parse.quote(os.environ["DB_PASS"], safe=""))'
+  elif command -v node >/dev/null 2>&1; then
+    node -e 'console.log(encodeURIComponent(process.env.DB_PASS))'
+  else
+    printf '%s' "$DB_PASS" | sed -e 's/%/%25/g' -e 's/@/%40/g' -e 's/!/%21/g' -e 's/\*/%2A/g'
+  fi
+}
+
+# Dev (arkiv-development) boleh pakai password lama via DB_PASS / DEV_DB_PASS_URLENCODED
+# supaya tidak tertukar dengan password postgres produksi.
+if [ "${CONTAINER_NAME:-}" = "arkiv-development" ]; then
+  if [ -n "${DEV_DB_PASS_URLENCODED:-}" ]; then
+    DB_PASS_URLENCODED="$DEV_DB_PASS_URLENCODED"
+  elif [ -n "${DB_PASS:-}" ]; then
+    DB_PASS_URLENCODED="$(encode_db_pass)"
+  else
+    DB_PASS_URLENCODED="${DB_PASS_URLENCODED:-}"
+  fi
+else
+  DB_PASS_URLENCODED="${DB_PASS_URLENCODED:-}"
+fi
 CONTAINER_PORT="${CONTAINER_PORT:-3000}"
 BIND_ADDRESS="${BIND_ADDRESS:-0.0.0.0}"
 
