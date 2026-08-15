@@ -138,6 +138,7 @@ export function CreateAccountDialog({
         warehouse_ids: form.default_warehouse_id ? [form.default_warehouse_id] : [],
         default_warehouse_id: form.default_warehouse_id || null,
         can_switch_stall: form.can_switch_stall,
+        can_central_checkout: form.can_central_checkout,
         ...scope,
       },
       {
@@ -235,6 +236,7 @@ export function CreateAccountDialog({
                     warehouse_ids: [],
                     default_warehouse_id: "",
                     can_switch_stall: false,
+                    can_central_checkout: false,
                   })
                 }
                 placeholder="Pilih role"
@@ -251,6 +253,8 @@ export function CreateAccountDialog({
                 stalls={stallOptions}
                 defaultWarehouseId={form.default_warehouse_id}
                 canSwitchStall={form.can_switch_stall}
+                canCentralCheckout={form.can_central_checkout}
+                showCentralCheckout
                 required={requiresStallAssignment(form.role, form.business_scope || null, true)}
                 onChange={(patch) => setField(patch)}
               />

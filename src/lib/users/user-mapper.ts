@@ -56,6 +56,7 @@ export type EmployeeUserRow = {
     brands?: { id: string; name: string } | null;
     last_sign_in_at?: string | null;
     can_switch_stall?: boolean | null;
+    can_central_checkout?: boolean | null;
     default_warehouse_id?: string | null;
     user_approval_permissions?: Array<{
       id: string;
@@ -132,6 +133,7 @@ export function mapEmployeeUserRow(row: EmployeeUserRow) {
           branchName: row.app_user.branch?.name ?? null,
           lastSignInAt: row.app_user.last_sign_in_at ?? null,
           canSwitchStall: row.app_user.can_switch_stall === true,
+          canCentralCheckout: row.app_user.can_central_checkout === true,
           defaultWarehouseId: row.app_user.default_warehouse_id ?? null,
           approvalPermissions: row.app_user.user_approval_permissions ?? [],
           warehouses: (row.app_user.user_warehouses ?? []).map((warehouse) => ({

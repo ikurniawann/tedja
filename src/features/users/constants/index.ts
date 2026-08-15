@@ -119,6 +119,7 @@ export const emptyUserForm: UserEmployeeFormValues = {
   warehouse_ids: [],
   default_warehouse_id: "",
   can_switch_stall: false,
+  can_central_checkout: false,
   account_status: "active",
   approval_permissions: [],
 };

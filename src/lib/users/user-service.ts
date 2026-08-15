@@ -47,7 +47,7 @@ async function enrichWithAppUser(row: EmployeeUserRow): Promise<EmployeeUserRow>
     .from("users")
     .select(
       `id, role, status, brand_id, business_scope, holding_id, company_id, branch_id,
-       can_switch_stall, default_warehouse_id,
+       can_switch_stall, can_central_checkout, default_warehouse_id,
        user_approval_permissions(*)`
     )
     .eq("id", row.user_id)
@@ -219,18 +219,22 @@ function stallProfileFields(input: {
   warehouse_ids?: string[];
   default_warehouse_id?: string | null;
   can_switch_stall?: boolean;
+  can_central_checkout?: boolean;
 }) {
   const defaultId = resolveDefaultWarehouseId({
     defaultWarehouseId: input.default_warehouse_id,
     warehouseIds: input.warehouse_ids,
   });
+  const canSwitchStall =
+    input.can_central_checkout === true || input.can_switch_stall === true;
   return {
     default_warehouse_id: defaultId,
-    can_switch_stall: input.can_switch_stall === true,
+    can_central_checkout: input.can_central_checkout === true,
+    can_switch_stall: canSwitchStall,
     warehouse_ids: resolveSavedWarehouseIds({
       defaultWarehouseId: defaultId,
       warehouseIds: input.warehouse_ids,
-      canSwitchStall: input.can_switch_stall === true,
+      canSwitchStall,
     }),
   };
 }
@@ -278,6 +282,7 @@ async function provisionAppAccount(
     warehouse_ids?: string[];
     default_warehouse_id?: string | null;
     can_switch_stall?: boolean;
+    can_central_checkout?: boolean;
   }
 ) {
   let authUserId: string | null = null;
@@ -305,6 +310,7 @@ async function provisionAppAccount(
       role: input.role,
       status,
       can_switch_stall: stall.can_switch_stall,
+      can_central_checkout: stall.can_central_checkout,
       default_warehouse_id: stall.default_warehouse_id,
       ...scopeFields,
     });
@@ -435,6 +441,12 @@ async function syncAppAccount(
   if (input.can_switch_stall !== undefined) {
     profileUpdates.can_switch_stall = input.can_switch_stall === true;
   }
+  if (input.can_central_checkout !== undefined) {
+    profileUpdates.can_central_checkout = input.can_central_checkout === true;
+  }
+  if (input.can_central_checkout === true) {
+    profileUpdates.can_switch_stall = true;
+  }
 
   const shouldSyncStalls =
     input.warehouse_ids !== undefined || input.default_warehouse_id !== undefined;
@@ -443,6 +455,12 @@ async function syncAppAccount(
     profileUpdates.default_warehouse_id = stall.default_warehouse_id;
     if (input.can_switch_stall === undefined) {
       profileUpdates.can_switch_stall = stall.can_switch_stall;
+    }
+    if (input.can_central_checkout === undefined) {
+      profileUpdates.can_central_checkout = stall.can_central_checkout;
+    }
+    if (stall.can_central_checkout) {
+      profileUpdates.can_switch_stall = true;
     }
   }
 
@@ -600,6 +618,7 @@ export async function createUserEmployee(
       warehouse_ids: input.warehouse_ids,
       default_warehouse_id: input.default_warehouse_id,
       can_switch_stall: input.can_switch_stall,
+      can_central_checkout: input.can_central_checkout,
     });
   }
 
@@ -708,6 +727,7 @@ export async function updateUserEmployee(
       warehouse_ids: input.warehouse_ids,
       default_warehouse_id: input.default_warehouse_id,
       can_switch_stall: input.can_switch_stall,
+      can_central_checkout: input.can_central_checkout,
     });
   } else if (existing.user_id && wantsAccess) {
     await syncAppAccount(db, actorId, existing.user_id, {

@@ -100,6 +100,7 @@ export function AppAccessFormSection({
         warehouse_ids: [],
         default_warehouse_id: "",
         can_switch_stall: false,
+        can_central_checkout: false,
       });
       return;
     }
@@ -239,6 +240,8 @@ export function AppAccessFormSection({
                 stalls={branchStalls}
                 defaultWarehouseId={form.default_warehouse_id}
                 canSwitchStall={form.can_switch_stall}
+                canCentralCheckout={form.can_central_checkout}
+                showCentralCheckout
                 required={requiresStallAssignment(form.role, form.business_scope || null, true)}
                 onChange={(patch) => onChange(patch)}
               />

@@ -55,6 +55,7 @@ export interface UserEmployeeFormValues {
   warehouse_ids: string[];
   default_warehouse_id: string;
   can_switch_stall: boolean;
+  can_central_checkout: boolean;
   account_status: AccountStatus;
   approval_permissions: ApprovalPermission[];
 }

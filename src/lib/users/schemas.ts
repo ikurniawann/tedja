@@ -49,6 +49,7 @@ const businessScopeFieldsSchema = z.object({
   warehouse_ids: z.array(z.string().uuid()).optional(),
   default_warehouse_id: z.string().uuid().nullable().optional(),
   can_switch_stall: z.boolean().optional(),
+  can_central_checkout: z.boolean().optional(),
 });
 
 const appAccessSchema = z

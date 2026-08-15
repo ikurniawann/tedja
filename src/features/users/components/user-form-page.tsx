@@ -80,6 +80,7 @@ function toFormValues(detail: NonNullable<ReturnType<typeof useUserDetail>["data
       detail.appAccount?.warehouses?.[0]?.id ??
       "",
     can_switch_stall: detail.appAccount?.canSwitchStall === true,
+    can_central_checkout: detail.appAccount?.canCentralCheckout === true,
     account_status: detail.appAccount?.status ?? "active",
     approval_permissions:
       detail.appAccount?.approvalPermissions
@@ -110,6 +111,7 @@ function buildPayload(form: UserEmployeeFormValues, isEdit: boolean) {
       key === "warehouse_ids" ||
       key === "default_warehouse_id" ||
       key === "can_switch_stall" ||
+      key === "can_central_checkout" ||
       key === "account_status" ||
       key === "approval_permissions" ||
       key === "is_access_app"
@@ -131,6 +133,7 @@ function buildPayload(form: UserEmployeeFormValues, isEdit: boolean) {
       : form.warehouse_ids;
     base.default_warehouse_id = form.default_warehouse_id || null;
     base.can_switch_stall = form.can_switch_stall;
+    base.can_central_checkout = form.can_central_checkout;
 
     const scope = normalizeBusinessScopePayload(
       form.role === "super_admin" ? null : form.business_scope || null,
