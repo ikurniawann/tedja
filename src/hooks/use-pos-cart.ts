@@ -32,6 +32,7 @@ export interface PosCartItem {
   modifierPriceAdj?: number;
   imageUrl?: string;
   station?: string;
+  warehouse_id?: string;
   /** Manual line discount */
   discount_type?: DiscountType | null;
   discount_value?: number | null;

@@ -51,3 +51,15 @@ export function canAddItemToSingleStallCart(
 export function shouldConfirmClearCart(raw: string | null | undefined): boolean {
   return posCartHasItems(raw);
 }
+
+/** Phase 1: one stall in the cart + kasir pusat mode all → sell as that stall. */
+export function resolveSingleStallSellFromAllMode(input: {
+  itemWarehouses: Array<string | null | undefined>;
+  canSellMixed: boolean;
+}): string | null {
+  const stallIds = uniqueStallIds(input.itemWarehouses);
+  if (stallIds.length === 1 && input.canSellMixed) {
+    return stallIds[0] ?? null;
+  }
+  return null;
+}

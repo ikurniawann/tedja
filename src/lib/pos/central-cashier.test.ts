@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   canAddItemToSingleStallCart,
   canSellMixedStall,
+  resolveSingleStallSellFromAllMode,
   shouldConfirmClearCart,
   shouldCreateCheckout,
   uniqueStallIds,
@@ -61,5 +62,31 @@ describe("shouldConfirmClearCart", () => {
     expect(shouldConfirmClearCart(JSON.stringify({ items: [{ id: "1" }] }))).toBe(true);
     expect(shouldConfirmClearCart(JSON.stringify({ items: [] }))).toBe(false);
     expect(shouldConfirmClearCart(null)).toBe(false);
+  });
+});
+
+describe("resolveSingleStallSellFromAllMode", () => {
+  it("sells as the sole cart stall when kasir pusat is in all mode", () => {
+    expect(
+      resolveSingleStallSellFromAllMode({
+        itemWarehouses: ["w-a", "w-a"],
+        canSellMixed: true,
+      })
+    ).toBe("w-a");
+  });
+
+  it("returns null for mixed cart or when the central gate is closed", () => {
+    expect(
+      resolveSingleStallSellFromAllMode({
+        itemWarehouses: ["w-a", "w-b"],
+        canSellMixed: true,
+      })
+    ).toBeNull();
+    expect(
+      resolveSingleStallSellFromAllMode({
+        itemWarehouses: ["w-a"],
+        canSellMixed: false,
+      })
+    ).toBeNull();
   });
 });

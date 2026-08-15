@@ -25,7 +25,9 @@ import {
   cashierSplitRowClass,
 } from '@/features/pos/cashier/cashier-workspace-layout';
 import { PosTabletChromeControls } from '@/features/pos/components/pos-tablet-chrome-controls';
+import { useCanUseCentralCashier } from '@/components/pos/confirm-stall-switch-dialog';
 import { CashierStallGate } from '@/features/pos/cashier/components/cashier-stall-gate';
+import { canAddItemToSingleStallCart } from '@/lib/pos/central-cashier';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -194,7 +196,8 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
   const handoffOrderType = searchParams.get('orderType');
   const handoffKeyRef = useRef<string | null>(null);
   const pendingRestaurantReturnRef = useRef(false);
-  const { products, categories, loading, error, stallBlockedReason } = usePosProducts();
+  const { products, categories, loading, error, stallBlockedReason, activeMode } = usePosProducts();
+  const canUseCentralCashier = useCanUseCentralCashier();
   const { customers, findCustomer, refetch: refetchCustomers } = usePosCustomers();
   const cart = usePosCart();
   const { checkout, submitting } = usePosCheckout();
@@ -209,6 +212,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
 
   /* UI state */
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedStallFilter, setSelectedStallFilter] = useState<'All' | string>('All');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [showCustomerModal, setShowCustomerModal] = useState(false);
   const [pendingNfcUid, setPendingNfcUid] = useState<string | null>(null);
@@ -686,12 +690,48 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     selectedCustomer?.name,
   ]);
 
+  const uniqueStallsFromProducts = useMemo(() => {
+    const byId = new Map<string, string>();
+    for (const product of products) {
+      if (!product.warehouse_id || byId.has(product.warehouse_id)) continue;
+      const name = product.warehouse_name?.trim();
+      byId.set(product.warehouse_id, name || 'Stall');
+    }
+    return [...byId.entries()].map(([id, label]) => ({ id, label }));
+  }, [products]);
+
+  const stallFilters = useMemo(
+    () => [{ id: 'All', label: 'Semua stall' }, ...uniqueStallsFromProducts],
+    [uniqueStallsFromProducts]
+  );
+
+  const showStallFilters = canUseCentralCashier && activeMode === 'all';
+
   /* Product filter */
-  const filteredProducts = useMemo(() => products.filter(p => {
-    const okCat = selectedCategory === 'All' || (p.category?.name || 'Uncategorized') === selectedCategory;
-    const okSearch = (p.name || "").toLowerCase().includes(searchTerm.toLowerCase());
-    return okCat && okSearch;
-  }), [products, selectedCategory, searchTerm]);
+  const filteredProducts = useMemo(() => products.filter((product) => {
+    const okStall =
+      selectedStallFilter === 'All' ||
+      product.warehouse_id === selectedStallFilter;
+    const okCat =
+      selectedCategory === 'All' ||
+      (product.category?.name || 'Uncategorized') === selectedCategory;
+    const okSearch = (product.name || "").toLowerCase().includes(searchTerm.toLowerCase());
+    return okStall && okCat && okSearch;
+  }), [products, selectedStallFilter, selectedCategory, searchTerm]);
+
+  const tryAddCatalogItem = useCallback((
+    product: Product,
+    item: Omit<Parameters<typeof cart.addItem>[0], 'warehouse_id'>
+  ) => {
+    const existing = cart.items.map((row) => row.warehouse_id);
+    const check = canAddItemToSingleStallCart(existing, product.warehouse_id);
+    if (!check.ok) {
+      toast.error(check.message);
+      return false;
+    }
+    cart.addItem({ ...item, warehouse_id: product.warehouse_id });
+    return true;
+  }, [cart]);
 
   const productSuggestions = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
@@ -744,7 +784,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         notes: '',
       });
     } else {
-      cart.addItem({
+      tryAddCatalogItem(product, {
         id: product.id,
         productId: product.id,
         name: product.name,
@@ -754,7 +794,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         station: product.station,
       });
     }
-  }, [cart, requireActiveShift]);
+  }, [cart, requireActiveShift, tryAddCatalogItem]);
 
   const applyOfferToCart = useCallback(
     (offer: PosActiveOffer) => {
@@ -800,7 +840,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
           continue;
         }
 
-        cart.addItem({
+        if (!tryAddCatalogItem(product, {
           id: product.id,
           productId: product.id,
           name: product.name,
@@ -808,7 +848,9 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
           quantity: row.qty,
           imageUrl: product.image_url,
           station: product.station,
-        });
+        })) {
+          continue;
+        }
         added += 1;
       }
 
@@ -837,7 +879,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         toast.message("Tambah qty sampai min belanja promo tercapai");
       }
     },
-    [cart, products, requireActiveShift]
+    [cart, products, requireActiveShift, tryAddCatalogItem]
   );
 
   /* EPIC-034 Fase B — nominal gift card dikonfirmasi → masuk keranjang.
@@ -845,7 +887,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
   const handleConfirmGiftCardSale = useCallback((values: GiftCardSaleValues) => {
     const product = giftCardProduct;
     if (!product) return;
-    cart.addItem({
+    tryAddCatalogItem(product, {
       // id unik per nominal supaya dua nominal berbeda tidak digabung jadi
       // satu baris keranjang (kartu berbeda, saldo berbeda)
       id: `${product.id}-${values.nominal}`,
@@ -862,7 +904,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         : null
     );
     setGiftCardProduct(null);
-  }, [cart, giftCardProduct]);
+  }, [cart, giftCardProduct, tryAddCatalogItem]);
 
   const selectProductFromSearch = useCallback((product: Product) => {
     openCustomization(product);
@@ -875,7 +917,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
      supaya dua varian berbeda tidak digabung; harga = override ?? produk) */
   const handleSelectMerchSku = useCallback((product: Product, sku: ProductSku) => {
     if (!requireActiveShift()) return;
-    cart.addItem({
+    tryAddCatalogItem(product, {
       id: `${product.id}::sku:${sku.id}`,
       productId: product.id,
       skuId: sku.id,
@@ -887,7 +929,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       station: product.station,
     });
     setMerchSkuProduct(null);
-  }, [cart, requireActiveShift]);
+  }, [cart, requireActiveShift, tryAddCatalogItem]);
 
   /* EPIC-039 Fase B — scan barcode: input search yang persis cocok dengan
      barcode/kode SKU varian langsung menambahkan varian itu ke keranjang
@@ -928,7 +970,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     });
     const finalPrice = product.base_price + (variant?.price_adjustment || 0) + modifierAdj;
     const compositeId = `${product.id}::${variantName ?? ''}::${modifierNames.join(',')}`;
-    cart.addItem({
+    if (!tryAddCatalogItem(product, {
       id: compositeId,
       productId: product.id,
       name: product.name,
@@ -941,10 +983,12 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       notes: custom.notes,
       imageUrl: product.image_url,
       station: product.station,
-    });
+    })) {
+      return;
+    }
     setCustom(null);
     setCustomizingProduct(null);
-  }, [custom, customizingProduct, cart, requireActiveShift]);
+  }, [custom, customizingProduct, cart, requireActiveShift, tryAddCatalogItem]);
 
   const openPaymentModal = useCallback(() => {
     if (cart.items.length === 0) return;
@@ -2045,6 +2089,25 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
                 </button>
               ))}
             </div>
+          </div>
+        )}
+
+        {showStallFilters && (
+          <div className="flex gap-2 overflow-x-auto pb-2">
+            {stallFilters.map((stall) => (
+              <button
+                key={stall.id}
+                type="button"
+                onClick={() => setSelectedStallFilter(stall.id)}
+                className={`rounded-lg border border-gray-200/70 px-3 py-1.5 text-xs font-semibold whitespace-nowrap transition-all ${
+                  selectedStallFilter === stall.id
+                    ? 'bg-primary text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                {stall.label}
+              </button>
+            ))}
           </div>
         )}
 

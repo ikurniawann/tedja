@@ -87,6 +87,7 @@ export async function GET(request: NextRequest) {
             stallScope.mode === "none"
               ? stallScope.reason || "no_stall_assignment"
               : "no_products_for_stall",
+          active_mode: stallScope.activeMode,
         },
       });
     }
@@ -161,6 +162,7 @@ export async function GET(request: NextRequest) {
         stall_scoped: allowedIds !== null,
         warehouse_ids: stallScope.mode === "ids" ? stallScope.warehouseIds : [],
         product_count: productsWithWarehouse.length,
+        active_mode: stallScope.activeMode,
       },
     });
   } catch (error: unknown) {

@@ -13,8 +13,15 @@ import {
   type MerchStockClaim,
 } from '@/lib/pos/merchandise-stock';
 import { normalizeGuestCount } from '@/lib/pos/guest-count';
+import { getApiUserScope } from '@/lib/api/scope';
+import {
+  canSellMixedStall,
+  resolveSingleStallSellFromAllMode,
+} from '@/lib/pos/central-cashier';
 import {
   assertOrderItemsMatchSellStall,
+  loadCentralCashierGate,
+  loadPosProductWarehouseIds,
   resolvePosSellStallForUser,
 } from '@/lib/pos/pos-sell-stall-server';
 import { withTransaction } from '@/lib/db';
@@ -241,13 +248,37 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Items and total amount are required' }, { status: 400 });
     }
 
-    const sellStall = await resolvePosSellStallForUser(sessionUserId);
-    if (!sellStall.ok) {
-      return NextResponse.json({ success: false, error: sellStall.message }, { status: 400 });
+    const productIds = items.map((item) => String(item.product_id || ''));
+    const warehouseByProduct = await loadPosProductWarehouseIds(productIds);
+    const itemWarehouses = [...warehouseByProduct.values()];
+    const scope = await getApiUserScope();
+    const gate = await loadCentralCashierGate({
+      userId: sessionUserId,
+      role: scope?.role ?? null,
+    });
+    const singleStallFromAll = resolveSingleStallSellFromAllMode({
+      itemWarehouses,
+      canSellMixed: canSellMixedStall({
+        hasCentralMenu: gate.hasCentralMenu,
+        canCentralCheckout: gate.canCentralCheckout,
+        activeMode: gate.activeMode,
+      }),
+    });
+
+    let sellWarehouseId: string;
+    if (singleStallFromAll) {
+      sellWarehouseId = singleStallFromAll;
+    } else {
+      const sellStall = await resolvePosSellStallForUser(sessionUserId);
+      if (!sellStall.ok) {
+        return NextResponse.json({ success: false, error: sellStall.message }, { status: 400 });
+      }
+      sellWarehouseId = sellStall.warehouseId;
     }
+
     const itemStallCheck = await assertOrderItemsMatchSellStall(
-      items.map((item) => String(item.product_id || '')),
-      sellStall.warehouseId
+      productIds,
+      sellWarehouseId
     );
     if (!itemStallCheck.ok) {
       return NextResponse.json({ success: false, error: itemStallCheck.message }, { status: 400 });
@@ -364,7 +395,7 @@ export async function POST(request: NextRequest) {
         .update({
           company_id: venueForSplit.companyId,
           branch_id: body.branch_id || venueForSplit.branchId,
-          warehouse_id: sellStall.warehouseId,
+          warehouse_id: sellWarehouseId,
         })
         .eq('id', result.order_id);
       await ensureQueueNumber(db, {
@@ -692,7 +723,7 @@ export async function POST(request: NextRequest) {
         payment_status: deferPaid ? 'unpaid' : 'paid',
         company_id: venue.companyId,
         branch_id: body.branch_id || venue.branchId,
-        warehouse_id: sellStall.warehouseId,
+        warehouse_id: sellWarehouseId,
         customer_id: customer_id || null,
         cashier_id: effectiveCashierId,
         server_id: server_id || null,
@@ -735,7 +766,7 @@ export async function POST(request: NextRequest) {
           payment_status: deferPaid ? 'unpaid' : 'paid',
           company_id: venue.companyId,
           branch_id: body.branch_id || venue.branchId,
-          warehouse_id: sellStall.warehouseId,
+          warehouse_id: sellWarehouseId,
           customer_id: customer_id || null,
           cashier_id: effectiveCashierId,
           server_id: server_id || null,

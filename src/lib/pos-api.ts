@@ -98,6 +98,7 @@ export async function getProducts(params?: { category?: string; search?: string 
       warehouse_ids?: string[];
       reason?: string;
       product_count?: number;
+      active_mode?: "unset" | "all" | "stall";
     };
   }>(`/products${queryString ? '?' + queryString : ''}`);
 }

@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { getProducts, type Product } from "@/lib/pos-api";
 import { cacheProducts, getCachedProducts, setLastSyncTimestamp } from "@/lib/pos-db";
+import type { ActiveStallMode } from "@/lib/pos/pos-sell-stall";
 
 export function usePosProducts() {
   const [products, setProducts] = useState<Product[]>([]);
@@ -11,6 +12,7 @@ export function usePosProducts() {
   const [error, setError] = useState<string | null>(null);
   const [isOfflineFallback, setIsOfflineFallback] = useState(false);
   const [stallBlockedReason, setStallBlockedReason] = useState<string | null>(null);
+  const [activeMode, setActiveMode] = useState<ActiveStallMode | null>(null);
 
   const fetchProducts = useCallback(async () => {
     try {
@@ -22,15 +24,19 @@ export function usePosProducts() {
       setProducts(data);
       const cats = Array.from(new Set(data.map((p: any) => p.category?.name || "Uncategorized")));
       setCategories(["All", ...cats]);
+      setActiveMode(res.meta?.active_mode ?? null);
       const reason = res.meta?.reason;
+      const catalogFilled = data.length > 0;
+      // Central cashier all-mode catalog is filled — do not treat all_stalls as blocked.
       setStallBlockedReason(
-        data.length === 0 &&
-          (reason === "all_stalls" ||
-            reason === "multiple_unselected" ||
-            reason === "no_stall" ||
-            reason === "no_stall_assignment")
-          ? reason
-          : null
+        catalogFilled
+          ? null
+          : reason === "all_stalls" ||
+              reason === "multiple_unselected" ||
+              reason === "no_stall" ||
+              reason === "no_stall_assignment"
+            ? reason
+            : null
       );
       void cacheProducts(
         data.map((p: any) => ({
@@ -62,6 +68,7 @@ export function usePosProducts() {
           setIsOfflineFallback(true);
           setError(null);
           setStallBlockedReason(null);
+          setActiveMode(null);
         } else {
           setError(err.message || "Failed to load products");
         }
@@ -84,6 +91,7 @@ export function usePosProducts() {
     error,
     isOfflineFallback,
     stallBlockedReason,
+    activeMode,
     refetch: fetchProducts,
   };
 }
