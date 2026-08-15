@@ -19,6 +19,7 @@ import {
   isXenditQrPaid,
   loadActiveXenditConfig,
 } from "@/lib/payments/xendit";
+import { resolveTableSaleTarget } from "@/lib/pos/table-sale-target";
 import { normalizeGuestCount } from "@/lib/pos/guest-count";
 import {
   buildKitchenPrintJobs,
@@ -114,6 +115,10 @@ export type CreateMixedCheckoutInput = {
   shiftId?: string | null;
   companyId?: string | null;
   sessionUserId: string;
+  /** Restaurant open-bill: insert unpaid children so KDS/floor can see them. */
+  forceInsertChildren?: boolean;
+  /** Append mixed items onto the table's existing unpaid central checkout. */
+  reuseUnpaidTableCheckout?: boolean;
 };
 
 export type MixedCheckoutResult = {
@@ -886,6 +891,210 @@ function snapshotFromInput(
   };
 }
 
+async function findUnpaidCheckoutByTable(
+  client: PoolClient,
+  tableId: string
+): Promise<CheckoutRow | null> {
+  try {
+    const result = await client.query<CheckoutRow>(
+      `SELECT id, checkout_number, queue_number, payment_status, payment_method,
+              company_id, branch_id, table_id, customer_id, cashier_id, shift_id,
+              subtotal, discount_amount, tax_amount, service_charge_amount,
+              other_charges_amount, total_amount, amount_paid, change_amount,
+              notes, cart_snapshot
+       FROM pos.pos_checkouts
+       WHERE table_id = $1 AND LOWER(payment_status::text) <> 'paid'
+       ORDER BY created_at DESC
+       LIMIT 1
+       FOR UPDATE`,
+      [tableId]
+    );
+    return result.rows[0] ?? null;
+  } catch (error) {
+    if (!isMissingColumn(error)) throw error;
+    return null;
+  }
+}
+
+async function appendItemsToExistingCheckout(
+  client: PoolClient,
+  input: {
+    existing: CheckoutRow;
+    lines: BuiltLine[];
+    snapshot: MixedCheckoutCartSnapshot;
+    merchClaimedIds: Set<string>;
+    costMap: Map<string, { cost_price?: number | string | null }>;
+    discountAmount: number;
+    taxAmount: number;
+    serviceChargeAmount: number;
+    otherChargesAmount: number;
+    serverSubtotal: number;
+    serverTotal: number;
+    paymentStatus: string;
+  }
+): Promise<MixedCheckoutResult> {
+  const grouped = groupItemsByStall(input.lines, (line) => line.warehouseId);
+  const slices = [...grouped.entries()].map(([warehouseId, stallLines]) => ({
+    warehouseId,
+    subtotal: stallLines.reduce((sum, line) => sum + line.lineSubtotal, 0),
+    lines: stallLines,
+  }));
+  const allocated = allocateCheckoutCharges({
+    slices: slices.map((slice) => ({
+      warehouseId: slice.warehouseId,
+      subtotal: slice.subtotal,
+    })),
+    discount: input.discountAmount,
+    tax: input.taxAmount,
+    serviceCharge: input.serviceChargeAmount,
+    otherCharges: input.otherChargesAmount,
+  });
+
+  const children = await client.query<{ id: string; warehouse_id: string | null }>(
+    `SELECT id, warehouse_id FROM pos.pos_orders
+     WHERE checkout_id = $1
+       AND COALESCE(sold_from, 'stall') = 'central'
+       AND status::text NOT IN ('completed', 'cancelled', 'voided', 'merged')
+       AND LOWER(payment_status::text) <> 'paid'`,
+    [input.existing.id]
+  );
+  const childByWarehouse = new Map(
+    children.rows.map((row) => [String(row.warehouse_id || ""), row.id])
+  );
+  const orderIds: string[] = [];
+
+  for (let index = 0; index < slices.length; index += 1) {
+    const slice = slices[index];
+    const charges = allocated[index];
+    if (!slice || !charges) continue;
+    let orderId = childByWarehouse.get(slice.warehouseId) ?? null;
+    if (!orderId) {
+      const orderNumber = await generateOrderNumber(client);
+      orderId = await insertChildOrder(client, {
+        orderNumber,
+        queueNumber: String(input.existing.queue_number || ""),
+        orderType: input.snapshot.orderType,
+        paymentStatus: input.paymentStatus,
+        paymentMethod: input.existing.payment_method || "cash",
+        companyId: input.existing.company_id,
+        branchId: input.existing.branch_id,
+        warehouseId: slice.warehouseId,
+        checkoutId: input.existing.id,
+        customerId: input.existing.customer_id,
+        cashierId: input.existing.cashier_id,
+        serverId: input.snapshot.serverId,
+        tableId: input.existing.table_id,
+        guestCount: input.snapshot.guestCount,
+        shiftId: input.existing.shift_id,
+        subtotal: slice.subtotal,
+        discount: charges.discount,
+        discountReason: input.snapshot.discountReason,
+        tax: charges.tax,
+        serviceCharge: charges.serviceCharge,
+        otherCharges: charges.otherCharges,
+        total: charges.total,
+        amountPaid: 0,
+        changeAmount: 0,
+        notes: input.snapshot.notes,
+        specialRequests: input.snapshot.specialRequests,
+      });
+    } else {
+      await client.query(
+        `UPDATE pos.pos_orders SET
+           subtotal = COALESCE(subtotal, 0) + $1,
+           discount_amount = COALESCE(discount_amount, 0) + $2,
+           tax_amount = COALESCE(tax_amount, 0) + $3,
+           service_charge_amount = COALESCE(service_charge_amount, 0) + $4,
+           other_charges_amount = COALESCE(other_charges_amount, 0) + $5,
+           total_amount = COALESCE(total_amount, 0) + $6,
+           updated_at = now()
+         WHERE id = $7`,
+        [
+          slice.subtotal,
+          charges.discount,
+          charges.tax,
+          charges.serviceCharge,
+          charges.otherCharges,
+          charges.total,
+          orderId,
+        ]
+      );
+    }
+    await insertChildItems(
+      client,
+      orderId,
+      slice.lines,
+      input.costMap,
+      input.merchClaimedIds
+    );
+    orderIds.push(orderId);
+  }
+
+  const prevSnapshot = parseSnapshot(input.existing);
+  const mergedSnapshot: MixedCheckoutCartSnapshot = {
+    ...input.snapshot,
+    items: [...(prevSnapshot?.items || []), ...input.snapshot.items],
+    warehouseByProduct: {
+      ...(prevSnapshot?.warehouseByProduct || {}),
+      ...input.snapshot.warehouseByProduct,
+    },
+  };
+
+  try {
+    await client.query(
+      `UPDATE pos.pos_checkouts SET
+         subtotal = COALESCE(subtotal, 0) + $1,
+         discount_amount = COALESCE(discount_amount, 0) + $2,
+         tax_amount = COALESCE(tax_amount, 0) + $3,
+         service_charge_amount = COALESCE(service_charge_amount, 0) + $4,
+         other_charges_amount = COALESCE(other_charges_amount, 0) + $5,
+         total_amount = COALESCE(total_amount, 0) + $6,
+         cart_snapshot = $7::jsonb,
+         updated_at = now()
+       WHERE id = $8`,
+      [
+        input.serverSubtotal,
+        input.discountAmount,
+        input.taxAmount,
+        input.serviceChargeAmount,
+        input.otherChargesAmount,
+        input.serverTotal,
+        JSON.stringify(mergedSnapshot),
+        input.existing.id,
+      ]
+    );
+  } catch (error) {
+    if (!isMissingColumn(error)) throw error;
+    await client.query(
+      `UPDATE pos.pos_checkouts SET
+         subtotal = COALESCE(subtotal, 0) + $1,
+         discount_amount = COALESCE(discount_amount, 0) + $2,
+         tax_amount = COALESCE(tax_amount, 0) + $3,
+         service_charge_amount = COALESCE(service_charge_amount, 0) + $4,
+         other_charges_amount = COALESCE(other_charges_amount, 0) + $5,
+         total_amount = COALESCE(total_amount, 0) + $6,
+         updated_at = now()
+       WHERE id = $7`,
+      [
+        input.serverSubtotal,
+        input.discountAmount,
+        input.taxAmount,
+        input.serviceChargeAmount,
+        input.otherChargesAmount,
+        input.serverTotal,
+        input.existing.id,
+      ]
+    );
+  }
+
+  return {
+    checkoutId: input.existing.id,
+    checkoutNumber: input.existing.checkout_number,
+    queueNumber: String(input.existing.queue_number || ""),
+    orderIds,
+  };
+}
+
 export async function createMixedCheckout(
   input: CreateMixedCheckoutInput
 ): Promise<MixedCheckoutResult> {
@@ -928,15 +1137,24 @@ export async function createMixedCheckout(
   }
   const amountPaid = toNumber(input.amountPaid);
   const arkUsed = toNumber(input.arkCoinsUsed);
-  const insertChildren = shouldInsertCheckoutChildren({
-    paymentMethod,
-    paymentStatus: input.paymentStatus,
-    amountPaid: amountPaid + arkUsed,
-    total: serverTotal,
-  });
-  const paymentStatus = insertChildren ? "paid" : "unpaid";
+  const requestedUnpaid =
+    String(input.paymentStatus || "").toLowerCase() === "unpaid";
+  const insertChildren =
+    Boolean(input.forceInsertChildren) ||
+    shouldInsertCheckoutChildren({
+      paymentMethod,
+      paymentStatus: input.paymentStatus,
+      amountPaid: amountPaid + arkUsed,
+      total: serverTotal,
+    });
+  const paymentStatus = requestedUnpaid
+    ? "unpaid"
+    : insertChildren
+      ? "paid"
+      : "unpaid";
+  const isPaidSale = paymentStatus === "paid";
 
-  if (insertChildren && amountPaid + arkUsed < serverTotal) {
+  if (isPaidSale && amountPaid + arkUsed < serverTotal) {
     throw new MixedCheckoutError("Payment insufficient");
   }
   if (paymentMethod === "ark_coin") {
@@ -957,7 +1175,7 @@ export async function createMixedCheckout(
 
   let merchClaims: MerchStockClaim[] = [];
   let merchClaimedIds = new Set<string>();
-  if (insertChildren) {
+  if (isPaidSale) {
     const merchClaimResult = await claimMerchandiseStock(db, input.items);
     if (!merchClaimResult.ok) {
       throw new MixedCheckoutError(merchClaimResult.reason, merchClaimResult.status);
@@ -975,6 +1193,30 @@ export async function createMixedCheckout(
 
   try {
     const created = await withTransaction(async (client) => {
+      if (input.reuseUnpaidTableCheckout && requestedUnpaid && input.tableId) {
+        const existing = await findUnpaidCheckoutByTable(client, input.tableId);
+        const target = resolveTableSaleTarget({
+          saleKind: "central_mixed",
+          unpaidCentralCheckoutId: existing?.id ?? null,
+        });
+        if (target.action === "append_checkout" && existing) {
+          return appendItemsToExistingCheckout(client, {
+            existing,
+            lines,
+            snapshot,
+            merchClaimedIds,
+            costMap,
+            discountAmount,
+            taxAmount,
+            serviceChargeAmount,
+            otherChargesAmount,
+            serverSubtotal,
+            serverTotal,
+            paymentStatus,
+          });
+        }
+      }
+
       const checkoutNumber = await nextCheckoutNumber(client);
       const queueNumber = await generateQueueNumber(client, companyId, branchId);
       const checkout = await insertCheckout(client, {
@@ -1078,7 +1320,7 @@ export async function createMixedCheckout(
 
     merchClaims = [];
 
-    if (insertChildren) {
+    if (isPaidSale && insertChildren) {
       await finalizePaidChildren({
         orderIds: created.orderIds,
         customerId: input.customerId,

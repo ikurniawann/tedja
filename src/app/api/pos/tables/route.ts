@@ -3,6 +3,7 @@ import { createPgClient } from "@/lib/pg/create-client";
 import { getPosSession } from "@/lib/api/auth";
 import { generateTableQrCode } from "@/features/pos/tables/qr-code";
 import { resolveTableBoardStatus } from "@/features/pos/restaurant/table-board-status";
+import { listTableBoardBills } from "@/features/pos/restaurant/table-board-bills";
 
 type TableRow = {
   id: string;
@@ -27,6 +28,16 @@ type ActiveOrderRow = {
   payment_status?: string | null;
   total_amount?: number | string | null;
   pre_settled_at?: string | null;
+  checkout_id?: string | null;
+  sold_from?: string | null;
+};
+
+type UnpaidCheckoutRow = {
+  id: string;
+  checkout_number?: string | null;
+  table_id?: string | null;
+  payment_status?: string | null;
+  total_amount?: number | string | null;
 };
 
 const TABLE_STATUSES = ["available", "occupied", "reserved", "maintenance"] as const;
@@ -38,24 +49,35 @@ function toNumber(value: unknown) {
   return Number.isFinite(numeric) ? numeric : 0;
 }
 
+function toOrderPayload(order: ActiveOrderRow) {
+  return {
+    id: order.id,
+    order_number: order.order_number,
+    status: order.status,
+    payment_status: order.payment_status,
+    total_amount: toNumber(order.total_amount),
+    pre_settled_at: order.pre_settled_at ?? null,
+    checkout_id: order.checkout_id ?? null,
+    sold_from: order.sold_from ?? null,
+  };
+}
+
 function normalizeTable(
   table: TableRow,
-  activeOrder?: ActiveOrderRow | null
+  activeOrders: ActiveOrderRow[] = [],
+  unpaidCheckouts: UnpaidCheckoutRow[] = []
 ) {
   const tableNumber = String(table.table_number || "").trim()
     || String(table.qr_code || "").trim()
     || String(table.name || "").trim()
     || "Meja";
-  const orderPayload = activeOrder
-    ? {
-        id: activeOrder.id,
-        order_number: activeOrder.order_number,
-        status: activeOrder.status,
-        payment_status: activeOrder.payment_status,
-        total_amount: toNumber(activeOrder.total_amount),
-        pre_settled_at: activeOrder.pre_settled_at ?? null,
-      }
-    : null;
+  const orderPayloads = activeOrders.map(toOrderPayload);
+  const bills = listTableBoardBills({
+    tableId: table.id,
+    orders: activeOrders,
+    checkouts: unpaidCheckouts,
+  });
+  const primary = orderPayloads[0] ?? null;
 
   return {
     id: table.id,
@@ -67,14 +89,28 @@ function normalizeTable(
     capacity: toNumber(table.capacity) || 4,
     status: resolveTableBoardStatus({
       tableStatus: table.status || "available",
-      activeOrder: orderPayload,
+      activeOrders: [
+        ...orderPayloads,
+        ...unpaidCheckouts.map((checkout) => ({
+          payment_status: checkout.payment_status,
+          pre_settled_at: null,
+        })),
+      ],
     }),
     qr_code: table.qr_code || null,
     notes: table.notes || null,
     is_active: table.is_active !== false,
     pos_x: table.pos_x == null ? null : Number(table.pos_x),
     pos_y: table.pos_y == null ? null : Number(table.pos_y),
-    active_order: orderPayload,
+    active_order: primary,
+    active_orders: orderPayloads,
+    open_checkouts: unpaidCheckouts.map((checkout) => ({
+      id: checkout.id,
+      checkout_number: checkout.checkout_number,
+      payment_status: checkout.payment_status,
+      total_amount: toNumber(checkout.total_amount),
+    })),
+    bill_count: bills.length,
   };
 }
 
@@ -139,36 +175,75 @@ export async function GET(request: NextRequest) {
     const { data: tables, error: tableError } = await tableQuery;
     if (tableError) throw tableError;
 
-    const { data: activeOrders, error: orderError } = await db
+    const ordersFull = await db
       .from("pos_orders")
       .select(
-        "id, order_number, table_id, status, payment_status, total_amount, pre_settled_at"
+        "id, order_number, table_id, status, payment_status, total_amount, pre_settled_at, checkout_id, sold_from"
       )
       .not("table_id", "is", null)
       .in("status", ["pending", "confirmed", "preparing", "ready", "served"])
       .neq("payment_status", "paid");
 
-    if (orderError) throw orderError;
+    let activeOrders: ActiveOrderRow[] = [];
+    if (
+      ordersFull.error &&
+      (ordersFull.error.code === "42703" || ordersFull.error.code === "PGRST204")
+    ) {
+      const legacy = await db
+        .from("pos_orders")
+        .select(
+          "id, order_number, table_id, status, payment_status, total_amount, pre_settled_at"
+        )
+        .not("table_id", "is", null)
+        .in("status", ["pending", "confirmed", "preparing", "ready", "served"])
+        .neq("payment_status", "paid");
+      if (legacy.error) throw legacy.error;
+      activeOrders = (legacy.data ?? []) as ActiveOrderRow[];
+    } else if (ordersFull.error) {
+      throw ordersFull.error;
+    } else {
+      activeOrders = (ordersFull.data ?? []) as ActiveOrderRow[];
+    }
 
-    const activeOrderByTable = new Map<string, ActiveOrderRow>();
+    let unpaidCheckouts: UnpaidCheckoutRow[] = [];
+    const checkoutResult = await db
+      .from("pos_checkouts")
+      .select("id, checkout_number, table_id, payment_status, total_amount")
+      .not("table_id", "is", null)
+      .neq("payment_status", "paid");
+    if (
+      checkoutResult.error &&
+      checkoutResult.error.code !== "42P01" &&
+      checkoutResult.error.code !== "PGRST205" &&
+      checkoutResult.error.code !== "42703" &&
+      checkoutResult.error.code !== "PGRST204"
+    ) {
+      throw checkoutResult.error;
+    }
+    unpaidCheckouts = (checkoutResult.data ?? []) as UnpaidCheckoutRow[];
+
+    const activeOrdersByTable = new Map<string, ActiveOrderRow[]>();
     for (const order of (activeOrders ?? []) as ActiveOrderRow[]) {
       if (!order.table_id) continue;
-      const existing = activeOrderByTable.get(order.table_id);
-      // Prefer a non-pre-settled order when both exist (added food after billing).
-      if (
-        existing?.pre_settled_at &&
-        !order.pre_settled_at
-      ) {
-        activeOrderByTable.set(order.table_id, order);
-        continue;
-      }
-      if (!existing) {
-        activeOrderByTable.set(order.table_id, order);
-      }
+      const list = activeOrdersByTable.get(order.table_id) ?? [];
+      list.push(order);
+      activeOrdersByTable.set(order.table_id, list);
+    }
+
+    const checkoutsByTable = new Map<string, UnpaidCheckoutRow[]>();
+    for (const checkout of unpaidCheckouts) {
+      if (!checkout.table_id) continue;
+      const list = checkoutsByTable.get(checkout.table_id) ?? [];
+      list.push(checkout);
+      checkoutsByTable.set(checkout.table_id, list);
     }
 
     const normalizedTables = ((tables ?? []) as TableRow[]).map((table) =>
-      normalizeTable(table, activeOrderByTable.get(table.id) ?? null)
+      normalizeTable(
+        table,
+        activeOrdersByTable.get(table.id) ?? [],
+        checkoutsByTable.get(table.id) ?? []
+      )
     );
 
     return NextResponse.json({

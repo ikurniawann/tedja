@@ -34,22 +34,9 @@ export async function PATCH(
       return Response.json({ success: false, error: 'Cannot move finished order' }, { status: 400 });
     }
 
-    // 2. If moving to a dine-in table, check availability (skip if same table)
+    // A table may already have other open bills (stall + central). Moving
+    // this order onto it must not 409 — it becomes another bill on that table.
     const newTableId = table_id || null;
-    if (newTableId && newTableId !== order.table_id) {
-      const { data: occupied, error: occErr } = await db
-        .from('pos_orders')
-        .select('id')
-        .eq('table_id', newTableId)
-        .in('status', activeStatuses)
-        .neq('id', orderId)
-        .maybeSingle();
-
-      if (occErr) throw occErr;
-      if (occupied) {
-        return Response.json({ success: false, error: 'Table is occupied' }, { status: 409 });
-      }
-    }
 
     // 3. Update order
     const updatePayload: Record<string, string | null> = { updated_at: new Date().toISOString() };

@@ -433,6 +433,8 @@ export interface Order {
   special_requests?: string;
   items?: any[];
   splits?: any[];
+  checkout_id?: string | null;
+  sold_from?: string | null;
   /** Void tracking */
   voided_at?: string;
   voided_by?: string;
@@ -565,7 +567,26 @@ export interface PosTable {
     payment_status?: string;
     total_amount: number;
     pre_settled_at?: string | null;
+    checkout_id?: string | null;
+    sold_from?: string | null;
   } | null;
+  active_orders?: Array<{
+    id: string;
+    order_number?: string;
+    status?: string;
+    payment_status?: string;
+    total_amount: number;
+    pre_settled_at?: string | null;
+    checkout_id?: string | null;
+    sold_from?: string | null;
+  }>;
+  open_checkouts?: Array<{
+    id: string;
+    checkout_number?: string | null;
+    payment_status?: string | null;
+    total_amount: number;
+  }>;
+  bill_count?: number;
 }
 
 export async function getPOSTables(params?: { include_inactive?: boolean }) {

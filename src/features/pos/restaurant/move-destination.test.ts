@@ -26,8 +26,19 @@ describe("canPickMoveDestination", () => {
     ).toBe(false);
   });
 
-  it("rejects occupied, billing, reserved, maintenance", () => {
-    for (const status of ["occupied", "billing", "reserved", "maintenance"]) {
+  it("allows occupied and billing so a table can hold multiple bills", () => {
+    for (const status of ["occupied", "billing"]) {
+      expect(
+        canPickMoveDestination(
+          { id: "t2", status, is_active: true },
+          { sourceTableId: "t1" }
+        )
+      ).toBe(true);
+    }
+  });
+
+  it("rejects reserved and maintenance", () => {
+    for (const status of ["reserved", "maintenance"]) {
       expect(
         canPickMoveDestination(
           { id: "t2", status, is_active: true },
@@ -125,7 +136,7 @@ describe("canPickMergeDestination", () => {
 });
 
 describe("canPickSeatDestination", () => {
-  it("matches move eligibility for available tables", () => {
+  it("keeps seating on available tables only", () => {
     expect(
       canPickSeatDestination(
         { id: "t2", status: "available", is_active: true },

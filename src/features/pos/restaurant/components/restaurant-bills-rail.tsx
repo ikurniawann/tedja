@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Clock, Loader2, ReceiptText, Table2 } from "lucide-react";
 
+import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useOpenBills } from "@/features/pos/open-bills/queries";
@@ -13,6 +14,7 @@ import type { PosTable } from "@/lib/pos-api";
 
 import { buildCashierHandoffUrl } from "../nav";
 import { getActiveSplitSummary } from "@/features/pos/open-bills/split-summary";
+import { listTableBoardBills, type TableBoardBill } from "../table-board-bills";
 import {
   billSelection,
   isBillSelected,
@@ -77,17 +79,12 @@ function resolveOrderTableLabel(order: Order, tablesById: Map<string, PosTable>)
   return order.table_id ? "Meja" : "Without table";
 }
 
-function isOpenBill(order: Order) {
-  return (
-    !["completed", "cancelled", "voided", "merged"].includes(order.status || "") &&
-    (order.payment_status || "unpaid") !== "paid"
-  );
-}
-
 export interface RestaurantBillsRailProps {
   tablesById: Map<string, PosTable>;
   selection: NullableRestaurantSelection;
   immersive?: boolean;
+  /** When set, only bills for this table are listed (board detail). */
+  filterTableId?: string | null;
   /** panel = permanent column (legacy); drawer = content inside Sheet */
   variant?: "panel" | "drawer";
   onSelect: (selection: RestaurantSelection) => void;
@@ -98,6 +95,7 @@ export function RestaurantBillsRail({
   tablesById,
   selection,
   immersive = false,
+  filterTableId = null,
   variant = "panel",
   onSelect,
   onPaySplits,
@@ -107,36 +105,70 @@ export function RestaurantBillsRail({
     limit: 200,
   });
 
-  const openBills = useMemo(() => orders.filter(isOpenBill), [orders]);
+  const checkouts = useMemo(
+    () =>
+      [...tablesById.values()].flatMap((table) =>
+        (table.open_checkouts || []).map((checkout) => ({
+          id: checkout.id,
+          table_id: table.id,
+          payment_status: checkout.payment_status,
+          checkout_number: checkout.checkout_number,
+          total_amount: checkout.total_amount,
+        }))
+      ),
+    [tablesById]
+  );
+
+  const bills = useMemo(
+    () =>
+      listTableBoardBills({
+        tableId: filterTableId,
+        orders,
+        checkouts,
+      }),
+    [checkouts, filterTableId, orders]
+  );
+  const ordersById = useMemo(
+    () => new Map(orders.map((order) => [order.id, order])),
+    [orders]
+  );
   const loading = isLoading;
   const errorMessage = error instanceof Error ? error.message : null;
 
-  const openBill = (order: Order) => {
-    const splitSummary = getActiveSplitSummary(order.splits);
-    if (splitSummary && onPaySplits) {
+  const openBill = (bill: TableBoardBill) => {
+    const order = bill.orderId ? ordersById.get(bill.orderId) : null;
+    const splitSummary = order ? getActiveSplitSummary(order.splits) : null;
+    if (order && splitSummary && onPaySplits) {
       onPaySplits(order);
+      return;
+    }
+    if (!bill.orderId) {
+      toast.error("Checkout ini belum punya order anak untuk dibuka di kasir");
       return;
     }
     router.push(
       buildCashierHandoffUrl({
-        orderId: order.id,
-        tableId: order.table_id,
+        orderId: bill.orderId,
+        tableId: bill.table_id,
         immersive,
       })
     );
   };
 
+  const filterTable = filterTableId ? tablesById.get(filterTableId) : null;
   const header = (
     <div className={cn(variant === "drawer" ? "pr-10" : undefined)}>
       <div className="flex items-center justify-between gap-3">
         <div>
           <h2 className="text-sm font-semibold text-gray-950">Open Bills</h2>
           <p className="text-xs text-muted-foreground">
-            Select a bill to use restaurant actions.
+            {filterTable
+              ? `Semua tagihan di ${getTableDisplayName(filterTable) || "meja ini"}.`
+              : "Select a bill to use restaurant actions."}
           </p>
         </div>
         <Badge variant="outline" className="border-primary/20 text-primary">
-          {openBills.length}
+          {bills.length}
         </Badge>
       </div>
     </div>
@@ -159,7 +191,7 @@ export function RestaurantBillsRail({
         <div className="rounded-lg border border-red-200/80 bg-red-50 p-4 text-sm font-medium text-red-600">
           {errorMessage}
         </div>
-      ) : openBills.length === 0 ? (
+      ) : bills.length === 0 ? (
         <div className="rounded-lg border border-gray-200/70 bg-gray-50/80 p-6 text-center">
           <ReceiptText className="mx-auto size-8 text-muted-foreground" />
           <div className="mt-3 text-sm font-semibold text-gray-950">
@@ -170,20 +202,33 @@ export function RestaurantBillsRail({
           </p>
         </div>
       ) : (
-        openBills.map((order) => {
-          const selected = isBillSelected(selection, order.id);
-          const tableLabel = resolveOrderTableLabel(order, tablesById);
-          const splitSummary = getActiveSplitSummary(order.splits);
+        bills.map((bill) => {
+          const order = bill.orderId ? ordersById.get(bill.orderId) : null;
+          const selected = Boolean(
+            (bill.orderId && isBillSelected(selection, bill.orderId)) ||
+              (selection?.orderId &&
+                order &&
+                isBillSelected(selection, order.id))
+          );
+          const tableLabel = bill.table_id
+            ? getTableDisplayName(tablesById.get(bill.table_id)) ||
+              (order ? resolveOrderTableLabel(order, tablesById) : "Meja")
+            : "Without table";
+          const splitSummary = order ? getActiveSplitSummary(order.splits) : null;
 
           return (
             <article
-              key={order.id}
+              key={`${bill.kind}-${bill.id}`}
               role="button"
               tabIndex={0}
-              onClick={() => onSelect(billSelection(order.id, order.table_id))}
-              onDoubleClick={() => openBill(order)}
+              onClick={() =>
+                onSelect(
+                  billSelection(bill.orderId || bill.id, bill.table_id ?? undefined)
+                )
+              }
+              onDoubleClick={() => openBill(bill)}
               onKeyDown={(event) => {
-                if (event.key === "Enter") openBill(order);
+                if (event.key === "Enter") openBill(bill);
               }}
               className={cn(
                 "rounded-lg border bg-white p-3 text-left shadow-xs transition-all",
@@ -195,30 +240,36 @@ export function RestaurantBillsRail({
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="truncate font-mono text-sm font-bold text-gray-950">
-                    {order.order_number || order.id.slice(0, 8)}
+                    {bill.label}
                   </div>
                   <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
                     <Table2 className="size-3.5" />
                     <span className="truncate">{tableLabel}</span>
                   </div>
+                  <Badge
+                    variant="outline"
+                    className="mt-2 border-gray-200/80 bg-gray-50 text-[10px] text-muted-foreground"
+                  >
+                    {bill.kind === "checkout" ? "Kasir pusat" : "Stall"}
+                  </Badge>
                   {splitSummary ? (
                     <Badge
                       variant="outline"
-                      className="mt-2 border-primary/20 bg-primary/5 text-[10px] text-primary"
+                      className="mt-2 ml-1 border-primary/20 bg-primary/5 text-[10px] text-primary"
                     >
                       Split · {splitSummary.paid}/{splitSummary.total}
                     </Badge>
                   ) : null}
                 </div>
                 <div className="shrink-0 text-right text-sm font-bold text-gray-950">
-                  {formatCurrency(Number(order.total_amount || 0))}
+                  {formatCurrency(bill.total_amount)}
                 </div>
               </div>
 
               <div className="mt-3 flex items-center justify-between gap-2">
                 <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
                   <Clock className="size-3.5" />
-                  <RelativeTime value={order.ordered_at} />
+                  <RelativeTime value={order?.ordered_at} />
                 </span>
                 <Button
                   type="button"
@@ -227,7 +278,7 @@ export function RestaurantBillsRail({
                   className="h-7 border-primary/20 px-2 text-xs text-primary hover:bg-primary/5"
                   onClick={(event) => {
                     event.stopPropagation();
-                    openBill(order);
+                    openBill(bill);
                   }}
                 >
                   {splitSummary ? "Pay" : "Open"}

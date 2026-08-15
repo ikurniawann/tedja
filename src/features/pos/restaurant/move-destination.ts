@@ -25,7 +25,8 @@ export function canPickMoveDestination(
 ): boolean {
   if (!isNotSource(table, opts.sourceTableId)) return false;
   if (!isActiveTable(table)) return false;
-  return normalizedStatus(table) === "available";
+  const status = normalizedStatus(table);
+  return status === "available" || status === "occupied" || status === "billing";
 }
 
 /** Move Items: empty (available) or occupied/billing destination. */
@@ -50,10 +51,12 @@ export function canPickMergeDestination(
   return status === "occupied" || status === "billing";
 }
 
-/** Seat reservation: available tables only (same as move). */
+/** Seat reservation: available tables only. */
 export function canPickSeatDestination(
   table: MoveDestinationTable,
   opts: { sourceTableId?: string | null } = {}
 ): boolean {
-  return canPickMoveDestination(table, opts);
+  if (!isNotSource(table, opts.sourceTableId)) return false;
+  if (!isActiveTable(table)) return false;
+  return normalizedStatus(table) === "available";
 }
