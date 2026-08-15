@@ -30,6 +30,7 @@ import { CashierStallGate } from '@/features/pos/cashier/components/cashier-stal
 import {
   MIXED_ARK_UNSUPPORTED_MESSAGE,
   MIXED_NFC_GIFT_UNSUPPORTED_MESSAGE,
+  MIXED_PROMO_UNSUPPORTED_MESSAGE,
   MIXED_SPLIT_UNSUPPORTED_MESSAGE,
   buildCheckoutBillPayBody,
   canSellMixedStall,
@@ -39,6 +40,7 @@ import {
   resolveAddCatalogItem,
   shouldCreateCheckout,
   shouldDisableSplitBill,
+  shouldDisableMixedPromo,
   uniqueStallIds,
 } from '@/lib/pos/central-cashier';
 import { Button } from '@/components/ui/button';
@@ -799,6 +801,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       existingStallIds: existing,
       incomingWarehouseId: product.warehouse_id,
       centralAllMode: canUseCentralCashier && activeMode === 'all',
+      payingExistingCheckout: Boolean(paymentCheckoutId),
     });
     if (!check.ok) {
       toast.error(check.message);
@@ -810,7 +813,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       warehouse_name: product.warehouse_name,
     });
     return true;
-  }, [activeMode, canSellMixed, canUseCentralCashier, cart]);
+  }, [activeMode, canSellMixed, canUseCentralCashier, cart, paymentCheckoutId]);
 
   const productSuggestions = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
@@ -1153,6 +1156,10 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     );
     if (mixedCart && isMixedUnsupportedTender(method)) {
       toast.error(MIXED_NFC_GIFT_UNSUPPORTED_MESSAGE);
+      return;
+    }
+    if (mixedCart && (discountAmount > 0 || promoApplied)) {
+      toast.error(MIXED_PROMO_UNSUPPORTED_MESSAGE);
       return;
     }
     if (paymentCheckoutId && isCheckoutBillUnsupportedTender(method)) {
@@ -2444,7 +2451,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         promoInput={promoInput}
         promoBusy={promoBusy}
         promoError={promoError}
-        promoDisabled={!isOnline}
+        promoDisabled={!isOnline || shouldDisableMixedPromo(cartStallIds)}
         onPromoInputChange={(value) => {
           setPromoInput(value.toUpperCase());
           setPromoError(null);

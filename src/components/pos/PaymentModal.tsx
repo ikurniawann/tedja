@@ -45,6 +45,7 @@ import {
   mixedQrisCheckoutIdForAmount,
   shouldSkipQrisPrepare,
 } from "@/lib/pos/central-cashier";
+import { cancelCheckout } from "@/lib/pos-api";
 import { DEFAULT_POS_PAYMENT_METHODS } from "@/lib/pos/payment-methods";
 import { usePaymentMethods } from "@/features/pos/payment-methods";
 
@@ -193,6 +194,24 @@ export function PaymentModal({
   const qrisWasSubmitting = useRef(false);
   const onConfirmRef = useRef(onConfirm);
   onConfirmRef.current = onConfirm;
+  const mixedQrisCheckoutRef = useRef(mixedQrisCheckout);
+  mixedQrisCheckoutRef.current = mixedQrisCheckout;
+  const qrisPaidRef = useRef(qrisPaid);
+  qrisPaidRef.current = qrisPaid;
+  const submittingRef = useRef(submitting);
+  submittingRef.current = submitting;
+
+  const abandonPreparedMixedQris = (checkoutId?: string | null) => {
+    const id = checkoutId || mixedQrisCheckoutRef.current?.checkout_id;
+    if (!id || qrisPaidRef.current || submittingRef.current) return;
+    void cancelCheckout(id).catch(() => {});
+  };
+
+  const handleClose = () => {
+    if (submitting) return;
+    abandonPreparedMixedQris();
+    onClose();
+  };
 
   // EPIC-034 Fase C — kode gift card diketik/di-scan kasir
   const [giftCodeInput, setGiftCodeInput] = useState("");
@@ -274,6 +293,7 @@ export function PaymentModal({
 
   useEffect(() => {
     if (!open) {
+      abandonPreparedMixedQris();
       setMethod("cash");
       setCashReceived("");
       setArkToUse(0);
@@ -298,11 +318,19 @@ export function PaymentModal({
       setMethod("cash");
     }
     if (method !== "qris") {
+      abandonPreparedMixedQris();
       setMixedQrisCheckout(null);
     }
   }, [isMixedCart, isCheckoutBill, method]);
 
   useEffect(() => {
+    const previous = mixedQrisCheckoutRef.current;
+    if (
+      previous?.checkout_id &&
+      previous.amount !== totalAfterArk
+    ) {
+      abandonPreparedMixedQris(previous.checkout_id);
+    }
     setMixedQrisCheckout(null);
     setQris(null);
     setQrisLoading(false);
@@ -526,7 +554,7 @@ export function PaymentModal({
       }));
 
   return (
-    <Dialog open={open} onOpenChange={(v) => !v && !submitting && onClose()}>
+    <Dialog open={open} onOpenChange={(v) => !v && !submitting && handleClose()}>
       <DialogPanel size="md">
         <DialogPanelHeader>
           <DialogPanelTitle>Payment Method</DialogPanelTitle>
@@ -863,7 +891,7 @@ export function PaymentModal({
             type="button"
             variant="outline"
             className="border-gray-200/80"
-            onClick={onClose}
+            onClick={handleClose}
             disabled={submitting}
           >
             Cancel

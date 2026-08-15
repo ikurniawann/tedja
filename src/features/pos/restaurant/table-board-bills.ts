@@ -18,6 +18,7 @@ export type TableBoardBillCheckout = {
   payment_status?: string | null;
   checkout_number?: string | null;
   total_amount?: number | string | null;
+  notes?: string | null;
 };
 
 export type TableBoardBill = {
@@ -48,6 +49,9 @@ function isOpenOrder(order: TableBoardBillOrder) {
 }
 
 function isOpenCheckout(checkout: TableBoardBillCheckout) {
+  if (String(checkout.notes || "").trim().toLowerCase().startsWith("cancelled")) {
+    return false;
+  }
   return String(checkout.payment_status || "unpaid").toLowerCase() !== "paid";
 }
 
@@ -61,8 +65,16 @@ export function listTableBoardBills(input: {
   checkouts?: TableBoardBillCheckout[];
 }): TableBoardBill[] {
   const tableId = input.tableId ?? null;
+  const cancelledCheckoutIds = new Set(
+    (input.checkouts ?? [])
+      .filter((checkout) =>
+        String(checkout.notes || "").trim().toLowerCase().startsWith("cancelled")
+      )
+      .map((checkout) => checkout.id)
+  );
   const orders = (input.orders ?? []).filter((order) => {
     if (tableId && order.table_id !== tableId) return false;
+    if (order.checkout_id && cancelledCheckoutIds.has(order.checkout_id)) return false;
     return isOpenOrder(order);
   });
   const checkouts = (input.checkouts ?? []).filter((checkout) => {
@@ -74,8 +86,9 @@ export function listTableBoardBills(input: {
   const seenCheckoutIds = new Set<string>();
 
   for (const checkout of checkouts) {
-    seenCheckoutIds.add(checkout.id);
     const children = orders.filter((order) => order.checkout_id === checkout.id);
+    if (children.length === 0) continue;
+    seenCheckoutIds.add(checkout.id);
     const preSettled =
       children.find((order) => order.pre_settled_at)?.pre_settled_at ?? null;
     const childTotal = children.reduce(

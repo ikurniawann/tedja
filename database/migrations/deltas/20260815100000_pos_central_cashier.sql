@@ -34,6 +34,9 @@ FROM iam.menus parent
 WHERE child.code = 'pos.cashier.central'
   AND parent.code = 'pos.operations';
 
+-- Capability only — keep hidden from sidebar.
+UPDATE iam.menus SET is_visible = false WHERE code = 'pos.cashier.central';
+
 INSERT INTO iam.role_menu_permissions (role_id, menu_id, granted_actions, is_active)
 SELECT r.id, m.id, '["read"]'::jsonb, true
 FROM iam.roles r

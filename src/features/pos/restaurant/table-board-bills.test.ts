@@ -112,7 +112,7 @@ describe("listTableBoardBills", () => {
     expect(tableBillSourceLabel("stall")).toBe("Stall");
   });
 
-  it("keeps an unpaid checkout with no children", () => {
+  it("does not list a childless unpaid checkout as a table bill", () => {
     const bills = listTableBoardBills({
       tableId: "t1",
       checkouts: [
@@ -125,15 +125,35 @@ describe("listTableBoardBills", () => {
         },
       ],
     });
-    expect(bills).toEqual([
-      expect.objectContaining({
-        id: "chk-empty",
-        kind: "checkout",
-        label: "CHK-OPEN",
-        total_amount: 80,
-        orderId: null,
-      }),
-    ]);
+    expect(bills).toEqual([]);
+  });
+
+  it("does not list a cancelled unpaid checkout", () => {
+    const bills = listTableBoardBills({
+      tableId: "t1",
+      orders: [
+        {
+          id: "c1",
+          table_id: "t1",
+          checkout_id: "chk-1",
+          payment_status: "unpaid",
+          status: "pending",
+          sold_from: "central",
+          total_amount: 80,
+        },
+      ],
+      checkouts: [
+        {
+          id: "chk-1",
+          table_id: "t1",
+          payment_status: "unpaid",
+          checkout_number: "CHK-1",
+          total_amount: 80,
+          notes: "cancelled",
+        },
+      ],
+    });
+    expect(bills).toEqual([]);
   });
 
   it("excludes paid orders and other tables", () => {

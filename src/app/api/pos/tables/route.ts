@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createPgClient } from "@/lib/pg/create-client";
 import { getPosSession } from "@/lib/api/auth";
+import { getApiUserScope } from "@/lib/api/scope";
 import { generateTableQrCode } from "@/features/pos/tables/qr-code";
 import { resolveTableBoardStatus } from "@/features/pos/restaurant/table-board-status";
 import { listTableBoardBills } from "@/features/pos/restaurant/table-board-bills";
@@ -38,6 +39,7 @@ type UnpaidCheckoutRow = {
   table_id?: string | null;
   payment_status?: string | null;
   total_amount?: number | string | null;
+  notes?: string | null;
 };
 
 const TABLE_STATUSES = ["available", "occupied", "reserved", "maintenance"] as const;
@@ -77,6 +79,10 @@ function normalizeTable(
     orders: activeOrders,
     checkouts: unpaidCheckouts,
   });
+  const occupying = bills.map((bill) => ({
+    payment_status: bill.payment_status,
+    pre_settled_at: bill.pre_settled_at,
+  }));
   const primary = orderPayloads[0] ?? null;
 
   return {
@@ -89,13 +95,7 @@ function normalizeTable(
     capacity: toNumber(table.capacity) || 4,
     status: resolveTableBoardStatus({
       tableStatus: table.status || "available",
-      activeOrders: [
-        ...orderPayloads,
-        ...unpaidCheckouts.map((checkout) => ({
-          payment_status: checkout.payment_status,
-          pre_settled_at: null,
-        })),
-      ],
+      activeOrders: occupying,
     }),
     qr_code: table.qr_code || null,
     notes: table.notes || null,
@@ -104,12 +104,14 @@ function normalizeTable(
     pos_y: table.pos_y == null ? null : Number(table.pos_y),
     active_order: primary,
     active_orders: orderPayloads,
-    open_checkouts: unpaidCheckouts.map((checkout) => ({
-      id: checkout.id,
-      checkout_number: checkout.checkout_number,
-      payment_status: checkout.payment_status,
-      total_amount: toNumber(checkout.total_amount),
-    })),
+    open_checkouts: bills
+      .filter((bill) => bill.kind === "checkout")
+      .map((bill) => ({
+        id: bill.id,
+        checkout_number: bill.label,
+        payment_status: bill.payment_status,
+        total_amount: bill.total_amount,
+      })),
     bill_count: bills.length,
   };
 }
@@ -206,11 +208,19 @@ export async function GET(request: NextRequest) {
     }
 
     let unpaidCheckouts: UnpaidCheckoutRow[] = [];
-    const checkoutResult = await db
+    const scope = await getApiUserScope();
+    let checkoutQuery = db
       .from("pos_checkouts")
-      .select("id, checkout_number, table_id, payment_status, total_amount")
+      .select("id, checkout_number, table_id, payment_status, total_amount, notes")
       .not("table_id", "is", null)
       .neq("payment_status", "paid");
+    if (scope?.companyId && !scope.isUnscoped) {
+      checkoutQuery = checkoutQuery.eq("company_id", scope.companyId);
+    }
+    if (scope?.branchId && !scope.isUnscoped) {
+      checkoutQuery = checkoutQuery.eq("branch_id", scope.branchId);
+    }
+    const checkoutResult = await checkoutQuery;
     if (
       checkoutResult.error &&
       checkoutResult.error.code !== "42P01" &&

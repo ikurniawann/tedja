@@ -21,6 +21,7 @@ import {
   shouldConfirmClearCart,
   shouldCreateCheckout,
   shouldDisableSplitBill,
+  shouldDisableMixedPromo,
   uniqueStallIds,
 } from "./central-cashier";
 
@@ -73,6 +74,20 @@ describe("resolveAddCatalogItem", () => {
     ).toEqual({ ok: true });
   });
 
+  it("blocks add-to-cart while paying a hydrated checkout bill", () => {
+    const result = resolveAddCatalogItem({
+      canSellMixed: true,
+      existingStallIds: ["w-a"],
+      incomingWarehouseId: "w-b",
+      centralAllMode: true,
+      payingExistingCheckout: true,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.message).toMatch(/tagihan/i);
+    }
+  });
+
   it("keeps the single-stall guard for regular cashiers", () => {
     const result = resolveAddCatalogItem({
       canSellMixed: false,
@@ -93,6 +108,8 @@ describe("mixed cart payment UI", () => {
     expect(resolveCheckoutApi(["w-a"])).toBe("order");
     expect(shouldDisableSplitBill(["w-a", "w-b"])).toBe(true);
     expect(shouldDisableSplitBill(["w-a"])).toBe(false);
+    expect(shouldDisableMixedPromo(["w-a", "w-b"])).toBe(true);
+    expect(shouldDisableMixedPromo(["w-a"])).toBe(false);
     expect(isMixedUnsupportedTender("nfc_tab")).toBe(true);
     expect(isMixedUnsupportedTender("gift_card")).toBe(true);
     expect(isMixedUnsupportedTender("cash")).toBe(false);

@@ -1,14 +1,20 @@
 import { describe, expect, it } from "vitest";
 import { allocateCheckoutCharges, shouldCreateCheckout } from "@/lib/pos/central-cashier";
 import {
+  CHECKOUT_CANCELLED_NOTE,
+  MIXED_PROMO_UNSUPPORTED_MESSAGE,
   MISSING_PRODUCT_STALL_MESSAGE,
   MIXED_NFC_GIFT_UNSUPPORTED_MESSAGE,
   MIXED_SPLIT_UNSUPPORTED_MESSAGE,
   MIXED_STALL_FORBIDDEN_MESSAGE,
   allocateCheckoutTender,
   assertCheckoutQrisReadyToComplete,
+  canCancelUnpaidChildlessCheckout,
   groupItemsByStall,
   guardMixedCheckoutCart,
+  isCancelledCheckout,
+  mustConfirmStoredCheckoutQris,
+  rejectMixedPromo,
   rejectUnsupportedMixedTender,
   resolveCheckoutBillTender,
   resolveCheckoutQrisAction,
@@ -20,6 +26,8 @@ import {
   shouldInsertCheckoutChildren,
   shouldReuseCheckoutQris,
   shouldSyncCustomerStatsOnFinalize,
+  unpaidChildlessCheckoutCancelPatch,
+  unpaidCheckoutScopeSql,
 } from "@/lib/pos/create-mixed-checkout";
 
 describe("guardMixedCheckoutCart", () => {
@@ -99,6 +107,52 @@ describe("guardMixedCheckoutCart", () => {
     if (!result.ok) {
       expect(result.message).toBe(MIXED_SPLIT_UNSUPPORTED_MESSAGE);
     }
+  });
+
+  it("rejects promo code or discount on mixed checkout", () => {
+    const withPromo = guardMixedCheckoutCart({
+      productIds: ["p1", "p2"],
+      warehouseByProduct: new Map([
+        ["p1", "w-a"],
+        ["p2", "w-b"],
+      ]),
+      canSellMixed: true,
+      promoCode: "HEMAT10",
+    });
+    expect(withPromo.ok).toBe(false);
+    if (!withPromo.ok) {
+      expect(withPromo.message).toBe(MIXED_PROMO_UNSUPPORTED_MESSAGE);
+    }
+
+    const withDiscount = guardMixedCheckoutCart({
+      productIds: ["p1", "p2"],
+      warehouseByProduct: new Map([
+        ["p1", "w-a"],
+        ["p2", "w-b"],
+      ]),
+      canSellMixed: true,
+      discountAmount: 5000,
+    });
+    expect(withDiscount.ok).toBe(false);
+    if (!withDiscount.ok) {
+      expect(withDiscount.message).toBe(MIXED_PROMO_UNSUPPORTED_MESSAGE);
+    }
+  });
+});
+
+describe("rejectMixedPromo", () => {
+  it("rejects mixed payloads with discount_amount or promo_code", () => {
+    expect(rejectMixedPromo({ discountAmount: 1 })).toEqual({
+      ok: false,
+      message: MIXED_PROMO_UNSUPPORTED_MESSAGE,
+    });
+    expect(rejectMixedPromo({ promoCode: "X" })).toEqual({
+      ok: false,
+      message: MIXED_PROMO_UNSUPPORTED_MESSAGE,
+    });
+    expect(rejectMixedPromo({ discountAmount: 0, promoCode: "  " })).toEqual({
+      ok: true,
+    });
   });
 });
 
@@ -328,6 +382,77 @@ describe("resolveCheckoutBillTender", () => {
     if (!ark.ok) {
       expect(ark.message).toMatch(/ARK/i);
     }
+  });
+});
+
+describe("mustConfirmStoredCheckoutQris", () => {
+  it("still requires Xendit confirm when children already exist", () => {
+    expect(
+      mustConfirmStoredCheckoutQris({
+        paymentMethod: "qris",
+        paymentAlreadyConfirmed: false,
+        hasExistingChildren: true,
+      })
+    ).toBe(true);
+    expect(
+      mustConfirmStoredCheckoutQris({
+        paymentMethod: "qris",
+        paymentAlreadyConfirmed: true,
+        hasExistingChildren: true,
+      })
+    ).toBe(false);
+    expect(
+      mustConfirmStoredCheckoutQris({
+        paymentMethod: "cash",
+        paymentAlreadyConfirmed: false,
+        hasExistingChildren: true,
+      })
+    ).toBe(false);
+  });
+});
+
+describe("unpaid childless checkout cancel", () => {
+  it("allows cancel only for unpaid checkouts with no children", () => {
+    expect(
+      canCancelUnpaidChildlessCheckout({
+        paymentStatus: "unpaid",
+        childCount: 0,
+      })
+    ).toEqual({ ok: true });
+    expect(
+      canCancelUnpaidChildlessCheckout({
+        paymentStatus: "unpaid",
+        childCount: 2,
+      }).ok
+    ).toBe(false);
+    expect(
+      canCancelUnpaidChildlessCheckout({
+        paymentStatus: "paid",
+        childCount: 0,
+      }).ok
+    ).toBe(false);
+  });
+
+  it("unbinds the table and marks notes cancelled", () => {
+    expect(unpaidChildlessCheckoutCancelPatch()).toEqual({
+      table_id: null,
+      notes: CHECKOUT_CANCELLED_NOTE,
+    });
+    expect(isCancelledCheckout({ notes: CHECKOUT_CANCELLED_NOTE })).toBe(true);
+    expect(isCancelledCheckout({ notes: null, table_id: "t1" })).toBe(false);
+  });
+});
+
+describe("unpaidCheckoutScopeSql", () => {
+  it("adds company_id and branch_id from session scope", () => {
+    const scoped = unpaidCheckoutScopeSql({
+      companyId: "co-1",
+      branchId: "br-1",
+      startParam: 2,
+    });
+    expect(scoped.sql).toContain("company_id = $2");
+    expect(scoped.sql).toContain("branch_id = $3");
+    expect(scoped.params).toEqual(["co-1", "br-1"]);
   });
 });
 

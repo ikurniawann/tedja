@@ -274,6 +274,8 @@ export async function POST(request: NextRequest) {
       warehouseByProduct,
       canSellMixed,
       hasSplits: Array.isArray(body.splits) && body.splits.length > 0,
+      discountAmount: discount_amount,
+      promoCode: body.promo_code,
     });
     if (!mixedGuard.ok) {
       return NextResponse.json({ success: false, error: mixedGuard.message }, { status: 400 });
@@ -302,6 +304,7 @@ export async function POST(request: NextRequest) {
         guestCount: body.guest_count,
         discountAmount: discount_amount,
         discountReason: discount_reason,
+        promoCode: body.promo_code,
         taxAmount: tax_amount,
         serviceChargeAmount: service_charge_amount,
         otherChargesAmount: other_charges_amount,
@@ -312,7 +315,8 @@ export async function POST(request: NextRequest) {
         arkCoinsUsed: ark_coins_used,
         notes,
         specialRequests: special_requests,
-        branchId: body.branch_id,
+        companyId: scope?.companyId,
+        branchId: body.branch_id || scope?.branchId,
         shiftId: body.shift_id,
         sessionUserId,
       });

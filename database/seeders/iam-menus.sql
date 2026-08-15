@@ -191,6 +191,9 @@ ON CONFLICT (code) DO UPDATE SET
   deleted_at           = NULL,
   updated_at           = now();
 
+-- Capability only: seeder upsert forces is_visible = true for every code.
+UPDATE iam.menus SET is_visible = false WHERE code = 'pos.cashier.central';
+
 UPDATE iam.menus
 SET module = split_part(code, '.', 1),
     level  = (length(code) - length(replace(code, '.', ''))) + 1

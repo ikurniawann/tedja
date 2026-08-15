@@ -148,6 +148,8 @@ export async function POST(request: NextRequest) {
       productIds,
       warehouseByProduct,
       canSellMixed,
+      discountAmount: body.discount_amount,
+      promoCode: body.promo_code,
     });
     if (!mixedGuard.ok) {
       return NextResponse.json({ success: false, error: mixedGuard.message }, { status: 400 });
@@ -160,11 +162,18 @@ export async function POST(request: NextRequest) {
     let unpaidCentralCheckoutId: string | null = null;
     if (soldFrom === "central" && table_id) {
       const lookup = createPgClient();
-      const existingCheckout = await lookup
+      let existingQuery = lookup
         .from("pos_checkouts")
         .select("id")
         .eq("table_id", table_id)
-        .neq("payment_status", "paid")
+        .neq("payment_status", "paid");
+      if (scope?.companyId && !scope.isUnscoped) {
+        existingQuery = existingQuery.eq("company_id", scope.companyId);
+      }
+      if (scope?.branchId && !scope.isUnscoped) {
+        existingQuery = existingQuery.eq("branch_id", scope.branchId);
+      }
+      const existingCheckout = await existingQuery
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
@@ -208,6 +217,7 @@ export async function POST(request: NextRequest) {
           guestCount: body.guest_count,
           discountAmount: body.discount_amount,
           discountReason: discount_reason,
+          promoCode: body.promo_code,
           taxAmount: tax_amount,
           serviceChargeAmount: service_charge_amount,
           otherChargesAmount: other_charges_amount,
@@ -222,6 +232,8 @@ export async function POST(request: NextRequest) {
           sessionUserId,
           forceInsertChildren: true,
           reuseUnpaidTableCheckout: Boolean(table_id),
+          companyId: scope?.companyId,
+          branchId: scope?.branchId,
         });
         return NextResponse.json(
           {

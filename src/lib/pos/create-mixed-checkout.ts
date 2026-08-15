@@ -8,6 +8,7 @@ import { AccountingPostError } from "@/lib/pos/accounting-posting";
 import {
   MIXED_ARK_UNSUPPORTED_MESSAGE,
   MIXED_NFC_GIFT_UNSUPPORTED_MESSAGE,
+  MIXED_PROMO_UNSUPPORTED_MESSAGE,
   MIXED_SPLIT_UNSUPPORTED_MESSAGE,
   allocateCheckoutCharges,
   shouldCreateCheckout,
@@ -40,8 +41,14 @@ import { buildCostSnapshot, loadPosProductCostMap } from "@/lib/pos/purchasing-s
 export {
   MIXED_ARK_UNSUPPORTED_MESSAGE,
   MIXED_NFC_GIFT_UNSUPPORTED_MESSAGE,
+  MIXED_PROMO_UNSUPPORTED_MESSAGE,
   MIXED_SPLIT_UNSUPPORTED_MESSAGE,
 } from "@/lib/pos/central-cashier";
+
+export const CHECKOUT_CANCELLED_NOTE = "cancelled";
+export const CHECKOUT_CANCEL_HAS_CHILDREN_MESSAGE =
+  "Checkout dengan pesanan tidak bisa dibatalkan";
+export const CHECKOUT_CANCEL_PAID_MESSAGE = "Checkout sudah lunas";
 
 export const MIXED_STALL_FORBIDDEN_MESSAGE =
   "Keranjang campur stall hanya untuk kasir pusat";
@@ -106,6 +113,7 @@ export type CreateMixedCheckoutInput = {
   guestCount?: unknown;
   discountAmount?: number | string;
   discountReason?: string | null;
+  promoCode?: string | null;
   taxAmount?: number | string;
   serviceChargeAmount?: number | string;
   otherChargesAmount?: number | string;
@@ -165,11 +173,26 @@ export function lineItemSubtotal(item: MixedCheckoutItem): number {
   return (unit + variantAdj + modifierAdj) * qty;
 }
 
+export function rejectMixedPromo(input: {
+  discountAmount?: number | string | null;
+  promoCode?: string | null;
+}): { ok: true } | { ok: false; message: string } {
+  if (String(input.promoCode || "").trim()) {
+    return { ok: false, message: MIXED_PROMO_UNSUPPORTED_MESSAGE };
+  }
+  if (toNumber(input.discountAmount) > 0) {
+    return { ok: false, message: MIXED_PROMO_UNSUPPORTED_MESSAGE };
+  }
+  return { ok: true };
+}
+
 export function guardMixedCheckoutCart(input: {
   productIds: string[];
   warehouseByProduct: Map<string, string | null>;
   canSellMixed: boolean;
   hasSplits?: boolean;
+  discountAmount?: number | string | null;
+  promoCode?: string | null;
 }): MixedCheckoutGuardResult {
   for (const id of input.productIds) {
     const warehouseId = input.warehouseByProduct.get(id);
@@ -187,6 +210,13 @@ export function guardMixedCheckoutCart(input: {
   }
   if (shouldCreateCheckout(stallIds) && input.hasSplits) {
     return { ok: false, message: MIXED_SPLIT_UNSUPPORTED_MESSAGE };
+  }
+  if (shouldCreateCheckout(stallIds)) {
+    const promoGuard = rejectMixedPromo({
+      discountAmount: input.discountAmount,
+      promoCode: input.promoCode,
+    });
+    if (!promoGuard.ok) return promoGuard;
   }
 
   return {
@@ -359,6 +389,68 @@ export type CompleteMixedCheckoutOptions = {
   /** Webhook already verified paid; skip Xendit GET re-confirm. */
   paymentAlreadyConfirmed?: boolean;
 };
+
+export function mustConfirmStoredCheckoutQris(input: {
+  paymentMethod: string;
+  paymentAlreadyConfirmed?: boolean;
+  hasExistingChildren?: boolean;
+}): boolean {
+  void input.hasExistingChildren;
+  return input.paymentMethod === "qris" && !input.paymentAlreadyConfirmed;
+}
+
+export function isCancelledCheckout(input: {
+  notes?: string | null;
+  table_id?: string | null;
+}): boolean {
+  return String(input.notes || "").trim().toLowerCase().startsWith(CHECKOUT_CANCELLED_NOTE);
+}
+
+export function canCancelUnpaidChildlessCheckout(input: {
+  paymentStatus?: string | null;
+  childCount: number;
+  notes?: string | null;
+}): { ok: true } | { ok: false; message: string } {
+  if (isCancelledCheckout({ notes: input.notes })) {
+    return { ok: true };
+  }
+  if (String(input.paymentStatus || "unpaid").toLowerCase() === "paid") {
+    return { ok: false, message: CHECKOUT_CANCEL_PAID_MESSAGE };
+  }
+  if (input.childCount > 0) {
+    return { ok: false, message: CHECKOUT_CANCEL_HAS_CHILDREN_MESSAGE };
+  }
+  return { ok: true };
+}
+
+export function unpaidChildlessCheckoutCancelPatch(): {
+  table_id: null;
+  notes: string;
+} {
+  return { table_id: null, notes: CHECKOUT_CANCELLED_NOTE };
+}
+
+export function unpaidCheckoutScopeSql(input: {
+  companyId?: string | null;
+  branchId?: string | null;
+  startParam: number;
+}): { sql: string; params: string[] } {
+  const parts: string[] = [];
+  const params: string[] = [];
+  let index = input.startParam;
+  if (input.companyId) {
+    parts.push(`company_id = $${index++}`);
+    params.push(input.companyId);
+  }
+  if (input.branchId) {
+    parts.push(`branch_id = $${index++}`);
+    params.push(input.branchId);
+  }
+  return {
+    sql: parts.map((part) => ` AND ${part}`).join(""),
+    params,
+  };
+}
 
 export function resolveCompleteCheckoutTender(input: {
   tender?: CompleteMixedCheckoutTender;
@@ -976,9 +1068,15 @@ function snapshotFromInput(
 
 async function findUnpaidCheckoutByTable(
   client: PoolClient,
-  tableId: string
+  tableId: string,
+  scope: { companyId?: string | null; branchId?: string | null } = {}
 ): Promise<CheckoutRow | null> {
   try {
+    const scoped = unpaidCheckoutScopeSql({
+      companyId: scope.companyId,
+      branchId: scope.branchId,
+      startParam: 2,
+    });
     const result = await client.query<CheckoutRow>(
       `SELECT id, checkout_number, queue_number, payment_status, payment_method,
               company_id, branch_id, table_id, customer_id, cashier_id, shift_id,
@@ -986,11 +1084,14 @@ async function findUnpaidCheckoutByTable(
               other_charges_amount, total_amount, amount_paid, change_amount,
               notes, cart_snapshot
        FROM pos.pos_checkouts
-       WHERE table_id = $1 AND LOWER(payment_status::text) <> 'paid'
+       WHERE table_id = $1
+         AND LOWER(payment_status::text) <> 'paid'
+         AND COALESCE(notes, '') NOT ILIKE 'cancelled%'
+         ${scoped.sql}
        ORDER BY created_at DESC
        LIMIT 1
        FOR UPDATE`,
-      [tableId]
+      [tableId, ...scoped.params]
     );
     return result.rows[0] ?? null;
   } catch (error) {
@@ -1212,6 +1313,16 @@ export async function createMixedCheckout(
   const taxAmount = toNumber(input.taxAmount);
   const serviceChargeAmount = toNumber(input.serviceChargeAmount);
   const otherChargesAmount = toNumber(input.otherChargesAmount);
+  const promoGuard = rejectMixedPromo({
+    discountAmount,
+    promoCode: input.promoCode,
+  });
+  if (promoGuard.ok === false) {
+    throw new MixedCheckoutError(promoGuard.message);
+  }
+  if (lines.some((line) => line.lineDiscount > 0)) {
+    throw new MixedCheckoutError(MIXED_PROMO_UNSUPPORTED_MESSAGE);
+  }
   const allocated = allocateCheckoutCharges({
     slices,
     discount: discountAmount,
@@ -1285,7 +1396,10 @@ export async function createMixedCheckout(
   try {
     const created = await withTransaction(async (client) => {
       if (input.tableId) {
-        const existing = await findUnpaidCheckoutByTable(client, input.tableId);
+        const existing = await findUnpaidCheckoutByTable(client, input.tableId, {
+          companyId,
+          branchId,
+        });
         if (!requestedUnpaid) {
           const paidTarget = resolvePaidMixedOnOccupiedTable({
             unpaidCentralCheckoutId: existing?.id ?? null,
@@ -1562,6 +1676,19 @@ export async function completeMixedCheckout(
 
   const previewSnapshot = parseSnapshot(preview as CheckoutRow);
 
+  if (
+    mustConfirmStoredCheckoutQris({
+      paymentMethod: resolved.paymentMethod,
+      paymentAlreadyConfirmed: options.paymentAlreadyConfirmed,
+      hasExistingChildren: existingIds.length > 0,
+    })
+  ) {
+    await confirmStoredCheckoutQrisPaid({
+      xenditQrId: preview.xendit_qr_id,
+      xenditExternalId: preview.xendit_external_id,
+    });
+  }
+
   if (existingIds.length > 0) {
     const now = new Date().toISOString();
     const { error: payCheckoutErr } = await db
@@ -1607,13 +1734,6 @@ export async function completeMixedCheckout(
       alreadyHadChildren: true,
     });
     return { orderIds: existingIds };
-  }
-
-  if (!options.paymentAlreadyConfirmed) {
-    await confirmStoredCheckoutQrisPaid({
-      xenditQrId: preview.xendit_qr_id,
-      xenditExternalId: preview.xendit_external_id,
-    });
   }
 
   let merchClaims: MerchStockClaim[] = [];
@@ -1699,4 +1819,56 @@ export async function completeMixedCheckout(
     }
     throw error;
   }
+}
+
+export async function cancelUnpaidChildlessCheckout(
+  checkoutId: string,
+  scope: { companyId?: string | null; branchId?: string | null } = {}
+): Promise<{ checkoutId: string }> {
+  return withTransaction(async (client) => {
+    const scoped = unpaidCheckoutScopeSql({
+      companyId: scope.companyId,
+      branchId: scope.branchId,
+      startParam: 2,
+    });
+    const result = await client.query<{
+      id: string;
+      payment_status: string;
+      notes: string | null;
+      table_id: string | null;
+    }>(
+      `SELECT id, payment_status, notes, table_id
+       FROM pos.pos_checkouts
+       WHERE id = $1 ${scoped.sql}
+       FOR UPDATE`,
+      [checkoutId, ...scoped.params]
+    );
+    const row = result.rows[0];
+    if (!row) {
+      throw new MixedCheckoutError("Checkout tidak ditemukan", 404);
+    }
+    if (isCancelledCheckout(row)) {
+      return { checkoutId: row.id };
+    }
+    const children = await client.query<{ n: number }>(
+      `SELECT COUNT(*)::int AS n FROM pos.pos_orders WHERE checkout_id = $1`,
+      [checkoutId]
+    );
+    const guard = canCancelUnpaidChildlessCheckout({
+      paymentStatus: row.payment_status,
+      childCount: children.rows[0]?.n ?? 0,
+      notes: row.notes,
+    });
+    if (!guard.ok) {
+      throw new MixedCheckoutError(guard.message);
+    }
+    const patch = unpaidChildlessCheckoutCancelPatch();
+    await client.query(
+      `UPDATE pos.pos_checkouts
+       SET table_id = $2, notes = $3, updated_at = now()
+       WHERE id = $1`,
+      [checkoutId, patch.table_id, patch.notes]
+    );
+    return { checkoutId: row.id };
+  });
 }

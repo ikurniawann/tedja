@@ -33,13 +33,21 @@ export const MIXED_NFC_GIFT_UNSUPPORTED_MESSAGE =
   "Pembayaran NFC Tab / Gift Card belum didukung untuk checkout multi-stall";
 export const MIXED_ARK_UNSUPPORTED_MESSAGE =
   "Pembayaran ARK Coin belum didukung untuk tagihan checkout — gunakan tunai, kartu, atau QRIS";
+export const MIXED_PROMO_UNSUPPORTED_MESSAGE =
+  "Promo/diskon belum didukung untuk checkout multi-stall";
+export const HYDRATED_CHECKOUT_CART_LOCKED_MESSAGE =
+  "Tagihan tersimpan — bayar tagihan ini, jangan tambah item baru";
 
 export function resolveAddCatalogItem(input: {
   canSellMixed: boolean;
   existingStallIds: string[];
   incomingWarehouseId: string | null | undefined;
   centralAllMode?: boolean;
+  payingExistingCheckout?: boolean;
 }): { ok: true } | { ok: false; message: string } {
+  if (input.payingExistingCheckout) {
+    return { ok: false, message: HYDRATED_CHECKOUT_CART_LOCKED_MESSAGE };
+  }
   if (input.canSellMixed) return { ok: true };
   return canAddItemToSingleStallCart(
     input.existingStallIds,
@@ -53,6 +61,10 @@ export function resolveCheckoutApi(stallIds: string[]): "checkout" | "order" {
 }
 
 export function shouldDisableSplitBill(stallIds: string[]): boolean {
+  return shouldCreateCheckout(stallIds);
+}
+
+export function shouldDisableMixedPromo(stallIds: string[]): boolean {
   return shouldCreateCheckout(stallIds);
 }
 

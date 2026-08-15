@@ -44,6 +44,7 @@ type CheckoutBody = {
   notes?: string;
   special_requests?: string;
   ark_coins_used?: number | string;
+  promo_code?: string;
   splits?: unknown[];
   branch_id?: string;
   shift_id?: string;
@@ -81,6 +82,8 @@ export async function POST(request: NextRequest) {
         activeMode: gate.activeMode,
       }),
       hasSplits: Array.isArray(body.splits) && body.splits.length > 0,
+      discountAmount: body.discount_amount,
+      promoCode: body.promo_code,
     });
     if (!mixedGuard.ok) {
       return NextResponse.json({ success: false, error: mixedGuard.message }, { status: 400 });
@@ -109,6 +112,7 @@ export async function POST(request: NextRequest) {
       guestCount: body.guest_count,
       discountAmount: body.discount_amount,
       discountReason: body.discount_reason,
+      promoCode: body.promo_code,
       taxAmount: body.tax_amount,
       serviceChargeAmount: body.service_charge_amount,
       otherChargesAmount: body.other_charges_amount,
@@ -120,7 +124,8 @@ export async function POST(request: NextRequest) {
       arkCoinsUsed: body.ark_coins_used,
       notes: body.notes,
       specialRequests: body.special_requests,
-      branchId: body.branch_id,
+      companyId: scope?.companyId,
+      branchId: body.branch_id || scope?.branchId,
       shiftId: body.shift_id,
       sessionUserId,
     });

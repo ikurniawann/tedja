@@ -538,6 +538,13 @@ export async function completeCheckout(
   );
 }
 
+export async function cancelCheckout(checkoutId: string) {
+  return fetchAPI<{ success: boolean; data?: { checkout_id: string }; error?: string }>(
+    `/checkouts/${encodeURIComponent(checkoutId)}/cancel`,
+    { method: 'POST' }
+  );
+}
+
 export async function getCheckout(checkoutId: string) {
   return fetchAPI<{
     success: boolean;
