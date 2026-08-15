@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { ApiError, requireApiUser } from "@/lib/api/auth";
 import { getApiUserScope } from "@/lib/api/scope";
 import { getStallAccess } from "@/lib/auth/stall-access";
+import { resolveActiveStallFromCookies } from "@/lib/auth/active-stall";
 
 /**
  * Daftar stall yang boleh dipilih user di switcher / kasir gate.
@@ -21,10 +22,24 @@ export async function GET() {
       throw ApiError.forbidden("Akun ini tidak perlu mengganti stall");
     }
 
+    // Stall aktif ikut dikirim supaya tombol switcher di kasir bisa
+    // menandai posisi sekarang tanpa endpoint tambahan. Cookie kosong =
+    // mengikuti penempatan (stall pertama), "all" = Semua Stall.
+    const resolved = await resolveActiveStallFromCookies();
+    const active =
+      resolved.mode === "stall"
+        ? { id: resolved.stall.id, name: resolved.stall.name, code: resolved.stall.code }
+        : resolved.mode === "all"
+          ? null
+          : access.stalls[0]
+            ? { id: access.stalls[0].id, name: access.stalls[0].name, code: access.stalls[0].code }
+            : null;
+
     return NextResponse.json({
       success: true,
       data: {
         all_access: access.allAccess,
+        active,
         stalls: access.stalls.map(({ id, name, code }) => ({ id, name, code })),
       },
     });

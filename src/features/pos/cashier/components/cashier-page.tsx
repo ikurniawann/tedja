@@ -26,6 +26,7 @@ import {
 } from '@/features/pos/cashier/cashier-workspace-layout';
 import { PosTabletChromeControls } from '@/features/pos/components/pos-tablet-chrome-controls';
 import { CashierStallGate } from '@/features/pos/cashier/components/cashier-stall-gate';
+import { StallSwitchButton } from '@/features/pos/cashier/components/stall-switch-button';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -1742,6 +1743,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
           )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <StallSwitchButton />
           {fromRestaurant && (
             <Button
               type="button"
