@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { splitQueueBoardOrders } from "@/lib/pos/queue-board";
+import {
+  queueItemProgress,
+  readyItemKeys,
+  splitQueueBoardOrders,
+} from "@/lib/pos/queue-board";
 import type { KDSOrder } from "@/features/pos/kds/types";
 
 function order(partial: Partial<KDSOrder> & { id: string }): KDSOrder {
@@ -30,5 +34,134 @@ describe("splitQueueBoardOrders", () => {
 
     expect(preparing.map((row) => row.queue_number)).toEqual(["001", "003"]);
     expect(ready.map((row) => row.queue_number)).toEqual(["002", "012"]);
+  });
+
+  it("puts partial-ready tickets on Siap diambil without waiting for all items", () => {
+    const { preparing, ready } = splitQueueBoardOrders([
+      order({
+        id: "late",
+        queue_number: "001",
+        station_status: "preparing",
+        pos_order_items: [
+          {
+            id: "i1",
+            product_id: "p",
+            product_name: "A",
+            product_sku: "a",
+            quantity: 1,
+            unit_price: 1,
+            kitchen_status: "preparing",
+          },
+        ],
+      }),
+      order({
+        id: "partial",
+        queue_number: "009",
+        station_status: "preparing",
+        pos_order_items: [
+          {
+            id: "i2",
+            product_id: "p",
+            product_name: "B",
+            product_sku: "b",
+            quantity: 1,
+            unit_price: 1,
+            kitchen_status: "ready",
+          },
+          {
+            id: "i3",
+            product_id: "p",
+            product_name: "C",
+            product_sku: "c",
+            quantity: 1,
+            unit_price: 1,
+            kitchen_status: "preparing",
+          },
+        ],
+      }),
+    ]);
+
+    // Masih ada yang dimasak → tetap di preparing
+    expect(preparing.map((row) => row.id)).toEqual(["partial", "late"]);
+    // Sudah ada item siap → muncul juga di siap diambil
+    expect(ready.map((row) => row.id)).toEqual(["partial"]);
+  });
+});
+
+describe("queueItemProgress", () => {
+  it("counts ready vs pending active items", () => {
+    const progress = queueItemProgress(
+      order({
+        id: "x",
+        pos_order_items: [
+          {
+            id: "a",
+            product_id: "p",
+            product_name: "A",
+            product_sku: "a",
+            quantity: 1,
+            unit_price: 1,
+            kitchen_status: "ready",
+          },
+          {
+            id: "b",
+            product_id: "p",
+            product_name: "B",
+            product_sku: "b",
+            quantity: 1,
+            unit_price: 1,
+            kitchen_status: "preparing",
+          },
+          {
+            id: "c",
+            product_id: "p",
+            product_name: "C",
+            product_sku: "c",
+            quantity: 1,
+            unit_price: 1,
+            kitchen_status: "served",
+          },
+        ],
+      })
+    );
+    expect(progress).toMatchObject({
+      total: 2,
+      readyCount: 1,
+      pendingCount: 1,
+      hasPartialReady: true,
+      allReady: false,
+    });
+  });
+});
+
+describe("readyItemKeys", () => {
+  it("keys ready items for chime tracking", () => {
+    const keys = readyItemKeys([
+      order({
+        id: "o1",
+        station_status: "preparing",
+        pos_order_items: [
+          {
+            id: "i1",
+            product_id: "p",
+            product_name: "A",
+            product_sku: "a",
+            quantity: 1,
+            unit_price: 1,
+            kitchen_status: "ready",
+          },
+          {
+            id: "i2",
+            product_id: "p",
+            product_name: "B",
+            product_sku: "b",
+            quantity: 1,
+            unit_price: 1,
+            kitchen_status: "preparing",
+          },
+        ],
+      }),
+    ]);
+    expect([...keys]).toEqual(["o1:i1"]);
   });
 });

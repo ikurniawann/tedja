@@ -10,8 +10,9 @@ import {
 } from '@/lib/pos/kds-status';
 
 /** PATCH /api/pos/orders/{id}/status
- *  Body: { status: string, station?: string, reason?: string }
- *  Station-scoped kitchen bump; order.status is derived from remaining F&B items.
+ *  Body: { status: string, station?: string, reason?: string, item_ids?: string[] }
+ *  Station-scoped kitchen bump; optional item_ids for per-line siap/sajikan.
+ *  order.status is derived from remaining F&B items.
  */
 export async function PATCH(
   request: NextRequest,
@@ -24,16 +25,21 @@ export async function PATCH(
   }
 
   const body = await request.json().catch(() => ({}));
-  const { status, reason, station: stationRaw } = body as {
+  const { status, reason, station: stationRaw, item_ids: itemIdsRaw } = body as {
     status?: string;
     reason?: string;
     station?: string;
+    item_ids?: unknown;
   };
 
   const validStatuses = ['pending','confirmed','preparing','ready','served','completed','cancelled'];
   if (!status || !validStatuses.includes(status)) {
     return NextResponse.json({ success: false, error: 'Invalid status' }, { status: 400 });
   }
+
+  const itemIdFilter = Array.isArray(itemIdsRaw)
+    ? [...new Set(itemIdsRaw.map((id) => String(id || '').trim()).filter(Boolean))]
+    : null;
 
   const db = createPgClient();
 
@@ -95,7 +101,7 @@ export async function PATCH(
     station: normalizeStation(item.station, item.product_name || '', item.kitchen_notes || ''),
   }));
 
-  const targetIds = normalizedItems
+  const eligibleIds = normalizedItems
     .filter((item) => {
       if (!isFnbStation(item.station)) return false;
       if (isTerminalKitchenStatus(item.kitchen_status) && status !== 'cancelled') return false;
@@ -103,6 +109,18 @@ export async function PATCH(
       return true;
     })
     .map((item) => item.id);
+
+  const targetIds =
+    itemIdFilter && itemIdFilter.length > 0
+      ? eligibleIds.filter((id) => itemIdFilter.includes(id))
+      : eligibleIds;
+
+  if (itemIdFilter && itemIdFilter.length > 0 && targetIds.length === 0) {
+    return NextResponse.json(
+      { success: false, error: 'Item tidak ditemukan / sudah selesai di station ini' },
+      { status: 400 }
+    );
+  }
 
   if (kitchenStatus && targetIds.length > 0) {
     const itemUpdate: Record<string, string | null> = {
@@ -158,11 +176,18 @@ export async function PATCH(
     return NextResponse.json({ success: false, error: updateError.message }, { status: 500 });
   }
 
+  const itemHint =
+    itemIdFilter && itemIdFilter.length > 0
+      ? ` (item ${targetIds.length}/${itemIdFilter.length})`
+      : '';
+
   await db.from('pos_order_status_history').insert({
     order_id: orderId,
     from_status: currentOrder.status,
     to_status: derived.orderStatus,
-    reason: reason || `Status updated to ${status}${station ? ` (${station})` : ''}`,
+    reason:
+      reason ||
+      `Status updated to ${status}${station ? ` (${station})` : ''}${itemHint}`,
     changed_at: now,
   });
 
@@ -173,6 +198,7 @@ export async function PATCH(
       status: derived.orderStatus,
       kitchen_status: derived.kitchenStatus,
       station: station || null,
+      item_ids: targetIds,
     },
   });
 }

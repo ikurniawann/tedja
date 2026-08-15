@@ -70,23 +70,27 @@ export function useKds(options: UseKdsOptions = {}) {
   }, [query.data, soundEnabled]);
 
   const updateStatus = useCallback(
-    async (orderId: string, newStatus: string, reason?: string, station?: string) => {
-      const data = await updateKdsOrderStatus(orderId, newStatus, reason, station);
+    async (
+      orderId: string,
+      newStatus: string,
+      reason?: string,
+      station?: string,
+      itemIds?: string[]
+    ) => {
+      const data = await updateKdsOrderStatus(
+        orderId,
+        newStatus,
+        reason,
+        station,
+        itemIds
+      );
       if (data.success) {
-        queryClient.setQueryData(kdsQueryKeys.list(listParams), (current: typeof query.data) =>
-          current?.map((order) =>
-            order.id === orderId
-              ? { ...order, status: newStatus, station_status: newStatus }
-              : order
-          )
-        );
-        setTimeout(() => {
-          void queryClient.invalidateQueries({ queryKey: kdsQueryKeys.all });
-        }, 500);
+        // Refetch immediately — optimistic whole-order status is wrong for per-item bumps.
+        await queryClient.invalidateQueries({ queryKey: kdsQueryKeys.all });
       }
       return data;
     },
-    [listParams, queryClient]
+    [queryClient]
   );
 
   return {

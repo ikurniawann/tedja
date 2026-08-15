@@ -54,6 +54,30 @@ describe("deriveOrderKitchenStatus", () => {
     expect(deriveOrderKitchenStatus(items, "unpaid").orderStatus).toBe("served");
   });
 
+  it("stays preparing when only some items are ready (partial siap)", () => {
+    const items = [
+      { station: "kitchen", kitchen_status: "ready" },
+      { station: "kitchen", kitchen_status: "preparing" },
+      { station: "bar", kitchen_status: "ready" },
+    ];
+    expect(deriveOrderKitchenStatus(items, "paid")).toEqual({
+      kitchenStatus: "preparing",
+      orderStatus: "preparing",
+    });
+  });
+
+  it("becomes ready when every active F&B item is ready", () => {
+    const items = [
+      { station: "kitchen", kitchen_status: "ready" },
+      { station: "bar", kitchen_status: "ready" },
+      { station: "kitchen", kitchen_status: "served" },
+    ];
+    expect(deriveOrderKitchenStatus(items, "unpaid")).toEqual({
+      kitchenStatus: "ready",
+      orderStatus: "ready",
+    });
+  });
+
   it("ignores merchandise when deriving kitchen status", () => {
     const items = [
       { station: "merchandise", kitchen_status: "pending" },

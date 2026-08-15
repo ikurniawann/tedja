@@ -9,10 +9,17 @@ import {
   Minimize2,
   Utensils,
   ShoppingBag,
+  CheckCircle2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import type { KDSOrder } from "@/features/pos/kds/types";
+import {
+  activeQueueItems,
+  itemIsReady,
+  queueItemProgress,
+} from "@/lib/pos/queue-board";
 import { unlockQueueBoardSound, useQueueBoard } from "../queries";
 
 const ORDER_TYPE_LABELS: Record<string, string> = {
@@ -23,8 +30,14 @@ const ORDER_TYPE_LABELS: Record<string, string> = {
 };
 
 function getTodayRange() {
-  const start = new Date();
-  start.setHours(0, 0, 0, 0);
+  // Samakan SSR (UTC) & browser: hari operasional Asia/Jakarta.
+  const day = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Jakarta",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+  const start = new Date(`${day}T00:00:00+07:00`);
   const end = new Date(start);
   end.setDate(end.getDate() + 1);
   return {
@@ -38,6 +51,7 @@ function formatClock(date: Date) {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
+    hour12: false,
   });
 }
 
@@ -49,21 +63,51 @@ function QueueCard({
   emphasis: "preparing" | "ready";
 }) {
   const ready = emphasis === "ready";
+  const items = activeQueueItems(order);
+  const progress = queueItemProgress(order);
+  // Panel siap diambil: utamakan (dan fokusatkan) item yang sudah siap diantar
+  const displayItems = ready
+    ? [...items.filter(itemIsReady), ...items.filter((i) => !itemIsReady(i))]
+    : items;
+  const visible = displayItems.slice(0, 5);
+  const overflow = Math.max(0, displayItems.length - visible.length);
+
   return (
     <article
-      className={`rounded-2xl border p-4 sm:p-5 ${
+      className={cn(
+        "rounded-2xl border p-4 sm:p-5",
         ready
           ? "border-emerald-400/40 bg-emerald-500/15 shadow-[0_0_24px_rgba(16,185,129,0.18)]"
-          : "border-white/10 bg-white/5"
-      }`}
+          : progress.hasPartialReady
+            ? "border-emerald-400/25 bg-white/5 ring-1 ring-emerald-400/20"
+            : "border-white/10 bg-white/5"
+      )}
     >
-      <p
-        className={`font-black tabular-nums leading-none tracking-tight ${
-          ready ? "text-6xl text-emerald-300 sm:text-7xl" : "text-5xl text-amber-200 sm:text-6xl"
-        }`}
-      >
-        {order.queue_number || "—"}
-      </p>
+      <div className="flex items-start justify-between gap-3">
+        <p
+          className={cn(
+            "font-black tabular-nums leading-none tracking-tight",
+            ready
+              ? "text-6xl text-emerald-300 sm:text-7xl"
+              : "text-5xl text-amber-200 sm:text-6xl"
+          )}
+        >
+          {order.queue_number || "—"}
+        </p>
+        {ready ? (
+          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/25 px-2.5 py-1 text-xs font-semibold text-emerald-200">
+            <CheckCircle2 className="h-3.5 w-3.5" />
+            {progress.allReady
+              ? "Semua siap"
+              : `${progress.readyCount}/${progress.total} siap ambil`}
+          </span>
+        ) : progress.hasPartialReady ? (
+          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/20 px-2.5 py-1 text-xs font-semibold text-emerald-300">
+            <CheckCircle2 className="h-3.5 w-3.5" />
+            {progress.readyCount}/{progress.total} siap
+          </span>
+        ) : null}
+      </div>
       <p className="mt-2 flex items-center gap-1.5 text-sm text-white/60">
         {order.order_type === "dine_in" ? (
           <Utensils className="h-3.5 w-3.5" />
@@ -75,16 +119,61 @@ function QueueCard({
           <span>· {order.table_label || `Meja ${String(order.table_id).slice(0, 6)}`}</span>
         )}
       </p>
-      <ul className="mt-3 space-y-1 text-sm text-white/80">
-        {(order.pos_order_items || []).slice(0, 4).map((item) => (
-          <li key={item.id} className="truncate">
-            <span className="font-semibold text-white/50">{item.quantity}×</span> {item.product_name}
-          </li>
-        ))}
-        {(order.pos_order_items || []).length > 4 ? (
-          <li className="text-xs text-white/40">
-            +{(order.pos_order_items || []).length - 4} item lain
-          </li>
+      <ul className="mt-3 space-y-1.5 text-sm">
+        {visible.map((item) => {
+          const itemReady = itemIsReady(item);
+          // Di panel siap: item belum ready ditampilkan redup (masih dimasak)
+          if (ready && !itemReady) {
+            return (
+              <li
+                key={item.id}
+                className="flex items-center justify-between gap-2 truncate rounded-lg px-2 py-1 text-white/40"
+              >
+                <span className="min-w-0 truncate">
+                  <span className="font-semibold text-white/30">{item.quantity}×</span>{" "}
+                  {item.product_name}
+                </span>
+                <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-amber-200/50">
+                  Proses
+                </span>
+              </li>
+            );
+          }
+          return (
+            <li
+              key={item.id}
+              className={cn(
+                "flex items-center justify-between gap-2 truncate rounded-lg px-2 py-1",
+                itemReady
+                  ? "bg-emerald-500/15 text-emerald-100"
+                  : "text-white/80"
+              )}
+            >
+              <span className="min-w-0 truncate">
+                <span
+                  className={cn(
+                    "font-semibold",
+                    itemReady ? "text-emerald-300/80" : "text-white/50"
+                  )}
+                >
+                  {item.quantity}×
+                </span>{" "}
+                {item.product_name}
+              </span>
+              {itemReady ? (
+                <span className="shrink-0 text-[10px] font-bold uppercase tracking-wide text-emerald-300">
+                  Siap
+                </span>
+              ) : (
+                <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-amber-200/70">
+                  Proses
+                </span>
+              )}
+            </li>
+          );
+        })}
+        {overflow > 0 ? (
+          <li className="px-2 text-xs text-white/40">+{overflow} item lain</li>
         ) : null}
       </ul>
     </article>
@@ -97,7 +186,8 @@ type QueueBoardPageProps = {
 
 export function QueueBoardPage({ venueName }: QueueBoardPageProps) {
   const todayRange = getTodayRange();
-  const [now, setNow] = useState(() => new Date());
+  // Jam hidup: jangan render waktu di SSR — `new Date()` / locale beda → hydration mismatch.
+  const [now, setNow] = useState<Date | null>(null);
   const [isBrowserFullscreen, setIsBrowserFullscreen] = useState(false);
   const { preparing, ready, loading, error, soundEnabled, setSoundEnabled, refresh } =
     useQueueBoard({
@@ -107,6 +197,7 @@ export function QueueBoardPage({ venueName }: QueueBoardPageProps) {
     });
 
   useEffect(() => {
+    setNow(new Date());
     const timer = window.setInterval(() => setNow(new Date()), 1000);
     return () => window.clearInterval(timer);
   }, []);
@@ -140,8 +231,11 @@ export function QueueBoardPage({ venueName }: QueueBoardPageProps) {
           </h1>
         </div>
         <div className="flex items-center gap-2">
-          <p className="mr-2 hidden font-mono text-xl tabular-nums text-white/70 sm:block">
-            {formatClock(now)}
+          <p
+            className="mr-2 hidden min-w-[7.5rem] text-right font-mono text-xl tabular-nums text-white/70 sm:block"
+            suppressHydrationWarning
+          >
+            {now ? formatClock(now) : "\u00A0"}
           </p>
           <Button
             size="icon"

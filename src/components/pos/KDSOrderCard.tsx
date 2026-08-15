@@ -3,12 +3,18 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChefHat, CheckCircle2, ArrowRight, Utensils, Flame, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
+import { isTerminalKitchenStatus } from '@/lib/pos/kds-status';
 
-import type { KDSOrder } from "@/features/pos/kds/types";
+import type { KDSOrder, KDSOrderItem } from "@/features/pos/kds/types";
 
 interface KDSOrderCardProps {
   order: KDSOrder;
-  onStatusChange: (orderId: string, newStatus: string) => void | Promise<void>;
+  onStatusChange: (
+    orderId: string,
+    newStatus: string,
+    itemIds?: string[]
+  ) => void | Promise<void>;
   index: number;
 }
 
@@ -61,6 +67,10 @@ function formatWaitTime(seconds: number): string {
   return `${h}j ${rem}m`;
 }
 
+function itemKitchenStatus(item: KDSOrderItem): string {
+  return String(item.kitchen_status || 'pending').toLowerCase();
+}
+
 export function KDSOrderCard({ order, onStatusChange, index }: KDSOrderCardProps) {
   const displayStatus = order.station_status || order.status;
   const colors = STATUS_COLORS[displayStatus] || STATUS_COLORS.pending;
@@ -68,16 +78,33 @@ export function KDSOrderCard({ order, onStatusChange, index }: KDSOrderCardProps
   const paid = String(order.payment_status || '').toLowerCase() === 'paid';
   const actionButtonClass = nextStatus ? ACTION_BUTTON_COLORS[nextStatus] || 'bg-gray-900 hover:bg-gray-800 text-white' : '';
   const [elapsed, setElapsed] = useState(order.wait_seconds);
-  const [updating, setUpdating] = useState(false);
+  const [updatingOrder, setUpdatingOrder] = useState(false);
+  const [updatingItemId, setUpdatingItemId] = useState<string | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
-  const handleBump = async () => {
-    if (!nextStatus || updating) return;
-    setUpdating(true);
+  const activeItems = (order.pos_order_items || []).filter(
+    (item) => !isTerminalKitchenStatus(item.kitchen_status)
+  );
+
+  const handleBumpOrder = async () => {
+    if (!nextStatus || updatingOrder || updatingItemId) return;
+    setUpdatingOrder(true);
     try {
       await onStatusChange(order.id, nextStatus);
     } finally {
-      setUpdating(false);
+      setUpdatingOrder(false);
+    }
+  };
+
+  const handleBumpItem = async (item: KDSOrderItem) => {
+    const status = itemKitchenStatus(item);
+    const next = STATUS_FLOW[status];
+    if (!next || updatingOrder || updatingItemId) return;
+    setUpdatingItemId(item.id);
+    try {
+      await onStatusChange(order.id, next, [item.id]);
+    } finally {
+      setUpdatingItemId(null);
     }
   };
 
@@ -95,6 +122,7 @@ export function KDSOrderCard({ order, onStatusChange, index }: KDSOrderCardProps
 
   const bgPulse = order.is_overdue ? 'animate-pulse' : '';
   const isUrgent = order.is_urgent || order.is_overdue;
+  const busy = updatingOrder || Boolean(updatingItemId);
 
   return (
     <div
@@ -130,42 +158,101 @@ export function KDSOrderCard({ order, onStatusChange, index }: KDSOrderCardProps
         </div>
       </div>
 
-      {/* Items */}
-      <div className="flex-1 space-y-1.5 mb-4">
-        {order.pos_order_items?.map((item) => (
-          <div key={item.id} className="flex items-start justify-between text-sm">
-            <div className="flex items-start gap-2">
-              <span className={`inline-flex items-center justify-center min-w-[24px] h-6 rounded font-bold text-xs ${colors.bg} ${colors.text} border ${colors.border}`}>
-                {item.quantity}
-              </span>
-              <div>
-                <p className="font-semibold text-gray-900 leading-tight">{item.product_name}</p>
-                {item.station && (
-                  <span className="mt-1 inline-flex rounded-full bg-gray-900/5 px-2 py-0.5 text-[10px] font-medium text-gray-600">
-                    {STATION_LABELS[item.station] || item.station}
-                  </span>
-                )}
-                {(item.variant_info || item.modifier_info) && (
-                  <p className="text-[10px] text-gray-500 mt-0.5">
-                    {item.variant_info} {item.modifier_info}
-                  </p>
-                )}
-                {item.notes && (
-                  <p className="text-[10px] text-amber-600 italic mt-0.5">&quot;{item.notes}&quot;</p>
-                )}
+      {/* Items — per-line siap / sajikan */}
+      <div className="mb-4 flex-1 space-y-1.5">
+        {activeItems.map((item) => {
+          const itemStatus = itemKitchenStatus(item);
+          const itemColors = STATUS_COLORS[itemStatus] || STATUS_COLORS.pending;
+          const itemNext = STATUS_FLOW[itemStatus];
+          const itemBusy = updatingItemId === item.id;
+          const isReady = itemStatus === 'ready';
+
+          return (
+            <div
+              key={item.id}
+              className={cn(
+                'flex items-start justify-between gap-2 rounded-lg border px-2 py-1.5 text-sm',
+                isReady
+                  ? 'border-emerald-300/80 bg-emerald-50/90'
+                  : 'border-gray-200/70 bg-white/60'
+              )}
+            >
+              <div className="flex min-w-0 flex-1 items-start gap-2">
+                <span
+                  className={cn(
+                    'inline-flex h-6 min-w-[24px] items-center justify-center rounded border text-xs font-bold',
+                    itemColors.bg,
+                    itemColors.text,
+                    itemColors.border
+                  )}
+                >
+                  {item.quantity}
+                </span>
+                <div className="min-w-0">
+                  <p className="leading-tight font-semibold text-gray-900">{item.product_name}</p>
+                  <div className="mt-1 flex flex-wrap items-center gap-1">
+                    <span
+                      className={cn(
+                        'inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-semibold',
+                        itemColors.badge
+                      )}
+                    >
+                      {STATUS_LABELS[itemStatus] || itemStatus}
+                    </span>
+                    {item.station && (
+                      <span className="inline-flex rounded-full bg-gray-900/5 px-2 py-0.5 text-[10px] font-medium text-gray-600">
+                        {STATION_LABELS[item.station] || item.station}
+                      </span>
+                    )}
+                  </div>
+                  {(item.variant_info || item.modifier_info) && (
+                    <p className="mt-0.5 text-[10px] text-gray-500">
+                      {item.variant_info} {item.modifier_info}
+                    </p>
+                  )}
+                  {item.notes && (
+                    <p className="mt-0.5 text-[10px] italic text-amber-600">&quot;{item.notes}&quot;</p>
+                  )}
+                </div>
               </div>
+
+              {itemNext ? (
+                <Button
+                  size="sm"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void handleBumpItem(item)}
+                  className={cn(
+                    'h-7 shrink-0 gap-1 px-2 text-[11px] shadow-xs',
+                    ACTION_BUTTON_COLORS[itemNext] || 'bg-gray-900 text-white hover:bg-gray-800'
+                  )}
+                  title={`${STATUS_LABELS[itemNext] || itemNext}: ${item.product_name}`}
+                >
+                  {itemBusy ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : itemNext === 'ready' ? (
+                    <CheckCircle2 className="h-3 w-3" />
+                  ) : (
+                    <ArrowRight className="h-3 w-3" />
+                  )}
+                  {STATUS_LABELS[itemNext] || itemNext}
+                </Button>
+              ) : null}
             </div>
-          </div>
-        ))}
+          );
+        })}
+        {activeItems.length === 0 && (
+          <p className="py-2 text-center text-xs text-gray-500">Semua item sudah disajikan</p>
+        )}
       </div>
 
-      {/* Footer */}
-      <div className="flex items-center justify-between pt-2 border-t border-dashed border-gray-300">
+      {/* Footer — bump seluruh tiket / station */}
+      <div className="flex items-center justify-between border-t border-dashed border-gray-300 pt-2">
         <div className="flex items-center gap-1.5 text-xs text-gray-500">
           {order.order_type === 'dine_in' ? (
-            <Utensils className="w-3.5 h-3.5" />
+            <Utensils className="h-3.5 w-3.5" />
           ) : (
-            <ChefHat className="w-3.5 h-3.5" />
+            <ChefHat className="h-3.5 w-3.5" />
           )}
           <span className="capitalize">{order.order_type.replace('_', ' ')}</span>
           {(order.table_label || order.table_id) && (
@@ -173,37 +260,38 @@ export function KDSOrderCard({ order, onStatusChange, index }: KDSOrderCardProps
           )}
         </div>
 
-        {nextStatus ? (
+        {nextStatus && activeItems.length > 0 ? (
           <Button
             size="sm"
-            onClick={() => void handleBump()}
-            disabled={updating}
-            className={`${actionButtonClass} text-xs h-8 px-3 gap-1 shadow-sm`}
+            onClick={() => void handleBumpOrder()}
+            disabled={busy}
+            className={`${actionButtonClass} h-8 gap-1 px-3 text-xs shadow-sm`}
+            title="Semua item aktif di tiket ini"
           >
-            {updating ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            {updatingOrder ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : nextStatus === 'ready' ? (
-              <CheckCircle2 className="w-3.5 h-3.5" />
+              <CheckCircle2 className="h-3.5 w-3.5" />
             ) : (
-              <ArrowRight className="w-3.5 h-3.5" />
+              <ArrowRight className="h-3.5 w-3.5" />
             )}
-            {updating ? 'Menyimpan...' : STATUS_LABELS[nextStatus] || nextStatus}
+            {updatingOrder ? 'Menyimpan...' : `Semua → ${STATUS_LABELS[nextStatus] || nextStatus}`}
           </Button>
         ) : (
           <Button
             size="sm"
             variant="outline"
             disabled
-            className="text-xs h-8 px-3"
+            className="h-8 px-3 text-xs"
           >
-            <CheckCircle2 className="w-3.5 h-3.5 mr-1 text-green-600" /> Selesai
+            <CheckCircle2 className="mr-1 h-3.5 w-3.5 text-green-600" /> Selesai
           </Button>
         )}
       </div>
 
       {/* Overdue warning overlay */}
       {order.is_overdue && (
-        <div className="absolute inset-x-0 top-0 h-1 bg-red-500 rounded-t-xl" />
+        <div className="absolute inset-x-0 top-0 h-1 rounded-t-xl bg-red-500" />
       )}
     </div>
   );

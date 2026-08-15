@@ -338,9 +338,6 @@ export function OfferRulesPage({ offerType }: { offerType: OfferType }) {
         <h1 className="text-2xl font-bold text-foreground">{meta.title}</h1>
         <p className="mt-1 text-sm text-muted-foreground">{meta.description}</p>
         <p className="mt-1 text-xs text-muted-foreground">{meta.note}</p>
-        <p className="mt-1 text-xs text-amber-700">
-          Integrasi otomatis ke kasir POS menyusul — saat ini master aturan & periode saja.
-        </p>
       </div>
 
       <PurchasingListSection
@@ -471,7 +468,7 @@ export function OfferRulesPage({ offerType }: { offerType: OfferType }) {
               <div>
                 <div className="text-sm font-medium">Aktif</div>
                 <div className="text-xs text-muted-foreground">
-                  Nonaktif = tidak dipakai saat integrasi kasir nanti
+                  Nonaktif = tidak dipakai di kasir POS
                 </div>
               </div>
               <Switch

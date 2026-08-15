@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { listKdsOrders } from "@/features/pos/kds/api";
-import { readyOrderIds, splitQueueBoardOrders } from "@/lib/pos/queue-board";
+import { readyItemKeys, splitQueueBoardOrders } from "@/lib/pos/queue-board";
 import type { KdsListParams } from "@/features/pos/kds/types";
 
 let queueAudioCtx: AudioContext | null = null;
@@ -48,7 +48,7 @@ function playReadyChime() {
 export function useQueueBoard(params: KdsListParams & { pollInterval?: number } = {}) {
   const { pollInterval = 3000, ...listParams } = params;
   const [soundEnabled, setSoundEnabled] = useState(true);
-  const prevReadyIds = useRef<Set<string>>(new Set());
+  const prevReadyItemKeys = useRef<Set<string>>(new Set());
 
   const query = useQuery({
     queryKey: ["pos", "queue-board", listParams],
@@ -64,12 +64,15 @@ export function useQueueBoard(params: KdsListParams & { pollInterval?: number } 
   useEffect(() => {
     const fetched = query.data;
     if (!fetched) return;
-    const nextReady = readyOrderIds(fetched);
-    if (soundEnabled && prevReadyIds.current.size > 0) {
-      const newlyReady = [...nextReady].filter((id) => !prevReadyIds.current.has(id));
+    // Bunyi saat ada menu baru yang siap (termasuk partial), bukan hanya order penuh.
+    const nextReadyItems = readyItemKeys(fetched);
+    if (soundEnabled && prevReadyItemKeys.current.size > 0) {
+      const newlyReady = [...nextReadyItems].filter(
+        (key) => !prevReadyItemKeys.current.has(key)
+      );
       if (newlyReady.length > 0) playReadyChime();
     }
-    prevReadyIds.current = nextReady;
+    prevReadyItemKeys.current = nextReadyItems;
   }, [query.data, soundEnabled]);
 
   return {

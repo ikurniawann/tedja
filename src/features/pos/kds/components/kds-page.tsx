@@ -91,22 +91,28 @@ function KdsPageContent() {
   }, []);
 
   const handleStatusChange = useCallback(
-    async (orderId: string, newStatus: string) => {
+    async (orderId: string, newStatus: string, itemIds?: string[]) => {
       const result = await updateStatus(
         orderId,
         newStatus,
         undefined,
-        station === 'all' ? undefined : station
+        station === 'all' ? undefined : station,
+        itemIds
       );
       if (!result?.success) {
         toast.error(result?.error || 'Gagal update status order');
         return;
       }
+      const isItem = Boolean(itemIds && itemIds.length > 0);
       toast.success(
         newStatus === 'ready'
-          ? 'Pesanan siap diambil'
+          ? isItem
+            ? 'Menu siap diantar'
+            : 'Pesanan siap diambil'
           : newStatus === 'served'
-            ? 'Pesanan disajikan'
+            ? isItem
+              ? 'Menu disajikan'
+              : 'Pesanan disajikan'
             : `Status diubah: ${newStatus}`
       );
       await refresh();
