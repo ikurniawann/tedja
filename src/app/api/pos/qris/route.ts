@@ -53,13 +53,11 @@ export async function POST(request: NextRequest) {
     try {
       xendit = await loadActiveXenditConfig(db);
     } catch (err) {
+      const message = err instanceof Error ? err.message : "QRIS belum dikonfigurasi";
+      console.error("[pos] qris gateway config:", message);
       if (isGatewayConfigError(err)) {
         return NextResponse.json(
-          {
-            success: false,
-            error:
-              "QRIS belum dikonfigurasi di Settings → Payment Gateways",
-          },
+          { success: false, error: message },
           { status: 503 }
         );
       }
@@ -84,9 +82,10 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (err) {
-    console.error("[pos] create qris error:", err);
+    const message = err instanceof Error ? err.message : "Gagal membuat QR pembayaran";
+    console.error("[pos] create qris error:", message);
     return NextResponse.json(
-      { success: false, error: "Gagal membuat QR pembayaran" },
+      { success: false, error: message },
       { status: 502 }
     );
   }

@@ -148,6 +148,7 @@ export function PaymentModal({
   );
   const [qrisLoading, setQrisLoading] = useState(false);
   const [qrisUnavailable, setQrisUnavailable] = useState(false);
+  const [qrisError, setQrisError] = useState<string | null>(null);
 
   // EPIC-034 Fase C — kode gift card diketik/di-scan kasir
   const [giftCodeInput, setGiftCodeInput] = useState("");
@@ -238,6 +239,7 @@ export function PaymentModal({
       setGiftResult(null);
       setQris(null);
       setQrisUnavailable(false);
+      setQrisError(null);
     }
   }, [open]);
 
@@ -261,6 +263,7 @@ export function PaymentModal({
     let cancelled = false;
     setQrisLoading(true);
     setQrisUnavailable(false);
+    setQrisError(null);
     fetch("/api/pos/qris", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -271,12 +274,20 @@ export function PaymentModal({
         if (cancelled) return;
         if (!res.ok) {
           setQrisUnavailable(true);
+          setQrisError(
+            typeof body.error === "string" && body.error.trim()
+              ? body.error
+              : "Gagal membuat QR pembayaran"
+          );
           return;
         }
         setQris({ amount: body.data.amount, qr_string: body.data.qr_string });
       })
       .catch(() => {
-        if (!cancelled) setQrisUnavailable(true);
+        if (!cancelled) {
+          setQrisUnavailable(true);
+          setQrisError("Gagal menghubungi server QR");
+        }
       })
       .finally(() => {
         if (!cancelled) setQrisLoading(false);
@@ -437,7 +448,7 @@ export function PaymentModal({
               ) : qrisUnavailable || !qris ? (
                 <span className="inline-flex items-center gap-2 text-amber-700">
                   <AlertTriangle className="h-4 w-4 shrink-0" />
-                  Warning: QR belum dikonfigurasi
+                  Warning: {qrisError || "QR belum dikonfigurasi"}
                 </span>
               ) : (
                 <span className="inline-flex items-center gap-2 font-medium text-emerald-700">
