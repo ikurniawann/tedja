@@ -7,9 +7,10 @@ import { createPgClient } from "@/lib/pg/create-client";
 import {
   createXenditDynamicQr,
   getXenditQrCode,
+  getXenditQrCodeByReferenceId,
   loadActiveXenditConfig,
 } from "@/lib/payments/xendit";
-import { shouldReuseCheckoutQris } from "@/lib/pos/create-mixed-checkout";
+import { resolveCheckoutQrisAction } from "@/lib/pos/create-mixed-checkout";
 
 // QRIS dinamis utk customer display: QR per transaksi dengan nominal terkunci.
 // Secret diambil dari Settings → Payment Gateways (configuration.payment_gateways),
@@ -102,36 +103,66 @@ export async function POST(request: NextRequest) {
       }
       amount = checkoutTotal;
 
-      if (
-        shouldReuseCheckoutQris({
-          xendit_qr_id: checkout.xendit_qr_id,
-          xendit_external_id: checkout.xendit_external_id,
-        })
-      ) {
-        const qrId = String(checkout.xendit_qr_id || "");
-        if (qrId) {
-          const remote = await getXenditQrCode(xendit.secretKey, qrId);
-          return NextResponse.json({
-            success: true,
-            data: {
-              qr_id: String(remote.id || qrId),
-              qr_string: String((remote as { qr_string?: unknown }).qr_string || ""),
-              amount:
-                Number(
-                  (remote as { amount?: unknown }).amount != null
-                    ? (remote as { amount?: unknown }).amount
-                    : amount
-                ) || amount,
-              expires_at: (remote as { expires_at?: unknown }).expires_at
-                ? String((remote as { expires_at?: unknown }).expires_at)
-                : null,
-              checkout_id: checkoutId,
-            },
-          });
+      const qrisAction = resolveCheckoutQrisAction({
+        xendit_qr_id: checkout.xendit_qr_id,
+        xendit_external_id: checkout.xendit_external_id,
+      });
+      if (qrisAction !== "create") {
+        const remote =
+          qrisAction === "reuse_qr_id"
+            ? await getXenditQrCode(xendit.secretKey, String(checkout.xendit_qr_id))
+            : await getXenditQrCodeByReferenceId(
+                xendit.secretKey,
+                String(checkout.xendit_external_id)
+              );
+        if (qrisAction === "lookup_external_id" && remote.id && !checkout.xendit_qr_id) {
+          const { error: healError } = await db
+            .from("pos_checkouts")
+            .update({
+              xendit_qr_id: remote.id,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", checkoutId);
+          if (healError) {
+            return NextResponse.json(
+              { success: false, error: "Gagal menyimpan QRIS checkout" },
+              { status: 500 }
+            );
+          }
         }
+        return NextResponse.json({
+          success: true,
+          data: {
+            qr_id: String(remote.id || checkout.xendit_qr_id || ""),
+            qr_string: String((remote as { qr_string?: unknown }).qr_string || ""),
+            amount:
+              Number(
+                (remote as { amount?: unknown }).amount != null
+                  ? (remote as { amount?: unknown }).amount
+                  : amount
+              ) || amount,
+            expires_at: (remote as { expires_at?: unknown }).expires_at
+              ? String((remote as { expires_at?: unknown }).expires_at)
+              : null,
+            checkout_id: checkoutId,
+          },
+        });
       }
 
-      referenceId = String(checkout.xendit_external_id || `pos-chk-${checkoutId}`);
+      referenceId = `pos-chk-${checkoutId}`;
+      const { error: reserveError } = await db
+        .from("pos_checkouts")
+        .update({
+          xendit_external_id: referenceId,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", checkoutId);
+      if (reserveError) {
+        return NextResponse.json(
+          { success: false, error: "Gagal menyimpan QRIS checkout" },
+          { status: 500 }
+        );
+      }
     }
 
     if (amount == null || amount <= 0) {
@@ -160,6 +191,10 @@ export async function POST(request: NextRequest) {
         .eq("id", checkoutId);
       if (saveError) {
         console.error("[pos] save checkout qris ids:", saveError.message);
+        return NextResponse.json(
+          { success: false, error: "Gagal menyimpan QRIS checkout" },
+          { status: 500 }
+        );
       }
     }
 

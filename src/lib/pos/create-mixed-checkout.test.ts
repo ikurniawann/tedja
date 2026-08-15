@@ -1,12 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { allocateCheckoutCharges } from "@/lib/pos/central-cashier";
+import { allocateCheckoutCharges, shouldCreateCheckout } from "@/lib/pos/central-cashier";
 import {
   MISSING_PRODUCT_STALL_MESSAGE,
+  MIXED_NFC_GIFT_UNSUPPORTED_MESSAGE,
   MIXED_SPLIT_UNSUPPORTED_MESSAGE,
   MIXED_STALL_FORBIDDEN_MESSAGE,
+  allocateCheckoutTender,
+  assertCheckoutQrisReadyToComplete,
   groupItemsByStall,
   guardMixedCheckoutCart,
+  rejectUnsupportedMixedTender,
+  resolveCheckoutQrisAction,
+  resolveLineWarehouse,
   resolveOrderSoldFrom,
+  settleMixedCheckoutTender,
   shouldInsertCheckoutChildren,
   shouldReuseCheckoutQris,
 } from "@/lib/pos/create-mixed-checkout";
@@ -165,6 +172,133 @@ describe("shouldReuseCheckoutQris", () => {
         xendit_external_id: null,
       })
     ).toBe(false);
+  });
+
+  it("looks up by external_id instead of creating a second QR", () => {
+    expect(
+      resolveCheckoutQrisAction({
+        xendit_qr_id: null,
+        xendit_external_id: "pos-chk-1",
+      })
+    ).toBe("lookup_external_id");
+    expect(
+      resolveCheckoutQrisAction({
+        xendit_qr_id: "qr_1",
+        xendit_external_id: "pos-chk-1",
+      })
+    ).toBe("reuse_qr_id");
+    expect(
+      resolveCheckoutQrisAction({
+        xendit_qr_id: null,
+        xendit_external_id: null,
+      })
+    ).toBe("create");
+  });
+});
+
+describe("rejectUnsupportedMixedTender", () => {
+  it("rejects mixed NFC Tab and gift card until debit is wired", () => {
+    expect(rejectUnsupportedMixedTender("nfc_tab")).toEqual({
+      ok: false,
+      message: MIXED_NFC_GIFT_UNSUPPORTED_MESSAGE,
+    });
+    expect(rejectUnsupportedMixedTender("gift_card")).toEqual({
+      ok: false,
+      message: MIXED_NFC_GIFT_UNSUPPORTED_MESSAGE,
+    });
+    expect(rejectUnsupportedMixedTender("cash")).toEqual({ ok: true });
+    expect(rejectUnsupportedMixedTender("qris")).toEqual({ ok: true });
+  });
+});
+
+describe("resolveLineWarehouse", () => {
+  it("groups children by catalog warehouse, not client item.warehouse_id", () => {
+    expect(
+      resolveLineWarehouse(
+        { product_id: "p1", warehouse_id: "client-spoof" },
+        new Map([["p1", "catalog-w"]])
+      )
+    ).toBe("catalog-w");
+  });
+});
+
+describe("allocateCheckoutTender", () => {
+  it("allocates checkout amount_paid onto children, not zeros", () => {
+    const paid = allocateCheckoutTender(27000, [18000, 9000]);
+    expect(paid).toEqual([18000, 9000]);
+    expect(paid.reduce((sum, value) => sum + value, 0)).toBe(27000);
+    expect(paid.every((value) => value > 0)).toBe(true);
+  });
+});
+
+describe("settleMixedCheckoutTender", () => {
+  it("sets amount_paid to total_amount when QRIS settles", () => {
+    expect(settleMixedCheckoutTender({ totalAmount: 27000 })).toEqual({
+      amountPaid: 27000,
+      changeAmount: 0,
+    });
+  });
+
+  it("keeps cash overpay as change", () => {
+    expect(
+      settleMixedCheckoutTender({ totalAmount: 27000, amountPaid: 30000 })
+    ).toEqual({
+      amountPaid: 30000,
+      changeAmount: 3000,
+    });
+  });
+});
+
+describe("assertCheckoutQrisReadyToComplete", () => {
+  it("rejects complete when no QR is stored", () => {
+    const result = assertCheckoutQrisReadyToComplete({
+      xenditQrId: null,
+      xenditExternalId: null,
+      paid: false,
+    });
+    expect(result.ok).toBe(false);
+  });
+
+  it("rejects complete when stored QR is unpaid", () => {
+    const result = assertCheckoutQrisReadyToComplete({
+      xenditQrId: "qr_1",
+      xenditExternalId: "pos-chk-1",
+      paid: false,
+    });
+    expect(result.ok).toBe(false);
+  });
+
+  it("allows complete after isXenditQrPaid confirms the stored QR", () => {
+    expect(
+      assertCheckoutQrisReadyToComplete({
+        xenditQrId: "qr_1",
+        xenditExternalId: "pos-chk-1",
+        paid: true,
+      })
+    ).toEqual({ ok: true });
+  });
+});
+
+describe("guardMixedCheckoutCart uses shouldCreateCheckout", () => {
+  it("matches shouldCreateCheckout for mixed vs single stall", () => {
+    const mixed = guardMixedCheckoutCart({
+      productIds: ["p1", "p2"],
+      warehouseByProduct: new Map([
+        ["p1", "w-a"],
+        ["p2", "w-b"],
+      ]),
+      canSellMixed: true,
+    });
+    const single = guardMixedCheckoutCart({
+      productIds: ["p1", "p2"],
+      warehouseByProduct: new Map([
+        ["p1", "w-a"],
+        ["p2", "w-a"],
+      ]),
+      canSellMixed: true,
+    });
+    expect(mixed.ok && mixed.createCheckout).toBe(shouldCreateCheckout(["w-a", "w-b"]));
+    expect(single.ok && single.createCheckout).toBe(shouldCreateCheckout(["w-a"]));
   });
 });
 

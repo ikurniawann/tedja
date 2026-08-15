@@ -7,8 +7,16 @@ import { awardCrmXpForPosOrder, syncPosCustomerOrderStats } from "@/lib/crm/loya
 import { AccountingPostError } from "@/lib/pos/accounting-posting";
 import {
   allocateCheckoutCharges,
+  shouldCreateCheckout,
   uniqueStallIds,
 } from "@/lib/pos/central-cashier";
+import {
+  getXenditQrCode,
+  getXenditQrCodeByReferenceId,
+  getXenditQrPayments,
+  isXenditQrPaid,
+  loadActiveXenditConfig,
+} from "@/lib/payments/xendit";
 import { normalizeGuestCount } from "@/lib/pos/guest-count";
 import {
   buildKitchenPrintJobs,
@@ -27,6 +35,10 @@ export const MIXED_SPLIT_UNSUPPORTED_MESSAGE =
   "Split bill belum didukung untuk checkout multi-stall";
 export const MISSING_PRODUCT_STALL_MESSAGE =
   "Ada produk tanpa stall — tidak bisa dimasukkan ke keranjang";
+export const MIXED_NFC_GIFT_UNSUPPORTED_MESSAGE =
+  "Pembayaran NFC Tab / Gift Card belum didukung untuk checkout multi-stall";
+export const CHECKOUT_QRIS_MISSING_MESSAGE = "QRIS belum dibuat untuk checkout ini";
+export const CHECKOUT_QRIS_UNPAID_MESSAGE = "QRIS belum lunas";
 
 export class MixedCheckoutError extends Error {
   status: number;
@@ -156,16 +168,16 @@ export function guardMixedCheckoutCart(input: {
     input.productIds.map((id) => input.warehouseByProduct.get(id) ?? null)
   );
 
-  if (stallIds.length >= 2 && !input.canSellMixed) {
+  if (shouldCreateCheckout(stallIds) && !input.canSellMixed) {
     return { ok: false, message: MIXED_STALL_FORBIDDEN_MESSAGE };
   }
-  if (stallIds.length >= 2 && input.hasSplits) {
+  if (shouldCreateCheckout(stallIds) && input.hasSplits) {
     return { ok: false, message: MIXED_SPLIT_UNSUPPORTED_MESSAGE };
   }
 
   return {
     ok: true,
-    createCheckout: stallIds.length >= 2,
+    createCheckout: shouldCreateCheckout(stallIds),
     stallIds,
   };
 }
@@ -204,7 +216,65 @@ export function shouldReuseCheckoutQris(checkout: {
   xendit_qr_id?: string | null;
   xendit_external_id?: string | null;
 }): boolean {
-  return Boolean(checkout.xendit_qr_id || checkout.xendit_external_id);
+  return resolveCheckoutQrisAction(checkout) !== "create";
+}
+
+export function resolveCheckoutQrisAction(checkout: {
+  xendit_qr_id?: string | null;
+  xendit_external_id?: string | null;
+}): "reuse_qr_id" | "lookup_external_id" | "create" {
+  if (checkout.xendit_qr_id) return "reuse_qr_id";
+  if (checkout.xendit_external_id) return "lookup_external_id";
+  return "create";
+}
+
+export function rejectUnsupportedMixedTender(
+  paymentMethod: string
+): { ok: true } | { ok: false; message: string } {
+  if (paymentMethod === "nfc_tab" || paymentMethod === "gift_card") {
+    return { ok: false, message: MIXED_NFC_GIFT_UNSUPPORTED_MESSAGE };
+  }
+  return { ok: true };
+}
+
+export function resolveLineWarehouse(
+  item: MixedCheckoutItem,
+  warehouseByProduct: Map<string, string | null>
+): string {
+  const productId = String(item.product_id || "");
+  return warehouseByProduct.get(productId) || "";
+}
+
+export function allocateCheckoutTender(amountPaid: number, childTotals: number[]): number[] {
+  return allocateAmount(amountPaid, childTotals);
+}
+
+export function settleMixedCheckoutTender(input: {
+  totalAmount: number;
+  amountPaid?: number;
+}): { amountPaid: number; changeAmount: number } {
+  const amountPaid =
+    input.amountPaid != null && Number.isFinite(input.amountPaid)
+      ? input.amountPaid
+      : input.totalAmount;
+  return {
+    amountPaid,
+    changeAmount: Math.max(0, amountPaid - input.totalAmount),
+  };
+}
+
+export function assertCheckoutQrisReadyToComplete(input: {
+  xenditQrId?: string | null;
+  xenditExternalId?: string | null;
+  paid: boolean;
+}): { ok: true } | { ok: false; message: string } {
+  if (!input.xenditQrId && !input.xenditExternalId) {
+    return { ok: false, message: CHECKOUT_QRIS_MISSING_MESSAGE };
+  }
+  if (!input.paid) {
+    return { ok: false, message: CHECKOUT_QRIS_UNPAID_MESSAGE };
+  }
+  return { ok: true };
 }
 
 function allocateAmount(total: number, weights: number[]): number[] {
@@ -222,9 +292,7 @@ function buildLines(
   warehouseByProduct: Map<string, string | null>
 ): BuiltLine[] {
   return items.map((item) => {
-    const productId = String(item.product_id || "");
-    const warehouseId =
-      item.warehouse_id || warehouseByProduct.get(productId) || "";
+    const warehouseId = resolveLineWarehouse(item, warehouseByProduct);
     const qty = toNumber(item.quantity, 1) || 1;
     const unitPrice =
       toNumber(item.unit_price) +
@@ -304,6 +372,8 @@ type CheckoutRow = {
   ark_coins_used?: string | number | null;
   notes: string | null;
   cart_snapshot?: MixedCheckoutCartSnapshot | null;
+  xendit_qr_id?: string | null;
+  xendit_external_id?: string | null;
 };
 
 async function loadCheckout(
@@ -316,7 +386,7 @@ async function loadCheckout(
               company_id, branch_id, table_id, customer_id, cashier_id, shift_id,
               subtotal, discount_amount, tax_amount, service_charge_amount,
               other_charges_amount, total_amount, amount_paid, change_amount,
-              notes, cart_snapshot
+              notes, cart_snapshot, xendit_qr_id, xendit_external_id
        FROM pos.pos_checkouts
        WHERE id = $1
        FOR UPDATE`,
@@ -622,7 +692,7 @@ async function insertChildrenForCheckout(
     serviceCharge: toNumber(input.checkout.service_charge_amount),
     otherCharges: toNumber(input.checkout.other_charges_amount),
   });
-  const paidParts = allocateAmount(
+  const paidParts = allocateCheckoutTender(
     toNumber(input.checkout.amount_paid),
     allocated.map((row) => row.total)
   );
@@ -716,10 +786,24 @@ async function finalizePaidChildren(input: {
 
   for (const order of orders || []) {
     const childItems = itemsByOrder.get(String(order.id)) || [];
+    const { data: existingJobs } = await db
+      .from("pos_print_jobs")
+      .select("id")
+      .eq("order_id", String(order.id))
+      .limit(1);
+    if (existingJobs && existingJobs.length > 0) continue;
     const printJobs = buildKitchenPrintJobs(order as Record<string, unknown>, childItems || []);
     if (printJobs.length > 0) {
       const { error: printJobError } = await db.from("pos_print_jobs").insert(printJobs);
-      if (printJobError && printJobError.code !== "42P01" && printJobError.code !== "PGRST205") {
+      const duplicate =
+        printJobError?.code === "23505" ||
+        /duplicate key|unique/i.test(printJobError?.message ?? "");
+      if (
+        printJobError &&
+        !duplicate &&
+        printJobError.code !== "42P01" &&
+        printJobError.code !== "PGRST205"
+      ) {
         console.warn("[pos] mixed checkout print jobs:", printJobError.message);
       }
     }
@@ -797,7 +881,7 @@ export async function createMixedCheckout(
   }
 
   const stallIds = uniqueStallIds(lines.map((line) => line.warehouseId));
-  if (stallIds.length < 2) {
+  if (!shouldCreateCheckout(stallIds)) {
     throw new MixedCheckoutError("Checkout multi-stall membutuhkan item dari minimal 2 stall");
   }
 
@@ -823,6 +907,10 @@ export async function createMixedCheckout(
   const serverSubtotal = slices.reduce((sum, slice) => sum + slice.subtotal, 0);
   const serverTotal = allocated.reduce((sum, row) => sum + row.total, 0);
   const paymentMethod = input.paymentMethod || "cash";
+  const tenderGuard = rejectUnsupportedMixedTender(paymentMethod);
+  if (!tenderGuard.ok) {
+    throw new MixedCheckoutError(tenderGuard.message);
+  }
   const amountPaid = toNumber(input.amountPaid);
   const arkUsed = toNumber(input.arkCoinsUsed);
   const insertChildren = shouldInsertCheckoutChildren({
@@ -833,10 +921,8 @@ export async function createMixedCheckout(
   });
   const paymentStatus = insertChildren ? "paid" : "unpaid";
 
-  if (insertChildren && paymentMethod !== "nfc_tab" && paymentMethod !== "gift_card") {
-    if (amountPaid + arkUsed < serverTotal) {
-      throw new MixedCheckoutError("Payment insufficient");
-    }
+  if (insertChildren && amountPaid + arkUsed < serverTotal) {
+    throw new MixedCheckoutError("Payment insufficient");
   }
   if (paymentMethod === "ark_coin") {
     if (!input.customerId) {
@@ -1012,6 +1098,52 @@ function parseSnapshot(checkout: CheckoutRow): MixedCheckoutCartSnapshot | null 
   return null;
 }
 
+async function confirmStoredCheckoutQrisPaid(input: {
+  xenditQrId?: string | null;
+  xenditExternalId?: string | null;
+}) {
+  const hasQr = assertCheckoutQrisReadyToComplete({
+    xenditQrId: input.xenditQrId,
+    xenditExternalId: input.xenditExternalId,
+    paid: true,
+  });
+  if (!hasQr.ok) {
+    throw new MixedCheckoutError(hasQr.message, 409);
+  }
+
+  const xendit = await loadActiveXenditConfig();
+  let qrId = String(input.xenditQrId || "");
+  let remote: Record<string, unknown>;
+  if (qrId) {
+    remote = await getXenditQrCode(xendit.secretKey, qrId);
+  } else {
+    remote = await getXenditQrCodeByReferenceId(
+      xendit.secretKey,
+      String(input.xenditExternalId)
+    );
+    qrId = String(remote.id || "");
+  }
+
+  let paid = isXenditQrPaid(remote);
+  if (!paid && qrId) {
+    try {
+      const payments = await getXenditQrPayments(xendit.secretKey, qrId);
+      paid = isXenditQrPaid({ payments });
+    } catch {
+      // payments endpoint is optional; QR detail may already be enough
+    }
+  }
+
+  const ready = assertCheckoutQrisReadyToComplete({
+    xenditQrId: input.xenditQrId || qrId,
+    xenditExternalId: input.xenditExternalId,
+    paid,
+  });
+  if (!ready.ok) {
+    throw new MixedCheckoutError(ready.message, 409);
+  }
+}
+
 export async function completeMixedCheckout(
   checkoutId: string
 ): Promise<{ orderIds: string[] }> {
@@ -1024,17 +1156,36 @@ export async function completeMixedCheckout(
   const existingIds = ((existing.data || []) as Array<{ id: string }>).map((row) =>
     String(row.id)
   );
+
+  const { data: preview, error: previewError } = await db
+    .from("pos_checkouts")
+    .select(
+      "id, customer_id, cashier_id, payment_method, branch_id, cart_snapshot, xendit_qr_id, xendit_external_id"
+    )
+    .eq("id", checkoutId)
+    .maybeSingle();
+  if (previewError) throw previewError;
+  if (!preview) {
+    throw new MixedCheckoutError("Checkout tidak ditemukan", 404);
+  }
+
+  const previewSnapshot = parseSnapshot(preview as CheckoutRow);
+
   if (existingIds.length > 0) {
+    await finalizePaidChildren({
+      orderIds: existingIds,
+      customerId: preview.customer_id,
+      sessionUserId: previewSnapshot?.sessionUserId || String(preview.cashier_id || ""),
+      paymentMethod: String(preview.payment_method || "qris"),
+      branchId: preview.branch_id,
+    });
     return { orderIds: existingIds };
   }
 
-  await db
-    .from("pos_checkouts")
-    .update({
-      payment_status: "paid",
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", checkoutId);
+  await confirmStoredCheckoutQrisPaid({
+    xenditQrId: preview.xendit_qr_id,
+    xenditExternalId: preview.xendit_external_id,
+  });
 
   let merchClaims: MerchStockClaim[] = [];
   try {
@@ -1048,13 +1199,31 @@ export async function completeMixedCheckout(
         [checkoutId]
       );
       if (already.rows.length > 0) {
-        return { orderIds: already.rows.map((row) => row.id), snapshot: null as MixedCheckoutCartSnapshot | null, checkout };
+        return {
+          orderIds: already.rows.map((row) => row.id),
+          snapshot: parseSnapshot(checkout),
+          checkout,
+        };
       }
 
       const snapshot = parseSnapshot(checkout);
       if (!snapshot?.items?.length) {
         throw new MixedCheckoutError("Checkout tidak punya item untuk diselesaikan", 409);
       }
+
+      const settled = settleMixedCheckoutTender({
+        totalAmount: toNumber(checkout.total_amount),
+      });
+      await client.query(
+        `UPDATE pos.pos_checkouts
+         SET payment_status = 'paid',
+             amount_paid = $2,
+             change_amount = $3,
+             updated_at = now()
+         WHERE id = $1`,
+        [checkoutId, settled.amountPaid, settled.changeAmount]
+      );
+
       const warehouseByProduct = new Map(
         Object.entries(snapshot.warehouseByProduct || {})
       );
@@ -1067,29 +1236,30 @@ export async function completeMixedCheckout(
         db,
         snapshot.items.map((item) => String(item.product_id || "")).filter(Boolean)
       );
+      const settledCheckout = {
+        ...checkout,
+        payment_status: "paid",
+        amount_paid: settled.amountPaid,
+        change_amount: settled.changeAmount,
+      };
       const orderIds = await insertChildrenForCheckout(client, {
-        checkout: {
-          ...checkout,
-          payment_status: "paid",
-        },
+        checkout: settledCheckout,
         snapshot,
         warehouseByProduct,
         merchClaimedIds: new Set(merchClaims.map((claim) => claim.productId)),
         costMap,
       });
-      return { orderIds, snapshot, checkout };
+      return { orderIds, snapshot, checkout: settledCheckout };
     });
 
     merchClaims = [];
-    if (created.snapshot) {
-      await finalizePaidChildren({
-        orderIds: created.orderIds,
-        customerId: created.checkout.customer_id,
-        sessionUserId: created.snapshot.sessionUserId || created.checkout.cashier_id,
-        paymentMethod: created.checkout.payment_method || "qris",
-        branchId: created.checkout.branch_id,
-      });
-    }
+    await finalizePaidChildren({
+      orderIds: created.orderIds,
+      customerId: created.checkout.customer_id,
+      sessionUserId: created.snapshot?.sessionUserId || created.checkout.cashier_id,
+      paymentMethod: created.checkout.payment_method || "qris",
+      branchId: created.checkout.branch_id,
+    });
     return { orderIds: created.orderIds };
   } catch (error) {
     if (merchClaims.length > 0) {

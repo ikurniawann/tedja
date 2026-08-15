@@ -279,6 +279,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: mixedGuard.message }, { status: 400 });
     }
     if (mixedGuard.createCheckout) {
+      const privilegeDb = createPgClient();
+      const privilege = await checkProductPrivileges(
+        privilegeDb,
+        productIds,
+        customer_id
+      );
+      if (!privilege.allowed) {
+        return NextResponse.json(
+          { success: false, error: privilege.message },
+          { status: 403 }
+        );
+      }
       const result = await createMixedCheckout({
         items,
         warehouseByProduct,
