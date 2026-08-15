@@ -81,3 +81,54 @@ export function assertAllModeSellStallAssigned(
     message: "Stall aktif di luar penempatan Anda",
   };
 }
+
+export type CheckoutChargeSlice = {
+  warehouseId: string;
+  subtotal: number;
+};
+
+export type AllocatedCheckoutSlice = CheckoutChargeSlice & {
+  discount: number;
+  tax: number;
+  serviceCharge: number;
+  otherCharges: number;
+  total: number;
+};
+
+function allocateAmount(total: number, weights: number[]): number[] {
+  const sum = weights.reduce((a, b) => a + b, 0);
+  if (sum <= 0 || total === 0) return weights.map(() => 0);
+  const raw = weights.map((w) => Math.floor((total * w) / sum));
+  let remainder = total - raw.reduce((a, b) => a + b, 0);
+  const largest = weights.indexOf(Math.max(...weights));
+  if (remainder !== 0 && largest >= 0) raw[largest] += remainder;
+  return raw;
+}
+
+export function allocateCheckoutCharges(input: {
+  slices: CheckoutChargeSlice[];
+  discount: number;
+  tax: number;
+  serviceCharge: number;
+  otherCharges: number;
+}): AllocatedCheckoutSlice[] {
+  const weights = input.slices.map((s) => s.subtotal);
+  const discounts = allocateAmount(input.discount, weights);
+  const taxes = allocateAmount(input.tax, weights);
+  const services = allocateAmount(input.serviceCharge, weights);
+  const others = allocateAmount(input.otherCharges, weights);
+  return input.slices.map((slice, index) => {
+    const discount = discounts[index] ?? 0;
+    const tax = taxes[index] ?? 0;
+    const serviceCharge = services[index] ?? 0;
+    const otherCharges = others[index] ?? 0;
+    return {
+      ...slice,
+      discount,
+      tax,
+      serviceCharge,
+      otherCharges,
+      total: slice.subtotal - discount + tax + serviceCharge + otherCharges,
+    };
+  });
+}

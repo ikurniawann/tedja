@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  allocateCheckoutCharges,
   assertAllModeSellStallAssigned,
   canAddItemToSingleStallCart,
   canSellMixedStall,
@@ -110,5 +111,36 @@ describe("assertAllModeSellStallAssigned", () => {
     if (!result.ok) {
       expect(result.message).toBe("Stall aktif di luar penempatan Anda");
     }
+  });
+});
+
+describe("allocateCheckoutCharges", () => {
+  it("splits proportionally and puts remainder on largest slice", () => {
+    const rows = allocateCheckoutCharges({
+      slices: [
+        { warehouseId: "w-a", subtotal: 10000 },
+        { warehouseId: "w-b", subtotal: 5000 },
+      ],
+      discount: 1500,
+      tax: 1350,
+      serviceCharge: 0,
+      otherCharges: 0,
+    });
+    expect(rows[0].discount + rows[1].discount).toBe(1500);
+    expect(rows[0].tax + rows[1].tax).toBe(1350);
+    expect(rows[0].warehouseId).toBe("w-a");
+    expect(rows[0].discount).toBe(1000);
+    expect(rows[1].discount).toBe(500);
+  });
+
+  it("returns zeros when checkout subtotal is 0", () => {
+    const rows = allocateCheckoutCharges({
+      slices: [{ warehouseId: "w-a", subtotal: 0 }],
+      discount: 0,
+      tax: 0,
+      serviceCharge: 0,
+      otherCharges: 0,
+    });
+    expect(rows[0].total).toBe(0);
   });
 });
