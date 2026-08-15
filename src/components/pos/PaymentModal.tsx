@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   Banknote,
@@ -26,6 +26,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+
+import { QRCodeSVG } from "qrcode.react";
 
 import { formatIdrInput, parseIdrDigits } from "./idr-input";
 import type { CfdPayment } from "@/lib/pos/cfd";
@@ -143,12 +145,19 @@ export function PaymentModal({
     (NfcTabCheckResult & { uid: string }) | null
   >(null);
   // QRIS dinamis (EPIC-024) — QR per transaksi ber-nominal terkunci
-  const [qris, setQris] = useState<{ amount: number; qr_string: string } | null>(
-    null
-  );
+  const [qris, setQris] = useState<{
+    amount: number;
+    qr_string: string;
+    qr_id: string;
+  } | null>(null);
   const [qrisLoading, setQrisLoading] = useState(false);
   const [qrisUnavailable, setQrisUnavailable] = useState(false);
   const [qrisError, setQrisError] = useState<string | null>(null);
+  const [qrisPaid, setQrisPaid] = useState(false);
+  const qrisConfirmStarted = useRef(false);
+  const qrisWasSubmitting = useRef(false);
+  const onConfirmRef = useRef(onConfirm);
+  onConfirmRef.current = onConfirm;
 
   // EPIC-034 Fase C — kode gift card diketik/di-scan kasir
   const [giftCodeInput, setGiftCodeInput] = useState("");
@@ -240,6 +249,8 @@ export function PaymentModal({
       setQris(null);
       setQrisUnavailable(false);
       setQrisError(null);
+      setQrisPaid(false);
+      qrisConfirmStarted.current = false;
     }
   }, [open]);
 
@@ -258,7 +269,7 @@ export function PaymentModal({
   // Buat QR dinamis saat QRIS dipilih (sekali per nominal) — gagal bukan
   // penghalang bayar: kasir bisa lanjut dgn QRIS statis di meja.
   useEffect(() => {
-    if (!open || method !== "qris" || !onCfdPayment) return;
+    if (!open || method !== "qris") return;
     if (qrisLoading || (qris && qris.amount === totalAfterArk)) return;
     let cancelled = false;
     setQrisLoading(true);
@@ -281,7 +292,13 @@ export function PaymentModal({
           );
           return;
         }
-        setQris({ amount: body.data.amount, qr_string: body.data.qr_string });
+        setQris({
+          amount: body.data.amount,
+          qr_string: body.data.qr_string,
+          qr_id: String(body.data.qr_id || ""),
+        });
+        setQrisPaid(false);
+        qrisConfirmStarted.current = false;
       })
       .catch(() => {
         if (!cancelled) {
@@ -296,7 +313,53 @@ export function PaymentModal({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, method, totalAfterArk, onCfdPayment]);
+  }, [open, method, totalAfterArk]);
+
+  // QRIS lunas di Xendit → checkout otomatis, sama seperti tunai.
+  useEffect(() => {
+    if (!open || method !== "qris" || !qris?.qr_id || qrisUnavailable || submitting) {
+      return;
+    }
+    if (qrisConfirmStarted.current) return;
+
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const res = await fetch(`/api/pos/qris/${encodeURIComponent(qris.qr_id)}/status`);
+        const body = await res.json().catch(() => ({}));
+        if (cancelled || qrisConfirmStarted.current) return;
+        if (res.ok && body?.data?.paid) {
+          qrisConfirmStarted.current = true;
+          setQrisPaid(true);
+          void onConfirmRef.current({
+            method: "qris",
+            cashReceived: "",
+            arkToUse,
+          });
+        }
+      } catch {
+        // Poll lanjut; kasir tetap bisa batal
+      }
+    };
+
+    void tick();
+    const timer = window.setInterval(() => {
+      void tick();
+    }, 2500);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [open, method, qris?.qr_id, qrisUnavailable, submitting, arkToUse]);
+
+  useEffect(() => {
+    if (qrisWasSubmitting.current && !submitting && qrisPaid && open) {
+      qrisConfirmStarted.current = false;
+      setQrisPaid(false);
+    }
+    qrisWasSubmitting.current = submitting;
+  }, [submitting, qrisPaid, open]);
 
   const cashAmount = parseIdrDigits(cashReceived);
   const change = method === "cash" ? cashAmount - totalAfterArk : 0;
@@ -438,7 +501,7 @@ export function PaymentModal({
             </div>
           )}
 
-          {method === "qris" && onCfdPayment && (
+          {method === "qris" && (
             <div className="rounded-xl border border-gray-200/70 bg-muted/30 p-4 text-sm">
               {qrisLoading ? (
                 <span className="inline-flex items-center gap-2 text-muted-foreground">
@@ -451,11 +514,20 @@ export function PaymentModal({
                   Warning: {qrisError || "QR belum dikonfigurasi"}
                 </span>
               ) : (
-                <span className="inline-flex items-center gap-2 font-medium text-emerald-700">
-                  <QrCode className="h-4 w-4" />
-                  QR tampil di layar customer — nominal terkunci{" "}
-                  {formatCurrency(qris.amount)}
-                </span>
+                <div className="flex flex-col items-center gap-3">
+                  <div className="rounded-xl border border-gray-200/70 bg-white p-3">
+                    <QRCodeSVG value={qris.qr_string} size={200} />
+                  </div>
+                  <p className="font-medium text-foreground">
+                    Scan QRIS · {formatCurrency(qris.amount)}
+                  </p>
+                  <p className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    {qrisPaid || submitting
+                      ? "Pembayaran diterima, menyelesaikan…"
+                      : "Menunggu pembayaran pelanggan…"}
+                  </p>
+                </div>
               )}
             </div>
           )}
@@ -655,35 +727,46 @@ export function PaymentModal({
           >
             Cancel
           </Button>
-          <Button
-            type="button"
-            className="bg-primary hover:bg-primary/90"
-            disabled={!isValid || submitting}
-            onClick={() =>
-              void onConfirm({
-                method,
-                cashReceived: String(cashAmount || ""),
-                arkToUse,
-                nfcTabUid:
-                  method === "nfc_tab" && tabResult?.ok
-                    ? tabResult.uid
-                    : undefined,
-                giftCardCode:
-                  method === "gift_card" && giftResult?.ok
-                    ? giftResult.code
-                    : undefined,
-              })
-            }
-          >
-            {submitting ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Processing…
-              </>
-            ) : (
-              "Confirm payment"
-            )}
-          </Button>
+          {method === "qris" && qris?.qr_id && !qrisUnavailable ? (
+            <Button
+              type="button"
+              className="bg-primary hover:bg-primary/90"
+              disabled
+            >
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              {qrisPaid || submitting ? "Processing…" : "Menunggu pembayaran…"}
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              className="bg-primary hover:bg-primary/90"
+              disabled={!isValid || submitting}
+              onClick={() =>
+                void onConfirm({
+                  method,
+                  cashReceived: String(cashAmount || ""),
+                  arkToUse,
+                  nfcTabUid:
+                    method === "nfc_tab" && tabResult?.ok
+                      ? tabResult.uid
+                      : undefined,
+                  giftCardCode:
+                    method === "gift_card" && giftResult?.ok
+                      ? giftResult.code
+                      : undefined,
+                })
+              }
+            >
+              {submitting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Processing…
+                </>
+              ) : (
+                "Confirm payment"
+              )}
+            </Button>
+          )}
         </DialogFooter>
       </DialogPanel>
     </Dialog>

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildQrImageUrl,
+  isXenditQrPaid,
   parseXenditQrWebhook,
   verifyXenditWebhookToken,
 } from "./xendit";
@@ -41,6 +42,33 @@ describe("parseXenditQrWebhook", () => {
       data: { status: "PENDING", qr_id: "qr_1" },
     });
     expect(parsed.paid).toBe(false);
+  });
+});
+
+describe("isXenditQrPaid", () => {
+  it("detects paid status on the QR itself", () => {
+    expect(isXenditQrPaid({ status: "SUCCEEDED" })).toBe(true);
+    expect(isXenditQrPaid({ payment_status: "COMPLETED" })).toBe(true);
+  });
+
+  it("detects a paid payment in list payloads", () => {
+    expect(
+      isXenditQrPaid({
+        payments: [{ id: "qrpy_1", status: "SUCCEEDED" }],
+      })
+    ).toBe(true);
+    expect(
+      isXenditQrPaid({
+        data: [{ id: "qrpy_1", status: "COMPLETED" }],
+      })
+    ).toBe(true);
+  });
+
+  it("does not treat inactive or pending QR as paid", () => {
+    expect(isXenditQrPaid({ status: "ACTIVE" })).toBe(false);
+    expect(isXenditQrPaid({ status: "INACTIVE" })).toBe(false);
+    expect(isXenditQrPaid({ status: "PENDING" })).toBe(false);
+    expect(isXenditQrPaid({ payments: [{ status: "PENDING" }] })).toBe(false);
   });
 });
 

@@ -110,6 +110,33 @@ export function buildQrImageUrl(qrString: string) {
   return `https://api.qrserver.com/v1/create-qr-code/?size=320x320&data=${encodeURIComponent(qrString)}`;
 }
 
+const PAID_QR_STATUSES = new Set(["SUCCEEDED", "SUCCESS", "COMPLETED", "PAID"]);
+
+function paymentRowsFromPayload(payload: Record<string, unknown>): Record<string, unknown>[] {
+  if (Array.isArray(payload.payments)) {
+    return payload.payments.filter(
+      (row): row is Record<string, unknown> => Boolean(row) && typeof row === "object"
+    );
+  }
+  if (Array.isArray(payload.data)) {
+    return payload.data.filter(
+      (row): row is Record<string, unknown> => Boolean(row) && typeof row === "object"
+    );
+  }
+  return [];
+}
+
+export function isXenditQrPaid(payload: Record<string, unknown>): boolean {
+  const status = String(payload.status || "").toUpperCase();
+  const paymentStatus = String(payload.payment_status || "").toUpperCase();
+  if (PAID_QR_STATUSES.has(status) || PAID_QR_STATUSES.has(paymentStatus)) {
+    return true;
+  }
+  return paymentRowsFromPayload(payload).some((row) =>
+    PAID_QR_STATUSES.has(String(row.status || "").toUpperCase())
+  );
+}
+
 export async function getXenditQrCode(
   secretKey: string,
   qrId: string
@@ -130,6 +157,35 @@ export async function getXenditQrCode(
     );
   }
   return { ...payload, id: String(payload.id || qrId) };
+}
+
+export async function getXenditQrPayments(
+  secretKey: string,
+  qrId: string
+): Promise<Record<string, unknown>[]> {
+  const auth = Buffer.from(`${secretKey}:`).toString("base64");
+  const response = await fetch(
+    `https://api.xendit.co/qr_codes/${encodeURIComponent(qrId)}/payments`,
+    {
+      method: "GET",
+      headers: {
+        Authorization: `Basic ${auth}`,
+        "api-version": "2022-07-31",
+      },
+    }
+  );
+  const payload = (await response.json().catch(() => ({}))) as
+    | Record<string, unknown>
+    | Record<string, unknown>[];
+  if (!response.ok) {
+    const message =
+      payload && !Array.isArray(payload) && typeof payload.message === "string"
+        ? payload.message
+        : `Failed to fetch QRIS payments (${response.status})`;
+    throw new Error(message);
+  }
+  if (Array.isArray(payload)) return payload;
+  return paymentRowsFromPayload(payload);
 }
 
 export function extractXenditWebhookToken(request: Request): string | null {
