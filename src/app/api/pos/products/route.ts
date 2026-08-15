@@ -6,6 +6,7 @@ import {
   buildMerchandiseColumns,
   type MerchandiseFieldsPayload,
 } from '@/lib/pos/merchandise-fields';
+import { loadPosProductWarehouses } from '@/lib/pos/pos-sell-stall-server';
 import {
   applyStallScopeToProductIds,
   resolvePosProductStallScope,
@@ -141,13 +142,25 @@ export async function GET(request: NextRequest) {
       normalizedProducts as Array<Record<string, unknown>>
     );
 
+    const warehouseByProduct = await loadPosProductWarehouses(
+      enrichedProducts.map((product) => String(product.id ?? ""))
+    );
+    const productsWithWarehouse = enrichedProducts.map((product) => {
+      const warehouse = warehouseByProduct.get(String(product.id ?? ""));
+      return {
+        ...product,
+        warehouse_id: warehouse?.warehouse_id ?? null,
+        warehouse_name: warehouse?.warehouse_name ?? null,
+      };
+    });
+
     return NextResponse.json({
       success: true,
-      data: enrichedProducts,
+      data: productsWithWarehouse,
       meta: {
         stall_scoped: allowedIds !== null,
         warehouse_ids: stallScope.mode === "ids" ? stallScope.warehouseIds : [],
-        product_count: enrichedProducts.length,
+        product_count: productsWithWarehouse.length,
       },
     });
   } catch (error: unknown) {

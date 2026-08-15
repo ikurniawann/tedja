@@ -46,6 +46,8 @@ export interface Product {
    * EPIC-039 — 'merchandise' = barang beli-jadi-jual ber-stok (Fase A/B).
    */
   product_kind?: 'regular' | 'gift_card' | 'merchandise';
+  warehouse_id?: string;
+  warehouse_name?: string;
   variants?: ProductVariant[];
   /** EPIC-039 Fase B — varian merchandise ber-stok per SKU */
   skus?: ProductSku[];

@@ -60,6 +60,8 @@ export interface SidebarUser {
   warehouse_name?: string | null;
   active_stall_id?: string | null;
   can_switch_stall?: boolean;
+  can_central_checkout?: boolean;
+  has_central_cashier_menu?: boolean;
 }
 
 export interface AppSidebarProps {

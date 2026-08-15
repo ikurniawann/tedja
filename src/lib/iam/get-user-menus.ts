@@ -111,7 +111,8 @@ function buildMenuTree(menus: MenuRow[]): NavItem[] {
     .filter((item): item is NavItem => item !== null);
 }
 
-async function resolveRoleIds(userId: string, role: UserRole): Promise<string[]> {
+/** IAM role ids: `iam.user_roles` rows, else `iam.roles` by `configuration.users.role` code. */
+export async function resolveRoleIds(userId: string, role: UserRole): Promise<string[]> {
   const userRoles = await iamDbQuery<{ role_id: string }>(
     `SELECT role_id FROM iam.user_roles WHERE user_id = $1`,
     [userId]
