@@ -1718,6 +1718,8 @@ export async function completeMixedCheckout(
           payment_method: resolved.paymentMethod,
           amount_paid: paidParts[index] ?? 0,
           change_amount: index === 0 ? resolved.changeAmount : 0,
+          xendit_qr_id: preview.xendit_qr_id || null,
+          xendit_external_id: preview.xendit_external_id || null,
           updated_at: now,
         })
         .eq("id", child.id)
@@ -1798,6 +1800,18 @@ export async function completeMixedCheckout(
         merchClaimedIds: new Set(merchClaims.map((claim) => claim.productId)),
         costMap,
       });
+      if (checkout.xendit_qr_id || checkout.xendit_external_id) {
+        try {
+          await client.query(
+            `UPDATE pos.pos_orders
+             SET xendit_qr_id = $2, xendit_external_id = $3, updated_at = now()
+             WHERE checkout_id = $1`,
+            [checkoutId, checkout.xendit_qr_id || null, checkout.xendit_external_id || null]
+          );
+        } catch (error) {
+          if (!isMissingColumn(error)) throw error;
+        }
+      }
       return { orderIds, snapshot, checkout: settledCheckout, reusedExistingChildren: false };
     });
 

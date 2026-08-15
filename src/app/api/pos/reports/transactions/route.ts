@@ -24,6 +24,8 @@ type TransactionRow = {
   checkout_id: string | null;
   checkout_number: string | null;
   sold_from: string | null;
+  xendit_qr_id: string | null;
+  xendit_external_id: string | null;
 };
 
 function toNumber(value: unknown) {
@@ -90,7 +92,9 @@ export async function GET(request: NextRequest) {
          COALESCE(w_order.name, stall_from_item.stall_name) AS stall_name,
          o.checkout_id,
          o.sold_from,
-         chk.checkout_number
+         chk.checkout_number,
+         COALESCE(o.xendit_qr_id, chk.xendit_qr_id) AS xendit_qr_id,
+         COALESCE(o.xendit_external_id, chk.xendit_external_id) AS xendit_external_id
        FROM pos.pos_orders o
        LEFT JOIN pos.pos_checkouts chk ON chk.id = o.checkout_id
        LEFT JOIN configuration.warehouses w_order ON w_order.id = o.warehouse_id
@@ -172,6 +176,8 @@ export async function GET(request: NextRequest) {
           checkout_id: row.checkout_id,
           checkout_number: row.checkout_number,
           sold_from: row.sold_from,
+          xendit_qr_id: row.xendit_qr_id,
+          xendit_external_id: row.xendit_external_id,
         })),
       },
     });

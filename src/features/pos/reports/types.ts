@@ -133,6 +133,8 @@ export interface TransactionReportRow {
   checkout_id?: string | null;
   checkout_number?: string | null;
   sold_from?: string | null;
+  xendit_qr_id?: string | null;
+  xendit_external_id?: string | null;
 }
 
 export interface TransactionReport {

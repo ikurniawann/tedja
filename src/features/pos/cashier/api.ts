@@ -45,6 +45,8 @@ export interface PayOpenOrderPayload {
   nfc_tab_uid?: string;
   /** Kode kartu — wajib saat payment_method 'gift_card' (EPIC-034 Fase C) */
   gift_card_code?: string;
+  xendit_qr_id?: string;
+  xendit_external_id?: string;
 }
 
 export async function listCashierTables(): Promise<PosTable[]> {
@@ -107,6 +109,8 @@ export async function payOpenOrder(orderId: string, payload: PayOpenOrderPayload
     amount_paid: payload.amount_paid,
     ark_coins_used: payload.ark_coins_used,
     nfc_tab_uid: payload.nfc_tab_uid,
+    xendit_qr_id: payload.xendit_qr_id,
+    xendit_external_id: payload.xendit_external_id,
   });
 }
 

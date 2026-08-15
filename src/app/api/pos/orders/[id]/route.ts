@@ -12,6 +12,7 @@ import {
 } from '@/lib/giftcard/giftcard-server';
 import { ensureQueueNumber } from '@/lib/pos/queue-number';
 import { AccountingPostError } from '@/lib/pos/accounting-posting';
+import { sanitizeXenditRef } from '@/lib/pos/xendit-ids';
 
 type OrderPatchBody = {
   status?: string;
@@ -26,6 +27,8 @@ type OrderPatchBody = {
   nfc_tab_uid?: string;
   /** Kode gift card — wajib saat bayar open bill via 'gift_card' (EPIC-034) */
   gift_card_code?: string;
+  xendit_qr_id?: string;
+  xendit_external_id?: string;
 };
 
 function getErrorMessage(error: unknown) {
@@ -51,13 +54,17 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     const numericAmountPaid = Number(amount_paid) || 0;
     const numericArkUsed = Number(ark_coins_used) || 0;
 
-    const updateData: Record<string, string | number> = {};
+    const updateData: Record<string, string | number | null> = {};
     if (status && status !== 'completed') updateData.status = status;
     if (payment_status) updateData.payment_status = payment_status;
     if (payment_method) updateData.payment_method = payment_method;
     if (amount_paid !== undefined) updateData.amount_paid = numericAmountPaid;
     if (ark_coins_used !== undefined) updateData.ark_coins_used = numericArkUsed;
     if (notes) updateData.notes = notes;
+    const xenditQrId = sanitizeXenditRef(body.xendit_qr_id);
+    const xenditExternalId = sanitizeXenditRef(body.xendit_external_id);
+    if (xenditQrId) updateData.xendit_qr_id = xenditQrId;
+    if (xenditExternalId) updateData.xendit_external_id = xenditExternalId;
 
     // Payment no longer drives kitchen status. Client may still send
     // status=completed when paying; treat it as paid only.

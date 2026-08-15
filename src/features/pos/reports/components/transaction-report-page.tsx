@@ -27,8 +27,15 @@ import { Label } from "@/components/ui/label";
 import { PageTransition } from "@/components/motion";
 import { PurchasingListSection } from "@/modules/purchasing/components/list/PurchasingListSection";
 import { PurchasingPageHeader } from "@/modules/purchasing/components/page/purchasing-page-header";
+import { Badge } from "@/components/ui/badge";
 import { useTransactionReport } from "../queries";
 import type { TransactionReportRow } from "../types";
+import { TransactionDetailBody } from "./transaction-detail-body";
+import {
+  formatPaymentMethodLabel,
+  formatPaymentStatusLabel,
+  isPaidPaymentStatus,
+} from "../utils/transaction-labels";
 
 const today = () => new Date().toISOString().slice(0, 10);
 const firstDayOfMonth = () => {
@@ -86,9 +93,27 @@ type OrderDetail = {
   id: string;
   order_number?: string | null;
   ordered_at?: string | null;
+  queue_number?: string | null;
+  order_type?: string | null;
+  table_id?: string | null;
+  notes?: string | null;
+  subtotal?: number | string | null;
+  discount_amount?: number | string | null;
+  tax_amount?: number | string | null;
+  service_charge_amount?: number | string | null;
   total_amount?: number | string | null;
+  amount_paid?: number | string | null;
+  change_amount?: number | string | null;
+  ark_coins_used?: number | string | null;
   payment_method?: string | null;
+  payment_status?: string | null;
   status?: string | null;
+  sold_from?: string | null;
+  checkout_id?: string | null;
+  checkout_number?: string | null;
+  xendit_external_id?: string | null;
+  xendit_qr_id?: string | null;
+  customer?: { name?: string | null } | null;
   items?: OrderItemDetail[];
 };
 
@@ -138,9 +163,39 @@ export function TransactionReportPage() {
       const response = await fetch(`/api/pos/orders/${row.id}`, { cache: "no-store" });
       const payload = await response.json();
       if (!response.ok || !payload.success || !payload.data) {
-        throw new Error(payload.error || "Gagal memuat detail item");
+        throw new Error(payload.error || "Gagal memuat detail transaksi");
       }
-      setOrderDetail(payload.data as OrderDetail);
+      const detail = payload.data as OrderDetail;
+      const checkoutId = detail.checkout_id || row.checkout_id;
+      if (checkoutId) {
+        const checkoutRes = await fetch(`/api/pos/checkouts/${checkoutId}`, {
+          cache: "no-store",
+        });
+        const checkoutPayload = await checkoutRes.json().catch(() => ({}));
+        const checkout = checkoutPayload?.data as
+          | {
+              checkout_number?: string | null;
+              xendit_external_id?: string | null;
+              xendit_qr_id?: string | null;
+              payment_status?: string | null;
+            }
+          | undefined;
+        if (checkoutRes.ok && checkout) {
+          detail.checkout_number = checkout.checkout_number ?? row.checkout_number;
+          detail.xendit_external_id =
+            checkout.xendit_external_id ?? row.xendit_external_id ?? null;
+          detail.xendit_qr_id = checkout.xendit_qr_id ?? row.xendit_qr_id ?? null;
+        } else {
+          detail.checkout_number = row.checkout_number;
+          detail.xendit_external_id = row.xendit_external_id ?? null;
+          detail.xendit_qr_id = row.xendit_qr_id ?? null;
+        }
+      } else {
+        detail.checkout_number = row.checkout_number;
+        detail.xendit_external_id = row.xendit_external_id ?? null;
+        detail.xendit_qr_id = row.xendit_qr_id ?? null;
+      }
+      setOrderDetail(detail);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Gagal memuat detail item";
       toast.error(message);
@@ -156,7 +211,7 @@ export function TransactionReportPage() {
       <div className="space-y-5">
         <PurchasingPageHeader
           title="Laporan Transaksi"
-          description="Daftar transaksi POS berdasarkan rentang tanggal dan stall."
+          description="Omzet yang sudah tercatat. Kolom Pembayaran = lunas/belum, bukan antrian dapur."
         />
 
         <Card className="border-gray-200/70 shadow-xs">
@@ -236,8 +291,8 @@ export function TransactionReportPage() {
                   <th className="px-3 py-3 text-left font-semibold">Order</th>
                   <th className="px-3 py-3 text-left font-semibold">Waktu</th>
                   <th className="px-3 py-3 text-left font-semibold">Stall</th>
-                  <th className="px-3 py-3 text-left font-semibold">Status</th>
-                  <th className="px-3 py-3 text-left font-semibold">Payment</th>
+                  <th className="px-3 py-3 text-left font-semibold">Pembayaran</th>
+                  <th className="px-3 py-3 text-left font-semibold">Metode</th>
                   <th className="px-3 py-3 text-right font-semibold">Total</th>
                   <th className="px-3 py-3 text-right font-semibold">ARK</th>
                   <th className="px-3 py-3 text-right font-semibold">Aksi</th>
@@ -272,11 +327,20 @@ export function TransactionReportPage() {
                       <td className="px-3 py-3 text-muted-foreground">
                         {formatStallLabel(row)}
                       </td>
-                      <td className="px-3 py-3 capitalize text-muted-foreground">
-                        {row.status || "—"}
+                      <td className="px-3 py-3">
+                        <Badge
+                          variant="outline"
+                          className={
+                            isPaidPaymentStatus(row.payment_status, row.status)
+                              ? "border-emerald-200/80 bg-emerald-50 text-emerald-800"
+                              : "border-amber-200/80 bg-amber-50 text-amber-800"
+                          }
+                        >
+                          {formatPaymentStatusLabel(row.payment_status, row.status)}
+                        </Badge>
                       </td>
-                      <td className="px-3 py-3 capitalize text-muted-foreground">
-                        {row.payment_method || row.payment_status || "—"}
+                      <td className="px-3 py-3 text-muted-foreground">
+                        {formatPaymentMethodLabel(row.payment_method)}
                       </td>
                       <td className="px-3 py-3 text-right font-medium">
                         {formatCurrency(row.total_amount)}
@@ -319,15 +383,16 @@ export function TransactionReportPage() {
             }
           }}
         >
-          <DialogPanel size="lg">
+          <DialogPanel size="xl">
             <DialogPanelHeader>
               <DialogPanelTitle>
-                Detail item — {selectedRow?.order_number || selectedRow?.id.slice(0, 8) || "Order"}
+                Detail transaksi{" "}
+                {selectedRow?.order_number || selectedRow?.id.slice(0, 8) || ""}
               </DialogPanelTitle>
               <DialogPanelDescription>
                 {selectedRow
                   ? `${formatDateTime(selectedRow.ordered_at)} · ${formatStallLabel(selectedRow)}`
-                  : "Item dalam transaksi"}
+                  : "Ringkasan pembayaran, item, dan status Xendit"}
               </DialogPanelDescription>
             </DialogPanelHeader>
             <DialogPanelBody className="space-y-4">
@@ -336,69 +401,11 @@ export function TransactionReportPage() {
                   <Loader2 className="size-5 animate-spin" />
                 </div>
               ) : (
-                <>
-                  <div className="grid gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm sm:grid-cols-3">
-                    <div>
-                      <div className="text-xs text-muted-foreground">Status</div>
-                      <div className="font-medium capitalize">
-                        {orderDetail?.status || selectedRow?.status || "—"}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-xs text-muted-foreground">Payment</div>
-                      <div className="font-medium capitalize">
-                        {orderDetail?.payment_method || selectedRow?.payment_method || "—"}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-xs text-muted-foreground">Total</div>
-                      <div className="font-medium">
-                        {formatCurrency(toNumber(orderDetail?.total_amount ?? selectedRow?.total_amount))}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="overflow-x-auto rounded-lg border border-border">
-                    <table className="min-w-full text-sm">
-                      <thead className="border-b border-gray-200/70 bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
-                        <tr>
-                          <th className="px-3 py-2.5 text-left font-semibold">Produk</th>
-                          <th className="px-3 py-2.5 text-left font-semibold">SKU</th>
-                          <th className="px-3 py-2.5 text-right font-semibold">Qty</th>
-                          <th className="px-3 py-2.5 text-right font-semibold">Harga</th>
-                          <th className="px-3 py-2.5 text-right font-semibold">Subtotal</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-200/70">
-                        {detailItems.length === 0 ? (
-                          <tr>
-                            <td colSpan={5} className="px-3 py-6 text-center text-muted-foreground">
-                              Tidak ada item
-                            </td>
-                          </tr>
-                        ) : (
-                          detailItems.map((item) => (
-                            <tr key={item.id}>
-                              <td className="px-3 py-2.5 font-medium text-foreground">
-                                {item.product_name || "—"}
-                              </td>
-                              <td className="px-3 py-2.5 text-muted-foreground">
-                                {item.product_sku || "—"}
-                              </td>
-                              <td className="px-3 py-2.5 text-right">{formatQty(toNumber(item.quantity))}</td>
-                              <td className="px-3 py-2.5 text-right text-muted-foreground">
-                                {formatCurrency(toNumber(item.unit_price))}
-                              </td>
-                              <td className="px-3 py-2.5 text-right font-medium">
-                                {formatCurrency(toNumber(item.total_amount))}
-                              </td>
-                            </tr>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </>
+                <TransactionDetailBody
+                  row={selectedRow}
+                  detail={orderDetail}
+                  items={detailItems}
+                />
               )}
             </DialogPanelBody>
             <DialogFooter>

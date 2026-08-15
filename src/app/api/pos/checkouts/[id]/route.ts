@@ -32,7 +32,7 @@ export async function GET(
     const { data: checkout, error: checkoutErr } = await db
       .from("pos_checkouts")
       .select(
-        "id, checkout_number, queue_number, table_id, payment_status, payment_method, customer_id, notes, total_amount, subtotal"
+        "id, checkout_number, queue_number, table_id, payment_status, payment_method, customer_id, notes, total_amount, subtotal, xendit_qr_id, xendit_external_id"
       )
       .eq("id", checkoutId)
       .maybeSingle();

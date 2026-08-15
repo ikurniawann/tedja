@@ -61,6 +61,8 @@ export function usePosCheckout() {
       offerDiscount,
       offerLabels,
       paymentStatus,
+      xenditQrId,
+      xenditExternalId,
     }: {
       cart: PosCartItem[];
       orderType: string;
@@ -88,6 +90,8 @@ export function usePosCheckout() {
       offerDiscount?: number;
       offerLabels?: string[];
       paymentStatus?: "paid" | "unpaid";
+      xenditQrId?: string;
+      xenditExternalId?: string;
     }): Promise<PaymentResult> => {
       const snap = {
         snapshotCart: [...cart],
@@ -204,6 +208,8 @@ export function usePosCheckout() {
           gift_card_code: paymentMethod === "gift_card" ? giftCardCode : undefined,
           gift_card_buyer_name: giftCardBuyer?.name || undefined,
           gift_card_buyer_phone: giftCardBuyer?.phone || undefined,
+          xendit_qr_id: xenditQrId,
+          xendit_external_id: xenditExternalId,
         };
 
         const response = useCheckout

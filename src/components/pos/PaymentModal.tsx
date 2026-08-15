@@ -115,6 +115,8 @@ interface Props {
     checkoutId?: string;
     checkoutNumber?: string;
     queueNumber?: string | null;
+    xenditQrId?: string;
+    xenditExternalId?: string;
   }) => void | Promise<void>;
   submitting?: boolean;
   formatCurrency: (v: number) => string;
@@ -179,6 +181,7 @@ export function PaymentModal({
     amount: number;
     qr_string: string;
     qr_id: string;
+    reference_id?: string;
   } | null>(null);
   const [qrisLoading, setQrisLoading] = useState(false);
   const [qrisUnavailable, setQrisUnavailable] = useState(false);
@@ -420,6 +423,7 @@ export function PaymentModal({
         amount: body.data.amount,
         qr_string: body.data.qr_string,
         qr_id: String(body.data.qr_id || ""),
+        reference_id: String(body.data.reference_id || ""),
       });
       setQrisPaid(false);
       qrisConfirmStarted.current = false;
@@ -475,6 +479,8 @@ export function PaymentModal({
               checkoutId: mixedQrisCheckout?.checkout_id,
               checkoutNumber: mixedQrisCheckout?.checkout_number,
               queueNumber: mixedQrisCheckout?.queue_number,
+              xenditQrId: qris.qr_id,
+              xenditExternalId: qris.reference_id,
             })
           ).catch(() => {
             qrisConfirmStarted.current = false;
@@ -936,6 +942,8 @@ export function PaymentModal({
                   checkoutId: mixedQrisCheckout?.checkout_id,
                   checkoutNumber: mixedQrisCheckout?.checkout_number,
                   queueNumber: mixedQrisCheckout?.queue_number,
+                  xenditQrId: method === "qris" ? qris?.qr_id : undefined,
+                  xenditExternalId: method === "qris" ? qris?.reference_id : undefined,
                 });
               }}
             >

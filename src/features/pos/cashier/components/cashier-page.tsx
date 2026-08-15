@@ -1145,6 +1145,8 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     checkoutId?: string;
     checkoutNumber?: string;
     queueNumber?: string | null;
+    xenditQrId?: string;
+    xenditExternalId?: string;
   }) => {
     if (processingPayment) return;
     if (cart.items.length === 0) return;
@@ -1524,6 +1526,8 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
             payment_method: paymentMethodForApi,
             amount_paid: paidAmount,
             ark_coins_used: method === 'ark_coin' ? arkCapped : 0,
+            xendit_qr_id: overrides?.xenditQrId,
+            xendit_external_id: overrides?.xenditExternalId,
           },
         });
 
@@ -1650,6 +1654,8 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       manualDiscountValue: cart.manual_discount_value,
       offerDiscount,
       offerLabels: offerEval.applied.map((a) => a.name),
+      xenditQrId: overrides?.xenditQrId,
+      xenditExternalId: overrides?.xenditExternalId,
     });
 
     if (res.success) {
@@ -2809,6 +2815,8 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
           checkoutId,
           checkoutNumber,
           queueNumber,
+          xenditQrId,
+          xenditExternalId,
         }) => {
           setPaymentMethod(method);
           setCashReceived(cashReceived);
@@ -2822,6 +2830,8 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
             checkoutId,
             checkoutNumber,
             queueNumber,
+            xenditQrId,
+            xenditExternalId,
           });
         }}
         formatCurrency={formatCurrency}

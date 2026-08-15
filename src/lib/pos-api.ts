@@ -488,6 +488,8 @@ export interface CreateOrderRequest {
   promo_code?: string;
   /** Link order to active cashier shift */
   shift_id?: string;
+  xendit_qr_id?: string;
+  xendit_external_id?: string;
 }
 
 export interface IssuedGiftCardResponse {
@@ -668,7 +670,7 @@ export async function getCustomerFavoriteProducts(customerId: string, products: 
 export async function updateOrderStatus(
   orderId: string,
   status: string,
-  additionalData?: { payment_status?: string; payment_method?: string; amount_paid?: number; ark_coins_used?: number; cancelled_reason?: string; nfc_tab_uid?: string }
+  additionalData?: { payment_status?: string; payment_method?: string; amount_paid?: number; ark_coins_used?: number; cancelled_reason?: string; nfc_tab_uid?: string; xendit_qr_id?: string; xendit_external_id?: string }
 ) {
   const response = await fetch(`/api/pos/orders/${orderId}`, {
     method: 'PATCH',

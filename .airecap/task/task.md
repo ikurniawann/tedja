@@ -11,11 +11,14 @@ Kasir pusat jual semua stall, bayar 1x; data pecah per stall. Kasir stall tetap 
 
 - [x] User review spec (lanjut ke plan)
 - [x] Tulis implementation plan
-- [ ] Fase 1: IAM + flag + katalog + filter + dialog switch (Task 1–7)
-- [ ] Fase 2: checkout + child + payment 1x (Task 8–11)
-- [ ] Fase 3: restaurant multi-bill (Task 12)
-- [ ] Fase 4: KDS + antrian (Task 13)
-- [ ] Fase 5: laporan + webhook Xendit (Task 14–15)
+- [x] Fase 1: IAM + flag + katalog + filter + dialog switch (Task 1–7)
+- [x] Fase 2: checkout + child + payment 1x (Task 8–11)
+- [x] Fase 3: restaurant multi-bill (Task 12)
+- [x] Fase 4: KDS + antrian (Task 13)
+- [x] Fase 5: laporan + webhook Xendit (Task 14–15)
+- [x] Final-review fixes: block mixed promo, cancel orphan QRIS, hide IAM menu on seed
 
 ## Review
-Plan siap dieksekusi. Belum implementasi.
+Branch `feature/pos-central-cashier`. Tes unit 1452 passed sebelum fix terakhir; fix commit `a9e4ea5a`.
+
+Follow-up laporan transaksi: dialog Detail dipecah Transaksi / Pembayaran / Xendit (QRIS) / Item terjual. Settlement Pending dijelaskan sebagai cair T+2, bukan gagal bayar.

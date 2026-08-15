@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { Expand, Home, Minimize2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -25,7 +24,6 @@ export function PosTabletChromeControls({
   immersive = false,
   onToggleImmersive,
 }: Props) {
-  const router = useRouter();
   const [isBrowserFullscreen, setIsBrowserFullscreen] = useState(false);
 
   useEffect(() => {
@@ -45,8 +43,9 @@ export function PosTabletChromeControls({
     } catch {
       // ignore
     }
-    router.push(HOME_HREF);
-  }, [router]);
+    // POS layout → (dashboard) layout: soft router.push memicu RSC TypeError.
+    window.location.assign(HOME_HREF);
+  }, []);
 
   const toggle = useCallback(async () => {
     if (expanded) {

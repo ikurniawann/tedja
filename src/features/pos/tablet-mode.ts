@@ -30,6 +30,22 @@ export function isPosChromeLessPath(href: string): boolean {
   return path === "/pos" || path.startsWith("/pos/");
 }
 
+const POS_DASHBOARD_PREFIX = "/dashboard/pos";
+
+export function isPosDashboardPath(href: string): boolean {
+  const path = href.split("?")[0] ?? "";
+  return path === POS_DASHBOARD_PREFIX || path.startsWith(`${POS_DASHBOARD_PREFIX}/`);
+}
+
+/**
+ * `dashboard/pos/layout` dan `dashboard/(dashboard)/layout` tidak berbagi parent.
+ * Soft `<Link>` menyeberang keduanya → Next RSC `TypeError: network error`.
+ */
+export function needsCrossPosLayoutHardNav(fromPath: string, toHref: string): boolean {
+  if (isPosChromeLessPath(toHref)) return true;
+  return isPosDashboardPath(fromPath) !== isPosDashboardPath(toHref);
+}
+
 type SearchParamsLike = { get(name: string): string | null };
 
 /** Query flag used across POS pages for tablet/kiosk shell. */

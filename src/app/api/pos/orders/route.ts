@@ -58,6 +58,7 @@ import {
   normalizeStation,
 } from '@/lib/pos/kitchen-station';
 import { AccountingPostError } from '@/lib/pos/accounting-posting';
+import { sanitizeXenditRef } from '@/lib/pos/xendit-ids';
 import {
   buildDiscountReason,
   computeOrderDiscountStack,
@@ -121,6 +122,8 @@ type PosOrderBody = {
   /** Data pembeli saat MENJUAL gift card — nomor dipakai kirim kode via WA (Fase B) */
   gift_card_buyer_name?: string;
   gift_card_buyer_phone?: string;
+  xendit_qr_id?: string;
+  xendit_external_id?: string;
 };
 
 type PosOrderRow = {
@@ -837,6 +840,8 @@ export async function POST(request: NextRequest) {
         special_requests: special_requests || null,
         ordered_at: new Date().toISOString(),
         sold_from: soldFrom,
+        xendit_qr_id: sanitizeXenditRef(body.xendit_qr_id),
+        xendit_external_id: sanitizeXenditRef(body.xendit_external_id),
       })
       .select()
       .single();

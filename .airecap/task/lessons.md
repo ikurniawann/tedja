@@ -11,6 +11,18 @@
 
 
 
+## Laporan transaksi Xendit
+- Jangan reconstruct External ID sebagai `pos-{orderId}`. QR stall = `pos-{uuid acak}` sebelum order ada.
+- Simpan `xendit_qr_id` + `xendit_external_id` ke `pos_orders` saat QRIS lunas (create/pay/complete checkout). Transaksi lama tetap kosong.
+- Jangan hardcode field Settlement = "Pending". Arkiv tidak lacak settlement Xendit.
+
+## Xendit POS webhook
+- Kolom Webhook merah di dashboard Xendit = HTTP non-2xx / URL tak terjangkau, bukan “Settlement Pending” (cair T+2 itu normal).
+- QRIS POS biasa (`pos-{uuid}`) diselesaikan poll kasir, bukan webhook. Webhook hanya topup + checkout campur (`pos-chk-`).
+- Sulu production: `callback_url` = `https://dashboard.suluinwounderland.com/api/payments/xendit/webhook`. Jangan `sulu.within.ventures` (domain lama).
+- Path itu HARUS masuk `publicRoutes` middleware. Tanpa itu Xendit dapat 401 "Authentication required" → webhook failed. Token tetap dicek di route.
+- Lookup `pos_checkouts` di webhook jangan sampai 500 kalau tabel/kolom belum ada.
+
 ## Deploy DB credentials
 - Produksi: `postgres@5432/arkiv` + `DB_PASS_URLENCODED` (CI).
 - Dev `db-dev-arkiv`: role `agus_remote` / `agus123` (tunnel lokal `:15432`).
@@ -122,6 +134,7 @@
 - Query builder `IN`/`NOT IN`: jangan `.not('col','in','(a,b)')` tanpa quote — parser lama nyatu jadi `"ab"`. Prefer array `.not('col','in', ['a','b'])`. Enum Postgres akan error `22P02`.
 - KDS fullscreen = `/pos/kds` di LUAR `/dashboard/pos` layout (App Router tidak bisa opt-out induk). Sama pola `/pos/customer-display`. Jangan taruh fullscreen KDS di bawah layout yang masih `AppSidebar`.
 - Jangan `<Link>` ke `/pos/*` dari dashboard: Next RSC payload gagal (`TypeError: Failed to fetch`) karena beda root layout. Sidebar pakai `<a>` hard nav (`isPosChromeLessPath`). KDS enter/exit tetap `location.assign`.
+- Sama untuk POS dashboard ↔ back-office: `dashboard/pos/layout` vs `dashboard/(dashboard)/layout` tidak berbagi parent. Soft nav (sidebar Roles, tablet Beranda `router.push('/dashboard')`) → overlay `Runtime TypeError / network error`. Pakai `needsCrossPosLayoutHardNav` + `<a>` / `location.assign`.
 - `AppSidebar` Suspense fallback jangan render `ThemeToggle`/`useTheme` (atau chrome penuh). `useSearchParams` suspend → fallback SSR kadang di luar ThemeProvider → crash `useTheme must be used within ThemeProvider`. Fallback = shell mesh kosong; `ThemeToggle` pakai `useThemeOrNull`.
 - TV antrian customer = `/pos/queue` (bukan CFD `/pos/customer-display`). CFD = monitor kasir (cart/bayar); queue board = dinding tamu (nomor + status).
 - Kasir mode tablet: jangan tampilkan Layar Customer / TV Antrian di toolbar — itu untuk monitor kedua di desktop. Sembunyikan juga di **handheld UA** (iPad/Android) meski URL masih `/cashier-new` tanpa `?tablet=1`. Jangan ikat hanya ke immersive flag.

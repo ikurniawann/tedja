@@ -29,7 +29,12 @@ export async function POST(request: NextRequest) {
     try {
       config = await loadActiveXenditConfig(db);
     } catch {
-      return NextResponse.json({ success: false, error: "Xendit not configured" }, { status: 503 });
+      // ACK 200 supaya dashboard Xendit tidak "failed"; proses via poll kasir.
+      return NextResponse.json({
+        success: true,
+        ignored: true,
+        reason: "xendit_not_configured",
+      });
     }
 
     const incomingToken = extractXenditWebhookToken(request);
@@ -85,12 +90,23 @@ export async function POST(request: NextRequest) {
 
     let checkoutId: string | null = null;
     if (!txId && parsed.referenceId) {
-      const { data: checkout } = await db
-        .from("pos_checkouts")
-        .select("id")
-        .eq("xendit_external_id", parsed.referenceId)
-        .maybeSingle();
-      if (checkout?.id) checkoutId = String(checkout.id);
+      try {
+        const { data: checkout, error: checkoutError } = await db
+          .from("pos_checkouts")
+          .select("id")
+          .eq("xendit_external_id", parsed.referenceId)
+          .maybeSingle();
+        if (checkoutError) {
+          console.warn("[xendit webhook] checkout lookup skipped:", checkoutError.message);
+        } else if (checkout?.id) {
+          checkoutId = String(checkout.id);
+        }
+      } catch (error) {
+        console.warn(
+          "[xendit webhook] checkout lookup skipped:",
+          error instanceof Error ? error.message : error
+        );
+      }
     }
 
     let childCount = 0;
@@ -158,17 +174,15 @@ export async function POST(request: NextRequest) {
       reason: "topup_not_found",
     });
   } catch (error: unknown) {
-    if (error instanceof MixedCheckoutError) {
-      return NextResponse.json(
-        { success: false, error: error.message },
-        { status: error.status }
-      );
-    }
+    // Xendit menandai webhook failed untuk setiap non-2xx. ACK tetap 200;
+    // kasir/poll atau retry manual yang menyelesaikan bisnis.
     console.error("Xendit webhook error:", error);
-    return NextResponse.json(
-      { success: false, error: getErrorMessage(error) },
-      { status: 500 }
-    );
+    return NextResponse.json({
+      success: true,
+      ignored: true,
+      reason: error instanceof MixedCheckoutError ? "checkout_error" : "handler_error",
+      error: getErrorMessage(error),
+    });
   }
 }
 

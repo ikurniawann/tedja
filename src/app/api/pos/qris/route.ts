@@ -134,6 +134,11 @@ export async function POST(request: NextRequest) {
           success: true,
           data: {
             qr_id: String(remote.id || checkout.xendit_qr_id || ""),
+            reference_id: String(
+              (remote as { reference_id?: unknown }).reference_id ||
+                checkout.xendit_external_id ||
+                ""
+            ),
             qr_string: String((remote as { qr_string?: unknown }).qr_string || ""),
             amount:
               Number(
@@ -202,6 +207,7 @@ export async function POST(request: NextRequest) {
       success: true,
       data: {
         qr_id: qr.id,
+        reference_id: qr.reference_id,
         qr_string: qr.qr_string,
         amount: qr.amount,
         expires_at: qr.expires_at,
