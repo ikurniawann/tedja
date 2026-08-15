@@ -164,3 +164,58 @@ button{font:inherit}
 .entry-error{color:#ff8aa8;font-size:12px;margin-top:2px}
 .entry-alt{color:var(--muted);font-size:12px;margin-top:10px}
 .entry-alt a,.entry-alt button{color:var(--text);background:none;border:none;padding:0;font:inherit;font-size:12px;text-decoration:underline;cursor:pointer}
+
+/* ── Fase D: adaptasi mobile (≤900px / layar sentuh) ────────────────────
+ * Prototipe dirancang desktop (min-width 1024). Member membuka portal dari
+ * link WA di HP, jadi lapisan ini menata ulang panggung tanpa menyentuh
+ * tampilan desktop: nav rail kiri → tab bar bawah; panel mode → lembar
+ * hampir-penuh-layar; hero mengecil; hiasan khusus-kursor disembunyikan. */
+@media (max-width:900px){
+  #app{min-width:0;min-height:0}
+
+  .topbar{top:10px;left:12px;right:12px;height:48px}
+  .brand img{width:64px;height:auto}
+  .hud-chip{height:44px;min-width:0;padding:0 12px;gap:8px}
+  .hud-copy small{font-size:8px}
+  .hud-copy strong{font-size:14px}
+
+  /* Nav rail menjadi tab bar bawah — pola yang dikenal jempol HP */
+  .navrail{left:10px;right:10px;top:auto;bottom:10px;width:auto;flex-direction:row;justify-content:space-around;gap:4px;background:var(--glass-strong);border:1px solid var(--line);border-radius:18px;padding:6px;backdrop-filter:blur(18px)}
+  .nav-item{width:auto;flex:1;padding:7px 4px}
+  .nav-index{display:none}
+
+  .hero-copy{left:16px;right:16px;top:70px;width:auto}
+  .name{font-size:clamp(30px,9vw,44px)}
+  .stat-glass{width:100%;max-width:360px}
+  .quote{display:none}
+
+  /* Karakter tetap tampil sebagai latar suasana, digeser agar tidak
+     menabrak kartu — pointer-events sudah none dari prototipe */
+  .character-wrap{left:auto;right:-14%;bottom:64px;width:62vw;height:52vh}
+
+  .side-stack{left:16px;right:16px;top:auto;bottom:150px;width:auto}
+  .bottom-tray,.journey,.scroll-hint{display:none}
+
+  /* Panel mode = lembar penuh di atas tab bar */
+  .mode-panel{left:12px;right:12px;bottom:72px;top:130px;width:auto;overflow-y:auto}
+
+  .overlay .lore{width:min(420px,92vw)}
+  .entry-inner h1{font-size:clamp(26px,8vw,40px)}
+
+  /* Posisi karakter per-mode versi desktop tidak relevan di panggung sempit */
+  #app[data-mode="coins"] .character-wrap,
+  #app[data-mode="history"] .character-wrap,
+  #app[data-mode="profile"] .character-wrap{left:auto;right:-18%;bottom:64px;transform:scale(.94)}
+}
+
+/* Perangkat tanpa hover/kursor halus: hiasan kursor tidak pernah relevan */
+@media (pointer:coarse){
+  .cursor-dot,.cursor-ring{display:none}
+  .scroll-hint{display:none}
+}
+
+/* Hormati preferensi gerak minimal — animasi latar & transisi ditenangkan */
+@media (prefers-reduced-motion:reduce){
+  .ambient,.wheel::before{animation:none}
+  .character-wrap,.hero-copy,.side-stack,.mode-panel,.lab-bg{transition:none}
+}
