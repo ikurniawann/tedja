@@ -2,8 +2,8 @@
 
 ## Deploy DB credentials
 - Produksi: `postgres@5432/arkiv` + `DB_PASS_URLENCODED` (CI).
-- Dev `db-dev-arkiv`: role `arkiv` @ port `5435`, bukan postgres:5432.
-- Lokal tunnel: `agus_remote:agus123@localhost:15432/db-dev-arkiv`.
+- Dev `db-dev-arkiv`: role `agus_remote` / `agus123` (tunnel lokal `:15432`).
+- Container deploy tidak bisa `localhost:15432` — pakai `host.docker.internal:5432` + user yang sama.
 - Jangan samakan password/user dev dengan produksi. Jangan push ke `production` kecuali diminta.
 
 ## ErrorBoundary "Terjadi Kesalahan"

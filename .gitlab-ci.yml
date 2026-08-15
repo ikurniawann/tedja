@@ -32,10 +32,12 @@ deploy_development:
     STORAGE_DIR: /srv/arkiv-dev/storage
     NEXT_PUBLIC_APP_URL: https://dev-sulu.within.ventures
     NEXT_PUBLIC_BASE_URL: https://dev-sulu.within.ventures
-    # db-dev-arkiv = role arkiv di 5435. Jangan ikut default postgres:5432 (itu produksi).
+    # Sama dengan tunnel lokal: agus_remote / db-dev-arkiv
+    # (15432 hanya di laptop via cloudflared; di server = host.docker.internal:5432)
     DB_HOST: host.docker.internal
-    DB_PORT: "5435"
-    DB_USER: arkiv
+    DB_PORT: "5432"
+    DB_USER: agus_remote
+    DEV_DB_PASS_URLENCODED: agus123
   script:
     - bash .gitlab/deploy-docker.sh
   only:
