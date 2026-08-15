@@ -11,10 +11,8 @@ import {
   History,
   Loader2,
   MessageCircle,
-  Nfc,
   Printer,
   QrCode,
-  User,
   Wallet,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -38,6 +36,7 @@ import type {
   TopupStatus,
 } from '../types';
 import { useTopupCustomers, useTopupHistory } from '../queries';
+import { TopupMemberFinder } from './topup-member-finder';
 import { useCancelTopup, useProcessTopup } from '../mutations';
 import { buildTopupQrImageUrl, fetchTopupStatus, listTopupCustomers } from '../api';
 import { printTopupReceipt } from '../print-topup-receipt';
@@ -249,13 +248,6 @@ export function TopupPage() {
     window.addEventListener(POS_NFC_CARD_EVENT, onBridgeCard);
     return () => window.removeEventListener(POS_NFC_CARD_EVENT, onBridgeCard);
   }, [resolveScannedCard]);
-
-  async function openCustomerList() {
-    setPendingNfcUid(null);
-    setCustomerSearch('');
-    setShowCustomerModal(true);
-    if (customers.length === 0) await refetch();
-  }
 
   function selectPreset(value: number) {
     setTopupRp(value);
@@ -522,39 +514,16 @@ export function TopupPage() {
 
       <div className="flex-1 overflow-y-auto pb-4">
         {step === 'idle' && (
-          <div className="grid gap-4 lg:grid-cols-12">
-            <div className="lg:col-span-5">
-              <div className="w-full rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/90 via-primary to-amber-600 p-6 text-left text-primary-foreground shadow-sm">
-                <div className="mb-8 flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-sm font-medium opacity-90">
-                    <Coins className="h-4 w-4" />
-                    ARK Wallet
-                  </div>
-                  <Nfc className="h-5 w-5 opacity-80" />
-                </div>
-                <div className="text-xs uppercase tracking-wide opacity-80">Available balance</div>
-                <div className="mt-1 text-3xl font-bold tracking-tight">—</div>
-                <div className="mt-1 text-sm opacity-80">Tap a card to load wallet</div>
-              </div>
-            </div>
-            <div className="flex flex-col justify-center lg:col-span-7">
-              <h2 className="mb-1 text-base font-semibold text-foreground">Top up e-money</h2>
-              <p className="mb-6 max-w-xl text-sm text-muted-foreground">
-                Tap the member NFC card on the reader, or find a customer manually.
-              </p>
-              <div>
-                <Button
-                  type="button"
-                  onClick={openCustomerList}
-                  disabled={resolvingCard}
-                  className="bg-primary hover:bg-primary/90"
-                >
-                  <User className="mr-2 h-4 w-4" />
-                  Find customer
-                </Button>
-              </div>
-            </div>
-          </div>
+          <TopupMemberFinder
+            resolvingCard={resolvingCard}
+            arkRate={arkRate}
+            onSelect={selectCustomer}
+            onCreateNew={(prefill) => {
+              setPendingNfcUid(null);
+              setCustomerSearch(prefill);
+              setShowCustomerModal(true);
+            }}
+          />
         )}
 
         {(step === 'enter_amount' || step === 'payment') && customer && (
