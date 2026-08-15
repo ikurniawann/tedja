@@ -535,6 +535,37 @@ export async function completeCheckout(checkoutId: string) {
   );
 }
 
+export async function getCheckout(checkoutId: string) {
+  return fetchAPI<{
+    success: boolean;
+    data?: {
+      id: string;
+      checkout_number?: string | null;
+      queue_number?: string | null;
+      table_id?: string | null;
+      payment_status?: string | null;
+      customer_id?: string | null;
+      notes?: string | null;
+      total_amount?: number | string | null;
+      order_type?: string | null;
+      order_ids?: string[];
+      items?: Array<{
+        id?: string;
+        product_id?: string;
+        product_name?: string;
+        quantity?: number | string;
+        unit_price?: number | string;
+        subtotal?: number | string;
+        total_amount?: number | string;
+        variants?: Array<{ name?: string }>;
+        modifiers?: Array<{ name?: string }>;
+        station?: string;
+      }>;
+    };
+    error?: string;
+  }>(`/checkouts/${encodeURIComponent(checkoutId)}`);
+}
+
 export async function getOrders(params?: {
   status?: string;
   customer_id?: string;

@@ -17,6 +17,7 @@ import {
   guardMixedCheckoutCart,
   resolveOrderSoldFrom,
 } from '@/lib/pos/create-mixed-checkout';
+import { resolveTableSaleTarget } from "@/lib/pos/table-sale-target";
 import {
   assertOrderItemsMatchSellStall,
   loadCentralCashierGate,
@@ -156,7 +157,33 @@ export async function POST(request: NextRequest) {
       isCentralCashier: gate.hasCentralMenu && gate.canCentralCheckout,
     });
 
-    if (mixedGuard.createCheckout) {
+    let unpaidCentralCheckoutId: string | null = null;
+    if (soldFrom === "central" && table_id) {
+      const lookup = createPgClient();
+      const existingCheckout = await lookup
+        .from("pos_checkouts")
+        .select("id")
+        .eq("table_id", table_id)
+        .neq("payment_status", "paid")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      unpaidCentralCheckoutId = existingCheckout.data?.id ?? null;
+    }
+
+    const saleTarget = resolveTableSaleTarget({
+      saleKind: mixedGuard.createCheckout
+        ? "central_mixed"
+        : soldFrom === "central"
+          ? "central_single"
+          : "stall",
+      unpaidCentralCheckoutId,
+    });
+
+    if (
+      saleTarget.action === "create_checkout" ||
+      saleTarget.action === "append_checkout"
+    ) {
       const privilegeDb = createPgClient();
       const privilege = await checkProductPrivileges(
         privilegeDb,

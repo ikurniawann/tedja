@@ -61,7 +61,7 @@ import {
 } from '../api';
 import { completeCheckout, type ProductSku } from '@/lib/pos-api';
 import { MerchSkuPickerDialog } from '@/components/pos/MerchSkuPickerDialog';
-import { useCashierOrder, useCashierTables, useCustomerFavoriteProducts } from '../queries';
+import { useCashierCheckout, useCashierOrder, useCashierTables, useCustomerFavoriteProducts } from '../queries';
 import { usePayOpenOrder } from '../mutations';
 import { usePosCart } from '@/hooks/use-pos-cart';
 import { usePosProducts } from '@/hooks/use-pos-products';
@@ -184,7 +184,9 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
   });
   const homeRoute = cashierRoute(variant, searchParams);
   const paymentOrderId = searchParams.get('orderId');
+  const paymentCheckoutId = searchParams.get('checkoutId');
   const loadedPaymentOrderRef = useRef<string | null>(null);
+  const loadedPaymentCheckoutRef = useRef<string | null>(null);
   const autoPay = searchParams.get('pay') === '1';
   const autoPayAppliedRef = useRef(false);
   const fromRestaurant = searchParams.get('from') === RESTAURANT_FROM;
@@ -219,7 +221,8 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
   const payOpenOrderMutation = usePayOpenOrder();
   const { data: tables = [], isLoading: loadingTables, error: tablesQueryError } = useCashierTables();
   const tableError = tablesQueryError instanceof Error ? tablesQueryError.message : null;
-  const { data: paymentOrder } = useCashierOrder(paymentOrderId);
+  const { data: paymentOrder } = useCashierOrder(paymentCheckoutId ? null : paymentOrderId);
+  const { data: paymentCheckout } = useCashierCheckout(paymentCheckoutId);
 
   // URL tableId from restaurant must win over stale localStorage cart table.
   const effectiveTableId =
@@ -419,6 +422,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
 
   /* Load existing open bill when redirected from Orders */
   useEffect(() => {
+    if (paymentCheckoutId) return;
     if (!paymentOrderId || !paymentOrder || loadedPaymentOrderRef.current === paymentOrderId) return;
 
     const order = paymentOrder;
@@ -448,21 +452,63 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     setPayingOrderNumber(order.order_number || null);
     setPaymentMethod('cash');
     setCashReceived(String(Number(order.total_amount || 0)));
-  }, [paymentOrderId, paymentOrder, cart]);
+  }, [paymentCheckoutId, paymentOrderId, paymentOrder, cart]);
+
+  /* Load a collapsed kasir-pusat checkout as one bill. */
+  useEffect(() => {
+    if (!paymentCheckoutId || !paymentCheckout || loadedPaymentCheckoutRef.current === paymentCheckoutId) {
+      return;
+    }
+
+    loadedPaymentCheckoutRef.current = paymentCheckoutId;
+    cart.clearCart();
+    cart.setOrderType(
+      (paymentCheckout.order_type as 'dine_in' | 'takeaway' | 'delivery' | 'self_order') || 'dine_in'
+    );
+
+    (paymentCheckout.items || []).forEach((item, index) => {
+      const qty = Number(item.quantity) || 1;
+      const variants = Array.isArray(item.variants) ? item.variants : [];
+      const modifiers = Array.isArray(item.modifiers) ? item.modifiers : [];
+      cart.addItem({
+        id: item.id || `${item.product_id}-${index}`,
+        productId: item.product_id,
+        name: item.product_name,
+        price: Number(item.total_amount || item.subtotal || item.unit_price || 0) / qty,
+        quantity: qty,
+        variantName: variants.map((v) => v?.name).filter(Boolean).join(', ') || undefined,
+        modifierNames: modifiers.map((m) => m?.name).filter((name): name is string => Boolean(name)),
+        station: item.station,
+      });
+    });
+
+    cart.setTable(paymentCheckout.table_id || null);
+    cart.setCustomer(paymentCheckout.customer_id || null);
+    cart.setNotes(paymentCheckout.notes || '');
+    setPayingOrderNumber(paymentCheckout.order_number || paymentCheckout.checkout_number || null);
+    setPaymentMethod('cash');
+    setCashReceived(String(Number(paymentCheckout.total_amount || 0)));
+  }, [paymentCheckoutId, paymentCheckout, cart]);
 
   /* Auto-open payment when handed off with pay=1 (e.g. Pre Settlement from restaurant) */
   useEffect(() => {
     if (!autoPay || autoPayAppliedRef.current) return;
+    if (paymentCheckoutId) {
+      if (!paymentCheckout) return;
+      autoPayAppliedRef.current = true;
+      setShowPayment(true);
+      return;
+    }
     if (!paymentOrderId || !paymentOrder) return;
     autoPayAppliedRef.current = true;
     setShowPayment(true);
-  }, [autoPay, paymentOrderId, paymentOrder]);
+  }, [autoPay, paymentCheckoutId, paymentCheckout, paymentOrderId, paymentOrder]);
 
   /* Apply restaurant handoff after cart localStorage hydrate so URL table wins. */
   useEffect(() => {
     if (!fromRestaurant || !cart.hydrated) return;
 
-    const handoffKey = `${handoffTableId ?? ''}|${handoffOrderType ?? ''}|${paymentOrderId ?? ''}`;
+    const handoffKey = `${handoffTableId ?? ''}|${handoffOrderType ?? ''}|${paymentOrderId ?? ''}|${paymentCheckoutId ?? ''}`;
     if (handoffKeyRef.current === handoffKey) return;
     handoffKeyRef.current = handoffKey;
 
@@ -480,6 +526,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     handoffTableId,
     handoffOrderType,
     paymentOrderId,
+    paymentCheckoutId,
     cart.hydrated,
     cart.setOrderType,
     cart.setTable,
@@ -1189,7 +1236,12 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         let queueNumber: string | null = null;
         const cTotal = total;
 
-        if (paymentOrderId) {
+        if (paymentCheckoutId) {
+          await completeCheckout(paymentCheckoutId);
+          orderId = paymentCheckoutId;
+          orderNumber = payingOrderNumber || paymentCheckoutId;
+          queueNumber = null;
+        } else if (paymentOrderId) {
           const data = await payOpenOrderMutation.mutateAsync({
             orderId: paymentOrderId,
             payload: {
@@ -1287,7 +1339,12 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         let queueNumber: string | null = null;
         const cTotal = total;
 
-        if (paymentOrderId) {
+        if (paymentCheckoutId) {
+          await completeCheckout(paymentCheckoutId);
+          orderId = paymentCheckoutId;
+          orderNumber = payingOrderNumber || paymentCheckoutId;
+          queueNumber = null;
+        } else if (paymentOrderId) {
           const data = await payOpenOrderMutation.mutateAsync({
             orderId: paymentOrderId,
             payload: {
@@ -1375,6 +1432,52 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     }
 
     setProcessingPayment(true);
+
+    if (paymentCheckoutId) {
+      if (promoApplied) {
+        toast.error('Kode promo belum didukung untuk pembayaran open bill — hapus kode dulu');
+        setProcessingPayment(false);
+        return;
+      }
+      try {
+        await completeCheckout(paymentCheckoutId);
+        const receipt: ReceiptPayload = {
+          orderId: paymentCheckoutId,
+          orderNumber: payingOrderNumber || paymentCheckoutId,
+          checkoutNumber: paymentCheckout?.checkout_number || payingOrderNumber,
+          queueNumber: null,
+          orderType: cart.orderType,
+          table: selectedTableDisplay,
+          items: [...cart.items],
+          notes: cart.notes,
+          total: payTotal,
+          change: method === 'cash' ? (parseFloat(cashValue) || 0) - payTotal : 0,
+          paymentMethod: method,
+          customerName: selectedCustomer?.name,
+          discountAmount,
+          taxAmount,
+        };
+        storeResultPayload(receipt);
+        if (selectedCustomer) void refetchCustomers();
+        setShowPayment(false);
+        setLastResultType('standard');
+        cart.clearCart();
+        setCashReceived('');
+        setPaymentMethod('cash');
+        setCurrentArkToUse(0);
+        loadedPaymentOrderRef.current = null;
+        loadedPaymentCheckoutRef.current = null;
+        if (!deferReturnToRestaurant()) {
+          router.replace(homeRoute);
+        }
+        setProcessingPayment(false);
+        return;
+      } catch (e: unknown) {
+        toast.error(e instanceof Error ? e.message : 'Payment failed');
+        setProcessingPayment(false);
+        return;
+      }
+    }
 
     if (paymentOrderId) {
       if (promoApplied) {
@@ -1564,7 +1667,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       toast.error(res.error || 'Payment failed');
     }
     setProcessingPayment(false);
-  }, [cart, paymentMethod, selectedCustomer, cashReceived, currentArkToUse, maxArkUsable, totalAfterArk, arkToUseCapped, checkout, discountAmount, taxAmount, isOnline, enqueue, membershipDiscount, shift, refreshCount, paymentOrderId, payingOrderNumber, router, processingPayment, selectedTableDisplay, effectiveTableId, requireActiveShift, payOpenOrderMutation, deferReturnToRestaurant, storeResultPayload, refetchCustomers, promoApplied, giftCardBuyer, billCharges, serviceChargeAmount, otherChargesAmount, total, homeRoute, guestCount, offerDiscount, offerEval]);
+  }, [cart, paymentMethod, selectedCustomer, cashReceived, currentArkToUse, maxArkUsable, totalAfterArk, arkToUseCapped, checkout, discountAmount, taxAmount, isOnline, enqueue, membershipDiscount, shift, refreshCount, paymentOrderId, paymentCheckoutId, paymentCheckout, payingOrderNumber, router, processingPayment, selectedTableDisplay, effectiveTableId, requireActiveShift, payOpenOrderMutation, deferReturnToRestaurant, storeResultPayload, refetchCustomers, promoApplied, giftCardBuyer, billCharges, serviceChargeAmount, otherChargesAmount, total, homeRoute, guestCount, offerDiscount, offerEval]);
 
   /* Split Bill */
   const handleConfirmSplit = useCallback(async (config: SplitConfig) => {

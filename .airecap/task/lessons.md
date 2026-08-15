@@ -1,5 +1,14 @@
 # Lessons
 
+## POS checkout = one bill
+- Collapsed kasir-pusat bill must handoff `checkoutId`, never `children[0]`. Cashier pays via `completeCheckout`.
+- Move-table on a checkout child must move every unpaid sibling **and** `pos_checkouts.table_id`.
+- Merge/transfer use the same family gate (`canAppendTransferItems`). Stall must not merge into a central child; disable merge on mixed-family destinations.
+- Pay-now mixed while an unpaid central checkout exists → 400 “lanjutkan open bill”, not a second checkout.
+- Kasir pusat 1-stall open-bill on a table with an unpaid central checkout appends to that checkout (even if the new cart is 1 stall). Stall cashier still always creates a new order.
+
+
+
 ## Deploy DB credentials
 - Produksi: `postgres@5432/arkiv` + `DB_PASS_URLENCODED` (CI).
 - Dev `db-dev-arkiv`: role `agus_remote` / `agus123` (tunnel lokal `:15432`).

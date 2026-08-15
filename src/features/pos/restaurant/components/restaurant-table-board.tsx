@@ -76,7 +76,8 @@ function toNode(table: PosTable): FloorPlanNode {
 function canPickForMode(
   mode: RestaurantBoardMode,
   table: PosTable,
-  sourceTableId?: string | null
+  sourceTableId?: string | null,
+  sourceBill?: { checkout_id?: string | null; sold_from?: string | null }
 ) {
   const opts = { sourceTableId };
   if (mode === "move") return canPickMoveDestination(table, opts);
@@ -84,7 +85,13 @@ function canPickForMode(
     return canPickSeatDestination(table, opts);
   }
   if (mode === "transfer") return canPickTransferDestination(table, opts);
-  if (mode === "merge") return canPickMergeDestination(table, opts);
+  if (mode === "merge") {
+    return canPickMergeDestination(table, {
+      ...opts,
+      sourceBill,
+      destOrders: table.active_orders,
+    });
+  }
   return false;
 }
 
@@ -116,6 +123,7 @@ export interface RestaurantTableBoardProps {
   busy?: boolean;
   moving?: boolean;
   sourceTableId?: string | null;
+  sourceBill?: { checkout_id?: string | null; sold_from?: string | null };
   onSelectOccupied: (table: PosTable) => void;
   onOpenAvailable?: (table: PosTable) => void;
   onPickDestination?: (table: PosTable) => void;
@@ -132,6 +140,7 @@ export function RestaurantTableBoard({
   busy = false,
   moving = false,
   sourceTableId = null,
+  sourceBill,
   onSelectOccupied,
   onOpenAvailable,
   onPickDestination,
@@ -159,7 +168,7 @@ export function RestaurantTableBoard({
 
   const handlePick = (table: PosTable) => {
     if (!inBoardMode || isBusy) return;
-    if (!canPickForMode(mode, table, sourceTableId)) {
+    if (!canPickForMode(mode, table, sourceTableId, sourceBill)) {
       toast.message(pickBlockedMessage(mode));
       return;
     }
@@ -178,6 +187,34 @@ export function RestaurantTableBoard({
 
   const handleOccupiedDoubleClick = (table: PosTable) => {
     if (inBoardMode || isBusy) return;
+    const checkout = table.open_checkouts?.[0];
+    const stallOrders = (table.active_orders || []).filter(
+      (order) => !order.checkout_id
+    );
+    if (checkout && stallOrders.length === 0) {
+      router.push(
+        buildCashierHandoffUrl({
+          checkoutId: checkout.id,
+          tableId: table.id,
+          immersive,
+        })
+      );
+      return;
+    }
+    if (!checkout && stallOrders.length === 1 && stallOrders[0]?.id) {
+      router.push(
+        buildCashierHandoffUrl({
+          orderId: stallOrders[0].id,
+          tableId: table.id,
+          immersive,
+        })
+      );
+      return;
+    }
+    if ((table.bill_count ?? 0) > 1) {
+      toast.message("Pick a bill from the list to open.");
+      return;
+    }
     if (table.active_order?.id) {
       router.push(
         buildCashierHandoffUrl({
@@ -260,7 +297,7 @@ export function RestaurantTableBoard({
                     if (!table) return true;
                     if (inBoardMode) {
                       return (
-                        isBusy || !canPickForMode(mode, table, sourceTableId)
+                        isBusy || !canPickForMode(mode, table, sourceTableId, sourceBill)
                       );
                     }
                     return (

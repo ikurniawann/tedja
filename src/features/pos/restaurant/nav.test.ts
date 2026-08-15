@@ -90,6 +90,17 @@ describe("buildCashierHandoffUrl", () => {
     );
   });
 
+  it("hands off checkoutId without a child orderId", () => {
+    const url = buildCashierHandoffUrl({
+      checkoutId: "chk-1",
+      orderId: "child-0",
+      tableId: "t5",
+    });
+    expect(url).toContain("checkoutId=chk-1");
+    expect(url).toContain("tableId=t5");
+    expect(url).not.toContain("orderId=");
+  });
+
   it("includes pay flag", () => {
     expect(buildCashierHandoffUrl({ pay: true })).toContain("pay=1");
   });

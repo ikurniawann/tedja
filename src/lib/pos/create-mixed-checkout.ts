@@ -19,7 +19,11 @@ import {
   isXenditQrPaid,
   loadActiveXenditConfig,
 } from "@/lib/payments/xendit";
-import { resolveTableSaleTarget } from "@/lib/pos/table-sale-target";
+import {
+  planCheckoutAppend,
+  resolvePaidMixedOnOccupiedTable,
+  resolveTableSaleTarget,
+} from "@/lib/pos/table-sale-target";
 import { normalizeGuestCount } from "@/lib/pos/guest-count";
 import {
   buildKitchenPrintJobs,
@@ -958,16 +962,19 @@ async function appendItemsToExistingCheckout(
        AND LOWER(payment_status::text) <> 'paid'`,
     [input.existing.id]
   );
-  const childByWarehouse = new Map(
-    children.rows.map((row) => [String(row.warehouse_id || ""), row.id])
-  );
+  const plan = planCheckoutAppend({
+    incomingWarehouseIds: slices.map((slice) => slice.warehouseId),
+    existingCentralChildren: children.rows,
+  });
   const orderIds: string[] = [];
 
   for (let index = 0; index < slices.length; index += 1) {
     const slice = slices[index];
     const charges = allocated[index];
-    if (!slice || !charges) continue;
-    let orderId = childByWarehouse.get(slice.warehouseId) ?? null;
+    const planned = plan.children[index];
+    if (!slice || !charges || !planned) continue;
+    let orderId =
+      planned.action === "append" ? planned.orderId : null;
     if (!orderId) {
       const orderNumber = await generateOrderNumber(client);
       orderId = await insertChildOrder(client, {
@@ -1105,7 +1112,12 @@ export async function createMixedCheckout(
   }
 
   const stallIds = uniqueStallIds(lines.map((line) => line.warehouseId));
-  if (!shouldCreateCheckout(stallIds)) {
+  const canCreateFreshCheckout = shouldCreateCheckout(stallIds);
+  if (
+    !canCreateFreshCheckout &&
+    !input.reuseUnpaidTableCheckout &&
+    !input.tableId
+  ) {
     throw new MixedCheckoutError("Checkout multi-stall membutuhkan item dari minimal 2 stall");
   }
 
@@ -1193,13 +1205,24 @@ export async function createMixedCheckout(
 
   try {
     const created = await withTransaction(async (client) => {
-      if (input.reuseUnpaidTableCheckout && requestedUnpaid && input.tableId) {
+      if (input.tableId) {
         const existing = await findUnpaidCheckoutByTable(client, input.tableId);
+        if (!requestedUnpaid) {
+          const paidTarget = resolvePaidMixedOnOccupiedTable({
+            unpaidCentralCheckoutId: existing?.id ?? null,
+          });
+          if (paidTarget.action === "reject") {
+            throw new MixedCheckoutError(paidTarget.message);
+          }
+        }
+        const saleKind = canCreateFreshCheckout
+          ? "central_mixed"
+          : "central_single";
         const target = resolveTableSaleTarget({
-          saleKind: "central_mixed",
+          saleKind,
           unpaidCentralCheckoutId: existing?.id ?? null,
         });
-        if (target.action === "append_checkout" && existing) {
+        if (target.action === "append_checkout" && existing && requestedUnpaid) {
           return appendItemsToExistingCheckout(client, {
             existing,
             lines,
@@ -1215,6 +1238,15 @@ export async function createMixedCheckout(
             paymentStatus,
           });
         }
+        if (!canCreateFreshCheckout) {
+          throw new MixedCheckoutError(
+            "Checkout multi-stall membutuhkan item dari minimal 2 stall"
+          );
+        }
+      } else if (!canCreateFreshCheckout) {
+        throw new MixedCheckoutError(
+          "Checkout multi-stall membutuhkan item dari minimal 2 stall"
+        );
       }
 
       const checkoutNumber = await nextCheckoutNumber(client);
@@ -1429,6 +1461,27 @@ export async function completeMixedCheckout(
   const previewSnapshot = parseSnapshot(preview as CheckoutRow);
 
   if (existingIds.length > 0) {
+    const now = new Date().toISOString();
+    const { error: payCheckoutErr } = await db
+      .from("pos_checkouts")
+      .update({
+        payment_status: "paid",
+        updated_at: now,
+      })
+      .eq("id", checkoutId)
+      .neq("payment_status", "paid");
+    if (payCheckoutErr) throw payCheckoutErr;
+
+    const { error: payChildrenErr } = await db
+      .from("pos_orders")
+      .update({
+        payment_status: "paid",
+        updated_at: now,
+      })
+      .eq("checkout_id", checkoutId)
+      .neq("payment_status", "paid");
+    if (payChildrenErr) throw payChildrenErr;
+
     await finalizePaidChildren({
       orderIds: existingIds,
       customerId: preview.customer_id,

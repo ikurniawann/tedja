@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { getPool } from "@/lib/db";
 import { createPgClient } from "@/lib/pg/create-client";
 import { getPosSession } from "@/lib/api/auth";
+import { canAppendTransferItems } from "@/lib/pos/table-sale-target";
 
 function errorMessage(error: unknown, fallback = "Merge failed") {
   if (error instanceof Error && error.message) return error.message;
@@ -86,13 +87,13 @@ export async function POST(
 
     const { data: source, error: sourceErr } = await db
       .from("pos_orders")
-      .select("id, status, table_id, discount_amount, tax_amount")
+      .select("id, status, table_id, discount_amount, tax_amount, checkout_id, sold_from")
       .eq("id", sourceOrderId)
       .single();
 
     const { data: target, error: targetErr } = await db
       .from("pos_orders")
-      .select("id, status, discount_amount, tax_amount")
+      .select("id, status, discount_amount, tax_amount, checkout_id, sold_from")
       .eq("id", target_order_id)
       .single();
 
@@ -117,6 +118,24 @@ export async function POST(
     if (blockedStatuses.includes(target.status as string)) {
       return Response.json(
         { success: false, error: "Target order cannot receive merge" },
+        { status: 400 }
+      );
+    }
+
+    const sourceBill = {
+      checkout_id: (source as { checkout_id?: string | null }).checkout_id ?? null,
+      sold_from: (source as { sold_from?: string | null }).sold_from ?? null,
+    };
+    const targetBill = {
+      checkout_id: (target as { checkout_id?: string | null }).checkout_id ?? null,
+      sold_from: (target as { sold_from?: string | null }).sold_from ?? null,
+    };
+    if (!canAppendTransferItems(sourceBill, targetBill)) {
+      return Response.json(
+        {
+          success: false,
+          error: "Tidak bisa merge tagihan stall ke kasir pusat",
+        },
         { status: 400 }
       );
     }

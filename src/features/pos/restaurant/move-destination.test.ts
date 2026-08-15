@@ -133,6 +133,32 @@ describe("canPickMergeDestination", () => {
       )
     ).toBe(false);
   });
+
+  it("rejects a stall bill merging into a central or mixed destination", () => {
+    expect(
+      canPickMergeDestination(
+        { id: "t2", status: "occupied", is_active: true },
+        {
+          sourceTableId: "t1",
+          sourceBill: { sold_from: "stall", checkout_id: null },
+          destOrders: [{ sold_from: "central", checkout_id: "chk-1" }],
+        }
+      )
+    ).toBe(false);
+    expect(
+      canPickMergeDestination(
+        { id: "t2", status: "occupied", is_active: true },
+        {
+          sourceTableId: "t1",
+          sourceBill: { sold_from: "stall", checkout_id: null },
+          destOrders: [
+            { sold_from: "stall", checkout_id: null },
+            { sold_from: "central", checkout_id: "chk-1" },
+          ],
+        }
+      )
+    ).toBe(false);
+  });
 });
 
 describe("canPickSeatDestination", () => {

@@ -139,3 +139,18 @@ export function listTableBoardBills(input: {
 
   return bills;
 }
+
+/** Cashier must load a checkout as one bill — never a single child order. */
+export function cashierHandoffFromBill(bill: TableBoardBill): {
+  checkoutId?: string;
+  orderId?: string;
+  tableId: string | null;
+} {
+  if (bill.kind === "checkout" && bill.checkoutId) {
+    return { checkoutId: bill.checkoutId, tableId: bill.table_id };
+  }
+  return {
+    ...(bill.orderId ? { orderId: bill.orderId } : {}),
+    tableId: bill.table_id,
+  };
+}

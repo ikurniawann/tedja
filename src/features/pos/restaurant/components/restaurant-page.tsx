@@ -57,6 +57,10 @@ import {
 } from "../selection";
 import { canPickSeatDestination } from "../move-destination";
 import { listTableBoardBills } from "../table-board-bills";
+import {
+  canAppendTransferItems,
+  canMergeIntoDestination,
+} from "@/lib/pos/table-sale-target";
 import { useReservationList } from "@/features/pos/reservation/queries";
 import { reservationQueryKeys } from "@/features/pos/reservation/query-keys";
 import { seatReservation } from "@/features/pos/reservation/api";
@@ -451,7 +455,19 @@ function RestaurantPageContent() {
     }
 
     if (boardMode === "merge") {
-      const targetOrderId = table.active_order?.id;
+      const destOrders = table.active_orders || [];
+      const sourceBill = {
+        checkout_id: selectedOrder.checkout_id ?? null,
+        sold_from: selectedOrder.sold_from ?? null,
+      };
+      if (!canMergeIntoDestination(sourceBill, destOrders)) {
+        toast.error("Tidak bisa merge tagihan stall ke kasir pusat");
+        return;
+      }
+      const targetOrder = destOrders.find((order) =>
+        canAppendTransferItems(sourceBill, order)
+      );
+      const targetOrderId = targetOrder?.id;
       if (!targetOrderId) {
         toast.error("Destination table has no open bill");
         return;
@@ -626,6 +642,14 @@ function RestaurantPageContent() {
               boardMode={boardMode}
               busy={boardBusy}
               sourceTableId={selection?.tableId ?? null}
+              sourceBill={
+                selectedOrder
+                  ? {
+                      checkout_id: selectedOrder.checkout_id ?? null,
+                      sold_from: selectedOrder.sold_from ?? null,
+                    }
+                  : undefined
+              }
               onSelectOccupied={handleSelectOccupied}
               onPickDestination={handlePickDestination}
             />

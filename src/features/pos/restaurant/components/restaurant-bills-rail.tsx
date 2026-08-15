@@ -14,7 +14,11 @@ import type { PosTable } from "@/lib/pos-api";
 
 import { buildCashierHandoffUrl } from "../nav";
 import { getActiveSplitSummary } from "@/features/pos/open-bills/split-summary";
-import { listTableBoardBills, type TableBoardBill } from "../table-board-bills";
+import {
+  cashierHandoffFromBill,
+  listTableBoardBills,
+  type TableBoardBill,
+} from "../table-board-bills";
 import {
   billSelection,
   isBillSelected,
@@ -142,14 +146,16 @@ export function RestaurantBillsRail({
       onPaySplits(order);
       return;
     }
-    if (!bill.orderId) {
+    const handoff = cashierHandoffFromBill(bill);
+    if (!handoff.checkoutId && !handoff.orderId) {
       toast.error("Checkout ini belum punya order anak untuk dibuka di kasir");
       return;
     }
     router.push(
       buildCashierHandoffUrl({
-        orderId: bill.orderId,
-        tableId: bill.table_id,
+        checkoutId: handoff.checkoutId,
+        orderId: handoff.orderId,
+        tableId: bill.table_id ?? undefined,
         immersive,
       })
     );

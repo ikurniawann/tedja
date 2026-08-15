@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { listTableBoardBills } from "./table-board-bills";
+import { cashierHandoffFromBill, listTableBoardBills } from "./table-board-bills";
 
 describe("listTableBoardBills", () => {
   it("lists every unpaid stall order on the same table", () => {
@@ -92,6 +92,15 @@ describe("listTableBoardBills", () => {
       kind: "order",
       id: "s1",
       soldFrom: "stall",
+    });
+    expect(cashierHandoffFromBill(bills[0])).toEqual({
+      checkoutId: "chk-1",
+      tableId: "t5",
+    });
+    expect(cashierHandoffFromBill(bills[0])).not.toHaveProperty("orderId");
+    expect(cashierHandoffFromBill(bills[1])).toEqual({
+      orderId: "s1",
+      tableId: "t5",
     });
   });
 

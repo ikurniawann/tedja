@@ -1,5 +1,6 @@
 import {
   createSplitOrder,
+  getCheckout,
   getCustomerFavoriteProducts,
   getPOSTables,
   openBill,
@@ -52,6 +53,42 @@ export async function listCashierTables(): Promise<PosTable[]> {
     throw new Error(res.error || "Failed to load tables");
   }
   return res.data ?? [];
+}
+
+export type CashierCheckout = CashierOrder & {
+  checkout_number?: string | null;
+  order_ids?: string[];
+};
+
+export async function getCashierCheckout(checkoutId: string): Promise<CashierCheckout> {
+  const res = await getCheckout(checkoutId);
+  if (!res.success || !res.data) {
+    throw new Error(res.error || "Failed to load checkout");
+  }
+  const data = res.data;
+  return {
+    id: data.id,
+    order_number: data.checkout_number || undefined,
+    order_type: data.order_type || undefined,
+    table_id: data.table_id ?? null,
+    customer_id: data.customer_id ?? null,
+    notes: data.notes ?? null,
+    total_amount: Number(data.total_amount || 0),
+    items: (data.items || []).map((item) => ({
+      id: item.id,
+      product_id: String(item.product_id || ""),
+      product_name: String(item.product_name || ""),
+      quantity: item.quantity ?? 1,
+      unit_price: item.unit_price,
+      subtotal: item.subtotal,
+      total_amount: item.total_amount,
+      variants: item.variants,
+      modifiers: item.modifiers,
+      station: item.station,
+    })),
+    checkout_number: data.checkout_number,
+    order_ids: data.order_ids,
+  };
 }
 
 export async function getCashierOrder(orderId: string): Promise<CashierOrder> {
