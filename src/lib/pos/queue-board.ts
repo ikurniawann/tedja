@@ -1,5 +1,6 @@
 import type { KDSOrder, KDSOrderItem } from "@/features/pos/kds/types";
 import { isTerminalKitchenStatus } from "@/lib/pos/kds-status";
+import { uniqueQueueRows } from "@/lib/pos/queue-board-rows";
 
 const PREPARING_STATUSES = new Set(["pending", "confirmed", "preparing"]);
 
@@ -38,13 +39,36 @@ export function queueItemProgress(order: Pick<KDSOrder, "pos_order_items">) {
   };
 }
 
+/** One TV row per checkout (merged children) or per stall order. */
+export function sourceQueueBoardOrders(orders: KDSOrder[]): KDSOrder[] {
+  const grouped = new Map<string, KDSOrder[]>();
+  for (const order of orders) {
+    const key = order.checkout_id || order.id;
+    const list = grouped.get(key) ?? [];
+    list.push(order);
+    grouped.set(key, list);
+  }
+
+  const merged: KDSOrder[] = [];
+  for (const group of grouped.values()) {
+    const first = group[0];
+    if (!first) continue;
+    merged.push({
+      ...first,
+      pos_order_items: group.flatMap((row) => row.pos_order_items || []),
+    });
+  }
+
+  return uniqueQueueRows(merged);
+}
+
 export function splitQueueBoardOrders(orders: KDSOrder[]) {
   const preparing: KDSOrder[] = [];
   const ready: KDSOrder[] = [];
   const seenPreparing = new Set<string>();
   const seenReady = new Set<string>();
 
-  for (const order of orders) {
+  for (const order of sourceQueueBoardOrders(orders)) {
     const status = orderBoardStatus(order);
     // Skip fully finished tickets (no active F&B left / served header)
     if (status === "served" || status === "completed" || status === "cancelled") {

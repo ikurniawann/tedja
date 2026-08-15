@@ -294,7 +294,11 @@ export function QueueBoardPage({ venueName }: QueueBoardPageProps) {
               <p className="py-16 text-center text-white/35">Belum ada antrian</p>
             ) : (
               preparing.map((order) => (
-                <QueueCard key={order.id} order={order} emphasis="preparing" />
+                <QueueCard
+                  key={order.checkout_id || order.id}
+                  order={order}
+                  emphasis="preparing"
+                />
               ))
             )}
           </div>
@@ -314,7 +318,11 @@ export function QueueBoardPage({ venueName }: QueueBoardPageProps) {
               <p className="py-16 text-center text-white/35">Belum ada yang siap</p>
             ) : (
               ready.map((order) => (
-                <QueueCard key={order.id} order={order} emphasis="ready" />
+                <QueueCard
+                  key={order.checkout_id || order.id}
+                  order={order}
+                  emphasis="ready"
+                />
               ))
             )}
           </div>
