@@ -8,10 +8,14 @@ deploy_production:
     DOCKER_IMAGE: arkiv-production
     CONTAINER_NAME: arkiv
     HOST_PORT: "3004"
-    DATABASE_NAME: db-production-arkiv
+    DATABASE_NAME: arkiv
     STORAGE_DIR: /srv/arkiv/storage
-    NEXT_PUBLIC_APP_URL: https://sulu.within.ventures
-    NEXT_PUBLIC_BASE_URL: https://sulu.within.ventures
+    NEXT_PUBLIC_APP_URL: https://dashboard.suluinwounderland.com
+    NEXT_PUBLIC_BASE_URL: https://dashboard.suluinwounderland.com
+    DB_HOST: host.docker.internal
+    DB_PORT: "5432"
+    DB_USER: postgres
+    BIND_ADDRESS: 0.0.0.0
   script:
     - bash .gitlab/deploy-docker.sh
   only:
