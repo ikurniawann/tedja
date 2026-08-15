@@ -74,6 +74,9 @@ interface CartPanelProps {
   onPromoInputChange?: (value: string) => void;
   onApplyPromo?: () => void;
   onClearPromo?: () => void;
+  /** Catatan transaksi — ikut tercetak di struk customer & CO dapur/bar */
+  orderNotes?: string;
+  onOrderNotesChange?: (value: string) => void;
   itemDiscountTotal?: number;
   /** Auto product offers (bundle/bxgy/volume) */
   offerDiscount?: number;
@@ -154,6 +157,8 @@ export function CartPanel({
   onPromoInputChange,
   onApplyPromo,
   onClearPromo,
+  orderNotes = '',
+  onOrderNotesChange,
   itemDiscountTotal = 0,
   offerDiscount = 0,
   offerApplied = [],
@@ -549,6 +554,17 @@ export function CartPanel({
             </div>
             {promoError && <p className="mt-1 text-[11px] text-red-600">{promoError}</p>}
           </div>
+        ) : null}
+
+        {onOrderNotesChange ? (
+          <input
+            type="text"
+            value={orderNotes}
+            onChange={(e) => onOrderNotesChange(e.target.value)}
+            maxLength={200}
+            placeholder="Catatan transaksi — tercetak di CO & struk"
+            className="h-8 w-full rounded-md border border-gray-200/80 bg-white px-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary/40 focus:outline-none focus:ring-1 focus:ring-primary/30"
+          />
         ) : null}
 
         {taxToggleLabel ? (

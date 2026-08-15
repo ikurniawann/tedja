@@ -2237,6 +2237,8 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
           setPromoApplied(null);
           setPromoError(null);
         }}
+        orderNotes={cart.notes}
+        onOrderNotesChange={cart.setNotes}
         itemDiscountTotal={itemDiscountTotal}
         offerDiscount={offerDiscount}
         offerApplied={offerEval.applied}
