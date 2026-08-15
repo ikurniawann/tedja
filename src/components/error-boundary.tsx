@@ -3,6 +3,9 @@
 import { Component, ErrorInfo, ReactNode } from "react";
 import { AlertCircle, RefreshCw, Home } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { isStaleClientBundleError } from "@/lib/client-bundle-error";
+
+const CHUNK_RELOAD_KEY = "arkiv:stale-bundle-reload";
 
 interface Props {
   children: ReactNode;
@@ -25,7 +28,14 @@ export class ErrorBoundary extends Component<Props, State> {
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error("Uncaught error:", error, errorInfo);
-    // Bisa kirim ke error tracking service (Sentry, dll)
+    if (typeof window === "undefined" || !isStaleClientBundleError(error)) return;
+    try {
+      if (sessionStorage.getItem(CHUNK_RELOAD_KEY)) return;
+      sessionStorage.setItem(CHUNK_RELOAD_KEY, "1");
+      window.location.reload();
+    } catch {
+      // sessionStorage bisa diblokir
+    }
   }
 
   private handleReload = () => {
@@ -58,14 +68,16 @@ export class ErrorBoundary extends Component<Props, State> {
               Tim kami telah diberitahu tentang masalah ini.
             </p>
 
-            {this.state.error && process.env.NODE_ENV === "development" && (
+            {this.state.error && (
               <div className="bg-gray-100 rounded p-4 mb-6 text-left overflow-auto">
-                <p className="text-sm font-mono text-red-600 mb-2">
+                <p className="text-sm font-mono text-red-600">
                   {this.state.error.name}: {this.state.error.message}
                 </p>
-                <pre className="text-xs text-gray-600 overflow-x-auto">
-                  {this.state.error.stack}
-                </pre>
+                {process.env.NODE_ENV === "development" && this.state.error.stack ? (
+                  <pre className="mt-2 text-xs text-gray-600 overflow-x-auto">
+                    {this.state.error.stack}
+                  </pre>
+                ) : null}
               </div>
             )}
             

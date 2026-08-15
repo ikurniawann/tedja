@@ -1,5 +1,12 @@
 # Lessons
 
+## ErrorBoundary "Terjadi Kesalahan"
+- Copy "Tim kami telah diberitahu" = `src/components/error-boundary.tsx` (client crash), bukan `dashboard/error.tsx`.
+- Di production `NODE_ENV=production` stack disembunyikan — selalu tampilkan `error.name + message`.
+- Setelah deploy, tab lama sering `ChunkLoadError` / failed dynamic import. Auto-reload sekali (`sessionStorage` guard), jangan loop.
+
+
+
 ## Restaurant Open Bills drawer
 - Panel kanan Open Bills default **tertutup**; buka via **View Orders** → Sheet kanan.
 - Workspace restaurant = 2 kolom (action + floor), bukan 3.

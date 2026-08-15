@@ -689,7 +689,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
   /* Product filter */
   const filteredProducts = useMemo(() => products.filter(p => {
     const okCat = selectedCategory === 'All' || (p.category?.name || 'Uncategorized') === selectedCategory;
-    const okSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase());
+    const okSearch = (p.name || "").toLowerCase().includes(searchTerm.toLowerCase());
     return okCat && okSearch;
   }), [products, selectedCategory, searchTerm]);
 
@@ -699,7 +699,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
 
     return products
       .filter((product) => {
-        const name = product.name.toLowerCase();
+        const name = (product.name || "").toLowerCase();
         const sku = (product.sku || '').toLowerCase();
         return name.includes(query) || sku.includes(query);
       })
@@ -900,7 +900,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         (candidate) =>
           candidate.is_active !== false &&
           ((candidate.barcode || '').toLowerCase() === code ||
-            candidate.sku.toLowerCase() === code)
+            (candidate.sku || "").toLowerCase() === code)
       );
       if (sku) {
         handleSelectMerchSku(product, sku);

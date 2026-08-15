@@ -331,10 +331,15 @@ export function PaymentModal({
         if (res.ok && body?.data?.paid) {
           qrisConfirmStarted.current = true;
           setQrisPaid(true);
-          void onConfirmRef.current({
-            method: "qris",
-            cashReceived: "",
-            arkToUse,
+          void Promise.resolve(
+            onConfirmRef.current({
+              method: "qris",
+              cashReceived: "",
+              arkToUse,
+            })
+          ).catch(() => {
+            qrisConfirmStarted.current = false;
+            setQrisPaid(false);
           });
         }
       } catch {
@@ -515,9 +520,16 @@ export function PaymentModal({
                 </span>
               ) : (
                 <div className="flex flex-col items-center gap-3">
-                  <div className="rounded-xl border border-gray-200/70 bg-white p-3">
-                    <QRCodeSVG value={qris.qr_string} size={200} />
-                  </div>
+                  {qris.qr_string ? (
+                    <div className="rounded-xl border border-gray-200/70 bg-white p-3">
+                      <QRCodeSVG value={qris.qr_string} size={200} />
+                    </div>
+                  ) : (
+                    <span className="inline-flex items-center gap-2 text-amber-700">
+                      <AlertTriangle className="h-4 w-4 shrink-0" />
+                      QR belum siap — coba pilih metode lain lalu kembali ke QRIS
+                    </span>
+                  )}
                   <p className="font-medium text-foreground">
                     Scan QRIS · {formatCurrency(qris.amount)}
                   </p>
