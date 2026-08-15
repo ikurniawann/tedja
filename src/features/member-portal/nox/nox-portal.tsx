@@ -323,7 +323,7 @@ export function NoxPortal() {
 
       <header className="topbar">
         <div className="brand">
-          <Image src="/member-nox/logo.webp" alt="SULU in Wounderland" width={139} height={115} unoptimized />
+          <Image src="/member-nox/logo.webp?v=2" alt="SULU in Wounderland" width={139} height={115} unoptimized />
         </div>
         <div className="hud">
           <div className="hud-chip">
@@ -598,7 +598,7 @@ export function NoxPortal() {
         <div className="entry-inner">
           <Image
             className="entry-logo"
-            src="/member-nox/logo.webp"
+            src="/member-nox/logo.webp?v=2"
             alt="SULU in Wounderland"
             width={139}
             height={115}
