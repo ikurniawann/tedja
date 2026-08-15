@@ -29,8 +29,9 @@ describe("calculateBillCharges", () => {
     });
     expect(result.tax_amount).toBe(10_000);
     expect(result.total).toBe(110_000);
+    // rate + calc_method ikut di-snapshot supaya struk bisa mencetak "Tax (10%)"
     expect(result.breakdown).toEqual([
-      { code: "TAX", name: "Tax", kind: "tax", amount: 10_000 },
+      { code: "TAX", name: "Tax", kind: "tax", amount: 10_000, rate: 10, calc_method: "percent" },
     ]);
   });
 

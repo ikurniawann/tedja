@@ -1,7 +1,12 @@
 const ESC = 0x1b;
 const GS = 0x1d;
 
-export const THERMAL_WIDTH = 32;
+// Kertas thermal 80mm (Font A, 576 dot) = 48 kolom. Dulu 32 (58mm) —
+// owner memakai printer 80mm (2026-08-16).
+export const THERMAL_WIDTH = 48;
+
+/** Garis pemisah selebar kertas — jangan hardcode jumlah strip di pemanggil. */
+export const RECEIPT_DIVIDER = "-".repeat(THERMAL_WIDTH);
 
 export type EscPosAlign = "left" | "center";
 

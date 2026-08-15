@@ -1,3 +1,5 @@
+import { formatReceiptRow } from "@/lib/pos/thermal-escpos";
+
 export function groupCartItemsByStallName<
   T extends { warehouse_name?: string | null; warehouse_id?: string | null },
 >(items: T[]): Array<{ stallName: string; items: T[] }> {
@@ -34,6 +36,7 @@ export function receiptDocumentLabel(payload: {
 export type ReceiptLineItem = {
   name: string;
   quantity: number;
+  price?: number;
   variantName?: string;
   modifierNames?: string[];
   notes?: string;
@@ -41,9 +44,15 @@ export type ReceiptLineItem = {
   warehouse_id?: string | null;
 };
 
+function formatReceiptCurrency(n: number) {
+  return "Rp " + new Intl.NumberFormat("id-ID", { minimumFractionDigits: 0 }).format(Math.abs(n));
+}
+
 export function buildReceiptItemLines(
-  items: ReceiptLineItem[]
+  items: ReceiptLineItem[],
+  options?: { withPrices?: boolean }
 ): Array<{ text: string; align: "left" | "center" }> {
+  const withPrices = Boolean(options?.withPrices);
   const groups = groupCartItemsByStallName(items);
   const showHeaders = groups.length >= 2;
   const lines: Array<{ text: string; align: "left" | "center" }> = [];
@@ -52,7 +61,19 @@ export function buildReceiptItemLines(
       lines.push({ text: `--- ${group.stallName} ---`, align: "center" });
     }
     for (const item of group.items) {
-      lines.push({ text: `${item.quantity}x ${item.name}`, align: "left" });
+      const qty = Number(item.quantity) || 0;
+      const unit = Number(item.price) || 0;
+      if (withPrices) {
+        lines.push({
+          text: formatReceiptRow(`${item.quantity}x ${item.name}`, formatReceiptCurrency(unit * qty)),
+          align: "left",
+        });
+        if (qty > 1) {
+          lines.push({ text: `  @ ${formatReceiptCurrency(unit)}`, align: "left" });
+        }
+      } else {
+        lines.push({ text: `${item.quantity}x ${item.name}`, align: "left" });
+      }
       if (item.variantName) lines.push({ text: `  ${item.variantName}`, align: "left" });
       if (item.modifierNames?.length) {
         lines.push({ text: `  ${item.modifierNames.join(", ")}`, align: "left" });

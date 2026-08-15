@@ -3,13 +3,16 @@ import { createPgClient } from "@/lib/pg/create-client";
 import { getPosSession } from '@/lib/api/auth';
 import { withTransaction } from '@/lib/db';
 import { restoreMerchandiseStockForOrder } from '@/lib/pos/merchandise-stock';
+import { findSupervisorByPin } from '@/lib/pos/supervisor-pin';
 import { releasePromoRedemption } from '@/lib/promo/promo-server';
 import { buildVoidBesarMessage, voidDedupKey } from '@/lib/wa/notifications-messages';
 import { fireOwnerNotification, getWaNotifConfig } from '@/lib/wa/notifications-sender';
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  // Next 16: params adalah Promise — akses sinkron membuat id undefined
+  // dan SEMUA void gagal "Order not found" (bug sejak upgrade).
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const sessionUserId = await getPosSession();
   if (!sessionUserId) {
@@ -19,7 +22,7 @@ export async function POST(
   try {
     const body = await request.json();
     const { reason, supervisor_pin } = body;
-    const orderId = params.id;
+    const { id: orderId } = await params;
 
     if (!reason || !supervisor_pin) {
       return Response.json({ success: false, error: 'Reason and supervisor PIN required' }, { status: 400 });
@@ -27,13 +30,16 @@ export async function POST(
 
     const db = createPgClient();
 
-    // 1. Validate supervisor PIN
-    const { data: supervisor } = await db
+    // 1. Validate supervisor PIN — pos_pin kini hash bcrypt (UI kelola PIN),
+    //    nilai plaintext lama tetap diterima sampai di-reset dari UI.
+    const { data: supervisorRows } = await db
       .from('users')
-      .select('id, full_name, role')
-      .eq('role', 'pos_supervisor')
-      .eq('pos_pin', String(supervisor_pin))
-      .single();
+      .select('id, full_name, role, pos_pin')
+      .eq('role', 'pos_supervisor');
+    const supervisor = await findSupervisorByPin(
+      supervisorRows ?? [],
+      String(supervisor_pin)
+    );
 
     if (!supervisor) {
       return Response.json({ success: false, error: 'PIN supervisor tidak valid' }, { status: 403 });

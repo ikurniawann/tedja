@@ -7,6 +7,7 @@ import {
   resolveReportStallFilter,
 } from "@/lib/pos/report-stall-filter";
 import { isRevenueOrder } from "@/lib/pos/revenue-order";
+import { aggregatePerStall, summarizeSales } from "@/lib/pos/sales-summary";
 
 type TransactionRow = {
   id: string;
@@ -15,6 +16,10 @@ type TransactionRow = {
   status: string | null;
   payment_status: string | null;
   payment_method: string | null;
+  subtotal: number | string | null;
+  discount_amount: number | string | null;
+  tax_amount: number | string | null;
+  service_charge_amount: number | string | null;
   total_amount: number | string | null;
   ark_coins_used: number | string | null;
   cashier_id: string | null;
@@ -26,6 +31,14 @@ type TransactionRow = {
   sold_from: string | null;
   xendit_qr_id: string | null;
   xendit_external_id: string | null;
+  /** Tanggal WIB (YYYY-MM-DD) — dihitung DB supaya konsisten dengan filter. */
+  hari_wib: string;
+};
+
+type TopProductRow = {
+  product_name: string;
+  quantity: number | string;
+  revenue: number | string;
 };
 
 function toNumber(value: unknown) {
@@ -70,7 +83,15 @@ export async function GET(request: NextRequest) {
             transactions: 0,
             total_sales: 0,
             total_ark_used: 0,
+            revenue: 0,
+            discount: 0,
+            tax: 0,
+            service: 0,
+            nett: 0,
           },
+          per_stall: [],
+          top_products: [],
+          daily: [],
           rows: [],
         },
       });
@@ -84,9 +105,14 @@ export async function GET(request: NextRequest) {
          o.status,
          o.payment_status,
          o.payment_method,
+         o.subtotal,
+         o.discount_amount,
+         o.tax_amount,
+         o.service_charge_amount,
          o.total_amount,
          o.ark_coins_used,
          o.cashier_id,
+         (o.ordered_at AT TIME ZONE 'Asia/Jakarta')::date::text AS hari_wib,
          COALESCE(o.warehouse_id, stall_from_item.warehouse_id) AS warehouse_id,
          COALESCE(w_order.code, stall_from_item.stall_code) AS stall_code,
          COALESCE(w_order.name, stall_from_item.stall_name) AS stall_name,
@@ -135,15 +161,48 @@ export async function GET(request: NextRequest) {
     );
 
     const revenueRows = rows.filter(isRevenueOrder);
-    const summary = revenueRows.reduce(
-      (acc, row) => {
-        acc.transactions += 1;
-        acc.total_sales += toNumber(row.total_amount);
-        acc.total_ark_used += toNumber(row.ark_coins_used);
-        return acc;
-      },
-      { transactions: 0, total_sales: 0, total_ark_used: 0 }
-    );
+    const summary = summarizeSales(revenueRows);
+    const perStall = aggregatePerStall(revenueRows);
+
+    // Tren harian (hari WIB): nett + jumlah transaksi per tanggal — bahan
+    // grafik tren di halaman laporan.
+    const dailyMap = new Map<string, { nett: number; transactions: number }>();
+    for (const row of revenueRows) {
+      const bucket = dailyMap.get(row.hari_wib) ?? { nett: 0, transactions: 0 };
+      bucket.nett += toNumber(row.total_amount);
+      bucket.transactions += 1;
+      dailyMap.set(row.hari_wib, bucket);
+    }
+    const daily = Array.from(dailyMap.entries())
+      .map(([date, v]) => ({
+        date,
+        nett: Math.round(v.nett * 100) / 100,
+        transactions: v.transactions,
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    // Top produk pada rentang & stall yang SAMA dengan daftar transaksi —
+    // satu sumber filter, supaya angka antar-bagian laporan tidak berselisih.
+    const orderIds = revenueRows.map((row) => row.id);
+    let topProducts: Array<{ product_name: string; quantity: number; revenue: number }> = [];
+    if (orderIds.length > 0) {
+      const topRows = await query<TopProductRow>(
+        `SELECT COALESCE(i.product_name, 'Tanpa Nama') AS product_name,
+                SUM(i.quantity)::float8 AS quantity,
+                SUM(i.total_amount)::float8 AS revenue
+           FROM pos.pos_order_items i
+          WHERE i.order_id = ANY($1::uuid[])
+          GROUP BY 1
+          ORDER BY SUM(i.total_amount) DESC
+          LIMIT 10`,
+        [orderIds]
+      );
+      topProducts = topRows.map((row) => ({
+        product_name: row.product_name,
+        quantity: Math.round(toNumber(row.quantity) * 100) / 100,
+        revenue: Math.round(toNumber(row.revenue) * 100) / 100,
+      }));
+    }
 
     return NextResponse.json({
       success: true,
@@ -157,9 +216,18 @@ export async function GET(request: NextRequest) {
         stall_locked: stallFilter.stallLocked,
         summary: {
           transactions: summary.transactions,
-          total_sales: Math.round(summary.total_sales * 100) / 100,
-          total_ark_used: Math.round(summary.total_ark_used * 100) / 100,
+          // Nama lama dipertahankan untuk kompatibilitas klien yang sudah ada.
+          total_sales: summary.nett,
+          total_ark_used: summary.ark_used,
+          revenue: summary.revenue,
+          discount: summary.discount,
+          tax: summary.tax,
+          service: summary.service,
+          nett: summary.nett,
         },
+        per_stall: perStall,
+        top_products: topProducts,
+        daily,
         rows: revenueRows.map((row) => ({
           id: row.id,
           order_number: row.order_number,
@@ -167,6 +235,10 @@ export async function GET(request: NextRequest) {
           status: row.status,
           payment_status: row.payment_status,
           payment_method: row.payment_method,
+          subtotal: toNumber(row.subtotal),
+          discount_amount: toNumber(row.discount_amount),
+          tax_amount: toNumber(row.tax_amount),
+          service_charge_amount: toNumber(row.service_charge_amount),
           total_amount: toNumber(row.total_amount),
           ark_coins_used: toNumber(row.ark_coins_used),
           cashier_id: row.cashier_id,

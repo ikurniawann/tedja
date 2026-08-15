@@ -28,6 +28,7 @@ import { PageTransition } from "@/components/motion";
 import { PurchasingListSection } from "@/modules/purchasing/components/list/PurchasingListSection";
 import { PurchasingPageHeader } from "@/modules/purchasing/components/page/purchasing-page-header";
 import { Badge } from "@/components/ui/badge";
+import { ApexChart } from "./apex-chart";
 import { useTransactionReport } from "../queries";
 import type { TransactionReportRow } from "../types";
 import { TransactionDetailBody } from "./transaction-detail-body";
@@ -269,15 +270,136 @@ export function TransactionReportPage() {
           </div>
         ) : null}
 
-        <div className="grid gap-3 sm:grid-cols-3">
+        {/* Rincian keuangan (permintaan owner): Revenue − Diskon + Pajak +
+            Service = Nett — identitasnya bisa diperiksa pembaca sendiri. */}
+        <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 xl:grid-cols-6">
           <Metric title="Transaksi" value={String(data?.summary.transactions ?? 0)} icon={ReceiptText} />
-          <Metric title="Total penjualan" value={formatCurrency(data?.summary.total_sales ?? 0)} icon={Wallet} />
-          <Metric
-            title="ARK digunakan"
-            value={formatCurrency(data?.summary.total_ark_used ?? 0)}
-            icon={Store}
-          />
+          <Metric title="Revenue (kotor)" value={formatCurrency(data?.summary.revenue ?? 0)} icon={Wallet} />
+          <Metric title="Diskon" value={`− ${formatCurrency(data?.summary.discount ?? 0)}`} icon={Wallet} />
+          <Metric title="Pajak" value={formatCurrency(data?.summary.tax ?? 0)} icon={Wallet} />
+          <Metric title="Service" value={formatCurrency(data?.summary.service ?? 0)} icon={Wallet} />
+          <Metric title="Nett" value={formatCurrency(data?.summary.nett ?? 0)} icon={Store} />
         </div>
+
+        {/* Tren nett harian + top produk pada filter yang sama */}
+        <div className="grid gap-4 lg:grid-cols-2">
+          <Card className="border-gray-200/70 shadow-xs">
+            <CardContent className="p-4">
+              <div className="mb-3 text-sm font-semibold text-foreground">Tren Penjualan Harian (Nett)</div>
+              {(data?.daily?.length ?? 0) === 0 ? (
+                <div className="py-10 text-center text-sm text-muted-foreground">
+                  Belum ada data pada filter ini
+                </div>
+              ) : (
+                <ApexChart
+                  type="area"
+                  height={240}
+                  series={[
+                    {
+                      name: "Nett",
+                      data: (data?.daily ?? []).map((d) => ({ x: d.date, y: d.nett })),
+                    },
+                  ]}
+                  options={{
+                    chart: { toolbar: { show: false } },
+                    dataLabels: { enabled: false },
+                    stroke: { curve: "smooth", width: 2 },
+                    xaxis: { type: "category" },
+                    yaxis: {
+                      labels: {
+                        formatter: (v: number) => new Intl.NumberFormat("id-ID", { notation: "compact" }).format(v),
+                      },
+                    },
+                    tooltip: { y: { formatter: (v: number) => formatCurrency(v) } },
+                  }}
+                />
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="border-gray-200/70 shadow-xs">
+            <CardContent className="p-4">
+              <div className="mb-3 text-sm font-semibold text-foreground">Top Produk</div>
+              {(data?.top_products?.length ?? 0) === 0 ? (
+                <div className="py-10 text-center text-sm text-muted-foreground">
+                  Belum ada data pada filter ini
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  {(data?.top_products ?? []).map((prod, index) => {
+                    const max = data?.top_products?.[0]?.revenue || 1;
+                    return (
+                      <div key={prod.product_name}>
+                        <div className="flex items-center justify-between gap-2 text-sm">
+                          <span className="truncate font-medium text-foreground">
+                            {index + 1}. {prod.product_name}
+                          </span>
+                          <span className="shrink-0 text-muted-foreground">
+                            {formatQty(prod.quantity)} pcs · {formatCurrency(prod.revenue)}
+                          </span>
+                        </div>
+                        <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-muted">
+                          <div
+                            className="h-full rounded-full bg-primary"
+                            style={{ width: `${Math.max(4, (prod.revenue / max) * 100)}%` }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Rekap per stall — jawaban langsung 'laporan transaksi per stall' */}
+        <PurchasingListSection
+          icon={Store}
+          title="Rekap per Stall"
+          description="Ringkasan Revenue / Diskon / Pajak / Service / Nett tiap stall pada filter yang sama"
+        >
+          <div className="overflow-x-auto px-4">
+            <table className="min-w-full text-sm">
+              <thead className="border-b border-gray-200/70 bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
+                <tr>
+                  <th className="px-3 py-3 text-left font-semibold">Stall</th>
+                  <th className="px-3 py-3 text-right font-semibold">Transaksi</th>
+                  <th className="px-3 py-3 text-right font-semibold">Revenue</th>
+                  <th className="px-3 py-3 text-right font-semibold">Diskon</th>
+                  <th className="px-3 py-3 text-right font-semibold">Pajak</th>
+                  <th className="px-3 py-3 text-right font-semibold">Service</th>
+                  <th className="px-3 py-3 text-right font-semibold">Nett</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200/70">
+                {(data?.per_stall?.length ?? 0) === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-3 py-8 text-center text-muted-foreground">
+                      Belum ada data pada filter ini
+                    </td>
+                  </tr>
+                ) : (
+                  (data?.per_stall ?? []).map((stall) => (
+                    <tr key={stall.stall_code ?? stall.stall_name} className="hover:bg-muted/30">
+                      <td className="px-3 py-3 font-medium text-foreground">
+                        {formatStallLabel(stall)}
+                      </td>
+                      <td className="px-3 py-3 text-right">{stall.transactions}</td>
+                      <td className="px-3 py-3 text-right">{formatCurrency(stall.revenue)}</td>
+                      <td className="px-3 py-3 text-right text-rose-600">
+                        − {formatCurrency(stall.discount)}
+                      </td>
+                      <td className="px-3 py-3 text-right">{formatCurrency(stall.tax)}</td>
+                      <td className="px-3 py-3 text-right">{formatCurrency(stall.service)}</td>
+                      <td className="px-3 py-3 text-right font-semibold">{formatCurrency(stall.nett)}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </PurchasingListSection>
 
         <PurchasingListSection
           icon={CalendarDays}

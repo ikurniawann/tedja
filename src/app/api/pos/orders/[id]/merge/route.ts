@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { getPool } from "@/lib/db";
 import { createPgClient } from "@/lib/pg/create-client";
+import { findSupervisorByPin } from "@/lib/pos/supervisor-pin";
 import { getPosSession } from "@/lib/api/auth";
 import { canAppendTransferItems } from "@/lib/pos/table-sale-target";
 
@@ -70,12 +71,15 @@ export async function POST(
     const db = createPgClient();
 
     if (supervisor_pin != null && String(supervisor_pin).trim() !== "") {
-      const { data: supervisor } = await db
+      // pos_pin kini hash bcrypt (UI kelola PIN); plaintext lama tetap diterima.
+      const { data: supervisorRows } = await db
         .from("users")
-        .select("id, full_name, role")
-        .eq("role", "pos_supervisor")
-        .eq("pos_pin", String(supervisor_pin))
-        .single();
+        .select("id, full_name, role, pos_pin")
+        .eq("role", "pos_supervisor");
+      const supervisor = await findSupervisorByPin(
+        supervisorRows ?? [],
+        String(supervisor_pin)
+      );
 
       if (!supervisor) {
         return Response.json(

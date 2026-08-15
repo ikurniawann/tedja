@@ -8,14 +8,15 @@ import { isRevenueOrder } from '@/lib/pos/revenue-order';
  */
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  // Next 16: params adalah Promise — akses sinkron membuat id undefined.
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const session = await getPosSession();
   if (!session) {
     return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
   }
 
-  const shiftId = params.id;
+  const { id: shiftId } = await params;
   if (!shiftId) {
     return NextResponse.json({ success: false, error: 'Shift ID required' }, { status: 400 });
   }
