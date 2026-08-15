@@ -29,13 +29,17 @@ export function shouldCreateCheckout(stallIds: string[]): boolean {
 
 export function canAddItemToSingleStallCart(
   existingStallIds: string[],
-  incomingWarehouseId: string | null | undefined
+  incomingWarehouseId: string | null | undefined,
+  options?: { centralAllMode?: boolean }
 ): { ok: true } | { ok: false; message: string } {
   if (!incomingWarehouseId) {
-    return {
-      ok: false,
-      message: "Ada produk tanpa stall — tidak bisa dimasukkan ke keranjang",
-    };
+    if (options?.centralAllMode) {
+      return {
+        ok: false,
+        message: "Ada produk tanpa stall — tidak bisa dimasukkan ke keranjang",
+      };
+    }
+    return { ok: true };
   }
   const existing = uniqueStallIds(existingStallIds);
   if (existing.length === 0 || existing[0] === incomingWarehouseId) {
@@ -62,4 +66,18 @@ export function resolveSingleStallSellFromAllMode(input: {
     return stallIds[0] ?? null;
   }
   return null;
+}
+
+/** After resolving stallIds[0] in all-mode, require it is in the user's allowed set. */
+export function assertAllModeSellStallAssigned(
+  warehouseId: string,
+  allowedStallIds: readonly string[]
+): { ok: true } | { ok: false; message: string } {
+  if (allowedStallIds.includes(warehouseId)) {
+    return { ok: true };
+  }
+  return {
+    ok: false,
+    message: "Stall aktif di luar penempatan Anda",
+  };
 }

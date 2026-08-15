@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  assertAllModeSellStallAssigned,
   canAddItemToSingleStallCart,
   canSellMixedStall,
   resolveSingleStallSellFromAllMode,
@@ -53,7 +54,14 @@ describe("phase-1 single-stall cart", () => {
 
   it("rejects missing or other stall", () => {
     expect(canAddItemToSingleStallCart(["w-a"], "w-b").ok).toBe(false);
-    expect(canAddItemToSingleStallCart([], null).ok).toBe(false);
+    expect(canAddItemToSingleStallCart([], null, { centralAllMode: true }).ok).toBe(false);
+  });
+
+  it("allows missing stall outside central all mode", () => {
+    expect(canAddItemToSingleStallCart([], null).ok).toBe(true);
+    expect(canAddItemToSingleStallCart([], undefined, { centralAllMode: false }).ok).toBe(
+      true
+    );
   });
 });
 
@@ -88,5 +96,19 @@ describe("resolveSingleStallSellFromAllMode", () => {
         canSellMixed: false,
       })
     ).toBeNull();
+  });
+});
+
+describe("assertAllModeSellStallAssigned", () => {
+  it("accepts a stall in the allowed set", () => {
+    expect(assertAllModeSellStallAssigned("w-a", ["w-a", "w-b"])).toEqual({ ok: true });
+  });
+
+  it("rejects a stall outside the user's allowed stalls", () => {
+    const result = assertAllModeSellStallAssigned("w-x", ["w-a", "w-b"]);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.message).toBe("Stall aktif di luar penempatan Anda");
+    }
   });
 });

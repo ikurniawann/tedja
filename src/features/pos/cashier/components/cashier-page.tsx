@@ -724,14 +724,16 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     item: Omit<Parameters<typeof cart.addItem>[0], 'warehouse_id'>
   ) => {
     const existing = cart.items.map((row) => row.warehouse_id);
-    const check = canAddItemToSingleStallCart(existing, product.warehouse_id);
+    const check = canAddItemToSingleStallCart(existing, product.warehouse_id, {
+      centralAllMode: canUseCentralCashier && activeMode === 'all',
+    });
     if (!check.ok) {
       toast.error(check.message);
       return false;
     }
     cart.addItem({ ...item, warehouse_id: product.warehouse_id });
     return true;
-  }, [cart]);
+  }, [activeMode, canUseCentralCashier, cart]);
 
   const productSuggestions = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
@@ -887,7 +889,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
   const handleConfirmGiftCardSale = useCallback((values: GiftCardSaleValues) => {
     const product = giftCardProduct;
     if (!product) return;
-    tryAddCatalogItem(product, {
+    if (!tryAddCatalogItem(product, {
       // id unik per nominal supaya dua nominal berbeda tidak digabung jadi
       // satu baris keranjang (kartu berbeda, saldo berbeda)
       id: `${product.id}-${values.nominal}`,
@@ -897,7 +899,9 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       quantity: values.quantity,
       imageUrl: product.image_url,
       station: product.station,
-    });
+    })) {
+      return;
+    }
     setGiftCardBuyer(
       values.buyerName || values.buyerPhone
         ? { name: values.buyerName, phone: values.buyerPhone }
@@ -917,7 +921,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
      supaya dua varian berbeda tidak digabung; harga = override ?? produk) */
   const handleSelectMerchSku = useCallback((product: Product, sku: ProductSku) => {
     if (!requireActiveShift()) return;
-    tryAddCatalogItem(product, {
+    if (!tryAddCatalogItem(product, {
       id: `${product.id}::sku:${sku.id}`,
       productId: product.id,
       skuId: sku.id,
@@ -927,7 +931,9 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       quantity: 1,
       imageUrl: product.image_url,
       station: product.station,
-    });
+    })) {
+      return;
+    }
     setMerchSkuProduct(null);
   }, [cart, requireActiveShift, tryAddCatalogItem]);
 

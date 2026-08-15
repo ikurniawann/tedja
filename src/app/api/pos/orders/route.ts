@@ -14,7 +14,9 @@ import {
 } from '@/lib/pos/merchandise-stock';
 import { normalizeGuestCount } from '@/lib/pos/guest-count';
 import { getApiUserScope } from '@/lib/api/scope';
+import { getStallAccess } from '@/lib/auth/stall-access';
 import {
+  assertAllModeSellStallAssigned,
   canSellMixedStall,
   resolveSingleStallSellFromAllMode,
 } from '@/lib/pos/central-cashier';
@@ -267,6 +269,18 @@ export async function POST(request: NextRequest) {
 
     let sellWarehouseId: string;
     if (singleStallFromAll) {
+      const access = await getStallAccess(
+        sessionUserId,
+        scope?.role ?? null,
+        scope?.branchId ?? null
+      );
+      const assigned = assertAllModeSellStallAssigned(
+        singleStallFromAll,
+        access.stalls.map((stall) => stall.id)
+      );
+      if (!assigned.ok) {
+        return NextResponse.json({ success: false, error: assigned.message }, { status: 400 });
+      }
       sellWarehouseId = singleStallFromAll;
     } else {
       const sellStall = await resolvePosSellStallForUser(sessionUserId);

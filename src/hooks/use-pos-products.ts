@@ -2,7 +2,13 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { getProducts, type Product } from "@/lib/pos-api";
-import { cacheProducts, getCachedProducts, setLastSyncTimestamp } from "@/lib/pos-db";
+import {
+  cacheCatalogMeta,
+  cacheProducts,
+  getCachedCatalogMeta,
+  getCachedProducts,
+  setLastSyncTimestamp,
+} from "@/lib/pos-db";
 import type { ActiveStallMode } from "@/lib/pos/pos-sell-stall";
 
 export function usePosProducts() {
@@ -53,12 +59,18 @@ export function usePosProducts() {
           xp: p.xp,
           station: p.station,
           product_kind: p.product_kind,
+          warehouse_id: p.warehouse_id ?? null,
+          warehouse_name: p.warehouse_name ?? null,
         }))
       );
+      void cacheCatalogMeta({ active_mode: res.meta?.active_mode ?? null });
       void setLastSyncTimestamp("products");
     } catch (err: any) {
       try {
-        const cached = await getCachedProducts();
+        const [cached, cachedMeta] = await Promise.all([
+          getCachedProducts(),
+          getCachedCatalogMeta(),
+        ]);
         if (cached.length > 0) {
           setProducts(cached as Product[]);
           const cats = Array.from(
@@ -68,7 +80,7 @@ export function usePosProducts() {
           setIsOfflineFallback(true);
           setError(null);
           setStallBlockedReason(null);
-          setActiveMode(null);
+          setActiveMode(cachedMeta?.active_mode ?? null);
         } else {
           setError(err.message || "Failed to load products");
         }
