@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createPgClient } from "@/lib/pg/create-client";
+import {
+  MixedCheckoutError,
+  completeMixedCheckout,
+  resolveXenditPaidWebhookAction,
+} from "@/lib/pos/create-mixed-checkout";
 import { creditPendingTopup } from "@/lib/pos/topup-credit";
 import {
   extractXenditWebhookToken,
@@ -78,34 +83,85 @@ export async function POST(request: NextRequest) {
       if (data?.id) txId = String(data.id);
     }
 
-    if (!txId) {
-      console.warn("[xendit webhook] no matching topup", {
-        qrId: parsed.qrId,
-        referenceId: parsed.referenceId,
-        paymentId: parsed.paymentId,
+    let checkoutId: string | null = null;
+    if (!txId && parsed.referenceId) {
+      const { data: checkout } = await db
+        .from("pos_checkouts")
+        .select("id")
+        .eq("xendit_external_id", parsed.referenceId)
+        .maybeSingle();
+      if (checkout?.id) checkoutId = String(checkout.id);
+    }
+
+    let childCount = 0;
+    if (checkoutId) {
+      const { data: children } = await db
+        .from("pos_orders")
+        .select("id")
+        .eq("checkout_id", checkoutId);
+      childCount = (children || []).length;
+    }
+
+    const action = resolveXenditPaidWebhookAction({
+      topupId: txId,
+      checkoutId,
+      childCount,
+    });
+
+    if (action.type === "credit_topup" && txId) {
+      const result = await creditPendingTopup(db, {
+        transactionId: txId,
+        xenditPaymentId: parsed.paymentId || parsed.qrId,
+        notes: "Top-up QRIS",
       });
+
       return NextResponse.json({
         success: true,
-        ignored: true,
-        reason: "topup_not_found",
+        data: {
+          topup_id: txId,
+          credit_status: result.status,
+          balance_after: "balance_after" in result ? result.balance_after : undefined,
+        },
       });
     }
 
-    const result = await creditPendingTopup(db, {
-      transactionId: txId,
-      xenditPaymentId: parsed.paymentId || parsed.qrId,
-      notes: "Top-up QRIS",
-    });
+    if (action.type === "noop_checkout") {
+      return NextResponse.json({
+        success: true,
+        ignored: true,
+        reason: "checkout_children_exist",
+        data: { checkout_id: action.checkoutId },
+      });
+    }
 
+    if (action.type === "complete_checkout") {
+      const result = await completeMixedCheckout(action.checkoutId);
+      return NextResponse.json({
+        success: true,
+        data: {
+          checkout_id: action.checkoutId,
+          order_ids: result.orderIds,
+        },
+      });
+    }
+
+    console.warn("[xendit webhook] no matching topup", {
+      qrId: parsed.qrId,
+      referenceId: parsed.referenceId,
+      paymentId: parsed.paymentId,
+    });
     return NextResponse.json({
       success: true,
-      data: {
-        topup_id: txId,
-        credit_status: result.status,
-        balance_after: "balance_after" in result ? result.balance_after : undefined,
-      },
+      ignored: true,
+      reason: "topup_not_found",
     });
   } catch (error: unknown) {
+    if (error instanceof MixedCheckoutError) {
+      return NextResponse.json(
+        { success: false, error: error.message },
+        { status: error.status }
+      );
+    }
     console.error("Xendit webhook error:", error);
     return NextResponse.json(
       { success: false, error: getErrorMessage(error) },

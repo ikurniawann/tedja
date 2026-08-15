@@ -332,6 +332,43 @@ export function shouldSyncCustomerStatsOnFinalize(input: {
   return !input.alreadyHadChildren;
 }
 
+export type XenditPaidWebhookAction =
+  | { type: "credit_topup" }
+  | { type: "complete_checkout"; checkoutId: string }
+  | { type: "noop_checkout"; checkoutId: string }
+  | { type: "ignore" };
+
+export function resolveXenditPaidWebhookAction(input: {
+  topupId?: string | null;
+  checkoutId?: string | null;
+  childCount: number;
+}): XenditPaidWebhookAction {
+  if (input.topupId) return { type: "credit_topup" };
+  const checkoutId = String(input.checkoutId || "").trim();
+  if (!checkoutId) return { type: "ignore" };
+  if (input.childCount > 0) return { type: "noop_checkout", checkoutId };
+  return { type: "complete_checkout", checkoutId };
+}
+
+export type CompleteMixedCheckoutTender = {
+  paymentMethod?: string | null;
+  amountPaid?: number | null;
+};
+
+export function resolveCompleteCheckoutTender(input: {
+  tender?: CompleteMixedCheckoutTender;
+  storedPaymentMethod?: string | null;
+  totalAmount: number;
+}): { paymentMethod: string | null; amountPaid: number } {
+  const tender = input.tender || {};
+  const paymentMethod = String(tender.paymentMethod || input.storedPaymentMethod || "").trim() || null;
+  const amountPaid =
+    tender.amountPaid != null && Number.isFinite(Number(tender.amountPaid))
+      ? Number(tender.amountPaid)
+      : input.totalAmount;
+  return { paymentMethod, amountPaid };
+}
+
 function allocateAmount(total: number, weights: number[]): number[] {
   const sum = weights.reduce((a, b) => a + b, 0);
   if (sum <= 0 || total === 0) return weights.map(() => 0);
@@ -1470,11 +1507,6 @@ async function confirmStoredCheckoutQrisPaid(input: {
   }
 }
 
-export type CompleteMixedCheckoutTender = {
-  paymentMethod?: string | null;
-  amountPaid?: number | null;
-};
-
 export async function completeMixedCheckout(
   checkoutId: string,
   tender: CompleteMixedCheckoutTender = {}
@@ -1508,9 +1540,14 @@ export async function completeMixedCheckout(
 
   const childTotal = existingChildren.reduce((sum, row) => sum + row.total, 0);
   const totalAmount = toNumber(preview.total_amount) || childTotal;
+  const storedTender = resolveCompleteCheckoutTender({
+    tender,
+    storedPaymentMethod: preview.payment_method,
+    totalAmount,
+  });
   const resolved = resolveCheckoutBillTender({
-    paymentMethod: tender.paymentMethod,
-    amountPaid: tender.amountPaid,
+    paymentMethod: storedTender.paymentMethod,
+    amountPaid: storedTender.amountPaid,
     totalAmount,
   });
   if (!resolved.ok) {

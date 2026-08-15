@@ -12,8 +12,10 @@ import {
   rejectUnsupportedMixedTender,
   resolveCheckoutBillTender,
   resolveCheckoutQrisAction,
+  resolveCompleteCheckoutTender,
   resolveLineWarehouse,
   resolveOrderSoldFrom,
+  resolveXenditPaidWebhookAction,
   settleMixedCheckoutTender,
   shouldInsertCheckoutChildren,
   shouldReuseCheckoutQris,
@@ -386,6 +388,75 @@ describe("shouldSyncCustomerStatsOnFinalize", () => {
   it("syncs stats on first finalize only", () => {
     expect(shouldSyncCustomerStatsOnFinalize({ alreadyHadChildren: false })).toBe(true);
     expect(shouldSyncCustomerStatsOnFinalize({ alreadyHadChildren: true })).toBe(false);
+  });
+});
+
+describe("resolveXenditPaidWebhookAction", () => {
+  it("keeps the wallet topup path when a pending topup matches", () => {
+    expect(
+      resolveXenditPaidWebhookAction({
+        topupId: "tx-1",
+        checkoutId: "chk-1",
+        childCount: 0,
+      })
+    ).toEqual({ type: "credit_topup" });
+  });
+
+  it("completes mixed checkout when external_id matches and children are missing", () => {
+    expect(
+      resolveXenditPaidWebhookAction({
+        topupId: null,
+        checkoutId: "chk-1",
+        childCount: 0,
+      })
+    ).toEqual({ type: "complete_checkout", checkoutId: "chk-1" });
+  });
+
+  it("no-ops when checkout children already exist", () => {
+    expect(
+      resolveXenditPaidWebhookAction({
+        topupId: null,
+        checkoutId: "chk-1",
+        childCount: 2,
+      })
+    ).toEqual({ type: "noop_checkout", checkoutId: "chk-1" });
+  });
+
+  it("ignores paid webhooks that match neither topup nor checkout", () => {
+    expect(
+      resolveXenditPaidWebhookAction({
+        topupId: null,
+        checkoutId: null,
+        childCount: 0,
+      })
+    ).toEqual({ type: "ignore" });
+  });
+});
+
+describe("resolveCompleteCheckoutTender", () => {
+  it("lets completeMixedCheckout(checkoutId) use stored QRIS tender", () => {
+    expect(
+      resolveCompleteCheckoutTender({
+        storedPaymentMethod: "qris",
+        totalAmount: 45000,
+      })
+    ).toEqual({
+      paymentMethod: "qris",
+      amountPaid: 45000,
+    });
+  });
+
+  it("prefers an explicit cashier tender over stored checkout values", () => {
+    expect(
+      resolveCompleteCheckoutTender({
+        tender: { paymentMethod: "cash", amountPaid: 50000 },
+        storedPaymentMethod: "qris",
+        totalAmount: 45000,
+      })
+    ).toEqual({
+      paymentMethod: "cash",
+      amountPaid: 50000,
+    });
   });
 });
 
