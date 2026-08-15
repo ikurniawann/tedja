@@ -123,7 +123,10 @@ export function parseReportDateRange(dateFrom?: string | null, dateTo?: string |
   return {
     dateFrom: from,
     dateTo: to,
-    startIso: `${from}T00:00:00.000Z`,
-    endIso: `${to}T23:59:59.999Z`,
+    // Hari operasional = WIB, bukan UTC: tanpa offset +07:00, order setelah
+    // 17:00 WIB tercatat di tanggal laporan BERIKUTNYA dan order dini hari
+    // hilang dari tanggalnya sendiri.
+    startIso: `${from}T00:00:00.000+07:00`,
+    endIso: `${to}T23:59:59.999+07:00`,
   };
 }

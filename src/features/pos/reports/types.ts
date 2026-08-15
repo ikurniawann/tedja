@@ -124,12 +124,47 @@ export interface TransactionReportRow {
   status: string | null;
   payment_status: string | null;
   payment_method: string | null;
+  subtotal: number;
+  discount_amount: number;
+  tax_amount: number;
+  service_charge_amount: number;
   total_amount: number;
   ark_coins_used: number;
   cashier_id: string | null;
   warehouse_id: string | null;
   stall_code: string | null;
   stall_name: string | null;
+}
+
+export interface TransactionReportSummary {
+  transactions: number;
+  total_sales: number;
+  total_ark_used: number;
+  /** Σ subtotal — nilai barang SEBELUM diskon/pajak/service. */
+  revenue: number;
+  discount: number;
+  tax: number;
+  service: number;
+  /** Σ total_amount — yang benar-benar dibayar pelanggan. */
+  nett: number;
+}
+
+export interface TransactionStallSummary extends TransactionReportSummary {
+  ark_used: number;
+  stall_code: string | null;
+  stall_name: string;
+}
+
+export interface TransactionTopProduct {
+  product_name: string;
+  quantity: number;
+  revenue: number;
+}
+
+export interface TransactionDailyPoint {
+  date: string;
+  nett: number;
+  transactions: number;
 }
 
 export interface TransactionReport {
@@ -140,11 +175,10 @@ export interface TransactionReport {
   };
   stall_options: ReportStallOption[];
   stall_locked: boolean;
-  summary: {
-    transactions: number;
-    total_sales: number;
-    total_ark_used: number;
-  };
+  summary: TransactionReportSummary;
+  per_stall: TransactionStallSummary[];
+  top_products: TransactionTopProduct[];
+  daily: TransactionDailyPoint[];
   rows: TransactionReportRow[];
 }
 

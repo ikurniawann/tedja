@@ -63,29 +63,36 @@ type BranchRow = {
 };
 
 function paidOrdersQuery(db: ReturnType<typeof createPgClient>, startIso: string, endIso: string) {
+  // Alur POS live menyisakan order LUNAS berstatus 'pending' — status
+  // fulfilment tidak pernah maju ke 'completed', sehingga filter lama membuat
+  // laporan ini SELALU nol. Pendapatan = dibayar dan tidak batal, definisi
+  // yang sama dengan laporan transaksi.
   return db
     .from("pos_orders")
     .select(
       "id, shift_id, order_type, subtotal, discount_amount, tax_amount, service_charge_amount, total_amount, ordered_at, completed_at, discount_reason"
     )
-    .eq("status", "completed")
+    .not("status", "in", '("cancelled","voided","merged")')
     .eq("payment_status", "paid")
     .is("voided_at", null)
     .gte("ordered_at", startIso)
     .lte("ordered_at", endIso);
 }
 
-async function loadSettings(db: ReturnType<typeof createPgClient>) {
-  const { data } = await db
-    .from("settings")
-    .select("key, value")
-    .in("key", ["pos_monthly_sales_target", "pos_daily_sales_target", "pos_outlet_name"]);
-
-  const map = new Map((data || []).map((row) => [row.key as string, row.value]));
+async function loadSettings() {
+  // Sebelumnya membaca tabel bare "settings" yang tidak ada — error-nya
+  // tertelan destructuring dan target selalu nol. Sumber yang benar:
+  // configuration.app_settings (pola DeepSeek/Google BP/WA gateway).
+  const { getSettings } = await import("@/lib/settings/app-settings");
+  const stored = await getSettings([
+    "pos_monthly_sales_target",
+    "pos_daily_sales_target",
+    "pos_outlet_name",
+  ]).catch(() => ({}) as Record<string, string | null>);
   return {
-    monthlyTarget: toNumber(map.get("pos_monthly_sales_target")),
-    dailyTarget: toNumber(map.get("pos_daily_sales_target")),
-    outletName: (map.get("pos_outlet_name") as string) || null,
+    monthlyTarget: toNumber(stored["pos_monthly_sales_target"]),
+    dailyTarget: toNumber(stored["pos_daily_sales_target"]),
+    outletName: stored["pos_outlet_name"] || null,
   };
 }
 
@@ -100,8 +107,9 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const date = searchParams.get("date") || new Date().toISOString().slice(0, 10);
     const shiftId = searchParams.get("shift_id");
-    const startIso = `${date}T00:00:00.000Z`;
-    const endIso = `${date}T23:59:59.999Z`;
+    // Hari operasional WIB — jendela UTC membuat order malam pindah tanggal.
+    const startIso = `${date}T00:00:00.000+07:00`;
+    const endIso = `${date}T23:59:59.999+07:00`;
 
     let ordersQuery = paidOrdersQuery(db, startIso, endIso);
     if (shiftId) ordersQuery = ordersQuery.eq("shift_id", shiftId);
@@ -115,7 +123,7 @@ export async function GET(request: NextRequest) {
           .gte("opened_at", startIso)
           .lte("opened_at", endIso)
           .order("opened_at", { ascending: true }),
-        loadSettings(db),
+        loadSettings(),
         getApiUser(),
       ]);
 
@@ -314,14 +322,13 @@ export async function GET(request: NextRequest) {
     const reportDate = new Date(`${date}T12:00:00`);
     const daysInMonth = new Date(reportDate.getFullYear(), reportDate.getMonth() + 1, 0).getDate();
     const dayOfMonth = reportDate.getDate();
-    const monthStart = new Date(Date.UTC(reportDate.getFullYear(), reportDate.getMonth(), 1));
-    const monthEnd = new Date(Date.UTC(reportDate.getFullYear(), reportDate.getMonth() + 1, 0, 23, 59, 59, 999));
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const y = reportDate.getFullYear();
+    const m = reportDate.getMonth() + 1;
+    const monthStartIso = `${y}-${pad(m)}-01T00:00:00.000+07:00`;
+    const monthEndIso = `${y}-${pad(m)}-${pad(daysInMonth)}T23:59:59.999+07:00`;
 
-    const { data: monthOrders } = await paidOrdersQuery(
-      db,
-      monthStart.toISOString(),
-      monthEnd.toISOString()
-    );
+    const { data: monthOrders } = await paidOrdersQuery(db, monthStartIso, monthEndIso);
 
     const monthlyActual = roundCurrency(
       ((monthOrders || []) as PosOrderRow[]).reduce((sum, order) => {
@@ -329,8 +336,7 @@ export async function GET(request: NextRequest) {
       }, 0)
     );
 
-    const monthToDateEnd = new Date(`${date}T23:59:59.999Z`);
-    const { data: mtdOrders } = await paidOrdersQuery(db, monthStart.toISOString(), monthToDateEnd.toISOString());
+    const { data: mtdOrders } = await paidOrdersQuery(db, monthStartIso, endIso);
 
     const monthToDateActual = roundCurrency(
       ((mtdOrders || []) as PosOrderRow[]).reduce((sum, order) => {

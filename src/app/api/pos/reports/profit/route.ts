@@ -120,7 +120,10 @@ export async function GET(request: NextRequest) {
     const { data: orders, error: orderError } = await db
       .from("pos_orders")
       .select("id, order_number, ordered_at, cashier_id, total_amount")
-      .eq("status", "completed")
+      // Alur POS live menyisakan order LUNAS berstatus 'pending' (status
+      // fulfilment tidak pernah maju ke 'completed'). Pendapatan = yang sudah
+      // dibayar dan tidak batal — definisi yang sama dengan laporan transaksi.
+      .not("status", "in", '("cancelled","voided","merged")')
       .eq("payment_status", "paid")
       .gte("ordered_at", startDate.toISOString())
       .lte("ordered_at", endDate.toISOString())
