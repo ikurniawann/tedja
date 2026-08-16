@@ -77,6 +77,8 @@ interface CartPanelProps {
   /** Catatan transaksi — ikut tercetak di struk customer & CO dapur/bar */
   orderNotes?: string;
   onOrderNotesChange?: (value: string) => void;
+  /** Mode Semua Stall — tampilkan badge stall asal per item */
+  showStallBadges?: boolean;
   itemDiscountTotal?: number;
   /** Auto product offers (bundle/bxgy/volume) */
   offerDiscount?: number;
@@ -159,6 +161,7 @@ export function CartPanel({
   onClearPromo,
   orderNotes = '',
   onOrderNotesChange,
+  showStallBadges = false,
   itemDiscountTotal = 0,
   offerDiscount = 0,
   offerApplied = [],
@@ -296,6 +299,11 @@ export function CartPanel({
                       <div className="min-w-0 flex-1">
                         <div className="truncate text-sm font-medium text-foreground">
                           {item.name}
+                          {showStallBadges && item.stallName ? (
+                            <span className="ml-1.5 rounded bg-sky-50 px-1.5 py-0.5 align-middle text-[9px] font-semibold uppercase tracking-wide text-sky-700">
+                              {item.stallName}
+                            </span>
+                          ) : null}
                         </div>
                         {(item.variantName ||
                           (item.modifierNames && item.modifierNames.length > 0)) && (
@@ -401,6 +409,11 @@ export function CartPanel({
                         </div>
                         <div className="truncate text-sm font-medium text-foreground">
                           {item.name}
+                          {showStallBadges && item.stallName ? (
+                            <span className="ml-1.5 rounded bg-sky-50 px-1.5 py-0.5 align-middle text-[9px] font-semibold uppercase tracking-wide text-sky-700">
+                              {item.stallName}
+                            </span>
+                          ) : null}
                         </div>
                         <div className="mt-1 text-xs font-medium text-emerald-700">
                           {formatCurrency(0)}

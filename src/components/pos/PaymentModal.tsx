@@ -26,12 +26,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import dynamic from "next/dynamic";
 
-const QRCodeSVG = dynamic(
-  () => import("qrcode.react").then((mod) => mod.QRCodeSVG),
-  { ssr: false }
-);
+import { QrisCard } from "@/components/pos/QrisCard";
 
 import { formatIdrInput, parseIdrDigits } from "./idr-input";
 import type { CfdPayment } from "@/lib/pos/cfd";
@@ -188,6 +184,8 @@ export function PaymentModal({
     qr_string: string;
     qr_id: string;
     reference_id?: string;
+    merchant_name?: string | null;
+    nmid?: string | null;
   } | null>(null);
   const [qrisLoading, setQrisLoading] = useState(false);
   const [qrisUnavailable, setQrisUnavailable] = useState(false);
@@ -437,6 +435,8 @@ export function PaymentModal({
         qr_string: body.data.qr_string,
         qr_id: String(body.data.qr_id || ""),
         reference_id: String(body.data.reference_id || ""),
+        merchant_name: body.data.merchant_name ?? null,
+        nmid: body.data.nmid ?? null,
       });
       setQrisPaid(false);
       qrisConfirmStarted.current = false;
@@ -698,24 +698,16 @@ export function PaymentModal({
               ) : (
                 <div className="flex flex-col items-center gap-3">
                   {qris.qr_string ? (
-                    <div className="rounded-xl border border-gray-200/70 bg-white p-3">
-                      <QRCodeSVG value={qris.qr_string} size={200} />
-                    </div>
+                    <p className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      QR tampil di dialog QRIS…
+                    </p>
                   ) : (
                     <span className="inline-flex items-center gap-2 text-amber-700">
                       <AlertTriangle className="h-4 w-4 shrink-0" />
                       QR belum siap — coba pilih metode lain lalu kembali ke QRIS
                     </span>
                   )}
-                  <p className="font-medium text-foreground">
-                    Scan QRIS · {formatCurrency(qris.amount)}
-                  </p>
-                  <p className="inline-flex items-center gap-2 text-xs text-muted-foreground">
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    {qrisPaid || submitting
-                      ? "Pembayaran diterima, menyelesaikan…"
-                      : "Menunggu pembayaran pelanggan…"}
-                  </p>
                 </div>
               )}
             </div>
@@ -976,6 +968,41 @@ export function PaymentModal({
           )}
         </DialogFooter>
       </DialogPanel>
+
+      {/* Dialog fokus QRIS (owner 2026-08-16): QR tampil bergaya terpampang
+          QRIS Indonesia (logo QRIS+GPN, merchant, NMID) menutupi modal bayar
+          sampai pembayaran terkonfirmasi atau kasir memilih metode lain. */}
+      {method === "qris" && qris?.qr_string && !qrisUnavailable ? (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4">
+          <div className="flex max-h-full w-full max-w-sm flex-col items-center gap-3 overflow-y-auto">
+            <QrisCard
+              qrString={qris.qr_string}
+              merchantName={qris.merchant_name}
+              nmid={qris.nmid}
+            />
+            <div className="w-full max-w-sm rounded-xl bg-white/95 px-4 py-3 text-center shadow-sm">
+              <div className="text-2xl font-bold tabular-nums text-gray-900">
+                {formatCurrency(qris.amount)}
+              </div>
+              <p className="mt-1 inline-flex items-center gap-2 text-xs text-muted-foreground">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                {qrisPaid || submitting
+                  ? "Pembayaran diterima, menyelesaikan…"
+                  : "Menunggu pembayaran pelanggan…"}
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              className="border-white/40 bg-white/90 hover:bg-white"
+              disabled={qrisPaid || submitting}
+              onClick={() => setMethod("cash")}
+            >
+              Pilih metode lain
+            </Button>
+          </div>
+        </div>
+      ) : null}
     </Dialog>
   );
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  resolvePosSellScope,
   assertProductWarehousesMatchStall,
   posCartHasItems,
   resolvePosSellStall,
@@ -88,5 +89,67 @@ describe("assertProductWarehousesMatchStall", () => {
   it("rejects foreign or missing stall products", () => {
     expect(assertProductWarehousesMatchStall(["w-a", "w-b"], "w-a").ok).toBe(false);
     expect(assertProductWarehousesMatchStall([null], "w-a").ok).toBe(false);
+  });
+});
+
+/**
+ * Mode jual "Semua Stall" (permintaan owner 2026-08-16): kasir ber-akses
+ * penuh boleh menampilkan katalog seluruh stall dan menjual lintas stall
+ * dalam SATU transaksi. Kontrak:
+ * - allStallsAllowed=false → perilaku lama persis (satu stall wajib).
+ * - allStallsAllowed=true + cookie "all"/unset tanpa penempatan → mode "all".
+ * - Cookie stall tertentu tetap menang walau allStallsAllowed=true.
+ */
+describe("resolvePosSellScope — mode Semua Stall", () => {
+  it("cookie 'all' + allStallsAllowed → mode all", () => {
+    const result = resolvePosSellScope({
+      activeMode: "all",
+      activeStallId: null,
+      assignedWarehouseIds: [],
+      allStallsAllowed: true,
+    });
+    expect(result).toEqual({ mode: "all" });
+  });
+
+  it("cookie 'all' tanpa izin → tetap diblok seperti dulu", () => {
+    const result = resolvePosSellScope({
+      activeMode: "all",
+      activeStallId: null,
+      assignedWarehouseIds: ["w-a"],
+      allStallsAllowed: false,
+    });
+    expect(result.mode).toBe("blocked");
+    if (result.mode === "blocked") expect(result.reason).toBe("all_stalls");
+  });
+
+  it("cookie stall tertentu tetap menang meski boleh semua stall", () => {
+    const result = resolvePosSellScope({
+      activeMode: "stall",
+      activeStallId: "w-b",
+      assignedWarehouseIds: ["w-a", "w-b"],
+      allStallsAllowed: true,
+    });
+    expect(result).toEqual({ mode: "stall", warehouseId: "w-b" });
+  });
+
+  it("unset + tanpa penempatan + allStallsAllowed → mode all (super admin default)", () => {
+    const result = resolvePosSellScope({
+      activeMode: "unset",
+      activeStallId: null,
+      assignedWarehouseIds: [],
+      allStallsAllowed: true,
+    });
+    expect(result).toEqual({ mode: "all" });
+  });
+
+  it("unset dengan default warehouse → tetap stall itu (bukan all)", () => {
+    const result = resolvePosSellScope({
+      activeMode: "unset",
+      activeStallId: null,
+      assignedWarehouseIds: ["w-a"],
+      defaultWarehouseId: "w-a",
+      allStallsAllowed: true,
+    });
+    expect(result).toEqual({ mode: "stall", warehouseId: "w-a" });
   });
 });

@@ -63,6 +63,9 @@ export interface OffProduct {
   xp?: number;
   warehouse_id?: string | null;
   warehouse_name?: string | null;
+  stall_warehouse_id?: string | null;
+  stall_code?: string | null;
+  stall_name?: string | null;
 }
 
 export type OffCatalogActiveMode = "unset" | "all" | "stall";

@@ -37,6 +37,7 @@ import type {
 } from '../types';
 import { useTopupCustomers, useTopupHistory } from '../queries';
 import { TopupMemberFinder } from './topup-member-finder';
+import { QrisCard } from '@/components/pos/QrisCard';
 import { useCancelTopup, useProcessTopup } from '../mutations';
 import { buildTopupQrImageUrl, fetchTopupStatus, listTopupCustomers } from '../api';
 import { printTopupReceipt } from '../print-topup-receipt';
@@ -716,14 +717,10 @@ export function TopupPage() {
               </div>
             </div>
             <div className="flex flex-col items-center gap-4 lg:col-span-7">
-              <div className="rounded-2xl border border-gray-200/70 bg-white p-4 shadow-sm">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={result.qr_code_url}
-                  alt="QRIS payment"
-                  className="h-72 w-72 object-contain"
-                />
-              </div>
+              <QrisCard
+                qrString={result.qr_string}
+                qrImageUrl={result.qr_code_url}
+              />
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin text-primary" />
                 Waiting for payment confirmation…

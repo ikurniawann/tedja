@@ -11,6 +11,7 @@ import {
   loadActiveXenditConfig,
 } from "@/lib/payments/xendit";
 import { resolveCheckoutQrisAction } from "@/lib/pos/create-mixed-checkout";
+import { getSettings, SETTING_KEYS } from "@/lib/settings/app-settings";
 
 // QRIS dinamis utk customer display: QR per transaksi dengan nominal terkunci.
 // Secret diambil dari Settings → Payment Gateways (configuration.payment_gateways),
@@ -203,6 +204,12 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const identity = await getSettings([
+      SETTING_KEYS.QRIS_MERCHANT_NAME,
+      SETTING_KEYS.QRIS_NMID,
+      SETTING_KEYS.COMPANY_LEGAL_NAME,
+    ]);
+
     return NextResponse.json({
       success: true,
       data: {
@@ -212,6 +219,11 @@ export async function POST(request: NextRequest) {
         amount: qr.amount,
         expires_at: qr.expires_at,
         ...(checkoutId ? { checkout_id: checkoutId } : {}),
+        merchant_name:
+          identity[SETTING_KEYS.QRIS_MERCHANT_NAME] ||
+          identity[SETTING_KEYS.COMPANY_LEGAL_NAME] ||
+          null,
+        nmid: identity[SETTING_KEYS.QRIS_NMID] || null,
       },
     });
   } catch (err) {

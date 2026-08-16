@@ -6,7 +6,10 @@ import {
   buildMerchandiseColumns,
   type MerchandiseFieldsPayload,
 } from '@/lib/pos/merchandise-fields';
-import { loadPosProductWarehouses } from '@/lib/pos/pos-sell-stall-server';
+import {
+  loadPosProductStallInfo,
+  loadPosProductWarehouses,
+} from '@/lib/pos/pos-sell-stall-server';
 import {
   applyStallScopeToProductIds,
   resolvePosProductStallScope,
@@ -143,15 +146,22 @@ export async function GET(request: NextRequest) {
       normalizedProducts as Array<Record<string, unknown>>
     );
 
-    const warehouseByProduct = await loadPosProductWarehouses(
-      enrichedProducts.map((product) => String(product.id ?? ""))
-    );
+    const productIds = enrichedProducts.map((product) => String(product.id ?? ""));
+    const [warehouseByProduct, stallInfo] = await Promise.all([
+      loadPosProductWarehouses(productIds),
+      loadPosProductStallInfo(productIds),
+    ]);
     const productsWithWarehouse = enrichedProducts.map((product) => {
-      const warehouse = warehouseByProduct.get(String(product.id ?? ""));
+      const id = String(product.id ?? "");
+      const warehouse = warehouseByProduct.get(id);
+      const info = stallInfo.get(id);
       return {
         ...product,
-        warehouse_id: warehouse?.warehouse_id ?? null,
-        warehouse_name: warehouse?.warehouse_name ?? null,
+        warehouse_id: warehouse?.warehouse_id ?? info?.warehouse_id ?? null,
+        warehouse_name: warehouse?.warehouse_name ?? info?.stall_name ?? null,
+        stall_warehouse_id: info?.warehouse_id ?? warehouse?.warehouse_id ?? null,
+        stall_code: info?.stall_code ?? null,
+        stall_name: info?.stall_name ?? warehouse?.warehouse_name ?? null,
       };
     });
 
@@ -160,6 +170,7 @@ export async function GET(request: NextRequest) {
       data: productsWithWarehouse,
       meta: {
         stall_scoped: allowedIds !== null,
+        all_stalls: stallScope.mode === "all",
         warehouse_ids: stallScope.mode === "ids" ? stallScope.warehouseIds : [],
         product_count: productsWithWarehouse.length,
         active_mode: stallScope.activeMode,

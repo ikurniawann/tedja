@@ -110,7 +110,10 @@ export function buildReceiptEscPosLayout(
   lines.push({ text: RECEIPT_DIVIDER, align: "left" });
 
   lines.push(
-    ...buildReceiptItemLines(payload.items, { withPrices: !isKitchen && !isBar })
+    ...buildReceiptItemLines(payload.items, {
+      withPrices: !isKitchen && !isBar,
+      headerStallName: payload.stallName,
+    })
   );
 
   if (!isKitchen && !isBar) {
@@ -274,6 +277,7 @@ export function buildReceiptHtml(payload: ReceiptPayload, label: ThermalPrintLab
       <td style="width:28px;vertical-align:top;font-weight:bold;padding:3px 2px">${item.quantity}x</td>
       <td style="padding:3px 2px">
         <strong>${item.name}</strong>
+        ${item.stallName && item.stallName !== stallName ? `<br><small style="color:#0369a1;font-weight:600">[${item.stallName}]</small>` : ""}
         ${!isKitchenCopy && qty > 1 ? `<br><small style="color:#555">@ ${formatCurrency(Number(item.price) || 0)}</small>` : ""}
         ${item.variantName ? `<br><small style="color:#555">${item.variantName}</small>` : ""}
         ${item.modifierNames?.length ? `<br><small style="color:#555">${item.modifierNames.join(", ")}</small>` : ""}

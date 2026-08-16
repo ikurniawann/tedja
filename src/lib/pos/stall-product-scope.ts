@@ -5,6 +5,7 @@ import { canSellMixedStall } from "@/lib/pos/central-cashier";
 import type { ActiveStallMode } from "@/lib/pos/pos-sell-stall";
 import {
   loadCentralCashierGate,
+  resolvePosSellScopeForUser,
   resolvePosSellStallForUser,
 } from "@/lib/pos/pos-sell-stall-server";
 
@@ -47,9 +48,9 @@ export async function loadProductIdsForWarehouses(
 
 /**
  * Resolve which POS products a logged-in user may sell.
- * Default: single active sell stall (1 order = 1 stall).
- * Central cashier gate + mode "all" → union of all accessible stall catalogs.
- * Regular cashier in "Semua Stall" / no stall → empty catalog.
+ * Kasir pusat + mode all → union katalog stall yang diizinkan.
+ * User unscoped "Semua Stall" → seluruh katalog.
+ * Kasir stall biasa tanpa stall aktif → katalog kosong.
  */
 export async function resolvePosProductStallScope(
   scope: UserScope | null
@@ -74,6 +75,14 @@ export async function resolvePosProductStallScope(
     const warehouseIds = access.stalls.map((stall) => stall.id);
     const productIds = await loadProductIdsForWarehouses(warehouseIds);
     return { mode: "ids", productIds, warehouseIds, activeMode: gate.activeMode };
+  }
+
+  const sellScope = await resolvePosSellScopeForUser(scope.userId);
+  if (sellScope.mode === "all") {
+    return { mode: "all", activeMode: gate.activeMode };
+  }
+  if (sellScope.mode === "blocked") {
+    return { mode: "none", reason: sellScope.reason, activeMode: gate.activeMode };
   }
 
   const sellStall = await resolvePosSellStallForUser(scope.userId);

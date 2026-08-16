@@ -27,10 +27,12 @@ export async function GET() {
     // menandai posisi sekarang tanpa endpoint tambahan. Cookie kosong =
     // mengikuti penempatan (stall pertama), "all" = Semua Stall.
     const resolved = await resolveActiveStallFromCookies();
+    // Fallback cookie unset: user akses penuh = "Semua Stall" (selaras
+    // resolvePosSellScope); user biasa mengikuti penempatan pertamanya.
     const active =
       resolved.mode === "stall"
         ? { id: resolved.stall.id, name: resolved.stall.name, code: resolved.stall.code }
-        : resolved.mode === "all"
+        : resolved.mode === "all" || access.allAccess
           ? null
           : access.stalls[0]
             ? { id: access.stalls[0].id, name: access.stalls[0].name, code: access.stalls[0].code }

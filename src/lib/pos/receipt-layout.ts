@@ -1,13 +1,18 @@
 import { formatReceiptRow } from "@/lib/pos/thermal-escpos";
 
 export function groupCartItemsByStallName<
-  T extends { warehouse_name?: string | null; warehouse_id?: string | null },
+  T extends {
+    warehouse_name?: string | null;
+    warehouse_id?: string | null;
+    stallName?: string | null;
+  },
 >(items: T[]): Array<{ stallName: string; items: T[] }> {
   const groups: Array<{ stallName: string; items: T[] }> = [];
   const indexByKey = new Map<string, number>();
   for (const item of items) {
-    const key = item.warehouse_id || item.warehouse_name?.trim() || "Stall";
-    const stallName = item.warehouse_name?.trim() || "Stall";
+    const stallName =
+      item.warehouse_name?.trim() || item.stallName?.trim() || "Stall";
+    const key = item.warehouse_id || stallName;
     const existing = indexByKey.get(key);
     if (existing != null) {
       groups[existing]?.items.push(item);
@@ -42,6 +47,7 @@ export type ReceiptLineItem = {
   notes?: string;
   warehouse_name?: string | null;
   warehouse_id?: string | null;
+  stallName?: string | null;
 };
 
 function formatReceiptCurrency(n: number) {
@@ -50,9 +56,10 @@ function formatReceiptCurrency(n: number) {
 
 export function buildReceiptItemLines(
   items: ReceiptLineItem[],
-  options?: { withPrices?: boolean }
+  options?: { withPrices?: boolean; headerStallName?: string | null }
 ): Array<{ text: string; align: "left" | "center" }> {
   const withPrices = Boolean(options?.withPrices);
+  const headerStall = String(options?.headerStallName || "").trim();
   const groups = groupCartItemsByStallName(items);
   const showHeaders = groups.length >= 2;
   const lines: Array<{ text: string; align: "left" | "center" }> = [];
@@ -73,6 +80,10 @@ export function buildReceiptItemLines(
         }
       } else {
         lines.push({ text: `${item.quantity}x ${item.name}`, align: "left" });
+      }
+      const itemStall = item.stallName?.trim() || "";
+      if (itemStall && itemStall !== headerStall) {
+        lines.push({ text: `  [${itemStall}]`, align: "left" });
       }
       if (item.variantName) lines.push({ text: `  ${item.variantName}`, align: "left" });
       if (item.modifierNames?.length) {

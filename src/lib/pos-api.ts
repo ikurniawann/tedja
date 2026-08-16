@@ -48,6 +48,10 @@ export interface Product {
   product_kind?: 'regular' | 'gift_card' | 'merchandise';
   warehouse_id?: string;
   warehouse_name?: string;
+  /** Stall asal produk — badge katalog/keranjang & struk mode Semua Stall */
+  stall_warehouse_id?: string | null;
+  stall_code?: string | null;
+  stall_name?: string | null;
   variants?: ProductVariant[];
   /** EPIC-039 Fase B — varian merchandise ber-stok per SKU */
   skus?: ProductSku[];
@@ -95,6 +99,7 @@ export async function getProducts(params?: { category?: string; search?: string 
     data: Product[];
     meta?: {
       stall_scoped?: boolean;
+      all_stalls?: boolean;
       warehouse_ids?: string[];
       reason?: string;
       product_count?: number;

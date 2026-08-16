@@ -359,7 +359,7 @@ export function TransactionReportPage() {
         <PurchasingListSection
           icon={Store}
           title="Rekap per Stall"
-          description="Ringkasan Revenue / Diskon / Pajak / Service / Nett tiap stall pada filter yang sama"
+          description="Berbasis item: order lintas stall menyumbang ke tiap stall sesuai itemnya (nilai setelah diskon item, sebelum diskon/pajak transaksi)"
         >
           <div className="overflow-x-auto px-4">
             <table className="min-w-full text-sm">
@@ -367,17 +367,14 @@ export function TransactionReportPage() {
                 <tr>
                   <th className="px-3 py-3 text-left font-semibold">Stall</th>
                   <th className="px-3 py-3 text-right font-semibold">Transaksi</th>
-                  <th className="px-3 py-3 text-right font-semibold">Revenue</th>
-                  <th className="px-3 py-3 text-right font-semibold">Diskon</th>
-                  <th className="px-3 py-3 text-right font-semibold">Pajak</th>
-                  <th className="px-3 py-3 text-right font-semibold">Service</th>
-                  <th className="px-3 py-3 text-right font-semibold">Nett</th>
+                  <th className="px-3 py-3 text-right font-semibold">Item Terjual</th>
+                  <th className="px-3 py-3 text-right font-semibold">Penjualan</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200/70">
                 {(data?.per_stall?.length ?? 0) === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-3 py-8 text-center text-muted-foreground">
+                    <td colSpan={4} className="px-3 py-8 text-center text-muted-foreground">
                       Belum ada data pada filter ini
                     </td>
                   </tr>
@@ -388,13 +385,8 @@ export function TransactionReportPage() {
                         {formatStallLabel(stall)}
                       </td>
                       <td className="px-3 py-3 text-right">{stall.transactions}</td>
-                      <td className="px-3 py-3 text-right">{formatCurrency(stall.revenue)}</td>
-                      <td className="px-3 py-3 text-right text-rose-600">
-                        − {formatCurrency(stall.discount)}
-                      </td>
-                      <td className="px-3 py-3 text-right">{formatCurrency(stall.tax)}</td>
-                      <td className="px-3 py-3 text-right">{formatCurrency(stall.service)}</td>
-                      <td className="px-3 py-3 text-right font-semibold">{formatCurrency(stall.nett)}</td>
+                      <td className="px-3 py-3 text-right">{stall.quantity}</td>
+                      <td className="px-3 py-3 text-right font-semibold">{formatCurrency(stall.sales)}</td>
                     </tr>
                   ))
                 )}

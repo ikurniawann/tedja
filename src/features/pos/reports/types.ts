@@ -156,10 +156,21 @@ export interface TransactionReportSummary {
   nett: number;
 }
 
-export interface TransactionStallSummary extends TransactionReportSummary {
-  ark_used: number;
+/**
+ * Rekap per stall berbasis ITEM (bukan order): order lintas stall (mode
+ * Semua Stall) menyumbang ke tiap stall sesuai itemnya. Diskon/pajak/service
+ * order-level sengaja tidak dialokasikan per stall — tidak ada dasar jujur
+ * untuk membaginya.
+ */
+export interface TransactionStallSummary {
   stall_code: string | null;
   stall_name: string;
+  /** Jumlah order yang menyentuh stall ini */
+  transactions: number;
+  /** Σ qty item */
+  quantity: number;
+  /** Σ total item (setelah diskon item, sebelum diskon/pajak transaksi) */
+  sales: number;
 }
 
 export interface TransactionTopProduct {
