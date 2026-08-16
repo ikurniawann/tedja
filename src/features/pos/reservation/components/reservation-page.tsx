@@ -214,6 +214,28 @@ export function ReservationPage() {
     isLoading: loading,
     error: reservationsError,
   } = useReservationList({ date: selectedDate, status: filterStatus });
+  const { data: allForDate = [] } = useReservationList({
+    date: selectedDate,
+    status: "all",
+  });
+
+  /* Kartu ringkasan antrian (owner 2026-08-16): sedang dilayani, siapa yang
+   * harus siap-siap, dan berapa yang menunggu — dihitung dari SEMUA reservasi
+   * tanggal terpilih, bukan subset filter chip. */
+  const queueSummary = useMemo(() => {
+    const withQueue = allForDate.filter((r) => Number(r.queue_number) > 0);
+    const waiting = withQueue
+      .filter((r) => r.status === "pending" || r.status === "confirmed")
+      .sort((a, b) => Number(a.queue_number) - Number(b.queue_number));
+    const served = withQueue
+      .filter((r) => r.status === "seated" || r.status === "completed")
+      .sort((a, b) => Number(b.queue_number) - Number(a.queue_number));
+    return {
+      nowServing: served[0] ?? null,
+      next: waiting[0] ?? null,
+      waitingCount: waiting.length,
+    };
+  }, [allForDate]);
   const { data: customers = [], error: customersError } =
     useReservationCustomers();
   const { data: tables = [], refetch: refetchTables } = useReservationTables();
@@ -469,6 +491,52 @@ export function ReservationPage() {
                   : status.charAt(0).toUpperCase() + status.slice(1)}
             </button>
           ))}
+        </div>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-3">
+        <div className="rounded-xl border border-gray-200/70 bg-card px-4 py-3">
+          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Antrian Sekarang
+          </div>
+          {queueSummary.nowServing ? (
+            <>
+              <div className="mt-1 text-2xl font-bold tabular-nums text-primary">
+                {formatReservationQueueNumber(queueSummary.nowServing.queue_number)}
+              </div>
+              <div className="truncate text-xs text-muted-foreground">
+                {reservationName(queueSummary.nowServing)}
+              </div>
+            </>
+          ) : (
+            <div className="mt-1 text-2xl font-bold text-muted-foreground/50">—</div>
+          )}
+        </div>
+        <div className="rounded-xl border border-amber-200/70 bg-amber-50/60 px-4 py-3">
+          <div className="text-xs font-semibold uppercase tracking-wide text-amber-700">
+            Siap-Siap Berikutnya
+          </div>
+          {queueSummary.next ? (
+            <>
+              <div className="mt-1 text-2xl font-bold tabular-nums text-amber-700">
+                {formatReservationQueueNumber(queueSummary.next.queue_number)}
+              </div>
+              <div className="truncate text-xs font-medium text-amber-800">
+                a/n {reservationName(queueSummary.next)} · {queueSummary.next.pax_count} orang
+              </div>
+            </>
+          ) : (
+            <div className="mt-1 text-2xl font-bold text-amber-700/40">—</div>
+          )}
+        </div>
+        <div className="rounded-xl border border-gray-200/70 bg-card px-4 py-3">
+          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Total Menunggu
+          </div>
+          <div className="mt-1 text-2xl font-bold tabular-nums text-foreground">
+            {queueSummary.waitingCount}
+            <span className="ml-1.5 text-sm font-medium text-muted-foreground">antrian</span>
+          </div>
         </div>
       </div>
 
