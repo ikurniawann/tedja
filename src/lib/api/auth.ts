@@ -2,6 +2,8 @@ import { createServerPgClient } from "@/lib/pg/create-client";
 import { NextRequest, NextResponse } from "next/server";
 import { UserRole } from "@/types";
 import { z } from "zod";
+import { resolveRoleIds } from "@/lib/iam/get-user-menus";
+import { hasAnyIamMenuPrefix, loadGrantedMenuCodes } from "@/lib/iam/has-menu";
 
 export interface ApiUser {
   id: string;
@@ -63,6 +65,20 @@ export async function requireApiUser(): Promise<ApiUser> {
 export async function requireApiRole(roles: UserRole[]): Promise<ApiUser> {
   const user = await requireApiUser();
   if (!roles.includes(user.role)) {
+    throw ApiError.forbidden("Insufficient permissions");
+  }
+  return user;
+}
+
+/**
+ * Gate API pakai grant IAM, bukan daftar role di kode.
+ * Prefix `items.product` loloskan `items.product.master.products`, dst.
+ */
+export async function requireIamMenuPrefix(prefixes: string[]): Promise<ApiUser> {
+  const user = await requireApiUser();
+  const roleIds = await resolveRoleIds(user.id, user.role);
+  const granted = await loadGrantedMenuCodes(roleIds);
+  if (!hasAnyIamMenuPrefix(granted, prefixes)) {
     throw ApiError.forbidden("Insufficient permissions");
   }
   return user;

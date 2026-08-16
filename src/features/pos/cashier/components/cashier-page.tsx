@@ -29,6 +29,7 @@ import { useCanUseCentralCashier } from '@/components/pos/confirm-stall-switch-d
 import { CashierStallGate } from '@/features/pos/cashier/components/cashier-stall-gate';
 import {
   MIXED_ARK_UNSUPPORTED_MESSAGE,
+  MIXED_LINE_DISCOUNT_UNSUPPORTED_MESSAGE,
   MIXED_NFC_GIFT_UNSUPPORTED_MESSAGE,
   MIXED_PROMO_UNSUPPORTED_MESSAGE,
   MIXED_SPLIT_UNSUPPORTED_MESSAGE,
@@ -1332,8 +1333,14 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       toast.error(MIXED_NFC_GIFT_UNSUPPORTED_MESSAGE);
       return;
     }
-    if (mixedCart && (discountAmount > 0 || promoApplied)) {
+    // Diskon transaksi (mis. diskon manual) lolos: server membaginya pro-rata
+    // per stall. Promo & diskon per item masih ditolak — lihat central-cashier.
+    if (mixedCart && promoApplied) {
       toast.error(MIXED_PROMO_UNSUPPORTED_MESSAGE);
+      return;
+    }
+    if (mixedCart && itemDiscountTotal > 0) {
+      toast.error(MIXED_LINE_DISCOUNT_UNSUPPORTED_MESSAGE);
       return;
     }
     if (paymentCheckoutId && isCheckoutBillUnsupportedTender(method)) {

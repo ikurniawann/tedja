@@ -14,6 +14,7 @@ import {
   loadUserWarehousesBatch,
   syncUserWarehouses,
 } from "./user-warehouses";
+import { syncIamPrimaryRole } from "@/lib/iam/sync-user-role";
 
 const EMPLOYEE_SELECT = `
   *,
@@ -363,6 +364,8 @@ async function provisionAppAccount(
       );
     }
 
+    await syncIamPrimaryRole(authUserId, input.role, actorId);
+
     await db.from("admin_user_audit_logs").insert({
       actor_id: actorId,
       target_user_id: authUserId,
@@ -507,6 +510,10 @@ async function syncAppAccount(
       input.branch_id !== undefined ? input.branch_id : profile?.branch_id ?? null;
 
     await syncUserWarehouses(db, userId, stall.warehouse_ids, branchId);
+  }
+
+  if (input.role) {
+    await syncIamPrimaryRole(userId, input.role, actorId);
   }
 
   await db.from("admin_user_audit_logs").insert({
