@@ -6,3 +6,4 @@ export { ProfitReportPage } from "./components/profit-report-page";
 export { ClosingReportPage } from "./components/closing-report-page";
 export { TransactionReportPage } from "./components/transaction-report-page";
 export { ProductSalesReportPage } from "./components/product-sales-report-page";
+export { RushHourReportPage } from "./components/rush-hour-report-page";

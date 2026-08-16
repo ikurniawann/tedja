@@ -178,6 +178,10 @@
 - Semua jalur posting stok (GRN, impor, PO on-order) wajib lewat `resolveBaseUnitFactor` sebelum menulis ke inventory.
 - Sebelum mengubah tampilan qty/harga, cek dulu jalur penulisan datanya; label UI di project ini sempat memakai satuan besar padahal datanya satuan kecil.
 
+## POS laporan Rush Hour
+- Menu `pos.reports.rush-hour` wajib masuk INSERT seeder + whitelist `NOT IN` — seeder akan soft-delete kalau tidak.
+- Jam/hari pakai `AT TIME ZONE 'Asia/Jakarta'` + ISODOW. Filter sama laporan Transaksi (lunas, exclude void).
+
 ## POS void order lunas
 - Void bukan menu sidebar; aksi di `/dashboard/pos/orders` + PIN supervisor.
 - Order `completed`/`paid` boleh di-void. Tetap tolak `cancelled` / `voided` / `merged`.

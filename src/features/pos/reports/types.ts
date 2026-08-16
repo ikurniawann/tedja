@@ -200,6 +200,70 @@ export interface TransactionReport {
   rows: TransactionReportRow[];
 }
 
+export interface RushHourReportParams {
+  date_from: string;
+  date_to: string;
+  warehouse_id?: string;
+}
+
+export interface RushHourReport {
+  filters: {
+    date_from: string;
+    date_to: string;
+    warehouse_id: string | null;
+  };
+  stall_options: ReportStallOption[];
+  stall_locked: boolean;
+  summary: {
+    transactions: number;
+    revenue: number;
+    average_ticket: number;
+  };
+  peak_hour: {
+    hour: number | null;
+    hour_label: string | null;
+    dow: number | null;
+    dow_label: string | null;
+    transactions: number;
+    revenue: number;
+  };
+  peak_revenue_hour: {
+    hour: number | null;
+    hour_label: string | null;
+    dow: number | null;
+    dow_label: string | null;
+    transactions: number;
+    revenue: number;
+  };
+  peak_day: {
+    hour: number | null;
+    hour_label: string | null;
+    dow: number | null;
+    dow_label: string | null;
+    transactions: number;
+    revenue: number;
+  };
+  hourly: Array<{
+    hour: number;
+    label: string;
+    transactions: number;
+    revenue: number;
+    average_ticket: number;
+  }>;
+  weekdays: Array<{
+    dow: number;
+    label: string;
+    transactions: number;
+    revenue: number;
+  }>;
+  heatmap: Array<{
+    hour: number;
+    dow: number;
+    transactions: number;
+    revenue: number;
+  }>;
+}
+
 export interface ProductSalesReportParams {
   date_from: string;
   date_to: string;

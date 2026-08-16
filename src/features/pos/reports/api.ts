@@ -7,6 +7,8 @@ import type {
   TransactionReportParams,
   ProductSalesReport,
   ProductSalesReportParams,
+  RushHourReport,
+  RushHourReportParams,
 } from "./types";
 
 export type * from "./types";
@@ -69,4 +71,22 @@ export async function getProductSalesReport(
     throw new Error(payload.error || "Gagal memuat laporan penjualan produk");
   }
   return payload.data as ProductSalesReport;
+}
+
+export async function getRushHourReport(
+  params: RushHourReportParams
+): Promise<RushHourReport> {
+  const sp = new URLSearchParams({
+    date_from: params.date_from,
+    date_to: params.date_to,
+  });
+  if (params.warehouse_id) sp.set("warehouse_id", params.warehouse_id);
+  const response = await fetch(`/api/pos/reports/rush-hour?${sp.toString()}`, {
+    cache: "no-store",
+  });
+  const payload = await response.json();
+  if (!response.ok || !payload.success || !payload.data) {
+    throw new Error(payload.error || "Gagal memuat laporan rush hour");
+  }
+  return payload.data as RushHourReport;
 }
