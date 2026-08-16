@@ -245,7 +245,7 @@ export async function GET(request: NextRequest) {
           WHERE i.order_id = ANY($1::uuid[])
           GROUP BY 1
           ORDER BY SUM(i.total_amount) DESC
-          LIMIT 10`,
+          LIMIT 50`,
         [orderIds]
       );
       topProducts = topRows.map((row) => ({

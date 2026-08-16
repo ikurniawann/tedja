@@ -2,6 +2,7 @@ import { query } from "@/lib/db";
 import type { UserScope } from "@/lib/api/scope";
 import { loadUserWarehouses } from "@/lib/users/user-warehouses";
 import { loadCentralCashierGate } from "@/lib/pos/pos-sell-stall-server";
+import { firstDayOfMonthWib, todayWib } from "@/lib/pos/report-dates";
 
 /** Kasir pusat jual lintas stall — laporan tidak boleh terkunci ke 1 assignment. */
 export function shouldExpandReportStallsToBranch(input: {
@@ -129,9 +130,8 @@ export async function resolveReportStallFilter(
 }
 
 export function parseReportDateRange(dateFrom?: string | null, dateTo?: string | null) {
-  const now = new Date();
-  const defaultFrom = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
-  const defaultTo = now.toISOString().slice(0, 10);
+  const defaultFrom = firstDayOfMonthWib();
+  const defaultTo = todayWib();
   const from = dateFrom && /^\d{4}-\d{2}-\d{2}$/.test(dateFrom) ? dateFrom : defaultFrom;
   const to = dateTo && /^\d{4}-\d{2}-\d{2}$/.test(dateTo) ? dateTo : defaultTo;
   if (from > to) {

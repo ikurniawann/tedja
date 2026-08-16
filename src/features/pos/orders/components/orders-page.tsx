@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import {
+  ArrowLeft,
   Ban,
   CheckCircle,
   ChefHat,
@@ -38,23 +39,32 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { VoidModal } from "@/components/pos/VoidModal";
 import { canVoidOrderStatus } from "@/lib/pos/void-order";
-import { groupOrdersByCheckout } from "@/lib/pos/order-list-group";
+import {
+  canOpenOrderInCashier,
+  cashierHandoffFromOrderListRow,
+  groupOrdersByCheckout,
+} from "@/lib/pos/order-list-group";
+import {
+  cashierHomeFromOrders,
+  posHomeFromOrders,
+} from "@/features/pos/cashier/constants";
 import { formatPaymentMethodLabel } from "@/features/pos/reports/utils/transaction-labels";
 import { cn } from "@/lib/utils";
 
 import type { Order, OrderListParams } from "../types";
 import { orderToReceiptPayload } from "../order-to-receipt";
 import { useOrderList } from "../queries";
-import { useLoyaltySettings } from "@/features/pos/loyalty-settings";
-import { formatArkAmount } from "@/lib/pos/loyalty-settings";
-
-const todayWib = () =>
-  new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Jakarta" });
-
-const firstDayOfMonthWib = () => {
-  const [year, month] = todayWib().split("-");
-  return `${year}-${month}-01`;
-};
+import { firstDayOfMonthWib, todayWib } from "@/lib/pos/report-dates";
+import {
+  TransactionDetailBody,
+  type TransactionOrderDetail,
+} from "@/features/pos/reports/components/transaction-detail-body";
+import { loadOrderTransactionDetail } from "@/features/pos/reports/utils/load-order-detail";
+import {
+  flattenOrderItems,
+  mergeBillTransactionDetail,
+  orderToTransactionRow,
+} from "../order-transaction-detail";
 
 const shiftWibDate = (isoDate: string, days: number) => {
   const [year, month, day] = isoDate.split("-").map(Number);
@@ -208,11 +218,9 @@ function periodRange(preset: PeriodPreset) {
 }
 
 export function OrdersPage() {
-  const router = useRouter();
-  const { data: loyaltySettings } = useLoyaltySettings();
-  const formatArk = (value: number) =>
-    formatArkAmount(value, loyaltySettings?.ark_rate || 1000);
-  const initialPeriod = periodRange("today");
+  const searchParams = useSearchParams();
+  const posReturn = posHomeFromOrders(searchParams);
+  const initialPeriod = periodRange("month");
   const [dateFrom, setDateFrom] = useState(initialPeriod.date_from);
   const [dateTo, setDateTo] = useState(initialPeriod.date_to);
   const [paymentStatus, setPaymentStatus] = useState("");
@@ -230,6 +238,8 @@ export function OrdersPage() {
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [selectedSiblings, setSelectedSiblings] = useState<Order[]>([]);
   const [showDetailModal, setShowDetailModal] = useState(false);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [fetchedDetail, setFetchedDetail] = useState<TransactionOrderDetail | null>(null);
   const [showVoidModal, setShowVoidModal] = useState(false);
 
   useEffect(() => {
@@ -307,17 +317,38 @@ export function OrdersPage() {
     setSelectedOrder(order);
     setSelectedSiblings(siblings.length > 1 ? siblings : []);
     setShowDetailModal(true);
+    setFetchedDetail(null);
+    setDetailLoading(true);
+    void loadOrderTransactionDetail(order.id, order.checkout_id)
+      .then((detail) => setFetchedDetail(detail))
+      .catch((err) => {
+        toast.error(err instanceof Error ? err.message : "Gagal memuat detail");
+      })
+      .finally(() => setDetailLoading(false));
   };
 
   const canVoid = (order: Order) => canVoidOrderStatus(order.status);
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-xl font-semibold text-foreground">Orders</h1>
-        <p className="text-sm text-muted-foreground">
-          Riwayat order per periode. Void order lunas lewat ikon Ban.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold text-foreground">Orders</h1>
+          <p className="text-sm text-muted-foreground">
+            Riwayat order per periode. Void order lunas lewat ikon Ban.
+          </p>
+        </div>
+        {posReturn ? (
+          <Button
+            type="button"
+            variant="outline"
+            className="border-gray-200/80 text-gray-700 hover:border-primary/30 hover:bg-primary/10 hover:text-primary"
+            onClick={() => window.location.assign(posReturn.href)}
+          >
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            {posReturn.label}
+          </Button>
+        ) : null}
       </div>
 
       <Card className="border-gray-200/70 shadow-xs">
@@ -520,8 +551,6 @@ export function OrdersPage() {
                       ? row.orders.reduce((sum, child) => sum + (child.items?.length || 0), 0)
                       : order.items?.length || 0;
                     const paid = isMixed ? row.paid : isPaid(order);
-                    const orphanCheckout =
-                      isMixed && row.orders.length === 1 && row.orders[0]?.id === row.checkoutId;
                     return (
                     <tr
                       key={isMixed ? row.checkoutId : order.id}
@@ -597,19 +626,25 @@ export function OrdersPage() {
                         onClick={(e) => e.stopPropagation()}
                       >
                         <div className="inline-flex items-center justify-end gap-1">
-                          {!paid && order.status !== "completed" ? (
+                          {canOpenOrderInCashier(isMixed ? row.orders : [order]) ? (
                             <Button
                               type="button"
                               size="icon"
                               className="h-8 w-8 bg-primary hover:bg-primary/90"
                               title="Open in cashier"
-                              onClick={() =>
-                                router.push(
-                                  orphanCheckout
-                                    ? `/dashboard/pos/cashier-new?checkoutId=${order.id}`
-                                    : `/dashboard/pos/cashier-new?orderId=${order.id}`
-                                )
-                              }
+                              onClick={() => {
+                                const handoff = cashierHandoffFromOrderListRow(row);
+                                const url = new URL(
+                                  cashierHomeFromOrders(searchParams),
+                                  "http://local.invalid"
+                                );
+                                if (handoff.checkoutId) {
+                                  url.searchParams.set("checkoutId", handoff.checkoutId);
+                                } else if (handoff.orderId) {
+                                  url.searchParams.set("orderId", handoff.orderId);
+                                }
+                                window.location.assign(`${url.pathname}${url.search}`);
+                              }}
                             >
                               <ExternalLink className="h-3.5 w-3.5" />
                             </Button>
@@ -663,6 +698,7 @@ export function OrdersPage() {
           if (!open) {
             setSelectedOrder(null);
             setSelectedSiblings([]);
+            setFetchedDetail(null);
           }
         }}
       >
@@ -686,8 +722,16 @@ export function OrdersPage() {
             </DialogPanelDescription>
           </DialogPanelHeader>
           <DialogPanelBody>
-            {selectedOrder ? (
-              <OrderDetail order={selectedOrder} siblings={selectedSiblings} />
+            {detailLoading ? (
+              <div className="flex items-center justify-center py-10 text-muted-foreground">
+                <Loader2 className="size-5 animate-spin" />
+              </div>
+            ) : selectedOrder ? (
+              <OrderDetail
+                order={selectedOrder}
+                siblings={selectedSiblings}
+                detail={fetchedDetail}
+              />
             ) : null}
           </DialogPanelBody>
           <DialogFooter>
@@ -750,116 +794,32 @@ export function OrdersPage() {
 function OrderDetail({
   order,
   siblings = [],
+  detail,
 }: {
   order: Order;
   siblings?: Order[];
+  detail: TransactionOrderDetail | null;
 }) {
-  const { data: loyaltySettings } = useLoyaltySettings();
-  const formatArk = (value: number) =>
-    formatArkAmount(value, loyaltySettings?.ark_rate || 1000);
   const childOrders = siblings.length > 1 ? siblings : [order];
-  const billTotal = childOrders.reduce(
-    (sum, child) => sum + (Number(child.total_amount) || 0),
-    0
-  );
-  const billSubtotal = childOrders.reduce(
-    (sum, child) => sum + (Number(child.subtotal) || 0),
-    0
-  );
-  const billDiscount = childOrders.reduce(
-    (sum, child) => sum + (Number(child.discount_amount) || 0),
-    0
-  );
-  const billTax = childOrders.reduce(
-    (sum, child) => sum + (Number(child.tax_amount) || 0),
-    0
-  );
-  const billArk = childOrders.reduce(
-    (sum, child) => sum + (Number(child.ark_coins_used) || 0),
-    0
-  );
-  const billPaid = childOrders.reduce(
-    (sum, child) => sum + (Number(child.amount_paid) || 0),
-    0
-  );
-  const billChange = childOrders.reduce(
-    (sum, child) => sum + (Number(child.change_amount) || 0),
-    0
-  );
+  const merged = mergeBillTransactionDetail(detail, childOrders);
+  const items =
+    childOrders.length > 1
+      ? flattenOrderItems(childOrders)
+      : flattenOrderItems([
+          {
+            ...order,
+            items: detail?.items || order.items,
+          },
+        ]);
+
   return (
     <div className="space-y-4">
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <InfoTile
-          label={childOrders.length > 1 ? "Checkout" : "Order"}
-          value={
-            childOrders.length > 1
-              ? order.checkout_number || order.order_number || "—"
-              : order.order_number || "—"
-          }
-          mono
-        />
-        <InfoTile label="Antrian" value={order.queue_number || "—"} mono />
-        <InfoTile
-          label="Date"
-          value={order.ordered_at ? formatDate(order.ordered_at) : "—"}
-        />
-        <div className="rounded-xl border border-gray-200/70 bg-muted/20 px-3.5 py-3">
-          <div className="text-xs font-medium text-muted-foreground">Status</div>
-          <div className="mt-1.5">
-            <StatusBadge status={order.status} />
-          </div>
-        </div>
-        <div className="rounded-xl border border-gray-200/70 bg-muted/20 px-3.5 py-3">
-          <div className="text-xs font-medium text-muted-foreground">Payment</div>
-          <div className="mt-1.5">
-            <PaymentBadge
-              method={order.payment_method}
-              code={order.payment_method_code}
-              name={order.payment_method_name}
-            />
-          </div>
-        </div>
-      </div>
-
-      {order.customer ? (
-        <section className="rounded-xl border border-gray-200/70 bg-white p-4">
-          <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
-            <User className="h-4 w-4 text-muted-foreground" />
-            Customer
-          </h3>
-          <div className="grid gap-2 text-sm sm:grid-cols-3">
-            <div>
-              <span className="text-muted-foreground">Name</span>
-              <div className="font-medium text-foreground">
-                {order.customer.name}
-              </div>
-            </div>
-            {order.customer.phone ? (
-              <div>
-                <span className="text-muted-foreground">Phone</span>
-                <div className="font-medium text-foreground">
-                  {order.customer.phone}
-                </div>
-              </div>
-            ) : null}
-            {order.customer.membership_tier ? (
-              <div>
-                <span className="text-muted-foreground">Tier</span>
-                <div className="font-medium capitalize text-foreground">
-                  {order.customer.membership_tier}
-                </div>
-              </div>
-            ) : null}
-          </div>
-        </section>
-      ) : null}
-
       {childOrders.length > 1 ? (
-        <section className="rounded-xl border border-gray-200/70 bg-white p-4">
-          <h3 className="mb-3 text-sm font-semibold text-foreground">
+        <section className="rounded-lg border border-gray-200/70 bg-card">
+          <h3 className="border-b border-gray-200/70 px-3 py-2 text-sm font-semibold text-foreground">
             Nomor POS per stall
           </h3>
-          <div className="space-y-2">
+          <div className="space-y-2 p-3">
             {childOrders.map((child) => (
               <div
                 key={child.id}
@@ -881,161 +841,11 @@ function OrderDetail({
           </div>
         </section>
       ) : null}
-
-      <section className="overflow-hidden rounded-xl border border-gray-200/70 bg-white">
-        <div className="border-b border-gray-200/70 px-4 py-3">
-          <h3 className="text-sm font-semibold text-foreground">Items</h3>
-        </div>
-        <div className="divide-y divide-gray-200/70">
-          {childOrders.map((child) => (
-            <div key={child.id}>
-              {childOrders.length > 1 ? (
-                <div className="flex items-center justify-between gap-3 bg-muted/30 px-4 py-2">
-                  <span className="font-mono text-xs font-semibold text-foreground">
-                    {child.order_number || "—"}
-                  </span>
-                  <span className="text-xs tabular-nums text-muted-foreground">
-                    {formatCurrency(child.total_amount || 0)}
-                  </span>
-                </div>
-              ) : null}
-              {(child.items || []).map((item, idx) => (
-                <div
-                  key={item.id || `${child.id}-${item.product_id}-${idx}`}
-                  className="flex items-start justify-between gap-3 px-4 py-3"
-                >
-                  <div className="min-w-0">
-                    <div className="font-medium text-foreground">
-                      {item.product_name}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {item.quantity} × {formatCurrency(item.unit_price || 0)}
-                    </div>
-                    {item.variants && item.variants.length > 0 ? (
-                      <div className="mt-1.5 flex flex-wrap gap-1">
-                        {item.variants.map((v, i) => (
-                          <Badge
-                            key={i}
-                            variant="secondary"
-                            className="bg-primary/10 text-xs text-primary"
-                          >
-                            {v.name}
-                          </Badge>
-                        ))}
-                      </div>
-                    ) : null}
-                    {item.modifiers && item.modifiers.length > 0 ? (
-                      <div className="mt-1 flex flex-wrap gap-1">
-                        {item.modifiers.map((m, i) => (
-                          <Badge
-                            key={i}
-                            variant="secondary"
-                            className="bg-amber-50 text-xs text-amber-800"
-                          >
-                            {m.name}
-                          </Badge>
-                        ))}
-                      </div>
-                    ) : null}
-                  </div>
-                  <div className="shrink-0 font-semibold tabular-nums text-foreground">
-                    {formatCurrency(item.total_amount || 0)}
-                  </div>
-                </div>
-              ))}
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="rounded-xl border border-gray-200/70 bg-white p-4">
-        <h3 className="mb-3 text-sm font-semibold text-foreground">
-          Payment summary
-        </h3>
-        <div className="space-y-2 text-sm">
-          <SummaryRow label="Subtotal" value={formatCurrency(billSubtotal)} />
-          {billDiscount > 0 ? (
-            <SummaryRow
-              label="Discount"
-              value={`−${formatCurrency(billDiscount)}`}
-              tone="text-emerald-600"
-            />
-          ) : null}
-          {billTax > 0 ? (
-            <SummaryRow label="Tax" value={formatCurrency(billTax)} />
-          ) : null}
-          {billArk > 0 ? (
-            <SummaryRow
-              label="ARK used"
-              value={`−${formatArk(billArk)}`}
-              tone="text-amber-700"
-            />
-          ) : null}
-          <div className="flex items-center justify-between border-t border-gray-200/70 pt-2 text-base font-semibold">
-            <span>Total</span>
-            <span className="tabular-nums text-primary">
-              {formatCurrency(billTotal)}
-            </span>
-          </div>
-          <SummaryRow label="Paid" value={formatCurrency(billPaid)} />
-          {billChange > 0 ? (
-            <SummaryRow
-              label="Change"
-              value={formatCurrency(billChange)}
-            />
-          ) : null}
-        </div>
-      </section>
-
-      {order.notes ? (
-        <section className="rounded-xl border border-gray-200/70 bg-muted/20 p-4">
-          <div className="text-xs font-medium text-muted-foreground">Notes</div>
-          <p className="mt-1 text-sm text-foreground">{order.notes}</p>
-        </section>
-      ) : null}
-    </div>
-  );
-}
-
-function InfoTile({
-  label,
-  value,
-  mono,
-}: {
-  label: string;
-  value: string;
-  mono?: boolean;
-}) {
-  return (
-    <div className="rounded-xl border border-gray-200/70 bg-muted/20 px-3.5 py-3">
-      <div className="text-xs font-medium text-muted-foreground">{label}</div>
-      <div
-        className={cn(
-          "mt-1 break-all text-sm font-semibold text-foreground",
-          mono && "font-mono text-xs"
-        )}
-      >
-        {value}
-      </div>
-    </div>
-  );
-}
-
-function SummaryRow({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: string;
-  tone?: string;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-3">
-      <span className="text-muted-foreground">{label}</span>
-      <span className={cn("font-medium tabular-nums text-foreground", tone)}>
-        {value}
-      </span>
+      <TransactionDetailBody
+        row={orderToTransactionRow(order)}
+        detail={merged}
+        items={items}
+      />
     </div>
   );
 }

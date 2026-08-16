@@ -18,6 +18,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { FadeIn, PageTransition } from "@/components/motion";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { firstDayOfMonthWib, todayWib } from "@/lib/pos/report-dates";
 import { formatAmount } from "@/lib/purchasing/utils";
 import { PurchasingListSection } from "@/modules/purchasing/components/list/PurchasingListSection";
 import { PurchasingPageHeader } from "@/modules/purchasing/components/page/purchasing-page-header";
@@ -32,13 +33,6 @@ import {
 
 const formatNumber = (value: number) =>
   new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(value || 0);
-
-const today = () => new Date().toISOString().slice(0, 10);
-
-const firstDayOfMonth = () => {
-  const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
-};
 
 function MetricCard({
   title,
@@ -123,8 +117,8 @@ function BreakdownTableSection({
 }
 
 export function ProfitReportPage() {
-  const [dateFrom, setDateFrom] = useState(firstDayOfMonth);
-  const [dateTo, setDateTo] = useState(today);
+  const [dateFrom, setDateFrom] = useState(firstDayOfMonthWib);
+  const [dateTo, setDateTo] = useState(todayWib);
 
   const { data: report, isLoading, isFetching, error } = useProfitReport({
     date_from: dateFrom,
@@ -168,7 +162,7 @@ export function ProfitReportPage() {
                   variant="outline"
                   className="purchasing-secondary-button h-9 w-full sm:w-auto"
                   onClick={() => {
-                    const current = today();
+                    const current = todayWib();
                     setDateFrom(current);
                     setDateTo(current);
                   }}

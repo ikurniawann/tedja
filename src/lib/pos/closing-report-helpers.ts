@@ -68,3 +68,51 @@ export function targetBlock(actual: number, target: number) {
     variance: roundCurrency(actual - target),
   };
 }
+
+/** Diskon penuh: potongan menutup subtotal, atau bill lunas jadi 0. */
+export function isFullDiscountOrder(order: {
+  subtotal?: number | string | null;
+  discount_amount?: number | string | null;
+  total_amount?: number | string | null;
+}): boolean {
+  const subtotal = toNumber(order.subtotal);
+  const discount = toNumber(order.discount_amount);
+  const total = toNumber(order.total_amount);
+  if (subtotal <= 0) return false;
+  if (discount + 0.01 >= subtotal) return true;
+  return total <= 0.01 && discount > 0;
+}
+
+export function summarizeClosingTransactions(
+  orders: Array<{
+    subtotal?: number | string | null;
+    discount_amount?: number | string | null;
+    total_amount?: number | string | null;
+  }>
+) {
+  let transactions = 0;
+  let sales = 0;
+  let discount = 0;
+  let fullDiscountTransactions = 0;
+  let fullDiscountAmount = 0;
+
+  for (const order of orders) {
+    transactions += 1;
+    const subtotal = toNumber(order.subtotal);
+    const orderDiscount = toNumber(order.discount_amount);
+    sales += toNumber(order.total_amount);
+    discount += orderDiscount;
+    if (isFullDiscountOrder(order)) {
+      fullDiscountTransactions += 1;
+      fullDiscountAmount += subtotal;
+    }
+  }
+
+  return {
+    transactions,
+    sales: roundCurrency(sales),
+    discount: roundCurrency(discount),
+    full_discount_transactions: fullDiscountTransactions,
+    full_discount_amount: roundCurrency(fullDiscountAmount),
+  };
+}

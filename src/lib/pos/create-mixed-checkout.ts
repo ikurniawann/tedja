@@ -134,6 +134,8 @@ export type CreateMixedCheckoutInput = {
   forceInsertChildren?: boolean;
   /** Append mixed items onto the table's existing unpaid central checkout. */
   reuseUnpaidTableCheckout?: boolean;
+  /** Continue a specific unpaid checkout (takeaway / no table / explicit). */
+  existingCheckoutId?: string | null;
   paymentMethodCode?: string | null;
   paymentMethodName?: string | null;
 };
@@ -1166,6 +1168,38 @@ async function findUnpaidCheckoutByTable(
   }
 }
 
+async function findUnpaidCheckoutById(
+  client: PoolClient,
+  checkoutId: string,
+  scope: { companyId?: string | null; branchId?: string | null } = {}
+): Promise<CheckoutRow | null> {
+  try {
+    const scoped = unpaidCheckoutScopeSql({
+      companyId: scope.companyId,
+      branchId: scope.branchId,
+      startParam: 2,
+    });
+    const result = await client.query<CheckoutRow>(
+      `SELECT id, checkout_number, queue_number, payment_status, payment_method,
+              company_id, branch_id, table_id, customer_id, cashier_id, shift_id,
+              subtotal, discount_amount, tax_amount, service_charge_amount,
+              other_charges_amount, total_amount, amount_paid, change_amount,
+              notes, cart_snapshot
+       FROM pos.pos_checkouts
+       WHERE id = $1
+         AND LOWER(payment_status::text) <> 'paid'
+         AND COALESCE(notes, '') NOT ILIKE 'cancelled%'
+         ${scoped.sql}
+       FOR UPDATE`,
+      [checkoutId, ...scoped.params]
+    );
+    return result.rows[0] ?? null;
+  } catch (error) {
+    if (!isMissingColumn(error)) throw error;
+    return null;
+  }
+}
+
 async function appendItemsToExistingCheckout(
   client: PoolClient,
   input: {
@@ -1366,7 +1400,8 @@ export async function createMixedCheckout(
   if (
     !canCreateFreshCheckout &&
     !input.reuseUnpaidTableCheckout &&
-    !input.tableId
+    !input.tableId &&
+    !input.existingCheckoutId
   ) {
     throw new MixedCheckoutError("Checkout multi-stall membutuhkan item dari minimal 2 stall");
   }
@@ -1465,11 +1500,23 @@ export async function createMixedCheckout(
 
   try {
     const created = await withTransaction(async (client) => {
-      if (input.tableId) {
-        const existing = await findUnpaidCheckoutByTable(client, input.tableId, {
+      const explicitCheckoutId = String(input.existingCheckoutId || "").trim();
+      let existing: CheckoutRow | null = null;
+      if (explicitCheckoutId) {
+        existing = await findUnpaidCheckoutById(client, explicitCheckoutId, {
           companyId,
           branchId,
         });
+        if (!existing) {
+          throw new MixedCheckoutError("Open bill tidak ditemukan");
+        }
+      } else if (input.tableId) {
+        existing = await findUnpaidCheckoutByTable(client, input.tableId, {
+          companyId,
+          branchId,
+        });
+      }
+      if (input.tableId || existing) {
         if (!requestedUnpaid) {
           const paidTarget = resolvePaidMixedOnOccupiedTable({
             unpaidCentralCheckoutId: existing?.id ?? null,

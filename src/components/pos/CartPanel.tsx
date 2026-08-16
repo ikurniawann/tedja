@@ -94,6 +94,9 @@ interface CartPanelProps {
   ) => void;
   onSetManualDiscount?: (type: DiscountType | null, value: number | null) => void;
   className?: string;
+  /** Open bill yang sedang dilanjutkan — item lama terkunci, item baru di-Order lagi. */
+  continuingCheckoutNumber?: string | null;
+  lockedItemIds?: string[];
 }
 
 function MoneyPair({
@@ -172,7 +175,11 @@ export function CartPanel({
   onSetItemDiscount,
   onSetManualDiscount,
   className,
+  continuingCheckoutNumber = null,
+  lockedItemIds = [],
 }: CartPanelProps) {
+  const lockedItemIdSet = useMemo(() => new Set(lockedItemIds), [lockedItemIds]);
+  const hasNewItems = cart.some((item) => !lockedItemIdSet.has(item.id));
   const membershipAmt = membershipDiscountAmount ?? discountAmount;
   const showPromoUi = typeof onApplyPromo === 'function';
   const showManualUi = typeof onSetManualDiscount === 'function';
@@ -272,6 +279,11 @@ export function CartPanel({
               {selectedTable ? `Table ${selectedTable}` : 'Without Table'}
             </span>
           )}
+          {continuingCheckoutNumber ? (
+            <span className="inline-flex items-center rounded-md bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
+              Open bill {continuingCheckoutNumber}
+            </span>
+          ) : null}
         </div>
       </div>
 
@@ -290,6 +302,7 @@ export function CartPanel({
             const freeQty = freeInfo?.freeQty ?? 0;
             const paidQty = Math.max(0, item.quantity - freeQty);
             const showPaid = paidQty > 0 || freeQty === 0;
+            const locked = lockedItemIdSet.has(item.id);
 
             return (
               <div key={item.id} className="space-y-1.5">
@@ -347,8 +360,9 @@ export function CartPanel({
                         <div className="flex items-center rounded-md border border-gray-200/80 bg-white">
                           <button
                             type="button"
+                            disabled={locked}
                             onClick={() => updateQuantity(item.id, -1)}
-                            className="flex h-7 w-7 items-center justify-center text-muted-foreground hover:text-foreground"
+                            className="flex h-7 w-7 items-center justify-center text-muted-foreground hover:text-foreground disabled:opacity-40"
                             aria-label="Kurangi qty"
                           >
                             <Minus className="h-3 w-3" />
@@ -358,8 +372,9 @@ export function CartPanel({
                           </span>
                           <button
                             type="button"
+                            disabled={locked}
                             onClick={() => updateQuantity(item.id, 1)}
-                            className="flex h-7 w-7 items-center justify-center text-muted-foreground hover:text-foreground"
+                            className="flex h-7 w-7 items-center justify-center text-muted-foreground hover:text-foreground disabled:opacity-40"
                             aria-label="Tambah qty"
                           >
                             <Plus className="h-3 w-3" />
@@ -383,8 +398,9 @@ export function CartPanel({
                         )}
                         <button
                           type="button"
+                          disabled={locked}
                           onClick={() => removeFromCart(item.id)}
-                          className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-red-50 hover:text-red-600"
+                          className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-red-50 hover:text-red-600 disabled:opacity-40"
                           aria-label="Hapus item"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
@@ -716,7 +732,7 @@ export function CartPanel({
               Saving...
             </>
           ) : (
-            'Order'
+            continuingCheckoutNumber && hasNewItems ? 'Order lagi' : 'Order'
           )}
         </Button>
       </div>

@@ -43,6 +43,7 @@ import {
   shouldDisableMixedPromo,
   uniqueStallIds,
 } from '@/lib/pos/central-cashier';
+import { newCartItemsForOpenBillAppend } from '@/lib/pos/table-sale-target';
 import { StallSwitchButton } from '@/features/pos/cashier/components/stall-switch-button';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -129,7 +130,9 @@ import type { SplitConfig } from '@/components/pos/SplitBillModal';
 import { SplitBillModal } from '@/components/pos/SplitBillModal';
 import { SplitPaymentScreen } from '@/components/pos/SplitPaymentScreen';
 import {
+  buildPosOrdersUrl,
   cashierRoute,
+  shouldResetCashierSession,
   type CashierPageVariant,
 } from '../constants';
 import { PageTransition } from '@/components/motion';
@@ -143,6 +146,24 @@ import { formatArkAmount } from '@/lib/pos/loyalty-settings';
 const formatCurrency = (value: number) => formatAmount(value);
 
 const LAST_RECEIPT_KEY = 'pos:lastReceipt';
+const LAST_OPEN_CHECKOUT_KEY = 'pos:lastOpenCheckoutId';
+
+function readLastOpenCheckoutId() {
+  try {
+    return window.sessionStorage.getItem(LAST_OPEN_CHECKOUT_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function writeLastOpenCheckoutId(id: string | null) {
+  try {
+    if (id) window.sessionStorage.setItem(LAST_OPEN_CHECKOUT_KEY, id);
+    else window.sessionStorage.removeItem(LAST_OPEN_CHECKOUT_KEY);
+  } catch {
+    // sessionStorage can be blocked; append still works via in-memory ref
+  }
+}
 
 const getTableDisplayName = (table?: PosTable | null) =>
   table?.label || table?.table_number || table?.name || table?.qr_code || 'Table';
@@ -194,6 +215,8 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
   const paymentCheckoutId = searchParams.get('checkoutId');
   const loadedPaymentOrderRef = useRef<string | null>(null);
   const loadedPaymentCheckoutRef = useRef<string | null>(null);
+  const lastOpenCheckoutIdRef = useRef<string | null>(null);
+  const [persistedCartItemIds, setPersistedCartItemIds] = useState<string[]>([]);
   const autoPay = searchParams.get('pay') === '1';
   const autoPayAppliedRef = useRef(false);
   const fromRestaurant = searchParams.get('from') === RESTAURANT_FROM;
@@ -230,6 +253,16 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
   const tableError = tablesQueryError instanceof Error ? tablesQueryError.message : null;
   const { data: paymentOrder } = useCashierOrder(paymentCheckoutId ? null : paymentOrderId);
   const { data: paymentCheckout } = useCashierCheckout(paymentCheckoutId);
+
+  useEffect(() => {
+    if (paymentCheckoutId) {
+      lastOpenCheckoutIdRef.current = paymentCheckoutId;
+      writeLastOpenCheckoutId(paymentCheckoutId);
+      return;
+    }
+    lastOpenCheckoutIdRef.current = null;
+    writeLastOpenCheckoutId(null);
+  }, [paymentCheckoutId]);
 
   // URL tableId from restaurant must win over stale localStorage cart table.
   const effectiveTableId =
@@ -284,12 +317,16 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
   /* Kirim struk via WA dari modal sukses (fitur WA struk). Member → nomor
    * profil dipakai otomatis; non-member → kasir mengetik nomor dulu. */
   const [waPhoneInput, setWaPhoneInput] = useState("");
+  const [waPrefillFromMember, setWaPrefillFromMember] = useState(false);
   const [waSending, setWaSending] = useState(false);
   const [waSentTo, setWaSentTo] = useState<string | null>(null);
   const [waError, setWaError] = useState<string | null>(null);
   const receiptRevealTimerRef = useRef<number | null>(null);
+  const receiptWaPhoneRef = useRef("");
   const storeResultPayload = useCallback((payload: ReceiptPayload) => {
     window.sessionStorage.setItem(LAST_RECEIPT_KEY, JSON.stringify(payload));
+    lastOpenCheckoutIdRef.current = null;
+    writeLastOpenCheckoutId(null);
     // EPIC-024: layar customer merayakan transaksi selesai + kembalian.
     // Semua jalur sukses bayar (online/offline/open-bill) lewat sini —
     // satu titik publish, display menahan layar ini beberapa detik.
@@ -306,8 +343,13 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     if (receiptRevealTimerRef.current) {
       window.clearTimeout(receiptRevealTimerRef.current);
     }
+    // Snapshot sebelum cart.clearCart() — effect sync ref akan kosong
+    // begitu member dilepas, jadi jangan baca ref lagi di dalam timeout.
+    const phoneAtPay = receiptWaPhoneRef.current;
     receiptRevealTimerRef.current = window.setTimeout(() => {
       setResultPayload(payload);
+      setWaPhoneInput(phoneAtPay);
+      setWaPrefillFromMember(Boolean(phoneAtPay));
       receiptRevealTimerRef.current = null;
     }, 120);
   }, []);
@@ -375,6 +417,12 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     if (!cart.selectedCustomerId) return null;
     return findCustomer(cart.selectedCustomerId) || null;
   }, [cart.selectedCustomerId, findCustomer]);
+
+  useEffect(() => {
+    receiptWaPhoneRef.current = String(
+      selectedCustomer?.phone || giftCardBuyer?.phone || ""
+    ).trim();
+  }, [selectedCustomer?.phone, giftCardBuyer?.phone]);
 
   const { data: favorites = [], isLoading: loadingFav } = useCustomerFavoriteProducts(
     selectedCustomer?.id,
@@ -473,12 +521,15 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       (paymentCheckout.order_type as 'dine_in' | 'takeaway' | 'delivery' | 'self_order') || 'dine_in'
     );
 
+    const hydratedIds: string[] = [];
     (paymentCheckout.items || []).forEach((item, index) => {
       const qty = Number(item.quantity) || 1;
       const variants = Array.isArray(item.variants) ? item.variants : [];
       const modifiers = Array.isArray(item.modifiers) ? item.modifiers : [];
+      const lineId = item.id || `${item.product_id}-${index}`;
+      hydratedIds.push(lineId);
       cart.addItem({
-        id: item.id || `${item.product_id}-${index}`,
+        id: lineId,
         productId: item.product_id,
         name: item.product_name,
         price: Number(item.total_amount || item.subtotal || item.unit_price || 0) / qty,
@@ -486,8 +537,10 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         variantName: variants.map((v) => v?.name).filter(Boolean).join(', ') || undefined,
         modifierNames: modifiers.map((m) => m?.name).filter((name): name is string => Boolean(name)),
         station: item.station,
+        warehouse_id: item.warehouse_id,
       });
     });
+    setPersistedCartItemIds(hydratedIds);
 
     cart.setTable(paymentCheckout.table_id || null);
     cart.setCustomer(paymentCheckout.customer_id || null);
@@ -496,6 +549,18 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     setPaymentMethod('cash');
     setCashReceived(String(Number(paymentCheckout.total_amount || 0)));
   }, [paymentCheckoutId, paymentCheckout, cart]);
+
+  const resetFreshCashierRef = useRef(false);
+  useEffect(() => {
+    if (!cart.hydrated || resetFreshCashierRef.current) return;
+    if (!shouldResetCashierSession(searchParams)) return;
+    resetFreshCashierRef.current = true;
+    loadedPaymentCheckoutRef.current = null;
+    loadedPaymentOrderRef.current = null;
+    setPersistedCartItemIds([]);
+    setPayingOrderNumber(null);
+    cart.clearCart();
+  }, [cart.hydrated, cart.clearCart, searchParams]);
 
   /* Auto-open payment when handed off with pay=1 (e.g. Pre Settlement from restaurant) */
   useEffect(() => {
@@ -580,6 +645,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
   const closeResultModal = useCallback(() => {
     setResultPayload(null);
     setWaPhoneInput("");
+    setWaPrefillFromMember(false);
     setWaSentTo(null);
     setWaError(null);
     if (pendingRestaurantReturnRef.current) {
@@ -874,7 +940,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       existingStallIds: existing,
       incomingWarehouseId: product.warehouse_id,
       centralAllMode: canUseCentralCashier && activeMode === 'all',
-      payingExistingCheckout: Boolean(paymentCheckoutId),
+      payingExistingCheckout: Boolean(paymentCheckoutId && autoPay),
     });
     if (!check.ok) {
       toast.error(check.message);
@@ -886,7 +952,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       warehouse_name: product.warehouse_name,
     });
     return true;
-  }, [activeMode, canSellMixed, canUseCentralCashier, cart, paymentCheckoutId]);
+  }, [activeMode, autoPay, canSellMixed, canUseCentralCashier, cart, paymentCheckoutId]);
 
   const productSuggestions = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
@@ -1165,8 +1231,16 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
   const openPaymentModal = useCallback(() => {
     if (cart.items.length === 0) return;
     if (!requireActiveShift()) return;
+    const unsaved = newCartItemsForOpenBillAppend({
+      items: cart.items,
+      persistedItemIds: persistedCartItemIds,
+    });
+    if (paymentCheckoutId && unsaved.length > 0) {
+      toast.message('Order dulu item baru, baru bayar tagihan');
+      return;
+    }
     setShowPayment(true);
-  }, [cart.items.length, requireActiveShift]);
+  }, [cart.items, paymentCheckoutId, persistedCartItemIds, requireActiveShift]);
 
   const processNFCCard = useCallback((cardData: string) => {
     const trimmed = cardData.trim();
@@ -1963,6 +2037,22 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
   const handleOpenBill = useCallback(async () => {
     if (cart.items.length === 0) return;
     if (!requireActiveShift()) return;
+    const continueCheckoutId =
+      paymentCheckoutId || lastOpenCheckoutIdRef.current || readLastOpenCheckoutId() || undefined;
+    const appendItems = newCartItemsForOpenBillAppend({
+      items: cart.items,
+      persistedItemIds: persistedCartItemIds,
+    });
+    const isAppend = Boolean(continueCheckoutId && persistedCartItemIds.length > 0);
+    if (isAppend && appendItems.length === 0) {
+      toast.message('Belum ada item baru — tambah menu lalu Order lagi');
+      return;
+    }
+    const sendItems = isAppend ? appendItems : cart.items;
+    const sendSubtotal = sendItems.reduce(
+      (sum, item) => sum + Number(item.price) * Number(item.quantity),
+      0
+    );
     try {
       setSavingBill(true);
       const res = await openBill({
@@ -1971,10 +2061,10 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         cashier_id: CASHIER_ID,
         server_id: undefined,
         table_id: effectiveTableId || undefined,
+        checkout_id: continueCheckoutId,
         guest_count: normalizeGuestCount(guestCount),
         shift_id: shift?.id || undefined,
-        items: cart.items.map((item, index) => {
-          const line = discountStack.line_results[index];
+        items: sendItems.map((item) => {
           return {
             product_id: item.productId,
             sku_id: item.skuId,
@@ -1989,14 +2079,14 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
             subtotal: Number(item.price * item.quantity),
             discount_type: item.discount_type ?? null,
             discount_value: item.discount_value ?? null,
-            discount_amount: line?.discount_amount ?? 0,
-            total_amount: line?.total_amount ?? Number(item.price * item.quantity),
+            discount_amount: 0,
+            total_amount: Number(item.price * item.quantity),
             station: item.station,
             kitchen_notes: item.notes,
           };
         }),
-        subtotal: cart.subtotal,
-        discount_amount: discountAmount,
+        subtotal: isAppend ? sendSubtotal : cart.subtotal,
+        discount_amount: isAppend ? 0 : discountAmount,
         discount_reason: [
           itemDiscountTotal > 0 ? 'ITEM line discounts' : null,
           ...offerEval.applied.map((a) => `OFFER ${a.name}`),
@@ -2013,24 +2103,43 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         manual_discount_type: cart.manual_discount_type,
         manual_discount_value: cart.manual_discount_value,
         membership_discount_pct: selectedCustomer?.discount || 0,
-        promo_discount: promoApplied?.discount ?? 0,
-        promo_code: promoApplied?.code,
-        tax_amount: taxAmount,
-        service_charge_amount: serviceChargeAmount,
-        other_charges_amount: otherChargesAmount,
-        charges_breakdown: billCharges.breakdown,
-        total_amount: total,
+        promo_discount: isAppend ? 0 : promoApplied?.discount ?? 0,
+        promo_code: isAppend ? undefined : promoApplied?.code,
+        tax_amount: isAppend ? 0 : taxAmount,
+        service_charge_amount: isAppend ? 0 : serviceChargeAmount,
+        other_charges_amount: isAppend ? 0 : otherChargesAmount,
+        charges_breakdown: isAppend ? [] : billCharges.breakdown,
+        total_amount: isAppend ? sendSubtotal : total,
         notes: cart.notes,
       });
 
       if (res.success && res.data) {
+        const continuedCheckoutId =
+          (res.data as { checkout_id?: string }).checkout_id || null;
+        if (continuedCheckoutId) {
+          lastOpenCheckoutIdRef.current = continuedCheckoutId;
+          writeLastOpenCheckoutId(continuedCheckoutId);
+        }
+        const continuedNumber =
+          (res.data as { checkout_number?: string }).checkout_number ||
+          res.data.order_number;
         toast.success(
-          res.data.queue_number
-            ? `Open bill tersimpan — Antrian ${res.data.queue_number}`
-            : `Open bill tersimpan — Order ${res.data.order_number}`
+          isAppend
+            ? `Item ditambahkan ke ${continuedNumber}`
+            : res.data.queue_number
+              ? `Open bill tersimpan — Antrian ${res.data.queue_number}`
+              : `Open bill tersimpan — ${continuedNumber}`
         );
-        cart.clearCart();
-        maybeReturnToRestaurant();
+        if (isAppend) {
+          setPersistedCartItemIds((prev) => [
+            ...prev,
+            ...appendItems.map((item) => item.id),
+          ]);
+        } else {
+          cart.clearCart();
+          setPersistedCartItemIds([]);
+          maybeReturnToRestaurant();
+        }
       } else {
         toast.error(res.error || 'Failed to save open bill');
       }
@@ -2039,7 +2148,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     } finally {
       setSavingBill(false);
     }
-  }, [cart, selectedCustomer, discountAmount, taxAmount, total, requireActiveShift, shift, maybeReturnToRestaurant, effectiveTableId, serviceChargeAmount, otherChargesAmount, billCharges, guestCount, discountStack, itemDiscountTotal, membershipDiscount, promoApplied, offerEval]);
+  }, [cart, selectedCustomer, discountAmount, taxAmount, total, requireActiveShift, shift, maybeReturnToRestaurant, effectiveTableId, serviceChargeAmount, otherChargesAmount, billCharges, guestCount, itemDiscountTotal, membershipDiscount, promoApplied, offerEval, paymentCheckoutId, persistedCartItemIds]);
 
   /* Print helpers */
   const [printingReceipt, setPrintingReceipt] = useState(false);
@@ -2201,6 +2310,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
           ) : null}
           <PosTabletChromeControls
             immersive={isTabletMode}
+            ordersHref={buildPosOrdersUrl({ from: "cashier", tablet: isTabletMode })}
             onToggleImmersive={(next) => {
               if (next) router.push(cashierTabletRoute(searchParams));
               else router.replace(cashierDesktopRoute(searchParams));
@@ -2620,6 +2730,8 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         setIncludeService={cart.setIncludeService}
         setShowPaymentModal={openPaymentModal}
         onOpenBill={handleOpenBill}
+        continuingCheckoutNumber={paymentCheckoutId ? payingOrderNumber : null}
+        lockedItemIds={persistedCartItemIds}
         isSavingBill={savingBill}
         canTransact={canTransact}
         onOpenShift={POS_SHIFT_MANAGEMENT_ENABLED ? () => setShowShiftModal(true) : undefined}
@@ -3229,27 +3341,15 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
                   Print Struk
                 </Button>
 
-                {/* Kirim struk via WA. Member → langsung ke nomor profil;
-                    non-member → kasir isi nomor dulu. Setelah terkirim tombol
-                    berubah jadi penanda, bukan bisa dispam. */}
+                {/* Member ber-nomor: field terisi, klik Kirim WA. Tetap bisa
+                    diganti / diketik manual jika nomor kosong atau beda. */}
                 {waSentTo ? (
                   <div className="flex items-center justify-center gap-2 rounded-xl border border-emerald-200/70 bg-emerald-50/60 px-4 py-2.5 text-sm text-emerald-700">
                     <CheckCircle className="h-4 w-4" />
                     Struk terkirim ke {waSentTo}
                   </div>
-                ) : selectedCustomer?.phone ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => void sendReceiptWa()}
-                    disabled={waSending}
-                    className="h-11 w-full gap-2 border-emerald-300 text-emerald-700 hover:bg-emerald-50"
-                  >
-                    {waSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageCircle className="h-4 w-4" />}
-                    Kirim WA ke {selectedCustomer.phone}
-                  </Button>
                 ) : (
-                  <div className="space-y-2">
+                  <div className="space-y-1.5">
                     <div className="flex gap-2">
                       <Input
                         type="tel"
@@ -3270,6 +3370,11 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
                         Kirim WA
                       </Button>
                     </div>
+                    <p className="text-xs text-muted-foreground">
+                      {waPrefillFromMember
+                        ? "Nomor pelanggan — bisa diganti sebelum kirim"
+                        : "Isi nomor WA pelanggan, atau biarkan kosong jika tidak dikirim"}
+                    </p>
                   </div>
                 )}
                 {waError && <p className="text-center text-xs text-red-600">{waError}</p>}

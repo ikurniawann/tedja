@@ -21,6 +21,8 @@ type OrderItemDetail = {
   quantity?: number | string | null;
   unit_price?: number | string | null;
   total_amount?: number | string | null;
+  variants?: Array<{ name?: string | null }>;
+  modifiers?: Array<{ name?: string | null }>;
 };
 
 export type TransactionOrderDetail = {
@@ -48,7 +50,16 @@ export type TransactionOrderDetail = {
   checkout_number?: string | null;
   xendit_external_id?: string | null;
   xendit_qr_id?: string | null;
-  customer?: { name?: string | null } | null;
+  items?: OrderItemDetail[];
+  customer?: {
+    name?: string | null;
+    phone?: string | null;
+    membership_tier?: string | null;
+  } | null;
+  void_reason?: string | null;
+  voided_at?: string | null;
+  created_by_name?: string | null;
+  voided_by_name?: string | null;
 };
 
 const formatCurrency = (value: number) =>
@@ -154,6 +165,15 @@ export function TransactionDetailBody({
             label="Pelanggan"
             value={detail?.customer?.name?.trim() || "Walk-in"}
           />
+          {detail?.customer?.phone ? (
+            <DetailField label="Telepon" value={detail.customer.phone} />
+          ) : null}
+          {detail?.customer?.membership_tier ? (
+            <DetailField
+              label="Tier"
+              value={detail.customer.membership_tier}
+            />
+          ) : null}
           <DetailField
             label="Sumber jual"
             value={formatSoldFromLabel(detail?.sold_from ?? row?.sold_from)}
@@ -171,6 +191,30 @@ export function TransactionDetailBody({
           ) : null}
         </dl>
       </SectionCard>
+
+      {detail?.void_reason || detail?.voided_at || detail?.voided_by_name ? (
+        <SectionCard title="Void">
+          <dl className="grid gap-3 sm:grid-cols-3">
+            <DetailField
+              label="Waktu void"
+              value={formatDateTime(detail?.voided_at)}
+            />
+            <DetailField
+              label="Dibuat oleh"
+              value={detail?.created_by_name || "—"}
+            />
+            <DetailField
+              label="Divoid oleh"
+              value={detail?.voided_by_name || "—"}
+            />
+            <DetailField
+              label="Alasan"
+              value={detail?.void_reason || "—"}
+              className="sm:col-span-3"
+            />
+          </dl>
+        </SectionCard>
+      ) : null}
 
       <SectionCard title="Pembayaran">
         <dl className="grid gap-3 sm:grid-cols-3">
@@ -291,7 +335,33 @@ export function TransactionDetailBody({
                 items.map((item) => (
                   <tr key={item.id}>
                     <td className="px-3 py-2.5 font-medium text-foreground">
-                      {item.product_name || "—"}
+                      <div>{item.product_name || "—"}</div>
+                      {item.variants?.length || item.modifiers?.length ? (
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {(item.variants || []).map((variant, index) =>
+                            variant.name ? (
+                              <Badge
+                                key={`v-${index}`}
+                                variant="secondary"
+                                className="bg-primary/10 text-xs text-primary"
+                              >
+                                {variant.name}
+                              </Badge>
+                            ) : null
+                          )}
+                          {(item.modifiers || []).map((modifier, index) =>
+                            modifier.name ? (
+                              <Badge
+                                key={`m-${index}`}
+                                variant="secondary"
+                                className="bg-amber-50 text-xs text-amber-800"
+                              >
+                                {modifier.name}
+                              </Badge>
+                            ) : null
+                          )}
+                        </div>
+                      ) : null}
                     </td>
                     <td className="px-3 py-2.5 text-muted-foreground">
                       {item.product_sku || "—"}

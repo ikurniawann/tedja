@@ -17,7 +17,10 @@ import {
   guardMixedCheckoutCart,
   resolveOrderSoldFrom,
 } from '@/lib/pos/create-mixed-checkout';
-import { resolveTableSaleTarget } from "@/lib/pos/table-sale-target";
+import {
+  resolveOpenBillCheckoutId,
+  resolveTableSaleTarget,
+} from "@/lib/pos/table-sale-target";
 import {
   assertOrderItemsMatchSellStall,
   loadCentralCashierGate,
@@ -76,6 +79,8 @@ type OpenBillBody = {
   total_amount?: number | string;
   notes?: string;
   special_requests?: string;
+  /** Lanjutkan open bill gabungan yang sama (termasuk takeaway tanpa meja). */
+  checkout_id?: string;
   membership_discount_pct?: number | string;
   /** Preview only — promo hold happens at pay time */
   promo_discount?: number | string;
@@ -179,6 +184,10 @@ export async function POST(request: NextRequest) {
         .maybeSingle();
       unpaidCentralCheckoutId = existingCheckout.data?.id ?? null;
     }
+    unpaidCentralCheckoutId = resolveOpenBillCheckoutId({
+      explicitCheckoutId: body.checkout_id,
+      tableUnpaidCheckoutId: unpaidCentralCheckoutId,
+    });
 
     const saleTarget = resolveTableSaleTarget({
       saleKind: mixedGuard.createCheckout
@@ -231,7 +240,8 @@ export async function POST(request: NextRequest) {
           shiftId: shift_id,
           sessionUserId,
           forceInsertChildren: true,
-          reuseUnpaidTableCheckout: Boolean(table_id),
+          reuseUnpaidTableCheckout: Boolean(table_id || unpaidCentralCheckoutId),
+          existingCheckoutId: unpaidCentralCheckoutId,
           companyId: scope?.companyId,
           branchId: scope?.branchId,
         });

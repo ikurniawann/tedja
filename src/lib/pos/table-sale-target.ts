@@ -22,6 +22,26 @@ export type CheckoutAppendChild =
  * Kasir pusat (mixed or 1-stall) appends only to an existing unpaid central
  * checkout — never to a stall order, and never to a paid checkout.
  */
+/** Lines already on the open bill must not be posted again on "Order lagi". */
+export function newCartItemsForOpenBillAppend<T extends { id: string }>(input: {
+  items: T[];
+  persistedItemIds: Iterable<string>;
+}): T[] {
+  const persisted = new Set(input.persistedItemIds);
+  return input.items.filter((item) => !persisted.has(item.id));
+}
+
+/** Continue the same open checkout when adding items (table or takeaway). */
+export function resolveOpenBillCheckoutId(input: {
+  explicitCheckoutId?: string | null;
+  tableUnpaidCheckoutId?: string | null;
+}): string | null {
+  const explicit = String(input.explicitCheckoutId || "").trim();
+  if (explicit) return explicit;
+  const fromTable = String(input.tableUnpaidCheckoutId || "").trim();
+  return fromTable || null;
+}
+
 export function resolveTableSaleTarget(input: {
   saleKind: TableSaleKind;
   unpaidCentralCheckoutId?: string | null;

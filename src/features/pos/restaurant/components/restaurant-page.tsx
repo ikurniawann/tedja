@@ -16,6 +16,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { buildPosOrdersUrl } from "@/features/pos/cashier/constants";
 import { cashierQueryKeys } from "@/features/pos/cashier/query-keys";
 import { useCashierTables } from "@/features/pos/cashier/queries";
 import { useOpenBills } from "@/features/pos/open-bills/queries";
@@ -529,6 +530,7 @@ function RestaurantPageContent() {
         <div className="flex flex-wrap items-center gap-2">
           <PosTabletChromeControls
             immersive={immersive}
+            ordersHref={buildPosOrdersUrl({ from: "restaurant", tablet: immersive })}
             onToggleImmersive={(next) => {
               router.replace(restaurantPath({ immersive: next }));
             }}

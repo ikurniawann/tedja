@@ -5,6 +5,8 @@ import {
   canMergeIntoDestination,
   planCheckoutAppend,
   resolvePaidMixedOnOccupiedTable,
+  newCartItemsForOpenBillAppend,
+  resolveOpenBillCheckoutId,
   resolveTableSaleTarget,
 } from "./table-sale-target";
 
@@ -42,6 +44,45 @@ describe("resolveTableSaleTarget", () => {
         saleKind: "central_mixed",
       })
     ).toEqual({ action: "create_checkout" });
+  });
+
+  it("sends only newly added cart lines when continuing an open bill", () => {
+    expect(
+      newCartItemsForOpenBillAppend({
+        items: [
+          { id: "persisted-1", name: "Age Gyoza" },
+          { id: "new-1", name: "Extra Mochi" },
+        ],
+        persistedItemIds: ["persisted-1"],
+      })
+    ).toEqual([{ id: "new-1", name: "Extra Mochi" }]);
+    expect(
+      newCartItemsForOpenBillAppend({
+        items: [{ id: "persisted-1", name: "Age Gyoza" }],
+        persistedItemIds: ["persisted-1"],
+      })
+    ).toEqual([]);
+  });
+
+  it("prefers an explicit checkout id so takeaway/no-table add-on appends", () => {
+    expect(
+      resolveOpenBillCheckoutId({
+        explicitCheckoutId: "chk-5",
+        tableUnpaidCheckoutId: "chk-table",
+      })
+    ).toBe("chk-5");
+    expect(
+      resolveOpenBillCheckoutId({
+        explicitCheckoutId: null,
+        tableUnpaidCheckoutId: "chk-table",
+      })
+    ).toBe("chk-table");
+    expect(
+      resolveOpenBillCheckoutId({
+        explicitCheckoutId: "  ",
+        tableUnpaidCheckoutId: null,
+      })
+    ).toBeNull();
   });
 
   it("appends a 1-stall kasir pusat open-bill onto that table's unpaid checkout", () => {

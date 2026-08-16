@@ -14,6 +14,7 @@ import { ensureQueueNumber } from '@/lib/pos/queue-number';
 import { AccountingPostError } from '@/lib/pos/accounting-posting';
 import { resolvePaymentCatalogStamp } from '@/lib/pos/payment-methods';
 import { sanitizeXenditRef } from '@/lib/pos/xendit-ids';
+import { assertQrisSaleMaySettle } from '@/lib/pos/qris-settle-guard';
 
 type OrderPatchBody = {
   status?: string;
@@ -83,7 +84,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
     const { data: existing, error: fetchErr } = await db
       .from('pos_orders')
-      .select('customer_id, payment_status, payment_method, total_amount, order_number, company_id, branch_id, queue_number, status')
+      .select('customer_id, payment_status, payment_method, total_amount, order_number, company_id, branch_id, queue_number, status, xendit_qr_id, xendit_external_id')
       .eq('id', orderId)
       .single();
 
@@ -94,6 +95,37 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     // 1 pembayaran = 1 metode (EPIC-011): ARK Coin tidak boleh dicampur metode
     // lain, dan kalau metodenya ARK Coin maka harus menutup seluruh total.
     const effectiveMethod = payment_method ?? existing.payment_method ?? null;
+    const settlingQris =
+      effectiveMethod === 'qris' &&
+      (updateData.payment_status === 'paid' || payment_status === 'paid') &&
+      existing.payment_status !== 'paid';
+    if (settlingQris) {
+      const qrisId = xenditQrId || sanitizeXenditRef(existing.xendit_qr_id);
+      const qrisExternalId = xenditExternalId || sanitizeXenditRef(existing.xendit_external_id);
+      let qrisAlreadyUsed = false;
+      if (qrisId || qrisExternalId) {
+        let usedQuery = db
+          .from('pos_orders')
+          .select('id')
+          .eq('payment_status', 'paid')
+          .neq('id', orderId)
+          .limit(1);
+        usedQuery = qrisId
+          ? usedQuery.eq('xendit_qr_id', qrisId)
+          : usedQuery.eq('xendit_external_id', qrisExternalId);
+        const { data: usedRow } = await usedQuery.maybeSingle();
+        qrisAlreadyUsed = Boolean(usedRow);
+      }
+      const qrisGate = assertQrisSaleMaySettle({
+        paymentMethod: 'qris',
+        xenditQrId: qrisId,
+        xenditExternalId: qrisExternalId,
+        alreadyUsedByPaidOrder: qrisAlreadyUsed,
+      });
+      if (!qrisGate.ok) {
+        return NextResponse.json({ success: false, error: qrisGate.message }, { status: 400 });
+      }
+    }
     const orderTotal = Number(existing.total_amount) || 0;
     if (numericArkUsed > 0 && effectiveMethod !== 'ark_coin') {
       return NextResponse.json(

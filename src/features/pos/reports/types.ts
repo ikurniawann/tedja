@@ -81,6 +81,13 @@ export interface ClosingReport {
     discount: number;
     gross: number;
   };
+  transaction_totals: {
+    transactions: number;
+    sales: number;
+    discount: number;
+    full_discount_transactions: number;
+    full_discount_amount: number;
+  };
   guests: {
     count: number;
     average_per_pax: number;
@@ -296,4 +303,54 @@ export interface ProductSalesReport {
     revenue: number;
   };
   rows: ProductSalesReportRow[];
+}
+
+export interface VoidReportParams {
+  date_from: string;
+  date_to: string;
+  warehouse_id?: string;
+}
+
+export interface VoidReportItem {
+  id: string;
+  product_name: string;
+  product_sku: string | null;
+  quantity: number;
+  unit_price: number;
+  total_amount: number;
+}
+
+export interface VoidReportRow {
+  id: string;
+  order_number: string | null;
+  checkout_number: string | null;
+  ordered_at: string | null;
+  voided_at: string | null;
+  void_reason: string | null;
+  created_by_name: string;
+  voided_by_name: string;
+  stall_name: string | null;
+  stall_code: string | null;
+  total_amount: number;
+  payment_method: string | null;
+  payment_method_code?: string | null;
+  payment_method_name?: string | null;
+  sold_from?: string | null;
+  checkout_id?: string | null;
+  items: VoidReportItem[];
+}
+
+export interface VoidReport {
+  filters: {
+    date_from: string;
+    date_to: string;
+    warehouse_id: string | null;
+  };
+  stall_options: ReportStallOption[];
+  stall_locked: boolean;
+  summary: {
+    voids: number;
+    amount: number;
+  };
+  rows: VoidReportRow[];
 }

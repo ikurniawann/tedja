@@ -332,6 +332,8 @@ export interface OpenBillRequest {
   cashier_id?: string;
   server_id?: string;
   table_id?: string;
+  /** Lanjutkan CHK yang sama saat tambah item (termasuk tanpa meja). */
+  checkout_id?: string;
   /** Jumlah tamu yang duduk (EPIC-038). Kosong → 1 orang, ditegakkan server. */
   guest_count?: number;
   shift_id?: string;
