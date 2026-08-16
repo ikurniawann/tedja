@@ -7,6 +7,7 @@ import {
   type MemberProfileFields,
 } from "@/lib/member-portal/profile";
 import { dateColToIso } from "@/lib/payroll/period";
+import { DEFAULT_POS_LOYALTY_SETTINGS } from "@/lib/pos/loyalty-settings";
 
 /**
  * GET /api/member-portal/me — profil + saldo/XP/tier + progres tier
@@ -42,6 +43,13 @@ export async function GET() {
           []
         ),
       ]);
+    // ark_coin_balance disimpan dalam Rupiah (kasir memotongnya 1:1 terhadap
+    // total order), jadi portal butuh rate-nya untuk menampilkan ARK Coin.
+    const { rows: loyalty } = await pool.query(
+      `SELECT ark_rate::float AS ark_rate FROM pos.pos_loyalty_settings
+       WHERE is_active ORDER BY updated_at DESC LIMIT 1`,
+      []
+    );
     const customer = customers[0];
     if (!customer) {
       return NextResponse.json({ success: false, error: "Member tidak ditemukan" }, { status: 404 });
@@ -71,6 +79,7 @@ export async function GET() {
         profile: { id: customer.id, ...fields },
         member_type: customer.member_type,
         ark_coin_balance: Number(customer.ark_coin_balance) || 0,
+        ark_rate: Number(loyalty[0]?.ark_rate) || DEFAULT_POS_LOYALTY_SETTINGS.ark_rate,
         total_xp: totalXp,
         visit_count: Number(customer.visit_count) || 0,
         tier: currentTier
