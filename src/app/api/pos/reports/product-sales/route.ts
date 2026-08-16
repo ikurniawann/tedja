@@ -67,6 +67,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
+    // Omzet = pos_orders + items only. Do not join pos_checkouts totals.
     const rows = await query<ProductSalesRow>(
       `SELECT
          i.product_id,

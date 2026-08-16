@@ -26,16 +26,26 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import dynamic from "next/dynamic";
 
-const QRCodeSVG = dynamic(
-  () => import("qrcode.react").then((mod) => mod.QRCodeSVG),
-  { ssr: false }
-);
+import { QrisCard } from "@/components/pos/QrisCard";
 
 import { formatIdrInput, parseIdrDigits } from "./idr-input";
 import type { CfdPayment } from "@/lib/pos/cfd";
-import { DEFAULT_POS_PAYMENT_METHODS } from "@/lib/pos/payment-methods";
+import {
+  MIXED_ARK_UNSUPPORTED_MESSAGE,
+  MIXED_NFC_GIFT_UNSUPPORTED_MESSAGE,
+  buildPosQrisCreateBody,
+  isCheckoutBillUnsupportedTender,
+  isMixedUnsupportedTender,
+  mayConfirmMixedQris,
+  mixedQrisCheckoutIdForAmount,
+  shouldSkipQrisPrepare,
+} from "@/lib/pos/central-cashier";
+import { cancelCheckout } from "@/lib/pos-api";
+import {
+  cashierMethodFromHandler,
+  DEFAULT_POS_PAYMENT_METHODS,
+} from "@/lib/pos/payment-methods";
 import { usePaymentMethods } from "@/features/pos/payment-methods";
 
 export type PaymentMethod =
@@ -44,7 +54,9 @@ export type PaymentMethod =
   | "credit_card"
   | "ark_coin"
   | "nfc_tab"
-  | "gift_card";
+  | "gift_card"
+  // Metode kustom buatan admin (master Metode Bayar) — alur generik
+  | (string & {});
 
 /** Hasil pratinjau tab ticketing (EPIC-023 Fase C) utk metode NFC Tab. */
 export interface NfcTabCheckResult {
@@ -101,6 +113,13 @@ interface Props {
     nfcTabUid?: string;
     /** Kode gift card — terisi saat method 'gift_card' (EPIC-034 Fase C) */
     giftCardCode?: string;
+    checkoutId?: string;
+    checkoutNumber?: string;
+    queueNumber?: string | null;
+    xenditQrId?: string;
+    xenditExternalId?: string;
+    paymentMethodCode?: string;
+    paymentMethodName?: string;
   }) => void | Promise<void>;
   submitting?: boolean;
   formatCurrency: (v: number) => string;
@@ -122,6 +141,15 @@ interface Props {
    * membuat QR dinamis Xendit ber-nominal terkunci.
    */
   onCfdPayment?: (payment: CfdPayment | null) => void;
+  /** Cart has items from 2+ stalls — QRIS must bind to checkout_id. */
+  isMixedCart?: boolean;
+  /** Paying an existing table/central checkout — ARK/NFC/gift are not wired. */
+  isCheckoutBill?: boolean;
+  onPrepareMixedQrisCheckout?: () => Promise<{
+    checkout_id: string;
+    checkout_number?: string;
+    queue_number?: string | null;
+  }>;
 }
 
 export function PaymentModal({
@@ -138,9 +166,13 @@ export function PaymentModal({
   onCheckNfcTab,
   onCheckGiftCard,
   onCfdPayment,
+  isMixedCart = false,
+  isCheckoutBill = false,
+  onPrepareMixedQrisCheckout,
 }: Props) {
   const methodsQuery = usePaymentMethods(true);
   const [method, setMethod] = useState<PaymentMethod>("cash");
+  const [selectedCode, setSelectedCode] = useState("cash");
   const [cashReceived, setCashReceived] = useState("");
   const [arkToUse, setArkToUse] = useState(0);
   const [tabUidInput, setTabUidInput] = useState("");
@@ -153,15 +185,42 @@ export function PaymentModal({
     amount: number;
     qr_string: string;
     qr_id: string;
+    reference_id?: string;
+    merchant_name?: string | null;
+    nmid?: string | null;
   } | null>(null);
   const [qrisLoading, setQrisLoading] = useState(false);
   const [qrisUnavailable, setQrisUnavailable] = useState(false);
   const [qrisError, setQrisError] = useState<string | null>(null);
   const [qrisPaid, setQrisPaid] = useState(false);
+  const [mixedQrisCheckout, setMixedQrisCheckout] = useState<{
+    checkout_id: string;
+    checkout_number?: string;
+    queue_number?: string | null;
+    amount: number;
+  } | null>(null);
   const qrisConfirmStarted = useRef(false);
   const qrisWasSubmitting = useRef(false);
   const onConfirmRef = useRef(onConfirm);
   onConfirmRef.current = onConfirm;
+  const mixedQrisCheckoutRef = useRef(mixedQrisCheckout);
+  mixedQrisCheckoutRef.current = mixedQrisCheckout;
+  const qrisPaidRef = useRef(qrisPaid);
+  qrisPaidRef.current = qrisPaid;
+  const submittingRef = useRef(submitting);
+  submittingRef.current = submitting;
+
+  const abandonPreparedMixedQris = (checkoutId?: string | null) => {
+    const id = checkoutId || mixedQrisCheckoutRef.current?.checkout_id;
+    if (!id || qrisPaidRef.current || submittingRef.current) return;
+    void cancelCheckout(id).catch(() => {});
+  };
+
+  const handleClose = () => {
+    if (submitting) return;
+    abandonPreparedMixedQris();
+    onClose();
+  };
 
   // EPIC-034 Fase C — kode gift card diketik/di-scan kasir
   const [giftCodeInput, setGiftCodeInput] = useState("");
@@ -182,7 +241,8 @@ export function PaymentModal({
         return true;
       })
       .map((option) => ({
-        key: option.code as PaymentMethod,
+        code: option.code,
+        cashierKey: cashierMethodFromHandler(option.handler),
         title: option.name,
         desc: option.description,
         icon:
@@ -243,7 +303,9 @@ export function PaymentModal({
 
   useEffect(() => {
     if (!open) {
+      abandonPreparedMixedQris();
       setMethod("cash");
+      setSelectedCode("cash");
       setCashReceived("");
       setArkToUse(0);
       setTabUidInput("");
@@ -254,16 +316,52 @@ export function PaymentModal({
       setQrisUnavailable(false);
       setQrisError(null);
       setQrisPaid(false);
+      setMixedQrisCheckout(null);
       qrisConfirmStarted.current = false;
     }
   }, [open]);
 
   useEffect(() => {
-    if (!open || paymentOptions.length === 0) return;
-    if (!paymentOptions.some((option) => option.key === method)) {
-      setMethod(paymentOptions[0].key);
+    if (isMixedCart && isMixedUnsupportedTender(method)) {
+      setMethod("cash");
+      setSelectedCode("cash");
     }
-  }, [open, paymentOptions, method]);
+    if (isCheckoutBill && isCheckoutBillUnsupportedTender(method)) {
+      setMethod("cash");
+      setSelectedCode("cash");
+    }
+    if (method !== "qris") {
+      abandonPreparedMixedQris();
+      setMixedQrisCheckout(null);
+    }
+  }, [isMixedCart, isCheckoutBill, method]);
+
+  useEffect(() => {
+    const previous = mixedQrisCheckoutRef.current;
+    if (
+      previous?.checkout_id &&
+      previous.amount !== totalAfterArk
+    ) {
+      abandonPreparedMixedQris(previous.checkout_id);
+    }
+    setMixedQrisCheckout(null);
+    setQris(null);
+    setQrisLoading(false);
+    setQrisPaid(false);
+    setQrisUnavailable(false);
+    setQrisError(null);
+    qrisConfirmStarted.current = false;
+  }, [totalAfterArk]);
+
+  useEffect(() => {
+    if (!open || paymentOptions.length === 0) return;
+    if (!paymentOptions.some((option) => option.code === selectedCode)) {
+      const first = paymentOptions[0];
+      if (!first) return;
+      setSelectedCode(first.code);
+      setMethod(first.cashierKey);
+    }
+  }, [open, paymentOptions, selectedCode]);
 
   // Total berubah (item ditambah/dihapus) → hasil cek lama basi: saldo yang
   // tadinya menutup bisa jadi kurang. Paksa kasir cek ulang.
@@ -274,40 +372,83 @@ export function PaymentModal({
   // penghalang bayar: kasir bisa lanjut dgn QRIS statis di meja.
   useEffect(() => {
     if (!open || method !== "qris") return;
-    if (qrisLoading || (qris && qris.amount === totalAfterArk)) return;
+    const reusableCheckoutId = mixedQrisCheckoutIdForAmount({
+      checkoutId: mixedQrisCheckout?.checkout_id,
+      boundAmount: mixedQrisCheckout?.amount,
+      currentAmount: totalAfterArk,
+    });
+    if (
+      shouldSkipQrisPrepare({
+        qrisLoading,
+        existingQrAmount: qris?.amount ?? null,
+        currentAmount: totalAfterArk,
+        mixedCheckoutId: reusableCheckoutId,
+        isMixedCart,
+      })
+    ) {
+      return;
+    }
     let cancelled = false;
     setQrisLoading(true);
     setQrisUnavailable(false);
     setQrisError(null);
-    fetch("/api/pos/qris", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ amount: totalAfterArk }),
-    })
-      .then(async (res) => {
-        const body = await res.json();
-        if (cancelled) return;
-        if (!res.ok) {
-          setQrisUnavailable(true);
-          setQrisError(
-            typeof body.error === "string" && body.error.trim()
-              ? body.error
-              : "Gagal membuat QR pembayaran"
-          );
-          return;
+
+    const run = async () => {
+      let checkoutId = mixedQrisCheckoutIdForAmount({
+        checkoutId: mixedQrisCheckout?.checkout_id,
+        boundAmount: mixedQrisCheckout?.amount,
+        currentAmount: totalAfterArk,
+      });
+      if (isMixedCart) {
+        if (!onPrepareMixedQrisCheckout) {
+          throw new Error("Checkout multi-stall membutuhkan persiapan QRIS");
         }
-        setQris({
-          amount: body.data.amount,
-          qr_string: body.data.qr_string,
-          qr_id: String(body.data.qr_id || ""),
-        });
-        setQrisPaid(false);
-        qrisConfirmStarted.current = false;
-      })
-      .catch(() => {
+        if (!checkoutId) {
+          const prepared = await onPrepareMixedQrisCheckout();
+          if (cancelled) return;
+          checkoutId = prepared.checkout_id;
+          setMixedQrisCheckout({ ...prepared, amount: totalAfterArk });
+        }
+      }
+
+      const res = await fetch("/api/pos/qris", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(
+          buildPosQrisCreateBody({
+            amount: totalAfterArk,
+            checkoutId,
+          })
+        ),
+      });
+      const body = await res.json();
+      if (cancelled) return;
+      if (!res.ok) {
+        setQrisUnavailable(true);
+        setQrisError(
+          typeof body.error === "string" && body.error.trim()
+            ? body.error
+            : "Gagal membuat QR pembayaran"
+        );
+        return;
+      }
+      setQris({
+        amount: body.data.amount,
+        qr_string: body.data.qr_string,
+        qr_id: String(body.data.qr_id || ""),
+        reference_id: String(body.data.reference_id || ""),
+        merchant_name: body.data.merchant_name ?? null,
+        nmid: body.data.nmid ?? null,
+      });
+      setQrisPaid(false);
+      qrisConfirmStarted.current = false;
+    };
+
+    void run()
+      .catch((err) => {
         if (!cancelled) {
           setQrisUnavailable(true);
-          setQrisError("Gagal menghubungi server QR");
+          setQrisError(err instanceof Error ? err.message : "Gagal menghubungi server QR");
         }
       })
       .finally(() => {
@@ -317,7 +458,7 @@ export function PaymentModal({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, method, totalAfterArk]);
+  }, [open, method, totalAfterArk, isMixedCart]);
 
   // QRIS lunas di Xendit → checkout otomatis, sama seperti tunai.
   useEffect(() => {
@@ -333,6 +474,16 @@ export function PaymentModal({
         const body = await res.json().catch(() => ({}));
         if (cancelled || qrisConfirmStarted.current) return;
         if (res.ok && body?.data?.paid) {
+          if (
+            !mayConfirmMixedQris({
+              isMixedCart,
+              method: "qris",
+              qrisPaid: true,
+              checkoutId: mixedQrisCheckout?.checkout_id,
+            })
+          ) {
+            return;
+          }
           qrisConfirmStarted.current = true;
           setQrisPaid(true);
           void Promise.resolve(
@@ -340,6 +491,11 @@ export function PaymentModal({
               method: "qris",
               cashReceived: "",
               arkToUse,
+              checkoutId: mixedQrisCheckout?.checkout_id,
+              checkoutNumber: mixedQrisCheckout?.checkout_number,
+              queueNumber: mixedQrisCheckout?.queue_number,
+              xenditQrId: qris.qr_id,
+              xenditExternalId: qris.reference_id,
             })
           ).catch(() => {
             qrisConfirmStarted.current = false;
@@ -360,7 +516,7 @@ export function PaymentModal({
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [open, method, qris?.qr_id, qrisUnavailable, submitting, arkToUse]);
+  }, [open, method, qris?.qr_id, qrisUnavailable, submitting, arkToUse, mixedQrisCheckout, isMixedCart]);
 
   useEffect(() => {
     if (qrisWasSubmitting.current && !submitting && qrisPaid && open) {
@@ -408,8 +564,18 @@ export function PaymentModal({
     return true;
   })();
 
+  const waitForQris =
+    method === "qris" &&
+    ((Boolean(qris?.qr_id) && !qrisUnavailable) ||
+      !mayConfirmMixedQris({
+        isMixedCart,
+        method: "qris",
+        qrisPaid,
+        checkoutId: mixedQrisCheckout?.checkout_id,
+      }));
+
   return (
-    <Dialog open={open} onOpenChange={(v) => !v && !submitting && onClose()}>
+    <Dialog open={open} onOpenChange={(v) => !v && !submitting && handleClose()}>
       <DialogPanel size="md">
         <DialogPanelHeader>
           <DialogPanelTitle>Payment Method</DialogPanelTitle>
@@ -422,20 +588,29 @@ export function PaymentModal({
           <div className="grid grid-cols-2 gap-3">
             {paymentOptions.map((option) => {
               const Icon = option.icon;
-              const selected = method === option.key;
-              const desc =
-                option.key === "ark_coin"
+              const selected = selectedCode === option.code;
+              const mixedBlocked = isMixedCart && isMixedUnsupportedTender(option.cashierKey);
+              const checkoutBlocked =
+                isCheckoutBill && isCheckoutBillUnsupportedTender(option.cashierKey);
+              const blocked = mixedBlocked || checkoutBlocked;
+              const desc = checkoutBlocked && option.cashierKey === "ark_coin"
+                ? MIXED_ARK_UNSUPPORTED_MESSAGE
+                : mixedBlocked || checkoutBlocked
+                ? MIXED_NFC_GIFT_UNSUPPORTED_MESSAGE
+                : option.cashierKey === "ark_coin"
                   ? formatArk(selectedCustomer?.ark_coin_balance || 0)
                   : option.desc;
 
               return (
                 <button
-                  key={option.key}
+                  key={option.code}
                   type="button"
-                  disabled={submitting}
+                  disabled={submitting || blocked}
                   onClick={() => {
-                    setMethod(option.key);
-                    if (option.key === "ark_coin" && !selectedCustomer) {
+                    if (blocked) return;
+                    setSelectedCode(option.code);
+                    setMethod(option.cashierKey);
+                    if (option.cashierKey === "ark_coin" && !selectedCustomer) {
                       onTapNFC();
                     }
                   }}
@@ -444,7 +619,7 @@ export function PaymentModal({
                     selected
                       ? "border-primary/40 bg-primary/10 ring-1 ring-primary/30"
                       : "border-gray-200/70 bg-white hover:border-primary/30 hover:bg-primary/5",
-                    submitting && "cursor-not-allowed opacity-60"
+                    (submitting || blocked) && "cursor-not-allowed opacity-60"
                   )}
                 >
                   <Icon
@@ -525,24 +700,16 @@ export function PaymentModal({
               ) : (
                 <div className="flex flex-col items-center gap-3">
                   {qris.qr_string ? (
-                    <div className="rounded-xl border border-gray-200/70 bg-white p-3">
-                      <QRCodeSVG value={qris.qr_string} size={200} />
-                    </div>
+                    <p className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      QR tampil di dialog QRIS…
+                    </p>
                   ) : (
                     <span className="inline-flex items-center gap-2 text-amber-700">
                       <AlertTriangle className="h-4 w-4 shrink-0" />
                       QR belum siap — coba pilih metode lain lalu kembali ke QRIS
                     </span>
                   )}
-                  <p className="font-medium text-foreground">
-                    Scan QRIS · {formatCurrency(qris.amount)}
-                  </p>
-                  <p className="inline-flex items-center gap-2 text-xs text-muted-foreground">
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    {qrisPaid || submitting
-                      ? "Pembayaran diterima, menyelesaikan…"
-                      : "Menunggu pembayaran pelanggan…"}
-                  </p>
                 </div>
               )}
             </div>
@@ -738,12 +905,12 @@ export function PaymentModal({
             type="button"
             variant="outline"
             className="border-gray-200/80"
-            onClick={onClose}
+            onClick={handleClose}
             disabled={submitting}
           >
             Cancel
           </Button>
-          {method === "qris" && qris?.qr_id && !qrisUnavailable ? (
+          {waitForQris ? (
             <Button
               type="button"
               className="bg-primary hover:bg-primary/90"
@@ -757,7 +924,17 @@ export function PaymentModal({
               type="button"
               className="bg-primary hover:bg-primary/90"
               disabled={!isValid || submitting}
-              onClick={() =>
+              onClick={() => {
+                if (
+                  !mayConfirmMixedQris({
+                    isMixedCart,
+                    method,
+                    qrisPaid,
+                    checkoutId: mixedQrisCheckout?.checkout_id,
+                  })
+                ) {
+                  return;
+                }
                 void onConfirm({
                   method,
                   cashReceived: String(cashAmount || ""),
@@ -770,8 +947,16 @@ export function PaymentModal({
                     method === "gift_card" && giftResult?.ok
                       ? giftResult.code
                       : undefined,
-                })
-              }
+                  checkoutId: mixedQrisCheckout?.checkout_id,
+                  checkoutNumber: mixedQrisCheckout?.checkout_number,
+                  queueNumber: mixedQrisCheckout?.queue_number,
+                  xenditQrId: method === "qris" ? qris?.qr_id : undefined,
+                  xenditExternalId: method === "qris" ? qris?.reference_id : undefined,
+                  paymentMethodCode: selectedCode,
+                  paymentMethodName: paymentOptions.find((option) => option.code === selectedCode)
+                    ?.title,
+                });
+              }}
             >
               {submitting ? (
                 <>
@@ -785,6 +970,41 @@ export function PaymentModal({
           )}
         </DialogFooter>
       </DialogPanel>
+
+      {/* Dialog fokus QRIS (owner 2026-08-16): QR tampil bergaya terpampang
+          QRIS Indonesia (logo QRIS+GPN, merchant, NMID) menutupi modal bayar
+          sampai pembayaran terkonfirmasi atau kasir memilih metode lain. */}
+      {method === "qris" && qris?.qr_string && !qrisUnavailable ? (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4">
+          <div className="flex max-h-full w-full max-w-sm flex-col items-center gap-3 overflow-y-auto">
+            <QrisCard
+              qrString={qris.qr_string}
+              merchantName={qris.merchant_name}
+              nmid={qris.nmid}
+            />
+            <div className="w-full max-w-sm rounded-xl bg-white/95 px-4 py-3 text-center shadow-sm">
+              <div className="text-2xl font-bold tabular-nums text-gray-900">
+                {formatCurrency(qris.amount)}
+              </div>
+              <p className="mt-1 inline-flex items-center gap-2 text-xs text-muted-foreground">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                {qrisPaid || submitting
+                  ? "Pembayaran diterima, menyelesaikan…"
+                  : "Menunggu pembayaran pelanggan…"}
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              className="border-white/40 bg-white/90 hover:bg-white"
+              disabled={qrisPaid || submitting}
+              onClick={() => setMethod("cash")}
+            >
+              Pilih metode lain
+            </Button>
+          </div>
+        </div>
+      ) : null}
     </Dialog>
   );
 }

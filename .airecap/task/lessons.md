@@ -1,5 +1,34 @@
 # Lessons
 
+## POS checkout = one bill
+- Collapsed kasir-pusat bill must handoff `checkoutId`, never `children[0]`. Cashier pays via `completeCheckout`.
+- Never call bare `completeCheckout(id)` — persist tender (`payment_method` + `amount_paid` + change). NFC/gift/ARK on checkout-bill pay → 400 until debit is wired.
+- Bills rail badge uses `soldFrom === "central"`, not `kind === "checkout"` (1-stall kasir pusat is `kind: order`).
+- Move-table on a checkout child must move every unpaid sibling **and** `pos_checkouts.table_id`.
+- Merge/transfer use the same family gate (`canAppendTransferItems`). Stall must not merge into a central child; disable merge on mixed-family destinations.
+- Pay-now mixed while an unpaid central checkout exists → 400 “lanjutkan open bill”, not a second checkout.
+- Kasir pusat 1-stall open-bill on a table with an unpaid central checkout appends to that checkout (even if the new cart is 1 stall). Stall cashier still always creates a new order.
+
+
+
+## Metode bayar POS
+- Tambah metode baru = alias Tunai/Kartu, bukan QRIS/Xendit. Order tetap enum `cash`/`credit`.
+- Jangan longgarkan `pos_payment_method` enum dari UI; handler existing yang dipakai kasir.
+- Nama custom harus disimpan di `payment_method_code` + `payment_method_name`. Tanpa itu laporan/struk/shift hanya lihat enum Tunai/Kartu.
+- Laci shift: hanya kode built-in `cash` yang dihitung tunai. Alias custom (Transfer BCA) jangan masuk expected cash.
+
+## Laporan transaksi Xendit
+- Jangan reconstruct External ID sebagai `pos-{orderId}`. QR stall = `pos-{uuid acak}` sebelum order ada.
+- Simpan `xendit_qr_id` + `xendit_external_id` ke `pos_orders` saat QRIS lunas (create/pay/complete checkout). Transaksi lama tetap kosong.
+- Jangan hardcode field Settlement = "Pending". Arkiv tidak lacak settlement Xendit.
+
+## Xendit POS webhook
+- Kolom Webhook merah di dashboard Xendit = HTTP non-2xx / URL tak terjangkau, bukan “Settlement Pending” (cair T+2 itu normal).
+- QRIS POS biasa (`pos-{uuid}`) diselesaikan poll kasir, bukan webhook. Webhook hanya topup + checkout campur (`pos-chk-`).
+- Sulu production: `callback_url` = `https://dashboard.suluinwounderland.com/api/payments/xendit/webhook`. Jangan `sulu.within.ventures` (domain lama).
+- Path itu HARUS masuk `publicRoutes` middleware. Tanpa itu Xendit dapat 401 "Authentication required" → webhook failed. Token tetap dicek di route.
+- Lookup `pos_checkouts` di webhook jangan sampai 500 kalau tabel/kolom belum ada.
+
 ## Deploy DB credentials
 - Produksi: `postgres@5432/arkiv` + `DB_PASS_URLENCODED` (CI).
 - Dev `db-dev-arkiv`: role `agus_remote` / `agus123` (tunnel lokal `:15432`).
@@ -111,6 +140,7 @@
 - Query builder `IN`/`NOT IN`: jangan `.not('col','in','(a,b)')` tanpa quote — parser lama nyatu jadi `"ab"`. Prefer array `.not('col','in', ['a','b'])`. Enum Postgres akan error `22P02`.
 - KDS fullscreen = `/pos/kds` di LUAR `/dashboard/pos` layout (App Router tidak bisa opt-out induk). Sama pola `/pos/customer-display`. Jangan taruh fullscreen KDS di bawah layout yang masih `AppSidebar`.
 - Jangan `<Link>` ke `/pos/*` dari dashboard: Next RSC payload gagal (`TypeError: Failed to fetch`) karena beda root layout. Sidebar pakai `<a>` hard nav (`isPosChromeLessPath`). KDS enter/exit tetap `location.assign`.
+- Sama untuk POS dashboard ↔ back-office: `dashboard/pos/layout` vs `dashboard/(dashboard)/layout` tidak berbagi parent. Soft nav (sidebar Roles, tablet Beranda `router.push('/dashboard')`) → overlay `Runtime TypeError / network error`. Pakai `needsCrossPosLayoutHardNav` + `<a>` / `location.assign`.
 - `AppSidebar` Suspense fallback jangan render `ThemeToggle`/`useTheme` (atau chrome penuh). `useSearchParams` suspend → fallback SSR kadang di luar ThemeProvider → crash `useTheme must be used within ThemeProvider`. Fallback = shell mesh kosong; `ThemeToggle` pakai `useThemeOrNull`.
 - TV antrian customer = `/pos/queue` (bukan CFD `/pos/customer-display`). CFD = monitor kasir (cart/bayar); queue board = dinding tamu (nomor + status).
 - Kasir mode tablet: jangan tampilkan Layar Customer / TV Antrian di toolbar — itu untuk monitor kedua di desktop. Sembunyikan juga di **handheld UA** (iPad/Android) meski URL masih `/cashier-new` tanpa `?tablet=1`. Jangan ikat hanya ke immersive flag.
@@ -147,6 +177,18 @@
 - Field di master (`harga_beli`, `stok_minimum`, `stok_maximum`) tetap per satuan besar. Jangan bandingkan langsung dengan qty inventory tanpa konversi.
 - Semua jalur posting stok (GRN, impor, PO on-order) wajib lewat `resolveBaseUnitFactor` sebelum menulis ke inventory.
 - Sebelum mengubah tampilan qty/harga, cek dulu jalur penulisan datanya; label UI di project ini sempat memakai satuan besar padahal datanya satuan kecil.
+
+## POS laporan Rush Hour
+- Menu `pos.reports.rush-hour` wajib masuk INSERT seeder + whitelist `NOT IN` — seeder akan soft-delete kalau tidak.
+- Jam/hari pakai `AT TIME ZONE 'Asia/Jakarta'` + ISODOW. Filter sama laporan Transaksi (lunas, exclude void).
+
+## POS void order lunas
+- Void bukan menu sidebar; aksi di `/dashboard/pos/orders` + PIN supervisor.
+- Order `completed`/`paid` boleh di-void. Tetap tolak `cancelled` / `voided` / `merged`.
+- Balik tender dulu (ARK / gift card / NFC tab), baru stempel `voided` + `refunded`. Helper harus idempoten.
+- Checkout campur: void satu child = void seluruh sibling + checkout `refunded`. ARK dikembalikan sekali, bukan dijumlah per child.
+- Gift card yang dijual lewat order: matikan jika belum terpakai; jika sudah ada ledger `pakai`, tolak void.
+- Tunai & QRIS tidak di-refund ke Xendit/laci otomatis — kasir kembalikan manual. Laporan sudah exclude `voided`.
 
 ## i18n Purchasing
 - Terjemahkan label bersama dulu (`PR_STATUS_LABELS`, `RETURN_*_LABELS`, `getPRStatusLabel`), baru hapus override lokal. Jangan biarkan halaman approval/list masih override Inggris.

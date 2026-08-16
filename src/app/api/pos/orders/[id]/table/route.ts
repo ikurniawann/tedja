@@ -21,7 +21,7 @@ export async function PATCH(
     // 1. Check order exists and is active
     const { data: order, error: orderErr } = await db
       .from('pos_orders')
-      .select('id, status, table_id')
+      .select('id, status, table_id, checkout_id, payment_status')
       .eq('id', orderId)
       .single();
 
@@ -34,34 +34,51 @@ export async function PATCH(
       return Response.json({ success: false, error: 'Cannot move finished order' }, { status: 400 });
     }
 
-    // 2. If moving to a dine-in table, check availability (skip if same table)
+    // A table may already have other open bills (stall + central). Moving
+    // this order onto it must not 409 — it becomes another bill on that table.
     const newTableId = table_id || null;
-    if (newTableId && newTableId !== order.table_id) {
-      const { data: occupied, error: occErr } = await db
-        .from('pos_orders')
-        .select('id')
-        .eq('table_id', newTableId)
-        .in('status', activeStatuses)
-        .neq('id', orderId)
-        .maybeSingle();
-
-      if (occErr) throw occErr;
-      if (occupied) {
-        return Response.json({ success: false, error: 'Table is occupied' }, { status: 409 });
-      }
-    }
 
     // 3. Update order
     const updatePayload: Record<string, string | null> = { updated_at: new Date().toISOString() };
     if (newTableId !== undefined) updatePayload.table_id = newTableId;
     if (order_type) updatePayload.order_type = order_type;
 
-    const { error: updErr } = await db
-      .from('pos_orders')
-      .update(updatePayload)
-      .eq('id', orderId);
+    const checkoutId =
+      (order as { checkout_id?: string | null }).checkout_id || null;
 
-    if (updErr) throw updErr;
+    if (checkoutId) {
+      const { error: childrenErr } = await db
+        .from('pos_orders')
+        .update(updatePayload)
+        .eq('checkout_id', checkoutId)
+        .neq('payment_status', 'paid')
+        .in('status', activeStatuses);
+      if (childrenErr) throw childrenErr;
+
+      const checkoutUpdate: Record<string, string | null> = {
+        updated_at: updatePayload.updated_at as string,
+      };
+      if (newTableId !== undefined) checkoutUpdate.table_id = newTableId;
+      const { error: checkoutErr } = await db
+        .from('pos_checkouts')
+        .update(checkoutUpdate)
+        .eq('id', checkoutId)
+        .neq('payment_status', 'paid');
+      if (
+        checkoutErr &&
+        checkoutErr.code !== '42703' &&
+        checkoutErr.code !== 'PGRST204'
+      ) {
+        throw checkoutErr;
+      }
+    } else {
+      const { error: updErr } = await db
+        .from('pos_orders')
+        .update(updatePayload)
+        .eq('id', orderId);
+
+      if (updErr) throw updErr;
+    }
 
     return Response.json({
       success: true,

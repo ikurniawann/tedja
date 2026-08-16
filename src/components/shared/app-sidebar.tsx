@@ -38,15 +38,15 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import {
+  CanUseCentralCashierProvider,
+  useConfirmAndSwitchStall,
+} from "@/components/pos/confirm-stall-switch-dialog";
 import { PosNfcShell } from "@/features/pos/nfc";
 import { isPosImmersiveShell } from "@/features/pos/tablet-mode";
 import { PosTabletManifestLink } from "@/features/pos/components/pos-tablet-manifest-link";
 import type { NavItem } from "@/lib/iam/types";
 import { isEssOnlyRole } from "@/lib/iam/access";
-import {
-  POS_CART_STORAGE_KEY,
-  posCartHasItems,
-} from "@/lib/pos/pos-sell-stall";
 import AppSidebarNav from "./app-sidebar-nav";
 import { DashboardBreadcrumbs } from "./dashboard-breadcrumbs";
 
@@ -60,6 +60,8 @@ export interface SidebarUser {
   warehouse_name?: string | null;
   active_stall_id?: string | null;
   can_switch_stall?: boolean;
+  can_central_checkout?: boolean;
+  has_central_cashier_menu?: boolean;
 }
 
 export interface AppSidebarProps {
@@ -88,24 +90,29 @@ function AppSidebarContent({
   const [collapsed, setCollapsed] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const useActivityNotification = pathname.startsWith("/dashboard/purchasing");
+  const canUseCentralCashier =
+    user.has_central_cashier_menu === true && user.can_central_checkout === true;
 
   const closeMobile = () => setMobileOpen(false);
 
   if (posImmersive) {
     return (
-      <PosNfcShell>
-        <PosTabletManifestLink />
-        <div
-          className="arkiv-dashboard-theme min-h-screen"
-          style={{ background: "var(--page-mesh)" }}
-        >
-          <main className="min-h-[100dvh] overflow-auto p-2 sm:p-3 md:p-4">{children}</main>
-        </div>
-      </PosNfcShell>
+      <CanUseCentralCashierProvider value={canUseCentralCashier}>
+        <PosNfcShell>
+          <PosTabletManifestLink />
+          <div
+            className="arkiv-dashboard-theme min-h-screen"
+            style={{ background: "var(--page-mesh)" }}
+          >
+            <main className="min-h-[100dvh] overflow-auto p-2 sm:p-3 md:p-4">{children}</main>
+          </div>
+        </PosNfcShell>
+      </CanUseCentralCashierProvider>
     );
   }
 
   return (
+    <CanUseCentralCashierProvider value={canUseCentralCashier}>
     <PosNfcShell>
     <div
       className="arkiv-dashboard-theme flex min-h-screen"
@@ -136,6 +143,7 @@ function AppSidebarContent({
           branchName={user.branch_name}
           warehouseName={user.warehouse_name}
           canSwitchStall={user.can_switch_stall === true}
+          canUseCentralCashier={canUseCentralCashier}
           activeStallId={user.active_stall_id ?? null}
         />
 
@@ -196,6 +204,7 @@ function AppSidebarContent({
       </div>
     </div>
     </PosNfcShell>
+    </CanUseCentralCashierProvider>
   );
 }
 
@@ -230,6 +239,7 @@ function SidebarHeader({
   branchName,
   warehouseName,
   canSwitchStall,
+  canUseCentralCashier,
   activeStallId,
 }: {
   collapsed: boolean;
@@ -238,6 +248,7 @@ function SidebarHeader({
   branchName?: string | null;
   warehouseName?: string | null;
   canSwitchStall: boolean;
+  canUseCentralCashier: boolean;
   activeStallId: string | null;
 }) {
   return (
@@ -274,7 +285,10 @@ function SidebarHeader({
           />
           <div className="min-w-0 flex-1 leading-tight">
             {canSwitchStall ? (
-              <StallSwitcher activeStallId={activeStallId}>
+              <StallSwitcher
+                activeStallId={activeStallId}
+                canUseCentralCashier={canUseCentralCashier}
+              >
                 <UserScopeLines
                   companyName={companyName}
                   branchName={branchName}
@@ -374,18 +388,23 @@ type StallOption = { id: string; name: string; code: string };
  */
 function StallSwitcher({
   activeStallId,
+  canUseCentralCashier,
   children,
 }: {
   activeStallId: string | null;
+  canUseCentralCashier: boolean;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
   const hideAllStallsOption =
-    pathname.includes("/cashier") || pathname.includes("/restaurant");
+    (pathname.includes("/cashier") || pathname.includes("/restaurant")) &&
+    !canUseCentralCashier;
   const [stalls, setStalls] = useState<StallOption[] | null>(null);
   const [allAccess, setAllAccess] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
-  const [switching, setSwitching] = useState(false);
+  const { confirmAndSwitchStall, switching, dialogOpen, dialog } =
+    useConfirmAndSwitchStall();
+  const stallBusy = switching || dialogOpen;
 
   async function loadStalls() {
     if (stalls !== null) return;
@@ -409,35 +428,12 @@ function StallSwitcher({
   }
 
   async function selectStall(warehouseId: string | null) {
-    if (switching || warehouseId === activeStallId) return;
-    try {
-      if (posCartHasItems(localStorage.getItem(POS_CART_STORAGE_KEY))) {
-        toast.error(
-          "Kosongkan atau selesaikan keranjang sebelum ganti stall"
-        );
-        return;
-      }
-    } catch {
-      /* localStorage may be unavailable */
-    }
-    setSwitching(true);
-    try {
-      const res = await fetch("/api/auth/active-stall", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ warehouse_id: warehouseId }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.error ?? "Gagal mengganti stall");
-      // Reload penuh agar layout server membaca cookie stall yang baru.
-      window.location.reload();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Gagal mengganti stall");
-      setSwitching(false);
-    }
+    if (stallBusy || warehouseId === activeStallId) return;
+    await confirmAndSwitchStall(warehouseId);
   }
 
   return (
+    <>
     <DropdownMenu onOpenChange={(open) => open && loadStalls()}>
       <DropdownMenuTrigger
         className="flex w-full min-w-0 items-center gap-1.5 rounded-xl px-2 py-1.5 text-left transition hover:bg-pink-50/80"
@@ -460,7 +456,7 @@ function StallSwitcher({
           </DropdownMenuLabel>
           {allAccess && !hideAllStallsOption && (
             <DropdownMenuItem
-              disabled={switching}
+              disabled={stallBusy}
               onClick={() => selectStall(null)}
               className="gap-2.5 rounded-lg px-2 py-1.5"
             >
@@ -488,7 +484,7 @@ function StallSwitcher({
             stalls.map((stall) => (
               <DropdownMenuItem
                 key={stall.id}
-                disabled={switching}
+                disabled={stallBusy}
                 onClick={() => selectStall(stall.id)}
                 className="gap-2.5 rounded-lg px-2 py-1.5"
               >
@@ -511,6 +507,8 @@ function StallSwitcher({
         </div>
       </DropdownMenuContent>
     </DropdownMenu>
+    {dialog}
+    </>
   );
 }
 

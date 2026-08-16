@@ -1,13 +1,25 @@
 import { query } from "@/lib/db";
 import type { UserScope } from "@/lib/api/scope";
-import { resolvePosSellStallForUser } from "@/lib/pos/pos-sell-stall-server";
+import { getStallAccess } from "@/lib/auth/stall-access";
+import { canSellMixedStall } from "@/lib/pos/central-cashier";
+import type { ActiveStallMode } from "@/lib/pos/pos-sell-stall";
+import {
+  loadCentralCashierGate,
+  resolvePosSellScopeForUser,
+  resolvePosSellStallForUser,
+} from "@/lib/pos/pos-sell-stall-server";
 
 export type StallProductScope =
-  | { mode: "all" }
-  | { mode: "none"; reason?: string }
-  | { mode: "ids"; productIds: string[]; warehouseIds: string[] };
+  | { mode: "all"; activeMode?: ActiveStallMode }
+  | { mode: "none"; reason?: string; activeMode?: ActiveStallMode }
+  | {
+      mode: "ids";
+      productIds: string[];
+      warehouseIds: string[];
+      activeMode?: ActiveStallMode;
+    };
 
-async function loadProductIdsForWarehouses(
+export async function loadProductIdsForWarehouses(
   warehouseIds: string[]
 ): Promise<string[]> {
   if (warehouseIds.length === 0) return [];
@@ -36,8 +48,9 @@ async function loadProductIdsForWarehouses(
 
 /**
  * Resolve which POS products a logged-in user may sell.
- * Always scoped to the single active sell stall (1 order = 1 stall).
- * "Semua Stall" / no stall selected → empty catalog.
+ * Kasir pusat + mode all → union katalog stall yang diizinkan.
+ * User unscoped "Semua Stall" → seluruh katalog.
+ * Kasir stall biasa tanpa stall aktif → katalog kosong.
  */
 export async function resolvePosProductStallScope(
   scope: UserScope | null
@@ -46,14 +59,40 @@ export async function resolvePosProductStallScope(
     return { mode: "none", reason: "no_session" };
   }
 
+  const gate = await loadCentralCashierGate({
+    userId: scope.userId,
+    role: scope.role,
+  });
+
+  if (
+    canSellMixedStall({
+      hasCentralMenu: gate.hasCentralMenu,
+      canCentralCheckout: gate.canCentralCheckout,
+      activeMode: gate.activeMode,
+    })
+  ) {
+    const access = await getStallAccess(scope.userId, scope.role, scope.branchId);
+    const warehouseIds = access.stalls.map((stall) => stall.id);
+    const productIds = await loadProductIdsForWarehouses(warehouseIds);
+    return { mode: "ids", productIds, warehouseIds, activeMode: gate.activeMode };
+  }
+
+  const sellScope = await resolvePosSellScopeForUser(scope.userId);
+  if (sellScope.mode === "all") {
+    return { mode: "all", activeMode: gate.activeMode };
+  }
+  if (sellScope.mode === "blocked") {
+    return { mode: "none", reason: sellScope.reason, activeMode: gate.activeMode };
+  }
+
   const sellStall = await resolvePosSellStallForUser(scope.userId);
   if (!sellStall.ok) {
-    return { mode: "none", reason: sellStall.reason };
+    return { mode: "none", reason: sellStall.reason, activeMode: gate.activeMode };
   }
 
   const warehouseIds = [sellStall.warehouseId];
   const productIds = await loadProductIdsForWarehouses(warehouseIds);
-  return { mode: "ids", productIds, warehouseIds };
+  return { mode: "ids", productIds, warehouseIds, activeMode: gate.activeMode };
 }
 
 export function applyStallScopeToProductIds(

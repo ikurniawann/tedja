@@ -7,7 +7,7 @@ import { ChevronDownIcon } from "@heroicons/react/24/outline";
 import { isNavLinkActive } from "@/lib/iam/nav-active";
 import { useNavFrom } from "@/lib/iam/use-nav-from";
 import type { NavItem } from "@/lib/iam/types";
-import { isPosChromeLessPath } from "@/features/pos/tablet-mode";
+import { needsCrossPosLayoutHardNav } from "@/features/pos/tablet-mode";
 import { AppSidebarNavIcon } from "./app-sidebar-nav-icons";
 
 interface AppSidebarNavProps {
@@ -321,8 +321,8 @@ export default function AppSidebarNav({
       </>
     );
 
-    // /pos/kds, /pos/queue, CFD: beda root layout → <Link> RSC fetch TypeError.
-    if (isPosChromeLessPath(item.href)) {
+    // /pos/* dan POS ↔ back-office: beda layout → <Link> RSC TypeError network error.
+    if (needsCrossPosLayoutHardNav(pathname, item.href)) {
       return (
         <a
           key={itemKey}

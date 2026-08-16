@@ -1,4 +1,4 @@
-import type { KDSOrder, KdsListParams } from "./types";
+import type { KDSOrder, KdsListParams, KdsStallOption } from "./types";
 
 export type * from "./types";
 
@@ -7,6 +7,7 @@ export async function listKdsOrders(params: KdsListParams = {}): Promise<KDSOrde
   sp.set("status", (params.status ?? ["pending", "confirmed", "preparing", "ready"]).join(","));
   if (params.station) sp.set("station", params.station);
   if (params.branchId) sp.set("branch_id", params.branchId);
+  if (params.warehouseId) sp.set("warehouse_id", params.warehouseId);
   if (params.dateFrom) sp.set("date_from", params.dateFrom);
   if (params.dateTo) sp.set("date_to", params.dateTo);
   sp.set("limit", String(params.limit ?? 50));
@@ -17,6 +18,17 @@ export async function listKdsOrders(params: KdsListParams = {}): Promise<KDSOrde
     throw new Error(data.error || "Gagal fetch KDS");
   }
   return (data.data ?? []) as KDSOrder[];
+}
+
+export async function listKdsStalls(): Promise<KdsStallOption[]> {
+  const res = await fetch("/api/auth/stall-options", { cache: "no-store" });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.success) return [];
+  return ((data.data?.stalls ?? []) as KdsStallOption[]).map(({ id, name, code }) => ({
+    id,
+    name,
+    code,
+  }));
 }
 
 export async function updateKdsOrderStatus(

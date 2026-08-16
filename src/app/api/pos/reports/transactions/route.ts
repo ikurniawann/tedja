@@ -6,7 +6,8 @@ import {
   parseReportDateRange,
   resolveReportStallFilter,
 } from "@/lib/pos/report-stall-filter";
-import { aggregatePerStall, summarizeSales } from "@/lib/pos/sales-summary";
+import { isRevenueOrder } from "@/lib/pos/revenue-order";
+import { summarizeSales } from "@/lib/pos/sales-summary";
 
 type TransactionRow = {
   id: string;
@@ -15,6 +16,8 @@ type TransactionRow = {
   status: string | null;
   payment_status: string | null;
   payment_method: string | null;
+  payment_method_code: string | null;
+  payment_method_name: string | null;
   subtotal: number | string | null;
   discount_amount: number | string | null;
   tax_amount: number | string | null;
@@ -25,6 +28,11 @@ type TransactionRow = {
   warehouse_id: string | null;
   stall_code: string | null;
   stall_name: string | null;
+  checkout_id: string | null;
+  checkout_number: string | null;
+  sold_from: string | null;
+  xendit_qr_id: string | null;
+  xendit_external_id: string | null;
   /** Tanggal WIB (YYYY-MM-DD) — dihitung DB supaya konsisten dengan filter. */
   hari_wib: string;
 };
@@ -99,6 +107,8 @@ export async function GET(request: NextRequest) {
          o.status,
          o.payment_status,
          o.payment_method,
+         o.payment_method_code,
+         o.payment_method_name,
          o.subtotal,
          o.discount_amount,
          o.tax_amount,
@@ -109,8 +119,14 @@ export async function GET(request: NextRequest) {
          (o.ordered_at AT TIME ZONE 'Asia/Jakarta')::date::text AS hari_wib,
          COALESCE(o.warehouse_id, stall_from_item.warehouse_id) AS warehouse_id,
          COALESCE(w_order.code, stall_from_item.stall_code) AS stall_code,
-         COALESCE(w_order.name, stall_from_item.stall_name) AS stall_name
+         COALESCE(w_order.name, stall_from_item.stall_name) AS stall_name,
+         o.checkout_id,
+         o.sold_from,
+         chk.checkout_number,
+         COALESCE(o.xendit_qr_id, chk.xendit_qr_id) AS xendit_qr_id,
+         COALESCE(o.xendit_external_id, chk.xendit_external_id) AS xendit_external_id
        FROM pos.pos_orders o
+       LEFT JOIN pos.pos_checkouts chk ON chk.id = o.checkout_id
        LEFT JOIN configuration.warehouses w_order ON w_order.id = o.warehouse_id
        LEFT JOIN LATERAL (
          SELECT
@@ -148,13 +164,13 @@ export async function GET(request: NextRequest) {
       [range.startIso, range.endIso, stallFilter.warehouseIds]
     );
 
-    const summary = summarizeSales(rows);
-    const perStall = aggregatePerStall(rows);
+    const revenueRows = rows.filter(isRevenueOrder);
+    const summary = summarizeSales(revenueRows);
 
     // Tren harian (hari WIB): nett + jumlah transaksi per tanggal — bahan
     // grafik tren di halaman laporan.
     const dailyMap = new Map<string, { nett: number; transactions: number }>();
-    for (const row of rows) {
+    for (const row of revenueRows) {
       const bucket = dailyMap.get(row.hari_wib) ?? { nett: 0, transactions: 0 };
       bucket.nett += toNumber(row.total_amount);
       bucket.transactions += 1;
@@ -170,7 +186,55 @@ export async function GET(request: NextRequest) {
 
     // Top produk pada rentang & stall yang SAMA dengan daftar transaksi —
     // satu sumber filter, supaya angka antar-bagian laporan tidak berselisih.
-    const orderIds = rows.map((row) => row.id);
+    const orderIds = revenueRows.map((row) => row.id);
+
+    // Rekap per stall berbasis ITEM: order lintas stall (mode Semua Stall,
+    // warehouse_id order null) menyumbang ke tiap stall sesuai itemnya.
+    let perStall: Array<{
+      stall_code: string | null;
+      stall_name: string;
+      transactions: number;
+      quantity: number;
+      sales: number;
+    }> = [];
+    if (orderIds.length > 0) {
+      const stallRows = await query<{
+        stall_code: string | null;
+        stall_name: string | null;
+        transactions: string | number;
+        quantity: string | number;
+        sales: string | number;
+      }>(
+        `SELECT COALESCE(w.code, w_sku.code) AS stall_code,
+                COALESCE(w.name, w_sku.name) AS stall_name,
+                COUNT(DISTINCT i.order_id) AS transactions,
+                SUM(i.quantity)::float8 AS quantity,
+                SUM(i.total_amount)::float8 AS sales
+           FROM pos.pos_order_items i
+           INNER JOIN pos.pos_products pp ON pp.id = i.product_id
+           LEFT JOIN item.products p ON p.id = pp.source_product_id AND p.deleted_at IS NULL
+           LEFT JOIN configuration.warehouses w ON w.id = p.warehouse_id
+           LEFT JOIN item.products p_sku
+             ON pp.source_product_id IS NULL
+            AND pp.sku = ('PUR-' || p_sku.kode)
+            AND p_sku.deleted_at IS NULL
+            AND p_sku.kode IS NOT NULL
+            AND btrim(p_sku.kode) <> ''
+           LEFT JOIN configuration.warehouses w_sku ON w_sku.id = p_sku.warehouse_id
+          WHERE i.order_id = ANY($1::uuid[])
+          GROUP BY 1, 2
+          ORDER BY SUM(i.total_amount) DESC`,
+        [orderIds]
+      );
+      perStall = stallRows.map((row) => ({
+        stall_code: row.stall_code,
+        stall_name: row.stall_name ?? "Tanpa Stall",
+        transactions: toNumber(row.transactions),
+        quantity: Math.round(toNumber(row.quantity) * 100) / 100,
+        sales: Math.round(toNumber(row.sales) * 100) / 100,
+      }));
+    }
+
     let topProducts: Array<{ product_name: string; quantity: number; revenue: number }> = [];
     if (orderIds.length > 0) {
       const topRows = await query<TopProductRow>(
@@ -215,13 +279,15 @@ export async function GET(request: NextRequest) {
         per_stall: perStall,
         top_products: topProducts,
         daily,
-        rows: rows.map((row) => ({
+        rows: revenueRows.map((row) => ({
           id: row.id,
           order_number: row.order_number,
           ordered_at: row.ordered_at,
           status: row.status,
           payment_status: row.payment_status,
           payment_method: row.payment_method,
+          payment_method_code: row.payment_method_code,
+          payment_method_name: row.payment_method_name,
           subtotal: toNumber(row.subtotal),
           discount_amount: toNumber(row.discount_amount),
           tax_amount: toNumber(row.tax_amount),
@@ -232,6 +298,11 @@ export async function GET(request: NextRequest) {
           warehouse_id: row.warehouse_id,
           stall_code: row.stall_code,
           stall_name: row.stall_name,
+          checkout_id: row.checkout_id,
+          checkout_number: row.checkout_number,
+          sold_from: row.sold_from,
+          xendit_qr_id: row.xendit_qr_id,
+          xendit_external_id: row.xendit_external_id,
         })),
       },
     });

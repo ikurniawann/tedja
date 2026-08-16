@@ -12,7 +12,7 @@ import { isPosTabletQuery } from '@/features/pos/tablet-mode';
 import { KDSOrderCard } from '@/components/pos/KDSOrderCard';
 import { KDS_ROUTES } from '../constants';
 import { QUEUE_BOARD_ROUTE } from '@/features/pos/queue-board/constants';
-import { unlockKdsSound, useKds } from "../queries";
+import { unlockKdsSound, useKds, useKdsStalls } from "../queries";
 
 const STATIONS = [
   { key: 'all', label: 'Semua', icon: Monitor },
@@ -48,10 +48,13 @@ function KdsPageContent() {
     pathname === KDS_ROUTES.fullscreen || isPosTabletQuery(searchParams);
   const [isBrowserFullscreen, setIsBrowserFullscreen] = useState(false);
   const [station, setStation] = useState('all');
+  const [warehouseId, setWarehouseId] = useState('all');
   const [dateScope, setDateScope] = useState<'today' | 'all'>('today');
   const todayRange = dateScope === 'today' ? getTodayRange() : { dateFrom: undefined, dateTo: undefined };
+  const { stalls } = useKdsStalls();
   const { orders, loading, error, soundEnabled, setSoundEnabled, refresh, updateStatus } = useKds({
     station: station === 'all' ? undefined : station,
+    warehouseId: warehouseId === 'all' ? undefined : warehouseId,
     dateFrom: todayRange.dateFrom,
     dateTo: todayRange.dateTo,
     pollInterval: 3000,
@@ -173,6 +176,20 @@ function KdsPageContent() {
               );
             })}
           </div>
+
+          <select
+            value={warehouseId}
+            onChange={(event) => setWarehouseId(event.target.value)}
+            className="h-8 rounded-md border-0 bg-gray-800 px-2 text-xs font-medium text-gray-200 focus:outline-none focus:ring-1 focus:ring-white/20"
+            title="Filter stall"
+          >
+            <option value="all">Semua stall</option>
+            {stalls.map((stall) => (
+              <option key={stall.id} value={stall.id}>
+                {stall.name}
+              </option>
+            ))}
+          </select>
 
           <div className="flex bg-gray-800 rounded-lg p-0.5">
             {[

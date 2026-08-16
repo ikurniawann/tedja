@@ -3,20 +3,24 @@
 import { useEffect, useState } from "react";
 import { BuildingStorefrontIcon } from "@heroicons/react/24/outline";
 import { Loader2 } from "lucide-react";
-import { toast } from "sonner";
-import {
-  POS_CART_STORAGE_KEY,
-  posCartHasItems,
-} from "@/lib/pos/pos-sell-stall";
+import { useConfirmAndSwitchStall, useCanUseCentralCashier } from "@/components/pos/confirm-stall-switch-dialog";
 
 type StallOption = { id: string; name: string; code: string };
+
+function isAllStallMode(reason: string): boolean {
+  return reason === "all" || reason === "all_stalls";
+}
 
 /**
  * Centered gate when kasir blocks "Semua Stall" / no assignment.
  * Stall list reuses the same APIs as sidebar StallSwitcher.
+ * Central cashier in mode all is not blocked — overlay stays for regular users.
  */
 export function CashierStallGate({ reason }: { reason: string }) {
+  const canUseCentralCashier = useCanUseCentralCashier();
   const isNoStall = reason === "no_stall";
+  const skipOverlay = canUseCentralCashier && isAllStallMode(reason);
+
   const title = isNoStall
     ? "Tidak ada stall penempatan"
     : "Pilih stall aktif untuk berjualan";
@@ -28,9 +32,12 @@ export function CashierStallGate({ reason }: { reason: string }) {
   const [loadFailed, setLoadFailed] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [switchingId, setSwitchingId] = useState<string | null>(null);
+  const { confirmAndSwitchStall, switching, dialogOpen, dialog } =
+    useConfirmAndSwitchStall();
+  const stallBusy = switching || dialogOpen;
 
   useEffect(() => {
-    if (isNoStall) return;
+    if (isNoStall || skipOverlay) return;
     let cancelled = false;
 
     async function loadStalls() {
@@ -60,38 +67,23 @@ export function CashierStallGate({ reason }: { reason: string }) {
     return () => {
       cancelled = true;
     };
-  }, [isNoStall]);
+  }, [isNoStall, skipOverlay]);
+
+  useEffect(() => {
+    if (!dialogOpen && !switching) setSwitchingId(null);
+  }, [dialogOpen, switching]);
 
   async function selectStall(warehouseId: string) {
-    if (switchingId) return;
-    try {
-      if (posCartHasItems(localStorage.getItem(POS_CART_STORAGE_KEY))) {
-        toast.error("Kosongkan atau selesaikan keranjang sebelum ganti stall");
-        return;
-      }
-    } catch {
-      /* localStorage may be unavailable */
-    }
-
+    if (stallBusy) return;
     setSwitchingId(warehouseId);
-    try {
-      const res = await fetch("/api/auth/active-stall", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ warehouse_id: warehouseId }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.error ?? "Gagal mengganti stall");
-      toast.success("Stall diganti — memuat ulang…");
-      window.location.reload();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Gagal mengganti stall");
-      setSwitchingId(null);
-    }
+    await confirmAndSwitchStall(warehouseId);
   }
+
+  if (skipOverlay) return null;
 
   return (
     <div className="absolute inset-0 z-40 flex items-center justify-center px-4">
+      {dialog}
       <div className="w-full max-w-lg rounded-xl border border-amber-200/80 bg-amber-50 px-4 py-4 text-center text-sm text-amber-950 shadow-sm">
         <p className="font-medium text-amber-950">{title}</p>
         <p className="mt-1 text-amber-900/90">{hint}</p>
@@ -114,8 +106,8 @@ export function CashierStallGate({ reason }: { reason: string }) {
             ) : (
               <ul className="max-h-56 space-y-2 overflow-y-auto pr-0.5 [scrollbar-width:thin]">
                 {stalls.map((stall) => {
-                  const busy = switchingId === stall.id;
-                  const disabled = switchingId !== null;
+                  const busy = switchingId === stall.id && stallBusy;
+                  const disabled = stallBusy;
                   return (
                     <li key={stall.id}>
                       <button

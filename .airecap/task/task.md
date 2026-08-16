@@ -1,17 +1,31 @@
-# Task: QRIS kasir auto-selesai seperti tunai
+# Task: POS Kasir Pusat multi-stall
 
 ## Goal
-Setelah pelanggan bayar QRIS, order langsung checkout + modal antrian
-muncul — tanpa klik Confirm payment.
+Kasir pusat jual semua stall, bayar 1x; data pecah per stall. Kasir stall tetap transaksi sendiri.
+
+## Spec
+`docs/superpowers/specs/2026-08-15-pos-central-cashier-multi-stall-design.md`
 
 ## Plan
-- [x] Helper `isXenditQrPaid` + tes
-- [x] GET `/api/pos/qris/[id]/status` (poll Xendit QR + payments)
-- [x] PaymentModal poll ~2.5s, auto-`onConfirm` saat lunas
-- [x] Sembunyikan Confirm saat QR dinamis aktif; fallback Confirm jika QR gagal
-- [x] Verifikasi tes unit
+`docs/superpowers/plans/2026-08-15-pos-central-cashier-multi-stall.md`
+
+- [x] User review spec (lanjut ke plan)
+- [x] Tulis implementation plan
+- [x] Fase 1: IAM + flag + katalog + filter + dialog switch (Task 1–7)
+- [x] Fase 2: checkout + child + payment 1x (Task 8–11)
+- [x] Fase 3: restaurant multi-bill (Task 12)
+- [x] Fase 4: KDS + antrian (Task 13)
+- [x] Fase 5: laporan + webhook Xendit (Task 14–15)
+- [x] Final-review fixes: block mixed promo, cancel orphan QRIS, hide IAM menu on seed
+
+## Follow-up: filter Orders
+- [x] Periode `date_from`/`date_to` (WIB) di GET `/api/pos/orders`
+- [x] Filter pembayaran, tipe, metode + chip Void
+- [x] Default hari ini; preset 7 hari / bulan ini
 
 ## Review
-- QRIS dinamis: kasir tidak klik Confirm. Poll Xendit tiap 2.5s.
-- Lunas → `handleCreateOrder` yang sama dengan tunai → modal antrian.
-- QR gagal dibuat: Confirm tetap ada (QR statis meja).
+Branch `feature/pos-central-cashier`. Tes unit 1452 passed sebelum fix terakhir; fix commit `a9e4ea5a`.
+
+Follow-up laporan transaksi: dialog Detail dipecah Transaksi / Pembayaran / Xendit (QRIS) / Item terjual. Settlement Pending dijelaskan sebagai cair T+2, bukan gagal bayar.
+
+Follow-up metode bayar custom: persist `payment_method_code` + `payment_method_name` di order/checkout supaya laporan, struk, dan laci shift tidak jatuh ke label Tunai/Kartu. Alias custom tidak dihitung sebagai uang laci.

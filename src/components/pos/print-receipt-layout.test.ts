@@ -130,3 +130,47 @@ describe("buildReceiptLines — struk customer", () => {
     expect(lines.some((l) => l.includes("Stall: Hikiniku Bar"))).toBe(true);
   });
 });
+
+describe("buildReceiptLines — transaksi lintas stall (mode Semua Stall)", () => {
+  it("item membawa stall asalnya saat header tanpa stall", () => {
+    const lines = buildReceiptLines(
+      basePayload({
+        stallName: null,
+        items: [
+          { id: "1", productId: "1", name: "Nasi Goreng", price: 25_000, quantity: 1, stallName: "Hikiniku Bar" },
+          { id: "2", productId: "2", name: "Es Teh", price: 8_000, quantity: 1, stallName: "Noodles Bar" },
+        ],
+      }),
+      "CUSTOMER"
+    );
+    expect(lines.some((l) => l.includes("[Hikiniku Bar]"))).toBe(true);
+    expect(lines.some((l) => l.includes("[Noodles Bar]"))).toBe(true);
+  });
+
+  it("stall tunggal (header sudah menyebut stall) → tanpa sub-baris redundan", () => {
+    const lines = buildReceiptLines(
+      basePayload({
+        stallName: "Hikiniku Bar",
+        items: [
+          { id: "1", productId: "1", name: "Nasi Goreng", price: 25_000, quantity: 1, stallName: "Hikiniku Bar" },
+        ],
+      }),
+      "CUSTOMER"
+    );
+    expect(lines.some((l) => l.includes("[Hikiniku Bar]"))).toBe(false);
+    expect(lines.some((l) => l.includes("Stall: Hikiniku Bar"))).toBe(true);
+  });
+
+  it("copy dapur juga memuat stall per item — CO lintas stall terbaca", () => {
+    const lines = buildReceiptLines(
+      basePayload({
+        stallName: null,
+        items: [
+          { id: "1", productId: "1", name: "Nasi Goreng", price: 25_000, quantity: 2, stallName: "Hikiniku Bar" },
+        ],
+      }),
+      "KITCHEN"
+    );
+    expect(lines.some((l) => l.includes("[Hikiniku Bar]"))).toBe(true);
+  });
+});

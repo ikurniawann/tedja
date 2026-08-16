@@ -54,6 +54,38 @@ export function resolvePosSellStall(input: PosSellStallInput): PosSellStallResul
   };
 }
 
+export type PosSellScopeInput = PosSellStallInput & {
+  /** true = user boleh berjualan mode "Semua Stall" (akses penuh). */
+  allStallsAllowed: boolean;
+};
+
+export type PosSellScopeResult =
+  | { mode: "stall"; warehouseId: string }
+  | { mode: "all" }
+  | { mode: "blocked"; reason: "all_stalls" | "no_stall" | "multiple_unselected"; message: string };
+
+/**
+ * Mode jual "Semua Stall" (owner 2026-08-16): satu transaksi boleh berisi
+ * produk lintas stall untuk user ber-akses penuh. Cookie stall tertentu
+ * tetap menang; tanpa izin, perilaku lama (wajib satu stall) dipertahankan.
+ */
+export function resolvePosSellScope(input: PosSellScopeInput): PosSellScopeResult {
+  if (input.allStallsAllowed) {
+    if (input.activeMode === "all") return { mode: "all" };
+    if (
+      input.activeMode === "unset" &&
+      !input.defaultWarehouseId &&
+      [...new Set(input.assignedWarehouseIds.filter(Boolean))].length === 0
+    ) {
+      return { mode: "all" };
+    }
+  }
+
+  const single = resolvePosSellStall(input);
+  if (single.ok) return { mode: "stall", warehouseId: single.warehouseId };
+  return { mode: "blocked", reason: single.reason, message: single.message };
+}
+
 /** localStorage key used by usePosCart — keep in sync. */
 export const POS_CART_STORAGE_KEY = "pos_cart_state";
 

@@ -25,7 +25,24 @@ import {
   cashierSplitRowClass,
 } from '@/features/pos/cashier/cashier-workspace-layout';
 import { PosTabletChromeControls } from '@/features/pos/components/pos-tablet-chrome-controls';
+import { useCanUseCentralCashier } from '@/components/pos/confirm-stall-switch-dialog';
 import { CashierStallGate } from '@/features/pos/cashier/components/cashier-stall-gate';
+import {
+  MIXED_ARK_UNSUPPORTED_MESSAGE,
+  MIXED_NFC_GIFT_UNSUPPORTED_MESSAGE,
+  MIXED_PROMO_UNSUPPORTED_MESSAGE,
+  MIXED_SPLIT_UNSUPPORTED_MESSAGE,
+  buildCheckoutBillPayBody,
+  canSellMixedStall,
+  isCheckoutBillUnsupportedTender,
+  isMixedUnsupportedTender,
+  mayConfirmMixedQris,
+  resolveAddCatalogItem,
+  shouldCreateCheckout,
+  shouldDisableSplitBill,
+  shouldDisableMixedPromo,
+  uniqueStallIds,
+} from '@/lib/pos/central-cashier';
 import { StallSwitchButton } from '@/features/pos/cashier/components/stall-switch-button';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -48,9 +65,10 @@ import {
   saveCustomer,
   createSplitOrder,
 } from '../api';
-import type { ProductSku } from '@/lib/pos-api';
+import { completeCheckout, type ProductSku } from '@/lib/pos-api';
+import { formatPaymentMethodLabel } from '@/features/pos/reports/utils/transaction-labels';
 import { MerchSkuPickerDialog } from '@/components/pos/MerchSkuPickerDialog';
-import { useCashierOrder, useCashierTables, useCustomerFavoriteProducts } from '../queries';
+import { useCashierCheckout, useCashierOrder, useCashierTables, useCustomerFavoriteProducts } from '../queries';
 import { usePayOpenOrder } from '../mutations';
 import { usePosCart } from '@/hooks/use-pos-cart';
 import { usePosProducts } from '@/hooks/use-pos-products';
@@ -173,7 +191,9 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
   });
   const homeRoute = cashierRoute(variant, searchParams);
   const paymentOrderId = searchParams.get('orderId');
+  const paymentCheckoutId = searchParams.get('checkoutId');
   const loadedPaymentOrderRef = useRef<string | null>(null);
+  const loadedPaymentCheckoutRef = useRef<string | null>(null);
   const autoPay = searchParams.get('pay') === '1';
   const autoPayAppliedRef = useRef(false);
   const fromRestaurant = searchParams.get('from') === RESTAURANT_FROM;
@@ -195,14 +215,21 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
   const handoffOrderType = searchParams.get('orderType');
   const handoffKeyRef = useRef<string | null>(null);
   const pendingRestaurantReturnRef = useRef(false);
-  const { products, categories, loading, error, stallBlockedReason } = usePosProducts();
+  const { products, categories, loading, error, stallBlockedReason, activeMode, allStalls } = usePosProducts();
+  const canUseCentralCashier = useCanUseCentralCashier();
+  const canSellMixed = canSellMixedStall({
+    hasCentralMenu: canUseCentralCashier,
+    canCentralCheckout: canUseCentralCashier,
+    activeMode,
+  });
   const { customers, findCustomer, refetch: refetchCustomers } = usePosCustomers();
   const cart = usePosCart();
   const { checkout, submitting } = usePosCheckout();
   const payOpenOrderMutation = usePayOpenOrder();
   const { data: tables = [], isLoading: loadingTables, error: tablesQueryError } = useCashierTables();
   const tableError = tablesQueryError instanceof Error ? tablesQueryError.message : null;
-  const { data: paymentOrder } = useCashierOrder(paymentOrderId);
+  const { data: paymentOrder } = useCashierOrder(paymentCheckoutId ? null : paymentOrderId);
+  const { data: paymentCheckout } = useCashierCheckout(paymentCheckoutId);
 
   // URL tableId from restaurant must win over stale localStorage cart table.
   const effectiveTableId =
@@ -210,6 +237,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
 
   /* UI state */
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedStallFilter, setSelectedStallFilter] = useState<'All' | string>('All');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [showCustomerModal, setShowCustomerModal] = useState(false);
   const [pendingNfcUid, setPendingNfcUid] = useState<string | null>(null);
@@ -401,6 +429,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
 
   /* Load existing open bill when redirected from Orders */
   useEffect(() => {
+    if (paymentCheckoutId) return;
     if (!paymentOrderId || !paymentOrder || loadedPaymentOrderRef.current === paymentOrderId) return;
 
     const order = paymentOrder;
@@ -430,21 +459,63 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     setPayingOrderNumber(order.order_number || null);
     setPaymentMethod('cash');
     setCashReceived(String(Number(order.total_amount || 0)));
-  }, [paymentOrderId, paymentOrder, cart]);
+  }, [paymentCheckoutId, paymentOrderId, paymentOrder, cart]);
+
+  /* Load a collapsed kasir-pusat checkout as one bill. */
+  useEffect(() => {
+    if (!paymentCheckoutId || !paymentCheckout || loadedPaymentCheckoutRef.current === paymentCheckoutId) {
+      return;
+    }
+
+    loadedPaymentCheckoutRef.current = paymentCheckoutId;
+    cart.clearCart();
+    cart.setOrderType(
+      (paymentCheckout.order_type as 'dine_in' | 'takeaway' | 'delivery' | 'self_order') || 'dine_in'
+    );
+
+    (paymentCheckout.items || []).forEach((item, index) => {
+      const qty = Number(item.quantity) || 1;
+      const variants = Array.isArray(item.variants) ? item.variants : [];
+      const modifiers = Array.isArray(item.modifiers) ? item.modifiers : [];
+      cart.addItem({
+        id: item.id || `${item.product_id}-${index}`,
+        productId: item.product_id,
+        name: item.product_name,
+        price: Number(item.total_amount || item.subtotal || item.unit_price || 0) / qty,
+        quantity: qty,
+        variantName: variants.map((v) => v?.name).filter(Boolean).join(', ') || undefined,
+        modifierNames: modifiers.map((m) => m?.name).filter((name): name is string => Boolean(name)),
+        station: item.station,
+      });
+    });
+
+    cart.setTable(paymentCheckout.table_id || null);
+    cart.setCustomer(paymentCheckout.customer_id || null);
+    cart.setNotes(paymentCheckout.notes || '');
+    setPayingOrderNumber(paymentCheckout.order_number || paymentCheckout.checkout_number || null);
+    setPaymentMethod('cash');
+    setCashReceived(String(Number(paymentCheckout.total_amount || 0)));
+  }, [paymentCheckoutId, paymentCheckout, cart]);
 
   /* Auto-open payment when handed off with pay=1 (e.g. Pre Settlement from restaurant) */
   useEffect(() => {
     if (!autoPay || autoPayAppliedRef.current) return;
+    if (paymentCheckoutId) {
+      if (!paymentCheckout) return;
+      autoPayAppliedRef.current = true;
+      setShowPayment(true);
+      return;
+    }
     if (!paymentOrderId || !paymentOrder) return;
     autoPayAppliedRef.current = true;
     setShowPayment(true);
-  }, [autoPay, paymentOrderId, paymentOrder]);
+  }, [autoPay, paymentCheckoutId, paymentCheckout, paymentOrderId, paymentOrder]);
 
   /* Apply restaurant handoff after cart localStorage hydrate so URL table wins. */
   useEffect(() => {
     if (!fromRestaurant || !cart.hydrated) return;
 
-    const handoffKey = `${handoffTableId ?? ''}|${handoffOrderType ?? ''}|${paymentOrderId ?? ''}`;
+    const handoffKey = `${handoffTableId ?? ''}|${handoffOrderType ?? ''}|${paymentOrderId ?? ''}|${paymentCheckoutId ?? ''}`;
     if (handoffKeyRef.current === handoffKey) return;
     handoffKeyRef.current = handoffKey;
 
@@ -462,6 +533,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     handoffTableId,
     handoffOrderType,
     paymentOrderId,
+    paymentCheckoutId,
     cart.hydrated,
     cart.setOrderType,
     cart.setTable,
@@ -758,12 +830,63 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     selectedCustomer?.name,
   ]);
 
+  const uniqueStallsFromProducts = useMemo(() => {
+    const byId = new Map<string, string>();
+    for (const product of products) {
+      if (!product.warehouse_id || byId.has(product.warehouse_id)) continue;
+      const name = product.warehouse_name?.trim();
+      byId.set(product.warehouse_id, name || 'Stall');
+    }
+    return [...byId.entries()].map(([id, label]) => ({ id, label }));
+  }, [products]);
+
+  const stallFilters = useMemo(
+    () => [{ id: 'All', label: 'Semua stall' }, ...uniqueStallsFromProducts],
+    [uniqueStallsFromProducts]
+  );
+
+  const showStallFilters = canUseCentralCashier && activeMode === 'all';
+  const cartStallIds = useMemo(
+    () => uniqueStallIds(cart.items.map((row) => row.warehouse_id)),
+    [cart.items]
+  );
+  const isMixedCart = shouldCreateCheckout(cartStallIds);
+
   /* Product filter */
-  const filteredProducts = useMemo(() => products.filter(p => {
-    const okCat = selectedCategory === 'All' || (p.category?.name || 'Uncategorized') === selectedCategory;
-    const okSearch = (p.name || "").toLowerCase().includes(searchTerm.toLowerCase());
-    return okCat && okSearch;
-  }), [products, selectedCategory, searchTerm]);
+  const filteredProducts = useMemo(() => products.filter((product) => {
+    const okStall =
+      selectedStallFilter === 'All' ||
+      product.warehouse_id === selectedStallFilter;
+    const okCat =
+      selectedCategory === 'All' ||
+      (product.category?.name || 'Uncategorized') === selectedCategory;
+    const okSearch = (product.name || "").toLowerCase().includes(searchTerm.toLowerCase());
+    return okStall && okCat && okSearch;
+  }), [products, selectedStallFilter, selectedCategory, searchTerm]);
+
+  const tryAddCatalogItem = useCallback((
+    product: Product,
+    item: Omit<Parameters<typeof cart.addItem>[0], 'warehouse_id' | 'warehouse_name'>
+  ) => {
+    const existing = cart.items.map((row) => row.warehouse_id);
+    const check = resolveAddCatalogItem({
+      canSellMixed,
+      existingStallIds: existing,
+      incomingWarehouseId: product.warehouse_id,
+      centralAllMode: canUseCentralCashier && activeMode === 'all',
+      payingExistingCheckout: Boolean(paymentCheckoutId),
+    });
+    if (!check.ok) {
+      toast.error(check.message);
+      return false;
+    }
+    cart.addItem({
+      ...item,
+      warehouse_id: product.warehouse_id,
+      warehouse_name: product.warehouse_name,
+    });
+    return true;
+  }, [activeMode, canSellMixed, canUseCentralCashier, cart, paymentCheckoutId]);
 
   const productSuggestions = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
@@ -816,7 +939,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         notes: '',
       });
     } else {
-      cart.addItem({
+      tryAddCatalogItem(product, {
         id: product.id,
         productId: product.id,
         name: product.name,
@@ -824,9 +947,10 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         quantity: 1,
         imageUrl: product.image_url,
         station: product.station,
+        stallName: product.stall_name ?? undefined,
       });
     }
-  }, [cart, requireActiveShift]);
+  }, [cart, requireActiveShift, tryAddCatalogItem]);
 
   const applyOfferToCart = useCallback(
     (offer: PosActiveOffer) => {
@@ -872,7 +996,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
           continue;
         }
 
-        cart.addItem({
+        if (!tryAddCatalogItem(product, {
           id: product.id,
           productId: product.id,
           name: product.name,
@@ -880,7 +1004,12 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
           quantity: row.qty,
           imageUrl: product.image_url,
           station: product.station,
-        });
+          warehouse_id: product.warehouse_id ?? product.stall_warehouse_id ?? undefined,
+          warehouse_name: product.warehouse_name ?? product.stall_name ?? null,
+          stallName: product.stall_name ?? product.warehouse_name ?? undefined,
+        })) {
+          continue;
+        }
         added += 1;
       }
 
@@ -909,7 +1038,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         toast.message("Tambah qty sampai min belanja promo tercapai");
       }
     },
-    [cart, products, requireActiveShift]
+    [cart, products, requireActiveShift, tryAddCatalogItem]
   );
 
   /* EPIC-034 Fase B — nominal gift card dikonfirmasi → masuk keranjang.
@@ -917,7 +1046,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
   const handleConfirmGiftCardSale = useCallback((values: GiftCardSaleValues) => {
     const product = giftCardProduct;
     if (!product) return;
-    cart.addItem({
+    if (!tryAddCatalogItem(product, {
       // id unik per nominal supaya dua nominal berbeda tidak digabung jadi
       // satu baris keranjang (kartu berbeda, saldo berbeda)
       id: `${product.id}-${values.nominal}`,
@@ -927,14 +1056,19 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       quantity: values.quantity,
       imageUrl: product.image_url,
       station: product.station,
-    });
+      warehouse_id: product.warehouse_id ?? product.stall_warehouse_id ?? undefined,
+      warehouse_name: product.warehouse_name ?? product.stall_name ?? null,
+      stallName: product.stall_name ?? product.warehouse_name ?? undefined,
+    })) {
+      return;
+    }
     setGiftCardBuyer(
       values.buyerName || values.buyerPhone
         ? { name: values.buyerName, phone: values.buyerPhone }
         : null
     );
     setGiftCardProduct(null);
-  }, [cart, giftCardProduct]);
+  }, [cart, giftCardProduct, tryAddCatalogItem]);
 
   const selectProductFromSearch = useCallback((product: Product) => {
     openCustomization(product);
@@ -947,7 +1081,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
      supaya dua varian berbeda tidak digabung; harga = override ?? produk) */
   const handleSelectMerchSku = useCallback((product: Product, sku: ProductSku) => {
     if (!requireActiveShift()) return;
-    cart.addItem({
+    if (!tryAddCatalogItem(product, {
       id: `${product.id}::sku:${sku.id}`,
       productId: product.id,
       skuId: sku.id,
@@ -957,9 +1091,14 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       quantity: 1,
       imageUrl: product.image_url,
       station: product.station,
-    });
+      warehouse_id: product.warehouse_id ?? product.stall_warehouse_id ?? undefined,
+      warehouse_name: product.warehouse_name ?? product.stall_name ?? null,
+      stallName: product.stall_name ?? product.warehouse_name ?? undefined,
+    })) {
+      return;
+    }
     setMerchSkuProduct(null);
-  }, [cart, requireActiveShift]);
+  }, [cart, requireActiveShift, tryAddCatalogItem]);
 
   /* EPIC-039 Fase B — scan barcode: input search yang persis cocok dengan
      barcode/kode SKU varian langsung menambahkan varian itu ke keranjang
@@ -1000,7 +1139,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     });
     const finalPrice = product.base_price + (variant?.price_adjustment || 0) + modifierAdj;
     const compositeId = `${product.id}::${variantName ?? ''}::${modifierNames.join(',')}`;
-    cart.addItem({
+    if (!tryAddCatalogItem(product, {
       id: compositeId,
       productId: product.id,
       name: product.name,
@@ -1013,10 +1152,15 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       notes: custom.notes,
       imageUrl: product.image_url,
       station: product.station,
-    });
+      warehouse_id: product.warehouse_id ?? product.stall_warehouse_id ?? undefined,
+      warehouse_name: product.warehouse_name ?? product.stall_name ?? null,
+      stallName: product.stall_name ?? product.warehouse_name ?? undefined,
+    })) {
+      return;
+    }
     setCustom(null);
     setCustomizingProduct(null);
-  }, [custom, customizingProduct, cart, requireActiveShift]);
+  }, [custom, customizingProduct, cart, requireActiveShift, tryAddCatalogItem]);
 
   const openPaymentModal = useCallback(() => {
     if (cart.items.length === 0) return;
@@ -1084,12 +1228,112 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     giftCardCode?: string;
     cashReceived?: string;
     arkToUse?: number;
+    checkoutId?: string;
+    checkoutNumber?: string;
+    queueNumber?: string | null;
+    xenditQrId?: string;
+    xenditExternalId?: string;
+    paymentMethodCode?: string;
+    paymentMethodName?: string;
   }) => {
     if (processingPayment) return;
     if (cart.items.length === 0) return;
     if (!requireActiveShift()) return;
 
     const method = overrides?.method ?? paymentMethod;
+    const catalogCode = overrides?.paymentMethodCode;
+    const catalogName = overrides?.paymentMethodName;
+    const receiptMethod = formatPaymentMethodLabel(method, {
+      code: catalogCode,
+      name: catalogName,
+    });
+    const catalogFields = {
+      payment_method_code: catalogCode,
+      payment_method_name: catalogName,
+    };
+    const mixedCart = shouldCreateCheckout(
+      uniqueStallIds(cart.items.map((row) => row.warehouse_id))
+    );
+    if (mixedCart && isMixedUnsupportedTender(method)) {
+      toast.error(MIXED_NFC_GIFT_UNSUPPORTED_MESSAGE);
+      return;
+    }
+    if (mixedCart && (discountAmount > 0 || promoApplied)) {
+      toast.error(MIXED_PROMO_UNSUPPORTED_MESSAGE);
+      return;
+    }
+    if (paymentCheckoutId && isCheckoutBillUnsupportedTender(method)) {
+      toast.error(
+        method === 'ark_coin'
+          ? MIXED_ARK_UNSUPPORTED_MESSAGE
+          : MIXED_NFC_GIFT_UNSUPPORTED_MESSAGE
+      );
+      return;
+    }
+    if (mixedCart && !isOnline && !overrides?.checkoutId) {
+      toast.error('Checkout multi-stall membutuhkan koneksi');
+      return;
+    }
+
+    if (mixedCart && method === 'qris') {
+      const paidCheckoutId = overrides?.checkoutId;
+      if (
+        !paidCheckoutId ||
+        !mayConfirmMixedQris({
+          isMixedCart: true,
+          method: 'qris',
+          qrisPaid: true,
+          checkoutId: paidCheckoutId,
+        })
+      ) {
+        toast.error('Menunggu pembayaran QRIS');
+        return;
+      }
+      setProcessingPayment(true);
+      try {
+        await completeCheckout(paidCheckoutId, {
+          payment_method: 'qris',
+          amount_paid: total,
+          ...catalogFields,
+        });
+        const receipt: ReceiptPayload = {
+          orderId: paidCheckoutId,
+          orderNumber: overrides.checkoutNumber,
+          checkoutNumber: overrides.checkoutNumber,
+          queueNumber: overrides.queueNumber ?? null,
+          orderType: cart.orderType,
+          table: selectedTableDisplay,
+          items: [...cart.items],
+          notes: cart.notes,
+          total,
+          change: 0,
+          paymentMethod: receiptMethod,
+          customerName: selectedCustomer?.name,
+          discountAmount,
+          taxAmount,
+          chargesBreakdown: billCharges.breakdown,
+        };
+        storeResultPayload(receipt);
+        toast.success(
+          overrides.queueNumber
+            ? `Pembayaran berhasil — Antrian ${overrides.queueNumber}`
+            : 'Pembayaran berhasil'
+        );
+        setShowPayment(false);
+        setLastResultType('standard');
+        cart.clearCart();
+        setCashReceived('');
+        setPaymentMethod('cash');
+        setCurrentArkToUse(0);
+        deferReturnToRestaurant();
+      } catch (e: unknown) {
+        toast.error(e instanceof Error ? e.message : 'Pembayaran QRIS gagal');
+      } finally {
+        setProcessingPayment(false);
+      }
+      return;
+    }
+
     const cashValue = overrides?.cashReceived ?? cashReceived;
     const arkValue = overrides?.arkToUse ?? currentArkToUse;
     const arkCapped = Math.min(arkValue, maxArkUsable);
@@ -1114,7 +1358,11 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         let queueNumber: string | null = null;
         const cTotal = total;
 
-        if (paymentOrderId) {
+        if (paymentCheckoutId) {
+          toast.error(MIXED_NFC_GIFT_UNSUPPORTED_MESSAGE);
+          setProcessingPayment(false);
+          return;
+        } else if (paymentOrderId) {
           const data = await payOpenOrderMutation.mutateAsync({
             orderId: paymentOrderId,
             payload: {
@@ -1123,6 +1371,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
               amount_paid: 0,
               ark_coins_used: 0,
               gift_card_code: giftCardCode,
+              ...catalogFields,
             },
           });
           orderId = paymentOrderId;
@@ -1141,6 +1390,8 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
             arkToUse: 0,
             shiftId: shift?.id || null,
             giftCardCode,
+            paymentMethodCode: catalogCode,
+            paymentMethodName: catalogName,
             promo: promoApplied,
             billCharges,
             manualDiscountType: cart.manual_discount_type,
@@ -1168,7 +1419,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
           notes: cart.notes,
           total: cTotal,
           change: 0,
-          paymentMethod: 'gift_card',
+          paymentMethod: receiptMethod,
           customerName: selectedCustomer?.name,
           discountAmount,
           taxAmount,
@@ -1213,7 +1464,11 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         let queueNumber: string | null = null;
         const cTotal = total;
 
-        if (paymentOrderId) {
+        if (paymentCheckoutId) {
+          toast.error(MIXED_NFC_GIFT_UNSUPPORTED_MESSAGE);
+          setProcessingPayment(false);
+          return;
+        } else if (paymentOrderId) {
           const data = await payOpenOrderMutation.mutateAsync({
             orderId: paymentOrderId,
             payload: {
@@ -1222,6 +1477,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
               amount_paid: 0,
               ark_coins_used: 0,
               nfc_tab_uid: nfcTabUid,
+              ...catalogFields,
             },
           });
           orderId = paymentOrderId;
@@ -1240,6 +1496,8 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
             arkToUse: 0,
             shiftId: shift?.id || null,
             nfcTabUid,
+            paymentMethodCode: catalogCode,
+            paymentMethodName: catalogName,
             promo: promoApplied,
             billCharges,
             manualDiscountType: cart.manual_discount_type,
@@ -1267,7 +1525,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
           notes: cart.notes,
           total: cTotal,
           change: 0,
-          paymentMethod: 'nfc_tab',
+          paymentMethod: receiptMethod,
           customerName: selectedCustomer?.name,
           discountAmount,
           taxAmount,
@@ -1303,6 +1561,64 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
 
     setProcessingPayment(true);
 
+    if (paymentCheckoutId) {
+      if (promoApplied) {
+        toast.error('Kode promo belum didukung untuk pembayaran open bill — hapus kode dulu');
+        setProcessingPayment(false);
+        return;
+      }
+      try {
+        if (method === 'ark_coin') {
+          toast.error(MIXED_ARK_UNSUPPORTED_MESSAGE);
+          setProcessingPayment(false);
+          return;
+        }
+        const tender = buildCheckoutBillPayBody({
+          method,
+          cashReceived: cashValue,
+          total: payTotal,
+          paymentMethodCode: catalogCode,
+          paymentMethodName: catalogName,
+        });
+        await completeCheckout(paymentCheckoutId, tender);
+        const receipt: ReceiptPayload = {
+          orderId: paymentCheckoutId,
+          orderNumber: payingOrderNumber || paymentCheckoutId,
+          checkoutNumber: paymentCheckout?.checkout_number || payingOrderNumber,
+          queueNumber: null,
+          orderType: cart.orderType,
+          table: selectedTableDisplay,
+          items: [...cart.items],
+          notes: cart.notes,
+          total: payTotal,
+          change: method === 'cash' ? (parseFloat(cashValue) || 0) - payTotal : 0,
+          paymentMethod: receiptMethod,
+          customerName: selectedCustomer?.name,
+          discountAmount,
+          taxAmount,
+        };
+        storeResultPayload(receipt);
+        if (selectedCustomer) void refetchCustomers();
+        setShowPayment(false);
+        setLastResultType('standard');
+        cart.clearCart();
+        setCashReceived('');
+        setPaymentMethod('cash');
+        setCurrentArkToUse(0);
+        loadedPaymentOrderRef.current = null;
+        loadedPaymentCheckoutRef.current = null;
+        if (!deferReturnToRestaurant()) {
+          router.replace(homeRoute);
+        }
+        setProcessingPayment(false);
+        return;
+      } catch (e: unknown) {
+        toast.error(e instanceof Error ? e.message : 'Payment failed');
+        setProcessingPayment(false);
+        return;
+      }
+    }
+
     if (paymentOrderId) {
       if (promoApplied) {
         toast.error('Kode promo belum didukung untuk pembayaran open bill — hapus kode dulu');
@@ -1319,6 +1635,9 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
             payment_method: paymentMethodForApi,
             amount_paid: paidAmount,
             ark_coins_used: method === 'ark_coin' ? arkCapped : 0,
+            xendit_qr_id: overrides?.xenditQrId,
+            xendit_external_id: overrides?.xenditExternalId,
+            ...catalogFields,
           },
         });
 
@@ -1332,7 +1651,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
           notes: cart.notes,
           total: payTotal,
           change: method === 'cash' ? (parseFloat(cashValue) || 0) - payTotal : 0,
-          paymentMethod: method,
+          paymentMethod: receiptMethod,
           customerName: selectedCustomer?.name,
           discountAmount,
           taxAmount,
@@ -1393,6 +1712,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         total_amount: cTotal,
         payment_method: method === 'qris' ? 'qris' : method === 'credit_card' ? 'credit' : method === 'ark_coin' ? 'ark_coin' : 'cash',
         amount_paid: method === 'cash' ? (parseFloat(cashValue) || cTotal) : cTotal,
+        ...catalogFields,
         include_tax: cart.includeTax,
         membership_discount_pct: membershipDiscount,
         notes: cart.notes,
@@ -1409,7 +1729,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         notes: cart.notes,
         total: cTotal,
         change: method === 'cash' ? (parseFloat(cashValue) || 0) - cTotal : 0,
-        paymentMethod: method,
+        paymentMethod: receiptMethod,
         customerName: selectedCustomer?.name,
         discountAmount,
         taxAmount,
@@ -1447,6 +1767,10 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       manualDiscountValue: cart.manual_discount_value,
       offerDiscount,
       offerLabels: offerEval.applied.map((a) => a.name),
+      xenditQrId: overrides?.xenditQrId,
+      xenditExternalId: overrides?.xenditExternalId,
+      paymentMethodCode: catalogCode,
+      paymentMethodName: catalogName,
     });
 
     if (res.success) {
@@ -1458,6 +1782,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       const receipt: ReceiptPayload = {
         orderId: res.orderId,
         orderNumber: res.orderNumber,
+        checkoutNumber: res.checkoutNumber,
         queueNumber: res.queueNumber || null,
         orderType: cart.orderType,
         table: selectedTableDisplay,
@@ -1465,7 +1790,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         notes: cart.notes,
         total: res.total,
         change: res.change,
-        paymentMethod: method,
+        paymentMethod: receiptMethod,
         customerName: selectedCustomer?.name,
         discountAmount,
         taxAmount,
@@ -1493,11 +1818,15 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       toast.error(res.error || 'Payment failed');
     }
     setProcessingPayment(false);
-  }, [cart, paymentMethod, selectedCustomer, cashReceived, currentArkToUse, maxArkUsable, totalAfterArk, arkToUseCapped, checkout, discountAmount, taxAmount, isOnline, enqueue, membershipDiscount, shift, refreshCount, paymentOrderId, payingOrderNumber, router, processingPayment, selectedTableDisplay, effectiveTableId, requireActiveShift, payOpenOrderMutation, deferReturnToRestaurant, storeResultPayload, refetchCustomers, promoApplied, giftCardBuyer, billCharges, serviceChargeAmount, otherChargesAmount, total, homeRoute, guestCount, offerDiscount, offerEval]);
+  }, [cart, paymentMethod, selectedCustomer, cashReceived, currentArkToUse, maxArkUsable, totalAfterArk, arkToUseCapped, checkout, discountAmount, taxAmount, isOnline, enqueue, membershipDiscount, shift, refreshCount, paymentOrderId, paymentCheckoutId, paymentCheckout, payingOrderNumber, router, processingPayment, selectedTableDisplay, effectiveTableId, requireActiveShift, payOpenOrderMutation, deferReturnToRestaurant, storeResultPayload, refetchCustomers, promoApplied, giftCardBuyer, billCharges, serviceChargeAmount, otherChargesAmount, total, homeRoute, guestCount, offerDiscount, offerEval]);
 
   /* Split Bill */
   const handleConfirmSplit = useCallback(async (config: SplitConfig) => {
     if (cart.items.length === 0) return;
+    if (shouldDisableSplitBill(uniqueStallIds(cart.items.map((row) => row.warehouse_id)))) {
+      toast.error(MIXED_SPLIT_UNSUPPORTED_MESSAGE);
+      return;
+    }
     // EPIC-032 C2 — promo belum didukung split bill: totals split tidak
     // melewati validasi promo server, jangan biarkan diskon promo bocor
     if (promoApplied) {
@@ -2127,6 +2456,25 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
           </div>
         )}
 
+        {showStallFilters && (
+          <div className="flex gap-2 overflow-x-auto pb-2">
+            {stallFilters.map((stall) => (
+              <button
+                key={stall.id}
+                type="button"
+                onClick={() => setSelectedStallFilter(stall.id)}
+                className={`rounded-lg border border-gray-200/70 px-3 py-1.5 text-xs font-semibold whitespace-nowrap transition-all ${
+                  selectedStallFilter === stall.id
+                    ? 'bg-primary text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                {stall.label}
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* Categories */}
         <div className="flex gap-2 overflow-x-auto pb-2">
           {categories.map(cat => (
@@ -2197,6 +2545,11 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
                     <div className={`line-clamp-2 font-medium leading-snug text-gray-900 ${isTabletMode ? 'text-[11px] @min-[40rem]:text-xs' : 'text-[11px] leading-tight'}`}>
                       {product.name}
                     </div>
+                    {allStalls && product.stall_name ? (
+                      <div className="truncate text-[9px] font-semibold uppercase tracking-wide text-sky-700">
+                        {product.stall_name}
+                      </div>
+                    ) : null}
                     <div className={`font-bold text-primary ${isTabletMode ? 'text-xs @min-[40rem]:text-sm' : 'text-[11px]'}`}>{formatCurrency(product.base_price)}</div>
                     <div className="flex items-center justify-between gap-1">
                       <span className={`font-medium text-amber-600 ${isTabletMode ? 'text-[11px]' : 'text-[9px]'}`}>{formatArk(product.base_price)}</span>
@@ -2227,7 +2580,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         promoInput={promoInput}
         promoBusy={promoBusy}
         promoError={promoError}
-        promoDisabled={!isOnline}
+        promoDisabled={!isOnline || shouldDisableMixedPromo(cartStallIds)}
         onPromoInputChange={(value) => {
           setPromoInput(value.toUpperCase());
           setPromoError(null);
@@ -2239,6 +2592,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         }}
         orderNotes={cart.notes}
         onOrderNotesChange={cart.setNotes}
+        showStallBadges={allStalls}
         itemDiscountTotal={itemDiscountTotal}
         offerDiscount={offerDiscount}
         offerApplied={offerEval.applied}
@@ -2543,7 +2897,57 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         selectedCustomer={selectedCustomer}
         onClose={() => setShowPayment(false)}
         submitting={processingPayment || submitting}
-        onConfirm={async ({ method, cashReceived, arkToUse, nfcTabUid, giftCardCode }) => {
+        isMixedCart={isMixedCart}
+        isCheckoutBill={Boolean(paymentCheckoutId)}
+        onPrepareMixedQrisCheckout={
+          isMixedCart
+            ? async () => {
+                const res = await checkout({
+                  cart: cart.items,
+                  orderType: cart.orderType,
+                  selectedTable: effectiveTableId,
+                  selectedCustomer,
+                  paymentMethod: 'qris',
+                  cashReceived: '',
+                  includeTax: cart.includeTax,
+                  notes: cart.notes,
+                  arkToUse: 0,
+                  shiftId: shift?.id || null,
+                  paymentMethodCode: 'qris',
+                  paymentMethodName: 'QRIS',
+                  promo: promoApplied,
+                  billCharges,
+                  manualDiscountType: cart.manual_discount_type,
+                  manualDiscountValue: cart.manual_discount_value,
+                  offerDiscount,
+                  offerLabels: offerEval.applied.map((a) => a.name),
+                  paymentStatus: 'unpaid',
+                });
+                if (!res.success || !res.checkoutId) {
+                  throw new Error(res.error || 'Gagal menyiapkan checkout QRIS');
+                }
+                return {
+                  checkout_id: res.checkoutId,
+                  checkout_number: res.checkoutNumber,
+                  queue_number: res.queueNumber ?? null,
+                };
+              }
+            : undefined
+        }
+        onConfirm={async ({
+          method,
+          cashReceived,
+          arkToUse,
+          nfcTabUid,
+          giftCardCode,
+          checkoutId,
+          checkoutNumber,
+          queueNumber,
+          xenditQrId,
+          xenditExternalId,
+          paymentMethodCode,
+          paymentMethodName,
+        }) => {
           setPaymentMethod(method);
           setCashReceived(cashReceived);
           setCurrentArkToUse(arkToUse);
@@ -2553,6 +2957,13 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
             arkToUse,
             nfcTabUid,
             giftCardCode,
+            checkoutId,
+            checkoutNumber,
+            queueNumber,
+            xenditQrId,
+            xenditExternalId,
+            paymentMethodCode,
+            paymentMethodName,
           });
         }}
         formatCurrency={formatCurrency}

@@ -449,10 +449,9 @@ function redeemInTransaction(
 }
 
 /**
- * Kembalikan saldo yang sudah terpotong untuk sebuah order — KOMPENSASI saat
- * langkah checkout sesudah debit gagal (keputusan owner 27 Jul: order yang
- * sudah `completed` tetap tidak bisa di-void, sama seperti cash/ark_coin;
- * koreksi lain dilakukan admin lewat aksi ber-audit).
+ * Kembalikan saldo yang sudah terpotong untuk sebuah order — dipakai saat
+ * langkah checkout sesudah debit gagal, dan saat void order lunas
+ * (otorisasi supervisor).
  *
  * Idempoten: order yang sudah pernah dikembalikan tidak dikembalikan lagi.
  * Best-effort — pemanggil tidak boleh gagal hanya karena refund gagal, tapi
@@ -521,6 +520,65 @@ export async function refundGiftCardForPosOrder(input: {
   });
 }
 
+export class IssuedGiftCardAlreadyUsedError extends Error {
+  constructor(code: string) {
+    super(`Gift card ${code} sudah terpakai — void ditolak`);
+    this.name = "IssuedGiftCardAlreadyUsedError";
+  }
+}
+
+/**
+ * Matikan kartu yang dijual lewat order ini. Kartu yang sudah ada ledger
+ * `pakai` ditolak — tamu sudah belanja saldo titipan itu.
+ * Idempoten: kartu `disabled` dilewati.
+ */
+export async function voidIssuedGiftCardsForPosOrder(input: {
+  orderId: string;
+  note?: string;
+}): Promise<number> {
+  return withTransaction(async (client) => {
+    const cards = await client.query<{
+      id: string;
+      code: string;
+      status: GiftCardStatus;
+    }>(
+      `SELECT id, code, status
+         FROM giftcard.gift_cards
+        WHERE source_type = 'pos_order' AND source_id = $1
+        FOR UPDATE`,
+      [input.orderId]
+    );
+    if (cards.rows.length === 0) return 0;
+
+    let disabled = 0;
+    for (const card of cards.rows) {
+      const used = await client.query(
+        `SELECT 1 FROM giftcard.gift_card_ledger
+          WHERE card_id = $1 AND direction = 'pakai'
+          LIMIT 1`,
+        [card.id]
+      );
+      if (used.rows.length > 0) {
+        throw new IssuedGiftCardAlreadyUsedError(card.code);
+      }
+      if (card.status === "disabled") {
+        disabled += 1;
+        continue;
+      }
+      await client.query(
+        `UPDATE giftcard.gift_cards
+            SET status = 'disabled',
+                note = COALESCE(note, '') || $2,
+                updated_at = now()
+          WHERE id = $1`,
+        [card.id, input.note ?? " — void penjualan kasir"]
+      );
+      disabled += 1;
+    }
+    return disabled;
+  });
+}
+
 // ── Koreksi manual admin (ber-audit) ───────────────────────────────────
 
 export type GiftCardAdjustOutcome =
@@ -528,9 +586,8 @@ export type GiftCardAdjustOutcome =
   | { ok: false; reason: string; status: 400 | 404 };
 
 /**
- * Koreksi saldo oleh admin — jalan keluar resmi saat ada salah input kasir
- * (keputusan owner 27 Jul: order `completed` tetap tidak bisa di-void, jadi
- * perbaikannya lewat sini, tercatat siapa & alasannya).
+ * Koreksi saldo oleh admin — untuk salah input di luar void order
+ * (void lunas mengembalikan saldo otomatis lewat refundGiftCardForPosOrder).
  *
  * `delta` bertanda: positif mengembalikan saldo, negatif menarik saldo.
  * Kartu dikunci FOR UPDATE — koreksi tidak bisa balapan dengan debit kasir.

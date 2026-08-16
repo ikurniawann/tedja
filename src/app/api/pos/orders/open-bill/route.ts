@@ -1,11 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createPgClient } from "@/lib/pg/create-client";
 import { getPosSession } from '@/lib/api/auth';
+import { getApiUserScope } from '@/lib/api/scope';
+import { getStallAccess } from '@/lib/auth/stall-access';
 import { buildCostSnapshot, loadPosProductCostMap } from '@/lib/pos/purchasing-sync';
 import { checkProductPrivileges } from '@/lib/crm/product-privilege';
 import { normalizeGuestCount } from '@/lib/pos/guest-count';
 import {
+  assertAllModeSellStallAssigned,
+  canSellMixedStall,
+  resolveSingleStallSellFromAllMode,
+} from '@/lib/pos/central-cashier';
+import {
+  MixedCheckoutError,
+  createMixedCheckout,
+  guardMixedCheckoutCart,
+  resolveOrderSoldFrom,
+} from '@/lib/pos/create-mixed-checkout';
+import { resolveTableSaleTarget } from "@/lib/pos/table-sale-target";
+import {
   assertOrderItemsMatchSellStall,
+  loadCentralCashierGate,
+  loadPosProductWarehouseIds,
   resolvePosSellStallForUser,
 } from '@/lib/pos/pos-sell-stall-server';
 import { getCrmDefaultVenue } from '@/lib/crm/server';
@@ -115,13 +131,165 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Items are required' }, { status: 400 });
     }
 
-    const sellStall = await resolvePosSellStallForUser(sessionUserId);
-    if (!sellStall.ok) {
-      return NextResponse.json({ success: false, error: sellStall.message }, { status: 400 });
+    const productIds = items.map((item) => String(item.product_id || ''));
+    const warehouseByProduct = await loadPosProductWarehouseIds(productIds);
+    const itemWarehouses = productIds.map((id) => warehouseByProduct.get(id) ?? null);
+    const scope = await getApiUserScope();
+    const gate = await loadCentralCashierGate({
+      userId: sessionUserId,
+      role: scope?.role ?? null,
+    });
+    const canSellMixed = canSellMixedStall({
+      hasCentralMenu: gate.hasCentralMenu,
+      canCentralCheckout: gate.canCentralCheckout,
+      activeMode: gate.activeMode,
+    });
+    const mixedGuard = guardMixedCheckoutCart({
+      productIds,
+      warehouseByProduct,
+      canSellMixed,
+      discountAmount: body.discount_amount,
+      promoCode: body.promo_code,
+    });
+    if (!mixedGuard.ok) {
+      return NextResponse.json({ success: false, error: mixedGuard.message }, { status: 400 });
+    }
+
+    const soldFrom = resolveOrderSoldFrom({
+      isCentralCashier: gate.hasCentralMenu && gate.canCentralCheckout,
+    });
+
+    let unpaidCentralCheckoutId: string | null = null;
+    if (soldFrom === "central" && table_id) {
+      const lookup = createPgClient();
+      let existingQuery = lookup
+        .from("pos_checkouts")
+        .select("id")
+        .eq("table_id", table_id)
+        .neq("payment_status", "paid");
+      if (scope?.companyId && !scope.isUnscoped) {
+        existingQuery = existingQuery.eq("company_id", scope.companyId);
+      }
+      if (scope?.branchId && !scope.isUnscoped) {
+        existingQuery = existingQuery.eq("branch_id", scope.branchId);
+      }
+      const existingCheckout = await existingQuery
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      unpaidCentralCheckoutId = existingCheckout.data?.id ?? null;
+    }
+
+    const saleTarget = resolveTableSaleTarget({
+      saleKind: mixedGuard.createCheckout
+        ? "central_mixed"
+        : soldFrom === "central"
+          ? "central_single"
+          : "stall",
+      unpaidCentralCheckoutId,
+    });
+
+    if (
+      saleTarget.action === "create_checkout" ||
+      saleTarget.action === "append_checkout"
+    ) {
+      const privilegeDb = createPgClient();
+      const privilege = await checkProductPrivileges(
+        privilegeDb,
+        productIds,
+        customer_id
+      );
+      if (!privilege.allowed) {
+        return NextResponse.json(
+          { success: false, error: privilege.message },
+          { status: 403 }
+        );
+      }
+      try {
+        const result = await createMixedCheckout({
+          items,
+          warehouseByProduct,
+          orderType: order_type,
+          customerId: customer_id,
+          cashierId: cashier_id || sessionUserId,
+          serverId: server_id,
+          tableId: table_id,
+          guestCount: body.guest_count,
+          discountAmount: body.discount_amount,
+          discountReason: discount_reason,
+          promoCode: body.promo_code,
+          taxAmount: tax_amount,
+          serviceChargeAmount: service_charge_amount,
+          otherChargesAmount: other_charges_amount,
+          chargesBreakdown: charges_breakdown,
+          totalAmount: body.total_amount,
+          paymentMethod: 'cash',
+          paymentStatus: 'unpaid',
+          amountPaid: 0,
+          notes,
+          specialRequests: special_requests,
+          shiftId: shift_id,
+          sessionUserId,
+          forceInsertChildren: true,
+          reuseUnpaidTableCheckout: Boolean(table_id),
+          companyId: scope?.companyId,
+          branchId: scope?.branchId,
+        });
+        return NextResponse.json(
+          {
+            success: true,
+            data: {
+              id: result.orderIds[0] || result.checkoutId,
+              checkout_id: result.checkoutId,
+              checkout_number: result.checkoutNumber,
+              queue_number: result.queueNumber,
+              order_ids: result.orderIds,
+              table_id: table_id || null,
+            },
+            message: 'Open bill created successfully',
+          },
+          { status: 201 }
+        );
+      } catch (error: unknown) {
+        if (error instanceof MixedCheckoutError) {
+          return NextResponse.json(
+            { success: false, error: error.message },
+            { status: error.status }
+          );
+        }
+        throw error;
+      }
+    }
+
+    const singleStallFromAll = resolveSingleStallSellFromAllMode({
+      itemWarehouses,
+      canSellMixed,
+    });
+    let sellWarehouseId: string;
+    if (singleStallFromAll) {
+      const access = await getStallAccess(
+        sessionUserId,
+        scope?.role ?? null,
+        scope?.branchId ?? null
+      );
+      const assigned = assertAllModeSellStallAssigned(
+        singleStallFromAll,
+        access.stalls.map((stall) => stall.id)
+      );
+      if (!assigned.ok) {
+        return NextResponse.json({ success: false, error: assigned.message }, { status: 400 });
+      }
+      sellWarehouseId = singleStallFromAll;
+    } else {
+      const sellStall = await resolvePosSellStallForUser(sessionUserId);
+      if (!sellStall.ok) {
+        return NextResponse.json({ success: false, error: sellStall.message }, { status: 400 });
+      }
+      sellWarehouseId = sellStall.warehouseId;
     }
     const itemStallCheck = await assertOrderItemsMatchSellStall(
-      items.map((item) => String(item.product_id || '')),
-      sellStall.warehouseId
+      productIds,
+      sellWarehouseId
     );
     if (!itemStallCheck.ok) {
       return NextResponse.json({ success: false, error: itemStallCheck.message }, { status: 400 });
@@ -219,7 +387,9 @@ export async function POST(request: NextRequest) {
       payment_status: 'unpaid',
       company_id: venue.companyId,
       branch_id: venue.branchId,
-      warehouse_id: sellStall.warehouseId,
+      warehouse_id: sellWarehouseId,
+      checkout_id: null,
+      sold_from: soldFrom,
       customer_id: customer_id || null,
       cashier_id: cashier_id || sessionUserId,
       server_id: server_id || null,
@@ -261,6 +431,8 @@ export async function POST(request: NextRequest) {
       delete (legacyPayload as { queue_number?: string | null }).queue_number;
       delete (legacyPayload as { manual_discount_type?: string | null }).manual_discount_type;
       delete (legacyPayload as { manual_discount_value?: number | null }).manual_discount_value;
+      delete (legacyPayload as { checkout_id?: string | null }).checkout_id;
+      delete (legacyPayload as { sold_from?: string }).sold_from;
       const legacyResult = await db.from('pos_orders').insert(legacyPayload).select().single();
       orderData = legacyResult.data;
       orderErr = legacyResult.error;

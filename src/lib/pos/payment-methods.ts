@@ -16,7 +16,8 @@ export type PosPaymentHandler =
 
 export type PosPaymentMethod = {
   id: string;
-  code: PosPaymentMethodCode;
+  /** Kode bawaan (union di atas) ATAU slug metode kustom buatan admin */
+  code: string;
   name: string;
   description: string;
   icon: string;
@@ -26,6 +27,19 @@ export type PosPaymentMethod = {
   requires_cash_input: boolean;
 };
 
+/** Handler yang boleh dipilih saat tambah metode manual (bukan Xendit/QRIS). */
+export const MANUAL_PAYMENT_HANDLERS = ["cash", "credit"] as const;
+export type ManualPaymentHandler = (typeof MANUAL_PAYMENT_HANDLERS)[number];
+
+export const POS_PAYMENT_HANDLERS: PosPaymentHandler[] = [
+  "cash",
+  "qris",
+  "credit",
+  "ark_wallet",
+  "nfc_tab",
+  "gift_card",
+];
+
 export const POS_PAYMENT_METHOD_CODES: PosPaymentMethodCode[] = [
   "cash",
   "qris",
@@ -34,6 +48,18 @@ export const POS_PAYMENT_METHOD_CODES: PosPaymentMethodCode[] = [
   "nfc_tab",
   "gift_card",
 ];
+
+/** Kode bawaan ber-alur khusus — tidak boleh dihapus dari master. */
+export const PROTECTED_PAYMENT_METHOD_CODES = new Set<string>(
+  POS_PAYMENT_METHOD_CODES
+);
+
+/** Slug kode metode (bawaan maupun kustom): huruf kecil/angka/-/_ 2-40. */
+export const PAYMENT_METHOD_CODE_PATTERN = /^[a-z0-9_-]{2,40}$/;
+
+export function isValidPaymentMethodCode(code: string): boolean {
+  return PAYMENT_METHOD_CODE_PATTERN.test(code);
+}
 
 /** Fallback jika tabel belum ada / API gagal — sama dengan seed. */
 export const DEFAULT_POS_PAYMENT_METHODS: PosPaymentMethod[] = [
@@ -107,4 +133,69 @@ export const DEFAULT_POS_PAYMENT_METHODS: PosPaymentMethod[] = [
 
 export function isPosPaymentMethodCode(value: string): value is PosPaymentMethodCode {
   return (POS_PAYMENT_METHOD_CODES as string[]).includes(value);
+}
+
+export function isPosPaymentHandler(value: string): value is PosPaymentHandler {
+  return (POS_PAYMENT_HANDLERS as string[]).includes(value);
+}
+
+export function isManualPaymentHandler(value: string): value is ManualPaymentHandler {
+  return (MANUAL_PAYMENT_HANDLERS as readonly string[]).includes(value);
+}
+
+/** Alur kasir dari handler — kode katalog custom tetap memakai handler ini. */
+export function cashierMethodFromHandler(
+  handler: string
+): PosPaymentMethodCode {
+  if (handler === "credit") return "credit_card";
+  if (handler === "ark_wallet") return "ark_coin";
+  if (handler === "qris") return "qris";
+  if (handler === "nfc_tab") return "nfc_tab";
+  if (handler === "gift_card") return "gift_card";
+  return "cash";
+}
+
+export function canRenamePaymentMethodCode(code: string) {
+  return !isPosPaymentMethodCode(code);
+}
+
+export function slugifyPaymentMethodCode(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 40);
+}
+
+export function sanitizePaymentMethodCode(value?: string | null) {
+  return slugifyPaymentMethodCode(String(value || "")) || null;
+}
+
+export function sanitizePaymentMethodName(value?: string | null) {
+  const trimmed = String(value || "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .slice(0, 80);
+  return trimmed || null;
+}
+
+export function resolvePaymentCatalogStamp(input: {
+  code?: string | null;
+  name?: string | null;
+}) {
+  return {
+    payment_method_code: sanitizePaymentMethodCode(input.code),
+    payment_method_name: sanitizePaymentMethodName(input.name),
+  };
+}
+
+/** Laci tunai hanya untuk kode built-in `cash`, bukan alias custom (Transfer BCA). */
+export function isDrawerCashMethod(input: {
+  paymentMethodCode?: string | null;
+  paymentMethod?: string | null;
+}) {
+  const code = String(input.paymentMethodCode || "").trim().toLowerCase();
+  if (code) return code === "cash";
+  return String(input.paymentMethod || "").trim().toLowerCase() === "cash";
 }

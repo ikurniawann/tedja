@@ -29,6 +29,8 @@ type KDSOrderRow = {
   id: string;
   order_number: string;
   queue_number?: string | null;
+  checkout_id?: string | null;
+  warehouse_id?: string | null;
   status: string;
   payment_status?: string | null;
   order_type?: string | null;
@@ -57,9 +59,11 @@ function formatVariantInfo(value: unknown) {
 }
 
 /** GET /api/pos/kds
+ *  Tickets are pos_orders only (child / stall) — never pos_checkouts rows.
  *  Query params:
  *    - status: pending,confirmed,preparing,ready (default multi)
  *    - station: kitchen, bar, bakery, dessert, merchandise, photobooth
+ *    - warehouse_id: optional stall filter
  *    - limit: default 50
  *    - branch_id: optional
  */
@@ -68,6 +72,7 @@ export async function GET(request: NextRequest) {
   const station = searchParams.get('station');
   const limit = parseInt(searchParams.get('limit') || '50', 10);
   const branchId = searchParams.get('branch_id');
+  const warehouseId = searchParams.get('warehouse_id');
   const dateFrom = searchParams.get('date_from');
   const dateTo = searchParams.get('date_to');
 
@@ -78,6 +83,9 @@ export async function GET(request: NextRequest) {
   const baseSelect = `
       id,
       order_number,
+      queue_number,
+      checkout_id,
+      warehouse_id,
       status,
       payment_status,
       order_type,
@@ -103,6 +111,8 @@ export async function GET(request: NextRequest) {
       id,
       order_number,
       queue_number,
+      checkout_id,
+      warehouse_id,
       status,
       payment_status,
       order_type,
@@ -139,6 +149,9 @@ export async function GET(request: NextRequest) {
   if (branchId) {
     query = query.eq('branch_id', branchId);
   }
+  if (warehouseId && isUuid(warehouseId)) {
+    query = query.eq('warehouse_id', warehouseId);
+  }
   if (dateFrom) {
     query = query.gte('ordered_at', dateFrom);
   }
@@ -160,6 +173,9 @@ export async function GET(request: NextRequest) {
 
     if (branchId) {
       legacyQuery = legacyQuery.eq('branch_id', branchId);
+    }
+    if (warehouseId && isUuid(warehouseId)) {
+      legacyQuery = legacyQuery.eq('warehouse_id', warehouseId);
     }
     if (dateFrom) {
       legacyQuery = legacyQuery.gte('ordered_at', dateFrom);

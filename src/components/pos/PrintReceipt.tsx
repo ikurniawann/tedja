@@ -8,10 +8,16 @@ import {
 } from "@/lib/pos/rawbt-print";
 import { encodeEscPosLines, formatReceiptRow, RECEIPT_DIVIDER } from "@/lib/pos/thermal-escpos";
 import { printBytesToPairedThermal } from "@/lib/pos/thermal-serial";
+import {
+  buildReceiptItemLines,
+  groupCartItemsByStallName,
+  receiptDocumentLabel,
+} from "@/lib/pos/receipt-layout";
 
 export interface ReceiptPayload {
   orderId?: string;
   orderNumber?: string;
+  checkoutNumber?: string;
   queueNumber?: string | null;
   orderType: string;
   table: string | null;
@@ -88,7 +94,7 @@ export function buildReceiptEscPosLayout(
     lines.push({ text: `ANTRIAN ${payload.queueNumber}`, align: "center" });
   }
   lines.push({
-    text: `Order #${(payload.orderNumber || "").slice(-8).toUpperCase() || (payload.orderId || "").slice(-8).toUpperCase()}`,
+    text: receiptDocumentLabel(payload),
     align: "center",
   });
   lines.push({ text: new Date().toLocaleTimeString("id-ID"), align: "center" });
@@ -103,29 +109,12 @@ export function buildReceiptEscPosLayout(
   }
   lines.push({ text: RECEIPT_DIVIDER, align: "left" });
 
-  const withPrices = !isKitchen && !isBar;
-  for (const item of payload.items) {
-    const qty = Number(item.quantity) || 0;
-    if (withPrices) {
-      lines.push({
-        text: formatReceiptRow(
-          `${item.quantity}x ${item.name}`,
-          formatCurrency((Number(item.price) || 0) * qty),
-        ),
-        align: "left",
-      });
-      if (qty > 1) {
-        lines.push({ text: `  @ ${formatCurrency(Number(item.price) || 0)}`, align: "left" });
-      }
-    } else {
-      lines.push({ text: `${item.quantity}x ${item.name}`, align: "left" });
-    }
-    if (item.variantName) lines.push({ text: `  ${item.variantName}`, align: "left" });
-    if (item.modifierNames?.length) {
-      lines.push({ text: `  ${item.modifierNames.join(", ")}`, align: "left" });
-    }
-    if (item.notes) lines.push({ text: `  * ${item.notes}`, align: "left" });
-  }
+  lines.push(
+    ...buildReceiptItemLines(payload.items, {
+      withPrices: !isKitchen && !isBar,
+      headerStallName: payload.stallName,
+    })
+  );
 
   if (!isKitchen && !isBar) {
     lines.push({ text: RECEIPT_DIVIDER, align: "left" });
@@ -254,8 +243,6 @@ function printViaPopupWindow(html: string) {
 
 export function buildReceiptHtml(payload: ReceiptPayload, label: ThermalPrintLabel): string {
   const {
-    orderId,
-    orderNumber,
     queueNumber,
     orderType,
     table,
@@ -273,16 +260,24 @@ export function buildReceiptHtml(payload: ReceiptPayload, label: ThermalPrintLab
   } = payload;
 
   const isKitchenCopy = label === "KITCHEN" || label === "BAR";
-  const itemsHtml = items
-    .map(
-      (item) => {
-        const qty = Number(item.quantity) || 0;
-        const lineTotal = (Number(item.price) || 0) * qty;
-        return `
+  const stallGroups = groupCartItemsByStallName(items);
+  const showStallHeaders = stallGroups.length >= 2;
+  const colSpan = isKitchenCopy ? 2 : 3;
+  const itemsHtml = stallGroups
+    .map((group) => {
+      const header = showStallHeaders
+        ? `<tr><td colspan="${colSpan}" style="text-align:center;font-weight:bold;padding:6px 2px">--- ${group.stallName} ---</td></tr>`
+        : "";
+      const rows = group.items
+        .map((item) => {
+          const qty = Number(item.quantity) || 0;
+          const lineTotal = (Number(item.price) || 0) * qty;
+          return `
     <tr>
       <td style="width:28px;vertical-align:top;font-weight:bold;padding:3px 2px">${item.quantity}x</td>
       <td style="padding:3px 2px">
         <strong>${item.name}</strong>
+        ${item.stallName && item.stallName !== stallName ? `<br><small style="color:#0369a1;font-weight:600">[${item.stallName}]</small>` : ""}
         ${!isKitchenCopy && qty > 1 ? `<br><small style="color:#555">@ ${formatCurrency(Number(item.price) || 0)}</small>` : ""}
         ${item.variantName ? `<br><small style="color:#555">${item.variantName}</small>` : ""}
         ${item.modifierNames?.length ? `<br><small style="color:#555">${item.modifierNames.join(", ")}</small>` : ""}
@@ -290,10 +285,12 @@ export function buildReceiptHtml(payload: ReceiptPayload, label: ThermalPrintLab
       </td>
       ${!isKitchenCopy ? `<td style="vertical-align:top;text-align:right;white-space:nowrap;padding:3px 2px">${formatCurrency(lineTotal)}</td>` : ""}
     </tr>
-    <tr><td colspan="${isKitchenCopy ? 2 : 3}"><div style="border-top:1px dashed #ccc;margin:2px 0"></div></td></tr>
+    <tr><td colspan="${colSpan}"><div style="border-top:1px dashed #ccc;margin:2px 0"></div></td></tr>
   `;
-      }
-    )
+        })
+        .join("");
+      return `${header}${rows}`;
+    })
     .join("");
 
   const isKitchen = label === "KITCHEN";
@@ -371,7 +368,7 @@ export function buildReceiptHtml(payload: ReceiptPayload, label: ThermalPrintLab
     <div class="big">${orderType.replace(/_/g, "-").toUpperCase()}</div>
     ${table ? `<div class="center">${table}</div>` : ""}
     ${queueNumber ? `<div class="big">ANTRIAN ${queueNumber}</div>` : ""}
-    <div class="center">Order #${(orderNumber || "").slice(-8).toUpperCase() || (orderId || "").slice(-8).toUpperCase()}</div>
+    <div class="center">${receiptDocumentLabel(payload)}</div>
     <div class="center">${new Date().toLocaleTimeString("id-ID")}</div>
     ${customerName ? `<div class="center">Customer: ${customerName}</div>` : ""}
     ${stallName ? `<div class="center">Stall: ${stallName}</div>` : ""}

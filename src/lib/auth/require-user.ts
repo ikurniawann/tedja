@@ -6,6 +6,32 @@ import { queryOne } from "@/lib/db";
 import { loadUserWarehouses } from "@/lib/users/user-warehouses";
 import { resolveActiveStallFromCookies } from "@/lib/auth/active-stall";
 import { getStallAccess } from "@/lib/auth/stall-access";
+import { resolveRoleIds } from "@/lib/iam/get-user-menus";
+import { hasIamMenuCode, loadGrantedMenuCodes } from "@/lib/iam/has-menu";
+import { CENTRAL_CASHIER_MENU } from "@/lib/pos/central-cashier";
+
+const PROFILE_SELECT =
+  "full_name, role, brand_id, business_scope, can_switch_stall, can_central_checkout, default_warehouse_id";
+const PROFILE_SELECT_LEGACY =
+  "full_name, role, brand_id, business_scope, can_switch_stall, default_warehouse_id";
+
+function isMissingColumnError(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false;
+  return (
+    error.code === "42703" ||
+    error.code === "PGRST204" ||
+    /column .* does not exist/i.test(error.message ?? "")
+  );
+}
+
+async function loadHasCentralCashierMenu(userId: string, role: UserRole): Promise<boolean> {
+  try {
+    const roleIds = await resolveRoleIds(userId, role);
+    return hasIamMenuCode(await loadGrantedMenuCodes(roleIds), CENTRAL_CASHIER_MENU);
+  } catch {
+    return false;
+  }
+}
 
 export interface AuthUser {
   id: string;
@@ -24,6 +50,8 @@ export interface AuthUser {
   active_stall_id: string | null;
   /** true bila user boleh membuka StallSwitcher (multi-stall / admin / allAccess). */
   can_switch_stall: boolean;
+  can_central_checkout: boolean;
+  has_central_cashier_menu: boolean;
 }
 
 export const getUser = cache(async (): Promise<{
@@ -37,11 +65,23 @@ export const getUser = cache(async (): Promise<{
 
   if (!user) return { user: null, db };
 
-  const { data: profile, error: profileError } = await db
+  let { data: profile, error: profileError } = await db
     .from("users")
-    .select("full_name, role, brand_id, business_scope, can_switch_stall, default_warehouse_id")
+    .select(PROFILE_SELECT)
     .eq("id", user.id)
     .single();
+
+  if (isMissingColumnError(profileError)) {
+    const fallback = await db
+      .from("users")
+      .select(PROFILE_SELECT_LEGACY)
+      .eq("id", user.id)
+      .single();
+    profile = fallback.data
+      ? { ...fallback.data, can_central_checkout: false }
+      : fallback.data;
+    profileError = fallback.error;
+  }
 
   // Query gagal (kolom belum ada, dsb.) bukan "tidak login" — jangan hapus sesi.
   // PGRST116 = tidak ada baris profil; itu yang boleh dianggap unauthenticated.
@@ -51,7 +91,7 @@ export const getUser = cache(async (): Promise<{
 
   if (!profile) return { user: null, db };
 
-  const [scope, warehouses, resolvedStall] = await Promise.all([
+  const [scope, warehouses, resolvedStall, hasCentralCashierMenu] = await Promise.all([
     queryOne<{
       company_name: string | null;
       branch_id: string | null;
@@ -66,6 +106,7 @@ export const getUser = cache(async (): Promise<{
     ),
     loadUserWarehouses(user.id),
     resolveActiveStallFromCookies(),
+    loadHasCentralCashierMenu(user.id, profile.role as UserRole),
   ]);
 
   const access = await getStallAccess(
@@ -145,6 +186,8 @@ export const getUser = cache(async (): Promise<{
       warehouse_name,
       active_stall_id,
       can_switch_stall: canSwitchStall,
+      can_central_checkout: profile.can_central_checkout === true,
+      has_central_cashier_menu: hasCentralCashierMenu,
     },
     db,
   };

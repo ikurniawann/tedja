@@ -19,6 +19,7 @@ export type FloorPlanNode = {
   is_active?: boolean;
   pos_x?: number | null;
   pos_y?: number | null;
+  billCount?: number;
 };
 
 type Point = { x: number; y: number };
@@ -262,7 +263,9 @@ export function FloorPlanCanvas(props: FloorPlanCanvasProps) {
             role="button"
             tabIndex={disabled ? -1 : 0}
             aria-disabled={disabled || undefined}
-            title={`${table.table_number} · ${table.capacity} seats`}
+            title={`${table.table_number} · ${table.capacity} seats${
+              (table.billCount ?? 0) > 1 ? ` · ${table.billCount} bills` : ""
+            }`}
             onKeyDown={(e) => {
               if (disabled) return;
               if (e.key === "Enter" || e.key === " ") {
@@ -330,6 +333,11 @@ export function FloorPlanCanvas(props: FloorPlanCanvasProps) {
               capacity={table.capacity}
               label={table.table_number}
             />
+            {mode === "operate" && (table.billCount ?? 0) > 1 ? (
+              <span className="absolute right-1 top-1 z-10 rounded-md bg-primary/15 px-1 py-0.5 text-[10px] font-semibold tabular-nums text-primary">
+                {table.billCount}
+              </span>
+            ) : null}
           </div>
         );
       })}

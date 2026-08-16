@@ -56,6 +56,11 @@ import {
   type RestaurantSelection,
 } from "../selection";
 import { canPickSeatDestination } from "../move-destination";
+import { listTableBoardBills } from "../table-board-bills";
+import {
+  canAppendTransferItems,
+  canMergeIntoDestination,
+} from "@/lib/pos/table-sale-target";
 import { useReservationList } from "@/features/pos/reservation/queries";
 import { reservationQueryKeys } from "@/features/pos/reservation/query-keys";
 import { seatReservation } from "@/features/pos/reservation/api";
@@ -163,17 +168,18 @@ function RestaurantPageContent() {
     return orders.find((order) => order.id === selection.orderId) ?? null;
   }, [orders, selection]);
 
-  const openBillsCount = useMemo(
-    () =>
-      orders.filter((order) => {
-        const status = order.status || "";
-        return (
-          !["completed", "cancelled", "voided", "merged"].includes(status) &&
-          (order.payment_status || "unpaid") !== "paid"
-        );
-      }).length,
-    [orders]
-  );
+  const openBillsCount = useMemo(() => {
+    const checkouts = tables.flatMap((table) =>
+      (table.open_checkouts || []).map((checkout) => ({
+        id: checkout.id,
+        table_id: table.id,
+        payment_status: checkout.payment_status,
+        checkout_number: checkout.checkout_number,
+        total_amount: checkout.total_amount,
+      }))
+    );
+    return listTableBoardBills({ orders, checkouts }).length;
+  }, [orders, tables]);
 
   const selectedTableLabel = useMemo(() => {
     if (!selection?.tableId) return null;
@@ -320,7 +326,10 @@ function RestaurantPageContent() {
     }
 
     toast.message(`Selected ${table.label || table.table_number || "table"}.`, {
-      description: "Double-click the table to open its bill in the cashier.",
+      description:
+        (table.bill_count ?? 0) > 1
+          ? `${table.bill_count} open bills — pick one from View Orders or double-click to open.`
+          : "Double-click the table to open its bill in the cashier.",
     });
   };
 
@@ -340,8 +349,8 @@ function RestaurantPageContent() {
     setTransferItems([]);
     setSeatingReservation(null);
     setBoardMode("move");
-    toast.message("Select an available table.", {
-      description: "Tap a green table on the floor plan to move this bill.",
+    toast.message("Select an available or occupied table.", {
+      description: "Tap a table on the floor plan to move this bill onto it.",
     });
   };
 
@@ -446,7 +455,19 @@ function RestaurantPageContent() {
     }
 
     if (boardMode === "merge") {
-      const targetOrderId = table.active_order?.id;
+      const destOrders = table.active_orders || [];
+      const sourceBill = {
+        checkout_id: selectedOrder.checkout_id ?? null,
+        sold_from: selectedOrder.sold_from ?? null,
+      };
+      if (!canMergeIntoDestination(sourceBill, destOrders)) {
+        toast.error("Tidak bisa merge tagihan stall ke kasir pusat");
+        return;
+      }
+      const targetOrder = destOrders.find((order) =>
+        canAppendTransferItems(sourceBill, order)
+      );
+      const targetOrderId = targetOrder?.id;
       if (!targetOrderId) {
         toast.error("Destination table has no open bill");
         return;
@@ -546,7 +567,7 @@ function RestaurantPageContent() {
           <div className="min-w-0">
             <p className="text-sm font-medium text-foreground">
               {boardMode === "move"
-                ? `Move ${selectedOrder.order_number} — tap an available table`
+                ? `Move ${selectedOrder.order_number} — tap an available or occupied table`
                 : boardMode === "transfer"
                   ? `Move ${transferItems.reduce((s, i) => s + i.qty, 0)} items — tap a table`
                   : `Merge ${selectedOrder.order_number} — tap an occupied table`}
@@ -621,9 +642,35 @@ function RestaurantPageContent() {
               boardMode={boardMode}
               busy={boardBusy}
               sourceTableId={selection?.tableId ?? null}
+              sourceBill={
+                selectedOrder
+                  ? {
+                      checkout_id: selectedOrder.checkout_id ?? null,
+                      sold_from: selectedOrder.sold_from ?? null,
+                    }
+                  : undefined
+              }
               onSelectOccupied={handleSelectOccupied}
               onPickDestination={handlePickDestination}
             />
+            {selection?.tableId ? (
+              <div className="mt-4 border-t border-gray-200/70 pt-4">
+                <RestaurantBillsRail
+                  variant="panel"
+                  tablesById={tablesById}
+                  selection={selection}
+                  immersive={tabletHandoff}
+                  filterTableId={selection.tableId}
+                  onSelect={(next) => {
+                    handleSelectBill(next);
+                    toast.message("Bill selected.");
+                  }}
+                  onPaySplits={(order) => {
+                    setSplitPaymentOrder(order);
+                  }}
+                />
+              </div>
+            ) : null}
           </CardContent>
         </Card>
       </div>

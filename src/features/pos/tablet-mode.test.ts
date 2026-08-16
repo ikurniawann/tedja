@@ -3,8 +3,10 @@ import {
   cashierDesktopRoute,
   cashierTabletRoute,
   isPosChromeLessPath,
+  isPosDashboardPath,
   isPosImmersiveShell,
   isPosTabletQuery,
+  needsCrossPosLayoutHardNav,
   restaurantTabletRoute,
   shouldShowSecondaryPosDisplays,
   withPosTabletParam,
@@ -17,6 +19,38 @@ describe("isPosChromeLessPath", () => {
     expect(isPosChromeLessPath("/pos/customer-display")).toBe(true);
     expect(isPosChromeLessPath("/dashboard/pos/kds")).toBe(false);
     expect(isPosChromeLessPath("/dashboard/pos/cashier-new")).toBe(false);
+  });
+});
+
+describe("needsCrossPosLayoutHardNav", () => {
+  it("hard-navs from POS tablet/cashier to back-office", () => {
+    expect(
+      needsCrossPosLayoutHardNav("/dashboard/pos/cashier-fullscreen", "/dashboard")
+    ).toBe(true);
+    expect(
+      needsCrossPosLayoutHardNav("/dashboard/pos/tablet", "/dashboard/settings/roles")
+    ).toBe(true);
+  });
+
+  it("hard-navs from back-office into POS dashboard", () => {
+    expect(needsCrossPosLayoutHardNav("/dashboard/settings/roles", "/dashboard/pos")).toBe(
+      true
+    );
+  });
+
+  it("keeps soft nav inside the same layout", () => {
+    expect(
+      needsCrossPosLayoutHardNav("/dashboard/pos/cashier-new", "/dashboard/pos/restaurant")
+    ).toBe(false);
+    expect(
+      needsCrossPosLayoutHardNav("/dashboard", "/dashboard/settings/roles")
+    ).toBe(false);
+  });
+
+  it("still hard-navs chrome-less /pos/* shells", () => {
+    expect(needsCrossPosLayoutHardNav("/dashboard", "/pos/kds")).toBe(true);
+    expect(isPosDashboardPath("/dashboard/pos/tablet")).toBe(true);
+    expect(isPosDashboardPath("/dashboard/settings/roles")).toBe(false);
   });
 });
 

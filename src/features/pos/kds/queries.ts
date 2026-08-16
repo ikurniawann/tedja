@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { listKdsOrders, updateKdsOrderStatus } from "./api";
+import { listKdsOrders, listKdsStalls, updateKdsOrderStatus } from "./api";
 import { kdsQueryKeys } from "./query-keys";
 import type { KdsListParams } from "./types";
 
@@ -101,5 +101,18 @@ export function useKds(options: UseKdsOptions = {}) {
     setSoundEnabled,
     refresh: query.refetch,
     updateStatus,
+  };
+}
+
+export function useKdsStalls() {
+  const query = useQuery({
+    queryKey: kdsQueryKeys.stalls,
+    queryFn: listKdsStalls,
+    staleTime: 60_000,
+  });
+
+  return {
+    stalls: query.data ?? [],
+    loading: query.isLoading,
   };
 }

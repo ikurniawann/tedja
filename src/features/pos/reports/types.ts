@@ -124,6 +124,8 @@ export interface TransactionReportRow {
   status: string | null;
   payment_status: string | null;
   payment_method: string | null;
+  payment_method_code?: string | null;
+  payment_method_name?: string | null;
   subtotal: number;
   discount_amount: number;
   tax_amount: number;
@@ -134,6 +136,11 @@ export interface TransactionReportRow {
   warehouse_id: string | null;
   stall_code: string | null;
   stall_name: string | null;
+  checkout_id?: string | null;
+  checkout_number?: string | null;
+  sold_from?: string | null;
+  xendit_qr_id?: string | null;
+  xendit_external_id?: string | null;
 }
 
 export interface TransactionReportSummary {
@@ -149,10 +156,21 @@ export interface TransactionReportSummary {
   nett: number;
 }
 
-export interface TransactionStallSummary extends TransactionReportSummary {
-  ark_used: number;
+/**
+ * Rekap per stall berbasis ITEM (bukan order): order lintas stall (mode
+ * Semua Stall) menyumbang ke tiap stall sesuai itemnya. Diskon/pajak/service
+ * order-level sengaja tidak dialokasikan per stall — tidak ada dasar jujur
+ * untuk membaginya.
+ */
+export interface TransactionStallSummary {
   stall_code: string | null;
   stall_name: string;
+  /** Jumlah order yang menyentuh stall ini */
+  transactions: number;
+  /** Σ qty item */
+  quantity: number;
+  /** Σ total item (setelah diskon item, sebelum diskon/pajak transaksi) */
+  sales: number;
 }
 
 export interface TransactionTopProduct {
@@ -180,6 +198,70 @@ export interface TransactionReport {
   top_products: TransactionTopProduct[];
   daily: TransactionDailyPoint[];
   rows: TransactionReportRow[];
+}
+
+export interface RushHourReportParams {
+  date_from: string;
+  date_to: string;
+  warehouse_id?: string;
+}
+
+export interface RushHourReport {
+  filters: {
+    date_from: string;
+    date_to: string;
+    warehouse_id: string | null;
+  };
+  stall_options: ReportStallOption[];
+  stall_locked: boolean;
+  summary: {
+    transactions: number;
+    revenue: number;
+    average_ticket: number;
+  };
+  peak_hour: {
+    hour: number | null;
+    hour_label: string | null;
+    dow: number | null;
+    dow_label: string | null;
+    transactions: number;
+    revenue: number;
+  };
+  peak_revenue_hour: {
+    hour: number | null;
+    hour_label: string | null;
+    dow: number | null;
+    dow_label: string | null;
+    transactions: number;
+    revenue: number;
+  };
+  peak_day: {
+    hour: number | null;
+    hour_label: string | null;
+    dow: number | null;
+    dow_label: string | null;
+    transactions: number;
+    revenue: number;
+  };
+  hourly: Array<{
+    hour: number;
+    label: string;
+    transactions: number;
+    revenue: number;
+    average_ticket: number;
+  }>;
+  weekdays: Array<{
+    dow: number;
+    label: string;
+    transactions: number;
+    revenue: number;
+  }>;
+  heatmap: Array<{
+    hour: number;
+    dow: number;
+    transactions: number;
+    revenue: number;
+  }>;
 }
 
 export interface ProductSalesReportParams {

@@ -134,6 +134,54 @@ describe("queueItemProgress", () => {
   });
 });
 
+describe("sourceQueueBoardOrders via splitQueueBoardOrders", () => {
+  it("shows one queue row for three children of the same checkout", () => {
+    const items = (id: string, status: string) => [
+      {
+        id,
+        product_id: "p",
+        product_name: id,
+        product_sku: id,
+        quantity: 1,
+        unit_price: 1,
+        kitchen_status: status,
+      },
+    ];
+    const { preparing, ready } = splitQueueBoardOrders([
+      order({
+        id: "child-a",
+        checkout_id: "chk-1",
+        queue_number: "007",
+        station_status: "preparing",
+        pos_order_items: items("nasi", "preparing"),
+      }),
+      order({
+        id: "child-b",
+        checkout_id: "chk-1",
+        queue_number: "007",
+        station_status: "ready",
+        pos_order_items: items("esteh", "ready"),
+      }),
+      order({
+        id: "child-c",
+        checkout_id: "chk-1",
+        queue_number: "007",
+        station_status: "preparing",
+        pos_order_items: items("puding", "preparing"),
+      }),
+    ]);
+
+    expect(preparing).toHaveLength(1);
+    expect(ready).toHaveLength(1);
+    expect(preparing[0]?.queue_number).toBe("007");
+    expect(preparing[0]?.pos_order_items.map((item) => item.id)).toEqual([
+      "nasi",
+      "esteh",
+      "puding",
+    ]);
+  });
+});
+
 describe("readyItemKeys", () => {
   it("keys ready items for chime tracking", () => {
     const keys = readyItemKeys([

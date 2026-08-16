@@ -6,6 +6,7 @@ import {
   getClosingReport,
   getTransactionReport,
   getProductSalesReport,
+  getRushHourReport,
 } from "./api";
 import { reportsQueryKeys } from "./query-keys";
 import type {
@@ -13,6 +14,7 @@ import type {
   ClosingReportParams,
   TransactionReportParams,
   ProductSalesReportParams,
+  RushHourReportParams,
 } from "./types";
 
 export const useProfitReport = (params: ProfitReportParams) =>
@@ -43,6 +45,14 @@ export const useProductSalesReport = (params: ProductSalesReportParams) =>
   useQuery({
     queryKey: reportsQueryKeys.productSales(params),
     queryFn: () => getProductSalesReport(params),
+    placeholderData: keepPreviousData,
+    enabled: Boolean(params.date_from && params.date_to),
+  });
+
+export const useRushHourReport = (params: RushHourReportParams) =>
+  useQuery({
+    queryKey: reportsQueryKeys.rushHour(params),
+    queryFn: () => getRushHourReport(params),
     placeholderData: keepPreviousData,
     enabled: Boolean(params.date_from && params.date_to),
   });

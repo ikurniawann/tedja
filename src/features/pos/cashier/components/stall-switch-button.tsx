@@ -37,6 +37,7 @@ type StallOption = { id: string; name: string; code: string };
  */
 export function StallSwitchButton() {
   const [allowed, setAllowed] = useState<boolean | null>(null);
+  const [allAccess, setAllAccess] = useState(false);
   const [active, setActive] = useState<StallOption | null>(null);
   const [stalls, setStalls] = useState<StallOption[]>([]);
   const [open, setOpen] = useState(false);
@@ -55,6 +56,7 @@ export function StallSwitchButton() {
         const json = await res.json();
         // API kini 200 utk semua user login; izin pindah ada di can_switch.
         setAllowed(Boolean(json.data?.can_switch));
+        setAllAccess(Boolean(json.data?.all_access));
         setActive(json.data?.active ?? null);
         setStalls(json.data?.stalls ?? []);
       } catch {
@@ -69,9 +71,9 @@ export function StallSwitchButton() {
   // Tanpa izin / masih memuat / tidak ada pilihan lain → tidak ada tombol.
   if (!allowed || stalls.length === 0) return null;
 
-  async function switchTo(stall: StallOption) {
+  async function switchTo(stall: StallOption | null) {
     if (switchingId) return;
-    if (stall.id === active?.id) {
+    if ((stall?.id ?? null) === (active?.id ?? null)) {
       setOpen(false);
       return;
     }
@@ -84,16 +86,16 @@ export function StallSwitchButton() {
       /* localStorage bisa tidak tersedia — biarkan server yang menolak */
     }
 
-    setSwitchingId(stall.id);
+    setSwitchingId(stall?.id ?? "__all__");
     try {
       const res = await fetch("/api/auth/active-stall", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ warehouse_id: stall.id }),
+        body: JSON.stringify({ warehouse_id: stall?.id ?? null }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error ?? "Gagal pindah stall");
-      toast.success(`Pindah ke ${stall.name} — memuat ulang…`);
+      toast.success(`Pindah ke ${stall?.name ?? "Semua Stall"} — memuat ulang…`);
       // Reload penuh, bukan invalidate query: katalog produk, billing, dan
       // gate stall semuanya diputuskan server per-request dari cookie.
       window.location.reload();
@@ -113,7 +115,9 @@ export function StallSwitchButton() {
         className="gap-1.5 border-border"
       >
         <Store className="h-3.5 w-3.5" />
-        <span className="max-w-40 truncate">{active ? active.name : "Pilih Stall"}</span>
+        <span className="max-w-40 truncate">
+          {active ? active.name : allAccess ? "Semua Stall" : "Pilih Stall"}
+        </span>
       </Button>
 
       <Dialog open={open} onOpenChange={setOpen}>
@@ -126,6 +130,41 @@ export function StallSwitchButton() {
           </DialogPanelHeader>
           <DialogPanelBody>
             <ul className="max-h-72 space-y-2 overflow-y-auto pr-0.5 [scrollbar-width:thin]">
+              {allAccess ? (
+                <li>
+                  <button
+                    type="button"
+                    disabled={switchingId !== null}
+                    onClick={() => void switchTo(null)}
+                    className={`flex w-full items-center gap-2.5 rounded-lg border px-3 py-2.5 text-left transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                      active === null
+                        ? "border-primary/40 bg-primary/5"
+                        : "border-gray-200/80 bg-white hover:border-primary/30 hover:bg-primary/5"
+                    }`}
+                  >
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-gray-200/70 bg-muted/50 text-muted-foreground">
+                      {switchingId === "__all__" ? (
+                        <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                      ) : (
+                        <BuildingStorefrontIcon className="h-4 w-4" />
+                      )}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium text-foreground">Semua Stall</span>
+                      <span className="block truncate text-xs text-muted-foreground">
+                        Katalog gabungan — 1 transaksi boleh lintas stall
+                      </span>
+                    </span>
+                    {active === null ? (
+                      <span className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-primary">
+                        <Check className="h-3.5 w-3.5" /> Aktif
+                      </span>
+                    ) : (
+                      <span className="shrink-0 text-xs font-medium text-primary">Pilih</span>
+                    )}
+                  </button>
+                </li>
+              ) : null}
               {stalls.map((stall) => {
                 const isActive = stall.id === active?.id;
                 const busy = switchingId === stall.id;

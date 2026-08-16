@@ -27,8 +27,11 @@ const METHOD_LABELS: Record<string, string> = {
   nfc_tab: "Tab Gelang",
 };
 
-const metodeBayar = (method: string): string =>
-  METHOD_LABELS[method] ?? method.replace(/_/g, " ").toUpperCase();
+const metodeBayar = (method: string): string => {
+  const mapped = METHOD_LABELS[method.trim().toLowerCase()];
+  if (mapped) return mapped;
+  return method.trim() || method.replace(/_/g, " ").toUpperCase();
+};
 
 /**
  * Normalisasi nomor WA dari input kasir: `08xx`/`+62`/spasi/strip → `628xx`.

@@ -19,7 +19,7 @@ describe("resolveTableBoardStatus", () => {
     expect(
       resolveTableBoardStatus({
         tableStatus: "available",
-        activeOrder: { payment_status: "unpaid", pre_settled_at: null },
+        activeOrders: [{ payment_status: "unpaid", pre_settled_at: null }],
       })
     ).toBe("occupied");
   });
@@ -27,10 +27,12 @@ describe("resolveTableBoardStatus", () => {
   it("returns billing when pre-settled", () => {
     expect(
       resolveTableBoardStatus({
-        activeOrder: {
-          payment_status: "unpaid",
-          pre_settled_at: "2026-07-12T08:00:00.000Z",
-        },
+        activeOrders: [
+          {
+            payment_status: "unpaid",
+            pre_settled_at: "2026-07-12T08:00:00.000Z",
+          },
+        ],
       })
     ).toBe("billing");
   });
@@ -39,8 +41,39 @@ describe("resolveTableBoardStatus", () => {
     expect(
       resolveTableBoardStatus({
         tableStatus: "reserved",
-        activeOrder: { pre_settled_at: null },
+        activeOrders: [{ pre_settled_at: null }],
       })
     ).toBe("occupied");
+  });
+
+  it("is occupied when any unpaid order exists", () => {
+    expect(
+      resolveTableBoardStatus({
+        activeOrders: [{ payment_status: "unpaid" }, { payment_status: "paid" }],
+      })
+    ).toBe("occupied");
+  });
+
+  it("is billing when any active order is pre-settled", () => {
+    expect(
+      resolveTableBoardStatus({
+        activeOrders: [
+          { payment_status: "unpaid", pre_settled_at: null },
+          {
+            payment_status: "unpaid",
+            pre_settled_at: "2026-08-15T10:00:00.000Z",
+          },
+        ],
+      })
+    ).toBe("billing");
+  });
+
+  it("stays available when only paid orders remain", () => {
+    expect(
+      resolveTableBoardStatus({
+        tableStatus: "occupied",
+        activeOrders: [{ payment_status: "paid" }],
+      })
+    ).toBe("available");
   });
 });

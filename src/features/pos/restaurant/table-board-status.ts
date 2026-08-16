@@ -4,24 +4,30 @@ export type TableBoardActiveOrder = {
 } | null;
 
 export type TableBoardStatusInput = {
-  /** Master / DB status when no active order drives the board */
+  /** Master / DB status when no unpaid/active order drives the board */
   tableStatus?: string | null;
-  activeOrder?: TableBoardActiveOrder;
+  activeOrders?: TableBoardActiveOrder[];
 };
+
+function isPaid(order: NonNullable<TableBoardActiveOrder>) {
+  return String(order.payment_status || "unpaid").toLowerCase() === "paid";
+}
 
 /**
  * Restaurant denah display status.
- * - available (green): no active order
- * - occupied (orange): active order, not pre-settled
- * - billing (red): pre-settled, awaiting payment
+ * - available (green): no unpaid order
+ * - occupied (orange): any unpaid/active order, none pre-settled
+ * - billing (red): any unpaid order with pre_settled_at
  * - reserved / maintenance: pass-through when idle
  */
 export function resolveTableBoardStatus(input: TableBoardStatusInput): string {
-  const order = input.activeOrder;
-  if (order) {
-    if (order.pre_settled_at) return "billing";
-    return "occupied";
-  }
+  const unpaid = (input.activeOrders ?? []).filter(
+    (order): order is NonNullable<TableBoardActiveOrder> =>
+      Boolean(order) && !isPaid(order)
+  );
+
+  if (unpaid.some((order) => Boolean(order.pre_settled_at))) return "billing";
+  if (unpaid.length > 0) return "occupied";
 
   const raw = String(input.tableStatus || "available").toLowerCase();
   if (raw === "reserved" || raw === "maintenance") return raw;

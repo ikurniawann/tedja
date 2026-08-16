@@ -159,6 +159,47 @@ export async function getXenditQrCode(
   return { ...payload, id: String(payload.id || qrId) };
 }
 
+export async function getXenditQrCodeByReferenceId(
+  secretKey: string,
+  referenceId: string
+): Promise<Record<string, unknown> & { id: string; qr_string?: string; amount?: number; expires_at?: string | null }> {
+  const auth = Buffer.from(`${secretKey}:`).toString("base64");
+  const response = await fetch(
+    `https://api.xendit.co/qr_codes?reference_id=${encodeURIComponent(referenceId)}`,
+    {
+      method: "GET",
+      headers: {
+        Authorization: `Basic ${auth}`,
+        "api-version": "2022-07-31",
+      },
+    }
+  );
+  const payload = (await response.json().catch(() => ({}))) as
+    | Record<string, unknown>
+    | Record<string, unknown>[];
+  if (!response.ok) {
+    const message =
+      payload && !Array.isArray(payload) && typeof payload.message === "string"
+        ? payload.message
+        : `Failed to lookup QRIS (${response.status})`;
+    throw new Error(message);
+  }
+
+  const rows = Array.isArray(payload)
+    ? payload
+    : Array.isArray((payload as Record<string, unknown>).data)
+      ? ((payload as Record<string, unknown>).data as Record<string, unknown>[])
+      : payload && typeof payload === "object" && (payload as Record<string, unknown>).id
+        ? [payload as Record<string, unknown>]
+        : [];
+  const row = rows[0];
+  const id = String(row?.id || "");
+  if (!row || !id) {
+    throw new Error("QRIS existing tidak ditemukan untuk checkout ini");
+  }
+  return { ...row, id };
+}
+
 export async function getXenditQrPayments(
   secretKey: string,
   qrId: string

@@ -46,6 +46,12 @@ export interface Product {
    * EPIC-039 — 'merchandise' = barang beli-jadi-jual ber-stok (Fase A/B).
    */
   product_kind?: 'regular' | 'gift_card' | 'merchandise';
+  warehouse_id?: string;
+  warehouse_name?: string;
+  /** Stall asal produk — badge katalog/keranjang & struk mode Semua Stall */
+  stall_warehouse_id?: string | null;
+  stall_code?: string | null;
+  stall_name?: string | null;
   variants?: ProductVariant[];
   /** EPIC-039 Fase B — varian merchandise ber-stok per SKU */
   skus?: ProductSku[];
@@ -93,9 +99,11 @@ export async function getProducts(params?: { category?: string; search?: string 
     data: Product[];
     meta?: {
       stall_scoped?: boolean;
+      all_stalls?: boolean;
       warehouse_ids?: string[];
       reason?: string;
       product_count?: number;
+      active_mode?: "unset" | "all" | "stall";
     };
   }>(`/products${queryString ? '?' + queryString : ''}`);
 }
@@ -398,6 +406,8 @@ export interface Order {
   status?: string;
   payment_status?: string;
   payment_method?: string;
+  payment_method_code?: string | null;
+  payment_method_name?: string | null;
   customer?: Customer;
   customer_id?: string;
   table?: { table_number?: string | null; qr_code?: string | null } | null;
@@ -430,6 +440,8 @@ export interface Order {
   special_requests?: string;
   items?: any[];
   splits?: any[];
+  checkout_id?: string | null;
+  sold_from?: string | null;
   /** Void tracking */
   voided_at?: string;
   voided_by?: string;
@@ -483,6 +495,10 @@ export interface CreateOrderRequest {
   promo_code?: string;
   /** Link order to active cashier shift */
   shift_id?: string;
+  xendit_qr_id?: string;
+  xendit_external_id?: string;
+  payment_method_code?: string;
+  payment_method_name?: string;
 }
 
 export interface IssuedGiftCardResponse {
@@ -505,15 +521,97 @@ export async function createOrder(order: CreateOrderRequest) {
   });
 }
 
+export interface CreateCheckoutRequest extends CreateOrderRequest {
+  payment_status?: 'paid' | 'unpaid';
+}
+
+export interface CheckoutResponse {
+  checkout_id: string;
+  checkout_number: string;
+  queue_number: string;
+  order_ids: string[];
+}
+
+export async function createCheckout(checkout: CreateCheckoutRequest) {
+  return fetchAPI<{ success: boolean; data: CheckoutResponse; error?: string }>('/checkouts', {
+    method: 'POST',
+    body: JSON.stringify(checkout),
+  });
+}
+
+export async function completeCheckout(
+  checkoutId: string,
+  tender: {
+    payment_method: string;
+    amount_paid: number;
+    payment_method_code?: string;
+    payment_method_name?: string;
+  }
+) {
+  return fetchAPI<{ success: boolean; data: { order_ids: string[] }; error?: string }>(
+    `/checkouts/${encodeURIComponent(checkoutId)}/complete`,
+    { method: 'POST', body: JSON.stringify(tender) }
+  );
+}
+
+export async function cancelCheckout(checkoutId: string) {
+  return fetchAPI<{ success: boolean; data?: { checkout_id: string }; error?: string }>(
+    `/checkouts/${encodeURIComponent(checkoutId)}/cancel`,
+    { method: 'POST' }
+  );
+}
+
+export async function getCheckout(checkoutId: string) {
+  return fetchAPI<{
+    success: boolean;
+    data?: {
+      id: string;
+      checkout_number?: string | null;
+      queue_number?: string | null;
+      table_id?: string | null;
+      payment_status?: string | null;
+      customer_id?: string | null;
+      notes?: string | null;
+      total_amount?: number | string | null;
+      order_type?: string | null;
+      order_ids?: string[];
+      items?: Array<{
+        id?: string;
+        product_id?: string;
+        product_name?: string;
+        quantity?: number | string;
+        unit_price?: number | string;
+        subtotal?: number | string;
+        total_amount?: number | string;
+        variants?: Array<{ name?: string }>;
+        modifiers?: Array<{ name?: string }>;
+        station?: string;
+      }>;
+    };
+    error?: string;
+  }>(`/checkouts/${encodeURIComponent(checkoutId)}`);
+}
+
 export async function getOrders(params?: {
   status?: string;
   customer_id?: string;
   payment_status?: string;
   order_type?: string;
+  payment_method?: string;
+  date_from?: string;
+  date_to?: string;
+  q?: string;
   active_only?: boolean;
   limit?: number;
 }) {
-  const queryString = params ? new URLSearchParams(params as any).toString() : '';
+  const search = new URLSearchParams();
+  if (params) {
+    for (const [key, value] of Object.entries(params)) {
+      if (value === undefined || value === null || value === '') continue;
+      search.set(key, String(value));
+    }
+  }
+  const queryString = search.toString();
   return fetchAPI<{ success: boolean; data: any[] }>(`/orders${queryString ? '?' + queryString : ''}`);
 }
 
@@ -537,7 +635,26 @@ export interface PosTable {
     payment_status?: string;
     total_amount: number;
     pre_settled_at?: string | null;
+    checkout_id?: string | null;
+    sold_from?: string | null;
   } | null;
+  active_orders?: Array<{
+    id: string;
+    order_number?: string;
+    status?: string;
+    payment_status?: string;
+    total_amount: number;
+    pre_settled_at?: string | null;
+    checkout_id?: string | null;
+    sold_from?: string | null;
+  }>;
+  open_checkouts?: Array<{
+    id: string;
+    checkout_number?: string | null;
+    payment_status?: string | null;
+    total_amount: number;
+  }>;
+  bill_count?: number;
 }
 
 export async function getPOSTables(params?: { include_inactive?: boolean }) {
@@ -578,7 +695,7 @@ export async function getCustomerFavoriteProducts(customerId: string, products: 
 export async function updateOrderStatus(
   orderId: string,
   status: string,
-  additionalData?: { payment_status?: string; payment_method?: string; amount_paid?: number; ark_coins_used?: number; cancelled_reason?: string; nfc_tab_uid?: string }
+  additionalData?: { payment_status?: string; payment_method?: string; amount_paid?: number; ark_coins_used?: number; cancelled_reason?: string; nfc_tab_uid?: string; xendit_qr_id?: string; xendit_external_id?: string; payment_method_code?: string; payment_method_name?: string }
 ) {
   const response = await fetch(`/api/pos/orders/${orderId}`, {
     method: 'PATCH',

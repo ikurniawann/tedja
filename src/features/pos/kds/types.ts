@@ -19,6 +19,8 @@ export interface KDSOrder {
   id: string;
   order_number: string;
   queue_number?: string | null;
+  checkout_id?: string | null;
+  warehouse_id?: string | null;
   station_status?: string;
   status: string;
   payment_status: string;
@@ -36,10 +38,17 @@ export interface KDSOrder {
   is_urgent: boolean;
 }
 
+export interface KdsStallOption {
+  id: string;
+  name: string;
+  code: string;
+}
+
 export interface KdsListParams {
   status?: string[];
   station?: string;
   branchId?: string;
+  warehouseId?: string;
   dateFrom?: string;
   dateTo?: string;
   limit?: number;

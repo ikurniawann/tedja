@@ -13,8 +13,23 @@ import {
   type MerchStockClaim,
 } from '@/lib/pos/merchandise-stock';
 import { normalizeGuestCount } from '@/lib/pos/guest-count';
+import { getApiUserScope } from '@/lib/api/scope';
+import { getStallAccess } from '@/lib/auth/stall-access';
+import {
+  assertAllModeSellStallAssigned,
+  canSellMixedStall,
+  resolveSingleStallSellFromAllMode,
+} from '@/lib/pos/central-cashier';
+import {
+  MixedCheckoutError,
+  createMixedCheckout,
+  guardMixedCheckoutCart,
+  resolveOrderSoldFrom,
+} from '@/lib/pos/create-mixed-checkout';
 import {
   assertOrderItemsMatchSellStall,
+  loadCentralCashierGate,
+  loadPosProductWarehouseIds,
   resolvePosSellStallForUser,
 } from '@/lib/pos/pos-sell-stall-server';
 import { withTransaction } from '@/lib/db';
@@ -43,12 +58,42 @@ import {
   normalizeStation,
 } from '@/lib/pos/kitchen-station';
 import { AccountingPostError } from '@/lib/pos/accounting-posting';
+import { resolvePaymentCatalogStamp } from '@/lib/pos/payment-methods';
+import { sanitizeXenditRef } from '@/lib/pos/xendit-ids';
 import {
   buildDiscountReason,
   computeOrderDiscountStack,
   type DiscountType,
 } from '@/lib/pos/manual-discount';
 import { evaluateActiveOffersForPosCart } from '@/lib/promo/offer-pos';
+import { parseReportDateRange } from '@/lib/pos/report-stall-filter';
+
+const ORDER_LIST_STATUSES = new Set([
+  'pending',
+  'preparing',
+  'ready',
+  'completed',
+  'cancelled',
+  'voided',
+  'merged',
+]);
+const ORDER_LIST_PAYMENT_STATUSES = new Set(['paid', 'unpaid', 'partial', 'refunded']);
+const ORDER_LIST_TYPES = new Set(['dine_in', 'takeaway', 'delivery', 'self_order']);
+const ORDER_LIST_PAYMENT_METHODS = new Set([
+  'cash',
+  'qris',
+  'credit',
+  'credit_card',
+  'ark_coin',
+  'nfc_tab',
+  'gift_card',
+]);
+
+function clampOrderListLimit(raw: string | null) {
+  const parsed = parseInt(raw || '50', 10);
+  if (!Number.isFinite(parsed)) return 50;
+  return Math.min(Math.max(parsed, 1), 500);
+}
 
 type PosOrderItemRequest = {
   product_id?: string;
@@ -106,6 +151,10 @@ type PosOrderBody = {
   /** Data pembeli saat MENJUAL gift card — nomor dipakai kirim kode via WA (Fase B) */
   gift_card_buyer_name?: string;
   gift_card_buyer_phone?: string;
+  xendit_qr_id?: string;
+  xendit_external_id?: string;
+  payment_method_code?: string;
+  payment_method_name?: string;
 };
 
 type PosOrderRow = {
@@ -142,8 +191,12 @@ export async function GET(request: NextRequest) {
     const customerId = searchParams.get('customer_id');
     const paymentStatus = searchParams.get('payment_status');
     const orderType = searchParams.get('order_type');
+    const paymentMethod = searchParams.get('payment_method');
+    const dateFrom = searchParams.get('date_from');
+    const dateTo = searchParams.get('date_to');
+    const search = searchParams.get('q')?.trim() || '';
     const activeOnly = searchParams.get('active_only') === 'true';
-    const limit = parseInt(searchParams.get('limit') || '50');
+    const limit = clampOrderListLimit(searchParams.get('limit'));
 
     let query = db
       .from('pos_orders')
@@ -156,10 +209,34 @@ export async function GET(request: NextRequest) {
       .order('ordered_at', { ascending: false })
       .limit(limit);
 
-    if (status) query = query.eq('status', status);
+    if (status && ORDER_LIST_STATUSES.has(status)) query = query.eq('status', status);
     if (customerId) query = query.eq('customer_id', customerId);
-    if (paymentStatus) query = query.eq('payment_status', paymentStatus);
-    if (orderType) query = query.eq('order_type', orderType);
+    if (paymentStatus && ORDER_LIST_PAYMENT_STATUSES.has(paymentStatus)) {
+      query = query.eq('payment_status', paymentStatus);
+    }
+    if (orderType && ORDER_LIST_TYPES.has(orderType)) query = query.eq('order_type', orderType);
+    if (paymentMethod && ORDER_LIST_PAYMENT_METHODS.has(paymentMethod)) {
+      const method =
+        paymentMethod === 'credit_card' ? 'credit' : paymentMethod;
+      query = query.eq('payment_method', method);
+    }
+    if (dateFrom || dateTo) {
+      try {
+        const range = parseReportDateRange(dateFrom, dateTo);
+        query = query.gte('ordered_at', range.startIso).lte('ordered_at', range.endIso);
+      } catch (rangeError) {
+        return NextResponse.json(
+          { success: false, error: getErrorMessage(rangeError) },
+          { status: 400 }
+        );
+      }
+    }
+    if (search) {
+      const safe = search.replace(/[%_*]/g, '').slice(0, 64);
+      if (safe) {
+        query = query.or(`order_number.ilike.%${safe}%,queue_number.ilike.%${safe}%`);
+      }
+    }
     if (activeOnly) query = query.not('status', 'in', '("completed","cancelled","voided","merged")');
 
     const { data, error } = await query;
@@ -241,13 +318,119 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Items and total amount are required' }, { status: 400 });
     }
 
-    const sellStall = await resolvePosSellStallForUser(sessionUserId);
-    if (!sellStall.ok) {
-      return NextResponse.json({ success: false, error: sellStall.message }, { status: 400 });
+    const productIds = items.map((item) => String(item.product_id || ''));
+    const warehouseByProduct = await loadPosProductWarehouseIds(productIds);
+    const itemWarehouses = productIds.map((id) => warehouseByProduct.get(id) ?? null);
+    const scope = await getApiUserScope();
+    const gate = await loadCentralCashierGate({
+      userId: sessionUserId,
+      role: scope?.role ?? null,
+    });
+    const canSellMixed = canSellMixedStall({
+      hasCentralMenu: gate.hasCentralMenu,
+      canCentralCheckout: gate.canCentralCheckout,
+      activeMode: gate.activeMode,
+    });
+    const mixedGuard = guardMixedCheckoutCart({
+      productIds,
+      warehouseByProduct,
+      canSellMixed,
+      hasSplits: Array.isArray(body.splits) && body.splits.length > 0,
+      discountAmount: discount_amount,
+      promoCode: body.promo_code,
+    });
+    if (!mixedGuard.ok) {
+      return NextResponse.json({ success: false, error: mixedGuard.message }, { status: 400 });
     }
+    if (mixedGuard.createCheckout) {
+      const privilegeDb = createPgClient();
+      const privilege = await checkProductPrivileges(
+        privilegeDb,
+        productIds,
+        customer_id
+      );
+      if (!privilege.allowed) {
+        return NextResponse.json(
+          { success: false, error: privilege.message },
+          { status: 403 }
+        );
+      }
+      const result = await createMixedCheckout({
+        items,
+        warehouseByProduct,
+        orderType: order_type,
+        customerId: customer_id,
+        cashierId: cashier_id || await resolveCashierId(),
+        serverId: server_id,
+        tableId: table_id,
+        guestCount: body.guest_count,
+        discountAmount: discount_amount,
+        discountReason: discount_reason,
+        promoCode: body.promo_code,
+        taxAmount: tax_amount,
+        serviceChargeAmount: service_charge_amount,
+        otherChargesAmount: other_charges_amount,
+        chargesBreakdown: charges_breakdown,
+        totalAmount: total_amount,
+        paymentMethod: payment_method,
+        amountPaid: amount_paid,
+        arkCoinsUsed: ark_coins_used,
+        notes,
+        specialRequests: special_requests,
+        companyId: scope?.companyId,
+        branchId: body.branch_id || scope?.branchId,
+        shiftId: body.shift_id,
+        sessionUserId,
+        paymentMethodCode: body.payment_method_code,
+        paymentMethodName: body.payment_method_name,
+      });
+      return NextResponse.json(
+        {
+          success: true,
+          data: {
+            checkout_id: result.checkoutId,
+            checkout_number: result.checkoutNumber,
+            queue_number: result.queueNumber,
+            order_ids: result.orderIds,
+          },
+        },
+        { status: 201 }
+      );
+    }
+    const soldFrom = resolveOrderSoldFrom({
+      isCentralCashier: gate.hasCentralMenu && gate.canCentralCheckout,
+    });
+    const singleStallFromAll = resolveSingleStallSellFromAllMode({
+      itemWarehouses,
+      canSellMixed,
+    });
+
+    let sellWarehouseId: string;
+    if (singleStallFromAll) {
+      const access = await getStallAccess(
+        sessionUserId,
+        scope?.role ?? null,
+        scope?.branchId ?? null
+      );
+      const assigned = assertAllModeSellStallAssigned(
+        singleStallFromAll,
+        access.stalls.map((stall) => stall.id)
+      );
+      if (!assigned.ok) {
+        return NextResponse.json({ success: false, error: assigned.message }, { status: 400 });
+      }
+      sellWarehouseId = singleStallFromAll;
+    } else {
+      const sellStall = await resolvePosSellStallForUser(sessionUserId);
+      if (!sellStall.ok) {
+        return NextResponse.json({ success: false, error: sellStall.message }, { status: 400 });
+      }
+      sellWarehouseId = sellStall.warehouseId;
+    }
+
     const itemStallCheck = await assertOrderItemsMatchSellStall(
-      items.map((item) => String(item.product_id || '')),
-      sellStall.warehouseId
+      productIds,
+      sellWarehouseId
     );
     if (!itemStallCheck.ok) {
       return NextResponse.json({ success: false, error: itemStallCheck.message }, { status: 400 });
@@ -364,7 +547,8 @@ export async function POST(request: NextRequest) {
         .update({
           company_id: venueForSplit.companyId,
           branch_id: body.branch_id || venueForSplit.branchId,
-          warehouse_id: sellStall.warehouseId,
+          warehouse_id: sellWarehouseId,
+          sold_from: soldFrom,
         })
         .eq('id', result.order_id);
       await ensureQueueNumber(db, {
@@ -692,7 +876,7 @@ export async function POST(request: NextRequest) {
         payment_status: deferPaid ? 'unpaid' : 'paid',
         company_id: venue.companyId,
         branch_id: body.branch_id || venue.branchId,
-        warehouse_id: sellStall.warehouseId,
+        warehouse_id: sellWarehouseId,
         customer_id: customer_id || null,
         cashier_id: effectiveCashierId,
         server_id: server_id || null,
@@ -716,6 +900,13 @@ export async function POST(request: NextRequest) {
         notes: notes || null,
         special_requests: special_requests || null,
         ordered_at: new Date().toISOString(),
+        sold_from: soldFrom,
+        xendit_qr_id: sanitizeXenditRef(body.xendit_qr_id),
+        xendit_external_id: sanitizeXenditRef(body.xendit_external_id),
+        ...resolvePaymentCatalogStamp({
+          code: body.payment_method_code,
+          name: body.payment_method_name,
+        }),
       })
       .select()
       .single();
@@ -735,7 +926,7 @@ export async function POST(request: NextRequest) {
           payment_status: deferPaid ? 'unpaid' : 'paid',
           company_id: venue.companyId,
           branch_id: body.branch_id || venue.branchId,
-          warehouse_id: sellStall.warehouseId,
+          warehouse_id: sellWarehouseId,
           customer_id: customer_id || null,
           cashier_id: effectiveCashierId,
           server_id: server_id || null,
@@ -1163,6 +1354,9 @@ export async function POST(request: NextRequest) {
       { status: 201 }
     );
   } catch (error: unknown) {
+    if (error instanceof MixedCheckoutError) {
+      return NextResponse.json({ success: false, error: error.message }, { status: error.status });
+    }
     if (error instanceof AccountingPostError) {
       return NextResponse.json({ success: false, error: error.message }, { status: 500 });
     }

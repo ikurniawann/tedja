@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { createPgClient } from "@/lib/pg/create-client";
 import { getPosSession } from "@/lib/api/auth";
 import { allocateQueueNumber } from "@/lib/pos/queue-number";
+import { canAppendTransferItems } from "@/lib/pos/table-sale-target";
 
 const ACTIVE_STATUSES = ["pending", "confirmed", "preparing", "ready", "served"];
 
@@ -139,7 +140,7 @@ export async function POST(
 
     const { data: source, error: sourceErr } = await db
       .from("pos_orders")
-      .select("id, status, table_id, discount_amount, tax_amount, company_id, branch_id")
+      .select("id, status, table_id, discount_amount, tax_amount, company_id, branch_id, checkout_id, sold_from")
       .eq("id", sourceOrderId)
       .single();
 
@@ -197,17 +198,26 @@ export async function POST(
     let targetOrderId: string | null = null;
     let createdTarget = false;
 
-    const { data: existingTarget } = await db
+    const sourceBill = {
+      checkout_id: (source as { checkout_id?: string | null }).checkout_id ?? null,
+      sold_from: (source as { sold_from?: string | null }).sold_from ?? null,
+    };
+
+    const existingTargets = await db
       .from("pos_orders")
-      .select("id, status")
+      .select("id, status, checkout_id, sold_from")
       .eq("table_id", target_table_id)
       .in("status", ACTIVE_STATUSES)
-      .order("ordered_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .order("ordered_at", { ascending: false });
 
-    if (existingTarget) {
-      targetOrderId = existingTarget.id;
+    const compatibleTarget = ((existingTargets.data || []) as Array<{
+      id: string;
+      checkout_id?: string | null;
+      sold_from?: string | null;
+    }>).find((row) => canAppendTransferItems(sourceBill, row));
+
+    if (compatibleTarget) {
+      targetOrderId = compatibleTarget.id;
       if (await orderHasUnpaidSplits(db, targetOrderId)) {
         return Response.json(
           {
@@ -249,6 +259,8 @@ export async function POST(
           branch_id: (source as { branch_id?: string | null }).branch_id || null,
           cashier_id: sessionUserId,
           table_id: target_table_id,
+          sold_from: sourceBill.sold_from === "central" ? "central" : "stall",
+          checkout_id: null,
           subtotal: 0,
           discount_amount: 0,
           tax_amount: 0,

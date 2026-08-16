@@ -121,8 +121,12 @@ describe("createUserEmployeeSchema", () => {
       branch_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567892",
       default_warehouse_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567893",
       can_switch_stall: true,
+      can_central_checkout: true,
     });
     expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.can_central_checkout).toBe(true);
+    }
   });
 
   it("rejects mismatched approval workflow for module", () => {

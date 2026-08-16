@@ -42,6 +42,7 @@ export function restaurantPath(opts?: { immersive?: boolean }): string {
 export function buildCashierHandoffUrl(opts: {
   tableId?: string;
   orderId?: string;
+  checkoutId?: string;
   orderType?: "dine_in" | "takeaway";
   pay?: boolean;
   immersive?: boolean;
@@ -54,7 +55,11 @@ export function buildCashierHandoffUrl(opts: {
   // Hanya dioper bila > 1: "1" adalah default, dan URL yang bersih lebih mudah
   // dibaca saat menelusuri masalah.
   if (opts.pax && opts.pax > 1) params.set("pax", String(opts.pax));
-  if (opts.orderId) params.set("orderId", opts.orderId);
+  if (opts.checkoutId) {
+    params.set("checkoutId", opts.checkoutId);
+  } else if (opts.orderId) {
+    params.set("orderId", opts.orderId);
+  }
   if (opts.orderType) params.set("orderType", opts.orderType);
   if (opts.pay) params.set("pay", "1");
   if (opts.immersive) {

@@ -61,7 +61,20 @@ export interface OffProduct {
   variants?: any[];
   modifiers?: any[];
   xp?: number;
+  warehouse_id?: string | null;
+  warehouse_name?: string | null;
+  stall_warehouse_id?: string | null;
+  stall_code?: string | null;
+  stall_name?: string | null;
 }
+
+export type OffCatalogActiveMode = "unset" | "all" | "stall";
+
+export interface OffCatalogMeta {
+  active_mode?: OffCatalogActiveMode | null;
+}
+
+const CATALOG_META_KEY = "products_meta";
 
 export async function cacheProducts(products: OffProduct[]) {
   const store = await getStore(STORES.products, 'readwrite');
@@ -87,6 +100,40 @@ export async function getCachedProduct(id: string): Promise<OffProduct | undefin
   return new Promise((resolve, reject) => {
     const request = store.get(id);
     request.onsuccess = () => resolve(request.result as OffProduct | undefined);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+function parseCachedActiveMode(value: unknown): OffCatalogActiveMode | null {
+  if (value === "unset" || value === "all" || value === "stall") return value;
+  return null;
+}
+
+export async function cacheCatalogMeta(meta: OffCatalogMeta) {
+  const store = await getStore(STORES.lastSync, "readwrite");
+  return new Promise<void>((resolve, reject) => {
+    const request = store.put({
+      key: CATALOG_META_KEY,
+      timestamp: new Date().toISOString(),
+      active_mode: meta.active_mode ?? null,
+    });
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
+}
+
+export async function getCachedCatalogMeta(): Promise<OffCatalogMeta | null> {
+  const store = await getStore(STORES.lastSync);
+  return new Promise((resolve, reject) => {
+    const request = store.get(CATALOG_META_KEY);
+    request.onsuccess = () => {
+      const res = request.result as { active_mode?: unknown } | undefined;
+      if (!res) {
+        resolve(null);
+        return;
+      }
+      resolve({ active_mode: parseCachedActiveMode(res.active_mode) });
+    };
     request.onerror = () => reject(request.error);
   });
 }

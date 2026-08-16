@@ -1,6 +1,45 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { SESSION_COOKIE } from "@/lib/auth/constants";
 
+const PUBLIC_AUTH_PREFIXES = [
+  "/arkiv-os",
+  "/qa",
+  "/login",
+  "/portal",
+  "/career",
+  "/table-order",
+  "/photobooth",
+  "/api/job-openings/public",
+  "/api/portal",
+  "/psikotes",
+  "/api/psikotes/session",
+  "/interview",
+  "/api/interview/session",
+  "/offer",
+  "/api/offer/session",
+  "/api/table-order",
+  "/api/auth/login",
+  "/api/auth/logout",
+  "/api/files",
+  "/member",
+  "/api/member-portal",
+  "/api/wa/inbound",
+  "/api/crm/instagram/webhook",
+  "/api/payments/xendit/webhook",
+  "/booking",
+  "/api/public/booking",
+  "/pass",
+  "/shop",
+  "/api/public/shop",
+];
+
+export function isPublicAuthPath(pathname: string): boolean {
+  return (
+    pathname === "/" ||
+    PUBLIC_AUTH_PREFIXES.some((route) => pathname.startsWith(route))
+  );
+}
+
 /**
  * Middleware Edge-compatible — cek keberadaan cookie session saja.
  * Validasi session penuh (DB) dilakukan di API route / server component.
@@ -8,61 +47,7 @@ import { SESSION_COOKIE } from "@/lib/auth/constants";
 export async function updateSession(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const hasSession = Boolean(request.cookies.get(SESSION_COOKIE)?.value);
-
-  const publicRoutes = [
-    "/arkiv-os",
-    "/qa",
-    "/login",
-    "/portal",
-    "/career",
-    "/table-order",
-    "/photobooth",
-    "/api/job-openings/public",
-    "/api/portal",
-    // portal psikotes kandidat (anonim, identitas = token sesi);
-    // /api/psikotes lainnya (instruments/questions/files) tetap ber-auth
-    "/psikotes",
-    "/api/psikotes/session",
-    // portal interview AI kandidat (anonim, identitas = token sesi);
-    // /api/interview lainnya (sessions/files) tetap ber-auth
-    "/interview",
-    "/api/interview/session",
-    // portal offer kandidat (anonim, identitas = token offer)
-    "/offer",
-    "/api/offer/session",
-    "/api/table-order",
-    "/api/auth/login",
-    "/api/auth/logout",
-    "/api/files",
-    // Portal member publik (member.suluindwounderland.com) — identitas =
-    // sesi OTP WA sendiri (cookie member_session), bukan arkiv_session.
-    "/member",
-    "/api/member-portal",
-    // Penerima event dari wa-gateway (mesin yang sama) — auth = header
-    // x-gateway-token, bukan sesi user.
-    "/api/wa/inbound",
-    // Webhook Instagram dari Meta — dipanggil server Meta tanpa sesi.
-    // Auth = tanda tangan HMAC X-Hub-Signature-256 atas raw body, diperiksa
-    // di dalam route itu sendiri.
-    "/api/crm/instagram/webhook",
-    // Website booking tiket (EPIC-023 Fase D) — halaman & API publik.
-    // Status booking = capability token 64-hex; webhook Xendit diverifikasi
-    // x-callback-token di dalam route; semua endpoint ber-rate-limit.
-    "/booking",
-    "/api/public/booking",
-    // EPIC-028 B2 — halaman publik beli/status Season Pass. API pass ada di
-    // bawah /api/public/booking (sudah publik); ini untuk halaman /pass/*.
-    // Status pass = capability token 64-hex; pembelian ber-rate-limit + Xendit.
-    "/pass",
-    // Storefront e-commerce publik (EPIC-039 Fase D) — katalog, checkout,
-    // status order (capability token), dan webhook Xendit/Biteship. Webhook
-    // diverifikasi token di dalam route; endpoint publik ber-rate-limit.
-    "/shop",
-    "/api/public/shop",
-  ];
-  const isPublicRoute =
-    pathname === "/" ||
-    publicRoutes.some((route) => pathname.startsWith(route));
+  const isPublicRoute = isPublicAuthPath(pathname);
 
   if (!hasSession && !isPublicRoute) {
     if (pathname.startsWith("/api/")) {

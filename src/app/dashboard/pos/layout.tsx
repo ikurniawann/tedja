@@ -43,6 +43,8 @@ export default async function PosDashboardLayout({
         warehouse_name: user.warehouse_name,
         active_stall_id: user.active_stall_id,
         can_switch_stall: user.can_switch_stall,
+        can_central_checkout: user.can_central_checkout,
+        has_central_cashier_menu: user.has_central_cashier_menu,
       }}
       navItems={navItems}
       essOnly={essOnly}
