@@ -4,9 +4,51 @@ import { getPosSession } from '@/lib/api/auth';
 import { withTransaction } from '@/lib/db';
 import { restoreMerchandiseStockForOrder } from '@/lib/pos/merchandise-stock';
 import { findSupervisorByPin } from '@/lib/pos/supervisor-pin';
+import {
+  canVoidOrderStatus,
+  isPaidPosOrder,
+  resolveArkRefundAmount,
+  resolveCustomerStatsReversal,
+} from '@/lib/pos/void-order';
 import { releasePromoRedemption } from '@/lib/promo/promo-server';
+import {
+  IssuedGiftCardAlreadyUsedError,
+  refundGiftCardForPosOrder,
+  voidIssuedGiftCardsForPosOrder,
+} from '@/lib/giftcard/giftcard-server';
+import { voidFnbOrderFromTab } from '@/lib/ticketing/tab-server';
 import { buildVoidBesarMessage, voidDedupKey } from '@/lib/wa/notifications-messages';
 import { fireOwnerNotification, getWaNotifConfig } from '@/lib/wa/notifications-sender';
+
+type VoidOrderRow = {
+  id: string;
+  status: string | null;
+  payment_status: string | null;
+  payment_method: string | null;
+  order_number: string | null;
+  total_amount: number | string | null;
+  customer_id: string | null;
+  company_id: string | null;
+  branch_id: string | null;
+  checkout_id: string | null;
+  ark_coins_used: number | string | null;
+};
+
+async function loadVoidFamily(
+  db: ReturnType<typeof createPgClient>,
+  order: VoidOrderRow
+): Promise<VoidOrderRow[]> {
+  if (!order.checkout_id) return [order];
+  const { data, error } = await db
+    .from('pos_orders')
+    .select(
+      'id, status, payment_status, payment_method, order_number, total_amount, customer_id, company_id, branch_id, checkout_id, ark_coins_used'
+    )
+    .eq('checkout_id', order.checkout_id);
+  if (error) throw error;
+  const rows = (data ?? []) as VoidOrderRow[];
+  return rows.length > 0 ? rows : [order];
+}
 
 export async function POST(
   request: NextRequest,
@@ -48,7 +90,9 @@ export async function POST(
     // 2. Fetch order
     const { data: order, error: orderErr } = await db
       .from('pos_orders')
-      .select('id, status, payment_status, order_number, total_amount')
+      .select(
+        'id, status, payment_status, payment_method, order_number, total_amount, customer_id, company_id, branch_id, checkout_id, ark_coins_used'
+      )
       .eq('id', orderId)
       .single();
 
@@ -56,61 +100,177 @@ export async function POST(
       return Response.json({ success: false, error: 'Order not found' }, { status: 404 });
     }
 
-    if (order.status === 'voided') {
-      return Response.json({ success: false, error: 'Order already voided' }, { status: 400 });
-    }
-    if (order.status === 'completed' || order.payment_status === 'paid') {
-      return Response.json({ success: false, error: 'Cannot void paid order' }, { status: 400 });
-    }
-    if (order.status === 'merged') {
-      return Response.json({ success: false, error: 'Cannot void merged order' }, { status: 400 });
+    const source = order as VoidOrderRow;
+    if (!canVoidOrderStatus(source.status)) {
+      if (source.status === 'voided') {
+        return Response.json({ success: false, error: 'Order already voided' }, { status: 400 });
+      }
+      if (source.status === 'merged') {
+        return Response.json({ success: false, error: 'Cannot void merged order' }, { status: 400 });
+      }
+      return Response.json({ success: false, error: 'Order tidak bisa di-void' }, { status: 400 });
     }
 
-    // 3. Void the order
+    const family = await loadVoidFamily(db, source);
+    const voidable = family.filter((row) => canVoidOrderStatus(row.status));
+    if (voidable.length === 0) {
+      return Response.json({ success: false, error: 'Order already voided' }, { status: 400 });
+    }
+
+    const paidRows = voidable.filter((row) => isPaidPosOrder(row));
+    const now = new Date().toISOString();
+    const voidReason = String(reason).trim();
+
+    // 3. Balik tender dulu (idempoten) — baru stempel void, supaya retry
+    //    tidak dobel-refund bila update status gagal.
+    if (paidRows.length > 0) {
+      for (const row of voidable) {
+        try {
+          await voidIssuedGiftCardsForPosOrder({
+            orderId: row.id,
+            note: ` — void ${row.order_number || row.id}`,
+          });
+        } catch (err) {
+          if (err instanceof IssuedGiftCardAlreadyUsedError) {
+            return Response.json({ success: false, error: err.message }, { status: 409 });
+          }
+          throw err;
+        }
+      }
+
+      const { data: walletRows } = await db
+        .from('pos_wallet_transactions')
+        .select('order_id, type, amount')
+        .in('order_id', voidable.map((row) => row.id));
+      const payments = (walletRows ?? []).filter((row) => row.type === 'payment');
+      const alreadyRefunded = (walletRows ?? []).some((row) => row.type === 'refund');
+      const walletPaymentAmount = payments.reduce(
+        (max, row) => Math.max(max, Number(row.amount) || 0),
+        0
+      );
+      const arkRefund = alreadyRefunded
+        ? 0
+        : resolveArkRefundAmount({
+            paymentMethod: source.payment_method || paidRows[0]?.payment_method,
+            orders: voidable,
+            walletPaymentAmount,
+          });
+      const arkCustomerId =
+        source.customer_id ||
+        voidable.find((row) => row.customer_id)?.customer_id ||
+        null;
+      if (arkRefund > 0 && arkCustomerId) {
+        const { error: coinError } = await db.rpc('update_ark_coin_balance', {
+          p_customer_id: arkCustomerId,
+          p_amount: arkRefund,
+          p_type: 'refund',
+          p_order_id: source.id,
+          p_notes: `Void ${source.order_number || source.id}`,
+        });
+        if (coinError) {
+          return Response.json(
+            { success: false, error: 'Gagal mengembalikan ARK Coin' },
+            { status: 400 }
+          );
+        }
+      }
+
+      for (const row of voidable) {
+        if (!row.company_id || !row.branch_id) continue;
+        await refundGiftCardForPosOrder({
+          scope: { companyId: row.company_id, branchId: row.branch_id },
+          orderId: row.id,
+          createdBy: supervisor.id,
+          note: `Pengembalian saldo — void ${row.order_number || row.id}`,
+        }).catch((refundErr) =>
+          console.error(`[pos] gift_card refund failed: order=${row.id}:`, refundErr)
+        );
+        await voidFnbOrderFromTab({
+          orderId: row.id,
+          reason: voidReason,
+          createdBy: supervisor.id,
+        }).catch((tabErr) =>
+          console.error(`[pos] nfc_tab void failed: order=${row.id}:`, tabErr)
+        );
+      }
+    }
+
+    // 4. Stempel void + refunded
+    const voidIds = voidable.map((row) => row.id);
     const { error: updErr } = await db
       .from('pos_orders')
       .update({
         status: 'voided',
-        voided_at: new Date().toISOString(),
+        payment_status: paidRows.length > 0 ? 'refunded' : source.payment_status,
+        voided_at: now,
         voided_by: supervisor.id,
-        void_reason: reason.trim(),
-        updated_at: new Date().toISOString(),
+        void_reason: voidReason,
+        updated_at: now,
       })
-      .eq('id', orderId);
-
+      .in('id', voidIds);
     if (updErr) throw updErr;
 
-    // EPIC-039 Fase A — void mengembalikan stok merchandise yang sudah
-    // terpotong. Idempoten via flag inventory_deducted per baris item.
-    await restoreMerchandiseStockForOrder(db, orderId);
+    if (source.checkout_id && paidRows.length > 0) {
+      const { error: checkoutErr } = await db
+        .from('pos_checkouts')
+        .update({
+          payment_status: 'refunded',
+          updated_at: now,
+        })
+        .eq('id', source.checkout_id);
+      if (checkoutErr) {
+        console.error('[pos] checkout void stamp failed:', checkoutErr);
+      }
+    }
 
-    // EPIC-032 C1 — void melepas pemakaian kode promo (captured → released,
-    // jatah kembali). Best-effort idempoten: gagal release ≠ gagal void.
-    await withTransaction((client) =>
-      releasePromoRedemption(client, 'pos_order', orderId)
-    ).catch((err) => console.error('[pos] release promo error:', err));
+    for (const row of voidable) {
+      await restoreMerchandiseStockForOrder(db, row.id);
+      await withTransaction((client) =>
+        releasePromoRedemption(client, 'pos_order', row.id)
+      ).catch((err) => console.error('[pos] release promo error:', err));
+      await db
+        .from('pos_order_splits')
+        .update({ status: 'cancelled', updated_at: now })
+        .eq('order_id', row.id)
+        .eq('status', 'pending');
+    }
 
-    // 4. Cancel any pending splits
-    await db
-      .from('pos_order_splits')
-      .update({ status: 'cancelled', updated_at: new Date().toISOString() })
-      .eq('order_id', orderId)
-      .eq('status', 'pending');
+    const stats = resolveCustomerStatsReversal({
+      customerId: source.customer_id || voidable.find((row) => row.customer_id)?.customer_id,
+      paidOrders: paidRows,
+    });
+    if (stats) {
+      const { data: customer } = await db
+        .from('pos_customers')
+        .select('total_spent, visit_count')
+        .eq('id', stats.customerId)
+        .maybeSingle();
+      if (customer) {
+        const spent = Math.max(0, (Number(customer.total_spent) || 0) - stats.amount);
+        const visits = Math.max(0, (Number(customer.visit_count) || 0) - stats.visitDelta);
+        await db
+          .from('pos_customers')
+          .update({
+            total_spent: spent,
+            visit_count: visits,
+            updated_at: now,
+          })
+          .eq('id', stats.customerId);
+      }
+    }
 
     // 5. EPIC-020: void bernilai besar → WA owner (event, bukan polling).
-    // Tembak-dan-lupakan: notifikasi tidak boleh menggagalkan void-nya;
-    // dedup by order id — retry request tidak mengirim WA dua kali.
     try {
-      const total = Number(order.total_amount) || 0;
+      const total = voidable.reduce((sum, row) => sum + (Number(row.total_amount) || 0), 0);
       const config = await getWaNotifConfig();
       if (total >= config.voidThresholdRp) {
         fireOwnerNotification({
           type: 'voidBesar',
           dedupKey: voidDedupKey(orderId),
           message: buildVoidBesarMessage({
-            orderNumber: String(order.order_number ?? orderId.slice(0, 8)),
+            orderNumber: String(source.order_number ?? orderId.slice(0, 8)),
             total,
-            reason: String(reason).trim(),
+            reason: voidReason,
             supervisorName: supervisor.full_name ?? 'supervisor',
           }),
           config,
@@ -122,7 +282,11 @@ export async function POST(
 
     return Response.json({
       success: true,
-      data: { order_id: orderId, message: 'Order voided successfully' },
+      data: {
+        order_id: orderId,
+        voided_order_ids: voidIds,
+        message: 'Order voided successfully',
+      },
     });
   } catch (error: unknown) {
     console.error('Void error:', error);

@@ -37,6 +37,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { VoidModal } from "@/components/pos/VoidModal";
+import { canVoidOrderStatus } from "@/lib/pos/void-order";
 import { cn } from "@/lib/utils";
 
 import type { Order } from "../types";
@@ -233,10 +234,7 @@ export function OrdersPage() {
     setShowDetailModal(true);
   };
 
-  const isActiveOrder = (order: Order) =>
-    !!order.status &&
-    !["completed", "cancelled", "voided", "merged"].includes(order.status) &&
-    order.payment_status !== "paid";
+  const canVoid = (order: Order) => canVoidOrderStatus(order.status);
 
   return (
     <div className="space-y-4">
@@ -407,7 +405,7 @@ export function OrdersPage() {
                           >
                             <Eye className="h-3.5 w-3.5" />
                           </Button>
-                          {isActiveOrder(order) ? (
+                          {canVoid(order) ? (
                             <Button
                               type="button"
                               variant="outline"
@@ -454,6 +452,20 @@ export function OrdersPage() {
             {selectedOrder ? <OrderDetail order={selectedOrder} /> : null}
           </DialogPanelBody>
           <DialogFooter>
+            {selectedOrder && canVoid(selectedOrder) ? (
+              <Button
+                type="button"
+                variant="outline"
+                className="border-red-200/80 text-red-700 hover:bg-red-50"
+                onClick={() => {
+                  setShowDetailModal(false);
+                  setShowVoidModal(true);
+                }}
+              >
+                <Ban className="mr-2 h-4 w-4" />
+                Void
+              </Button>
+            ) : null}
             <Button
               type="button"
               variant="outline"

@@ -178,6 +178,14 @@
 - Semua jalur posting stok (GRN, impor, PO on-order) wajib lewat `resolveBaseUnitFactor` sebelum menulis ke inventory.
 - Sebelum mengubah tampilan qty/harga, cek dulu jalur penulisan datanya; label UI di project ini sempat memakai satuan besar padahal datanya satuan kecil.
 
+## POS void order lunas
+- Void bukan menu sidebar; aksi di `/dashboard/pos/orders` + PIN supervisor.
+- Order `completed`/`paid` boleh di-void. Tetap tolak `cancelled` / `voided` / `merged`.
+- Balik tender dulu (ARK / gift card / NFC tab), baru stempel `voided` + `refunded`. Helper harus idempoten.
+- Checkout campur: void satu child = void seluruh sibling + checkout `refunded`. ARK dikembalikan sekali, bukan dijumlah per child.
+- Gift card yang dijual lewat order: matikan jika belum terpakai; jika sudah ada ledger `pakai`, tolak void.
+- Tunai & QRIS tidak di-refund ke Xendit/laci otomatis — kasir kembalikan manual. Laporan sudah exclude `voided`.
+
 ## i18n Purchasing
 - Terjemahkan label bersama dulu (`PR_STATUS_LABELS`, `RETURN_*_LABELS`, `getPRStatusLabel`), baru hapus override lokal. Jangan biarkan halaman approval/list masih override Inggris.
 - `CsvImporter` template header memakai `col.key`, bukan `col.label` — aman menerjemahkan `import-config` label tanpa merusak format file.

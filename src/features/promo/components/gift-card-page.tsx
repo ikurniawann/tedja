@@ -324,9 +324,7 @@ export function GiftCardPage() {
         )}
       </PurchasingListSection>
 
-      {/* EPIC-034 Fase C — koreksi saldo ber-audit. Order yang sudah lunas
-          tidak bisa di-void (kebijakan sama dgn cash/ark_coin), jadi ini
-          jalan keluar resminya: alasan wajib & tercatat di ledger. */}
+      {/* Koreksi saldo ber-audit — selain void order lunas di kasir. */}
       <Dialog
         open={Boolean(adjustCard)}
         onOpenChange={(open) => {

@@ -1,14 +1,29 @@
-import { useState } from 'react';
-import { X, AlertTriangle } from 'lucide-react';
+import { useState, type FormEvent } from 'react';
+import { AlertTriangle } from 'lucide-react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
+  DialogFooter,
+  DialogPanel,
+  DialogPanelBody,
+  DialogPanelDescription,
+  DialogPanelForm,
+  DialogPanelHeader,
+  DialogPanelTitle,
 } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 import { voidOrder } from '@/lib/pos-api';
+import { isPaidPosOrder } from '@/lib/pos/void-order';
 import type { Order } from '@/lib/pos-api';
+
+const VOID_REASONS = [
+  { value: 'salah_pesan', label: 'Salah pesan' },
+  { value: 'cancel', label: 'Customer cancel' },
+  { value: 'double_order', label: 'Double order' },
+  { value: 'item_habis', label: 'Item habis' },
+  { value: 'lainnya', label: 'Lainnya' },
+] as const;
 
 interface VoidModalProps {
   open: boolean;
@@ -19,123 +34,178 @@ interface VoidModalProps {
 
 export function VoidModal({ open, order, onClose, onSuccess }: VoidModalProps) {
   const [pin, setPin] = useState('');
-  const [reason, setReason] = useState('');
+  const [reasonCode, setReasonCode] = useState('');
+  const [customReason, setCustomReason] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
+  const paid = order ? isPaidPosOrder(order) : false;
+  const reason =
+    reasonCode === 'lainnya'
+      ? customReason.trim()
+      : VOID_REASONS.find((item) => item.value === reasonCode)?.label || '';
+
   const reset = () => {
     setPin('');
-    setReason('');
+    setReasonCode('');
+    setCustomReason('');
     setError('');
     setBusy(false);
   };
 
   const handleClose = () => {
+    if (busy) return;
     reset();
     onClose();
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (event: FormEvent) => {
+    event.preventDefault();
     if (!order) return;
-    if (!pin.trim() || !reason.trim()) {
+    if (!pin.trim() || !reason) {
       setError('PIN supervisor dan alasan wajib diisi');
       return;
     }
     try {
       setBusy(true);
       setError('');
-      const res = await voidOrder(order.id, reason.trim(), pin.trim());
+      const res = await voidOrder(order.id, reason, pin.trim());
       if (res.success) {
+        toast.success(
+          paid
+            ? 'Transaksi di-void. ARK/gift card/tab dikembalikan otomatis; tunai & QRIS dikembalikan manual.'
+            : 'Order di-void'
+        );
         reset();
         onSuccess?.();
         onClose();
       } else {
-        setError(res.error || 'Gagal melakukan void');
+        const message = res.error || 'Gagal melakukan void';
+        setError(message);
+        toast.error(message);
       }
-    } catch (e: any) {
-      setError(e.message || 'Terjadi kesalahan');
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : 'Terjadi kesalahan';
+      setError(message);
+      toast.error(message);
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-red-600">
-            <AlertTriangle className="w-5 h-5" /> Void Order
-          </DialogTitle>
-        </DialogHeader>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) handleClose();
+      }}
+    >
+      <DialogPanel size="sm" showCloseButton={!busy}>
+        <DialogPanelForm onSubmit={handleSubmit}>
+          <DialogPanelHeader>
+            <DialogPanelTitle className="flex items-center gap-2 text-red-700">
+              <AlertTriangle className="h-5 w-5" />
+              Void Order
+            </DialogPanelTitle>
+            <DialogPanelDescription>
+              Membutuhkan PIN supervisor. Order yang sudah void tidak bisa dikembalikan.
+            </DialogPanelDescription>
+          </DialogPanelHeader>
 
-        {order && (
-          <div className="bg-gray-50 rounded-lg p-3 text-sm space-y-1">
-            <p><span className="font-medium">Order:</span> {order.order_number}</p>
-            <p><span className="font-medium">Total:</span> Rp {order.total_amount?.toLocaleString('id-ID')}</p>
-            <p><span className="font-medium">Meja:</span> {order.table_id || '-'}</p>
-          </div>
-        )}
+          <DialogPanelBody className="space-y-4">
+            {order ? (
+              <div className="rounded-xl border border-gray-200/70 bg-muted/50 p-3 text-sm">
+                <p>
+                  <span className="font-medium">Order:</span> {order.order_number}
+                </p>
+                <p>
+                  <span className="font-medium">Total:</span> Rp{' '}
+                  {order.total_amount?.toLocaleString('id-ID')}
+                </p>
+                <p>
+                  <span className="font-medium">Status:</span>{' '}
+                  {paid ? 'Lunas' : order.status || '—'}
+                </p>
+              </div>
+            ) : null}
 
-        <div className="space-y-3 mt-4">
-          <div>
-            <label className="text-sm font-medium text-gray-700">Alasan Void</label>
-            <select
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              className="w-full mt-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-red-500 focus:border-red-500"
-            >
-              <option value="">Pilih alasan...</option>
-              <option value=" salah_pesan">Salah Pesan</option>
-              <option value="cancel">Customer cancel</option>
-              <option value="double_order">Double order</option>
-              <option value="item_habis">Item habis</option>
-              <option value="lainnya">Lainnya</option>
-            </select>
-            {reason === 'lainnya' && (
-              <textarea
-                value={reason === 'lainnya' ? '' : reason}
-                onChange={(e) => setReason(e.target.value)}
-                placeholder="Tulis alasan lain..."
-                className="w-full mt-2 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-red-500 focus:border-red-500"
-                rows={2}
-              />
-            )}
-          </div>
+            {paid ? (
+              <div className="rounded-xl border border-amber-200/80 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                Transaksi ini sudah lunas. Void akan mengeluarkan order dari laporan
+                dan mengembalikan ARK / gift card / tab. Tunai dan QRIS dikembalikan
+                ke pelanggan di luar sistem.
+              </div>
+            ) : null}
 
-          <div>
-            <label className="text-sm font-medium text-gray-700">PIN Supervisor</label>
-            <input
-              type="password"
-              inputMode="numeric"
-              maxLength={6}
-              value={pin}
-              onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
-              placeholder="Masukkan 4-6 digit PIN"
-              className="w-full mt-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-red-500 focus:border-red-500 tracking-widest"
-            />
-          </div>
-
-          {error && (
-            <div className="bg-red-50 text-red-700 text-sm px-3 py-2 rounded-lg flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4" /> {error}
+            <div className="space-y-1.5">
+              <label htmlFor="void-reason" className="text-sm font-medium text-foreground">
+                Alasan void
+              </label>
+              <select
+                id="void-reason"
+                value={reasonCode}
+                onChange={(e) => setReasonCode(e.target.value)}
+                disabled={busy}
+                className="h-9 w-full rounded-lg border border-gray-200/80 bg-transparent px-3 text-sm outline-none focus-visible:border-gray-300 focus-visible:ring-1 focus-visible:ring-gray-200"
+              >
+                <option value="">Pilih alasan...</option>
+                {VOID_REASONS.map((item) => (
+                  <option key={item.value} value={item.value}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+              {reasonCode === 'lainnya' ? (
+                <textarea
+                  value={customReason}
+                  onChange={(e) => setCustomReason(e.target.value)}
+                  placeholder="Tulis alasan lain..."
+                  disabled={busy}
+                  className="mt-2 w-full rounded-lg border border-gray-200/80 px-3 py-2 text-sm outline-none focus-visible:border-gray-300 focus-visible:ring-1 focus-visible:ring-gray-200"
+                  rows={2}
+                />
+              ) : null}
             </div>
-          )}
-        </div>
 
-        <div className="flex gap-2 mt-6">
-          <Button variant="outline" className="flex-1" onClick={handleClose} disabled={busy}>
-            Batal
-          </Button>
-          <Button
-            variant="destructive"
-            className="flex-1"
-            onClick={handleSubmit}
-            disabled={busy || !pin.trim() || !reason.trim()}
-          >
-            {busy ? 'Memproses...' : 'Void Order'}
-          </Button>
-        </div>
-      </DialogContent>
+            <div className="space-y-1.5">
+              <label htmlFor="void-pin" className="text-sm font-medium text-foreground">
+                PIN supervisor
+              </label>
+              <Input
+                id="void-pin"
+                type="password"
+                inputMode="numeric"
+                maxLength={6}
+                value={pin}
+                onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                placeholder="4-6 digit"
+                disabled={busy}
+                className="tracking-widest"
+              />
+            </div>
+
+            {error ? (
+              <div className="flex items-center gap-2 rounded-lg border border-red-200/80 bg-red-50 px-3 py-2 text-sm text-red-700">
+                <AlertTriangle className="h-4 w-4 shrink-0" /> {error}
+              </div>
+            ) : null}
+          </DialogPanelBody>
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={handleClose} disabled={busy}>
+              Batal
+            </Button>
+            <Button
+              type="submit"
+              variant="outline"
+              className="border-red-200/80 text-red-700 hover:bg-red-50"
+              disabled={busy || !pin.trim() || !reason}
+            >
+              {busy ? 'Memproses...' : 'Void Order'}
+            </Button>
+          </DialogFooter>
+        </DialogPanelForm>
+      </DialogPanel>
     </Dialog>
   );
 }

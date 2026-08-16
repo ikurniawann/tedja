@@ -253,3 +253,60 @@ export async function chargeFnbOrderToTab(input: {
     };
   });
 }
+
+/**
+ * Balik charge F&B NFC Tab saat order POS di-void. Append-only + idempoten
+ * (baris yang sudah punya pembalik dilewati). Visit tertutup tetap ditulis —
+ * void kasir ber-PIN supervisor tidak boleh meninggalkan tagihan tab.
+ */
+export async function voidFnbOrderFromTab(input: {
+  orderId: string;
+  reason: string;
+  createdBy: string | null;
+}): Promise<boolean> {
+  return withTransaction(async (client) => {
+    const chargeResult = await client.query<{
+      id: string;
+      company_id: string;
+      branch_id: string;
+      visit_id: string;
+      band_id: string | null;
+      description: string;
+      amount: string;
+    }>(
+      `SELECT id, company_id, branch_id, visit_id, band_id, description, amount
+         FROM ticketing.ticket_visit_charges
+        WHERE pos_order_id = $1 AND charge_type = 'fnb' AND direction = 'debit'
+        ORDER BY created_at
+        LIMIT 1`,
+      [input.orderId]
+    );
+    const charge = chargeResult.rows[0];
+    if (!charge) return false;
+
+    const reversed = await client.query(
+      `SELECT 1 FROM ticketing.ticket_visit_charges
+        WHERE voided_by_charge_id = $1 LIMIT 1`,
+      [charge.id]
+    );
+    if (reversed.rows.length > 0) return true;
+
+    await client.query(
+      `INSERT INTO ticketing.ticket_visit_charges
+         (company_id, branch_id, visit_id, band_id, charge_type, direction,
+          description, amount, voided_by_charge_id, created_by)
+       VALUES ($1, $2, $3, $4, 'koreksi', 'kredit', $5, $6, $7, $8)`,
+      [
+        charge.company_id,
+        charge.branch_id,
+        charge.visit_id,
+        charge.band_id,
+        `Void POS: ${charge.description} — ${input.reason}`,
+        charge.amount,
+        charge.id,
+        input.createdBy,
+      ]
+    );
+    return true;
+  });
+}
