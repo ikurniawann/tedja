@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { DEFAULT_POS_LOYALTY_SETTINGS, idrToArk } from "@/lib/pos/loyalty-settings";
+import { DEFAULT_POS_LOYALTY_SETTINGS, idrToArkDisplay } from "@/lib/pos/loyalty-settings";
 
 /**
  * Data member untuk portal Nox (Fase B) — menumpang API portal member yang
@@ -97,7 +97,7 @@ export function useNoxMember(): { state: NoxMemberState; reload: () => void } {
         wallet = ((txn.data?.wallet ?? []) as WalletRow[]).map((row) => ({
           id: row.id,
           type: row.type,
-          amount: idrToArk(Number(row.amount) || 0, arkRate),
+          amount: idrToArkDisplay(Number(row.amount) || 0, arkRate),
           createdAt: row.created_at,
           notes: row.notes,
         }));
@@ -107,7 +107,7 @@ export function useNoxMember(): { state: NoxMemberState; reload: () => void } {
           return {
             id: row.id,
             orderNumber: row.order_number,
-            totalAmount: paidWithArk ? idrToArk(totalIdr, arkRate) : totalIdr,
+            totalAmount: paidWithArk ? idrToArkDisplay(totalIdr, arkRate) : totalIdr,
             unit: paidWithArk ? ("ark" as const) : ("idr" as const),
             createdAt: row.created_at,
           };
@@ -124,7 +124,7 @@ export function useNoxMember(): { state: NoxMemberState; reload: () => void } {
             phone: d.profile?.phone ?? null,
           },
           memberType: d.member_type ?? null,
-          coins: idrToArk(Number(d.ark_coin_balance) || 0, arkRate),
+          coins: idrToArkDisplay(Number(d.ark_coin_balance) || 0, arkRate),
           totalXp: Number(d.total_xp) || 0,
           visitCount: Number(d.visit_count) || 0,
           tier: d.tier

@@ -107,6 +107,20 @@ export function formatArkAmount(amountIdr: number, arkRate: number) {
   return `${idrToArk(amountIdr, arkRate).toLocaleString("id-ID")} ARK`;
 }
 
+/**
+ * ARK bulat untuk TAMPILAN saja — pecahan ≥ 0,5 dibulatkan ke atas, sisanya ke
+ * bawah (Rp 2.600 → 3 ARK, Rp 2.400 → 2 ARK pada rate 1.000). Pembulatan
+ * memakai nilai mutlak agar transaksi negatif ikut membesar magnitudonya
+ * (−Rp 2.500 → −3 ARK), bukan bergeser ke arah nol seperti Math.round.
+ *
+ * JANGAN dipakai untuk aritmetika saldo/pembayaran — nilai simpanan tetap
+ * Rupiah dan kasir memotongnya 1:1.
+ */
+export function idrToArkDisplay(amountIdr: number, arkRate: number) {
+  const ark = idrToArk(amountIdr, arkRate);
+  return Math.sign(ark) * Math.round(Math.abs(ark));
+}
+
 export function calculateTopupXp(amountIdr: number, settings: Pick<
   PosLoyaltySettings,
   "topup_xp_enabled" | "topup_xp_mode" | "topup_xp_value" | "topup_xp_amount_step"
