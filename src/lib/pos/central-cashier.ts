@@ -34,7 +34,9 @@ export const MIXED_NFC_GIFT_UNSUPPORTED_MESSAGE =
 export const MIXED_ARK_UNSUPPORTED_MESSAGE =
   "Pembayaran ARK Coin belum didukung untuk tagihan checkout — gunakan tunai, kartu, atau QRIS";
 export const MIXED_PROMO_UNSUPPORTED_MESSAGE =
-  "Promo/diskon belum didukung untuk checkout multi-stall";
+  "Promo belum didukung untuk checkout multi-stall";
+export const MIXED_LINE_DISCOUNT_UNSUPPORTED_MESSAGE =
+  "Diskon per item belum didukung untuk checkout multi-stall — pakai diskon transaksi";
 export const HYDRATED_CHECKOUT_CART_LOCKED_MESSAGE =
   "Tagihan tersimpan — bayar tagihan ini, jangan tambah item baru";
 
