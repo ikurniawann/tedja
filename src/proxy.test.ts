@@ -12,11 +12,25 @@ function call(host: string, path: string) {
 }
 
 const MEMBER = "member.suluinwounderland.com";
+const MEMBER_DEV = "dev.sulu.member.wit.id";
 const DASH = "dashboard.suluinwounderland.com";
+const DASH_DEV = "dev.sulu.wit.id";
 
 describe("proxy: member hostname", () => {
   test("rewrites the root to /member", () => {
     expect(call(MEMBER, "/")).toBe("/member");
+  });
+
+  // Regression: the first version matched a "member." prefix, so the dev
+  // hostname -- which carries the label in the middle -- silently fell
+  // through and served the dashboard.
+  test("matches the member label anywhere in the host", () => {
+    expect(call(MEMBER_DEV, "/")).toBe("/member");
+    expect(call(MEMBER_DEV, "/classic")).toBe("/member/classic");
+  });
+
+  test("is case-insensitive", () => {
+    expect(call("DEV.SULU.MEMBER.WIT.ID", "/")).toBe("/member");
   });
 
   test("prefixes a nested path", () => {
@@ -40,5 +54,6 @@ describe("proxy: other hostnames", () => {
   test("leaves the dashboard host alone", () => {
     expect(call(DASH, "/")).toBeNull();
     expect(call(DASH, "/member/classic")).toBeNull();
+    expect(call(DASH_DEV, "/")).toBeNull();
   });
 });

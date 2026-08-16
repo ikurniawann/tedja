@@ -19,11 +19,21 @@ import { NextResponse, type NextRequest } from "next/server";
  * as the dashboard host and this never fires.
  */
 
-const MEMBER_HOST_PREFIX = "member.";
+/**
+ * True when any DNS label of the host is exactly "member". Matching the label
+ * rather than a "member." prefix is what makes this work across environments:
+ * production is member.suluinwounderland.com (label first), while the dev
+ * hostname is dev.sulu.member.wit.id (label in the middle). A prefix check
+ * silently served the dashboard on dev.
+ */
+function isMemberHost(hostHeader: string): boolean {
+  const hostname = hostHeader.split(":")[0].toLowerCase();
+  return hostname.split(".").includes("member");
+}
 
 export function proxy(request: NextRequest) {
   const host = request.headers.get("host") ?? "";
-  if (!host.startsWith(MEMBER_HOST_PREFIX)) return NextResponse.next();
+  if (!isMemberHost(host)) return NextResponse.next();
 
   const { pathname } = request.nextUrl;
 
