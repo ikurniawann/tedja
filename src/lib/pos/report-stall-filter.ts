@@ -1,6 +1,15 @@
 import { query } from "@/lib/db";
 import type { UserScope } from "@/lib/api/scope";
 import { loadUserWarehouses } from "@/lib/users/user-warehouses";
+import { loadCentralCashierGate } from "@/lib/pos/pos-sell-stall-server";
+
+/** Kasir pusat jual lintas stall — laporan tidak boleh terkunci ke 1 assignment. */
+export function shouldExpandReportStallsToBranch(input: {
+  isUnscoped: boolean;
+  canCentralCheckout: boolean;
+}) {
+  return input.isUnscoped || input.canCentralCheckout;
+}
 
 export type ReportStallOption = {
   id: string;
@@ -34,7 +43,15 @@ export async function resolveReportStallFilter(
   const requested =
     requestedWarehouseId && isUuid(requestedWarehouseId) ? requestedWarehouseId : null;
 
-  if (!scope || scope.isUnscoped || scope.role === "super_admin") {
+  const gate = scope
+    ? await loadCentralCashierGate({ userId: scope.userId, role: scope.role })
+    : null;
+  const expandToBranch = shouldExpandReportStallsToBranch({
+    isUnscoped: !scope || scope.isUnscoped || scope.role === "super_admin",
+    canCentralCheckout: gate?.canCentralCheckout === true,
+  });
+
+  if (expandToBranch) {
     const stalls = await query<ReportStallOption>(
       `SELECT id, code, name
        FROM configuration.warehouses

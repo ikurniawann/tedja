@@ -292,6 +292,16 @@ export function shouldInsertCheckoutChildren(input: {
   return true;
 }
 
+/** Pay-now gabungan (bukan open bill) langsung completed. Open bill tetap pending untuk KDS. */
+export function resolveCheckoutChildOrderStatus(input: {
+  paymentStatus?: string | null;
+  isOpenBill: boolean;
+}): "pending" | "completed" {
+  const paid = String(input.paymentStatus || "").toLowerCase() === "paid";
+  if (paid && !input.isOpenBill) return "completed";
+  return "pending";
+}
+
 export function resolveOrderSoldFrom(input: { isCentralCashier: boolean }): "central" | "stall" {
   return input.isCentralCashier ? "central" : "stall";
 }
@@ -766,9 +776,11 @@ async function insertChildOrder(
     changeAmount: number;
     notes: string | null;
     specialRequests: string | null;
+    orderStatus: "pending" | "completed";
   }
 ): Promise<string> {
   const id = randomUUID();
+  const orderStatus = row.orderStatus;
   await client.query(
     `INSERT INTO pos.pos_orders (
        id, order_number, queue_number, order_type, status, payment_status, payment_method,
@@ -776,14 +788,14 @@ async function insertChildOrder(
        customer_id, cashier_id, server_id, table_id, guest_count, shift_id,
        subtotal, discount_amount, discount_reason, tax_amount, service_charge_amount,
        other_charges_amount, charges_breakdown, total_amount, amount_paid, change_amount,
-       notes, special_requests, ordered_at
+       notes, special_requests, ordered_at, completed_at
      ) VALUES (
-       $1,$2,$3,$4::pos_order_type,'pending',$5::pos_payment_status,$6::pos_payment_method,
+       $1,$2,$3,$4::pos_order_type,$28::pos_order_status,$5::pos_payment_status,$6::pos_payment_method,
        $7,$8,$9,$10,'central',
        $11,$12,$13,$14,$15,$16,
        $17,$18,$19,$20,$21,
        $22,'[]'::jsonb,$23,$24,$25,
-       $26,$27, now()
+       $26,$27, now(), $29
      )`,
     [
       id,
@@ -813,6 +825,8 @@ async function insertChildOrder(
       row.changeAmount,
       row.notes,
       row.specialRequests,
+      orderStatus,
+      orderStatus === "completed" ? new Date() : null,
     ]
   );
   return id;
@@ -899,6 +913,7 @@ async function insertChildrenForCheckout(
       amount_paid: string | number;
       change_amount: string | number;
     };
+    isOpenBill?: boolean;
     snapshot: MixedCheckoutCartSnapshot;
     warehouseByProduct: Map<string, string | null>;
     merchClaimedIds: Set<string>;
@@ -931,6 +946,10 @@ async function insertChildrenForCheckout(
     allocated.map((row) => row.total)
   );
   const queueNumber = String(input.checkout.queue_number || "");
+  const orderStatus = resolveCheckoutChildOrderStatus({
+    paymentStatus: input.checkout.payment_status,
+    isOpenBill: Boolean(input.isOpenBill),
+  });
   const orderIds: string[] = [];
 
   for (let index = 0; index < slices.length; index += 1) {
@@ -965,6 +984,7 @@ async function insertChildrenForCheckout(
       changeAmount: index === 0 ? toNumber(input.checkout.change_amount) : 0,
       notes: input.snapshot.notes,
       specialRequests: input.snapshot.specialRequests,
+      orderStatus,
     });
     await insertChildItems(
       client,
@@ -975,13 +995,14 @@ async function insertChildrenForCheckout(
     );
     await client.query(
       `INSERT INTO pos.pos_order_status_history (order_id, from_status, to_status, changed_by, notes)
-       VALUES ($1, NULL, 'pending', $2, $3)`,
+       VALUES ($1, NULL, $4, $2, $3)`,
       [
         orderId,
         input.checkout.cashier_id,
         input.checkout.payment_status === "paid"
           ? "Order created and paid from central checkout"
           : "Order created from central checkout",
+        orderStatus,
       ]
     );
     orderIds.push(orderId);
@@ -1229,6 +1250,10 @@ async function appendItemsToExistingCheckout(
         changeAmount: 0,
         notes: input.snapshot.notes,
         specialRequests: input.snapshot.specialRequests,
+        orderStatus: resolveCheckoutChildOrderStatus({
+          paymentStatus: input.paymentStatus,
+          isOpenBill: true,
+        }),
       });
     } else {
       await client.query(
@@ -1534,6 +1559,7 @@ export async function createMixedCheckout(
             change_amount: changeAmount,
           },
           snapshot,
+          isOpenBill: requestedUnpaid,
           warehouseByProduct: input.warehouseByProduct,
           merchClaimedIds,
           costMap,
@@ -1854,6 +1880,7 @@ export async function completeMixedCheckout(
       const orderIds = await insertChildrenForCheckout(client, {
         checkout: settledCheckout,
         snapshot,
+        isOpenBill: Boolean(checkout.table_id),
         warehouseByProduct,
         merchClaimedIds: new Set(merchClaims.map((claim) => claim.productId)),
         costMap,

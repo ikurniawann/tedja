@@ -38,6 +38,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { VoidModal } from "@/components/pos/VoidModal";
 import { canVoidOrderStatus } from "@/lib/pos/void-order";
+import { groupOrdersByCheckout } from "@/lib/pos/order-list-group";
 import { formatPaymentMethodLabel } from "@/features/pos/reports/utils/transaction-labels";
 import { cn } from "@/lib/utils";
 
@@ -227,6 +228,7 @@ export function OrdersPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<(typeof STATUS_FILTERS)[number]>("all");
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [selectedSiblings, setSelectedSiblings] = useState<Order[]>([]);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showVoidModal, setShowVoidModal] = useState(false);
 
@@ -283,6 +285,7 @@ export function OrdersPage() {
       const matchesSearch =
         !q ||
         order.order_number?.toLowerCase().includes(q) ||
+        order.checkout_number?.toLowerCase().includes(q) ||
         order.queue_number?.toLowerCase().includes(q) ||
         order.customer?.name?.toLowerCase().includes(q) ||
         order.cashier_id?.toLowerCase().includes(q);
@@ -295,8 +298,14 @@ export function OrdersPage() {
     });
   }, [orders, searchTerm, statusFilter]);
 
-  const openDetail = (order: Order) => {
+  const groupedOrders = useMemo(
+    () => groupOrdersByCheckout(filteredOrders),
+    [filteredOrders]
+  );
+
+  const openDetail = (order: Order, siblings: Order[] = []) => {
     setSelectedOrder(order);
+    setSelectedSiblings(siblings.length > 1 ? siblings : []);
     setShowDetailModal(true);
   };
 
@@ -459,14 +468,14 @@ export function OrdersPage() {
             <div className="relative w-full max-w-md">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
-                placeholder="Cari nomor order, antrian, atau pelanggan…"
+                placeholder="Cari nomor order, checkout, antrian, atau pelanggan…"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="h-10 border-gray-200/80 bg-white pl-10"
               />
             </div>
             <p className="text-sm text-muted-foreground">
-              {filteredOrders.length} dari {orders.length} order
+              {groupedOrders.length} tagihan · {filteredOrders.length} order
               {applied.date_from && applied.date_to
                 ? ` · ${applied.date_from} s/d ${applied.date_to}`
                 : ""}
@@ -501,14 +510,36 @@ export function OrdersPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredOrders.map((order) => (
+                  {groupedOrders.map((row) => {
+                    const order = row.kind === "single" ? row.order : row.orders[0];
+                    if (!order) return null;
+                    const isMixed = row.kind === "checkout";
+                    const displayNumber = isMixed ? row.checkoutNumber : order.order_number;
+                    const total = isMixed ? row.total : order.total_amount || 0;
+                    const itemCount = isMixed
+                      ? row.orders.reduce((sum, child) => sum + (child.items?.length || 0), 0)
+                      : order.items?.length || 0;
+                    const paid = isMixed ? row.paid : isPaid(order);
+                    const orphanCheckout =
+                      isMixed && row.orders.length === 1 && row.orders[0]?.id === row.checkoutId;
+                    return (
                     <tr
-                      key={order.id}
+                      key={isMixed ? row.checkoutId : order.id}
                       className="border-b border-gray-200/70 last:border-0 hover:bg-muted/20"
                     >
                       <td className="px-4 py-3 font-mono text-xs font-semibold text-foreground">
-                        <div>{order.order_number}</div>
-                        {order.queue_number ? (
+                        <div>{displayNumber}</div>
+                        {isMixed && row.orders.length > 1 ? (
+                          <div className="mt-0.5 space-y-0.5 font-sans text-[11px] font-medium text-primary">
+                            <div>Gabungan {row.orders.length} stall</div>
+                            <div className="font-mono font-normal text-muted-foreground">
+                              {row.orders
+                                .map((child) => child.order_number)
+                                .filter(Boolean)
+                                .join(" · ")}
+                            </div>
+                          </div>
+                        ) : order.queue_number ? (
                           <div className="mt-0.5 text-[11px] font-bold text-primary">
                             Antrian {order.queue_number}
                           </div>
@@ -529,7 +560,7 @@ export function OrdersPage() {
                         <TypeBadge type={order.order_type} />
                       </td>
                       <td className="px-4 py-3 tabular-nums text-muted-foreground">
-                        {order.items?.length || 0}
+                        {itemCount}
                       </td>
                       <td className="px-4 py-3">
                         <PaymentBadge
@@ -539,12 +570,12 @@ export function OrdersPage() {
                         />
                       </td>
                       <td className="px-4 py-3 text-right font-semibold tabular-nums text-foreground">
-                        {formatCurrency(order.total_amount || 0)}
+                        {formatCurrency(total)}
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex flex-wrap items-center gap-1.5">
                           <StatusBadge status={order.status} />
-                          {isPaid(order) ? (
+                          {paid ? (
                             <Badge
                               variant="secondary"
                               className="bg-emerald-50 font-medium text-emerald-800"
@@ -566,7 +597,7 @@ export function OrdersPage() {
                         onClick={(e) => e.stopPropagation()}
                       >
                         <div className="inline-flex items-center justify-end gap-1">
-                          {order.status === "pending" ? (
+                          {!paid && order.status !== "completed" ? (
                             <Button
                               type="button"
                               size="icon"
@@ -574,7 +605,9 @@ export function OrdersPage() {
                               title="Open in cashier"
                               onClick={() =>
                                 router.push(
-                                  `/dashboard/pos/cashier-new?orderId=${order.id}`
+                                  orphanCheckout
+                                    ? `/dashboard/pos/cashier-new?checkoutId=${order.id}`
+                                    : `/dashboard/pos/cashier-new?orderId=${order.id}`
                                 )
                               }
                             >
@@ -587,7 +620,12 @@ export function OrdersPage() {
                             size="icon"
                             className="h-8 w-8 border-gray-200/80"
                             title="Detail"
-                            onClick={() => openDetail(order)}
+                            onClick={() =>
+                              openDetail(
+                                order,
+                                isMixed ? row.orders : []
+                              )
+                            }
                           >
                             <Eye className="h-3.5 w-3.5" />
                           </Button>
@@ -609,7 +647,8 @@ export function OrdersPage() {
                         </div>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -621,21 +660,35 @@ export function OrdersPage() {
         open={showDetailModal}
         onOpenChange={(open) => {
           setShowDetailModal(open);
-          if (!open) setSelectedOrder(null);
+          if (!open) {
+            setSelectedOrder(null);
+            setSelectedSiblings([]);
+          }
         }}
       >
         <DialogPanel size="xl">
           <DialogPanelHeader>
-            <DialogPanelTitle>Order detail</DialogPanelTitle>
+            <DialogPanelTitle>
+              {selectedSiblings.length > 1
+                ? selectedOrder?.checkout_number || "Tagihan gabungan"
+                : "Order detail"}
+            </DialogPanelTitle>
             <DialogPanelDescription>
-              {selectedOrder?.order_number || "Order"} ·{" "}
+              {selectedSiblings.length > 1
+                ? selectedSiblings
+                    .map((child) => child.order_number)
+                    .filter(Boolean)
+                    .join(" · ")
+                : selectedOrder?.order_number || "Order"}
               {selectedOrder?.ordered_at
-                ? formatDate(selectedOrder.ordered_at)
-                : "—"}
+                ? ` · ${formatDate(selectedOrder.ordered_at)}`
+                : ""}
             </DialogPanelDescription>
           </DialogPanelHeader>
           <DialogPanelBody>
-            {selectedOrder ? <OrderDetail order={selectedOrder} /> : null}
+            {selectedOrder ? (
+              <OrderDetail order={selectedOrder} siblings={selectedSiblings} />
+            ) : null}
           </DialogPanelBody>
           <DialogFooter>
             {selectedOrder && canVoid(selectedOrder) ? (
@@ -682,24 +735,69 @@ export function OrdersPage() {
         onClose={() => {
           setShowVoidModal(false);
           setSelectedOrder(null);
+          setSelectedSiblings([]);
         }}
         onSuccess={() => {
           void refetch();
           setSelectedOrder(null);
+          setSelectedSiblings([]);
         }}
       />
     </div>
   );
 }
 
-function OrderDetail({ order }: { order: Order }) {
+function OrderDetail({
+  order,
+  siblings = [],
+}: {
+  order: Order;
+  siblings?: Order[];
+}) {
   const { data: loyaltySettings } = useLoyaltySettings();
   const formatArk = (value: number) =>
     formatArkAmount(value, loyaltySettings?.ark_rate || 1000);
+  const childOrders = siblings.length > 1 ? siblings : [order];
+  const billTotal = childOrders.reduce(
+    (sum, child) => sum + (Number(child.total_amount) || 0),
+    0
+  );
+  const billSubtotal = childOrders.reduce(
+    (sum, child) => sum + (Number(child.subtotal) || 0),
+    0
+  );
+  const billDiscount = childOrders.reduce(
+    (sum, child) => sum + (Number(child.discount_amount) || 0),
+    0
+  );
+  const billTax = childOrders.reduce(
+    (sum, child) => sum + (Number(child.tax_amount) || 0),
+    0
+  );
+  const billArk = childOrders.reduce(
+    (sum, child) => sum + (Number(child.ark_coins_used) || 0),
+    0
+  );
+  const billPaid = childOrders.reduce(
+    (sum, child) => sum + (Number(child.amount_paid) || 0),
+    0
+  );
+  const billChange = childOrders.reduce(
+    (sum, child) => sum + (Number(child.change_amount) || 0),
+    0
+  );
   return (
     <div className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <InfoTile label="Order" value={order.order_number || "—"} mono />
+        <InfoTile
+          label={childOrders.length > 1 ? "Checkout" : "Order"}
+          value={
+            childOrders.length > 1
+              ? order.checkout_number || order.order_number || "—"
+              : order.order_number || "—"
+          }
+          mono
+        />
         <InfoTile label="Antrian" value={order.queue_number || "—"} mono />
         <InfoTile
           label="Date"
@@ -756,53 +854,95 @@ function OrderDetail({ order }: { order: Order }) {
         </section>
       ) : null}
 
+      {childOrders.length > 1 ? (
+        <section className="rounded-xl border border-gray-200/70 bg-white p-4">
+          <h3 className="mb-3 text-sm font-semibold text-foreground">
+            Nomor POS per stall
+          </h3>
+          <div className="space-y-2">
+            {childOrders.map((child) => (
+              <div
+                key={child.id}
+                className="flex items-center justify-between gap-3 rounded-lg border border-gray-200/70 bg-muted/20 px-3 py-2"
+              >
+                <div className="min-w-0">
+                  <div className="font-mono text-xs font-semibold text-foreground">
+                    {child.order_number || "—"}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {child.items?.length || 0} item
+                  </div>
+                </div>
+                <div className="shrink-0 text-sm font-semibold tabular-nums text-foreground">
+                  {formatCurrency(child.total_amount || 0)}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
       <section className="overflow-hidden rounded-xl border border-gray-200/70 bg-white">
         <div className="border-b border-gray-200/70 px-4 py-3">
           <h3 className="text-sm font-semibold text-foreground">Items</h3>
         </div>
         <div className="divide-y divide-gray-200/70">
-          {(order.items || []).map((item, idx) => (
-            <div
-              key={item.id || `${item.product_id}-${idx}`}
-              className="flex items-start justify-between gap-3 px-4 py-3"
-            >
-              <div className="min-w-0">
-                <div className="font-medium text-foreground">
-                  {item.product_name}
+          {childOrders.map((child) => (
+            <div key={child.id}>
+              {childOrders.length > 1 ? (
+                <div className="flex items-center justify-between gap-3 bg-muted/30 px-4 py-2">
+                  <span className="font-mono text-xs font-semibold text-foreground">
+                    {child.order_number || "—"}
+                  </span>
+                  <span className="text-xs tabular-nums text-muted-foreground">
+                    {formatCurrency(child.total_amount || 0)}
+                  </span>
                 </div>
-                <div className="text-xs text-muted-foreground">
-                  {item.quantity} × {formatCurrency(item.unit_price || 0)}
+              ) : null}
+              {(child.items || []).map((item, idx) => (
+                <div
+                  key={item.id || `${child.id}-${item.product_id}-${idx}`}
+                  className="flex items-start justify-between gap-3 px-4 py-3"
+                >
+                  <div className="min-w-0">
+                    <div className="font-medium text-foreground">
+                      {item.product_name}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {item.quantity} × {formatCurrency(item.unit_price || 0)}
+                    </div>
+                    {item.variants && item.variants.length > 0 ? (
+                      <div className="mt-1.5 flex flex-wrap gap-1">
+                        {item.variants.map((v, i) => (
+                          <Badge
+                            key={i}
+                            variant="secondary"
+                            className="bg-primary/10 text-xs text-primary"
+                          >
+                            {v.name}
+                          </Badge>
+                        ))}
+                      </div>
+                    ) : null}
+                    {item.modifiers && item.modifiers.length > 0 ? (
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {item.modifiers.map((m, i) => (
+                          <Badge
+                            key={i}
+                            variant="secondary"
+                            className="bg-amber-50 text-xs text-amber-800"
+                          >
+                            {m.name}
+                          </Badge>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="shrink-0 font-semibold tabular-nums text-foreground">
+                    {formatCurrency(item.total_amount || 0)}
+                  </div>
                 </div>
-                {item.variants && item.variants.length > 0 ? (
-                  <div className="mt-1.5 flex flex-wrap gap-1">
-                    {item.variants.map((v, i) => (
-                      <Badge
-                        key={i}
-                        variant="secondary"
-                        className="bg-primary/10 text-xs text-primary"
-                      >
-                        {v.name}
-                      </Badge>
-                    ))}
-                  </div>
-                ) : null}
-                {item.modifiers && item.modifiers.length > 0 ? (
-                  <div className="mt-1 flex flex-wrap gap-1">
-                    {item.modifiers.map((m, i) => (
-                      <Badge
-                        key={i}
-                        variant="secondary"
-                        className="bg-amber-50 text-xs text-amber-800"
-                      >
-                        {m.name}
-                      </Badge>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-              <div className="shrink-0 font-semibold tabular-nums text-foreground">
-                {formatCurrency(item.total_amount || 0)}
-              </div>
+              ))}
             </div>
           ))}
         </div>
@@ -813,35 +953,35 @@ function OrderDetail({ order }: { order: Order }) {
           Payment summary
         </h3>
         <div className="space-y-2 text-sm">
-          <SummaryRow label="Subtotal" value={formatCurrency(order.subtotal || 0)} />
-          {(order.discount_amount || 0) > 0 ? (
+          <SummaryRow label="Subtotal" value={formatCurrency(billSubtotal)} />
+          {billDiscount > 0 ? (
             <SummaryRow
               label="Discount"
-              value={`−${formatCurrency(order.discount_amount || 0)}`}
+              value={`−${formatCurrency(billDiscount)}`}
               tone="text-emerald-600"
             />
           ) : null}
-          {(order.tax_amount || 0) > 0 ? (
-            <SummaryRow label="Tax" value={formatCurrency(order.tax_amount || 0)} />
+          {billTax > 0 ? (
+            <SummaryRow label="Tax" value={formatCurrency(billTax)} />
           ) : null}
-          {(order.ark_coins_used || 0) > 0 ? (
+          {billArk > 0 ? (
             <SummaryRow
               label="ARK used"
-              value={`−${formatArk(order.ark_coins_used || 0)}`}
+              value={`−${formatArk(billArk)}`}
               tone="text-amber-700"
             />
           ) : null}
           <div className="flex items-center justify-between border-t border-gray-200/70 pt-2 text-base font-semibold">
             <span>Total</span>
             <span className="tabular-nums text-primary">
-              {formatCurrency(order.total_amount || 0)}
+              {formatCurrency(billTotal)}
             </span>
           </div>
-          <SummaryRow label="Paid" value={formatCurrency(order.amount_paid || 0)} />
-          {(order.change_amount || 0) > 0 ? (
+          <SummaryRow label="Paid" value={formatCurrency(billPaid)} />
+          {billChange > 0 ? (
             <SummaryRow
               label="Change"
-              value={formatCurrency(order.change_amount || 0)}
+              value={formatCurrency(billChange)}
             />
           ) : null}
         </div>
