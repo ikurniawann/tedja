@@ -4,6 +4,13 @@ export function hasIamMenuCode(grantedCodes: string[], code: string): boolean {
   return grantedCodes.includes(code);
 }
 
+/** True bila user punya menu exact atau anak di bawah prefix (mis. `items.product`). */
+export function hasAnyIamMenuPrefix(grantedCodes: string[], prefixes: string[]): boolean {
+  return grantedCodes.some((code) =>
+    prefixes.some((prefix) => code === prefix || code.startsWith(`${prefix}.`))
+  );
+}
+
 export async function loadGrantedMenuCodes(roleIds: string[]): Promise<string[]> {
   if (roleIds.length === 0) return [];
   const rows = await iamDbQuery<{ code: string }>(

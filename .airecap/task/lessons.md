@@ -1,5 +1,15 @@
 # Lessons
 
+## Produk insert — opsi stall
+- Dropdown stall memakai `GET /api/purchasing/warehouses`.
+- Jangan hardcode role. Gate pakai `requireIamMenuPrefix` (grant menu produk/inventory).
+- Role baru yang punya `items.product.*` otomatis dapat opsi stall.
+
+## IAM role vs Users.role
+- Sidebar memakai `iam.user_roles` dulu. `configuration.users.role` hanya fallback.
+- Import HRIS sering isi `employee`. Ganti role di Users tanpa sync IAM → menu POS tidak muncul.
+- Ganti role wajib `syncIamPrimaryRole`. Relogin setelah assignment diubah.
+
 ## POS laporan void
 - Menu baru wajib masuk whitelist `iam-menus.sql` NOT IN (kalau tidak, seeder retire menu).
 - Icon sidebar harus `NavIconName` yang ada (`document-text`). Jangan `ban`.
@@ -78,6 +88,10 @@
 - Sulu production: `callback_url` = `https://dashboard.suluinwounderland.com/api/payments/xendit/webhook`. Jangan `sulu.within.ventures` (domain lama).
 - Path itu HARUS masuk `publicRoutes` middleware. Tanpa itu Xendit dapat 401 "Authentication required" → webhook failed. Token tetap dicek di route.
 - Lookup `pos_checkouts` di webhook jangan sampai 500 kalau tabel/kolom belum ada.
+
+## POS menu baru di server-sulu
+- `deploy-docker.sh` tidak menjalankan `db:migrate:apply`. Push kode saja tidak membuat menu IAM.
+- Menu Void harus di-apply ke DB `arkiv` di server-sulu (`--allow-remote`). Relogin setelah grant.
 
 ## Deploy DB credentials
 - Produksi: `postgres@5432/arkiv` + `DB_PASS_URLENCODED` (CI).

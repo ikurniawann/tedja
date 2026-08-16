@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { createServerPgClient } from "@/lib/pg/create-client";
-import { ApiError, requireApiRole } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
 import {
   getApiUserScope,
   resolveWarehouseBranchFilter,
@@ -14,15 +14,11 @@ const querySchema = z.object({
 
 export async function GET(request: NextRequest) {
   try {
-    await requireApiRole([
-      "warehouse_staff",
-      "warehouse_admin",
-      "purchasing_admin",
-      "purchasing_staff",
-      "purchasing_manager",
-      "admin",
-      "super_admin",
-      "hrd",
+    await requireIamMenuPrefix([
+      "items.product",
+      "items.raw-material",
+      "pos.catalog",
+      "settings.users",
     ]);
 
     const db = await createServerPgClient();
