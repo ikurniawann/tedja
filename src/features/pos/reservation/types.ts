@@ -22,6 +22,8 @@ export interface ReservationRow {
   deposit_amount?: number | string | null;
   notes?: string | null;
   status: ReservationStatus;
+  /** Nomor antrian per tanggal (W-xx) — null utk baris sebelum fitur ini */
+  queue_number?: number | null;
   table?: { table_number?: string | null } | null;
   customer?: { name?: string | null; phone?: string | null } | null;
 }

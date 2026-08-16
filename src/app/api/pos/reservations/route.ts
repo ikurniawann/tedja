@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createPgClient } from "@/lib/pg/create-client";
 import { getPosSession } from "@/lib/api/auth";
+import { withTransaction } from "@/lib/db";
 
 function formatPgDate(value: unknown): string | null {
   if (value == null || value === "") return null;
@@ -222,6 +223,36 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (reservationError) throw reservationError;
+
+    // Nomor antrian per tanggal (W-xx) — advisory lock per tanggal supaya dua
+    // pendaftaran bersamaan tidak mendapat nomor sama; unique index pagar akhir.
+    let queueNumber: number | null = null;
+    try {
+      queueNumber = await withTransaction(async (client) => {
+        await client.query(
+          "SELECT pg_advisory_xact_lock(hashtext('pos-res-queue-' || $1::date::text))",
+          [reservation_date]
+        );
+        const { rows } = await client.query<{ queue_number: number }>(
+          `UPDATE pos.pos_reservations r
+              SET queue_number = sub.next_number
+             FROM (
+               SELECT COALESCE(MAX(queue_number), 0) + 1 AS next_number
+                 FROM pos.pos_reservations
+                WHERE reservation_date::date = $2::date
+                  AND id <> $1
+             ) sub
+            WHERE r.id = $1
+            RETURNING r.queue_number`,
+          [reservation.id, reservation_date]
+        );
+        return rows[0]?.queue_number ?? null;
+      });
+    } catch (queueErr) {
+      // Nomor antrian gagal ≠ reservasi gagal — baris tetap tersimpan.
+      console.error("[pos] reservation queue number error:", queueErr);
+    }
+    if (reservation && queueNumber != null) reservation.queue_number = queueNumber;
 
     let table: { table_number?: string | null } | null = null;
     let customer: { name?: string | null; phone?: string | null } | null =
