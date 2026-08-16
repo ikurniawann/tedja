@@ -197,6 +197,17 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get('q')?.trim() || '';
     const activeOnly = searchParams.get('active_only') === 'true';
     const limit = clampOrderListLimit(searchParams.get('limit'));
+    let dateRange: ReturnType<typeof parseReportDateRange> | null = null;
+    if (dateFrom || dateTo) {
+      try {
+        dateRange = parseReportDateRange(dateFrom, dateTo);
+      } catch (rangeError) {
+        return NextResponse.json(
+          { success: false, error: getErrorMessage(rangeError) },
+          { status: 400 }
+        );
+      }
+    }
 
     let query = db
       .from('pos_orders')
@@ -220,16 +231,8 @@ export async function GET(request: NextRequest) {
         paymentMethod === 'credit_card' ? 'credit' : paymentMethod;
       query = query.eq('payment_method', method);
     }
-    if (dateFrom || dateTo) {
-      try {
-        const range = parseReportDateRange(dateFrom, dateTo);
-        query = query.gte('ordered_at', range.startIso).lte('ordered_at', range.endIso);
-      } catch (rangeError) {
-        return NextResponse.json(
-          { success: false, error: getErrorMessage(rangeError) },
-          { status: 400 }
-        );
-      }
+    if (dateRange) {
+      query = query.gte('ordered_at', dateRange.startIso).lte('ordered_at', dateRange.endIso);
     }
     if (search) {
       const safe = search.replace(/[%_*]/g, '').slice(0, 64);
@@ -243,6 +246,80 @@ export async function GET(request: NextRequest) {
     if (error) throw error;
 
     const orderRows = (data || []) as PosOrderRow[];
+    const checkoutIds = Array.from(
+      new Set(
+        orderRows
+          .map((order) => order.checkout_id)
+          .filter((value): value is string => typeof value === 'string' && isUuid(value))
+      )
+    );
+    type CheckoutStamp = {
+      id: string;
+      checkout_number?: string | null;
+      queue_number?: string | null;
+      payment_status?: string | null;
+      payment_method?: string | null;
+      payment_method_code?: string | null;
+      payment_method_name?: string | null;
+      total_amount?: number | string | null;
+      created_at?: string | null;
+    };
+    let checkoutById = new Map<string, CheckoutStamp>();
+    if (checkoutIds.length > 0) {
+      const { data: checkouts, error: checkoutError } = await db
+        .from('pos_checkouts')
+        .select(
+          'id, checkout_number, queue_number, payment_status, payment_method, payment_method_code, payment_method_name, total_amount, created_at'
+        )
+        .in('id', checkoutIds);
+      if (checkoutError) throw checkoutError;
+      checkoutById = new Map(
+        ((checkouts || []) as CheckoutStamp[]).map((row) => [String(row.id), row])
+      );
+    }
+
+    if (dateRange && !activeOnly && !customerId) {
+      let orphanQuery = db
+        .from('pos_checkouts')
+        .select(
+          'id, checkout_number, queue_number, payment_status, payment_method, payment_method_code, payment_method_name, total_amount, created_at'
+        )
+        .gte('created_at', dateRange.startIso)
+        .lte('created_at', dateRange.endIso)
+        .order('created_at', { ascending: false })
+        .limit(limit);
+      if (paymentStatus && ORDER_LIST_PAYMENT_STATUSES.has(paymentStatus)) {
+        orphanQuery = orphanQuery.eq('payment_status', paymentStatus);
+      }
+      if (paymentMethod && ORDER_LIST_PAYMENT_METHODS.has(paymentMethod)) {
+        const method = paymentMethod === 'credit_card' ? 'credit' : paymentMethod;
+        orphanQuery = orphanQuery.eq('payment_method', method);
+      }
+      const { data: rangeCheckouts, error: orphanError } = await orphanQuery;
+      if (orphanError && orphanError.code !== '42P01' && orphanError.code !== 'PGRST205') {
+        throw orphanError;
+      }
+      for (const row of (rangeCheckouts || []) as CheckoutStamp[]) {
+        if (checkoutById.has(String(row.id))) continue;
+        checkoutById.set(String(row.id), row);
+        orderRows.push({
+          id: row.id,
+          order_number: row.checkout_number,
+          queue_number: row.queue_number,
+          checkout_id: row.id,
+          status: row.payment_status === 'paid' ? 'completed' : 'pending',
+          payment_status: row.payment_status,
+          payment_method: row.payment_method,
+          payment_method_code: row.payment_method_code,
+          payment_method_name: row.payment_method_name,
+          total_amount: row.total_amount,
+          ordered_at: row.created_at,
+          sold_from: 'central',
+          items: [],
+        });
+      }
+    }
+
     const tableIds = Array.from(
       new Set(
         orderRows
@@ -266,10 +343,15 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const ordersWithTables = orderRows.map((order) => ({
-      ...order,
-      table: order.table_id ? tableById.get(order.table_id) || null : null,
-    }));
+    const ordersWithTables = orderRows.map((order) => {
+      const checkout =
+        typeof order.checkout_id === 'string' ? checkoutById.get(order.checkout_id) : null;
+      return {
+        ...order,
+        checkout_number: checkout?.checkout_number || order.checkout_number || null,
+        table: order.table_id ? tableById.get(order.table_id) || null : null,
+      };
+    });
 
     return NextResponse.json({ success: true, data: ordersWithTables });
   } catch (error: unknown) {

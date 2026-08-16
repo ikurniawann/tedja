@@ -23,6 +23,7 @@ import {
   resolveOrderSoldFrom,
   resolveXenditPaidWebhookAction,
   settleMixedCheckoutTender,
+  resolveCheckoutChildOrderStatus,
   shouldInsertCheckoutChildren,
   shouldReuseCheckoutQris,
   shouldSyncCustomerStatsOnFinalize,
@@ -169,6 +170,32 @@ describe("groupItemsByStall", () => {
     expect([...grouped.keys()]).toEqual(["w-a", "w-b"]);
     expect(grouped.get("w-a")?.map((item) => item.product_id)).toEqual(["p1", "p3"]);
     expect(grouped.get("w-b")?.map((item) => item.product_id)).toEqual(["p2"]);
+  });
+});
+
+describe("resolveCheckoutChildOrderStatus", () => {
+  it("marks pay-now mixed children completed when already paid", () => {
+    expect(
+      resolveCheckoutChildOrderStatus({
+        paymentStatus: "paid",
+        isOpenBill: false,
+      })
+    ).toBe("completed");
+  });
+
+  it("keeps open-bill children pending even after later kitchen work", () => {
+    expect(
+      resolveCheckoutChildOrderStatus({
+        paymentStatus: "unpaid",
+        isOpenBill: true,
+      })
+    ).toBe("pending");
+    expect(
+      resolveCheckoutChildOrderStatus({
+        paymentStatus: "paid",
+        isOpenBill: true,
+      })
+    ).toBe("pending");
   });
 });
 

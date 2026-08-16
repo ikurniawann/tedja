@@ -1,5 +1,14 @@
 # Lessons
 
+## POS mixed checkout status
+- Pay-now gabungan (bukan open bill) menulis child `status=completed` + `payment_status=paid`. Jangan biarkan `pending` — itu status open bill/KDS.
+- Open bill (unpaid / ada meja lalu append) tetap `pending` sampai dapur selesai.
+
+## POS mixed checkout visibility
+- Tagihan gabungan = `pos_checkouts` + N `pos_orders` per stall. Orders/laporan yang hanya filter assignment 1 stall (mis. Operasional) menyembunyikan child Bakery/Sushi.
+- Kasir pusat (`can_central_checkout`) harus expand laporan ke semua stall branch. Halaman Orders group by `checkout_id` dan tampilkan `CHK-…`, bukan hanya `POS-…`.
+- QRIS mixed unpaid belum punya child — harus tetap muncul sebagai checkout yatim.
+
 ## POS checkout = one bill
 - Collapsed kasir-pusat bill must handoff `checkoutId`, never `children[0]`. Cashier pays via `completeCheckout`.
 - Never call bare `completeCheckout(id)` — persist tender (`payment_method` + `amount_paid` + change). NFC/gift/ARK on checkout-bill pay → 400 until debit is wired.

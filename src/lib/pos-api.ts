@@ -441,6 +441,7 @@ export interface Order {
   items?: any[];
   splits?: any[];
   checkout_id?: string | null;
+  checkout_number?: string | null;
   sold_from?: string | null;
   /** Void tracking */
   voided_at?: string;
