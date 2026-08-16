@@ -43,6 +43,10 @@ export const SETTING_KEYS = {
   // ditentukan oleh akun yang memindai QR saat pairing.
   WA_GATEWAY_URL: "wa_gateway_url",
   WA_GATEWAY_TOKEN: "wa_gateway_token",
+  // Identitas merchant di tampilan QRIS kasir (dialog QR bergaya standar
+  // QRIS Indonesia). Kosong = nama jatuh ke COMPANY_LEGAL_NAME, NMID disembunyikan.
+  QRIS_MERCHANT_NAME: "qris_merchant_name",
+  QRIS_NMID: "qris_nmid",
   // Penerima laporan tutup kasir via WA — JSON array nomor `628xx`, boleh
   // lebih dari satu. Terpisah dari recipients notifikasi owner (EPIC-020)
   // karena audiensnya beda: laporan shift sering ke supervisor/finance,

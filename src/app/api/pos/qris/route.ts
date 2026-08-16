@@ -8,6 +8,7 @@ import {
   createXenditDynamicQr,
   loadActiveXenditConfig,
 } from "@/lib/payments/xendit";
+import { getSettings, SETTING_KEYS } from "@/lib/settings/app-settings";
 
 // QRIS dinamis utk customer display: QR per transaksi dengan nominal terkunci.
 // Secret diambil dari Settings → Payment Gateways (configuration.payment_gateways),
@@ -72,6 +73,14 @@ export async function POST(request: NextRequest) {
       description: `POS ${Math.round(parsed.data.amount)}`,
     });
 
+    // Identitas merchant utk dialog QRIS bergaya standar Indonesia —
+    // nama jatuh ke profil legal perusahaan bila belum diisi khusus.
+    const identity = await getSettings([
+      SETTING_KEYS.QRIS_MERCHANT_NAME,
+      SETTING_KEYS.QRIS_NMID,
+      SETTING_KEYS.COMPANY_LEGAL_NAME,
+    ]);
+
     return NextResponse.json({
       success: true,
       data: {
@@ -79,6 +88,11 @@ export async function POST(request: NextRequest) {
         qr_string: qr.qr_string,
         amount: qr.amount,
         expires_at: qr.expires_at,
+        merchant_name:
+          identity[SETTING_KEYS.QRIS_MERCHANT_NAME] ||
+          identity[SETTING_KEYS.COMPANY_LEGAL_NAME] ||
+          null,
+        nmid: identity[SETTING_KEYS.QRIS_NMID] || null,
       },
     });
   } catch (err) {
