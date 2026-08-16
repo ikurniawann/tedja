@@ -11,6 +11,12 @@
 
 
 
+## Metode bayar POS
+- Tambah metode baru = alias Tunai/Kartu, bukan QRIS/Xendit. Order tetap enum `cash`/`credit`.
+- Jangan longgarkan `pos_payment_method` enum dari UI; handler existing yang dipakai kasir.
+- Nama custom harus disimpan di `payment_method_code` + `payment_method_name`. Tanpa itu laporan/struk/shift hanya lihat enum Tunai/Kartu.
+- Laci shift: hanya kode built-in `cash` yang dihitung tunai. Alias custom (Transfer BCA) jangan masuk expected cash.
+
 ## Laporan transaksi Xendit
 - Jangan reconstruct External ID sebagai `pos-{orderId}`. QR stall = `pos-{uuid acak}` sebelum order ada.
 - Simpan `xendit_qr_id` + `xendit_external_id` ke `pos_orders` saat QRIS lunas (create/pay/complete checkout). Transaksi lama tetap kosong.

@@ -12,6 +12,7 @@ import {
 } from '@/lib/giftcard/giftcard-server';
 import { ensureQueueNumber } from '@/lib/pos/queue-number';
 import { AccountingPostError } from '@/lib/pos/accounting-posting';
+import { resolvePaymentCatalogStamp } from '@/lib/pos/payment-methods';
 import { sanitizeXenditRef } from '@/lib/pos/xendit-ids';
 
 type OrderPatchBody = {
@@ -29,6 +30,8 @@ type OrderPatchBody = {
   gift_card_code?: string;
   xendit_qr_id?: string;
   xendit_external_id?: string;
+  payment_method_code?: string;
+  payment_method_name?: string;
 };
 
 function getErrorMessage(error: unknown) {
@@ -65,6 +68,12 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     const xenditExternalId = sanitizeXenditRef(body.xendit_external_id);
     if (xenditQrId) updateData.xendit_qr_id = xenditQrId;
     if (xenditExternalId) updateData.xendit_external_id = xenditExternalId;
+    const catalog = resolvePaymentCatalogStamp({
+      code: body.payment_method_code,
+      name: body.payment_method_name,
+    });
+    if (catalog.payment_method_code) updateData.payment_method_code = catalog.payment_method_code;
+    if (catalog.payment_method_name) updateData.payment_method_name = catalog.payment_method_name;
 
     // Payment no longer drives kitchen status. Client may still send
     // status=completed when paying; treat it as paid only.

@@ -7,6 +7,7 @@ import {
   buildOrderReceiptMessage,
   normalizeWaPhone,
 } from "@/lib/pos/receipt-wa";
+import { formatPaymentMethodLabel } from "@/features/pos/reports/utils/transaction-labels";
 
 /**
  * POST /api/pos/orders/[id]/send-wa — kirim struk digital via WhatsApp.
@@ -39,7 +40,7 @@ export async function POST(
       .from("pos_orders")
       .select(
         `id, order_number, ordered_at, total_amount, discount_amount,
-         payment_method, amount_paid, payment_status,
+         payment_method, payment_method_code, payment_method_name, amount_paid, payment_status,
          customer:pos_customers(name, phone),
          items:pos_order_items(product_name, quantity, total_amount)`
       )
@@ -90,7 +91,10 @@ export async function POST(
       orderedAt: String(order.ordered_at ?? new Date().toISOString()),
       items,
       total,
-      paymentMethod: String(order.payment_method ?? "cash"),
+      paymentMethod: formatPaymentMethodLabel(order.payment_method, {
+        code: order.payment_method_code,
+        name: order.payment_method_name,
+      }),
       change: Math.max(0, paid - total),
       discountAmount: Number(order.discount_amount) || 0,
       customerName: customer?.name ?? null,

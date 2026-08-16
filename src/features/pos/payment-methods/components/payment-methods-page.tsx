@@ -1,20 +1,44 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { CreditCard, Loader2 } from "lucide-react";
+import { CreditCard, Loader2, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogFooter,
+  DialogPanel,
+  DialogPanelBody,
+  DialogPanelDescription,
+  DialogPanelForm,
+  DialogPanelHeader,
+  DialogPanelTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { PurchasingListSection } from "@/modules/purchasing/components/list/PurchasingListSection";
+import { PurchasingPageHeader } from "@/modules/purchasing/components/page/purchasing-page-header";
 import { TableRow } from "@/components/ui/table";
-import type { PosPaymentMethod } from "@/lib/pos/payment-methods";
-import { usePaymentMethods, useUpdatePaymentMethod } from "../queries";
+import type { ManualPaymentHandler, PosPaymentMethod } from "@/lib/pos/payment-methods";
+import {
+  canRenamePaymentMethodCode,
+  slugifyPaymentMethodCode,
+} from "@/lib/pos/payment-methods";
+import { useCreatePaymentMethod, usePaymentMethods, useUpdatePaymentMethod } from "../queries";
 
 export function PaymentMethodsPage() {
   const listQuery = usePaymentMethods(false);
   const updateMutation = useUpdatePaymentMethod();
+  const createMutation = useCreatePaymentMethod();
+  const [addOpen, setAddOpen] = useState(false);
+  const [addForm, setAddForm] = useState({
+    name: "",
+    code: "",
+    description: "",
+    handler: "cash" as ManualPaymentHandler,
+  });
   const [drafts, setDrafts] = useState<
-    Record<string, { name: string; description: string; sort_order: string }>
+    Record<string, { name: string; description: string; sort_order: string; code: string }>
   >({});
 
   const methods = listQuery.data ?? [];
@@ -26,6 +50,7 @@ export function PaymentMethodsPage() {
         ...method,
         name: draft?.name ?? method.name,
         description: draft?.description ?? method.description,
+        code_text: draft?.code ?? method.code,
         sort_order_text:
           draft?.sort_order ?? String(method.sort_order),
       };
@@ -34,13 +59,14 @@ export function PaymentMethodsPage() {
 
   function setDraft(
     code: string,
-    patch: Partial<{ name: string; description: string; sort_order: string }>
+    patch: Partial<{ name: string; description: string; sort_order: string; code: string }>
   ) {
     setDrafts((current) => {
       const base = current[code] ?? {
         name: methods.find((m) => m.code === code)?.name ?? "",
         description: methods.find((m) => m.code === code)?.description ?? "",
         sort_order: String(methods.find((m) => m.code === code)?.sort_order ?? 0),
+        code,
       };
       return { ...current, [code]: { ...base, ...patch } };
     });
@@ -52,24 +78,39 @@ export function PaymentMethodsPage() {
     return (
       draft.name !== method.name ||
       draft.description !== method.description ||
+      draft.code !== method.code ||
       Number(draft.sort_order) !== method.sort_order
     );
   }
 
+  function resetAddForm() {
+    setAddForm({ name: "", code: "", description: "", handler: "cash" });
+  }
+
   return (
     <div className="space-y-6">
-      <div className="border-b border-gray-200/70 pb-4">
-        <h1 className="text-2xl font-bold text-foreground">Metode Bayar</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Aktifkan, urutkan, dan ubah label metode di kasir. Handler ARK / NFC /
-          Gift Card tetap terikat skema existing.
-        </p>
-      </div>
+      <PurchasingPageHeader
+        title="Metode Bayar"
+        description="Aktifkan, urutkan, atau tambah metode manual (Tunai/Kartu). QRIS tetap Xendit — tidak ditambah dari sini."
+        actions={
+          <Button
+            type="button"
+            className="gap-2"
+            onClick={() => {
+              resetAddForm();
+              setAddOpen(true);
+            }}
+          >
+            <Plus className="size-4" />
+            Tambah metode
+          </Button>
+        }
+      />
 
       <PurchasingListSection
         icon={CreditCard}
         title="Master metode pembayaran"
-        description="Kode & handler tidak diubah dari sini — hanya tampilan dan status aktif."
+        description="Metode baru memakai alur Tunai atau Kartu. QRIS/Xendit, ARK, NFC, dan Gift Card tidak dibuat ulang di sini."
       >
         {listQuery.isLoading ? (
           <div className="py-14 text-center">
@@ -115,8 +156,23 @@ export function PaymentMethodsPage() {
                           }
                         />
                       </td>
-                      <td className="px-4 py-3 font-mono text-xs text-foreground">
-                        {row.code}
+                      <td className="px-4 py-3">
+                        {canRenamePaymentMethodCode(original.code) ? (
+                          <Input
+                            value={row.code_text}
+                            disabled={busy}
+                            onChange={(e) =>
+                              setDraft(original.code, {
+                                code: slugifyPaymentMethodCode(e.target.value),
+                              })
+                            }
+                            className="h-9 border-gray-200/80 font-mono text-xs"
+                          />
+                        ) : (
+                          <span className="font-mono text-xs text-muted-foreground">
+                            {row.code}
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <Input
@@ -160,14 +216,24 @@ export function PaymentMethodsPage() {
                           <Button
                             size="sm"
                             className="h-8"
-                            disabled={!dirty || busy || row.name.trim().length < 2}
+                            disabled={
+                              !dirty ||
+                              busy ||
+                              row.name.trim().length < 2 ||
+                              (canRenamePaymentMethodCode(original.code) &&
+                                row.code_text.trim().length < 2)
+                            }
                             onClick={() =>
                               updateMutation.mutate(
                                 {
-                                  code: row.code,
+                                  code: original.code,
                                   name: row.name.trim(),
                                   description: row.description.trim(),
                                   sort_order: Number(row.sort_order_text) || 0,
+                                  ...(canRenamePaymentMethodCode(original.code) &&
+                                  row.code_text !== original.code
+                                    ? { new_code: row.code_text }
+                                    : {}),
                                 },
                                 {
                                   onSuccess: () =>
@@ -196,6 +262,135 @@ export function PaymentMethodsPage() {
           </div>
         )}
       </PurchasingListSection>
+
+      <Dialog
+        open={addOpen}
+        onOpenChange={(open) => {
+          if (createMutation.isPending) return;
+          setAddOpen(open);
+          if (!open) resetAddForm();
+        }}
+      >
+        <DialogPanel size="sm">
+          <DialogPanelForm
+            onSubmit={(event) => {
+              event.preventDefault();
+              createMutation.mutate(
+                {
+                  name: addForm.name.trim(),
+                  code: slugifyPaymentMethodCode(addForm.code || addForm.name),
+                  description: addForm.description.trim(),
+                  handler: addForm.handler,
+                },
+                {
+                  onSuccess: () => {
+                    setAddOpen(false);
+                    resetAddForm();
+                  },
+                }
+              );
+            }}
+          >
+            <DialogPanelHeader>
+              <DialogPanelTitle>Tambah metode bayar</DialogPanelTitle>
+              <DialogPanelDescription>
+                Metode manual tanpa Xendit. Pilih alur Tunai atau Kartu.
+              </DialogPanelDescription>
+            </DialogPanelHeader>
+            <DialogPanelBody className="space-y-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="pm-name">Nama</Label>
+                <Input
+                  id="pm-name"
+                  value={addForm.name}
+                  onChange={(e) => {
+                    const name = e.target.value;
+                    setAddForm((current) => ({
+                      ...current,
+                      name,
+                      code: current.code || slugifyPaymentMethodCode(name),
+                    }));
+                  }}
+                  placeholder="Transfer BCA"
+                  className="border-border"
+                  required
+                  minLength={2}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="pm-code">Kode</Label>
+                <Input
+                  id="pm-code"
+                  value={addForm.code}
+                  onChange={(e) =>
+                    setAddForm((current) => ({
+                      ...current,
+                      code: slugifyPaymentMethodCode(e.target.value),
+                    }))
+                  }
+                  placeholder="transfer_bca"
+                  className="border-border font-mono text-xs"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="pm-desc">Deskripsi</Label>
+                <Input
+                  id="pm-desc"
+                  value={addForm.description}
+                  onChange={(e) =>
+                    setAddForm((current) => ({
+                      ...current,
+                      description: e.target.value,
+                    }))
+                  }
+                  placeholder="Transfer rekening toko"
+                  className="border-border"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="pm-handler">Alur kasir</Label>
+                <select
+                  id="pm-handler"
+                  value={addForm.handler}
+                  onChange={(e) =>
+                    setAddForm((current) => ({
+                      ...current,
+                      handler: e.target.value as ManualPaymentHandler,
+                    }))
+                  }
+                  className="flex h-9 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus-visible:ring-1 focus-visible:ring-primary/30"
+                >
+                  <option value="cash">Tunai — input nominal & kembalian</option>
+                  <option value="credit">Kartu — EDC / debit / credit</option>
+                </select>
+              </div>
+            </DialogPanelBody>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                className="border-border"
+                disabled={createMutation.isPending}
+                onClick={() => setAddOpen(false)}
+              >
+                Batal
+              </Button>
+              <Button
+                type="submit"
+                disabled={
+                  createMutation.isPending || addForm.name.trim().length < 2
+                }
+              >
+                {createMutation.isPending ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  "Simpan"
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogPanelForm>
+        </DialogPanel>
+      </Dialog>
     </div>
   );
 }

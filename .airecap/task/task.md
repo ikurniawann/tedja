@@ -22,3 +22,5 @@ Kasir pusat jual semua stall, bayar 1x; data pecah per stall. Kasir stall tetap 
 Branch `feature/pos-central-cashier`. Tes unit 1452 passed sebelum fix terakhir; fix commit `a9e4ea5a`.
 
 Follow-up laporan transaksi: dialog Detail dipecah Transaksi / Pembayaran / Xendit (QRIS) / Item terjual. Settlement Pending dijelaskan sebagai cair T+2, bukan gagal bayar.
+
+Follow-up metode bayar custom: persist `payment_method_code` + `payment_method_name` di order/checkout supaya laporan, struk, dan laci shift tidak jatuh ke label Tunai/Kartu. Alias custom tidak dihitung sebagai uang laci.

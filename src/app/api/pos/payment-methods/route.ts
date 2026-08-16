@@ -2,10 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getPosSession, successResponse } from "@/lib/api/auth";
 import {
+  createPosPaymentMethod,
   listPosPaymentMethods,
   updatePosPaymentMethod,
 } from "@/lib/pos/payment-methods-store";
-import { isPosPaymentMethodCode } from "@/lib/pos/payment-methods";
+import {
+  isManualPaymentHandler,
+  slugifyPaymentMethodCode,
+} from "@/lib/pos/payment-methods";
 
 export async function GET(request: NextRequest) {
   const sessionUserId = await getPosSession();
@@ -37,6 +41,7 @@ const patchSchema = z.object({
   description: z.string().trim().max(200).optional(),
   is_active: z.boolean().optional(),
   sort_order: z.number().int().min(0).max(10_000).optional(),
+  new_code: z.string().trim().min(2).max(40).optional(),
 });
 
 export async function PATCH(request: NextRequest) {
@@ -57,7 +62,7 @@ export async function PATCH(request: NextRequest) {
       );
     }
     const { code, ...patch } = parsed.data;
-    if (!isPosPaymentMethodCode(code)) {
+    if (!slugifyPaymentMethodCode(code)) {
       return NextResponse.json(
         { success: false, error: "Kode metode tidak dikenali" },
         { status: 400 }
@@ -67,7 +72,8 @@ export async function PATCH(request: NextRequest) {
       patch.name === undefined &&
       patch.description === undefined &&
       patch.is_active === undefined &&
-      patch.sort_order === undefined
+      patch.sort_order === undefined &&
+      patch.new_code === undefined
     ) {
       return NextResponse.json(
         { success: false, error: "Tidak ada field yang diubah" },
@@ -84,10 +90,53 @@ export async function PATCH(request: NextRequest) {
     }
     return successResponse(updated, "Metode bayar diperbarui");
   } catch (err) {
+    const message = err instanceof Error ? err.message : "Gagal memperbarui metode bayar";
+    const known =
+      /tidak valid|tidak bisa diubah|sudah dipakai|metode bawaan/i.test(message);
     console.error("[pos] update payment method:", err);
     return NextResponse.json(
-      { success: false, error: "Gagal memperbarui metode bayar" },
-      { status: 500 }
+      { success: false, error: known ? message : "Gagal memperbarui metode bayar" },
+      { status: known ? 400 : 500 }
     );
+  }
+}
+
+const createSchema = z.object({
+  name: z.string().trim().min(2).max(80),
+  code: z.string().trim().max(40).optional(),
+  description: z.string().trim().max(200).optional(),
+  handler: z.enum(["cash", "credit"]),
+});
+
+export async function POST(request: NextRequest) {
+  const sessionUserId = await getPosSession();
+  if (!sessionUserId) {
+    return NextResponse.json(
+      { success: false, error: "Authentication required" },
+      { status: 401 }
+    );
+  }
+
+  try {
+    const parsed = createSchema.safeParse(await request.json());
+    if (!parsed.success) {
+      return NextResponse.json(
+        { success: false, error: "Validation failed", details: parsed.error.issues },
+        { status: 400 }
+      );
+    }
+    if (!isManualPaymentHandler(parsed.data.handler)) {
+      return NextResponse.json(
+        { success: false, error: "Metode baru hanya Tunai atau Kartu" },
+        { status: 400 }
+      );
+    }
+    const created = await createPosPaymentMethod(parsed.data);
+    return successResponse(created, "Metode bayar ditambahkan");
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Gagal menambah metode bayar";
+    const status = /sudah dipakai/i.test(message) ? 409 : 400;
+    console.error("[pos] create payment method:", err);
+    return NextResponse.json({ success: false, error: message }, { status });
   }
 }

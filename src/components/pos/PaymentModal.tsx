@@ -46,7 +46,10 @@ import {
   shouldSkipQrisPrepare,
 } from "@/lib/pos/central-cashier";
 import { cancelCheckout } from "@/lib/pos-api";
-import { DEFAULT_POS_PAYMENT_METHODS } from "@/lib/pos/payment-methods";
+import {
+  cashierMethodFromHandler,
+  DEFAULT_POS_PAYMENT_METHODS,
+} from "@/lib/pos/payment-methods";
 import { usePaymentMethods } from "@/features/pos/payment-methods";
 
 export type PaymentMethod =
@@ -117,6 +120,8 @@ interface Props {
     queueNumber?: string | null;
     xenditQrId?: string;
     xenditExternalId?: string;
+    paymentMethodCode?: string;
+    paymentMethodName?: string;
   }) => void | Promise<void>;
   submitting?: boolean;
   formatCurrency: (v: number) => string;
@@ -169,6 +174,7 @@ export function PaymentModal({
 }: Props) {
   const methodsQuery = usePaymentMethods(true);
   const [method, setMethod] = useState<PaymentMethod>("cash");
+  const [selectedCode, setSelectedCode] = useState("cash");
   const [cashReceived, setCashReceived] = useState("");
   const [arkToUse, setArkToUse] = useState(0);
   const [tabUidInput, setTabUidInput] = useState("");
@@ -235,7 +241,8 @@ export function PaymentModal({
         return true;
       })
       .map((option) => ({
-        key: option.code as PaymentMethod,
+        code: option.code,
+        cashierKey: cashierMethodFromHandler(option.handler),
         title: option.name,
         desc: option.description,
         icon:
@@ -298,6 +305,7 @@ export function PaymentModal({
     if (!open) {
       abandonPreparedMixedQris();
       setMethod("cash");
+      setSelectedCode("cash");
       setCashReceived("");
       setArkToUse(0);
       setTabUidInput("");
@@ -316,9 +324,11 @@ export function PaymentModal({
   useEffect(() => {
     if (isMixedCart && isMixedUnsupportedTender(method)) {
       setMethod("cash");
+      setSelectedCode("cash");
     }
     if (isCheckoutBill && isCheckoutBillUnsupportedTender(method)) {
       setMethod("cash");
+      setSelectedCode("cash");
     }
     if (method !== "qris") {
       abandonPreparedMixedQris();
@@ -345,10 +355,13 @@ export function PaymentModal({
 
   useEffect(() => {
     if (!open || paymentOptions.length === 0) return;
-    if (!paymentOptions.some((option) => option.key === method)) {
-      setMethod(paymentOptions[0].key);
+    if (!paymentOptions.some((option) => option.code === selectedCode)) {
+      const first = paymentOptions[0];
+      if (!first) return;
+      setSelectedCode(first.code);
+      setMethod(first.cashierKey);
     }
-  }, [open, paymentOptions, method]);
+  }, [open, paymentOptions, selectedCode]);
 
   // Total berubah (item ditambah/dihapus) → hasil cek lama basi: saldo yang
   // tadinya menutup bisa jadi kurang. Paksa kasir cek ulang.
@@ -573,28 +586,29 @@ export function PaymentModal({
           <div className="grid grid-cols-2 gap-3">
             {paymentOptions.map((option) => {
               const Icon = option.icon;
-              const selected = method === option.key;
-              const mixedBlocked = isMixedCart && isMixedUnsupportedTender(option.key);
+              const selected = selectedCode === option.code;
+              const mixedBlocked = isMixedCart && isMixedUnsupportedTender(option.cashierKey);
               const checkoutBlocked =
-                isCheckoutBill && isCheckoutBillUnsupportedTender(option.key);
+                isCheckoutBill && isCheckoutBillUnsupportedTender(option.cashierKey);
               const blocked = mixedBlocked || checkoutBlocked;
-              const desc = checkoutBlocked && option.key === "ark_coin"
+              const desc = checkoutBlocked && option.cashierKey === "ark_coin"
                 ? MIXED_ARK_UNSUPPORTED_MESSAGE
                 : mixedBlocked || checkoutBlocked
                 ? MIXED_NFC_GIFT_UNSUPPORTED_MESSAGE
-                : option.key === "ark_coin"
+                : option.cashierKey === "ark_coin"
                   ? formatArk(selectedCustomer?.ark_coin_balance || 0)
                   : option.desc;
 
               return (
                 <button
-                  key={option.key}
+                  key={option.code}
                   type="button"
                   disabled={submitting || blocked}
                   onClick={() => {
                     if (blocked) return;
-                    setMethod(option.key);
-                    if (option.key === "ark_coin" && !selectedCustomer) {
+                    setSelectedCode(option.code);
+                    setMethod(option.cashierKey);
+                    if (option.cashierKey === "ark_coin" && !selectedCustomer) {
                       onTapNFC();
                     }
                   }}
@@ -944,6 +958,9 @@ export function PaymentModal({
                   queueNumber: mixedQrisCheckout?.queue_number,
                   xenditQrId: method === "qris" ? qris?.qr_id : undefined,
                   xenditExternalId: method === "qris" ? qris?.reference_id : undefined,
+                  paymentMethodCode: selectedCode,
+                  paymentMethodName: paymentOptions.find((option) => option.code === selectedCode)
+                    ?.title,
                 });
               }}
             >

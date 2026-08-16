@@ -490,6 +490,8 @@ export interface CreateOrderRequest {
   shift_id?: string;
   xendit_qr_id?: string;
   xendit_external_id?: string;
+  payment_method_code?: string;
+  payment_method_name?: string;
 }
 
 export interface IssuedGiftCardResponse {
@@ -532,7 +534,12 @@ export async function createCheckout(checkout: CreateCheckoutRequest) {
 
 export async function completeCheckout(
   checkoutId: string,
-  tender: { payment_method: string; amount_paid: number }
+  tender: {
+    payment_method: string;
+    amount_paid: number;
+    payment_method_code?: string;
+    payment_method_name?: string;
+  }
 ) {
   return fetchAPI<{ success: boolean; data: { order_ids: string[] }; error?: string }>(
     `/checkouts/${encodeURIComponent(checkoutId)}/complete`,
@@ -670,7 +677,7 @@ export async function getCustomerFavoriteProducts(customerId: string, products: 
 export async function updateOrderStatus(
   orderId: string,
   status: string,
-  additionalData?: { payment_status?: string; payment_method?: string; amount_paid?: number; ark_coins_used?: number; cancelled_reason?: string; nfc_tab_uid?: string; xendit_qr_id?: string; xendit_external_id?: string }
+  additionalData?: { payment_status?: string; payment_method?: string; amount_paid?: number; ark_coins_used?: number; cancelled_reason?: string; nfc_tab_uid?: string; xendit_qr_id?: string; xendit_external_id?: string; payment_method_code?: string; payment_method_name?: string }
 ) {
   const response = await fetch(`/api/pos/orders/${orderId}`, {
     method: 'PATCH',

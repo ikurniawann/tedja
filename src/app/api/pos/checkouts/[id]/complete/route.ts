@@ -12,6 +12,8 @@ function getErrorMessage(error: unknown) {
 type CompleteCheckoutBody = {
   payment_method?: string;
   amount_paid?: number | string;
+  payment_method_code?: string;
+  payment_method_name?: string;
 };
 
 export async function POST(
@@ -45,6 +47,8 @@ export async function POST(
     const result = await completeMixedCheckout(checkoutId, {
       paymentMethod: body.payment_method,
       amountPaid,
+      paymentMethodCode: body.payment_method_code,
+      paymentMethodName: body.payment_method_name,
     });
     return NextResponse.json({
       success: true,

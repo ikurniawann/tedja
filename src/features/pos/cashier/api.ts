@@ -47,6 +47,8 @@ export interface PayOpenOrderPayload {
   gift_card_code?: string;
   xendit_qr_id?: string;
   xendit_external_id?: string;
+  payment_method_code?: string;
+  payment_method_name?: string;
 }
 
 export async function listCashierTables(): Promise<PosTable[]> {
@@ -111,6 +113,8 @@ export async function payOpenOrder(orderId: string, payload: PayOpenOrderPayload
     nfc_tab_uid: payload.nfc_tab_uid,
     xendit_qr_id: payload.xendit_qr_id,
     xendit_external_id: payload.xendit_external_id,
+    payment_method_code: payload.payment_method_code,
+    payment_method_name: payload.payment_method_name,
   });
 }
 

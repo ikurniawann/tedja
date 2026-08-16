@@ -16,6 +16,8 @@ type TransactionRow = {
   status: string | null;
   payment_status: string | null;
   payment_method: string | null;
+  payment_method_code: string | null;
+  payment_method_name: string | null;
   subtotal: number | string | null;
   discount_amount: number | string | null;
   tax_amount: number | string | null;
@@ -105,6 +107,8 @@ export async function GET(request: NextRequest) {
          o.status,
          o.payment_status,
          o.payment_method,
+         o.payment_method_code,
+         o.payment_method_name,
          o.subtotal,
          o.discount_amount,
          o.tax_amount,
@@ -235,6 +239,8 @@ export async function GET(request: NextRequest) {
           status: row.status,
           payment_status: row.payment_status,
           payment_method: row.payment_method,
+          payment_method_code: row.payment_method_code,
+          payment_method_name: row.payment_method_name,
           subtotal: toNumber(row.subtotal),
           discount_amount: toNumber(row.discount_amount),
           tax_amount: toNumber(row.tax_amount),

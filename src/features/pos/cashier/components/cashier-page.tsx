@@ -66,6 +66,7 @@ import {
   createSplitOrder,
 } from '../api';
 import { completeCheckout, type ProductSku } from '@/lib/pos-api';
+import { formatPaymentMethodLabel } from '@/features/pos/reports/utils/transaction-labels';
 import { MerchSkuPickerDialog } from '@/components/pos/MerchSkuPickerDialog';
 import { useCashierCheckout, useCashierOrder, useCashierTables, useCustomerFavoriteProducts } from '../queries';
 import { usePayOpenOrder } from '../mutations';
@@ -1219,12 +1220,24 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     queueNumber?: string | null;
     xenditQrId?: string;
     xenditExternalId?: string;
+    paymentMethodCode?: string;
+    paymentMethodName?: string;
   }) => {
     if (processingPayment) return;
     if (cart.items.length === 0) return;
     if (!requireActiveShift()) return;
 
     const method = overrides?.method ?? paymentMethod;
+    const catalogCode = overrides?.paymentMethodCode;
+    const catalogName = overrides?.paymentMethodName;
+    const receiptMethod = formatPaymentMethodLabel(method, {
+      code: catalogCode,
+      name: catalogName,
+    });
+    const catalogFields = {
+      payment_method_code: catalogCode,
+      payment_method_name: catalogName,
+    };
     const mixedCart = shouldCreateCheckout(
       uniqueStallIds(cart.items.map((row) => row.warehouse_id))
     );
@@ -1268,6 +1281,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         await completeCheckout(paidCheckoutId, {
           payment_method: 'qris',
           amount_paid: total,
+          ...catalogFields,
         });
         const receipt: ReceiptPayload = {
           orderId: paidCheckoutId,
@@ -1280,7 +1294,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
           notes: cart.notes,
           total,
           change: 0,
-          paymentMethod: 'qris',
+          paymentMethod: receiptMethod,
           customerName: selectedCustomer?.name,
           discountAmount,
           taxAmount,
@@ -1344,6 +1358,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
               amount_paid: 0,
               ark_coins_used: 0,
               gift_card_code: giftCardCode,
+              ...catalogFields,
             },
           });
           orderId = paymentOrderId;
@@ -1362,6 +1377,8 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
             arkToUse: 0,
             shiftId: shift?.id || null,
             giftCardCode,
+            paymentMethodCode: catalogCode,
+            paymentMethodName: catalogName,
             promo: promoApplied,
             billCharges,
             manualDiscountType: cart.manual_discount_type,
@@ -1389,7 +1406,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
           notes: cart.notes,
           total: cTotal,
           change: 0,
-          paymentMethod: 'gift_card',
+          paymentMethod: receiptMethod,
           customerName: selectedCustomer?.name,
           discountAmount,
           taxAmount,
@@ -1447,6 +1464,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
               amount_paid: 0,
               ark_coins_used: 0,
               nfc_tab_uid: nfcTabUid,
+              ...catalogFields,
             },
           });
           orderId = paymentOrderId;
@@ -1465,6 +1483,8 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
             arkToUse: 0,
             shiftId: shift?.id || null,
             nfcTabUid,
+            paymentMethodCode: catalogCode,
+            paymentMethodName: catalogName,
             promo: promoApplied,
             billCharges,
             manualDiscountType: cart.manual_discount_type,
@@ -1492,7 +1512,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
           notes: cart.notes,
           total: cTotal,
           change: 0,
-          paymentMethod: 'nfc_tab',
+          paymentMethod: receiptMethod,
           customerName: selectedCustomer?.name,
           discountAmount,
           taxAmount,
@@ -1544,6 +1564,8 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
           method,
           cashReceived: cashValue,
           total: payTotal,
+          paymentMethodCode: catalogCode,
+          paymentMethodName: catalogName,
         });
         await completeCheckout(paymentCheckoutId, tender);
         const receipt: ReceiptPayload = {
@@ -1557,7 +1579,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
           notes: cart.notes,
           total: payTotal,
           change: method === 'cash' ? (parseFloat(cashValue) || 0) - payTotal : 0,
-          paymentMethod: method,
+          paymentMethod: receiptMethod,
           customerName: selectedCustomer?.name,
           discountAmount,
           taxAmount,
@@ -1602,6 +1624,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
             ark_coins_used: method === 'ark_coin' ? arkCapped : 0,
             xendit_qr_id: overrides?.xenditQrId,
             xendit_external_id: overrides?.xenditExternalId,
+            ...catalogFields,
           },
         });
 
@@ -1615,7 +1638,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
           notes: cart.notes,
           total: payTotal,
           change: method === 'cash' ? (parseFloat(cashValue) || 0) - payTotal : 0,
-          paymentMethod: method,
+          paymentMethod: receiptMethod,
           customerName: selectedCustomer?.name,
           discountAmount,
           taxAmount,
@@ -1676,6 +1699,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         total_amount: cTotal,
         payment_method: method === 'qris' ? 'qris' : method === 'credit_card' ? 'credit' : method === 'ark_coin' ? 'ark_coin' : 'cash',
         amount_paid: method === 'cash' ? (parseFloat(cashValue) || cTotal) : cTotal,
+        ...catalogFields,
         include_tax: cart.includeTax,
         membership_discount_pct: membershipDiscount,
         notes: cart.notes,
@@ -1692,7 +1716,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         notes: cart.notes,
         total: cTotal,
         change: method === 'cash' ? (parseFloat(cashValue) || 0) - cTotal : 0,
-        paymentMethod: method,
+        paymentMethod: receiptMethod,
         customerName: selectedCustomer?.name,
         discountAmount,
         taxAmount,
@@ -1732,6 +1756,8 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       offerLabels: offerEval.applied.map((a) => a.name),
       xenditQrId: overrides?.xenditQrId,
       xenditExternalId: overrides?.xenditExternalId,
+      paymentMethodCode: catalogCode,
+      paymentMethodName: catalogName,
     });
 
     if (res.success) {
@@ -1751,7 +1777,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         notes: cart.notes,
         total: res.total,
         change: res.change,
-        paymentMethod: method,
+        paymentMethod: receiptMethod,
         customerName: selectedCustomer?.name,
         discountAmount,
         taxAmount,
@@ -2868,6 +2894,8 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
                   notes: cart.notes,
                   arkToUse: 0,
                   shiftId: shift?.id || null,
+                  paymentMethodCode: 'qris',
+                  paymentMethodName: 'QRIS',
                   promo: promoApplied,
                   billCharges,
                   manualDiscountType: cart.manual_discount_type,
@@ -2898,6 +2926,8 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
           queueNumber,
           xenditQrId,
           xenditExternalId,
+          paymentMethodCode,
+          paymentMethodName,
         }) => {
           setPaymentMethod(method);
           setCashReceived(cashReceived);
@@ -2913,6 +2943,8 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
             queueNumber,
             xenditQrId,
             xenditExternalId,
+            paymentMethodCode,
+            paymentMethodName,
           });
         }}
         formatCurrency={formatCurrency}

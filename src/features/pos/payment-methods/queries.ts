@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { fetchPaymentMethods, updatePaymentMethod } from "./api";
+import { createPaymentMethod, fetchPaymentMethods, updatePaymentMethod } from "./api";
 
 export const paymentMethodKeys = {
   all: ["pos", "payment-methods"] as const,
@@ -14,6 +14,18 @@ export function usePaymentMethods(activeOnly = false) {
     queryKey: activeOnly ? paymentMethodKeys.active : paymentMethodKeys.all,
     queryFn: () => fetchPaymentMethods(activeOnly),
     staleTime: 30_000,
+  });
+}
+
+export function useCreatePaymentMethod() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: createPaymentMethod,
+    onSuccess: async () => {
+      toast.success("Metode bayar ditambahkan");
+      await queryClient.invalidateQueries({ queryKey: paymentMethodKeys.all });
+    },
+    onError: (error: Error) => toast.error(error.message),
   });
 }
 

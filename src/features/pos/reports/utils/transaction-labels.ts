@@ -1,3 +1,5 @@
+import { canRenamePaymentMethodCode } from "@/lib/pos/payment-methods";
+
 /** Label laporan transaksi: bayar vs dapur, jangan campur. */
 
 const PAYMENT_STATUS_LABEL: Record<string, string> = {
@@ -48,9 +50,17 @@ export function formatPaymentStatusLabel(
   return paymentStatus || kitchenStatus ? "Belum lunas" : "—";
 }
 
-export function formatPaymentMethodLabel(method?: string | null) {
+export function formatPaymentMethodLabel(
+  method?: string | null,
+  catalog?: { name?: string | null; code?: string | null }
+) {
+  const catalogCode = key(catalog?.code);
+  const catalogName = String(catalog?.name || "").trim();
+  if (catalogName && catalogCode && canRenamePaymentMethodCode(catalogCode)) {
+    return catalogName;
+  }
   const value = key(method);
-  if (!value) return "—";
+  if (!value) return catalogName || "—";
   return PAYMENT_METHOD_LABEL[value] || method || "—";
 }
 

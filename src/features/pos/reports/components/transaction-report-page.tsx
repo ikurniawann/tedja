@@ -107,6 +107,8 @@ type OrderDetail = {
   change_amount?: number | string | null;
   ark_coins_used?: number | string | null;
   payment_method?: string | null;
+  payment_method_code?: string | null;
+  payment_method_name?: string | null;
   payment_status?: string | null;
   status?: string | null;
   sold_from?: string | null;
@@ -462,7 +464,10 @@ export function TransactionReportPage() {
                         </Badge>
                       </td>
                       <td className="px-3 py-3 text-muted-foreground">
-                        {formatPaymentMethodLabel(row.payment_method)}
+                        {formatPaymentMethodLabel(row.payment_method, {
+                          code: row.payment_method_code,
+                          name: row.payment_method_name,
+                        })}
                       </td>
                       <td className="px-3 py-3 text-right font-medium">
                         {formatCurrency(row.total_amount)}

@@ -37,6 +37,7 @@ import {
   type MerchStockClaim,
 } from "@/lib/pos/merchandise-stock";
 import { buildCostSnapshot, loadPosProductCostMap } from "@/lib/pos/purchasing-sync";
+import { resolvePaymentCatalogStamp } from "@/lib/pos/payment-methods";
 
 export {
   MIXED_ARK_UNSUPPORTED_MESSAGE,
@@ -133,6 +134,8 @@ export type CreateMixedCheckoutInput = {
   forceInsertChildren?: boolean;
   /** Append mixed items onto the table's existing unpaid central checkout. */
   reuseUnpaidTableCheckout?: boolean;
+  paymentMethodCode?: string | null;
+  paymentMethodName?: string | null;
 };
 
 export type MixedCheckoutResult = {
@@ -156,8 +159,45 @@ function isMissingColumn(error: unknown): boolean {
   const candidate = error as { code?: string; message?: string };
   return (
     candidate.code === "42703" ||
+    candidate.code === "PGRST204" ||
     /column .* does not exist/i.test(candidate.message ?? "")
   );
+}
+
+async function stampPaymentCatalog(
+  client: PoolClient,
+  input: {
+    checkoutId?: string | null;
+    orderIds?: string[];
+    code?: string | null;
+    name?: string | null;
+  }
+) {
+  const stamp = resolvePaymentCatalogStamp({
+    code: input.code,
+    name: input.name,
+  });
+  if (!stamp.payment_method_code && !stamp.payment_method_name) return;
+  try {
+    if (input.checkoutId) {
+      await client.query(
+        `UPDATE pos.pos_checkouts
+         SET payment_method_code = $2, payment_method_name = $3, updated_at = now()
+         WHERE id = $1`,
+        [input.checkoutId, stamp.payment_method_code, stamp.payment_method_name]
+      );
+    }
+    if (input.orderIds && input.orderIds.length > 0) {
+      await client.query(
+        `UPDATE pos.pos_orders
+         SET payment_method_code = $2, payment_method_name = $3, updated_at = now()
+         WHERE id = ANY($1::uuid[])`,
+        [input.orderIds, stamp.payment_method_code, stamp.payment_method_name]
+      );
+    }
+  } catch (error) {
+    if (!isMissingColumn(error)) throw error;
+  }
 }
 
 function toNumber(value: unknown, fallback = 0): number {
@@ -383,6 +423,8 @@ export function resolveXenditPaidWebhookAction(input: {
 export type CompleteMixedCheckoutTender = {
   paymentMethod?: string | null;
   amountPaid?: number | null;
+  paymentMethodCode?: string | null;
+  paymentMethodName?: string | null;
 };
 
 export type CompleteMixedCheckoutOptions = {
@@ -563,6 +605,8 @@ type CheckoutRow = {
   cart_snapshot?: MixedCheckoutCartSnapshot | null;
   xendit_qr_id?: string | null;
   xendit_external_id?: string | null;
+  payment_method_code?: string | null;
+  payment_method_name?: string | null;
 };
 
 async function loadCheckout(
@@ -575,7 +619,8 @@ async function loadCheckout(
               company_id, branch_id, table_id, customer_id, cashier_id, shift_id,
               subtotal, discount_amount, tax_amount, service_charge_amount,
               other_charges_amount, total_amount, amount_paid, change_amount,
-              notes, cart_snapshot, xendit_qr_id, xendit_external_id
+              notes, cart_snapshot, xendit_qr_id, xendit_external_id,
+              payment_method_code, payment_method_name
        FROM pos.pos_checkouts
        WHERE id = $1
        FOR UPDATE`,
@@ -1495,6 +1540,13 @@ export async function createMixedCheckout(
         });
       }
 
+      await stampPaymentCatalog(client, {
+        checkoutId: checkout.id,
+        orderIds,
+        code: input.paymentMethodCode,
+        name: input.paymentMethodName,
+      });
+
       return {
         checkoutId: checkout.id,
         checkoutNumber: checkout.checkout_number,
@@ -1649,7 +1701,7 @@ export async function completeMixedCheckout(
   const { data: preview, error: previewError } = await db
     .from("pos_checkouts")
     .select(
-      "id, customer_id, cashier_id, payment_method, branch_id, cart_snapshot, xendit_qr_id, xendit_external_id, total_amount"
+      "id, customer_id, cashier_id, payment_method, payment_method_code, payment_method_name, branch_id, cart_snapshot, xendit_qr_id, xendit_external_id, total_amount"
     )
     .eq("id", checkoutId)
     .maybeSingle();
@@ -1674,6 +1726,10 @@ export async function completeMixedCheckout(
     throw new MixedCheckoutError(resolved.message);
   }
 
+  const catalog = resolvePaymentCatalogStamp({
+    code: tender.paymentMethodCode || preview.payment_method_code,
+    name: tender.paymentMethodName || preview.payment_method_name,
+  });
   const previewSnapshot = parseSnapshot(preview as CheckoutRow);
 
   if (
@@ -1698,6 +1754,7 @@ export async function completeMixedCheckout(
         payment_method: resolved.paymentMethod,
         amount_paid: resolved.amountPaid,
         change_amount: resolved.changeAmount,
+        ...catalog,
         updated_at: now,
       })
       .eq("id", checkoutId)
@@ -1720,6 +1777,7 @@ export async function completeMixedCheckout(
           change_amount: index === 0 ? resolved.changeAmount : 0,
           xendit_qr_id: preview.xendit_qr_id || null,
           xendit_external_id: preview.xendit_external_id || null,
+          ...catalog,
           updated_at: now,
         })
         .eq("id", child.id)
@@ -1812,6 +1870,12 @@ export async function completeMixedCheckout(
           if (!isMissingColumn(error)) throw error;
         }
       }
+      await stampPaymentCatalog(client, {
+        checkoutId,
+        orderIds,
+        code: catalog.payment_method_code || checkout.payment_method_code,
+        name: catalog.payment_method_name || checkout.payment_method_name,
+      });
       return { orderIds, snapshot, checkout: settledCheckout, reusedExistingChildren: false };
     });
 

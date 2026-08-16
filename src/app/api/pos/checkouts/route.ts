@@ -39,6 +39,8 @@ type CheckoutBody = {
   charges_breakdown?: unknown;
   total_amount?: number | string;
   payment_method?: string;
+  payment_method_code?: string;
+  payment_method_name?: string;
   payment_status?: string;
   amount_paid?: number | string;
   notes?: string;
@@ -119,6 +121,8 @@ export async function POST(request: NextRequest) {
       chargesBreakdown: body.charges_breakdown,
       totalAmount: body.total_amount,
       paymentMethod: body.payment_method,
+      paymentMethodCode: body.payment_method_code,
+      paymentMethodName: body.payment_method_name,
       paymentStatus: body.payment_status,
       amountPaid: body.amount_paid,
       arkCoinsUsed: body.ark_coins_used,

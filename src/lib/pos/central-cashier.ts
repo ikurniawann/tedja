@@ -80,14 +80,29 @@ export function buildCheckoutBillPayBody(input: {
   method: string;
   cashReceived?: string;
   total: number;
-}): { payment_method: string; amount_paid: number } {
+  paymentMethodCode?: string;
+  paymentMethodName?: string;
+}): {
+  payment_method: string;
+  amount_paid: number;
+  payment_method_code?: string;
+  payment_method_name?: string;
+} {
   const payment_method = input.method === "credit_card" ? "credit" : input.method;
   const parsedCash = Number.parseFloat(input.cashReceived || "");
   const amount_paid =
     input.method === "cash" && Number.isFinite(parsedCash) && parsedCash > 0
       ? parsedCash
       : input.total;
-  return { payment_method, amount_paid };
+  const body: {
+    payment_method: string;
+    amount_paid: number;
+    payment_method_code?: string;
+    payment_method_name?: string;
+  } = { payment_method, amount_paid };
+  if (input.paymentMethodCode) body.payment_method_code = input.paymentMethodCode;
+  if (input.paymentMethodName) body.payment_method_name = input.paymentMethodName;
+  return body;
 }
 
 export function buildPosQrisCreateBody(input: {

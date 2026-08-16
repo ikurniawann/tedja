@@ -39,6 +39,8 @@ export type TransactionOrderDetail = {
   change_amount?: number | string | null;
   ark_coins_used?: number | string | null;
   payment_method?: string | null;
+  payment_method_code?: string | null;
+  payment_method_name?: string | null;
   payment_status?: string | null;
   status?: string | null;
   sold_from?: string | null;
@@ -119,6 +121,10 @@ export function TransactionDetailBody({
   const paymentStatus = detail?.payment_status ?? row?.payment_status;
   const kitchenStatus = detail?.status ?? row?.status;
   const paymentMethod = detail?.payment_method || row?.payment_method;
+  const paymentMethodLabel = formatPaymentMethodLabel(paymentMethod, {
+    code: detail?.payment_method_code || row?.payment_method_code,
+    name: detail?.payment_method_name || row?.payment_method_name,
+  });
   const paid = isPaidPaymentStatus(paymentStatus, kitchenStatus);
   const showXendit = isQrisPaymentMethod(paymentMethod);
   const externalId = resolveXenditExternalId({
@@ -183,7 +189,7 @@ export function TransactionDetailBody({
               </Badge>
             }
           />
-          <DetailField label="Metode" value={formatPaymentMethodLabel(paymentMethod)} />
+          <DetailField label="Metode" value={paymentMethodLabel} />
           <DetailField
             label="Total"
             value={formatCurrency(toNumber(detail?.total_amount ?? row?.total_amount))}

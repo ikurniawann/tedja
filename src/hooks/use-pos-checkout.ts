@@ -63,6 +63,8 @@ export function usePosCheckout() {
       paymentStatus,
       xenditQrId,
       xenditExternalId,
+      paymentMethodCode,
+      paymentMethodName,
     }: {
       cart: PosCartItem[];
       orderType: string;
@@ -92,6 +94,8 @@ export function usePosCheckout() {
       paymentStatus?: "paid" | "unpaid";
       xenditQrId?: string;
       xenditExternalId?: string;
+      paymentMethodCode?: string;
+      paymentMethodName?: string;
     }): Promise<PaymentResult> => {
       const snap = {
         snapshotCart: [...cart],
@@ -210,6 +214,8 @@ export function usePosCheckout() {
           gift_card_buyer_phone: giftCardBuyer?.phone || undefined,
           xendit_qr_id: xenditQrId,
           xendit_external_id: xenditExternalId,
+          payment_method_code: paymentMethodCode,
+          payment_method_name: paymentMethodName,
         };
 
         const response = useCheckout

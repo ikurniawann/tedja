@@ -58,6 +58,7 @@ import {
   normalizeStation,
 } from '@/lib/pos/kitchen-station';
 import { AccountingPostError } from '@/lib/pos/accounting-posting';
+import { resolvePaymentCatalogStamp } from '@/lib/pos/payment-methods';
 import { sanitizeXenditRef } from '@/lib/pos/xendit-ids';
 import {
   buildDiscountReason,
@@ -124,6 +125,8 @@ type PosOrderBody = {
   gift_card_buyer_phone?: string;
   xendit_qr_id?: string;
   xendit_external_id?: string;
+  payment_method_code?: string;
+  payment_method_name?: string;
 };
 
 type PosOrderRow = {
@@ -322,6 +325,8 @@ export async function POST(request: NextRequest) {
         branchId: body.branch_id || scope?.branchId,
         shiftId: body.shift_id,
         sessionUserId,
+        paymentMethodCode: body.payment_method_code,
+        paymentMethodName: body.payment_method_name,
       });
       return NextResponse.json(
         {
@@ -842,6 +847,10 @@ export async function POST(request: NextRequest) {
         sold_from: soldFrom,
         xendit_qr_id: sanitizeXenditRef(body.xendit_qr_id),
         xendit_external_id: sanitizeXenditRef(body.xendit_external_id),
+        ...resolvePaymentCatalogStamp({
+          code: body.payment_method_code,
+          name: body.payment_method_name,
+        }),
       })
       .select()
       .single();

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createPgClient } from "@/lib/pg/create-client";
 import { getPosSession } from '@/lib/api/auth';
+import { isDrawerCashMethod } from '@/lib/pos/payment-methods';
 import { isRevenueOrder } from '@/lib/pos/revenue-order';
 
 /** PATCH /api/pos/shifts/{id}/close
@@ -48,7 +49,7 @@ export async function PATCH(
   // Recalculate expected cash from pos_orders only — never pos_checkouts totals.
   const { data: agg, error: aggError } = await db
     .from('pos_orders')
-    .select('total_amount, amount_paid, ark_coins_used, payment_method')
+    .select('total_amount, amount_paid, ark_coins_used, payment_method, payment_method_code')
     .eq('shift_id', shiftId)
     .in('payment_status', ['paid', 'partial'])
     .not('status', 'eq', 'cancelled');
@@ -71,6 +72,16 @@ export async function PATCH(
     const amt = Number(r.total_amount) || 0;
     const method = (r.payment_method || 'cash').toLowerCase();
     const ark = Number(r.ark_coins_used) || 0;
+    if (
+      method === 'cash' &&
+      !isDrawerCashMethod({
+        paymentMethod: method,
+        paymentMethodCode: r.payment_method_code,
+      })
+    ) {
+      totalCredit += amt;
+      return;
+    }
     switch (method) {
       case 'cash': totalCash += amt; break;
       case 'qris': totalQris += amt; break;

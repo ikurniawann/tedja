@@ -29,6 +29,21 @@ describe("formatPaymentMethodLabel", () => {
     expect(formatPaymentMethodLabel("cash")).toBe("Tunai");
     expect(formatPaymentMethodLabel("credit")).toBe("Kartu");
   });
+
+  it("prefers custom catalog name over cash/credit handler", () => {
+    expect(
+      formatPaymentMethodLabel("cash", {
+        code: "transfer_bca",
+        name: "Transfer BCA",
+      })
+    ).toBe("Transfer BCA");
+    expect(
+      formatPaymentMethodLabel("cash", {
+        code: "cash",
+        name: "Cash",
+      })
+    ).toBe("Tunai");
+  });
 });
 
 describe("formatKitchenStatusLabel", () => {

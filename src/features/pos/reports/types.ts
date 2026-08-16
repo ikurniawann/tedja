@@ -124,6 +124,8 @@ export interface TransactionReportRow {
   status: string | null;
   payment_status: string | null;
   payment_method: string | null;
+  payment_method_code?: string | null;
+  payment_method_name?: string | null;
   subtotal: number;
   discount_amount: number;
   tax_amount: number;
