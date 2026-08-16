@@ -35,3 +35,26 @@ export async function updatePaymentMethod(input: {
   const body = (await res.json()) as { data: PosPaymentMethod };
   return body.data;
 }
+
+export async function createPaymentMethod(input: {
+  name: string;
+  description?: string;
+}) {
+  const res = await fetch("/api/pos/payment-methods", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) await parseError(res, "Gagal menambah metode bayar");
+  const body = (await res.json()) as { data: PosPaymentMethod };
+  return body.data;
+}
+
+export async function deletePaymentMethod(code: string) {
+  const res = await fetch(
+    `/api/pos/payment-methods?code=${encodeURIComponent(code)}`,
+    { method: "DELETE" }
+  );
+  if (!res.ok) await parseError(res, "Gagal menghapus metode bayar");
+  return true;
+}

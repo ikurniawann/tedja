@@ -16,7 +16,8 @@ export type PosPaymentHandler =
 
 export type PosPaymentMethod = {
   id: string;
-  code: PosPaymentMethodCode;
+  /** Kode bawaan (union di atas) ATAU slug metode kustom buatan admin */
+  code: string;
   name: string;
   description: string;
   icon: string;
@@ -34,6 +35,27 @@ export const POS_PAYMENT_METHOD_CODES: PosPaymentMethodCode[] = [
   "nfc_tab",
   "gift_card",
 ];
+
+/** Kode bawaan ber-alur khusus — tidak boleh dihapus dari master. */
+export const PROTECTED_PAYMENT_METHOD_CODES = new Set<string>(
+  POS_PAYMENT_METHOD_CODES
+);
+
+/** Slug kode metode (bawaan maupun kustom): huruf kecil/angka/-/_ 2-40. */
+export const PAYMENT_METHOD_CODE_PATTERN = /^[a-z0-9_-]{2,40}$/;
+
+export function isValidPaymentMethodCode(code: string): boolean {
+  return PAYMENT_METHOD_CODE_PATTERN.test(code);
+}
+
+/** Nama tampilan → slug kode ("Transfer BCA" → "transfer-bca"). */
+export function slugifyPaymentMethodCode(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40);
+}
 
 /** Fallback jika tabel belum ada / API gagal — sama dengan seed. */
 export const DEFAULT_POS_PAYMENT_METHODS: PosPaymentMethod[] = [

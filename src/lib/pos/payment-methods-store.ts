@@ -1,10 +1,11 @@
 import { query, queryOne } from "@/lib/db";
 import {
   DEFAULT_POS_PAYMENT_METHODS,
-  isPosPaymentMethodCode,
+  isValidPaymentMethodCode,
+  PROTECTED_PAYMENT_METHOD_CODES,
+  slugifyPaymentMethodCode,
   type PosPaymentHandler,
   type PosPaymentMethod,
-  type PosPaymentMethodCode,
 } from "@/lib/pos/payment-methods";
 
 type PaymentMethodRow = {
@@ -20,7 +21,8 @@ type PaymentMethodRow = {
 };
 
 function mapRow(row: PaymentMethodRow): PosPaymentMethod | null {
-  if (!isPosPaymentMethodCode(row.code)) return null;
+  // Metode kustom buatan admin ikut tampil — cukup pagari format slug.
+  if (!isValidPaymentMethodCode(row.code)) return null;
   return {
     id: row.id,
     code: row.code,
@@ -68,7 +70,7 @@ export async function updatePosPaymentMethod(
     sort_order?: number;
   }
 ): Promise<PosPaymentMethod | null> {
-  if (!isPosPaymentMethodCode(code)) return null;
+  if (!isValidPaymentMethodCode(code)) return null;
 
   const sets: string[] = ["updated_at = now()"];
   const values: unknown[] = [];
@@ -100,4 +102,55 @@ export async function updatePosPaymentMethod(
     values
   );
   return row ? mapRow(row) : null;
+}
+
+/**
+ * Tambah metode bayar kustom (owner 2026-08-16). Alur kasirnya generik
+ * (handler 'credit' — konfirmasi tanpa input khusus, lunas penuh); kode
+ * di-slug dari nama dan dijamin unik dengan sufiks angka.
+ */
+export async function createPosPaymentMethod(input: {
+  name: string;
+  description?: string;
+  icon?: string;
+}): Promise<PosPaymentMethod> {
+  const base = slugifyPaymentMethodCode(input.name);
+  if (!isValidPaymentMethodCode(base)) {
+    throw new Error("Nama metode tidak bisa dijadikan kode — pakai huruf/angka");
+  }
+
+  const existing = await query<{ code: string }>(
+    `SELECT code FROM pos.payment_methods WHERE code = $1 OR code LIKE $2`,
+    [base, `${base}-%`]
+  );
+  const taken = new Set(existing.map((row) => row.code));
+  let code = base;
+  for (let i = 2; taken.has(code); i += 1) code = `${base}-${i}`.slice(0, 40);
+
+  const row = await queryOne<PaymentMethodRow>(
+    `INSERT INTO pos.payment_methods
+       (code, name, description, icon, handler, is_active, sort_order, requires_cash_input)
+     VALUES ($1, $2, $3, $4, 'credit', true,
+             COALESCE((SELECT MAX(sort_order) FROM pos.payment_methods), 0) + 10,
+             false)
+     RETURNING id, code, name, description, icon, handler,
+               is_active, sort_order, requires_cash_input`,
+    [code, input.name.trim(), input.description?.trim() || "", input.icon || "credit-card"]
+  );
+  const mapped = row ? mapRow(row) : null;
+  if (!mapped) throw new Error("Gagal menambah metode bayar");
+  return mapped;
+}
+
+/** Hapus metode kustom. Metode bawaan ber-alur khusus dilindungi. */
+export async function deletePosPaymentMethod(code: string): Promise<boolean> {
+  if (!isValidPaymentMethodCode(code)) return false;
+  if (PROTECTED_PAYMENT_METHOD_CODES.has(code)) {
+    throw new Error("Metode bawaan tidak bisa dihapus — nonaktifkan saja");
+  }
+  const row = await queryOne<{ code: string }>(
+    `DELETE FROM pos.payment_methods WHERE code = $1 RETURNING code`,
+    [code]
+  );
+  return Boolean(row);
 }

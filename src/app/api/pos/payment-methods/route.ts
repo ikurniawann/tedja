@@ -2,10 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getPosSession, successResponse } from "@/lib/api/auth";
 import {
+  createPosPaymentMethod,
+  deletePosPaymentMethod,
   listPosPaymentMethods,
   updatePosPaymentMethod,
 } from "@/lib/pos/payment-methods-store";
-import { isPosPaymentMethodCode } from "@/lib/pos/payment-methods";
+import { ApiError, requireApiRole } from "@/lib/api/auth";
+import { isValidPaymentMethodCode } from "@/lib/pos/payment-methods";
 
 export async function GET(request: NextRequest) {
   const sessionUserId = await getPosSession();
@@ -57,7 +60,7 @@ export async function PATCH(request: NextRequest) {
       );
     }
     const { code, ...patch } = parsed.data;
-    if (!isPosPaymentMethodCode(code)) {
+    if (!isValidPaymentMethodCode(code)) {
       return NextResponse.json(
         { success: false, error: "Kode metode tidak dikenali" },
         { status: 400 }
@@ -89,5 +92,60 @@ export async function PATCH(request: NextRequest) {
       { success: false, error: "Gagal memperbarui metode bayar" },
       { status: 500 }
     );
+  }
+}
+
+const createSchema = z.object({
+  name: z.string().trim().min(2).max(80),
+  description: z.string().trim().max(200).optional(),
+  icon: z.string().trim().max(40).optional(),
+});
+
+// POST — tambah metode kustom (owner 2026-08-16). Hanya admin/super_admin;
+// alur kasirnya generik (konfirmasi lunas penuh, tanpa input khusus).
+export async function POST(request: NextRequest) {
+  try {
+    await requireApiRole(["super_admin", "admin"]);
+    const parsed = createSchema.safeParse(await request.json());
+    if (!parsed.success) {
+      return NextResponse.json(
+        { success: false, error: "Validation failed", details: parsed.error.issues },
+        { status: 400 }
+      );
+    }
+    const created = await createPosPaymentMethod(parsed.data);
+    return successResponse(created, "Metode bayar ditambahkan");
+  } catch (err) {
+    if (err instanceof ApiError) return err.toResponse();
+    const message = err instanceof Error ? err.message : "Gagal menambah metode bayar";
+    console.error("[pos] create payment method:", err);
+    return NextResponse.json({ success: false, error: message }, { status: 400 });
+  }
+}
+
+// DELETE ?code= — hapus metode kustom; bawaan dilindungi (nonaktifkan saja).
+export async function DELETE(request: NextRequest) {
+  try {
+    await requireApiRole(["super_admin", "admin"]);
+    const code = String(request.nextUrl.searchParams.get("code") || "").trim();
+    if (!isValidPaymentMethodCode(code)) {
+      return NextResponse.json(
+        { success: false, error: "Kode metode tidak valid" },
+        { status: 400 }
+      );
+    }
+    const deleted = await deletePosPaymentMethod(code);
+    if (!deleted) {
+      return NextResponse.json(
+        { success: false, error: "Metode bayar tidak ditemukan" },
+        { status: 404 }
+      );
+    }
+    return successResponse({ code }, "Metode bayar dihapus");
+  } catch (err) {
+    if (err instanceof ApiError) return err.toResponse();
+    const message = err instanceof Error ? err.message : "Gagal menghapus metode bayar";
+    console.error("[pos] delete payment method:", err);
+    return NextResponse.json({ success: false, error: message }, { status: 400 });
   }
 }

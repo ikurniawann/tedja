@@ -1,18 +1,38 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { CreditCard, Loader2 } from "lucide-react";
+import { CreditCard, Loader2, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { PurchasingListSection } from "@/modules/purchasing/components/list/PurchasingListSection";
 import { TableRow } from "@/components/ui/table";
 import type { PosPaymentMethod } from "@/lib/pos/payment-methods";
-import { usePaymentMethods, useUpdatePaymentMethod } from "../queries";
+import {
+  useCreatePaymentMethod,
+  useDeletePaymentMethod,
+  usePaymentMethods,
+  useUpdatePaymentMethod,
+} from "../queries";
+import { PROTECTED_PAYMENT_METHOD_CODES } from "@/lib/pos/payment-methods";
+import {
+  Dialog,
+  DialogFooter,
+  DialogPanel,
+  DialogPanelBody,
+  DialogPanelDescription,
+  DialogPanelHeader,
+  DialogPanelTitle,
+} from "@/components/ui/dialog";
 
 export function PaymentMethodsPage() {
   const listQuery = usePaymentMethods(false);
   const updateMutation = useUpdatePaymentMethod();
+  const createMutation = useCreatePaymentMethod();
+  const deleteMutation = useDeletePaymentMethod();
+  const [showAdd, setShowAdd] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newDescription, setNewDescription] = useState("");
   const [drafts, setDrafts] = useState<
     Record<string, { name: string; description: string; sort_order: string }>
   >({});
@@ -58,12 +78,19 @@ export function PaymentMethodsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="border-b border-gray-200/70 pb-4">
-        <h1 className="text-2xl font-bold text-foreground">Metode Bayar</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Aktifkan, urutkan, dan ubah label metode di kasir. Handler ARK / NFC /
-          Gift Card tetap terikat skema existing.
-        </p>
+      <div className="flex flex-wrap items-end justify-between gap-3 border-b border-gray-200/70 pb-4">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">Metode Bayar</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Aktifkan, urutkan, ubah label, atau tambah metode baru (transfer bank,
+            EDC, e-wallet). Metode bawaan ARK / NFC / Gift Card tetap terikat
+            alur khususnya.
+          </p>
+        </div>
+        <Button type="button" onClick={() => setShowAdd(true)} className="bg-primary hover:bg-primary/90">
+          <Plus className="mr-2 h-4 w-4" />
+          Tambah Metode
+        </Button>
       </div>
 
       <PurchasingListSection
@@ -156,7 +183,23 @@ export function PaymentMethodsPage() {
                         />
                       </td>
                       <td className="px-4 py-3">
-                        <div className="flex justify-end">
+                        <div className="flex justify-end gap-1.5">
+                          {!PROTECTED_PAYMENT_METHOD_CODES.has(row.code) ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-8 border-red-200/80 text-red-600 hover:bg-red-50"
+                              title="Hapus metode kustom"
+                              disabled={busy || deleteMutation.isPending}
+                              onClick={() => {
+                                if (window.confirm(`Hapus metode "${row.name}"?`)) {
+                                  deleteMutation.mutate(row.code);
+                                }
+                              }}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          ) : null}
                           <Button
                             size="sm"
                             className="h-8"
@@ -196,6 +239,68 @@ export function PaymentMethodsPage() {
           </div>
         )}
       </PurchasingListSection>
+
+      <Dialog open={showAdd} onOpenChange={(open) => !open && setShowAdd(false)}>
+        <DialogPanel size="xs">
+          <DialogPanelHeader>
+            <DialogPanelTitle>Tambah Metode Bayar</DialogPanelTitle>
+            <DialogPanelDescription>
+              Metode kustom tampil di kasir sebagai pembayaran non-tunai lunas
+              penuh (tanpa alur khusus). Kode dibuat otomatis dari nama.
+            </DialogPanelDescription>
+          </DialogPanelHeader>
+          <DialogPanelBody className="space-y-3">
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Nama metode</label>
+              <Input
+                value={newName}
+                autoFocus
+                onChange={(e) => setNewName(e.target.value)}
+                placeholder="cth: Transfer BCA / EDC Mandiri / GoPay"
+                className="border-gray-200/80"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Deskripsi (opsional)</label>
+              <Input
+                value={newDescription}
+                onChange={(e) => setNewDescription(e.target.value)}
+                placeholder="cth: Transfer ke rekening BCA 123456"
+                className="border-gray-200/80"
+              />
+            </div>
+          </DialogPanelBody>
+          <DialogFooter>
+            <Button type="button" variant="outline" className="border-border" onClick={() => setShowAdd(false)}>
+              Batal
+            </Button>
+            <Button
+              type="button"
+              className="bg-primary hover:bg-primary/90"
+              disabled={newName.trim().length < 2 || createMutation.isPending}
+              onClick={() =>
+                createMutation.mutate(
+                  { name: newName.trim(), description: newDescription.trim() || undefined },
+                  {
+                    onSuccess: () => {
+                      setShowAdd(false);
+                      setNewName("");
+                      setNewDescription("");
+                    },
+                  }
+                )
+              }
+            >
+              {createMutation.isPending ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Plus className="mr-2 h-4 w-4" />
+              )}
+              Tambah
+            </Button>
+          </DialogFooter>
+        </DialogPanel>
+      </Dialog>
     </div>
   );
 }
