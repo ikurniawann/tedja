@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { DEFAULT_POS_LOYALTY_SETTINGS, idrToArkDisplay } from "@/lib/pos/loyalty-settings";
 
 /**
  * Data member untuk portal Nox (Fase B) — menumpang API portal member yang
@@ -22,6 +23,7 @@ export interface NoxMemberData {
 export interface NoxWalletTxn {
   id: string;
   type: string;
+  /** Sudah dalam ARK Coin — dompet wallet seluruhnya transaksi ARK. */
   amount: number;
   createdAt: string;
   notes: string | null;
@@ -30,7 +32,10 @@ export interface NoxWalletTxn {
 export interface NoxOrder {
   id: string;
   orderNumber: string;
+  /** Nilai dalam satuan `unit`. */
   totalAmount: number;
+  /** Order yang dibayar ARK Coin tampil sebagai koin; sisanya tetap Rupiah. */
+  unit: "ark" | "idr";
   createdAt: string;
 }
 
@@ -66,6 +71,10 @@ export function useNoxMember(): { state: NoxMemberState; reload: () => void } {
       const me = await meRes.json();
       if (!meRes.ok || !me.success) throw new Error(me.error || "gagal memuat profil");
 
+      // Saldo & wallet disimpan dalam Rupiah; portal menampilkannya sebagai
+      // ARK Coin, jadi konversinya dilakukan di sini — satu kali, di adapter.
+      const arkRate = Number(me.data?.ark_rate) || DEFAULT_POS_LOYALTY_SETTINGS.ark_rate;
+
       // Riwayat gagal ≠ portal mati: profil tetap tampil, daftar dikosongkan.
       let wallet: NoxWalletTxn[] = [];
       let orders: NoxOrder[] = [];
@@ -82,21 +91,27 @@ export function useNoxMember(): { state: NoxMemberState; reload: () => void } {
           id: string;
           order_number: string;
           total_amount: number;
+          payment_method: string | null;
           created_at: string;
         };
         wallet = ((txn.data?.wallet ?? []) as WalletRow[]).map((row) => ({
           id: row.id,
           type: row.type,
-          amount: Number(row.amount) || 0,
+          amount: idrToArkDisplay(Number(row.amount) || 0, arkRate),
           createdAt: row.created_at,
           notes: row.notes,
         }));
-        orders = ((txn.data?.orders ?? []) as OrderRow[]).map((row) => ({
-          id: row.id,
-          orderNumber: row.order_number,
-          totalAmount: Number(row.total_amount) || 0,
-          createdAt: row.created_at,
-        }));
+        orders = ((txn.data?.orders ?? []) as OrderRow[]).map((row) => {
+          const totalIdr = Number(row.total_amount) || 0;
+          const paidWithArk = row.payment_method === "ark_coin";
+          return {
+            id: row.id,
+            orderNumber: row.order_number,
+            totalAmount: paidWithArk ? idrToArkDisplay(totalIdr, arkRate) : totalIdr,
+            unit: paidWithArk ? ("ark" as const) : ("idr" as const),
+            createdAt: row.created_at,
+          };
+        });
       }
 
       const d = me.data;
@@ -109,7 +124,7 @@ export function useNoxMember(): { state: NoxMemberState; reload: () => void } {
             phone: d.profile?.phone ?? null,
           },
           memberType: d.member_type ?? null,
-          coins: Number(d.ark_coin_balance) || 0,
+          coins: idrToArkDisplay(Number(d.ark_coin_balance) || 0, arkRate),
           totalXp: Number(d.total_xp) || 0,
           visitCount: Number(d.visit_count) || 0,
           tier: d.tier

@@ -4,6 +4,7 @@ import {
   calculateTopupXp,
   formatArkAmount,
   idrToArk,
+  idrToArkDisplay,
   normalizeLoyaltySettings,
   normalizeTopupPresets,
 } from "./loyalty-settings";
@@ -31,6 +32,30 @@ describe("ARK helpers", () => {
   it("converts IDR balance to ARK", () => {
     expect(idrToArk(50000, 1000)).toBe(50);
     expect(formatArkAmount(50000, 1000)).toContain("50");
+  });
+});
+
+describe("idrToArkDisplay", () => {
+  it("rounds the fraction up from 0,5 and down below it", () => {
+    expect(idrToArkDisplay(2600, 1000)).toBe(3);
+    expect(idrToArkDisplay(2400, 1000)).toBe(2);
+    expect(idrToArkDisplay(2500, 1000)).toBe(3);
+  });
+
+  it("keeps exact amounts untouched", () => {
+    expect(idrToArkDisplay(250000, 1000)).toBe(250);
+    expect(idrToArkDisplay(0, 1000)).toBe(0);
+  });
+
+  it("rounds negatives by magnitude, not toward zero", () => {
+    expect(idrToArkDisplay(-2600, 1000)).toBe(-3);
+    expect(idrToArkDisplay(-2400, 1000)).toBe(-2);
+    expect(idrToArkDisplay(-2500, 1000)).toBe(-3);
+  });
+
+  it("follows the configured rate", () => {
+    expect(idrToArkDisplay(2600, 5000)).toBe(1);
+    expect(idrToArkDisplay(12600, 5000)).toBe(3);
   });
 });
 

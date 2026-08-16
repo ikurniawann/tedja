@@ -541,7 +541,11 @@ export function NoxPortal() {
                   <b>{order.orderNumber}</b>
                   <small>{tanggal(order.createdAt)}</small>
                 </div>
-                <span className="pill">Rp {angka(order.totalAmount)}</span>
+                <span className="pill">
+                  {order.unit === "ark"
+                    ? `${angka(order.totalAmount)} ARK`
+                    : `Rp ${angka(order.totalAmount)}`}
+                </span>
               </div>
             ))}
           </div>
