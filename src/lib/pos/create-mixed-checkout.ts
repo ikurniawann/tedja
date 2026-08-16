@@ -7,6 +7,7 @@ import { awardCrmXpForPosOrder, syncPosCustomerOrderStats } from "@/lib/crm/loya
 import { AccountingPostError } from "@/lib/pos/accounting-posting";
 import {
   MIXED_ARK_UNSUPPORTED_MESSAGE,
+  MIXED_LINE_DISCOUNT_UNSUPPORTED_MESSAGE,
   MIXED_NFC_GIFT_UNSUPPORTED_MESSAGE,
   MIXED_PROMO_UNSUPPORTED_MESSAGE,
   MIXED_SPLIT_UNSUPPORTED_MESSAGE,
@@ -41,6 +42,7 @@ import { resolvePaymentCatalogStamp } from "@/lib/pos/payment-methods";
 
 export {
   MIXED_ARK_UNSUPPORTED_MESSAGE,
+  MIXED_LINE_DISCOUNT_UNSUPPORTED_MESSAGE,
   MIXED_NFC_GIFT_UNSUPPORTED_MESSAGE,
   MIXED_PROMO_UNSUPPORTED_MESSAGE,
   MIXED_SPLIT_UNSUPPORTED_MESSAGE,
@@ -215,14 +217,18 @@ export function lineItemSubtotal(item: MixedCheckoutItem): number {
   return (unit + variantAdj + modifierAdj) * qty;
 }
 
+/**
+ * Promo tetap ditolak untuk checkout multi-stall: engine promo bekerja per
+ * order tunggal dan belum punya aturan pembagian antar stall.
+ *
+ * Diskon transaksi (mis. diskon manual kasir) TIDAK ditolak — nilainya dibagi
+ * pro-rata ke tiap stall oleh `allocateCheckoutCharges` berdasarkan subtotal,
+ * dengan sisa pembulatan jatuh ke stall bersubtotal terbesar.
+ */
 export function rejectMixedPromo(input: {
-  discountAmount?: number | string | null;
   promoCode?: string | null;
 }): { ok: true } | { ok: false; message: string } {
   if (String(input.promoCode || "").trim()) {
-    return { ok: false, message: MIXED_PROMO_UNSUPPORTED_MESSAGE };
-  }
-  if (toNumber(input.discountAmount) > 0) {
     return { ok: false, message: MIXED_PROMO_UNSUPPORTED_MESSAGE };
   }
   return { ok: true };
@@ -254,10 +260,7 @@ export function guardMixedCheckoutCart(input: {
     return { ok: false, message: MIXED_SPLIT_UNSUPPORTED_MESSAGE };
   }
   if (shouldCreateCheckout(stallIds)) {
-    const promoGuard = rejectMixedPromo({
-      discountAmount: input.discountAmount,
-      promoCode: input.promoCode,
-    });
+    const promoGuard = rejectMixedPromo({ promoCode: input.promoCode });
     if (!promoGuard.ok) return promoGuard;
   }
 
@@ -1418,15 +1421,12 @@ export async function createMixedCheckout(
   const taxAmount = toNumber(input.taxAmount);
   const serviceChargeAmount = toNumber(input.serviceChargeAmount);
   const otherChargesAmount = toNumber(input.otherChargesAmount);
-  const promoGuard = rejectMixedPromo({
-    discountAmount,
-    promoCode: input.promoCode,
-  });
+  const promoGuard = rejectMixedPromo({ promoCode: input.promoCode });
   if (promoGuard.ok === false) {
     throw new MixedCheckoutError(promoGuard.message);
   }
   if (lines.some((line) => line.lineDiscount > 0)) {
-    throw new MixedCheckoutError(MIXED_PROMO_UNSUPPORTED_MESSAGE);
+    throw new MixedCheckoutError(MIXED_LINE_DISCOUNT_UNSUPPORTED_MESSAGE);
   }
   const allocated = allocateCheckoutCharges({
     slices,

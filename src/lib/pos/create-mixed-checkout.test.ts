@@ -110,7 +110,7 @@ describe("guardMixedCheckoutCart", () => {
     }
   });
 
-  it("rejects promo code or discount on mixed checkout", () => {
+  it("rejects promo code on mixed checkout", () => {
     const withPromo = guardMixedCheckoutCart({
       productIds: ["p1", "p2"],
       warehouseByProduct: new Map([
@@ -124,7 +124,9 @@ describe("guardMixedCheckoutCart", () => {
     if (!withPromo.ok) {
       expect(withPromo.message).toBe(MIXED_PROMO_UNSUPPORTED_MESSAGE);
     }
+  });
 
+  it("allows a transaction discount on mixed checkout", () => {
     const withDiscount = guardMixedCheckoutCart({
       productIds: ["p1", "p2"],
       warehouseByProduct: new Map([
@@ -134,26 +136,56 @@ describe("guardMixedCheckoutCart", () => {
       canSellMixed: true,
       discountAmount: 5000,
     });
-    expect(withDiscount.ok).toBe(false);
-    if (!withDiscount.ok) {
-      expect(withDiscount.message).toBe(MIXED_PROMO_UNSUPPORTED_MESSAGE);
+    expect(withDiscount.ok).toBe(true);
+    if (withDiscount.ok) {
+      expect(withDiscount.createCheckout).toBe(true);
+      expect(withDiscount.stallIds).toEqual(["w-a", "w-b"]);
     }
   });
 });
 
 describe("rejectMixedPromo", () => {
-  it("rejects mixed payloads with discount_amount or promo_code", () => {
-    expect(rejectMixedPromo({ discountAmount: 1 })).toEqual({
-      ok: false,
-      message: MIXED_PROMO_UNSUPPORTED_MESSAGE,
-    });
+  it("rejects only promo_code, not a manual discount", () => {
     expect(rejectMixedPromo({ promoCode: "X" })).toEqual({
       ok: false,
       message: MIXED_PROMO_UNSUPPORTED_MESSAGE,
     });
-    expect(rejectMixedPromo({ discountAmount: 0, promoCode: "  " })).toEqual({
-      ok: true,
+    expect(rejectMixedPromo({ promoCode: "  " })).toEqual({ ok: true });
+    expect(rejectMixedPromo({})).toEqual({ ok: true });
+  });
+});
+
+describe("manual discount allocation across stalls", () => {
+  it("splits the discount pro-rata by subtotal", () => {
+    const rows = allocateCheckoutCharges({
+      slices: [
+        { warehouseId: "w-a", subtotal: 75000 },
+        { warehouseId: "w-b", subtotal: 25000 },
+      ],
+      discount: 10000,
+      tax: 0,
+      serviceCharge: 0,
+      otherCharges: 0,
     });
+    expect(rows.map((r) => r.discount)).toEqual([7500, 2500]);
+    expect(rows.reduce((sum, r) => sum + r.discount, 0)).toBe(10000);
+    expect(rows.reduce((sum, r) => sum + r.total, 0)).toBe(90000);
+  });
+
+  it("puts the rounding remainder on the largest stall so the total still ties out", () => {
+    const rows = allocateCheckoutCharges({
+      slices: [
+        { warehouseId: "w-a", subtotal: 20000 },
+        { warehouseId: "w-b", subtotal: 10000 },
+        { warehouseId: "w-c", subtotal: 10000 },
+      ],
+      discount: 1000,
+      tax: 0,
+      serviceCharge: 0,
+      otherCharges: 0,
+    });
+    expect(rows.reduce((sum, r) => sum + r.discount, 0)).toBe(1000);
+    expect(rows[0].discount).toBeGreaterThanOrEqual(rows[1].discount);
   });
 });
 
