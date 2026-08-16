@@ -18,6 +18,11 @@ Kasir pusat jual semua stall, bayar 1x; data pecah per stall. Kasir stall tetap 
 - [x] Fase 5: laporan + webhook Xendit (Task 14–15)
 - [x] Final-review fixes: block mixed promo, cancel orphan QRIS, hide IAM menu on seed
 
+## Follow-up: filter Orders
+- [x] Periode `date_from`/`date_to` (WIB) di GET `/api/pos/orders`
+- [x] Filter pembayaran, tipe, metode + chip Void
+- [x] Default hari ini; preset 7 hari / bulan ini
+
 ## Review
 Branch `feature/pos-central-cashier`. Tes unit 1452 passed sebelum fix terakhir; fix commit `a9e4ea5a`.
 

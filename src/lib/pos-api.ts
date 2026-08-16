@@ -406,6 +406,8 @@ export interface Order {
   status?: string;
   payment_status?: string;
   payment_method?: string;
+  payment_method_code?: string | null;
+  payment_method_name?: string | null;
   customer?: Customer;
   customer_id?: string;
   table?: { table_number?: string | null; qr_code?: string | null } | null;
@@ -595,10 +597,21 @@ export async function getOrders(params?: {
   customer_id?: string;
   payment_status?: string;
   order_type?: string;
+  payment_method?: string;
+  date_from?: string;
+  date_to?: string;
+  q?: string;
   active_only?: boolean;
   limit?: number;
 }) {
-  const queryString = params ? new URLSearchParams(params as any).toString() : '';
+  const search = new URLSearchParams();
+  if (params) {
+    for (const [key, value] of Object.entries(params)) {
+      if (value === undefined || value === null || value === '') continue;
+      search.set(key, String(value));
+    }
+  }
+  const queryString = search.toString();
   return fetchAPI<{ success: boolean; data: any[] }>(`/orders${queryString ? '?' + queryString : ''}`);
 }
 

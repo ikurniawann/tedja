@@ -1,13 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Ban,
   CheckCircle,
   ChefHat,
   Clock,
-  Coins,
   CreditCard,
   ExternalLink,
   Eye,
@@ -36,15 +35,35 @@ import {
   DialogPanelTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { VoidModal } from "@/components/pos/VoidModal";
 import { canVoidOrderStatus } from "@/lib/pos/void-order";
+import { formatPaymentMethodLabel } from "@/features/pos/reports/utils/transaction-labels";
 import { cn } from "@/lib/utils";
 
-import type { Order } from "../types";
+import type { Order, OrderListParams } from "../types";
 import { orderToReceiptPayload } from "../order-to-receipt";
 import { useOrderList } from "../queries";
 import { useLoyaltySettings } from "@/features/pos/loyalty-settings";
 import { formatArkAmount } from "@/lib/pos/loyalty-settings";
+
+const todayWib = () =>
+  new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Jakarta" });
+
+const firstDayOfMonthWib = () => {
+  const [year, month] = todayWib().split("-");
+  return `${year}-${month}-01`;
+};
+
+const shiftWibDate = (isoDate: string, days: number) => {
+  const [year, month, day] = isoDate.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+};
+
+const selectClassName =
+  "flex h-10 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus-visible:ring-1 focus-visible:ring-primary/30";
 
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat("id-ID", {
@@ -139,34 +158,23 @@ function TypeBadge({ type }: { type?: string | null }) {
   );
 }
 
-function PaymentBadge({ method }: { method?: string | null }) {
-  if (!method) {
+function PaymentBadge({
+  method,
+  code,
+  name,
+}: {
+  method?: string | null;
+  code?: string | null;
+  name?: string | null;
+}) {
+  const label = formatPaymentMethodLabel(method, { code, name });
+  if (label === "—") {
     return <span className="text-sm text-muted-foreground">—</span>;
   }
-  const value = String(method);
-  if (value === "ark_coin") {
-    return (
-      <Badge
-        variant="outline"
-        className="gap-1 border-amber-200/80 bg-amber-50 font-medium text-amber-800"
-      >
-        <Coins className="h-3 w-3" />
-        ARK
-      </Badge>
-    );
-  }
-  const label =
-    value === "cash"
-      ? "Cash"
-      : value === "qris"
-        ? "QRIS"
-        : value === "credit_card" || value === "credit"
-          ? "Card"
-          : value.replace("_", " ");
   return (
     <Badge
       variant="outline"
-      className="gap-1 border-gray-200/80 bg-white font-medium capitalize text-foreground"
+      className="gap-1 border-gray-200/80 bg-white font-medium text-foreground"
     >
       <CreditCard className="h-3 w-3" />
       {label}
@@ -184,22 +192,78 @@ const STATUS_FILTERS = [
   "preparing",
   "ready",
   "completed",
+  "voided",
 ] as const;
+
+const ORDER_LIST_LIMIT = 300;
+
+type PeriodPreset = "today" | "7d" | "month";
+
+function periodRange(preset: PeriodPreset) {
+  const today = todayWib();
+  if (preset === "today") return { date_from: today, date_to: today };
+  if (preset === "7d") return { date_from: shiftWibDate(today, -6), date_to: today };
+  return { date_from: firstDayOfMonthWib(), date_to: today };
+}
 
 export function OrdersPage() {
   const router = useRouter();
   const { data: loyaltySettings } = useLoyaltySettings();
   const formatArk = (value: number) =>
     formatArkAmount(value, loyaltySettings?.ark_rate || 1000);
-  const { data: orders = [], isLoading, refetch } = useOrderList({ limit: 100 });
+  const initialPeriod = periodRange("today");
+  const [dateFrom, setDateFrom] = useState(initialPeriod.date_from);
+  const [dateTo, setDateTo] = useState(initialPeriod.date_to);
+  const [paymentStatus, setPaymentStatus] = useState("");
+  const [orderType, setOrderType] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState("");
+  const [applied, setApplied] = useState<OrderListParams>({
+    date_from: initialPeriod.date_from,
+    date_to: initialPeriod.date_to,
+    limit: ORDER_LIST_LIMIT,
+  });
+  const { data: orders = [], isLoading, isFetching, isError, error, refetch } =
+    useOrderList(applied);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<(typeof STATUS_FILTERS)[number]>("all");
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showVoidModal, setShowVoidModal] = useState(false);
 
+  useEffect(() => {
+    if (!isError) return;
+    toast.error(error instanceof Error ? error.message : "Gagal memuat orders");
+  }, [isError, error]);
+
+  function applyFilter(next?: {
+    date_from?: string;
+    date_to?: string;
+    payment_status?: string;
+    order_type?: string;
+    payment_method?: string;
+  }) {
+    const from = next?.date_from ?? dateFrom;
+    const to = next?.date_to ?? dateTo;
+    if (from && to && from > to) {
+      toast.error("Tanggal dari tidak boleh melebihi tanggal sampai");
+      return;
+    }
+    if (next?.date_from) setDateFrom(next.date_from);
+    if (next?.date_to) setDateTo(next.date_to);
+    setApplied({
+      date_from: from,
+      date_to: to,
+      payment_status: (next?.payment_status ?? paymentStatus) || undefined,
+      order_type: (next?.order_type ?? orderType) || undefined,
+      payment_method: (next?.payment_method ?? paymentMethod) || undefined,
+      limit: ORDER_LIST_LIMIT,
+    });
+  }
+
   const isPaid = (order: Order) =>
-    order.payment_status === "paid" || order.status === "completed";
+    (order.payment_status === "paid" || order.status === "completed") &&
+    order.status !== "voided" &&
+    order.status !== "cancelled";
 
   const statusCounts = useMemo(
     () => ({
@@ -208,6 +272,7 @@ export function OrdersPage() {
       preparing: orders.filter((o) => o.status === "preparing").length,
       ready: orders.filter((o) => o.status === "ready").length,
       completed: orders.filter((o) => isPaid(o)).length,
+      voided: orders.filter((o) => o.status === "voided").length,
     }),
     [orders]
   );
@@ -218,6 +283,7 @@ export function OrdersPage() {
       const matchesSearch =
         !q ||
         order.order_number?.toLowerCase().includes(q) ||
+        order.queue_number?.toLowerCase().includes(q) ||
         order.customer?.name?.toLowerCase().includes(q) ||
         order.cashier_id?.toLowerCase().includes(q);
       const matchesStatus =
@@ -241,18 +307,131 @@ export function OrdersPage() {
       <div>
         <h1 className="text-xl font-semibold text-foreground">Orders</h1>
         <p className="text-sm text-muted-foreground">
-          Browse transaction history and manage open orders
+          Riwayat order per periode. Void order lunas lewat ikon Ban.
         </p>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+      <Card className="border-gray-200/70 shadow-xs">
+        <CardContent className="space-y-4 p-4">
+          <div className="flex flex-wrap gap-2">
+            {(
+              [
+                ["today", "Hari ini"],
+                ["7d", "7 hari"],
+                ["month", "Bulan ini"],
+              ] as const
+            ).map(([key, label]) => {
+              const range = periodRange(key);
+              const active =
+                dateFrom === range.date_from && dateTo === range.date_to;
+              return (
+                <Button
+                  key={key}
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className={cn(
+                    "border-gray-200/80",
+                    active && "border-primary/40 bg-primary/5 text-primary"
+                  )}
+                  disabled={isFetching}
+                  onClick={() => applyFilter(range)}
+                >
+                  {label}
+                </Button>
+              );
+            })}
+          </div>
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="orders-date-from">Tanggal dari</Label>
+              <Input
+                id="orders-date-from"
+                type="date"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+                className="h-10 border-border"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="orders-date-to">Tanggal sampai</Label>
+              <Input
+                id="orders-date-to"
+                type="date"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+                className="h-10 border-border"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="orders-payment-status">Pembayaran</Label>
+              <select
+                id="orders-payment-status"
+                value={paymentStatus}
+                onChange={(e) => setPaymentStatus(e.target.value)}
+                className={selectClassName}
+              >
+                <option value="">Semua</option>
+                <option value="paid">Lunas</option>
+                <option value="unpaid">Belum bayar</option>
+                <option value="refunded">Refund</option>
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="orders-type">Tipe order</Label>
+              <select
+                id="orders-type"
+                value={orderType}
+                onChange={(e) => setOrderType(e.target.value)}
+                className={selectClassName}
+              >
+                <option value="">Semua</option>
+                <option value="dine_in">Dine-in</option>
+                <option value="takeaway">Takeaway</option>
+                <option value="delivery">Delivery</option>
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="orders-method">Metode bayar</Label>
+              <select
+                id="orders-method"
+                value={paymentMethod}
+                onChange={(e) => setPaymentMethod(e.target.value)}
+                className={selectClassName}
+              >
+                <option value="">Semua</option>
+                <option value="cash">Tunai</option>
+                <option value="qris">QRIS</option>
+                <option value="credit">Kartu</option>
+                <option value="ark_coin">ARK Coin</option>
+                <option value="gift_card">Gift card</option>
+                <option value="nfc_tab">NFC Tab</option>
+              </select>
+            </div>
+            <div className="flex items-end xl:col-start-4">
+              <Button
+                type="button"
+                onClick={() => applyFilter()}
+                disabled={isFetching}
+                className="w-full gap-2"
+              >
+                {isFetching ? <Loader2 className="size-4 animate-spin" /> : null}
+                Terapkan filter
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
         {(
           [
-            ["all", "All", statusCounts.all, "text-foreground"],
+            ["all", "Semua", statusCounts.all, "text-foreground"],
             ["pending", "Pending", statusCounts.pending, "text-amber-700"],
             ["preparing", "Preparing", statusCounts.preparing, "text-sky-700"],
             ["ready", "Ready", statusCounts.ready, "text-violet-700"],
             ["completed", "Lunas", statusCounts.completed, "text-emerald-700"],
+            ["voided", "Void", statusCounts.voided, "text-muted-foreground"],
           ] as const
         ).map(([key, label, count, tone]) => (
           <button
@@ -280,14 +459,17 @@ export function OrdersPage() {
             <div className="relative w-full max-w-md">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
-                placeholder="Search order, customer, or cashier…"
+                placeholder="Cari nomor order, antrian, atau pelanggan…"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="h-10 border-gray-200/80 bg-white pl-10"
               />
             </div>
             <p className="text-sm text-muted-foreground">
-              Showing {filteredOrders.length} of {orders.length} orders
+              {filteredOrders.length} dari {orders.length} order
+              {applied.date_from && applied.date_to
+                ? ` · ${applied.date_from} s/d ${applied.date_to}`
+                : ""}
             </p>
           </div>
 
@@ -298,7 +480,7 @@ export function OrdersPage() {
             </div>
           ) : filteredOrders.length === 0 ? (
             <div className="rounded-xl border border-dashed border-gray-200/80 bg-muted/20 px-4 py-16 text-center text-sm text-muted-foreground">
-              No orders found
+              Tidak ada order pada filter ini. Coba ubah periode atau kata kunci.
             </div>
           ) : (
             <div className="overflow-x-auto rounded-xl border border-gray-200/70">
@@ -350,7 +532,11 @@ export function OrdersPage() {
                         {order.items?.length || 0}
                       </td>
                       <td className="px-4 py-3">
-                        <PaymentBadge method={order.payment_method} />
+                        <PaymentBadge
+                          method={order.payment_method}
+                          code={order.payment_method_code}
+                          name={order.payment_method_name}
+                        />
                       </td>
                       <td className="px-4 py-3 text-right font-semibold tabular-nums text-foreground">
                         {formatCurrency(order.total_amount || 0)}
@@ -528,7 +714,11 @@ function OrderDetail({ order }: { order: Order }) {
         <div className="rounded-xl border border-gray-200/70 bg-muted/20 px-3.5 py-3">
           <div className="text-xs font-medium text-muted-foreground">Payment</div>
           <div className="mt-1.5">
-            <PaymentBadge method={order.payment_method} />
+            <PaymentBadge
+              method={order.payment_method}
+              code={order.payment_method_code}
+              name={order.payment_method_name}
+            />
           </div>
         </div>
       </div>

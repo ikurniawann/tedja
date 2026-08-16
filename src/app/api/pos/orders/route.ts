@@ -66,6 +66,34 @@ import {
   type DiscountType,
 } from '@/lib/pos/manual-discount';
 import { evaluateActiveOffersForPosCart } from '@/lib/promo/offer-pos';
+import { parseReportDateRange } from '@/lib/pos/report-stall-filter';
+
+const ORDER_LIST_STATUSES = new Set([
+  'pending',
+  'preparing',
+  'ready',
+  'completed',
+  'cancelled',
+  'voided',
+  'merged',
+]);
+const ORDER_LIST_PAYMENT_STATUSES = new Set(['paid', 'unpaid', 'partial', 'refunded']);
+const ORDER_LIST_TYPES = new Set(['dine_in', 'takeaway', 'delivery', 'self_order']);
+const ORDER_LIST_PAYMENT_METHODS = new Set([
+  'cash',
+  'qris',
+  'credit',
+  'credit_card',
+  'ark_coin',
+  'nfc_tab',
+  'gift_card',
+]);
+
+function clampOrderListLimit(raw: string | null) {
+  const parsed = parseInt(raw || '50', 10);
+  if (!Number.isFinite(parsed)) return 50;
+  return Math.min(Math.max(parsed, 1), 500);
+}
 
 type PosOrderItemRequest = {
   product_id?: string;
@@ -163,8 +191,12 @@ export async function GET(request: NextRequest) {
     const customerId = searchParams.get('customer_id');
     const paymentStatus = searchParams.get('payment_status');
     const orderType = searchParams.get('order_type');
+    const paymentMethod = searchParams.get('payment_method');
+    const dateFrom = searchParams.get('date_from');
+    const dateTo = searchParams.get('date_to');
+    const search = searchParams.get('q')?.trim() || '';
     const activeOnly = searchParams.get('active_only') === 'true';
-    const limit = parseInt(searchParams.get('limit') || '50');
+    const limit = clampOrderListLimit(searchParams.get('limit'));
 
     let query = db
       .from('pos_orders')
@@ -177,10 +209,34 @@ export async function GET(request: NextRequest) {
       .order('ordered_at', { ascending: false })
       .limit(limit);
 
-    if (status) query = query.eq('status', status);
+    if (status && ORDER_LIST_STATUSES.has(status)) query = query.eq('status', status);
     if (customerId) query = query.eq('customer_id', customerId);
-    if (paymentStatus) query = query.eq('payment_status', paymentStatus);
-    if (orderType) query = query.eq('order_type', orderType);
+    if (paymentStatus && ORDER_LIST_PAYMENT_STATUSES.has(paymentStatus)) {
+      query = query.eq('payment_status', paymentStatus);
+    }
+    if (orderType && ORDER_LIST_TYPES.has(orderType)) query = query.eq('order_type', orderType);
+    if (paymentMethod && ORDER_LIST_PAYMENT_METHODS.has(paymentMethod)) {
+      const method =
+        paymentMethod === 'credit_card' ? 'credit' : paymentMethod;
+      query = query.eq('payment_method', method);
+    }
+    if (dateFrom || dateTo) {
+      try {
+        const range = parseReportDateRange(dateFrom, dateTo);
+        query = query.gte('ordered_at', range.startIso).lte('ordered_at', range.endIso);
+      } catch (rangeError) {
+        return NextResponse.json(
+          { success: false, error: getErrorMessage(rangeError) },
+          { status: 400 }
+        );
+      }
+    }
+    if (search) {
+      const safe = search.replace(/[%_*]/g, '').slice(0, 64);
+      if (safe) {
+        query = query.or(`order_number.ilike.%${safe}%,queue_number.ilike.%${safe}%`);
+      }
+    }
     if (activeOnly) query = query.not('status', 'in', '("completed","cancelled","voided","merged")');
 
     const { data, error } = await query;
