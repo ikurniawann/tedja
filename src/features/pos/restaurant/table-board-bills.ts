@@ -35,8 +35,6 @@ export type TableBoardBill = {
   soldFrom: "central" | "stall";
 };
 
-const CLOSED_STATUSES = new Set(["completed", "cancelled", "voided", "merged"]);
-
 function toNumber(value: unknown) {
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : 0;
@@ -44,7 +42,10 @@ function toNumber(value: unknown) {
 
 function isOpenOrder(order: TableBoardBillOrder) {
   const status = String(order.status || "").toLowerCase();
-  if (CLOSED_STATUSES.has(status)) return false;
+  // Kitchen `completed` is not closed — unpaid open bills stay on the floor.
+  if (status === "cancelled" || status === "voided" || status === "merged") {
+    return false;
+  }
   return String(order.payment_status || "unpaid").toLowerCase() !== "paid";
 }
 

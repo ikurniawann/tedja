@@ -22,6 +22,7 @@ export interface CashierOrderItem {
   variants?: Array<{ name?: string }>;
   modifiers?: Array<{ name?: string }>;
   station?: string;
+  warehouse_id?: string | null;
 }
 
 export interface CashierOrder {
@@ -89,6 +90,7 @@ export async function getCashierCheckout(checkoutId: string): Promise<CashierChe
       variants: item.variants,
       modifiers: item.modifiers,
       station: item.station,
+      warehouse_id: item.warehouse_id,
     })),
     checkout_number: data.checkout_number,
     order_ids: data.order_ids,

@@ -112,6 +112,34 @@ describe("listTableBoardBills", () => {
     expect(tableBillSourceLabel("stall")).toBe("Stall");
   });
 
+  it("keeps a kitchen-completed unpaid checkout on the floor", () => {
+    const bills = listTableBoardBills({
+      tableId: "t1",
+      orders: [
+        {
+          id: "c1",
+          table_id: "t1",
+          checkout_id: "chk-1",
+          payment_status: "unpaid",
+          status: "completed",
+          sold_from: "central",
+          total_amount: 80,
+        },
+      ],
+      checkouts: [
+        {
+          id: "chk-1",
+          table_id: "t1",
+          payment_status: "unpaid",
+          checkout_number: "CHK-1",
+          total_amount: 80,
+        },
+      ],
+    });
+    expect(bills).toHaveLength(1);
+    expect(bills[0]).toMatchObject({ kind: "checkout", id: "chk-1", label: "CHK-1" });
+  });
+
   it("does not list a childless unpaid checkout as a table bill", () => {
     const bills = listTableBoardBills({
       tableId: "t1",

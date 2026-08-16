@@ -12,8 +12,7 @@ import { HelpHint } from "@/components/ui/help-hint";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { PurchasingPageHeader } from "@/modules/purchasing/components/page/purchasing-page-header";
 import { useClosingReport } from "../queries";
-
-const today = () => new Date().toISOString().slice(0, 10);
+import { todayWib } from "@/lib/pos/report-dates";
 
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat("id-ID", {
@@ -47,7 +46,7 @@ type ShiftOption = {
 };
 
 export function ClosingReportPage() {
-  const [date, setDate] = useState(today);
+  const [date, setDate] = useState(todayWib);
   const [shiftId, setShiftId] = useState("");
   const [shifts, setShifts] = useState<ShiftOption[]>([]);
   const [loadingShifts, setLoadingShifts] = useState(false);
@@ -175,6 +174,27 @@ export function ClosingReportPage() {
 
                   <div className="my-4 border-t border-gray-300" />
 
+                  <p className="font-semibold text-gray-900">TRANSAKSI</p>
+                  <div className="mt-2 space-y-1">
+                    {line(
+                      `${report.transaction_totals?.transactions ?? 0} transaksi`,
+                      formatCurrency(report.transaction_totals?.sales ?? 0)
+                    )}
+                    {line("Diskon", formatCurrency(report.transaction_totals?.discount ?? 0))}
+                  </div>
+
+                  <div className="mt-4">
+                    <p className="font-semibold text-gray-900">DISKON 100%</p>
+                    <div className="mt-2 space-y-1">
+                      {line(
+                        `${report.transaction_totals?.full_discount_transactions ?? 0} transaksi`,
+                        formatCurrency(report.transaction_totals?.full_discount_amount ?? 0)
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="my-4 border-t border-gray-300" />
+
                   <p className="font-semibold text-gray-900">SALES SUMMARY</p>
                   <div className="mt-2 space-y-1">
                     {/* Nett Sales with HelpHint (print:hidden on hint) */}
@@ -296,6 +316,14 @@ export function ClosingReportPage() {
               </CardContent>
             </Card>
           ) : null}
+
+          <style>{`
+            @media print {
+              aside, [data-sidebar], header, nav { display: none !important; }
+              body { background: white !important; }
+              .closing-report { max-width: none; font-size: 12px; }
+            }
+          `}</style>
         </div>
       </PageTransition>
     </TooltipProvider>

@@ -5,6 +5,7 @@ import { BuildingStorefrontIcon } from "@heroicons/react/24/outline";
 import { Check, Loader2, Store } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { POS_CHROME_BUTTON_CLASS } from "@/features/pos/components/pos-tablet-chrome-controls";
 import {
   Dialog,
   DialogFooter,
@@ -110,11 +111,10 @@ export function StallSwitchButton() {
       <Button
         type="button"
         variant="outline"
-        size="sm"
         onClick={() => setOpen(true)}
-        className="gap-1.5 border-border"
+        className={POS_CHROME_BUTTON_CLASS}
       >
-        <Store className="h-3.5 w-3.5" />
+        <Store className="mr-2 h-4 w-4" />
         <span className="max-w-40 truncate">
           {active ? active.name : allAccess ? "Semua Stall" : "Pilih Stall"}
         </span>

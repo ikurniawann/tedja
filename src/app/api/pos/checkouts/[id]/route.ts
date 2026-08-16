@@ -48,7 +48,7 @@ export async function GET(
     const { data: orders, error: ordersErr } = await db
       .from("pos_orders")
       .select(
-        "id, order_number, order_type, table_id, customer_id, notes, total_amount, payment_status, status, items:pos_order_items(*)"
+        "id, order_number, order_type, table_id, customer_id, notes, total_amount, payment_status, status, warehouse_id, items:pos_order_items(*)"
       )
       .eq("checkout_id", checkoutId)
       .neq("payment_status", "paid");
@@ -60,6 +60,7 @@ export async function GET(
       ((order.items || []) as Array<Record<string, unknown>>).map((item) => ({
         ...item,
         order_id: order.id,
+        warehouse_id: (order as { warehouse_id?: string | null }).warehouse_id,
       }))
     );
 

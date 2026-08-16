@@ -1,12 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Expand, Home, Minimize2 } from "lucide-react";
+import { ClipboardList, Expand, Home, Minimize2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const HOME_HREF = "/dashboard";
 
-const chromeButtonClass =
+export const POS_CHROME_BUTTON_CLASS =
   "border-gray-200/80 text-gray-700 hover:border-primary/30 hover:bg-primary/10 hover:text-primary";
 
 type Props = {
@@ -14,6 +14,8 @@ type Props = {
   /** Immersive POS shell (tanpa sidebar dashboard). */
   immersive?: boolean;
   onToggleImmersive?: (next: boolean) => void;
+  /** Pintasan Riwayat Transaksi / Orders. */
+  ordersHref?: string;
 };
 
 /**
@@ -23,6 +25,7 @@ export function PosTabletChromeControls({
   className,
   immersive = false,
   onToggleImmersive,
+  ordersHref,
 }: Props) {
   const [isBrowserFullscreen, setIsBrowserFullscreen] = useState(false);
 
@@ -67,11 +70,23 @@ export function PosTabletChromeControls({
 
   return (
     <div className={className ?? "flex flex-wrap items-center gap-2"}>
+      {ordersHref ? (
+        <Button
+          type="button"
+          variant="outline"
+          className={POS_CHROME_BUTTON_CLASS}
+          onClick={() => window.location.assign(ordersHref)}
+          title="Riwayat Transaksi"
+        >
+          <ClipboardList className="mr-2 h-4 w-4" />
+          Riwayat Transaksi
+        </Button>
+      ) : null}
       {immersive ? (
         <Button
           type="button"
           variant="outline"
-          className={chromeButtonClass}
+          className={POS_CHROME_BUTTON_CLASS}
           onClick={() => void goHome()}
           title="Kembali ke Beranda"
         >
@@ -82,7 +97,7 @@ export function PosTabletChromeControls({
       <Button
         type="button"
         variant="outline"
-        className={chromeButtonClass}
+        className={POS_CHROME_BUTTON_CLASS}
         onClick={() => void toggle()}
         title={expanded ? "Kembali ke tampilan biasa" : "Layar penuh tanpa sidebar"}
       >

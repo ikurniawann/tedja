@@ -25,11 +25,21 @@ function toAmount(value: unknown) {
   return Number.isFinite(n) ? n : 0;
 }
 
+function isClosedOrderStatus(status?: string | null) {
+  const value = String(status || "").toLowerCase();
+  return value === "voided" || value === "cancelled" || value === "merged";
+}
+
 function isPaid(order: OrderListGroupInput) {
   const status = String(order.status || "").toLowerCase();
   const payment = String(order.payment_status || "").toLowerCase();
-  if (status === "voided" || status === "cancelled") return false;
+  if (isClosedOrderStatus(status)) return false;
   return payment === "paid" || status === "completed";
+}
+
+/** Void/cancel/merged tidak boleh dibuka lagi di kasir. */
+export function canOpenOrderInCashier(orders: OrderListGroupInput[]): boolean {
+  return orders.some((order) => !isClosedOrderStatus(order.status) && !isPaid(order));
 }
 
 function latestAt(orders: OrderListGroupInput[]) {
@@ -80,4 +90,14 @@ export function groupOrdersByCheckout<T extends OrderListGroupInput>(
   return rows
     .sort((a, b) => (a.sortAt < b.sortAt ? 1 : a.sortAt > b.sortAt ? -1 : 0))
     .map(({ sortAt: _sortAt, ...row }) => row);
+}
+
+/** Mixed unpaid bill must open as one checkout — never the first child order. */
+export function cashierHandoffFromOrderListRow(
+  row: OrderListGroup<OrderListGroupInput>
+): { checkoutId?: string; orderId?: string } {
+  if (row.kind === "checkout") {
+    return { checkoutId: row.checkoutId };
+  }
+  return { orderId: row.order.id };
 }

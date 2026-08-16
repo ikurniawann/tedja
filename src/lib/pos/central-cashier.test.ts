@@ -13,6 +13,7 @@ import {
   buildCheckoutBillPayBody,
   mapPaidSaleToReceiptIds,
   mayConfirmMixedQris,
+  shouldWaitForQrisConfirm,
   mixedQrisCheckoutIdForAmount,
   resolveAddCatalogItem,
   shouldSkipQrisPrepare,
@@ -180,7 +181,7 @@ describe("mixed cart payment UI", () => {
     ).toBe(true);
   });
 
-  it("does not block cash or single-stall QRIS confirm", () => {
+  it("does not block cash confirm", () => {
     expect(
       mayConfirmMixedQris({
         isMixedCart: true,
@@ -188,13 +189,29 @@ describe("mixed cart payment UI", () => {
         qrisPaid: false,
       })
     ).toBe(true);
+  });
+
+  it("blocks single-stall QRIS confirm until Xendit poll says paid", () => {
     expect(
       mayConfirmMixedQris({
         isMixedCart: false,
         method: "qris",
         qrisPaid: false,
       })
+    ).toBe(false);
+    expect(
+      mayConfirmMixedQris({
+        isMixedCart: false,
+        method: "qris",
+        qrisPaid: true,
+      })
     ).toBe(true);
+  });
+
+  it("keeps waiting for QRIS while unpaid — including during QR create", () => {
+    expect(shouldWaitForQrisConfirm({ method: "qris", qrisPaid: false })).toBe(true);
+    expect(shouldWaitForQrisConfirm({ method: "qris", qrisPaid: true })).toBe(false);
+    expect(shouldWaitForQrisConfirm({ method: "cash", qrisPaid: false })).toBe(false);
   });
 
   it("drops the old unpaid mixed checkout when ARK/amount changes", () => {
@@ -242,6 +259,15 @@ describe("mixed cart payment UI", () => {
         isMixedCart: true,
       })
     ).toBe(true);
+    expect(
+      shouldSkipQrisPrepare({
+        qrisLoading: false,
+        existingQrAmount: 15000,
+        currentAmount: 15000,
+        isMixedCart: false,
+        existingQrPaid: true,
+      })
+    ).toBe(false);
   });
 
   it("maps mixed checkout response onto one receipt header", () => {

@@ -75,7 +75,7 @@ SELECT r.id, m.id, COALESCE(m.permission_context->'actions', '["read"]'::jsonb)
 FROM iam.roles r CROSS JOIN iam.menus m
 WHERE r.code = 'direksi' AND m.deleted_at IS NULL AND m.is_active = true
   AND (
-    m.code IN ('dashboard', 'hris', 'hris.insights.analytics', 'hris.insights.reports', 'pos', 'pos.reports.dashboard', 'pos.reports.profit', 'pos.reports.transactions', 'pos.reports.rush-hour', 'pos.reports.product-sales', 'pos.reports.closing')
+    m.code IN ('dashboard', 'hris', 'hris.insights.analytics', 'hris.insights.reports', 'pos', 'pos.reports.dashboard', 'pos.reports.profit', 'pos.reports.transactions', 'pos.reports.rush-hour', 'pos.reports.product-sales', 'pos.reports.voids', 'pos.reports.closing')
     OR m.module = 'crm'
   )
 ON CONFLICT (role_id, menu_id) DO UPDATE SET is_active = true, granted_actions = EXCLUDED.granted_actions, updated_at = now();

@@ -333,6 +333,11 @@ export function PaymentModal({
     if (method !== "qris") {
       abandonPreparedMixedQris();
       setMixedQrisCheckout(null);
+      setQris(null);
+      setQrisPaid(false);
+      setQrisUnavailable(false);
+      setQrisError(null);
+      qrisConfirmStarted.current = false;
     }
   }, [isMixedCart, isCheckoutBill, method]);
 
@@ -368,8 +373,8 @@ export function PaymentModal({
   useEffect(() => {
     setGiftResult(null);
   }, [total]);
-  // Buat QR dinamis saat QRIS dipilih (sekali per nominal) — gagal bukan
-  // penghalang bayar: kasir bisa lanjut dgn QRIS statis di meja.
+  // Buat QR dinamis saat QRIS dipilih. Gagal → jangan settle; kasir pilih
+  // metode lain. Confirm QRIS hanya lewat poll Xendit (bukan klik manual).
   useEffect(() => {
     if (!open || method !== "qris") return;
     const reusableCheckoutId = mixedQrisCheckoutIdForAmount({
@@ -384,6 +389,7 @@ export function PaymentModal({
         currentAmount: totalAfterArk,
         mixedCheckoutId: reusableCheckoutId,
         isMixedCart,
+        existingQrPaid: qrisPaid,
       })
     ) {
       return;
@@ -496,6 +502,8 @@ export function PaymentModal({
               queueNumber: mixedQrisCheckout?.queue_number,
               xenditQrId: qris.qr_id,
               xenditExternalId: qris.reference_id,
+              paymentMethodCode: "qris",
+              paymentMethodName: "QRIS",
             })
           ).catch(() => {
             qrisConfirmStarted.current = false;
@@ -564,15 +572,7 @@ export function PaymentModal({
     return true;
   })();
 
-  const waitForQris =
-    method === "qris" &&
-    ((Boolean(qris?.qr_id) && !qrisUnavailable) ||
-      !mayConfirmMixedQris({
-        isMixedCart,
-        method: "qris",
-        qrisPaid,
-        checkoutId: mixedQrisCheckout?.checkout_id,
-      }));
+  const waitForQris = method === "qris";
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && !submitting && handleClose()}>

@@ -1,5 +1,46 @@
 # Lessons
 
+## POS laporan void
+- Menu baru wajib masuk whitelist `iam-menus.sql` NOT IN (kalau tidak, seeder retire menu).
+- Icon sidebar harus `NavIconName` yang ada (`document-text`). Jangan `ban`.
+- Grant ikut role yang sudah punya `pos.reports.profit`. Relogin / refresh menu IAM setelah migrasi.
+- `cashier_id` sering UUID placeholder → join users kosong. Fallback label "Kasir", bukan blank.
+
+## POS cart setelah pindah menu
+- `pos_cart_state` + `pos:lastOpenCheckoutId` tetap hidup meski URL sudah tanpa `checkoutId`.
+- Masuk kasir dari menu (`?tablet=1` saja) wajib reset keranjang. Handoff `checkoutId`/`orderId`/`tableId` jangan di-reset.
+- Tanpa clear `lastOpenCheckoutId`, "Order lagi" menempel ke CHK lama.
+
+## POS default tanggal laporan
+- Jangan `new Date(y, m, 1).toISOString().slice(0, 10)` — tengah malam WIB jadi tanggal UTC kemarin (1 Agu → 31 Jul).
+- Default rentang = tanggal 1 bulan WIB s/d hari ini WIB (`firstDayOfMonthWib` + `todayWib`). Bulan baru ikut otomatis.
+
+## pg "Client was passed a null or undefined query"
+- Hampir selalu `query(sql[params])` karena koma hilang antara template SQL dan array param. `string[array]` = `undefined`.
+- Cek argumen `query(` di sekitar edit LIMIT/ORDER, bukan koneksi DB.
+
+## POS pintasan Orders
+- Riwayat Transaksi kasir = `/dashboard/pos/orders`, bukan laporan `/dashboard/pos/reports/transactions`.
+- `dashboard/pos/layout` dan `dashboard/(dashboard)/layout` tidak berbagi parent. Kasir ↔ Orders wajib `location.assign`, bukan `router.push` (RSC TypeError).
+- Bawa `from=cashier|restaurant` + flag tablet supaya tombol kembali mendarat di shell yang sama.
+
+## POS mixed open bill continue
+- Open dari Orders untuk `CHK-…` wajib `?checkoutId=`, bukan `orderId` child pertama. Salah id → kasir hanya hydrate 1 stall, Back + order lagi bikin nomor baru.
+- Append open bill gabungan tanpa meja tidak bisa andalkan `findUnpaidCheckoutByTable`. Kirim `checkout_id` (session last open + body) ke `/orders/open-bill`.
+- Kitchen `completed` + `unpaid` masih open bill. Jangan filter `status=completed` dari lantai/meja.
+- Open bill yang di-hydrate: item lama terkunci. Tambah item baru lalu **Order lagi** — jangan kirim ulang item lama (dobel). Jangan lock add kecuali `pay=1`.
+
+## POS QRIS settle
+- Jangan izinkan Confirm QRIS saat QR masih dibuat / gagal. `isValid` QRIS = true, jadi klik Confirm (otot kebiasaan tunai) langsung create order `paid` tanpa Xendit.
+- Single-stall `POST /api/pos/orders` menandai QRIS `paid` tanpa verifikasi. Wajib ada `xendit_qr_id`/`external_id` yang belum dipakai order lunas lain.
+- Jangan reuse QR state antar metode/transaksi: `shouldSkipQrisPrepare` + QR lama yang sudah paid → poll langsung "lunas".
+- Mixed checkout sudah verify Xendit di `completeMixedCheckout`. Single-stall harus ikut gate yang sama di klien.
+
+## POS Print Struk — prefill WA
+- Setelah bayar, `cart.clearCart()` jalan sebelum modal Print Struk (delay 120ms). Jangan baca `selectedCustomer` di UI modal — sudah `null`.
+- Snapshot nomor HP ke variabel lokal di `storeResultPayload` (dari ref yang di-sync sebelum clear). Jangan baca ref lagi di dalam timeout.
+- Field WA selalu editable: prefill dari member/pembeli gift card, kasir tetap bisa ganti atau isi manual.
+
 ## POS mixed checkout status
 - Pay-now gabungan (bukan open bill) menulis child `status=completed` + `payment_status=paid`. Jangan biarkan `pending` — itu status open bill/KDS.
 - Open bill (unpaid / ada meja lalu append) tetap `pending` sampai dapur selesai.

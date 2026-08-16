@@ -60,6 +60,7 @@ import {
 import { AccountingPostError } from '@/lib/pos/accounting-posting';
 import { resolvePaymentCatalogStamp } from '@/lib/pos/payment-methods';
 import { sanitizeXenditRef } from '@/lib/pos/xendit-ids';
+import { assertQrisSaleMaySettle } from '@/lib/pos/qris-settle-guard';
 import {
   buildDiscountReason,
   computeOrderDiscountStack,
@@ -898,6 +899,33 @@ export async function POST(request: NextRequest) {
         },
         { status: 400 }
       );
+    }
+
+    if (payment_method === 'qris') {
+      const qrisId = sanitizeXenditRef(body.xendit_qr_id);
+      const qrisExternalId = sanitizeXenditRef(body.xendit_external_id);
+      let qrisAlreadyUsed = false;
+      if (qrisId || qrisExternalId) {
+        let usedQuery = db
+          .from('pos_orders')
+          .select('id')
+          .eq('payment_status', 'paid')
+          .limit(1);
+        usedQuery = qrisId
+          ? usedQuery.eq('xendit_qr_id', qrisId)
+          : usedQuery.eq('xendit_external_id', qrisExternalId);
+        const { data: usedRow } = await usedQuery.maybeSingle();
+        qrisAlreadyUsed = Boolean(usedRow);
+      }
+      const qrisGate = assertQrisSaleMaySettle({
+        paymentMethod: payment_method,
+        xenditQrId: qrisId,
+        xenditExternalId: qrisExternalId,
+        alreadyUsedByPaidOrder: qrisAlreadyUsed,
+      });
+      if (!qrisGate.ok) {
+        return NextResponse.json({ success: false, error: qrisGate.message }, { status: 400 });
+      }
     }
 
     if (!isNfcTab && !payWithGiftCard && paidAmount + arkUsed < serverTotal) {

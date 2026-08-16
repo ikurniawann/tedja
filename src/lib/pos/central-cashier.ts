@@ -115,15 +115,25 @@ export function buildPosQrisCreateBody(input: {
   return { amount: input.amount };
 }
 
-/** Mixed QRIS Confirm is allowed only after Xendit poll says paid AND a checkout_id exists. */
+/** QRIS Confirm / auto-settle only after Xendit poll says paid. Mixed also needs checkout_id. */
 export function mayConfirmMixedQris(input: {
   isMixedCart: boolean;
   method: string;
   qrisPaid: boolean;
   checkoutId?: string | null;
 }): boolean {
-  if (!input.isMixedCart || input.method !== "qris") return true;
-  return Boolean(input.qrisPaid && input.checkoutId);
+  if (input.method !== "qris") return true;
+  if (!input.qrisPaid) return false;
+  if (input.isMixedCart) return Boolean(input.checkoutId);
+  return true;
+}
+
+/** Keep Confirm disabled for QRIS until poll marks paid — including while QR is still created. */
+export function shouldWaitForQrisConfirm(input: {
+  method: string;
+  qrisPaid: boolean;
+}): boolean {
+  return input.method === "qris" && !input.qrisPaid;
 }
 
 /** Drop the previous unpaid checkout when ARK/amount changes so a new QR is not bound to it. */
@@ -152,8 +162,10 @@ export function shouldSkipQrisPrepare(input: {
   currentAmount: number;
   mixedCheckoutId?: string | null;
   isMixedCart: boolean;
+  existingQrPaid?: boolean;
 }): boolean {
   void input.qrisLoading;
+  if (input.existingQrPaid) return false;
   if (input.existingQrAmount !== input.currentAmount) return false;
   if (!input.isMixedCart) return true;
   return Boolean(

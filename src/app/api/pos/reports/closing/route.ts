@@ -8,10 +8,12 @@ import {
   resolveSegment,
   roundCurrency,
   SEGMENT_LABELS,
+  summarizeClosingTransactions,
   targetBlock,
   toNumber,
   type SalesSegmentCode,
 } from "@/lib/pos/closing-report-helpers";
+import { todayWib } from "@/lib/pos/report-dates";
 
 type PosOrderRow = {
   id: string;
@@ -105,7 +107,7 @@ export async function GET(request: NextRequest) {
   try {
     const db = createPgClient();
     const searchParams = request.nextUrl.searchParams;
-    const date = searchParams.get("date") || new Date().toISOString().slice(0, 10);
+    const date = searchParams.get("date") || todayWib();
     const shiftId = searchParams.get("shift_id");
     // Hari operasional WIB — jendela UTC membuat order malam pindah tanggal.
     const startIso = `${date}T00:00:00.000+07:00`;
@@ -202,6 +204,7 @@ export async function GET(request: NextRequest) {
     tax = roundCurrency(tax);
     discount = roundCurrency(discount);
     const gross = roundCurrency(netSales + service + tax);
+    const transactionTotals = summarizeClosingTransactions(orderRows);
 
     const guestCount = orderRows.filter((order) => order.order_type === "dine_in").length || orderRows.length;
     const averagePerPax = guestCount > 0 ? roundCurrency(netSales / guestCount) : 0;
@@ -383,6 +386,7 @@ export async function GET(request: NextRequest) {
           discount,
           gross,
         },
+        transaction_totals: transactionTotals,
         guests: {
           count: guestCount,
           average_per_pax: averagePerPax,

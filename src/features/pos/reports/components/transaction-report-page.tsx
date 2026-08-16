@@ -28,21 +28,26 @@ import { PageTransition } from "@/components/motion";
 import { PurchasingListSection } from "@/modules/purchasing/components/list/PurchasingListSection";
 import { PurchasingPageHeader } from "@/modules/purchasing/components/page/purchasing-page-header";
 import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 import { ApexChart } from "./apex-chart";
 import { useTransactionReport } from "../queries";
 import type { TransactionReportRow } from "../types";
-import { TransactionDetailBody } from "./transaction-detail-body";
+import {
+  TransactionDetailBody,
+  type TransactionOrderDetail,
+} from "./transaction-detail-body";
+import { loadOrderTransactionDetail } from "../utils/load-order-detail";
 import {
   formatPaymentMethodLabel,
   formatPaymentStatusLabel,
   isPaidPaymentStatus,
 } from "../utils/transaction-labels";
-
-const today = () => new Date().toISOString().slice(0, 10);
-const firstDayOfMonth = () => {
-  const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
-};
+import {
+  sortTopProducts,
+  topProductBarValue,
+  type TopProductSort,
+} from "../utils/top-products";
+import { firstDayOfMonthWib, todayWib } from "@/lib/pos/report-dates";
 
 function toNumber(value: unknown) {
   const n = Number(value);
@@ -80,59 +85,20 @@ const formatDateTime = (value?: string | null) => {
   }).format(new Date(value));
 };
 
-type OrderItemDetail = {
-  id: string;
-  product_name?: string | null;
-  product_sku?: string | null;
-  quantity?: number | string | null;
-  unit_price?: number | string | null;
-  total_amount?: number | string | null;
-  station?: string | null;
-};
-
-type OrderDetail = {
-  id: string;
-  order_number?: string | null;
-  ordered_at?: string | null;
-  queue_number?: string | null;
-  order_type?: string | null;
-  table_id?: string | null;
-  notes?: string | null;
-  subtotal?: number | string | null;
-  discount_amount?: number | string | null;
-  tax_amount?: number | string | null;
-  service_charge_amount?: number | string | null;
-  total_amount?: number | string | null;
-  amount_paid?: number | string | null;
-  change_amount?: number | string | null;
-  ark_coins_used?: number | string | null;
-  payment_method?: string | null;
-  payment_method_code?: string | null;
-  payment_method_name?: string | null;
-  payment_status?: string | null;
-  status?: string | null;
-  sold_from?: string | null;
-  checkout_id?: string | null;
-  checkout_number?: string | null;
-  xendit_external_id?: string | null;
-  xendit_qr_id?: string | null;
-  customer?: { name?: string | null } | null;
-  items?: OrderItemDetail[];
-};
-
 export function TransactionReportPage() {
-  const [dateFrom, setDateFrom] = useState(firstDayOfMonth);
-  const [dateTo, setDateTo] = useState(today);
+  const [dateFrom, setDateFrom] = useState(firstDayOfMonthWib);
+  const [dateTo, setDateTo] = useState(todayWib);
   const [warehouseId, setWarehouseId] = useState("");
   const [applied, setApplied] = useState({
-    date_from: firstDayOfMonth(),
-    date_to: today(),
+    date_from: firstDayOfMonthWib(),
+    date_to: todayWib(),
     warehouse_id: undefined as string | undefined,
   });
+  const [topProductSort, setTopProductSort] = useState<TopProductSort>("omset");
   const [selectedRow, setSelectedRow] = useState<TransactionReportRow | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
-  const [orderDetail, setOrderDetail] = useState<OrderDetail | null>(null);
+  const [orderDetail, setOrderDetail] = useState<TransactionOrderDetail | null>(null);
 
   const { data, isLoading, isFetching, error } = useTransactionReport(applied);
 
@@ -147,6 +113,10 @@ export function TransactionReportPage() {
   const stallLocked = Boolean(data?.stall_locked);
 
   const rows = useMemo(() => data?.rows ?? [], [data?.rows]);
+  const topProducts = useMemo(
+    () => sortTopProducts(data?.top_products ?? [], topProductSort),
+    [data?.top_products, topProductSort]
+  );
   const detailItems = orderDetail?.items ?? [];
 
   function applyFilter() {
@@ -163,41 +133,10 @@ export function TransactionReportPage() {
     setDetailLoading(true);
     setOrderDetail(null);
     try {
-      const response = await fetch(`/api/pos/orders/${row.id}`, { cache: "no-store" });
-      const payload = await response.json();
-      if (!response.ok || !payload.success || !payload.data) {
-        throw new Error(payload.error || "Gagal memuat detail transaksi");
-      }
-      const detail = payload.data as OrderDetail;
-      const checkoutId = detail.checkout_id || row.checkout_id;
-      if (checkoutId) {
-        const checkoutRes = await fetch(`/api/pos/checkouts/${checkoutId}`, {
-          cache: "no-store",
-        });
-        const checkoutPayload = await checkoutRes.json().catch(() => ({}));
-        const checkout = checkoutPayload?.data as
-          | {
-              checkout_number?: string | null;
-              xendit_external_id?: string | null;
-              xendit_qr_id?: string | null;
-              payment_status?: string | null;
-            }
-          | undefined;
-        if (checkoutRes.ok && checkout) {
-          detail.checkout_number = checkout.checkout_number ?? row.checkout_number;
-          detail.xendit_external_id =
-            checkout.xendit_external_id ?? row.xendit_external_id ?? null;
-          detail.xendit_qr_id = checkout.xendit_qr_id ?? row.xendit_qr_id ?? null;
-        } else {
-          detail.checkout_number = row.checkout_number;
-          detail.xendit_external_id = row.xendit_external_id ?? null;
-          detail.xendit_qr_id = row.xendit_qr_id ?? null;
-        }
-      } else {
-        detail.checkout_number = row.checkout_number;
-        detail.xendit_external_id = row.xendit_external_id ?? null;
-        detail.xendit_qr_id = row.xendit_qr_id ?? null;
-      }
+      const detail = await loadOrderTransactionDetail(row.id, row.checkout_id);
+      detail.checkout_number = detail.checkout_number || row.checkout_number;
+      detail.xendit_external_id = detail.xendit_external_id || row.xendit_external_id;
+      detail.xendit_qr_id = detail.xendit_qr_id || row.xendit_qr_id;
       setOrderDetail(detail);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Gagal memuat detail item";
@@ -321,15 +260,41 @@ export function TransactionReportPage() {
 
           <Card className="border-gray-200/70 shadow-xs">
             <CardContent className="p-4">
-              <div className="mb-3 text-sm font-semibold text-foreground">Top Produk</div>
-              {(data?.top_products?.length ?? 0) === 0 ? (
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <div className="text-sm font-semibold text-foreground">Top Produk</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {(
+                    [
+                      ["omset", "Omset"],
+                      ["qty", "Qty"],
+                    ] as const
+                  ).map(([key, label]) => (
+                    <Button
+                      key={key}
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className={cn(
+                        "border-gray-200/80",
+                        topProductSort === key &&
+                          "border-primary/40 bg-primary/5 text-primary"
+                      )}
+                      onClick={() => setTopProductSort(key)}
+                    >
+                      {label}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+              {topProducts.length === 0 ? (
                 <div className="py-10 text-center text-sm text-muted-foreground">
                   Belum ada data pada filter ini
                 </div>
               ) : (
                 <div className="space-y-2.5">
-                  {(data?.top_products ?? []).map((prod, index) => {
-                    const max = data?.top_products?.[0]?.revenue || 1;
+                  {topProducts.map((prod, index) => {
+                    const max = topProductBarValue(topProducts[0], topProductSort) || 1;
+                    const bar = topProductBarValue(prod, topProductSort);
                     return (
                       <div key={prod.product_name}>
                         <div className="flex items-center justify-between gap-2 text-sm">
@@ -343,7 +308,7 @@ export function TransactionReportPage() {
                         <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-muted">
                           <div
                             className="h-full rounded-full bg-primary"
-                            style={{ width: `${Math.max(4, (prod.revenue / max) * 100)}%` }}
+                            style={{ width: `${Math.max(4, (bar / max) * 100)}%` }}
                           />
                         </div>
                       </div>

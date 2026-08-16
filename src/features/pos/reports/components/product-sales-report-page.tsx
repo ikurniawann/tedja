@@ -10,12 +10,7 @@ import { PageTransition } from "@/components/motion";
 import { PurchasingListSection } from "@/modules/purchasing/components/list/PurchasingListSection";
 import { PurchasingPageHeader } from "@/modules/purchasing/components/page/purchasing-page-header";
 import { useProductSalesReport } from "../queries";
-
-const today = () => new Date().toISOString().slice(0, 10);
-const firstDayOfMonth = () => {
-  const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
-};
+import { firstDayOfMonthWib, todayWib } from "@/lib/pos/report-dates";
 
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat("id-ID", {
@@ -29,12 +24,12 @@ const formatQty = (value: number) =>
   new Intl.NumberFormat("id-ID", { maximumFractionDigits: 2 }).format(value || 0);
 
 export function ProductSalesReportPage() {
-  const [dateFrom, setDateFrom] = useState(firstDayOfMonth);
-  const [dateTo, setDateTo] = useState(today);
+  const [dateFrom, setDateFrom] = useState(firstDayOfMonthWib);
+  const [dateTo, setDateTo] = useState(todayWib);
   const [warehouseId, setWarehouseId] = useState("");
   const [applied, setApplied] = useState({
-    date_from: firstDayOfMonth(),
-    date_to: today(),
+    date_from: firstDayOfMonthWib(),
+    date_to: todayWib(),
     warehouse_id: undefined as string | undefined,
   });
 

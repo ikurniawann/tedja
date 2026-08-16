@@ -183,7 +183,7 @@ export async function GET(request: NextRequest) {
         "id, order_number, table_id, status, payment_status, total_amount, pre_settled_at, checkout_id, sold_from"
       )
       .not("table_id", "is", null)
-      .in("status", ["pending", "confirmed", "preparing", "ready", "served"])
+      .in("status", ["pending", "confirmed", "preparing", "ready", "served", "completed"])
       .neq("payment_status", "paid");
 
     let activeOrders: ActiveOrderRow[] = [];
@@ -197,7 +197,7 @@ export async function GET(request: NextRequest) {
           "id, order_number, table_id, status, payment_status, total_amount, pre_settled_at"
         )
         .not("table_id", "is", null)
-        .in("status", ["pending", "confirmed", "preparing", "ready", "served"])
+        .in("status", ["pending", "confirmed", "preparing", "ready", "served", "completed"])
         .neq("payment_status", "paid");
       if (legacy.error) throw legacy.error;
       activeOrders = (legacy.data ?? []) as ActiveOrderRow[];

@@ -29,3 +29,10 @@ Branch `feature/pos-central-cashier`. Tes unit 1452 passed sebelum fix terakhir;
 Follow-up laporan transaksi: dialog Detail dipecah Transaksi / Pembayaran / Xendit (QRIS) / Item terjual. Settlement Pending dijelaskan sebagai cair T+2, bukan gagal bayar.
 
 Follow-up metode bayar custom: persist `payment_method_code` + `payment_method_name` di order/checkout supaya laporan, struk, dan laci shift tidak jatuh ke label Tunai/Kartu. Alias custom tidak dihitung sebagai uang laci.
+
+## Follow-up: Laporan Void
+- [x] API `GET /api/pos/reports/voids` (status voided, item, alasan, kasir, supervisor)
+- [x] Halaman `/dashboard/pos/reports/voids` + menu IAM Void
+- [x] Detail reuse `TransactionDetailBody` (kartu Void + item)
+- [x] Migrasi menu diterapkan lokal (`20260816183000_pos_void_report_menu.sql`)
+- [x] Grant diperluas + label sidebar **Laporan Void** (`20260816184500_pos_void_report_menu_grants.sql`)
