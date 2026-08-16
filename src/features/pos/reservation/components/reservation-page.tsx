@@ -13,6 +13,7 @@ import {
   User,
   Users,
   X,
+  Printer,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -35,6 +36,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { floorLabel, floorSortKey } from "@/features/pos/tables/floor-options";
 import { cn } from "@/lib/utils";
 
+import {
+  buildReservationQueueWaMessage,
+  formatReservationQueueNumber,
+} from "@/lib/pos/reservation-queue";
+import { printQueueSlip } from "../print-queue-slip";
 import type {
   CreateReservationPayload,
   OrderType,
@@ -198,7 +204,7 @@ export function ReservationPage() {
   const [showWhatsAppDialog, setShowWhatsAppDialog] = useState(false);
   const [whatsAppReservation, setWhatsAppReservation] =
     useState<ReservationRow | null>(null);
-  const [whatsAppType, setWhatsAppType] = useState<"reminder" | "confirmation">(
+  const [whatsAppType, setWhatsAppType] = useState<"reminder" | "confirmation" | "queue">(
     "reminder"
   );
   const [updatingId, setUpdatingId] = useState<string | null>(null);
@@ -208,6 +214,28 @@ export function ReservationPage() {
     isLoading: loading,
     error: reservationsError,
   } = useReservationList({ date: selectedDate, status: filterStatus });
+  const { data: allForDate = [] } = useReservationList({
+    date: selectedDate,
+    status: "all",
+  });
+
+  /* Kartu ringkasan antrian (owner 2026-08-16): sedang dilayani, siapa yang
+   * harus siap-siap, dan berapa yang menunggu — dihitung dari SEMUA reservasi
+   * tanggal terpilih, bukan subset filter chip. */
+  const queueSummary = useMemo(() => {
+    const withQueue = allForDate.filter((r) => Number(r.queue_number) > 0);
+    const waiting = withQueue
+      .filter((r) => r.status === "pending" || r.status === "confirmed")
+      .sort((a, b) => Number(a.queue_number) - Number(b.queue_number));
+    const served = withQueue
+      .filter((r) => r.status === "seated" || r.status === "completed")
+      .sort((a, b) => Number(b.queue_number) - Number(a.queue_number));
+    return {
+      nowServing: served[0] ?? null,
+      next: waiting[0] ?? null,
+      waitingCount: waiting.length,
+    };
+  }, [allForDate]);
   const { data: customers = [], error: customersError } =
     useReservationCustomers();
   const { data: tables = [], refetch: refetchTables } = useReservationTables();
@@ -333,8 +361,20 @@ export function ReservationPage() {
 
   function generateWhatsAppMessage(
     reservation: ReservationRow,
-    type: "reminder" | "confirmation"
+    type: "reminder" | "confirmation" | "queue"
   ) {
+    if (type === "queue") {
+      return buildReservationQueueWaMessage({
+        guestName: reservationName(reservation),
+        queueLabel:
+          formatReservationQueueNumber(reservation.queue_number) ?? "-",
+        dateLabel: queueDateLabel(reservation),
+        timeLabel: String(reservation.time_slot || "").slice(0, 5),
+        paxCount: reservation.pax_count,
+        tableLabel: reservation.table?.table_number || null,
+        merchantName: "Sulu in Wounderland",
+      });
+    }
     const dateObj = new Date(`${reservation.reservation_date}T00:00:00`);
     const formattedDate = dateObj.toLocaleDateString("en-GB", {
       weekday: "long",
@@ -349,9 +389,32 @@ export function ReservationPage() {
     return `Hello ${reservationName(reservation)}!\n\n${intro}\n\nDate: ${formattedDate}\nTime: ${reservation.time_slot}\nGuests: ${reservation.pax_count}\n${reservation.table?.table_number ? `Table: ${reservation.table.table_number}\n` : ""}${reservation.notes ? `Notes: ${reservation.notes}\n` : ""}\nPlease arrive 10 minutes before your reservation time.\n\nPrologue Wonderland`;
   }
 
+  function queueDateLabel(reservation: ReservationRow) {
+    return new Date(`${reservation.reservation_date}T00:00:00`).toLocaleDateString(
+      "id-ID",
+      { weekday: "long", day: "numeric", month: "long", year: "numeric" }
+    );
+  }
+
+  function handlePrintQueueSlip(reservation: ReservationRow) {
+    const queueLabel = formatReservationQueueNumber(reservation.queue_number);
+    if (!queueLabel) {
+      toast.error("Reservasi lama belum bernomor antrian");
+      return;
+    }
+    void printQueueSlip({
+      queueLabel,
+      guestName: reservationName(reservation),
+      paxCount: reservation.pax_count,
+      dateLabel: queueDateLabel(reservation),
+      timeLabel: String(reservation.time_slot || "").slice(0, 5),
+      tableLabel: reservation.table?.table_number || null,
+    });
+  }
+
   function openWhatsApp(
     reservation: ReservationRow,
-    type: "reminder" | "confirmation"
+    type: "reminder" | "confirmation" | "queue"
   ) {
     setWhatsAppReservation(reservation);
     setWhatsAppType(type);
@@ -431,6 +494,52 @@ export function ReservationPage() {
         </div>
       </div>
 
+      <div className="grid gap-3 sm:grid-cols-3">
+        <div className="rounded-xl border border-gray-200/70 bg-card px-4 py-3">
+          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Antrian Sekarang
+          </div>
+          {queueSummary.nowServing ? (
+            <>
+              <div className="mt-1 text-2xl font-bold tabular-nums text-primary">
+                {formatReservationQueueNumber(queueSummary.nowServing.queue_number)}
+              </div>
+              <div className="truncate text-xs text-muted-foreground">
+                {reservationName(queueSummary.nowServing)}
+              </div>
+            </>
+          ) : (
+            <div className="mt-1 text-2xl font-bold text-muted-foreground/50">—</div>
+          )}
+        </div>
+        <div className="rounded-xl border border-amber-200/70 bg-amber-50/60 px-4 py-3">
+          <div className="text-xs font-semibold uppercase tracking-wide text-amber-700">
+            Siap-Siap Berikutnya
+          </div>
+          {queueSummary.next ? (
+            <>
+              <div className="mt-1 text-2xl font-bold tabular-nums text-amber-700">
+                {formatReservationQueueNumber(queueSummary.next.queue_number)}
+              </div>
+              <div className="truncate text-xs font-medium text-amber-800">
+                a/n {reservationName(queueSummary.next)} · {queueSummary.next.pax_count} orang
+              </div>
+            </>
+          ) : (
+            <div className="mt-1 text-2xl font-bold text-amber-700/40">—</div>
+          )}
+        </div>
+        <div className="rounded-xl border border-gray-200/70 bg-card px-4 py-3">
+          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Total Menunggu
+          </div>
+          <div className="mt-1 text-2xl font-bold tabular-nums text-foreground">
+            {queueSummary.waitingCount}
+            <span className="ml-1.5 text-sm font-medium text-muted-foreground">antrian</span>
+          </div>
+        </div>
+      </div>
+
       <Card className="min-h-0 flex-1 overflow-hidden border-gray-200/70 shadow-xs">
         <CardContent className="flex h-full flex-col p-0">
           <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-4 py-4">
@@ -461,6 +570,11 @@ export function ReservationPage() {
                     <div className="mb-3 flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <div className="mb-1 flex flex-wrap items-center gap-2">
+                          {formatReservationQueueNumber(reservation.queue_number) ? (
+                            <span className="rounded-md bg-primary/10 px-2 py-0.5 text-sm font-bold tabular-nums text-primary">
+                              {formatReservationQueueNumber(reservation.queue_number)}
+                            </span>
+                          ) : null}
                           <h3 className="truncate text-sm font-semibold text-foreground">
                             {reservationName(reservation)}
                           </h3>
@@ -507,6 +621,36 @@ export function ReservationPage() {
                     ) : null}
 
                     <div className="flex flex-wrap gap-2 border-t border-gray-200/70 pt-3">
+                      {(reservation.status === "pending" ||
+                        reservation.status === "confirmed") &&
+                      formatReservationQueueNumber(reservation.queue_number) ? (
+                        <>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="border-gray-200/80"
+                            disabled={busy}
+                            title="Cetak slip nomor antrian"
+                            onClick={() => handlePrintQueueSlip(reservation)}
+                          >
+                            <Printer className="mr-1.5 h-3.5 w-3.5" />
+                            Antrian
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="border-emerald-200/80 text-emerald-700 hover:bg-emerald-50"
+                            disabled={busy}
+                            title="Kirim nomor antrian via WhatsApp"
+                            onClick={() => openWhatsApp(reservation, "queue")}
+                          >
+                            <MessageSquare className="mr-1.5 h-3.5 w-3.5" />
+                            WA Antrian
+                          </Button>
+                        </>
+                      ) : null}
                       {reservation.status === "pending" ? (
                         <>
                           <Button

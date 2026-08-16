@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { getPosSession, successResponse } from "@/lib/api/auth";
+import { ApiError, getPosSession, requireApiRole, successResponse } from "@/lib/api/auth";
 import {
   createPosPaymentMethod,
+  deletePosPaymentMethod,
   listPosPaymentMethods,
   updatePosPaymentMethod,
 } from "@/lib/pos/payment-methods-store";
 import {
   isManualPaymentHandler,
+  isValidPaymentMethodCode,
   slugifyPaymentMethodCode,
 } from "@/lib/pos/payment-methods";
 
@@ -62,7 +64,7 @@ export async function PATCH(request: NextRequest) {
       );
     }
     const { code, ...patch } = parsed.data;
-    if (!slugifyPaymentMethodCode(code)) {
+    if (!isValidPaymentMethodCode(code) && !slugifyPaymentMethodCode(code)) {
       return NextResponse.json(
         { success: false, error: "Kode metode tidak dikenali" },
         { status: 400 }
@@ -109,15 +111,8 @@ const createSchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
-  const sessionUserId = await getPosSession();
-  if (!sessionUserId) {
-    return NextResponse.json(
-      { success: false, error: "Authentication required" },
-      { status: 401 }
-    );
-  }
-
   try {
+    await requireApiRole(["super_admin", "admin"]);
     const parsed = createSchema.safeParse(await request.json());
     if (!parsed.success) {
       return NextResponse.json(
@@ -134,9 +129,36 @@ export async function POST(request: NextRequest) {
     const created = await createPosPaymentMethod(parsed.data);
     return successResponse(created, "Metode bayar ditambahkan");
   } catch (err) {
+    if (err instanceof ApiError) return err.toResponse();
     const message = err instanceof Error ? err.message : "Gagal menambah metode bayar";
     const status = /sudah dipakai/i.test(message) ? 409 : 400;
     console.error("[pos] create payment method:", err);
     return NextResponse.json({ success: false, error: message }, { status });
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    await requireApiRole(["super_admin", "admin"]);
+    const code = String(request.nextUrl.searchParams.get("code") || "").trim();
+    if (!isValidPaymentMethodCode(code)) {
+      return NextResponse.json(
+        { success: false, error: "Kode metode tidak valid" },
+        { status: 400 }
+      );
+    }
+    const deleted = await deletePosPaymentMethod(code);
+    if (!deleted) {
+      return NextResponse.json(
+        { success: false, error: "Metode bayar tidak ditemukan" },
+        { status: 404 }
+      );
+    }
+    return successResponse({ code }, "Metode bayar dihapus");
+  } catch (err) {
+    if (err instanceof ApiError) return err.toResponse();
+    const message = err instanceof Error ? err.message : "Gagal menghapus metode bayar";
+    console.error("[pos] delete payment method:", err);
+    return NextResponse.json({ success: false, error: message }, { status: 400 });
   }
 }

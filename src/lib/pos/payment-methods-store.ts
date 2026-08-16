@@ -1,10 +1,12 @@
 import { query, queryOne } from "@/lib/db";
 import {
   DEFAULT_POS_PAYMENT_METHODS,
+  PROTECTED_PAYMENT_METHOD_CODES,
   canRenamePaymentMethodCode,
   isManualPaymentHandler,
   isPosPaymentHandler,
   isPosPaymentMethodCode,
+  isValidPaymentMethodCode,
   slugifyPaymentMethodCode,
   type ManualPaymentHandler,
   type PosPaymentHandler,
@@ -24,6 +26,7 @@ type PaymentMethodRow = {
 };
 
 function mapRow(row: PaymentMethodRow): PosPaymentMethod | null {
+  if (!isValidPaymentMethodCode(row.code)) return null;
   if (!isPosPaymentHandler(row.handler)) return null;
   return {
     id: row.id,
@@ -74,7 +77,7 @@ export async function updatePosPaymentMethod(
   }
 ): Promise<PosPaymentMethod | null> {
   const normalized = slugifyPaymentMethodCode(code);
-  if (!normalized) return null;
+  if (!normalized || !isValidPaymentMethodCode(normalized)) return null;
 
   const sets: string[] = ["updated_at = now()"];
   const values: unknown[] = [];
@@ -88,7 +91,7 @@ export async function updatePosPaymentMethod(
   if (patch.sort_order !== undefined) add("sort_order", patch.sort_order);
   if (patch.new_code !== undefined) {
     const nextCode = slugifyPaymentMethodCode(patch.new_code);
-    if (!nextCode || nextCode.length < 2) {
+    if (!nextCode || nextCode.length < 2 || !isValidPaymentMethodCode(nextCode)) {
       throw new Error("Kode metode tidak valid");
     }
     if (!canRenamePaymentMethodCode(normalized)) {
@@ -143,19 +146,43 @@ export async function createPosPaymentMethod(input: {
   if (name.length < 2) {
     throw new Error("Nama metode minimal 2 karakter");
   }
-  const code = slugifyPaymentMethodCode(input.code || name);
-  if (code.length < 2) {
+  const base = slugifyPaymentMethodCode(input.code || name);
+  if (base.length < 2 || !isValidPaymentMethodCode(base)) {
     throw new Error("Kode metode tidak valid");
   }
 
-  const existing = await queryOne<{ id: string }>(
-    `SELECT id FROM pos.payment_methods WHERE code = $1`,
-    [code]
+  const existing = await query<{ code: string }>(
+    `SELECT code FROM pos.payment_methods WHERE code = $1 OR code LIKE $2`,
+    [base, `${base}_%`]
   );
-  if (existing) {
-    throw new Error("Kode metode sudah dipakai");
+  const taken = new Set(existing.map((row) => row.code));
+  if (isPosPaymentMethodCode(base) || taken.has(base)) {
+    let code = base;
+    for (let i = 2; taken.has(code) || isPosPaymentMethodCode(code); i += 1) {
+      code = `${base}_${i}`.slice(0, 40);
+    }
+    return insertPaymentMethod({
+      code,
+      name,
+      description: (input.description || "").trim(),
+      handler: input.handler,
+    });
   }
 
+  return insertPaymentMethod({
+    code: base,
+    name,
+    description: (input.description || "").trim(),
+    handler: input.handler,
+  });
+}
+
+async function insertPaymentMethod(input: {
+  code: string;
+  name: string;
+  description: string;
+  handler: ManualPaymentHandler;
+}): Promise<PosPaymentMethod> {
   const maxRow = await queryOne<{ max: number | string | null }>(
     `SELECT MAX(sort_order) AS max FROM pos.payment_methods`
   );
@@ -170,9 +197,9 @@ export async function createPosPaymentMethod(input: {
      RETURNING id, code, name, description, icon, handler,
                is_active, sort_order, requires_cash_input`,
     [
-      code,
-      name,
-      (input.description || "").trim(),
+      input.code,
+      input.name,
+      input.description,
       icon,
       input.handler,
       sortOrder,
@@ -184,4 +211,17 @@ export async function createPosPaymentMethod(input: {
     throw new Error("Gagal menyimpan metode bayar");
   }
   return mapped;
+}
+
+/** Hapus metode kustom. Metode bawaan ber-alur khusus dilindungi. */
+export async function deletePosPaymentMethod(code: string): Promise<boolean> {
+  if (!isValidPaymentMethodCode(code)) return false;
+  if (PROTECTED_PAYMENT_METHOD_CODES.has(code)) {
+    throw new Error("Metode bawaan tidak bisa dihapus — nonaktifkan saja");
+  }
+  const row = await queryOne<{ code: string }>(
+    `DELETE FROM pos.payment_methods WHERE code = $1 RETURNING code`,
+    [code]
+  );
+  return Boolean(row);
 }

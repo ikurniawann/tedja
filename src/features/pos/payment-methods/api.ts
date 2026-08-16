@@ -52,3 +52,12 @@ export async function createPaymentMethod(input: {
   const body = (await res.json()) as { data: PosPaymentMethod };
   return body.data;
 }
+
+export async function deletePaymentMethod(code: string) {
+  const res = await fetch(
+    `/api/pos/payment-methods?code=${encodeURIComponent(code)}`,
+    { method: "DELETE" }
+  );
+  if (!res.ok) await parseError(res, "Gagal menghapus metode bayar");
+  return true;
+}

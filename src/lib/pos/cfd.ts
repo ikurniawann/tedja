@@ -22,7 +22,8 @@ export interface CfdItem {
 }
 
 export interface CfdPayment {
-  method: "cash" | "qris" | "credit_card" | "ark_coin" | "nfc_tab" | "gift_card";
+  // Kode bawaan ATAU metode kustom buatan admin (master Metode Bayar)
+  method: "cash" | "qris" | "credit_card" | "ark_coin" | "nfc_tab" | "gift_card" | (string & {});
   /** Nominal yang harus dibayar (setelah ARK Coin). */
   amount: number;
   cash_received?: number;

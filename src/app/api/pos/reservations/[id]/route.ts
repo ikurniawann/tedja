@@ -12,7 +12,18 @@ type ReservationUpdateData = {
 };
 
 function getErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : 'Unknown error';
+  if (error instanceof Error && error.message) return error.message;
+  // Error QueryBuilder/pg berupa objek polos {message, code} — dulu jatuh ke
+  // "Unknown error" sehingga penyebab asli tidak pernah terlihat kasir.
+  if (
+    error &&
+    typeof error === 'object' &&
+    'message' in error &&
+    typeof (error as { message: unknown }).message === 'string'
+  ) {
+    return (error as { message: string }).message;
+  }
+  return 'Unknown error';
 }
 
 // PATCH /api/pos/reservations/:id - Update reservation status

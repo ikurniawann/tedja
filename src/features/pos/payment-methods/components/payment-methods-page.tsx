@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { CreditCard, Loader2, Plus } from "lucide-react";
+import { CreditCard, Loader2, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -21,15 +21,22 @@ import { PurchasingPageHeader } from "@/modules/purchasing/components/page/purch
 import { TableRow } from "@/components/ui/table";
 import type { ManualPaymentHandler, PosPaymentMethod } from "@/lib/pos/payment-methods";
 import {
+  PROTECTED_PAYMENT_METHOD_CODES,
   canRenamePaymentMethodCode,
   slugifyPaymentMethodCode,
 } from "@/lib/pos/payment-methods";
-import { useCreatePaymentMethod, usePaymentMethods, useUpdatePaymentMethod } from "../queries";
+import {
+  useCreatePaymentMethod,
+  useDeletePaymentMethod,
+  usePaymentMethods,
+  useUpdatePaymentMethod,
+} from "../queries";
 
 export function PaymentMethodsPage() {
   const listQuery = usePaymentMethods(false);
   const updateMutation = useUpdatePaymentMethod();
   const createMutation = useCreatePaymentMethod();
+  const deleteMutation = useDeletePaymentMethod();
   const [addOpen, setAddOpen] = useState(false);
   const [addForm, setAddForm] = useState({
     name: "",
@@ -212,7 +219,28 @@ export function PaymentMethodsPage() {
                         />
                       </td>
                       <td className="px-4 py-3">
-                        <div className="flex justify-end">
+                        <div className="flex justify-end gap-1.5">
+                          {!PROTECTED_PAYMENT_METHOD_CODES.has(row.code) ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-8 border-red-200/80 text-red-700 hover:bg-red-50"
+                              title="Hapus metode kustom"
+                              disabled={busy || deleteMutation.isPending}
+                              onClick={() => {
+                                if (window.confirm(`Hapus metode "${row.name}"?`)) {
+                                  deleteMutation.mutate(row.code);
+                                }
+                              }}
+                            >
+                              {deleteMutation.isPending &&
+                              deleteMutation.variables === row.code ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <Trash2 className="h-3.5 w-3.5" />
+                              )}
+                            </Button>
+                          ) : null}
                           <Button
                             size="sm"
                             className="h-8"

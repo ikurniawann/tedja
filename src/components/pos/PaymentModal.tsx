@@ -54,7 +54,9 @@ export type PaymentMethod =
   | "credit_card"
   | "ark_coin"
   | "nfc_tab"
-  | "gift_card";
+  | "gift_card"
+  // Metode kustom buatan admin (master Metode Bayar) — alur generik
+  | (string & {});
 
 /** Hasil pratinjau tab ticketing (EPIC-023 Fase C) utk metode NFC Tab. */
 export interface NfcTabCheckResult {
