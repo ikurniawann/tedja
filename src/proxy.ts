@@ -1,67 +1,48 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { updateSession } from "@/lib/auth/middleware";
 
-export async function proxy(request: NextRequest) {
-  const { pathname, search } = request.nextUrl;
+/**
+ * Serves the member portal at its own hostname.
+ *
+ *   member.suluinwounderland.com/            -> /member
+ *   member.suluinwounderland.com/classic     -> /member/classic
+ *
+ * The pages keep living under src/app/member; only the public URL changes.
+ * dashboard.suluinwounderland.com is untouched and still serves /member too,
+ * so nothing breaks while the new hostname is being rolled out.
+ *
+ * Next.js 16 renamed this file convention from `middleware.ts` to `proxy.ts`
+ * and the export from `middleware` to `proxy`. The old names are silently
+ * ignored on 16 -- the file exists, nothing runs.
+ *
+ * Requires the tunnel to pass the original Host through: if the Public
+ * Hostname entry sets an "HTTP Host Header" override, every request arrives
+ * as the dashboard host and this never fires.
+ */
 
-  // Portal member: subdomain member.* (member.suluindwounderland.com via
-  // Cloudflare Tunnel) di-rewrite ke /member — API & asset tidak disentuh.
+const MEMBER_HOST_PREFIX = "member.";
+
+export function proxy(request: NextRequest) {
   const host = request.headers.get("host") ?? "";
-  if (host.startsWith("member.")) {
-    if (
-      !pathname.startsWith("/member") &&
-      !pathname.startsWith("/api") &&
-      !pathname.startsWith("/_next")
-    ) {
-      const target = pathname === "/" ? "/member" : `/member${pathname}`;
-      return NextResponse.rewrite(new URL(`${target}${search}`, request.url));
-    }
+  if (!host.startsWith(MEMBER_HOST_PREFIX)) return NextResponse.next();
+
+  const { pathname } = request.nextUrl;
+
+  // /api/* must pass through untouched: the portal calls /api/member-portal/*
+  // with absolute paths in ~30 places, and prefixing those would 404 the whole
+  // portal while the pages themselves still rendered.
+  // /member/* is already correct -- links in the app emit absolute /member/...
+  // paths, so they must not get prefixed twice.
+  if (pathname.startsWith("/api") || pathname.startsWith("/member")) {
+    return NextResponse.next();
   }
 
-  // Legacy employees path (was under /dashboard/hris/employees).
-  if (pathname.startsWith("/dashboard/hris/employees")) {
-    const target = pathname.replace("/dashboard/hris/employees", "/dashboard/employees");
-    return NextResponse.redirect(new URL(`${target}${search}`, request.url));
-  }
-
-  // Legacy create URL: .../new → .../insert
-  const legacyNew = pathname.match(/^(\/dashboard\/(?:[^/]+\/)+)new$/);
-  if (legacyNew) {
-    return NextResponse.redirect(new URL(`${legacyNew[1]}insert${search}`, request.url));
-  }
-
-  // Legacy edit URL: .../{id}/edit → .../edit/{id}
-  const legacyEdit = pathname.match(/^(\/dashboard\/(?:.+\/)+)([^/]+)\/edit$/);
-  if (legacyEdit) {
-    return NextResponse.redirect(
-      new URL(`${legacyEdit[1]}edit/${legacyEdit[2]}${search}`, request.url)
-    );
-  }
-
-  // Redirect old HRIS paths to new /dashboard/hris/* structure.
-  // Must run before the session check so the redirect target is also authenticated.
-  // "staff" sengaja tidak ada di daftar: /dashboard/hris/staff tidak pernah dibuat,
-  // jadi redirect-nya hanya mengantar ke 404 (EPIC-015).
-  const hrisModules = ["candidates", "pipeline", "talent-pool", "analytics"];
-  for (const hrisModule of hrisModules) {
-    // Match /dashboard/{module}/* but NOT /dashboard/hris/{module}/*
-    if (
-      pathname.startsWith(`/dashboard/${hrisModule}`) &&
-      !pathname.startsWith("/dashboard/hris/")
-    ) {
-      const newPath = pathname.replace(
-        `/dashboard/${hrisModule}`,
-        `/dashboard/hris/${hrisModule}`
-      );
-      return NextResponse.redirect(new URL(newPath, request.url));
-    }
-  }
-
-  return await updateSession(request);
+  const url = request.nextUrl.clone();
+  url.pathname = pathname === "/" ? "/member" : `/member${pathname}`;
+  return NextResponse.rewrite(url);
 }
 
 export const config = {
-  matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|avif)$).*)",
-  ],
+  // Static assets are served from the same origin under the member host too,
+  // so they must not be rewritten into /member/_next/...
+  matcher: "/((?!_next/static|_next/image|favicon.ico).*)",
 };
