@@ -4,6 +4,10 @@ import { getPosSession } from "@/lib/api/auth";
 
 type Period = "today" | "week" | "month";
 
+/** Order dibatalkan/di-void/di-merge: uangnya tidak dihitung sebagai revenue. */
+const VOIDED_STATUSES = new Set(["cancelled", "voided", "merged"]);
+const VOIDED_STATUSES_SQL = '("cancelled","voided","merged")';
+
 function toNumber(value: unknown): number {
   const n = Number(value);
   return Number.isFinite(n) ? n : 0;
@@ -110,13 +114,22 @@ export async function GET(request: NextRequest) {
 
     const { data: periodOrders } = await db
       .from("pos_orders")
-      .select("id, total_amount, cashier_id, ordered_at, ark_coins_used, payment_method, status")
+      .select(
+        "id, total_amount, cashier_id, ordered_at, ark_coins_used, payment_method, status, payment_status"
+      )
       .gte("ordered_at", startIso)
       .lte("ordered_at", endIso);
 
-    const completedOrders = (periodOrders ?? []).filter((order) => order.status === "completed");
-    const todayRevenue = completedOrders.reduce((sum, order) => sum + toNumber(order.total_amount), 0);
-    const todayOrders = completedOrders.length;
+    // Revenue = order yang DIBAYAR. Status order sengaja tidak dipakai:
+    // kasir membuat order paid dengan status 'pending', dan status baru jadi
+    // 'completed' setelah semua item F&B di-serve lewat KDS — venue yang tidak
+    // disiplin KDS membuat dashboard nol padahal uang sudah masuk.
+    const paidOrders = (periodOrders ?? []).filter(
+      (order) =>
+        order.payment_status === "paid" && !VOIDED_STATUSES.has(String(order.status))
+    );
+    const todayRevenue = paidOrders.reduce((sum, order) => sum + toNumber(order.total_amount), 0);
+    const todayOrders = paidOrders.length;
     const averageOrderValue = todayOrders > 0 ? todayRevenue / todayOrders : 0;
     const activeCashiers = new Set(
       (periodOrders ?? []).map((order) => order.cashier_id).filter(Boolean)
@@ -125,7 +138,8 @@ export async function GET(request: NextRequest) {
     const { data: prevRevenueData } = await db
       .from("pos_orders")
       .select("total_amount")
-      .eq("status", "completed")
+      .eq("payment_status", "paid")
+      .not("status", "in", VOIDED_STATUSES_SQL)
       .gte("ordered_at", prevStart.toISOString())
       .lte("ordered_at", prevEnd.toISOString());
 
@@ -135,7 +149,8 @@ export async function GET(request: NextRequest) {
     const { count: prevOrders } = await db
       .from("pos_orders")
       .select("*", { count: "exact", head: true })
-      .eq("status", "completed")
+      .eq("payment_status", "paid")
+      .not("status", "in", VOIDED_STATUSES_SQL)
       .gte("ordered_at", prevStart.toISOString())
       .lte("ordered_at", prevEnd.toISOString());
 
@@ -144,12 +159,19 @@ export async function GET(request: NextRequest) {
 
     const { data: topProductsRaw } = await db
       .from("pos_order_items")
-      .select("product_id, product_name, quantity, total_amount")
+      .select("order_id, product_id, product_name, quantity, total_amount")
       .gte("created_at", startIso)
       .lte("created_at", endIso);
 
+    // Hanya item milik order yang dibayar — tanpa ini, order unpaid/void ikut
+    // mendongkrak produk terlaris.
+    const paidOrderIds = new Set(paidOrders.map((order) => String(order.id)));
+    const paidItems = (topProductsRaw ?? []).filter((item) =>
+      paidOrderIds.has(String(item.order_id))
+    );
+
     const productMap = new Map<string, { name: string; sold: number; revenue: number }>();
-    topProductsRaw?.forEach((item) => {
+    paidItems.forEach((item) => {
       const pid = String(item.product_id);
       const existing = productMap.get(pid);
       if (existing) {
@@ -197,15 +219,16 @@ export async function GET(request: NextRequest) {
       }),
     }));
 
-    const totalArkUsed = completedOrders.reduce((sum, order) => sum + toNumber(order.ark_coins_used), 0);
-    const arkPaymentOrders = completedOrders.filter(
+    const totalArkUsed = paidOrders.reduce((sum, order) => sum + toNumber(order.ark_coins_used), 0);
+    const arkPaymentOrders = paidOrders.filter(
       (order) => order.payment_method === "ark_coin" || toNumber(order.ark_coins_used) > 0
     ).length;
 
     const { data: arkEarnedRows } = await db
       .from("pos_orders")
       .select("ark_coins_earned")
-      .eq("status", "completed")
+      .eq("payment_status", "paid")
+      .not("status", "in", VOIDED_STATUSES_SQL)
       .gte("ordered_at", startIso)
       .lte("ordered_at", endIso);
 
@@ -261,7 +284,7 @@ export async function GET(request: NextRequest) {
 
     const bucketKey = period === "today" ? hourKey : dateKey;
 
-    completedOrders.forEach((order) => {
+    paidOrders.forEach((order) => {
       const key = bucketKey(String(order.ordered_at));
       const bucket = trendBuckets.get(key) ?? { revenue: 0, orders: 0, arkUsed: 0, xpEarned: 0 };
       bucket.revenue += toNumber(order.total_amount);
