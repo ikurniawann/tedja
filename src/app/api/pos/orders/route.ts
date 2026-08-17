@@ -419,7 +419,6 @@ export async function POST(request: NextRequest) {
       warehouseByProduct,
       canSellMixed,
       hasSplits: Array.isArray(body.splits) && body.splits.length > 0,
-      discountAmount: discount_amount,
       promoCode: body.promo_code,
     });
     if (!mixedGuard.ok) {

@@ -153,7 +153,6 @@ export async function POST(request: NextRequest) {
       productIds,
       warehouseByProduct,
       canSellMixed,
-      discountAmount: body.discount_amount,
       promoCode: body.promo_code,
     });
     if (!mixedGuard.ok) {

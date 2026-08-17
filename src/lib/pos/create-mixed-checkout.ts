@@ -239,7 +239,6 @@ export function guardMixedCheckoutCart(input: {
   warehouseByProduct: Map<string, string | null>;
   canSellMixed: boolean;
   hasSplits?: boolean;
-  discountAmount?: number | string | null;
   promoCode?: string | null;
 }): MixedCheckoutGuardResult {
   for (const id of input.productIds) {
