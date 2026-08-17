@@ -1,7 +1,8 @@
-import { requireRole } from "@/lib/auth/require-user";
+import { requireIamPage } from "@/lib/auth/require-user";
+import { IAM } from "@/lib/iam/prefixes";
 import { ShopOrdersPage } from "@/features/shop/orders";
 
 export default async function ShopOrdersRoute() {
-  await requireRole(["super_admin", "admin"]);
+  await requireIamPage(IAM.shop);
   return <ShopOrdersPage />;
 }

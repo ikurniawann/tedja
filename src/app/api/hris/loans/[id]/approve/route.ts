@@ -5,7 +5,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerPgClient } from "@/lib/pg/create-client";
-import { ApiError, requireApiRole } from '@/lib/api/auth';
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { LOAN_MANAGE_ROLES } from '@/lib/payroll/roles';
 import { loadPayrollConfig } from '@/lib/payroll/config';
 import { validateLoanLimits } from '@/lib/payroll/loans';
@@ -20,7 +21,7 @@ interface RouteParams {
 
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
-    const apiUser = await requireApiRole([...LOAN_MANAGE_ROLES]);
+    const apiUser = await requireIamMenuPrefix(IAM.hrisCompensation);
     const db = await createServerPgClient();
     const { id } = await params;
     const body = await request.json();

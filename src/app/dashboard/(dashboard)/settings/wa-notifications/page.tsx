@@ -1,4 +1,5 @@
-import { requireRole } from "@/lib/auth/require-user";
+import { requireIamPage } from "@/lib/auth/require-user";
+import { IAM } from "@/lib/iam/prefixes";
 import { WaNotifSettingsPanel } from "@/components/arkiv/wa-notif-settings";
 
 /**
@@ -10,7 +11,7 @@ import { WaNotifSettingsPanel } from "@/components/arkiv/wa-notif-settings";
  * (terang) ia dirender dengan tone="light" — satu form dua kulit, bukan dua salinan.
  */
 export default async function WaNotificationsSettingsPage() {
-  await requireRole(["super_admin", "direksi"]);
+  await requireIamPage(IAM.settingsIntegrations);
 
   return (
     <div className="mx-auto max-w-3xl">

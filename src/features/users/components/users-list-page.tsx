@@ -18,6 +18,8 @@ import { useDepartmentList } from "@/features/master-data/departments";
 import { PurchasingListSection } from "@/modules/purchasing/components/list/PurchasingListSection";
 import { PurchasingTablePagination } from "@/modules/purchasing/components/pagination/PurchasingTablePagination";
 import { useAuth } from "@/hooks/use-auth";
+import { useIamAccess } from "@/components/iam/iam-access-provider";
+import { IAM } from "@/lib/iam/prefixes";
 import { impersonateUser } from "../api";
 import { useUserDirectoryStats, useUserList } from "../queries";
 import {
@@ -47,12 +49,11 @@ export function UsersListPage({ variant = "directory" }: UsersListPageProps) {
   const router = useRouter();
   const { toasts, showToast, removeToast } = useToast();
   const { user } = useAuth();
-  const canResetPassword = user?.role === "super_admin" || user?.role === "admin";
-  // pembuatan akun login oleh Super Admin / Admin / HRD (selaras PUT /api/users)
-  const canCreateAccount =
-    user?.role === "super_admin" || user?.role === "admin" || user?.role === "hrd";
-  // Login As hanya untuk super_admin di halaman /dashboard/employees
-  const canLoginAs = !isAccountsView && user?.role === "super_admin";
+  const { hasPrefix } = useIamAccess();
+  const canManageUsers = hasPrefix(IAM.settingsUsers);
+  const canResetPassword = canManageUsers;
+  const canCreateAccount = canManageUsers;
+  const canLoginAs = !isAccountsView && canManageUsers;
 
   const [searchQuery, setSearchQuery] = useState("");
   const [search, setSearch] = useState("");

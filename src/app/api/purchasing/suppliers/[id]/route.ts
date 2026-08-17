@@ -1,12 +1,8 @@
 import { createServerPgClient } from "@/lib/pg/create-client";
 import { NextRequest } from "next/server";
 import { z } from "zod";
-import {
-  requireApiRole,
-  ApiError,
-  successResponse,
-  noContentResponse,
-} from "@/lib/api/auth";
+import { ApiError, successResponse, noContentResponse, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 
 const updateSupplierSchema = z.object({
   nama_supplier: z.string().min(1).max(200).optional(),
@@ -37,7 +33,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requireApiRole(["admin", "purchasing_admin", "purchasing_staff", "purchasing_manager", "super_admin"]);
+    await requireIamMenuPrefix(IAM.items);
 
     const { id } = await params;
     const db = await createServerPgClient();
@@ -162,7 +158,7 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const user = await requireApiRole(["admin", "purchasing_admin", "purchasing_staff", "purchasing_manager", "super_admin"]);
+    const user = await requireIamMenuPrefix(IAM.items);
 
     const { id } = await params;
     const body = await request.json();
@@ -219,7 +215,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const user = await requireApiRole(["admin", "purchasing_admin", "purchasing_manager", "purchasing_staff", "super_admin"]);
+    const user = await requireIamMenuPrefix(IAM.items);
 
     const { id } = await params;
     const db = await createServerPgClient();

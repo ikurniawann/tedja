@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createPgClient } from "@/lib/pg/create-client";
+import { requirePosMenu } from '@/lib/api/auth';
+import { IAM } from '@/lib/iam/prefixes';
 import { restoreMerchandiseStockForOrder } from '@/lib/pos/merchandise-stock';
 import { normalizeStation } from '@/lib/pos/kitchen-station';
 import {
@@ -18,6 +20,9 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: { id: string } | Promise<{ id: string }> }
 ) {
+  const pos = await requirePosMenu(IAM.posKitchen);
+  if (pos.error) return pos.error;
+
   const resolvedParams = await params;
   const orderId = resolvedParams.id;
   if (!orderId) {

@@ -1,7 +1,8 @@
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { createServerPgClient } from "@/lib/pg/create-client";
-import { ApiError, paginatedResponse, requireApiRole } from "@/lib/api/auth";
+import { ApiError, paginatedResponse, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import {
   effectiveBranchId,
   getApiUserScope,
@@ -39,7 +40,7 @@ const listQuerySchema = z.object({
 
 export async function GET(request: NextRequest) {
   try {
-    await requireApiRole([...TRANSFER_ROLES]);
+    await requireIamMenuPrefix(IAM.items);
     const scope = await getApiUserScope();
     const branchId = effectiveBranchId(scope);
 
@@ -70,7 +71,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const user = await requireApiRole([...TRANSFER_ROLES]);
+    const user = await requireIamMenuPrefix(IAM.items);
     const db = await createServerPgClient();
     const body = await request.json();
     const validated = transferSchema.parse(body);

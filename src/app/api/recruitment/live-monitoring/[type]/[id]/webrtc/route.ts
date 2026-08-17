@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireApiRole, ApiError } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { queryOne } from "@/lib/db";
 import {
   putOffer,
@@ -34,7 +35,7 @@ export async function POST(
   { params }: { params: Promise<{ type: string; id: string }> }
 ) {
   try {
-    await requireApiRole([...MONITOR_ROLES]);
+    await requireIamMenuPrefix(IAM.hrisRecruitment);
     const { type, id } = await params;
     if (!(await sessionExists(type, id))) {
       return NextResponse.json({ error: "Sesi tidak sedang berjalan" }, { status: 404 });
@@ -59,7 +60,7 @@ export async function GET(
   { params }: { params: Promise<{ type: string; id: string }> }
 ) {
   try {
-    await requireApiRole([...MONITOR_ROLES]);
+    await requireIamMenuPrefix(IAM.hrisRecruitment);
     const { type, id } = await params;
     if ((type !== "psikotes" && type !== "interview") || !UUID_RE.test(id)) {
       return NextResponse.json({ error: "Sesi tidak valid" }, { status: 400 });

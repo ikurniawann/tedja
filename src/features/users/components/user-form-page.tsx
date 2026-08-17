@@ -22,6 +22,8 @@ import { Combobox } from "@/components/ui/combobox";
 import { Input } from "@/components/ui/input";
 import { ToastContainer, useToast } from "@/components/ui/toast";
 import { useAuth } from "@/hooks/use-auth";
+import { useIamAccess } from "@/components/iam/iam-access-provider";
+import { IAM } from "@/lib/iam/prefixes";
 import { useBusinessTree } from "@/features/configuration/business";
 import { normalizeBusinessScopePayload } from "@/lib/configuration/business-scope";
 import { useCreateUser, useUpdateUser } from "../mutations";
@@ -160,7 +162,7 @@ export function UserFormPage({ mode, employeeId }: UserFormPageProps) {
   const { user } = useAuth();
   const { toasts, showToast, removeToast } = useToast();
   const isEdit = mode === "edit";
-  const canResetPassword = user?.role === "super_admin" || user?.role === "admin";
+  const canResetPassword = useIamAccess().hasPrefix(IAM.settingsUsers);
 
   const { data: detailRes, isLoading: detailLoading } = useUserDetail(
     isEdit && employeeId ? employeeId : null

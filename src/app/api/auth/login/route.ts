@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { authenticateCredentials, createSession, setSessionCookie } from "@/lib/auth/session";
 
+export const dynamic = "force-dynamic";
+
 export async function POST(request: Request) {
   try {
     const { email, password } = await request.json();
@@ -26,6 +28,7 @@ export async function POST(request: Request) {
     setSessionCookie(response, token, expiresAt);
     return response;
   } catch (err: any) {
+    console.error("[auth/login] POST failed:", err);
     return NextResponse.json({ error: err.message || "Login failed" }, { status: 500 });
   }
 }

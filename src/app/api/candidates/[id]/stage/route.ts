@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireApiRole, ApiError } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { query, queryOne } from "@/lib/db";
 import { CANDIDATE_STATUS_LABELS } from "@/lib/recruitment/status";
 
@@ -19,7 +20,7 @@ const VALID_STATUSES = new Set(Object.keys(CANDIDATE_STATUS_LABELS));
 
 export async function POST(req: NextRequest, { params }: RouteParams) {
   try {
-    const user = await requireApiRole([...ALLOWED_ROLES]);
+    const user = await requireIamMenuPrefix(IAM.hrisRecruitment);
     const { id } = await params;
 
     const body = await req.json().catch(() => ({}));

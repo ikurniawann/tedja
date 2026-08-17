@@ -1,6 +1,6 @@
 import { cache } from "react";
 import type { UserRole } from "@/types";
-import { isEssOnlyRole, isFullAccessRole } from "./access";
+import { isEssOnlyRole } from "./access";
 import { iamDbQuery, isIamDbConfigured } from "./pg-client";
 import type { MenuRow, NavIconName, NavItem } from "./types";
 import { isNavVisibleMenuType } from "./types";
@@ -269,11 +269,10 @@ export const getUserMenus = cache(async (userId: string, role: UserRole): Promis
  *
  * Fallback ke kebijakan kode (`isEssOnlyRole`) bila IAM tidak tersedia atau
  * user belum punya role/permission sama sekali — mencegah lockout saat data
- * IAM belum ter-seed. Role di FULL_ACCESS_ROLES selalu full-access.
+ * IAM belum ter-seed. Akses modul ditentukan grant menu, bukan FULL_ACCESS_ROLES.
  */
 export const isEssOnlyUser = cache(
   async (userId: string, role: UserRole): Promise<boolean> => {
-    if (isFullAccessRole(role)) return false;
     if (!isIamDbConfigured()) return isEssOnlyRole(role);
 
     try {

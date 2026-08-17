@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireApiRole, ApiError } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { filterRoleRows, mapRoleItem } from "@/lib/iam/role-mapper";
 import { createIamRoleInDb, listIamRolesFromDb } from "@/lib/iam/role-repository";
 
@@ -13,7 +14,7 @@ function apiErrorMessage(error: unknown) {
 
 export async function GET(request: NextRequest) {
   try {
-    await requireApiRole(["super_admin", "admin"]);
+    await requireIamMenuPrefix(IAM.settingsRoles);
 
     const { searchParams } = request.nextUrl;
     const search = searchParams.get("search") ?? undefined;
@@ -36,7 +37,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    await requireApiRole(["super_admin", "admin"]);
+    await requireIamMenuPrefix(IAM.settingsRoles);
     const body = await request.json();
 
     if (!body.code?.trim() || !body.name?.trim()) {

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createPgClient } from "@/lib/pg/create-client";
-import { requireApiRole, ApiError } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import {
   getApiUserScope,
   companyScopeOr,
@@ -70,7 +71,7 @@ async function generateProductionNumber(db: import("@/lib/pg/types").DbClient) {
 
 export async function GET(request: NextRequest) {
   try {
-    await requireApiRole([...PRODUCTION_API_ROLES]);
+    await requireIamMenuPrefix(IAM.items);
     const db = createPgClient();
     const { searchParams } = new URL(request.url);
     const status = searchParams.get("status");
@@ -116,7 +117,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const user = await requireApiRole([...PRODUCTION_API_ROLES]);
+    const user = await requireIamMenuPrefix(IAM.items);
     const db = createPgClient();
     const body = await request.json();
     const parsed = createProductionSchema.parse(

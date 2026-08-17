@@ -1,6 +1,7 @@
 import { createServerPgClient } from "@/lib/pg/create-client";
 import { NextResponse } from "next/server";
-import { requireApiRole, ApiError } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { deletePrivateFolder } from "@/lib/storage-private";
 
 // GET /api/candidates/[id]
@@ -68,7 +69,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const user = await requireApiRole(["super_admin", "admin", "hrd"]);
+    const user = await requireIamMenuPrefix(IAM.hrisRecruitment);
     const db = await createServerPgClient();
     const { id } = await params;
 

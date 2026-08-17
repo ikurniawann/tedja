@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
-import { ApiError, requireApiRole } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { savePrivateDocument } from "@/lib/storage-private";
 import { extractAttachmentText, MAX_ATTACHMENT_BYTES } from "@/lib/attachments/extract";
 import { parseReceiptText, type ReceiptFields } from "@/lib/purchasing/receipt-scan";
@@ -23,7 +24,7 @@ const ALLOWED_EXT = /\.(jpe?g|png|webp|pdf)$/i;
  */
 export async function POST(request: NextRequest) {
   try {
-    await requireApiRole([...SCAN_ROLES]);
+    await requireIamMenuPrefix(IAM.items);
 
     const form = await request.formData().catch(() => null);
     const file = form?.get("file");

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireApiRole, ApiError } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { getPipelineReportData } from "@/lib/recruitment/pipeline-report";
 import { buildPipelineReportPdf } from "@/lib/recruitment/pipeline-report-pdf";
 import { reportFileName } from "@/lib/recruitment/pipeline-report-format";
@@ -22,7 +23,7 @@ interface RouteParams {
 
 export async function GET(_req: NextRequest, { params }: RouteParams) {
   try {
-    const user = await requireApiRole([...ALLOWED_ROLES]);
+    const user = await requireIamMenuPrefix(IAM.hrisRecruitment);
     const { id } = await params;
     if (!UUID_RE.test(id)) {
       return NextResponse.json({ error: "ID kandidat tidak valid" }, { status: 400 });

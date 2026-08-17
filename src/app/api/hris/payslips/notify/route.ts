@@ -7,7 +7,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createServerPgClient } from "@/lib/pg/create-client";
-import { ApiError, requireApiRole, validateBody } from '@/lib/api/auth';
+import { ApiError, validateBody, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { PAYROLL_MANAGE_ROLES } from '@/lib/payroll/roles';
 import { buildWaLink } from '@/lib/recruitment/wa';
 
@@ -22,7 +23,7 @@ const notifySchema = z.object({
 
 export async function POST(request: NextRequest) {
   try {
-    await requireApiRole([...PAYROLL_MANAGE_ROLES]);
+    await requireIamMenuPrefix(IAM.hrisCompensation);
     const db = await createServerPgClient();
     const body = await validateBody(request, notifySchema);
 

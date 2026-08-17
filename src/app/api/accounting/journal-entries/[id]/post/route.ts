@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ApiError, requireApiRole } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import {
   getApiUserScope,
   isRowInBusinessScope,
@@ -20,7 +21,7 @@ function errMsg(error: unknown) {
 
 export async function POST(_request: NextRequest, { params }: RouteParams) {
   try {
-    const user = await requireApiRole([...ACCOUNTING_API_ROLES]);
+    const user = await requireIamMenuPrefix(IAM.accounting);
     const { id } = await params;
     const scope = await getApiUserScope();
 

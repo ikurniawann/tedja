@@ -2,12 +2,13 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { requireApiRole, ApiError } from '@/lib/api/auth';
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { query, queryOne } from '@/lib/db';
 
 export async function GET() {
   try {
-    await requireApiRole(['super_admin', 'admin']);
+    await requireIamMenuPrefix(IAM.shop);
     const rows = await query(
       `SELECT a.id, a.channel_code, a.shop_id, a.shop_name, a.status,
               a.stock_buffer, a.last_pull_at, a.token_expires_at,
@@ -31,7 +32,7 @@ const patchSchema = z.object({
 
 export async function PATCH(request: NextRequest) {
   try {
-    await requireApiRole(['super_admin', 'admin']);
+    await requireIamMenuPrefix(IAM.shop);
     const parsed = patchSchema.safeParse(await request.json());
     if (!parsed.success) {
       return NextResponse.json({ success: false, error: 'Payload tidak valid' }, { status: 400 });

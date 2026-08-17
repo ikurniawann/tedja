@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerPgClient } from "@/lib/pg/create-client";
-import { requireApiRole, ApiError } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { getApiUserScope, isOperationalRowInBusinessScope } from "@/lib/api/scope";
 import {
   findOpenDelivery,
@@ -21,13 +22,7 @@ function getErrorMessage(error: unknown, fallback: string) {
  */
 export async function GET(request: NextRequest) {
   try {
-    await requireApiRole([
-      "admin",
-      "purchasing_admin",
-      "purchasing_staff",
-      "purchasing_manager",
-      "super_admin",
-    ]);
+    await requireIamMenuPrefix(IAM.items);
 
     const db = await createServerPgClient();
     const scope = await getApiUserScope();

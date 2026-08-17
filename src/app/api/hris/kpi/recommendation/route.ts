@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ApiError, requireApiRole } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { getPool } from "@/lib/db";
 import { KPI_MANAGE_ROLES } from "@/lib/kpi/roles";
 
@@ -11,7 +12,7 @@ import { KPI_MANAGE_ROLES } from "@/lib/kpi/roles";
  */
 export async function GET(request: NextRequest) {
   try {
-    await requireApiRole([...KPI_MANAGE_ROLES]);
+    await requireIamMenuPrefix(IAM.hrisPerformance);
     const { searchParams } = new URL(request.url);
     const ids = (searchParams.get("employee_ids") || "")
       .split(",")

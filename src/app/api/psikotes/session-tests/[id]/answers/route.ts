@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireApiRole, ApiError } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { query, queryOne } from "@/lib/db";
 
 /**
@@ -33,7 +34,7 @@ interface QuestionRow {
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    await requireApiRole([...READ_ROLES]);
+    await requireIamMenuPrefix(IAM.hrisRecruitment);
     const { id } = await params;
     if (!UUID_RE.test(id)) {
       return NextResponse.json({ error: "ID tes tidak valid" }, { status: 400 });

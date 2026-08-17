@@ -4,7 +4,8 @@
 
 import { NextRequest } from "next/server";
 import { createServerPgClient } from "@/lib/pg/create-client";
-import { ApiError, requireApiRole } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { z } from "zod";
 
 const cancelSchema = z.object({
@@ -23,7 +24,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requireApiRole([...CANCEL_ROLES]);
+    await requireIamMenuPrefix(IAM.items);
     const { id } = await params;
     const db = await createServerPgClient();
     const body = await request.json();

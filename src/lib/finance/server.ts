@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
 import { getApiUser } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
+import { userHasIamPrefix } from "@/lib/iam/has-menu";
 import type { UserRole } from "@/types";
 
-// Modul Finance (EPIC-025) — keputusan owner 2026-07-23 Opsi B:
-// invoice diterbitkan & pembayaran dicatat oleh finance, bukan sales.
+/** @deprecated Gate memakai menu IAM accounting / sales-funnel. */
 export const FINANCE_ROLES: UserRole[] = ["super_admin", "finance_staff"];
 
-/** Aktor yang boleh MELIHAT invoice deal: sales (mengajukan) + finance. */
+/** @deprecated Dipakai call site lama; viewer = accounting.receivable ATAU sales-funnel. */
 export const INVOICE_VIEWER_ROLES: UserRole[] = [
   "super_admin",
   "sales",
@@ -15,11 +16,13 @@ export const INVOICE_VIEWER_ROLES: UserRole[] = [
 
 export type FinanceUser = { id: string; role: UserRole };
 
-/**
- * Guard role generik modul Finance — pola requireSalesFunnelRole.
- * Default FINANCE_ROLES; endpoint yang dibagi dengan sales (list/ajukan/PDF)
- * memakai INVOICE_VIEWER_ROLES.
- */
+function financeMenus(allowed: readonly string[]): readonly string[] {
+  if (allowed.includes("sales")) {
+    return [...IAM.accounting, ...IAM.salesFunnel];
+  }
+  return IAM.accounting;
+}
+
 export async function requireFinanceRole(
   allowed: UserRole[] = FINANCE_ROLES
 ): Promise<
@@ -35,7 +38,7 @@ export async function requireFinanceRole(
       user: null,
     };
   }
-  if (!allowed.includes(user.role)) {
+  if (!(await userHasIamPrefix(user.id, user.role, financeMenus(allowed)))) {
     return {
       error: NextResponse.json(
         { success: false, error: "Insufficient permissions" },

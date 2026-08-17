@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole } from "@/lib/auth/require-user";
+import { requireIamGuard } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { createPgClient } from "@/lib/pg/create-client";
 
 function slugify(value: string) {
@@ -41,7 +42,8 @@ function normalizePayload(body: Record<string, unknown>) {
 }
 
 export async function GET() {
-  await requireRole(["hrd"]);
+  const guard = await requireIamGuard(IAM.hrisRecruitment);
+  if (guard.error) return guard.error;
   const db = createPgClient();
 
   const { data, error } = await db
@@ -57,7 +59,8 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
-  await requireRole(["hrd"]);
+  const guard = await requireIamGuard(IAM.hrisRecruitment);
+  if (guard.error) return guard.error;
   const db = createPgClient();
   const payload = normalizePayload(await request.json() as Record<string, unknown>);
 

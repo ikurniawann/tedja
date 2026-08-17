@@ -4,7 +4,8 @@
 
 import { NextRequest } from "next/server";
 import { createServerPgClient } from "@/lib/pg/create-client";
-import { ApiError, requireApiRole } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { closePurchaseOrder } from "@/lib/purchasing/po";
 import { z } from "zod";
 
@@ -29,7 +30,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const user = await requireApiRole([...CLOSE_ROLES]);
+    const user = await requireIamMenuPrefix(IAM.items);
     const { id } = await params;
     const db = await createServerPgClient();
     const body = await request.json();

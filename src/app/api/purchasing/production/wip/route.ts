@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { ApiError, requireApiRole } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { PRODUCTION_API_ROLES } from "@/lib/manufacturing/constants";
 import { createPgClient } from "@/lib/pg/create-client";
 import {
@@ -54,7 +55,7 @@ type BatchRow = {
 
 export async function GET() {
   try {
-    await requireApiRole([...PRODUCTION_API_ROLES]);
+    await requireIamMenuPrefix(IAM.items);
     const db = createPgClient();
     const scope = await getApiUserScope();
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createPgClient } from "@/lib/pg/create-client";
-import { ApiError, requireApiRole, validateBody } from "@/lib/api/auth";
+import { ApiError, validateBody, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { updateAdminUserSchema } from "@/lib/admin/user-management";
 
 export async function PATCH(
@@ -9,7 +10,7 @@ export async function PATCH(
 ) {
   try {
     const { id } = await params;
-    const actor = await requireApiRole(["super_admin"]);
+    const actor = await requireIamMenuPrefix(IAM.settingsUsers);
     const body = await validateBody(request, updateAdminUserSchema);
     const db = createPgClient();
 

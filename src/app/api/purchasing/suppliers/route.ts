@@ -1,7 +1,8 @@
 import { createServerPgClient } from "@/lib/pg/create-client";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { requireApiRole, ApiError } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import {
   getApiUserScope,
   companyScopeOr,
@@ -77,7 +78,7 @@ async function generateSupplierCode(
 // ========================
 export async function GET(request: NextRequest) {
   try {
-    await requireApiRole(["admin", "purchasing_admin", "purchasing_staff", "purchasing_manager", "super_admin"]);
+    await requireIamMenuPrefix(IAM.items);
 
     const url = new URL(request.url);
     const rawParams = Object.fromEntries(url.searchParams);
@@ -170,7 +171,7 @@ export async function GET(request: NextRequest) {
 // ========================
 export async function POST(request: NextRequest) {
   try {
-    const user = await requireApiRole(["admin", "purchasing_admin", "purchasing_staff", "purchasing_manager", "super_admin"]);
+    const user = await requireIamMenuPrefix(IAM.items);
     const body = await request.json();
     const validated = createSupplierSchema.parse(body);
 

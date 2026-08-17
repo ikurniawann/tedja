@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { requireApiRole, ApiError } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { queryOne, query } from "@/lib/db";
 import { extractCvText } from "@/lib/recruitment/cv-extract";
 import {
@@ -20,7 +21,7 @@ const ALLOWED_ROLES = ["super_admin", "admin", "hrd", "hiring_manager"] as const
 
 export async function GET(_req: Request, { params }: RouteParams) {
   try {
-    await requireApiRole([...ALLOWED_ROLES]);
+    await requireIamMenuPrefix(IAM.hrisRecruitment);
     const { id } = await params;
     const row = await queryOne(
       `SELECT id, candidate_id, extracted, summary, match_score, match_reason,
@@ -39,7 +40,7 @@ export async function GET(_req: Request, { params }: RouteParams) {
 
 export async function POST(_req: Request, { params }: RouteParams) {
   try {
-    await requireApiRole([...ALLOWED_ROLES]);
+    await requireIamMenuPrefix(IAM.hrisRecruitment);
     const { id } = await params;
 
     const candidate = await queryOne<{

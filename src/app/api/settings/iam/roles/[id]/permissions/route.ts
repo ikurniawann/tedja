@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireApiRole, ApiError } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import {
   getIamRoleFromDb,
   listRolePermissionsMatrixFromDb,
@@ -19,7 +20,7 @@ function apiErrorMessage(error: unknown) {
 
 export async function GET(_request: NextRequest, context: RouteContext) {
   try {
-    await requireApiRole(["super_admin", "admin"]);
+    await requireIamMenuPrefix(IAM.settingsRoles);
     const { id } = await context.params;
 
     const row = await getIamRoleFromDb(id);
@@ -41,7 +42,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
 
 export async function PUT(request: NextRequest, context: RouteContext) {
   try {
-    const user = await requireApiRole(["super_admin", "admin"]);
+    const user = await requireIamMenuPrefix(IAM.settingsRoles);
     const { id } = await context.params;
     const body = await request.json();
 

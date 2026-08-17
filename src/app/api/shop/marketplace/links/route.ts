@@ -2,12 +2,13 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { requireApiRole, ApiError } from '@/lib/api/auth';
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { query, queryOne } from '@/lib/db';
 
 export async function GET(request: NextRequest) {
   try {
-    await requireApiRole(['super_admin', 'admin']);
+    await requireIamMenuPrefix(IAM.shop);
     const accountId = String(request.nextUrl.searchParams.get('account_id') || '');
     if (!z.string().uuid().safeParse(accountId).success) {
       return NextResponse.json({ success: false, error: 'account_id tidak valid' }, { status: 400 });
@@ -40,7 +41,7 @@ const createSchema = z.object({
 
 export async function POST(request: NextRequest) {
   try {
-    await requireApiRole(['super_admin', 'admin']);
+    await requireIamMenuPrefix(IAM.shop);
     const parsed = createSchema.safeParse(await request.json());
     if (!parsed.success) {
       return NextResponse.json({ success: false, error: 'Payload tidak valid' }, { status: 400 });
@@ -90,7 +91,7 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
-    await requireApiRole(['super_admin', 'admin']);
+    await requireIamMenuPrefix(IAM.shop);
     const id = String(request.nextUrl.searchParams.get('id') || '');
     if (!z.string().uuid().safeParse(id).success) {
       return NextResponse.json({ success: false, error: 'id tidak valid' }, { status: 400 });

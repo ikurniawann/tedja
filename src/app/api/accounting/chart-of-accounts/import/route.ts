@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ApiError, requireApiRole } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { createServerPgClient } from "@/lib/pg/create-client";
 import {
   getApiUserScope,
@@ -137,7 +138,7 @@ function buildPreview(
 
 export async function POST(request: NextRequest) {
   try {
-    const user = await requireApiRole([...ACCOUNTING_API_ROLES]);
+    const user = await requireIamMenuPrefix(IAM.accounting);
     const scope = await getApiUserScope();
     const companyId = requireAccountingCompanyId(scope);
 

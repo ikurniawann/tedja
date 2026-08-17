@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { ApiError, requireApiRole } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { ACCOUNTING_API_ROLES } from "@/lib/accounting/coa-types";
 import { getApInvoiceById } from "@/lib/accounting/ap-store";
 
@@ -12,7 +13,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requireApiRole([...ACCOUNTING_API_ROLES]);
+    await requireIamMenuPrefix(IAM.accounting);
     const { id } = await params;
     const row = await getApInvoiceById(id);
     if (!row) {

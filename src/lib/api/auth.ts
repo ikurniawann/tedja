@@ -3,7 +3,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { UserRole } from "@/types";
 import { z } from "zod";
 import { resolveRoleIds } from "@/lib/iam/get-user-menus";
-import { hasAnyIamMenuPrefix, loadGrantedMenuCodes } from "@/lib/iam/has-menu";
+import {
+  hasAnyIamMenuPrefix,
+  hasGrantedAction,
+  loadGrantedMenuActions,
+  loadGrantedMenuCodesForUser,
+} from "@/lib/iam/has-menu";
+import { IAM } from "@/lib/iam/prefixes";
 
 export interface ApiUser {
   id: string;
@@ -39,13 +45,19 @@ export async function getApiUser(): Promise<ApiUser | null> {
 }
 
 /**
- * Lightweight session check for POS routes.
- * Only verifies JWT is valid — does not require a users table record.
+ * Session POS: JWT + profil users + grant menu `pos.*`.
+ * 401/403 dikembalikan sebagai null agar call site lama tetap 401.
  */
 export async function getPosSession(): Promise<string | null> {
-  const db = await createServerPgClient();
-  const { data: { user } } = await db.auth.getUser();
-  return user?.id ?? null;
+  try {
+    const user = await requireIamMenuPrefix(IAM.pos);
+    return user.id;
+  } catch (error) {
+    if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
+      return null;
+    }
+    throw error;
+  }
 }
 
 /**
@@ -60,7 +72,8 @@ export async function requireApiUser(): Promise<ApiUser> {
 }
 
 /**
- * Require specific roles, returns 403 if not authorized
+ * @deprecated Pakai requireIamMenuPrefix. Tetap ada untuk endpoint break-glass
+ * (impersonate) sampai menu khusus tersedia.
  */
 export async function requireApiRole(roles: UserRole[]): Promise<ApiUser> {
   const user = await requireApiUser();
@@ -74,14 +87,72 @@ export async function requireApiRole(roles: UserRole[]): Promise<ApiUser> {
  * Gate API pakai grant IAM, bukan daftar role di kode.
  * Prefix `items.product` loloskan `items.product.master.products`, dst.
  */
-export async function requireIamMenuPrefix(prefixes: string[]): Promise<ApiUser> {
+export async function requireIamMenuPrefix(
+  prefixes: readonly string[]
+): Promise<ApiUser> {
   const user = await requireApiUser();
-  const roleIds = await resolveRoleIds(user.id, user.role);
-  const granted = await loadGrantedMenuCodes(roleIds);
+  const granted = await loadGrantedMenuCodesForUser(user.id, user.role);
   if (!hasAnyIamMenuPrefix(granted, prefixes)) {
     throw ApiError.forbidden("Insufficient permissions");
   }
   return user;
+}
+
+/** Exact menu code (tanpa anak). */
+export async function requireIamMenu(codes: readonly string[]): Promise<ApiUser> {
+  const user = await requireApiUser();
+  const granted = await loadGrantedMenuCodesForUser(user.id, user.role);
+  if (!codes.some((code) => granted.includes(code))) {
+    throw ApiError.forbidden("Insufficient permissions");
+  }
+  return user;
+}
+
+/** Menu prefix + granted_actions (create/update/delete/approve). */
+export async function requireIamAction(
+  prefixes: readonly string[],
+  action: string
+): Promise<ApiUser> {
+  const user = await requireApiUser();
+  const roleIds = await resolveRoleIds(user.id, user.role);
+  const granted = await loadGrantedMenuActions(roleIds);
+  if (!hasGrantedAction(granted, prefixes, action)) {
+    throw ApiError.forbidden("Insufficient permissions");
+  }
+  return user;
+}
+
+export type IamGuardResult =
+  | { error: NextResponse; user: null }
+  | { error: null; user: ApiUser };
+
+/** Pola result (ticketing/CRM) supaya route tidak perlu try/catch ApiError. */
+export async function requireIamGuard(
+  prefixes: readonly string[]
+): Promise<IamGuardResult> {
+  try {
+    const user = await requireIamMenuPrefix(prefixes);
+    return { error: null, user };
+  } catch (error) {
+    if (error instanceof ApiError) {
+      return { error: error.toResponse(), user: null };
+    }
+    throw error;
+  }
+}
+
+/** POS: ganti getPosSession — wajib profil users + grant menu. */
+export async function requirePosMenu(
+  prefixes: readonly string[]
+): Promise<
+  | { error: NextResponse; userId: null; user: null }
+  | { error: null; userId: string; user: ApiUser }
+> {
+  const guard = await requireIamGuard(prefixes);
+  if (guard.error) {
+    return { error: guard.error, userId: null, user: null };
+  }
+  return { error: null, userId: guard.user.id, user: guard.user };
 }
 
 /**

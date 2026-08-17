@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireApiRole, ApiError } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { queryOne } from "@/lib/db";
 import {
   deletePrivateFile,
@@ -40,7 +41,7 @@ async function loadContract(id: string): Promise<ContractDocRow | null> {
 
 export async function POST(req: NextRequest, { params }: RouteParams) {
   try {
-    await requireApiRole([...ROLES]);
+    await requireIamMenuPrefix(IAM.hris);
     const { id } = await params;
     if (!UUID_RE.test(id)) {
       return NextResponse.json({ error: "ID kontrak tidak valid" }, { status: 400 });
@@ -96,7 +97,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
 
 export async function GET(_req: NextRequest, { params }: RouteParams) {
   try {
-    await requireApiRole([...ROLES]);
+    await requireIamMenuPrefix(IAM.hris);
     const { id } = await params;
     if (!UUID_RE.test(id)) {
       return NextResponse.json({ error: "ID kontrak tidak valid" }, { status: 400 });
@@ -130,7 +131,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
 
 export async function DELETE(_req: NextRequest, { params }: RouteParams) {
   try {
-    await requireApiRole([...ROLES]);
+    await requireIamMenuPrefix(IAM.hris);
     const { id } = await params;
     if (!UUID_RE.test(id)) {
       return NextResponse.json({ error: "ID kontrak tidak valid" }, { status: 400 });

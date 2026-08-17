@@ -20,6 +20,7 @@ const PUBLIC_AUTH_PREFIXES = [
   "/api/table-order",
   "/api/auth/login",
   "/api/auth/logout",
+  "/api/settings/appearance",
   "/api/files",
   "/member",
   "/api/member-portal",

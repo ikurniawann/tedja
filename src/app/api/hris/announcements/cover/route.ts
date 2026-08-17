@@ -6,7 +6,8 @@
 // ============================================================
 
 import { NextRequest, NextResponse } from "next/server";
-import { ApiError, requireApiRole } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { savePrivateImage } from "@/lib/storage-private";
 import { ANNOUNCEMENT_MANAGE_ROLES } from "@/lib/hris/announcements";
 
@@ -14,7 +15,7 @@ const MAX_BYTES = 5 * 1024 * 1024;
 
 export async function POST(req: NextRequest) {
   try {
-    await requireApiRole([...ANNOUNCEMENT_MANAGE_ROLES]);
+    await requireIamMenuPrefix(IAM.hris);
     const body = (await req.json()) as { image?: string };
 
     const match = /^data:(image\/(?:jpeg|png|webp));base64,(.+)$/.exec(body.image ?? "");

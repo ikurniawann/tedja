@@ -2,19 +2,15 @@ import { NextResponse } from "next/server";
 import { getApiUser } from "@/lib/api/auth";
 import { importBusinessIds, type UserScope } from "@/lib/api/scope";
 import { query, queryOne } from "@/lib/db";
+import { IAM } from "@/lib/iam/prefixes";
+import { userHasIamPrefix } from "@/lib/iam/has-menu";
 import type { UserRole } from "@/types";
 
-// Modul Sales Funneling (EPIC-022) — keputusan owner 2026-07-21:
-// hanya super_admin + tim sales; role sales route-aware, bukan full access.
+/** @deprecated Gate memakai menu IAM `sales-funnel`. */
 export const SALES_FUNNEL_ROLES: UserRole[] = ["super_admin", "sales"];
 
 export type SalesFunnelUser = { id: string; role: UserRole };
 
-/**
- * Guard role modul Sales Funneling. Mengembalikan NextResponse (401/403)
- * bila tidak berwenang, atau user yang lolos — pola sama dengan
- * requireCrmRoles di src/lib/crm/server.ts.
- */
 export async function requireSalesFunnelRole(): Promise<
   { error: NextResponse; user: null } | { error: null; user: SalesFunnelUser }
 > {
@@ -28,7 +24,7 @@ export async function requireSalesFunnelRole(): Promise<
       user: null,
     };
   }
-  if (!SALES_FUNNEL_ROLES.includes(user.role)) {
+  if (!(await userHasIamPrefix(user.id, user.role, IAM.salesFunnel))) {
     return {
       error: NextResponse.json(
         { success: false, error: "Insufficient permissions" },

@@ -13,16 +13,27 @@ export async function GET() {
       );
     }
 
-    const { data: profile } = await db
+    // Jangan select `email` dari configuration.users — kolom itu opsional /
+    // kadang belum ada, dan error select sebelumnya di-map ke 404 sehingga
+    // desktop menganggap user logout meski sesi + profil masih valid.
+    const { data: profile, error: profileError } = await db
       .from("users")
-      .select("id, full_name, email, role, brand_id")
+      .select("id, full_name, role, brand_id")
       .eq("id", user.id)
       .single();
 
+    if (profileError && profileError.code !== "PGRST116") {
+      console.error("Error fetching user profile:", profileError);
+      return NextResponse.json(
+        { success: false, message: profileError.message || "Failed to fetch profile" },
+        { status: 500 }
+      );
+    }
+
     if (!profile) {
       return NextResponse.json(
-        { success: false, message: "Profile not found" },
-        { status: 404 }
+        { success: false, message: "Not authenticated" },
+        { status: 401 }
       );
     }
 
@@ -31,7 +42,7 @@ export async function GET() {
       data: {
         ...profile,
         id: user.id,
-        email: user.email ?? profile?.email,
+        email: user.email ?? "",
       },
     });
   } catch (error: any) {

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createPgClient } from "@/lib/pg/create-client";
-import { ApiError, requireApiRole } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { generatePONumber } from "@/lib/purchasing/utils";
 import { getPurchasePriceSuggestions } from "@/lib/purchasing/purchase-price";
 import {
@@ -43,13 +44,7 @@ export async function POST(
   let conversionFinalized = false;
   try {
     const { id } = await params;
-    const user = await requireApiRole([
-      "purchasing_staff",
-      "purchasing_manager",
-      "purchasing_admin",
-      "super_admin",
-      "admin",
-    ]);
+    const user = await requireIamMenuPrefix(IAM.items);
     const body = await request.json();
     const payload = convertSchema.parse(body);
     const db = createPgClient();
