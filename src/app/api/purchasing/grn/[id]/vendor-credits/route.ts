@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerPgClient } from "@/lib/pg/create-client";
-import { ApiError, requireApiRole } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { getVendorCreditsByGrnId } from "@/lib/purchasing/vendor-credit-service";
 
 // GET /api/purchasing/grn/[id]/vendor-credits
@@ -9,15 +10,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requireApiRole([
-      "admin",
-      "warehouse_staff",
-      "warehouse_admin",
-      "purchasing_admin",
-      "purchasing_staff",
-      "purchasing_manager",
-      "super_admin",
-    ]);
+    await requireIamMenuPrefix(IAM.items);
 
     const db = await createServerPgClient();
     const grnId = (await params).id;

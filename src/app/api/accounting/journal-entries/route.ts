@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { ApiError, requireApiRole } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import {
   getApiUserScope,
 } from "@/lib/api/scope";
@@ -48,7 +49,7 @@ function mapBizError(msg: string): never {
 
 export async function GET(request: NextRequest) {
   try {
-    await requireApiRole([...ACCOUNTING_API_ROLES]);
+    await requireIamMenuPrefix(IAM.accounting);
     const scope = await getApiUserScope();
     const { searchParams } = new URL(request.url);
 
@@ -76,7 +77,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const user = await requireApiRole([...ACCOUNTING_API_ROLES]);
+    const user = await requireIamMenuPrefix(IAM.accounting);
     const body = payloadSchema.parse(await request.json());
     const scope = await getApiUserScope();
     const companyId = requireAccountingCompanyId(scope);

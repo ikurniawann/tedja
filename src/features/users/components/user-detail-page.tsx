@@ -25,6 +25,8 @@ import {
 } from "@heroicons/react/24/outline";
 import { useToast, ToastContainer } from "@/components/ui/toast";
 import { useAuth } from "@/hooks/use-auth";
+import { useIamAccess } from "@/components/iam/iam-access-provider";
+import { IAM } from "@/lib/iam/prefixes";
 import {
   useEmployeeAttendance,
   useEmployeeLeaveBalances,
@@ -118,10 +120,9 @@ export function UserDetailPage({ params }: { params: Promise<{ id: string }> }) 
   const pathname = usePathname();
   const { user } = useAuth();
   const { toasts, showToast, removeToast } = useToast();
-  const canResetPassword = user?.role === "super_admin" || user?.role === "admin";
-  // pembuatan akun login oleh Super Admin / Admin / HRD (selaras PUT /api/users)
-  const canCreateAccount =
-    user?.role === "super_admin" || user?.role === "admin" || user?.role === "hrd";
+  const canManageUsers = useIamAccess().hasPrefix(IAM.settingsUsers);
+  const canResetPassword = canManageUsers;
+  const canCreateAccount = canManageUsers;
 
   // deep-link tab via ?tab=contracts (dipakai banner pengingat kontrak)
   const searchParams = useSearchParams();

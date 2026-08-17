@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireApiRole, ApiError } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import {
   createBusinessEntity,
   fetchBusinessTree,
@@ -15,7 +16,7 @@ const VALID_TYPES: BusinessEntityType[] = ["holding", "company", "branch", "ware
 
 export async function GET() {
   try {
-    await requireApiRole(["super_admin", "admin", "hrd"]);
+    await requireIamMenuPrefix(IAM.settingsBusiness);
     const tree = await fetchBusinessTree();
     return NextResponse.json({ data: tree });
   } catch (error) {
@@ -27,7 +28,7 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    await requireApiRole(["super_admin", "admin"]);
+    await requireIamMenuPrefix(IAM.settingsBusiness);
     const body = await request.json();
     const type = body.type as BusinessEntityType;
 

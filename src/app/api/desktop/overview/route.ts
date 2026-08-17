@@ -1,5 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { requireApiRole, ApiError } from "@/lib/api/auth";
+import { ApiError, requireApiUser } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
+import { loadGrantedMenuCodesForUser } from "@/lib/iam/has-menu";
+import { hasAnyIamMenuPrefix } from "@/lib/iam/match";
 import {
   DESKTOP_OVERVIEW_ROLES,
   buildDesktopOverview,
@@ -31,7 +34,13 @@ function parsePeriod(value: string | null): PeriodKind {
 
 export async function GET(request: NextRequest) {
   try {
-    await requireApiRole([...DESKTOP_OVERVIEW_ROLES]);
+    const user = await requireApiUser();
+    const granted = await loadGrantedMenuCodesForUser(user.id, user.role);
+    const allowed =
+      hasAnyIamMenuPrefix(granted, IAM.dashboard) ||
+      (granted.length === 0 &&
+        (DESKTOP_OVERVIEW_ROLES as readonly string[]).includes(user.role));
+    if (!allowed) throw ApiError.forbidden("Insufficient permissions");
 
     const periode = parsePeriod(request.nextUrl.searchParams.get("periode"));
 

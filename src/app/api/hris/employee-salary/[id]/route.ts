@@ -7,7 +7,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerPgClient } from "@/lib/pg/create-client";
-import { ApiError, requireApiRole } from '@/lib/api/auth';
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 
 // Salary is sensitive financial PII — restrict to HR/finance roles only.
 const SALARY_ROLES = ['super_admin', 'hrd', 'finance_staff'] as const;
@@ -22,7 +23,7 @@ interface RouteParams {
 
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
-    await requireApiRole([...SALARY_ROLES]);
+    await requireIamMenuPrefix(IAM.hrisCompensation);
     const db = await createServerPgClient();
     const { id } = await params;
 
@@ -81,7 +82,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
 export async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
-    await requireApiRole([...SALARY_ROLES]);
+    await requireIamMenuPrefix(IAM.hrisCompensation);
     const db = await createServerPgClient();
     const { id } = await params;
     const body = await request.json();
@@ -160,7 +161,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
-    await requireApiRole([...SALARY_ROLES]);
+    await requireIamMenuPrefix(IAM.hrisCompensation);
     const db = await createServerPgClient();
     const { id } = await params;
 

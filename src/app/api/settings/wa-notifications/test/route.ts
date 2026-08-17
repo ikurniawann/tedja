@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { requireApiRole, ApiError } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { getSetting } from "@/lib/settings/app-settings";
 import { readGatewayConfig, sendGatewayText } from "@/lib/whatsapp/gateway";
 import { WA_NOTIF_SETTING_KEY, parseWaNotifConfig } from "@/lib/wa/notifications-config";
@@ -12,7 +13,7 @@ import { WA_NOTIF_SETTING_KEY, parseWaNotifConfig } from "@/lib/wa/notifications
 
 export async function POST() {
   try {
-    await requireApiRole(["super_admin", "direksi"] as import("@/types").UserRole[]);
+    await requireIamMenuPrefix(IAM.settingsIntegrations);
 
     const config = parseWaNotifConfig(await getSetting(WA_NOTIF_SETTING_KEY));
     if (config.recipients.length === 0) {

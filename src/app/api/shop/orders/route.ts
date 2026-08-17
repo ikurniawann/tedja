@@ -1,13 +1,14 @@
 // EPIC-039 Fase E — daftar pesanan toko online (back-office).
 
 import { NextRequest, NextResponse } from 'next/server';
-import { requireApiRole, ApiError } from '@/lib/api/auth';
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { query } from '@/lib/db';
 import { releaseExpiredReservations } from '@/lib/shop/storefront-server';
 
 export async function GET(request: NextRequest) {
   try {
-    await requireApiRole(['super_admin', 'admin']);
+    await requireIamMenuPrefix(IAM.shop);
     await releaseExpiredReservations();
 
     const status = String(request.nextUrl.searchParams.get('status') || '').trim();

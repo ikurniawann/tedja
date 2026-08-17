@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createPgClient } from "@/lib/pg/create-client";
+import { requirePosMenu } from '@/lib/api/auth';
+import { IAM } from '@/lib/iam/prefixes';
 import { normalizeStation } from '@/lib/pos/kitchen-station';
 import {
   deriveStationStatus,
@@ -68,6 +70,9 @@ function formatVariantInfo(value: unknown) {
  *    - branch_id: optional
  */
 export async function GET(request: NextRequest) {
+  const pos = await requirePosMenu(IAM.posKitchen);
+  if (pos.error) return pos.error;
+
   const { searchParams } = new URL(request.url);
   const station = searchParams.get('station');
   const limit = parseInt(searchParams.get('limit') || '50', 10);

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerPgClient } from "@/lib/pg/create-client";
-import { requireApiRole, ApiError } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import {
   getApiUserScope,
   companyScopeOr,
@@ -23,7 +24,7 @@ const RECIPE_ROLES = PRODUCTION_API_ROLES;
 // GET /api/purchasing/production/product-recipes
 export async function GET(_request: NextRequest) {
   try {
-    await requireApiRole([...RECIPE_ROLES]);
+    await requireIamMenuPrefix(IAM.items);
     const db = await createServerPgClient();
     const scope = await getApiUserScope();
 

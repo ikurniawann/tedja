@@ -1,12 +1,8 @@
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { createPgClient } from "@/lib/pg/create-client";
-import {
-  requireApiRole,
-  ApiError,
-  successResponse,
-  createdResponse,
-} from "@/lib/api/auth";
+import { ApiError, successResponse, createdResponse, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { submitGrnQcInspection } from "@/lib/purchasing/grn-qc";
 import type { UserRole } from "@/types";
 
@@ -54,7 +50,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requireApiRole(QC_ROLES);
+    await requireIamMenuPrefix(IAM.items);
     const db = createPgClient();
     const { id } = await params;
 
@@ -95,7 +91,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const user = await requireApiRole(QC_ROLES);
+    const user = await requireIamMenuPrefix(IAM.items);
     const db = createPgClient();
     const { id } = await params;
 

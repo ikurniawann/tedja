@@ -6,7 +6,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerPgClient } from "@/lib/pg/create-client";
-import { ApiError, requireApiRole } from '@/lib/api/auth';
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { PAYROLL_MANAGE_ROLES } from '@/lib/payroll/roles';
 
 // ============================================================
@@ -15,7 +16,7 @@ import { PAYROLL_MANAGE_ROLES } from '@/lib/payroll/roles';
 
 export async function GET(request: NextRequest) {
   try {
-    await requireApiRole([...PAYROLL_MANAGE_ROLES]);
+    await requireIamMenuPrefix(IAM.hrisCompensation);
     const db = await createServerPgClient();
     const { searchParams } = new URL(request.url);
     const year = searchParams.get('year');
@@ -80,7 +81,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const apiUser = await requireApiRole([...PAYROLL_MANAGE_ROLES]);
+    const apiUser = await requireIamMenuPrefix(IAM.hrisCompensation);
     const db = await createServerPgClient();
     const body = await request.json();
     const { period_month, period_year, run_name } = body;

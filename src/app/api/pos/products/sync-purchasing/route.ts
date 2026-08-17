@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createPgClient } from "@/lib/pg/create-client";
+import { requirePosMenu } from '@/lib/api/auth';
+import { IAM } from '@/lib/iam/prefixes';
 import { syncPurchasingProductToPos } from '@/lib/pos/purchasing-sync';
 
 function getErrorMessage(error: unknown) {
@@ -8,6 +10,8 @@ function getErrorMessage(error: unknown) {
 
 export async function POST(request: NextRequest) {
   try {
+    const pos = await requirePosMenu(IAM.posCatalog);
+    if (pos.error) return pos.error;
     const db = createPgClient();
     const body = await request.json();
     const productIds = Array.isArray(body.purchasing_product_ids)

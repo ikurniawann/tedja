@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createPgClient } from "@/lib/pg/create-client";
-import { ApiError, requireApiRole, validateBody } from "@/lib/api/auth";
+import { ApiError, validateBody, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { createAdminUserSchema } from "@/lib/admin/user-management";
 
 async function listAuthUsers() {
@@ -21,7 +22,7 @@ async function listAuthUsers() {
 
 export async function GET() {
   try {
-    await requireApiRole(["super_admin"]);
+    await requireIamMenuPrefix(IAM.settingsUsers);
     const db = createPgClient();
 
     const [{ data: profiles, error: profilesError }, authUsers] = await Promise.all([
@@ -59,7 +60,7 @@ export async function POST(request: NextRequest) {
   let authUserId: string | null = null;
 
   try {
-    const actor = await requireApiRole(["super_admin"]);
+    const actor = await requireIamMenuPrefix(IAM.settingsUsers);
     const body = await validateBody(request, createAdminUserSchema);
 
     const { data: authData, error: authError } = await db.auth.admin.createUser({

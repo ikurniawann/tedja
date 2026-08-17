@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireApiRole, ApiError } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { query, queryOne } from "@/lib/db";
 
 /**
@@ -25,7 +26,7 @@ export interface ShiftRow {
 
 export async function GET() {
   try {
-    await requireApiRole([...ROLES]);
+    await requireIamMenuPrefix(IAM.hris);
     const rows = await query<ShiftRow>(
       `SELECT id, name, start_time, end_time, break_minutes,
               late_tolerance_minutes, is_overnight, is_active, sort_order
@@ -68,7 +69,7 @@ function validateShiftBody(body: ShiftBody): string | null {
 
 export async function POST(req: NextRequest) {
   try {
-    await requireApiRole([...ROLES]);
+    await requireIamMenuPrefix(IAM.hris);
     const body = (await req.json()) as ShiftBody;
 
     const invalid = validateShiftBody(body);

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { ApiError, requireApiRole, validateBody } from "@/lib/api/auth";
+import { ApiError, validateBody, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { createSession, setSessionCookie } from "@/lib/auth/session";
 import { queryOne } from "@/lib/db";
 
@@ -15,7 +16,7 @@ const impersonateSchema = z.object({
  */
 export async function POST(request: NextRequest) {
   try {
-    const admin = await requireApiRole(["super_admin"]);
+    const admin = await requireIamMenuPrefix(IAM.settingsUsers);
     const { user_id } = await validateBody(request, impersonateSchema);
 
     if (user_id === admin.id) {

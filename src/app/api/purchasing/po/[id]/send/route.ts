@@ -6,7 +6,8 @@ import { NextRequest } from "next/server";
 import { createPgClient } from "@/lib/pg/create-client";
 import { adjustInventoryOnOrder } from "@/lib/inventory";
 import { createBaseUnitResolver } from "@/lib/purchasing/raw-material-units";
-import { ApiError, requireApiRole } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { z } from "zod";
 
 const sendSchema = z.object({
@@ -31,7 +32,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requireApiRole([...SEND_ROLES]);
+    await requireIamMenuPrefix(IAM.items);
     const { id } = await params;
     const db = createPgClient();
     const body = await request.json();

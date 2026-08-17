@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireApiRole, ApiError } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { query, withTransaction } from "@/lib/db";
 import { parseIcs, toHolidayCandidates, type HolidayCandidate } from "@/lib/hris/holiday-ics";
 import type { HolidayType } from "@/lib/hris/holidays";
@@ -57,7 +58,7 @@ interface PreviewRow extends HolidayCandidate {
 
 export async function GET(req: NextRequest) {
   try {
-    await requireApiRole([...WRITE_ROLES]);
+    await requireIamMenuPrefix(IAM.hris);
 
     const yearParam = req.nextUrl.searchParams.get("year");
     const year = yearParam && YEAR_RE.test(yearParam)
@@ -140,7 +141,7 @@ function validateItem(item: ImportItem): string | null {
 
 export async function POST(req: NextRequest) {
   try {
-    const user = await requireApiRole([...WRITE_ROLES]);
+    const user = await requireIamMenuPrefix(IAM.hris);
     const body = (await req.json()) as { items?: ImportItem[] };
     const items = body.items ?? [];
 

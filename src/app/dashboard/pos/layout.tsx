@@ -1,8 +1,15 @@
+import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 import { Toaster } from "sonner";
 import { requireUser, type AuthUser } from "@/lib/auth/require-user";
 import { getUserMenus, isEssOnlyUser } from "@/lib/iam/get-user-menus";
+import { loadGrantedMenuCodesForUser } from "@/lib/iam/has-menu";
+import { hasAnyIamMenuPrefix } from "@/lib/iam/match";
+import { IAM } from "@/lib/iam/prefixes";
+import { canAccessPath, isFullAccessRole } from "@/lib/iam/access";
 import type { NavItem } from "@/lib/iam/types";
 import { AppSidebar } from "@/components/shared";
+import { IamAccessProvider } from "@/components/iam/iam-access-provider";
 import { LayoutLoadError } from "@/components/layout-load-error";
 import { getSafeErrorMessage, isNextControlFlowError } from "@/lib/next-control-flow";
 
@@ -14,11 +21,13 @@ export default async function PosDashboardLayout({
   let user: AuthUser;
   let navItems: NavItem[];
   let essOnly: boolean;
+  let grantedCodes: string[];
   try {
     user = await requireUser();
-    [navItems, essOnly] = await Promise.all([
+    [navItems, essOnly, grantedCodes] = await Promise.all([
       getUserMenus(user.id, user.role),
       isEssOnlyUser(user.id, user.role),
+      loadGrantedMenuCodesForUser(user.id, user.role),
     ]);
   } catch (error) {
     if (isNextControlFlowError(error)) throw error;
@@ -31,7 +40,17 @@ export default async function PosDashboardLayout({
     );
   }
 
+  const pathname = (await headers()).get("x-pathname") ?? "";
+  const hasPosMenu = hasAnyIamMenuPrefix(grantedCodes, IAM.pos);
+  const fallbackAllowed =
+    grantedCodes.length === 0 &&
+    (isFullAccessRole(user.role) || canAccessPath(user.role, pathname || "/dashboard/pos"));
+  if (!hasPosMenu && !fallbackAllowed) {
+    redirect("/dashboard");
+  }
+
   return (
+    <IamAccessProvider grantedCodes={grantedCodes}>
     <AppSidebar
       user={{
         full_name: user.full_name,
@@ -52,5 +71,6 @@ export default async function PosDashboardLayout({
       {children}
       <Toaster position="bottom-right" />
     </AppSidebar>
+    </IamAccessProvider>
   );
 }

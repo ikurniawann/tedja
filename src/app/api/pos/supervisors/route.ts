@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { ApiError, requireApiRole } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import type { UserRole } from "@/lib/api/auth";
 import { createPgClient } from "@/lib/pg/create-client";
 import { hashPosPin, isValidPosPin } from "@/lib/pos/supervisor-pin";
@@ -21,7 +22,7 @@ const PROTECTED_ROLES = new Set(["super_admin", "admin"]);
 
 export async function GET(request: NextRequest) {
   try {
-    await requireApiRole(ALLOWED_ROLES);
+    await requireIamMenuPrefix(IAM.posSupervisors);
     const db = createPgClient();
 
     // ?candidates=1&search=... → daftar user non-supervisor utk picker "Tambah"
@@ -98,7 +99,7 @@ const bodySchema = z.discriminatedUnion("action", [
 
 export async function POST(request: NextRequest) {
   try {
-    await requireApiRole(ALLOWED_ROLES);
+    await requireIamMenuPrefix(IAM.posSupervisors);
     const body = bodySchema.parse(await request.json());
     const db = createPgClient();
 

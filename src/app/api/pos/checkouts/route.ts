@@ -84,7 +84,6 @@ export async function POST(request: NextRequest) {
         activeMode: gate.activeMode,
       }),
       hasSplits: Array.isArray(body.splits) && body.splits.length > 0,
-      discountAmount: body.discount_amount,
       promoCode: body.promo_code,
     });
     if (!mixedGuard.ok) {

@@ -1,17 +1,16 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getApiUser } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
+import { userHasIamPrefix } from "@/lib/iam/has-menu";
 import type { UserRole } from "@/types";
 
-// Endpoint konfigurasi CRM (tier, reward, xp-rule, avatar, settings) hanya
-// boleh diubah Super Admin — keputusan owner EPIC-011.
+/** @deprecated Gate memakai menu IAM crm.settings. */
 export const CRM_CONFIG_ROLES: UserRole[] = ["super_admin"];
 
-/**
- * Guard role untuk endpoint konfigurasi CRM. Mengembalikan NextResponse
- * (401/403) jika tidak berwenang, atau null jika lolos.
- */
-export async function requireCrmConfigRole(): Promise<NextResponse | null> {
+async function denyUnlessIam(
+  prefixes: readonly string[]
+): Promise<NextResponse | null> {
   const user = await getApiUser();
   if (!user) {
     return NextResponse.json(
@@ -19,13 +18,17 @@ export async function requireCrmConfigRole(): Promise<NextResponse | null> {
       { status: 401 }
     );
   }
-  if (!CRM_CONFIG_ROLES.includes(user.role)) {
+  if (!(await userHasIamPrefix(user.id, user.role, prefixes))) {
     return NextResponse.json(
       { success: false, error: "Insufficient permissions" },
       { status: 403 }
     );
   }
   return null;
+}
+
+export async function requireCrmConfigRole(): Promise<NextResponse | null> {
+  return denyUnlessIam(IAM.crmSettings);
 }
 
 // Klaim/approve redeem reward adalah operasi harian di venue, bukan konfigurasi —
@@ -56,7 +59,7 @@ export const CRM_REVIEW_APPROVER_ROLES: UserRole[] = ["super_admin", "admin"];
 // campaign-config: PUT-nya super_admin only).
 export const CRM_CAMPAIGN_ROLES: UserRole[] = ["super_admin", "marketing"];
 
-async function requireCrmRoles(allowed: UserRole[]): Promise<
+async function requireCrmMenus(prefixes: readonly string[]): Promise<
   { error: NextResponse; user: null } | { error: null; user: { id: string; role: UserRole } }
 > {
   const user = await getApiUser();
@@ -69,7 +72,7 @@ async function requireCrmRoles(allowed: UserRole[]): Promise<
       user: null,
     };
   }
-  if (!allowed.includes(user.role)) {
+  if (!(await userHasIamPrefix(user.id, user.role, prefixes))) {
     return {
       error: NextResponse.json(
         { success: false, error: "Insufficient permissions" },
@@ -81,26 +84,20 @@ async function requireCrmRoles(allowed: UserRole[]): Promise<
   return { error: null, user: { id: user.id, role: user.role } };
 }
 
-/**
- * Guard role untuk operasi redeem reward (klaim/approve). Mengembalikan
- * NextResponse (401/403) bila tidak berwenang, atau user yang lolos.
- */
 export function requireCrmCampaign() {
-  return requireCrmRoles(CRM_CAMPAIGN_ROLES);
+  return requireCrmMenus(IAM.crmPromo);
 }
 
 export function requireCrmOperator() {
-  return requireCrmRoles(CRM_OPERATOR_ROLES);
+  return requireCrmMenus([...IAM.crmLoyalty, ...IAM.crmMembers, ...IAM.posOperations]);
 }
 
-/** Guard role untuk membaca data redemption yang memuat PII member. */
 export function requireCrmReader() {
-  return requireCrmRoles(CRM_READ_ROLES);
+  return requireCrmMenus([...IAM.crmReports, ...IAM.crmMembers, ...IAM.crmLoyalty]);
 }
 
-/** Guard role untuk inbox chat WhatsApp CS. */
 export function requireCrmInboxAgent() {
-  return requireCrmRoles(CRM_INBOX_ROLES);
+  return requireCrmMenus(IAM.crmInbox);
 }
 
 export const CRM_DEFAULT_TIERS = [

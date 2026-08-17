@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireApiRole, ApiError } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { readPrivateFile } from "@/lib/storage-private";
 
 /**
@@ -15,7 +16,7 @@ export async function GET(
   { params }: { params: Promise<{ path: string[] }> }
 ) {
   try {
-    await requireApiRole([...READ_ROLES]);
+    await requireIamMenuPrefix(IAM.hrisRecruitment);
     const { path: segments } = await params;
     const rel = segments.map(decodeURIComponent).join("/");
     if (!rel.startsWith("interview/")) {

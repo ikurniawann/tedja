@@ -7,7 +7,8 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { ApiError, requireApiRole } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { query, queryOne, withTransaction } from "@/lib/db";
 import { getWorkforceActor } from "@/lib/hris/workforce-auth";
 import {
@@ -115,7 +116,7 @@ async function isVisibleToEmployee(
 
 export async function PATCH(req: NextRequest, { params }: RouteParams) {
   try {
-    await requireApiRole([...ANNOUNCEMENT_MANAGE_ROLES]);
+    await requireIamMenuPrefix(IAM.hris);
     const { id } = await params;
     if (!UUID_RE.test(id)) {
       return NextResponse.json({ error: "ID tidak valid" }, { status: 400 });
@@ -212,7 +213,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
 
 export async function DELETE(_req: NextRequest, { params }: RouteParams) {
   try {
-    await requireApiRole([...ANNOUNCEMENT_MANAGE_ROLES]);
+    await requireIamMenuPrefix(IAM.hris);
     const { id } = await params;
     if (!UUID_RE.test(id)) {
       return NextResponse.json({ error: "ID tidak valid" }, { status: 400 });

@@ -2,7 +2,8 @@
 // Butuh sesi admin (owner memulai dari dashboard di browser yang sama).
 
 import { NextRequest, NextResponse } from 'next/server';
-import { requireApiRole, ApiError } from '@/lib/api/auth';
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { query } from '@/lib/db';
 import {
   resolveMarketplaceAdapter,
@@ -13,7 +14,7 @@ import {
 export async function GET(request: NextRequest) {
   const dashboardUrl = '/dashboard/shop/marketplace';
   try {
-    await requireApiRole(['super_admin', 'admin']);
+    await requireIamMenuPrefix(IAM.shop);
     const code = String(request.nextUrl.searchParams.get('code') || '').trim();
     const shopId = String(request.nextUrl.searchParams.get('shop_id') || '').trim();
     if (!code || !shopId) {

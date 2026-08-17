@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireApiRole, ApiError } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { queryOne, withTransaction } from "@/lib/db";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { screeningSchema } from "@/lib/validations/candidate";
@@ -30,7 +31,7 @@ const RECOMMENDATION_LABELS: Record<string, string> = {
 
 export async function GET(_req: NextRequest, { params }: RouteParams) {
   try {
-    await requireApiRole([...ALLOWED_ROLES]);
+    await requireIamMenuPrefix(IAM.hrisRecruitment);
     const { id } = await params;
     if (!UUID_RE.test(id)) {
       return NextResponse.json({ error: "ID kandidat tidak valid" }, { status: 400 });
@@ -49,7 +50,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
 
 export async function PUT(req: NextRequest, { params }: RouteParams) {
   try {
-    const user = await requireApiRole([...ALLOWED_ROLES]);
+    const user = await requireIamMenuPrefix(IAM.hrisRecruitment);
     const { id } = await params;
     if (!UUID_RE.test(id)) {
       return NextResponse.json({ error: "ID kandidat tidak valid" }, { status: 400 });

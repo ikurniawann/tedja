@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { successResponse, requireApiRole, ApiError } from "@/lib/api/auth";
+import { successResponse, ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { requireCrmCampaign } from "@/lib/crm/server";
 import { getSetting, setSetting } from "@/lib/settings/app-settings";
 import { parseCampaignConfig } from "@/lib/crm/campaigns";
@@ -34,7 +35,7 @@ const putSchema = z.object({
 
 export async function PUT(request: NextRequest) {
   try {
-    await requireApiRole(["super_admin"]);
+    await requireIamMenuPrefix(IAM.crm);
     const parsed = putSchema.safeParse(await request.json());
     if (!parsed.success) {
       return NextResponse.json(

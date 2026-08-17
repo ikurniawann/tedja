@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { ApiError, requireApiRole } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { createPgClient } from "@/lib/pg/create-client";
 
 const querySchema = z.object({
@@ -478,15 +479,7 @@ async function getProductStockCard(
 
 export async function GET(request: NextRequest) {
   try {
-    await requireApiRole([
-      "admin",
-      "purchasing_admin",
-      "purchasing_manager",
-      "warehouse_admin",
-      "warehouse_staff",
-      "qc_staff",
-      "super_admin",
-    ]);
+    await requireIamMenuPrefix(IAM.items);
     const db = createPgClient();
     const { searchParams } = new URL(request.url);
     const params = querySchema.parse(Object.fromEntries(searchParams));

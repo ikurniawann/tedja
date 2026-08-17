@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { ApiError, requireApiRole } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import {
   getApiUserScope,
   isRowInBusinessScope,
@@ -51,7 +52,7 @@ function mapBizError(msg: string): never {
 
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
-    await requireApiRole([...ACCOUNTING_API_ROLES]);
+    await requireIamMenuPrefix(IAM.accounting);
     const { id } = await params;
     const scope = await getApiUserScope();
     const data = await getJournalEntry(id);
@@ -69,7 +70,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 
 export async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
-    const user = await requireApiRole([...ACCOUNTING_API_ROLES]);
+    const user = await requireIamMenuPrefix(IAM.accounting);
     const { id } = await params;
     const body = payloadSchema.parse(await request.json());
     const scope = await getApiUserScope();
@@ -122,7 +123,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
 export async function DELETE(_request: NextRequest, { params }: RouteParams) {
   try {
-    const user = await requireApiRole([...ACCOUNTING_API_ROLES]);
+    const user = await requireIamMenuPrefix(IAM.accounting);
     const { id } = await params;
     const scope = await getApiUserScope();
 

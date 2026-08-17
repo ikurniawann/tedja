@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ApiError, requireApiRole, validateBody } from "@/lib/api/auth";
+import { ApiError, validateBody, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import {
   createUserEmployee,
   listUserEmployees,
@@ -8,7 +9,7 @@ import { createUserEmployeeSchema } from "@/lib/users/schemas";
 
 export async function GET(request: NextRequest) {
   try {
-    await requireApiRole(["super_admin", "admin", "hrd"]);
+    await requireIamMenuPrefix(IAM.settingsUsers);
 
     const searchParams = request.nextUrl.searchParams;
     const isAccessApp = searchParams.get("is_access_app");
@@ -37,7 +38,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const actor = await requireApiRole(["super_admin", "admin", "hrd"]);
+    const actor = await requireIamMenuPrefix(IAM.settingsUsers);
     const body = await validateBody(request, createUserEmployeeSchema);
     const data = await createUserEmployee(actor.id, body);
 

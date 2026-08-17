@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireApiRole, ApiError } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import {
   deleteBusinessEntity,
   fetchBusinessTree,
@@ -19,7 +20,7 @@ export async function PATCH(
   { params }: { params: Promise<{ type: string; id: string }> }
 ) {
   try {
-    await requireApiRole(["super_admin", "admin"]);
+    await requireIamMenuPrefix(IAM.settingsBusiness);
     const { type, id } = await params;
 
     if (!VALID_TYPES.includes(type as BusinessEntityType)) {
@@ -47,7 +48,7 @@ export async function DELETE(
   { params }: { params: Promise<{ type: string; id: string }> }
 ) {
   try {
-    await requireApiRole(["super_admin", "admin"]);
+    await requireIamMenuPrefix(IAM.settingsBusiness);
     const { type, id } = await params;
 
     if (!VALID_TYPES.includes(type as BusinessEntityType)) {

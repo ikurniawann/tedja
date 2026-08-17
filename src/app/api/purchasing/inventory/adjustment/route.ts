@@ -4,7 +4,8 @@
 
 import { NextRequest } from "next/server";
 import { createServerPgClient } from "@/lib/pg/create-client";
-import { ApiError, requireApiRole } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import {
   effectiveBranchId,
   getApiUserScope,
@@ -29,7 +30,7 @@ const ADJUST_ROLES = ["admin", "super_admin", "warehouse_admin", "purchasing_adm
 // POST /api/purchasing/inventory/adjustment
 export async function POST(request: NextRequest) {
   try {
-    const user = await requireApiRole([...ADJUST_ROLES]);
+    const user = await requireIamMenuPrefix(IAM.items);
     const db = await createServerPgClient();
     const body = await request.json();
 

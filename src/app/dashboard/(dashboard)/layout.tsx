@@ -11,10 +11,12 @@ import {
 import {
   allowedModulePaths,
   canAccessPath,
-  isFullAccessRole,
+  isEssPath,
   isPathAllowedByMenus,
   ESS_HOME_PATH,
 } from "@/lib/iam/access";
+import { loadGrantedMenuCodesForUser } from "@/lib/iam/has-menu";
+import { IamAccessProvider } from "@/components/iam/iam-access-provider";
 import { AppSidebar } from "@/components/shared";
 import { LayoutLoadError } from "@/components/layout-load-error";
 import { getSafeErrorMessage, isNextControlFlowError } from "@/lib/next-control-flow";
@@ -39,27 +41,26 @@ export default async function DashboardGroupLayout({
   }
   // Kebijakan ESS-only ditentukan IAM (permission menu non-ESS), bukan daftar role di kode.
   const essOnly = await isEssOnlyUser(user.id, user.role);
-  const allNavItems = await getUserMenus(user.id, user.role);
+  const [allNavItems, grantedCodes] = await Promise.all([
+    getUserMenus(user.id, user.role),
+    loadGrantedMenuCodesForUser(user.id, user.role),
+  ]);
 
-  // Guard path utk SEMUA role non-full-access (fix H1 security review
-  // EPIC-032 A4 — sebelumnya hanya essOnly, sehingga role ber-grant menu
-  // non-ESS seperti sales/finance_staff/marketing bisa membuka URL modul
-  // lain langsung). Path sah = ESS / ROLE_MODULE_PATHS / href menu IAM
-  // ber-grant (root "/dashboard" exact-only). POS punya layout sendiri di
-  // luar group ini — tidak tersentuh.
-  if (!isFullAccessRole(user.role)) {
-    const pathname = (await headers()).get("x-pathname") ?? "";
-    const allowed =
-      !pathname ||
-      canAccessPath(user.role, pathname) ||
-      isPathAllowedByMenus(pathname, collectNavHrefs(allNavItems));
-    if (!allowed) {
-      redirect(
-        essOnly
-          ? ESS_HOME_PATH
-          : (allowedModulePaths(user.role)[0] ?? ESS_HOME_PATH)
-      );
-    }
+  const pathname = (await headers()).get("x-pathname") ?? "";
+  const menuAllowed = isPathAllowedByMenus(pathname, collectNavHrefs(allNavItems));
+  const fallbackAllowed =
+    grantedCodes.length === 0 && canAccessPath(user.role, pathname);
+  const allowed =
+    !pathname ||
+    isEssPath(pathname) ||
+    menuAllowed ||
+    fallbackAllowed;
+  if (!allowed) {
+    if (essOnly) redirect(ESS_HOME_PATH);
+    const firstMenu = collectNavHrefs(allNavItems).find(
+      (href) => href.startsWith("/dashboard") && href !== ESS_HOME_PATH
+    );
+    redirect(firstMenu ?? allowedModulePaths(user.role)[0] ?? ESS_HOME_PATH);
   }
   // ESS-only: menu Area Karyawan + modul tambahan role. Full-access: buang
   // "Beranda" ESS (/dashboard/me) agar tak ganda dengan Beranda utama.
@@ -71,6 +72,7 @@ export default async function DashboardGroupLayout({
     : allNavItems.filter((item) => item.href !== "/dashboard/me");
 
   return (
+    <IamAccessProvider grantedCodes={grantedCodes}>
     <AppSidebar
       user={{
         full_name: user.full_name,
@@ -91,5 +93,6 @@ export default async function DashboardGroupLayout({
       {children}
       <Toaster position="bottom-right" />
     </AppSidebar>
+    </IamAccessProvider>
   );
 }

@@ -3,68 +3,41 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
+import { useIamAccess } from "@/components/iam/iam-access-provider";
+import { IAM } from "@/lib/iam/prefixes";
 
-/** Props for PurchasingGuard */
 interface PurchasingGuardProps {
-  /** Minimum role required to access the route */
+  /** @deprecated Akses memakai grant IAM `items.*`, bukan role. */
   minRole?: "purchasing_staff" | "purchasing_manager" | "purchasing_admin" | "super_admin";
-  /** Explicit list of allowed roles */
+  /** @deprecated Akses memakai grant IAM `items.*`, bukan role. */
   allowedRoles?: string[];
-  /** Content to render when access is granted */
   children: React.ReactNode;
-  /** Redirect destination when denied (default: /dashboard) */
   fallbackHref?: string;
 }
 
 /**
- * Role-based access guard for purchasing module pages.
- * Redirects to fallbackHref when user lacks permission.
+ * Guard halaman purchasing: lolos bila user punya menu IAM di bawah `items`.
  */
 export default function PurchasingGuard({
-  minRole,
-  allowedRoles,
   children,
   fallbackHref = "/dashboard",
 }: PurchasingGuardProps) {
   const { user, loading } = useAuth();
+  const { grantedCodes, hasPrefix } = useIamAccess();
   const router = useRouter();
+  const iamReady = grantedCodes.length > 0 || !loading;
+  const allowed = hasPrefix(IAM.items);
 
   useEffect(() => {
     if (loading) return;
-
-    const role = user?.role;
-    if (!role) {
+    if (!user) {
       router.replace(fallbackHref);
       return;
     }
-
-    let denied = true;
-
-    // Platform admin can access all purchasing screens.
-    if (role === "admin" || role === "super_admin") {
-      denied = false;
-    } else if (allowedRoles && allowedRoles.length > 0) {
-      denied = !allowedRoles.includes(role);
-    } else if (minRole) {
-      // ROLE_HIERARCHY: [viewer, warehouse_staff, qc_staff, purchasing_staff, purchasing_manager, purchasing_admin, super_admin]
-      const hierarchy = [
-        "viewer",
-        "warehouse_staff",
-        "qc_staff",
-        "purchasing_staff",
-        "purchasing_manager",
-        "purchasing_admin",
-        "super_admin",
-      ] as const;
-      const userIdx = hierarchy.indexOf(role as any);
-      const minIdx = hierarchy.indexOf(minRole as any);
-      denied = userIdx < minIdx;
-    }
-
-    if (denied) {
+    if (iamReady && grantedCodes.length > 0 && !allowed) {
       router.replace(fallbackHref);
     }
-  }, [user, loading, minRole, allowedRoles, fallbackHref, router]);
+  }, [user, loading, iamReady, grantedCodes.length, allowed, fallbackHref, router]);
 
   if (loading || !user) {
     return (
@@ -83,44 +56,13 @@ export default function PurchasingGuard({
   return <>{children}</>;
 }
 
-/**
- * Hook version — returns { allowed: boolean, loading: boolean }
- * for use inside page components that already handle their own redirect.
- */
-export function usePurchasingAccess(
-  minRole?: PurchasingGuardProps["minRole"],
-  allowedRoles?: string[]
-) {
+export function usePurchasingAccess() {
   const { user, loading } = useAuth();
+  const { hasPrefix } = useIamAccess();
 
   if (loading || !user) {
     return { allowed: false, loading: true };
   }
 
-  const role = user.role;
-
-  if (role === "admin" || role === "super_admin") {
-    return { allowed: true, loading: false };
-  }
-
-  if (allowedRoles && allowedRoles.length > 0) {
-    return { allowed: allowedRoles.includes(role), loading: false };
-  }
-
-  if (minRole) {
-    const hierarchy = [
-      "viewer",
-      "warehouse_staff",
-      "qc_staff",
-      "purchasing_staff",
-      "purchasing_manager",
-      "purchasing_admin",
-      "super_admin",
-    ] as const;
-    const userIdx = hierarchy.indexOf(role as any);
-    const minIdx = hierarchy.indexOf(minRole as any);
-    return { allowed: userIdx >= minIdx, loading: false };
-  }
-
-  return { allowed: true, loading: false };
+  return { allowed: hasPrefix(IAM.items), loading: false };
 }

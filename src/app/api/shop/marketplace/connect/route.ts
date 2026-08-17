@@ -1,12 +1,13 @@
 // EPIC-039 Fase F — mulai otorisasi toko Shopee: kembalikan URL auth_partner.
 
 import { NextRequest, NextResponse } from 'next/server';
-import { requireApiRole, ApiError } from '@/lib/api/auth';
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { resolveMarketplaceAdapter, MarketplaceError } from '@/lib/shop/marketplace/sync';
 
 export async function GET(request: NextRequest) {
   try {
-    await requireApiRole(['super_admin', 'admin']);
+    await requireIamMenuPrefix(IAM.shop);
     const baseUrl =
       process.env.NEXT_PUBLIC_APP_URL || `${request.nextUrl.protocol}//${request.nextUrl.host}`;
     const adapter = resolveMarketplaceAdapter('shopee');

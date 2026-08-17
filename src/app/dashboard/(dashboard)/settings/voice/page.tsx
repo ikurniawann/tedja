@@ -1,7 +1,8 @@
-import { requireRole } from "@/lib/auth/require-user";
+import { requireIamPage } from "@/lib/auth/require-user";
+import { IAM } from "@/lib/iam/prefixes";
 import { VoiceSettingsPage } from "@/features/configuration/voice";
 
 export default async function VoiceSettingsRoute() {
-  await requireRole(["super_admin", "admin"]);
+  await requireIamPage(IAM.settingsAppearance);
   return <VoiceSettingsPage />;
 }

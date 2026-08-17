@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { ApiError, getPosSession, requireApiRole, successResponse } from "@/lib/api/auth";
+import { ApiError, getPosSession, requireIamAction, successResponse } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import {
   createPosPaymentMethod,
   deletePosPaymentMethod,
@@ -47,12 +48,11 @@ const patchSchema = z.object({
 });
 
 export async function PATCH(request: NextRequest) {
-  const sessionUserId = await getPosSession();
-  if (!sessionUserId) {
-    return NextResponse.json(
-      { success: false, error: "Authentication required" },
-      { status: 401 }
-    );
+  try {
+    await requireIamAction(IAM.posOperations, "update");
+  } catch (err) {
+    if (err instanceof ApiError) return err.toResponse();
+    throw err;
   }
 
   try {
@@ -112,7 +112,7 @@ const createSchema = z.object({
 
 export async function POST(request: NextRequest) {
   try {
-    await requireApiRole(["super_admin", "admin"]);
+    await requireIamAction(IAM.posOperations, "update");
     const parsed = createSchema.safeParse(await request.json());
     if (!parsed.success) {
       return NextResponse.json(
@@ -139,7 +139,7 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
-    await requireApiRole(["super_admin", "admin"]);
+    await requireIamAction(IAM.posOperations, "delete");
     const code = String(request.nextUrl.searchParams.get("code") || "").trim();
     if (!isValidPaymentMethodCode(code)) {
       return NextResponse.json(

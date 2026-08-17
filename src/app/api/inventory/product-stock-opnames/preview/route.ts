@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
-import { ApiError, requireApiRole } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { getApiUserScope, validateProductWarehouseScope } from "@/lib/api/scope";
 import { listProductInventoryForOpname } from "@/lib/inventory/product-stock-opname";
 import { z } from "zod";
@@ -12,7 +13,7 @@ const previewSchema = z.object({
 
 export async function GET(request: NextRequest) {
   try {
-    await requireApiRole([...OPNAME_ROLES]);
+    await requireIamMenuPrefix(IAM.itemsInventory);
     const scope = await getApiUserScope();
     const params = previewSchema.parse(
       Object.fromEntries(new URL(request.url).searchParams)

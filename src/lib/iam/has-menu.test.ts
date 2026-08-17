@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hasAnyIamMenuPrefix, hasIamMenuCode } from "./has-menu";
+import { hasAnyIamMenuPrefix, hasGrantedAction, hasIamMenuCode } from "./match";
 
 describe("hasIamMenuCode", () => {
   it("matches exact code", () => {
@@ -19,5 +19,15 @@ describe("hasAnyIamMenuPrefix", () => {
     expect(hasAnyIamMenuPrefix(["ess.home", "pos.operations.cashier"], ["items.product"])).toBe(
       false
     );
+  });
+});
+
+describe("hasGrantedAction", () => {
+  it("allows update when granted on a matching menu", () => {
+    const granted = new Map<string, string[]>([
+      ["items.product.approval.po", ["read", "update"]],
+    ]);
+    expect(hasGrantedAction(granted, ["items.product.approval"], "update")).toBe(true);
+    expect(hasGrantedAction(granted, ["items.product.approval"], "delete")).toBe(false);
   });
 });

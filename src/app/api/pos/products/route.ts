@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createPgClient } from "@/lib/pg/create-client";
+import { requirePosMenu } from '@/lib/api/auth';
+import { IAM } from '@/lib/iam/prefixes';
 import { getApiUserScope } from '@/lib/api/scope';
 import { enrichPosProductsWithPurchasingCogs } from '@/lib/pos/purchasing-sync';
 import {
@@ -74,6 +76,8 @@ function normalizeStation(value?: string) {
 // GET /api/pos/products - List active products scoped to login stall assignment
 export async function GET(request: NextRequest) {
   try {
+    const pos = await requirePosMenu(IAM.posCatalog);
+    if (pos.error) return pos.error;
     const db = createPgClient();
     const scope = await getApiUserScope();
     const stallScope = await resolvePosProductStallScope(scope);
@@ -188,6 +192,8 @@ export async function GET(request: NextRequest) {
 // POST /api/pos/products - Create new product
 export async function POST(request: NextRequest) {
   try {
+    const pos = await requirePosMenu(IAM.posCatalog);
+    if (pos.error) return pos.error;
     const db = createPgClient();
     const body = (await request.json()) as ProductCreatePayload;
     const {

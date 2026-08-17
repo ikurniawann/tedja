@@ -1,7 +1,8 @@
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { createServerPgClient } from "@/lib/pg/create-client";
-import { ApiError, requireApiRole } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { fetchProductStockOpnameDetail } from "@/lib/inventory/product-stock-opname";
 
 const OPNAME_ROLES = ["super_admin", "warehouse_admin", "purchasing_admin"] as const;
@@ -27,7 +28,7 @@ type RouteContext = { params: Promise<{ id: string }> };
 
 export async function GET(_request: NextRequest, context: RouteContext) {
   try {
-    await requireApiRole([...OPNAME_ROLES]);
+    await requireIamMenuPrefix(IAM.itemsInventory);
     const { id } = await context.params;
     const detail = await fetchProductStockOpnameDetail(id);
 
@@ -51,7 +52,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
 
 export async function PATCH(request: NextRequest, context: RouteContext) {
   try {
-    const user = await requireApiRole([...OPNAME_ROLES]);
+    const user = await requireIamMenuPrefix(IAM.itemsInventory);
     const { id } = await context.params;
     const body = await request.json();
     const validated = patchSchema.parse(body);

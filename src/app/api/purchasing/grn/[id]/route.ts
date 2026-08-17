@@ -1,11 +1,8 @@
 import { createPgClient } from "@/lib/pg/create-client";
 import { NextRequest } from "next/server";
 import { z } from "zod";
-import {
-  requireApiRole,
-  ApiError,
-  successResponse,
-} from "@/lib/api/auth";
+import { ApiError, successResponse, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import {
   validateGrnTransition,
   updateDeliveryStatusAfterGrn,
@@ -105,7 +102,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requireApiRole(GRN_VIEW_ROLES);
+    await requireIamMenuPrefix(IAM.items);
     const db = createPgClient(); // bypass RLS
     const { id } = await params;
 
@@ -171,7 +168,7 @@ export async function PATCH(
   const { id } = await params; // Extract id at function scope
   
   try {
-    const user = await requireApiRole(GRN_VIEW_ROLES);
+    const user = await requireIamMenuPrefix(IAM.items);
     const db = createPgClient(); // bypass RLS
 
     console.log(`\n=== [PATCH GRN/${id}] START ===`);
@@ -502,12 +499,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const user = await requireApiRole([
-      "warehouse_admin",
-      "purchasing_admin",
-      "admin",
-      "super_admin",
-    ]);
+    const user = await requireIamMenuPrefix(IAM.items);
     const db = createPgClient(); // bypass RLS
     const { id } = await params;
 

@@ -5,7 +5,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { query } from "@/lib/db";
 import { createServerPgClient } from "@/lib/pg/create-client";
-import { ApiError, requireApiRole } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import {
   getApiUserScope,
   effectiveCompanyId,
@@ -83,7 +84,7 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    const user = await requireApiRole([...WRITE_ROLES]);
+    const user = await requireIamMenuPrefix(IAM.items);
     const db = await createServerPgClient();
     const scope = await getApiUserScope();
     const validated = usageSchema.parse(await request.json());

@@ -1,7 +1,8 @@
-import { requireRole } from "@/lib/auth/require-user";
+import { requireIamPage } from "@/lib/auth/require-user";
+import { IAM } from "@/lib/iam/prefixes";
 import { HolidaysPage } from "@/features/hris/holidays";
 
 export default async function HrisHolidaysPage() {
-  await requireRole(["super_admin", "hrd"]);
+  await requireIamPage(IAM.hrisWorkforce);
   return <HolidaysPage />;
 }

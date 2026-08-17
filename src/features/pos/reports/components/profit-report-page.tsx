@@ -1,10 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   AlertCircle,
   BarChart3,
   CalendarDays,
+  ChevronDown,
+  ChevronsUpDown,
+  ChevronUp,
   Loader2,
   Package,
   ReceiptText,
@@ -61,6 +64,17 @@ function MetricCard({
   );
 }
 
+type BreakdownSortKey = "label" | "quantity" | "revenue" | "cogs" | "gross_profit" | "gross_margin_pct";
+
+const BREAKDOWN_COLUMNS: Array<{ key: BreakdownSortKey; label: string; align: "left" | "right" }> = [
+  { key: "label", label: "Name", align: "left" },
+  { key: "quantity", label: "Qty", align: "right" },
+  { key: "revenue", label: "Revenue", align: "right" },
+  { key: "cogs", label: "COGS", align: "right" },
+  { key: "gross_profit", label: "Gross Profit", align: "right" },
+  { key: "gross_margin_pct", label: "Margin", align: "right" },
+];
+
 function BreakdownTableSection({
   icon: Icon,
   title,
@@ -72,23 +86,70 @@ function BreakdownTableSection({
   description: string;
   rows: ProfitBucket[];
 }) {
+  // null = biarkan urutan bawaan API (revenue tertinggi dulu)
+  const [sortKey, setSortKey] = useState<BreakdownSortKey | null>(null);
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+
+  function toggleSort(key: BreakdownSortKey) {
+    if (sortKey === key) {
+      setSortDir((dir) => (dir === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      // Kolom angka mulai dari terbesar; nama mulai dari A.
+      setSortDir(key === "label" ? "asc" : "desc");
+    }
+  }
+
+  function sortIcon(key: BreakdownSortKey) {
+    if (sortKey !== key) return <ChevronsUpDown className="h-3.5 w-3.5 text-gray-300" />;
+    return sortDir === "asc" ? (
+      <ChevronUp className="h-3.5 w-3.5 text-primary" />
+    ) : (
+      <ChevronDown className="h-3.5 w-3.5 text-primary" />
+    );
+  }
+
+  const sortedRows = useMemo(() => {
+    if (!sortKey) return rows;
+    const factor = sortDir === "asc" ? 1 : -1;
+    return [...rows].sort((a, b) => {
+      if (sortKey === "label") return factor * a.label.localeCompare(b.label, "id");
+      return factor * ((Number(a[sortKey]) || 0) - (Number(b[sortKey]) || 0));
+    });
+  }, [rows, sortKey, sortDir]);
+
   return (
     <PurchasingListSection icon={Icon} title={title} description={description}>
       <div className="overflow-x-auto">
         <table className="min-w-full text-sm">
           <thead className="border-b border-gray-100 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
             <tr>
-              <th className="px-4 py-3 text-left font-semibold">Name</th>
-              <th className="px-4 py-3 text-right font-semibold">Qty</th>
-              <th className="px-4 py-3 text-right font-semibold">Revenue</th>
-              <th className="px-4 py-3 text-right font-semibold">COGS</th>
-              <th className="px-4 py-3 text-right font-semibold">Gross Profit</th>
-              <th className="px-4 py-3 text-right font-semibold">Margin</th>
+              {BREAKDOWN_COLUMNS.map((column) => (
+                <th
+                  key={column.key}
+                  aria-sort={
+                    sortKey === column.key ? (sortDir === "asc" ? "ascending" : "descending") : "none"
+                  }
+                  className={`px-4 py-3 font-semibold ${
+                    column.align === "right" ? "text-right" : "text-left"
+                  }`}
+                >
+                  <button
+                    type="button"
+                    onClick={() => toggleSort(column.key)}
+                    className={`inline-flex items-center gap-1 hover:text-gray-800 ${
+                      column.align === "right" ? "flex-row-reverse" : ""
+                    }`}
+                  >
+                    {column.label} {sortIcon(column.key)}
+                  </button>
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {rows.length > 0 ? (
-              rows.map((row) => (
+            {sortedRows.length > 0 ? (
+              sortedRows.map((row) => (
                 <tr key={row.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3 font-medium text-gray-900">{row.label}</td>
                   <td className="px-4 py-3 text-right text-gray-700">{formatNumber(row.quantity)}</td>

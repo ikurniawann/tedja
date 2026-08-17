@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { updateSession } from "@/lib/auth/middleware";
 
 /**
  * Serves the member portal at its own hostname.
@@ -31,9 +32,9 @@ function isMemberHost(hostHeader: string): boolean {
   return hostname.split(".").includes("member");
 }
 
-export function proxy(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const host = request.headers.get("host") ?? "";
-  if (!isMemberHost(host)) return NextResponse.next();
+  if (!isMemberHost(host)) return updateSession(request);
 
   const { pathname } = request.nextUrl;
 

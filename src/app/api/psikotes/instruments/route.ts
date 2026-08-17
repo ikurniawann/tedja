@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { requireApiRole, ApiError } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { query } from "@/lib/db";
 import { checkRateLimit } from "@/lib/rate-limit";
 
@@ -16,7 +17,7 @@ const READ_ROLES = ["super_admin", "admin", "hrd", "hiring_manager"] as const;
 
 export async function GET() {
   try {
-    const user = await requireApiRole([...READ_ROLES]);
+    const user = await requireIamMenuPrefix(IAM.hrisRecruitment);
     if (!checkRateLimit(`psikotes_instruments_get_${user.id}`).allowed) {
       return NextResponse.json(
         { error: "Terlalu banyak permintaan, coba lagi sebentar lagi" },

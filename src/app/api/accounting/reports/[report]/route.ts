@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ApiError, requireApiRole } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { getApiUserScope } from "@/lib/api/scope";
 import { ACCOUNTING_API_ROLES } from "@/lib/accounting/coa-types";
 import { accountingCompanyId } from "@/lib/accounting/company-scope";
@@ -30,7 +31,7 @@ function yearStart() {
 
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
-    await requireApiRole([...ACCOUNTING_API_ROLES]);
+    await requireIamMenuPrefix(IAM.accounting);
     const { report } = await params;
     const scope = await getApiUserScope();
     const companyId = accountingCompanyId(scope);

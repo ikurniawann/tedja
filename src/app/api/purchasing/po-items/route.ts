@@ -1,17 +1,12 @@
 import { createPgClient } from "@/lib/pg/create-client";
 import { NextRequest, NextResponse } from "next/server";
-import { requireApiRole, ApiError, successResponse } from "@/lib/api/auth";
+import { ApiError, successResponse, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 
 // GET /api/purchasing/po-items?po_id=xxx
 export async function GET(request: NextRequest) {
   try {
-    await requireApiRole([
-      "warehouse_staff",
-      "warehouse_admin",
-      "purchasing_admin",
-      "purchasing_staff",
-      "admin",
-    ]);
+    await requireIamMenuPrefix(IAM.items);
 
     const db = createPgClient();
     const { searchParams } = new URL(request.url);

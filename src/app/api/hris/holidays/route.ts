@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireApiRole, requireApiUser, ApiError } from "@/lib/api/auth";
+import { requireApiUser, ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { query, queryOne } from "@/lib/db";
 import { HR_ROLES } from "@/lib/hris/workforce-auth";
 import type { HolidayType } from "@/lib/hris/holidays";
@@ -124,7 +125,7 @@ export function defaultDeductsLeave(type: HolidayType): boolean {
 
 export async function POST(req: NextRequest) {
   try {
-    const user = await requireApiRole([...WRITE_ROLES]);
+    const user = await requireIamMenuPrefix(IAM.hris);
     const body = (await req.json()) as HolidayBody;
 
     const invalid = validateHolidayBody(body);

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireApiRole, ApiError } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { getSettings, setSetting, SETTING_KEYS } from "@/lib/settings/app-settings";
 
 /**
@@ -20,7 +21,7 @@ type Field = keyof typeof FIELDS;
 
 export async function GET() {
   try {
-    await requireApiRole(["super_admin", "admin", "hrd"]);
+    await requireIamMenuPrefix(IAM.settingsBusiness);
     const settings = await getSettings(Object.values(FIELDS));
     const data = Object.fromEntries(
       (Object.keys(FIELDS) as Field[]).map((field) => [field, settings[FIELDS[field]]])
@@ -35,7 +36,7 @@ export async function GET() {
 
 export async function PUT(request: NextRequest) {
   try {
-    await requireApiRole(["super_admin", "admin"]);
+    await requireIamMenuPrefix(IAM.settingsBusiness);
     const body = (await request.json()) as Record<string, unknown>;
 
     for (const field of Object.keys(FIELDS) as Field[]) {

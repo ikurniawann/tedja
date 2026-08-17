@@ -1,7 +1,8 @@
 import { createServerPgClient } from "@/lib/pg/create-client";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { requireApiRole, ApiError, successResponse } from "@/lib/api/auth";
+import { ApiError, successResponse, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { formatRupiah } from "@/lib/purchasing/utils";
 import { PRODUCTION_API_ROLES } from "@/lib/manufacturing/constants";
 
@@ -33,7 +34,7 @@ function endOfDay(date: string) {
 
 export async function GET(request: NextRequest) {
   try {
-    await requireApiRole([...PRODUCTION_API_ROLES]);
+    await requireIamMenuPrefix(IAM.items);
     const db = await createServerPgClient();
 
     const { searchParams } = new URL(request.url);

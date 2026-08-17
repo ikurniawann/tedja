@@ -6,7 +6,8 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { ApiError, requireApiRole } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { query, withTransaction } from "@/lib/db";
 import { getWorkforceActor } from "@/lib/hris/workforce-auth";
 import { ANNOUNCEMENT_MANAGE_ROLES } from "@/lib/hris/announcements";
@@ -44,7 +45,7 @@ export function resolveVideo(videoUrl: string | null | undefined) {
 
 export async function GET(request: NextRequest) {
   try {
-    await requireApiRole([...ANNOUNCEMENT_MANAGE_ROLES]);
+    await requireIamMenuPrefix(IAM.hris);
     const { searchParams } = new URL(request.url);
     const status = searchParams.get("status");
 
@@ -77,7 +78,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    await requireApiRole([...ANNOUNCEMENT_MANAGE_ROLES]);
+    await requireIamMenuPrefix(IAM.hris);
     const actor = await getWorkforceActor();
     const body = upsertSchema.parse(await request.json());
 

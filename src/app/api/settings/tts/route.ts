@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireApiRole, ApiError } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { SETTING_KEYS, getSettings, maskSecret, setSetting } from "@/lib/settings/app-settings";
 import {
   TTS_DEFAULT_PROVIDER,
@@ -20,7 +21,7 @@ import {
 
 export async function GET() {
   try {
-    await requireApiRole(["super_admin", "admin"]);
+    await requireIamMenuPrefix(IAM.settingsIntegrations);
     const s = await getSettings([
       SETTING_KEYS.TTS_PROVIDER,
       SETTING_KEYS.TTS_VOICE,
@@ -62,7 +63,7 @@ export async function GET() {
 
 export async function PUT(request: NextRequest) {
   try {
-    await requireApiRole(["super_admin", "admin"]);
+    await requireIamMenuPrefix(IAM.settingsIntegrations);
     const body = (await request.json()) as Record<string, unknown>;
 
     if (body.provider !== undefined) {
