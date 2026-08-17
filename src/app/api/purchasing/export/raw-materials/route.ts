@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { requireApiRole, ApiError } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import {
   getApiUserScope,
   companyScopeOr,
@@ -31,15 +32,7 @@ type ExportRow = {
 
 export async function GET() {
   try {
-    await requireApiRole([
-      "admin",
-      "purchasing_admin",
-      "purchasing_staff",
-      "purchasing_manager",
-      "super_admin",
-      "warehouse_admin",
-      "warehouse_staff",
-    ]);
+    await requireIamMenuPrefix(IAM.items);
 
     const scope = await getApiUserScope();
     const params: unknown[] = [];

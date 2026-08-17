@@ -6,7 +6,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerPgClient } from "@/lib/pg/create-client";
-import { ApiError, requireApiRole } from '@/lib/api/auth';
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 
 // Salary is sensitive financial PII — restrict to HR/finance roles only.
 const SALARY_ROLES = ['super_admin', 'hrd', 'finance_staff'] as const;
@@ -17,7 +18,7 @@ const SALARY_ROLES = ['super_admin', 'hrd', 'finance_staff'] as const;
 
 export async function GET(request: NextRequest) {
   try {
-    await requireApiRole([...SALARY_ROLES]);
+    await requireIamMenuPrefix(IAM.hrisCompensation);
     const db = await createServerPgClient();
     const { searchParams } = new URL(request.url);
     const employeeId = searchParams.get('employee_id');
@@ -68,7 +69,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    await requireApiRole([...SALARY_ROLES]);
+    await requireIamMenuPrefix(IAM.hrisCompensation);
     const db = await createServerPgClient();
     const body = await request.json();
     const {

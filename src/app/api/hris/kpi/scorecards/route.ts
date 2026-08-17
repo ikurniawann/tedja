@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerPgClient } from "@/lib/pg/create-client";
 import { getWorkforceActor } from "@/lib/hris/workforce-auth";
-import { ApiError, requireApiRole } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { KPI_MANAGE_ROLES } from "@/lib/kpi/roles";
 import { buildWaLink } from "@/lib/recruitment/wa";
 
@@ -153,7 +154,7 @@ export async function GET(request: NextRequest) {
  */
 export async function PATCH(request: NextRequest) {
   try {
-    const actor = await requireApiRole([...KPI_MANAGE_ROLES]);
+    const actor = await requireIamMenuPrefix(IAM.hrisPerformance);
     const db = await createServerPgClient();
     const body = await request.json().catch(() => ({}));
     const { action, scorecard_id: scorecardId } = body;

@@ -4,7 +4,8 @@
 
 import { NextRequest } from "next/server";
 import { createServerPgClient } from "@/lib/pg/create-client";
-import { ApiError, requireApiRole } from "@/lib/api/auth";
+import { ApiError, requireIamAction, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 
 const APPROVE_ROLES = ["admin", "super_admin", "purchasing_admin", "purchasing_manager"] as const;
 
@@ -14,7 +15,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requireApiRole([...APPROVE_ROLES]);
+    await requireIamAction(IAM.itemsApproval, "update");
     const { id } = await params;
     const db = await createServerPgClient();
 

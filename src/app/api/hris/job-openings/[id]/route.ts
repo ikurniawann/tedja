@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole } from "@/lib/auth/require-user";
+import { requireIamGuard } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { createPgClient } from "@/lib/pg/create-client";
 
 function slugify(value: string) {
@@ -44,7 +45,8 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  await requireRole(["hrd"]);
+  const guard = await requireIamGuard(IAM.hrisRecruitment);
+  if (guard.error) return guard.error;
   const { id } = await params;
   const db = createPgClient();
   const payload = normalizePayload(await request.json() as Record<string, unknown>);
@@ -71,7 +73,8 @@ export async function DELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  await requireRole(["hrd"]);
+  const guard = await requireIamGuard(IAM.hrisRecruitment);
+  if (guard.error) return guard.error;
   const { id } = await params;
   const db = createPgClient();
 

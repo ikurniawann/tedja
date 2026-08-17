@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ApiError, requireApiRole } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { createServerPgClient } from "@/lib/pg/create-client";
 import { KPI_MANAGE_ROLES } from "@/lib/kpi/roles";
 
@@ -11,7 +12,7 @@ import { KPI_MANAGE_ROLES } from "@/lib/kpi/roles";
 
 export async function GET() {
   try {
-    await requireApiRole([...KPI_MANAGE_ROLES]);
+    await requireIamMenuPrefix(IAM.hrisPerformance);
     const db = await createServerPgClient();
     const { data, error } = await db
       .from("kpi_targets")
@@ -33,7 +34,7 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    const actor = await requireApiRole([...KPI_MANAGE_ROLES]);
+    const actor = await requireIamMenuPrefix(IAM.hrisPerformance);
     const db = await createServerPgClient();
     const body = await request.json().catch(() => ({}));
 
@@ -106,7 +107,7 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
-    await requireApiRole([...KPI_MANAGE_ROLES]);
+    await requireIamMenuPrefix(IAM.hrisPerformance);
     const db = await createServerPgClient();
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");

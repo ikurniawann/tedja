@@ -1,9 +1,7 @@
 import { createServerPgClient } from "@/lib/pg/create-client";
 import { NextResponse } from "next/server";
-import {
-  requireApiRole,
-  ApiError,
-} from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import {
   getApiUserScope,
   companyScopeOr,
@@ -41,13 +39,7 @@ type DeliveryRow = {
  */
 export async function GET(request: Request) {
   try {
-    await requireApiRole([
-      "admin",
-      "purchasing_admin",
-      "purchasing_staff",
-      "purchasing_manager",
-      "super_admin",
-    ]);
+    await requireIamMenuPrefix(IAM.items);
     const db = await createServerPgClient();
     const scope = await getApiUserScope();
     const { searchParams } = new URL(request.url);

@@ -8,7 +8,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createServerPgClient } from "@/lib/pg/create-client";
-import { ApiError, requireApiRole, validateBody } from '@/lib/api/auth';
+import { ApiError, validateBody, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import {
   PAYROLL_MANAGE_ROLES,
   PAYROLL_SETTINGS_WRITE_ROLES,
@@ -130,7 +131,7 @@ const putSchema = z.object({
 
 export async function GET(request: NextRequest) {
   try {
-    await requireApiRole([...PAYROLL_MANAGE_ROLES]);
+    await requireIamMenuPrefix(IAM.hrisCompensation);
     const db = await createServerPgClient();
     const { searchParams } = new URL(request.url);
     const taxYear = Number(searchParams.get('tax_year')) || new Date().getFullYear();
@@ -172,7 +173,7 @@ export async function GET(request: NextRequest) {
 
 export async function PUT(request: NextRequest) {
   try {
-    await requireApiRole([...PAYROLL_SETTINGS_WRITE_ROLES]);
+    await requireIamMenuPrefix(IAM.hrisCompensation);
     const db = await createServerPgClient();
     const body = await validateBody(request, putSchema);
 

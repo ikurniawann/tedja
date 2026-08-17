@@ -7,7 +7,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { requireApiRole, ApiError } from '@/lib/api/auth';
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { query, queryOne } from '@/lib/db';
 import { createPgClient } from '@/lib/pg/create-client';
 import {
@@ -64,7 +65,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const user = await requireApiRole(['super_admin', 'admin']);
+    const user = await requireIamMenuPrefix(IAM.shop);
     const { id } = await params;
     if (!z.string().uuid().safeParse(id).success) {
       return NextResponse.json({ success: false, error: 'Order tidak ditemukan' }, { status: 404 });

@@ -1,7 +1,8 @@
 // EPIC-039 Fase C — settings modul kurir (admin): provider, origin, kurir, markup.
 
 import { NextRequest, NextResponse } from 'next/server';
-import { requireApiRole, ApiError } from '@/lib/api/auth';
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { createPgClient } from '@/lib/pg/create-client';
 import {
   getOrCreateShippingSettings,
@@ -14,7 +15,7 @@ function getErrorMessage(error: unknown) {
 
 export async function GET() {
   try {
-    await requireApiRole(['super_admin', 'admin']);
+    await requireIamMenuPrefix(IAM.shop);
     const db = createPgClient();
     const settings = await getOrCreateShippingSettings(db);
     return NextResponse.json({ success: true, data: settings });
@@ -40,7 +41,7 @@ type SettingsPatchBody = {
 
 export async function PATCH(request: NextRequest) {
   try {
-    const user = await requireApiRole(['super_admin', 'admin']);
+    const user = await requireIamMenuPrefix(IAM.shop);
     const body = (await request.json()) as SettingsPatchBody;
     const payload: Record<string, string | number | null> = {};
 

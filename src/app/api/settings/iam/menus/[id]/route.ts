@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireApiRole, ApiError } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { mapMenuDetail } from "@/lib/iam/menu-mapper";
 import {
   deleteIamMenuInDb,
@@ -19,7 +20,7 @@ function apiErrorMessage(error: unknown) {
 
 export async function GET(_request: NextRequest, context: RouteContext) {
   try {
-    await requireApiRole(["super_admin", "admin"]);
+    await requireIamMenuPrefix(IAM.settingsMenus);
     const { id } = await context.params;
 
     const row = await getIamMenuFromDb(id);
@@ -37,7 +38,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
 
 export async function PUT(request: NextRequest, context: RouteContext) {
   try {
-    const user = await requireApiRole(["super_admin", "admin"]);
+    const user = await requireIamMenuPrefix(IAM.settingsMenus);
     const { id } = await context.params;
     const body = await request.json();
 
@@ -56,7 +57,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
 
 export async function DELETE(_request: NextRequest, context: RouteContext) {
   try {
-    const user = await requireApiRole(["super_admin", "admin"]);
+    const user = await requireIamMenuPrefix(IAM.settingsMenus);
     const { id } = await context.params;
 
     const deleted = await deleteIamMenuInDb(id, user.id);

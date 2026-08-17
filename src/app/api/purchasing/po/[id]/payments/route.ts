@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
-import { ApiError, requireApiRole } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 
 const PAYMENT_ROLES = ["admin", "super_admin", "purchasing_admin", "finance_staff"] as const;
 
@@ -16,7 +17,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requireApiRole([...PAYMENT_ROLES]);
+    await requireIamMenuPrefix(IAM.items);
     await params;
     return Response.json(
       {

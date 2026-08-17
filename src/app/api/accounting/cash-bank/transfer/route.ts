@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { ApiError, requireApiRole } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { getApiUserScope } from "@/lib/api/scope";
 import { ACCOUNTING_API_ROLES } from "@/lib/accounting/coa-types";
 import { requireAccountingCompanyId } from "@/lib/accounting/company-scope";
@@ -33,7 +34,7 @@ function mapBiz(msg: string): never {
 
 export async function GET(request: NextRequest) {
   try {
-    await requireApiRole([...ACCOUNTING_API_ROLES]);
+    await requireIamMenuPrefix(IAM.accounting);
     const scope = await getApiUserScope();
     const companyId = requireAccountingCompanyId(scope);
     const sp = request.nextUrl.searchParams;
@@ -62,7 +63,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const user = await requireApiRole([...ACCOUNTING_API_ROLES]);
+    const user = await requireIamMenuPrefix(IAM.accounting);
     const scope = await getApiUserScope();
     const companyId = requireAccountingCompanyId(scope);
     const body = createSchema.parse(await request.json());

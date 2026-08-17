@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createPgClient } from "@/lib/pg/create-client";
-import { requireApiRole, ApiError } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { PRODUCTION_API_ROLES } from "@/lib/manufacturing/constants";
 import { addInventoryFromProduction } from "@/lib/inventory";
 import { recordFinishedGoodsMovement } from "@/lib/inventory/finished-goods-movements";
@@ -183,7 +184,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requireApiRole([...PRODUCTION_API_ROLES]);
+    await requireIamMenuPrefix(IAM.items);
     const { id } = await params;
     const db = createPgClient();
 
@@ -296,7 +297,7 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const user = await requireApiRole([...PRODUCTION_API_ROLES]);
+    const user = await requireIamMenuPrefix(IAM.items);
     const { id } = await params;
     const db = createPgClient();
     const body = await request.json();

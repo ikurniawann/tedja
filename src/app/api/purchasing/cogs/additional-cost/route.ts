@@ -1,11 +1,8 @@
 import { createServerPgClient } from "@/lib/pg/create-client";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import {
-  requireApiRole,
-  ApiError,
-  successResponse,
-} from "@/lib/api/auth";
+import { ApiError, successResponse, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 
 // POST /api/purchasing/cogs/additional-cost
 // Input biaya tambahan (freight, handling, dll) per PO/GRN
@@ -32,7 +29,7 @@ const additionalCostSchema = z.object({
 
 export async function POST(request: NextRequest) {
   try {
-    const user = await requireApiRole(["admin", "purchasing_admin", "purchasing_staff", "purchasing_manager", "super_admin"]);
+    const user = await requireIamMenuPrefix(IAM.items);
     const db = await createServerPgClient();
 
     const body = await request.json();
@@ -210,7 +207,7 @@ export async function POST(request: NextRequest) {
 // GET /api/purchasing/cogs/additional-cost
 export async function GET(request: NextRequest) {
   try {
-    await requireApiRole(["admin", "purchasing_admin", "purchasing_staff", "purchasing_manager"]);
+    await requireIamMenuPrefix(IAM.items);
     const db = await createServerPgClient();
 
     const { searchParams } = new URL(request.url);

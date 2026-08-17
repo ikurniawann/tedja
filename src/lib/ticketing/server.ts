@@ -6,10 +6,11 @@ import {
   type UserScope,
 } from "@/lib/api/scope";
 import { query } from "@/lib/db";
+import { IAM } from "@/lib/iam/prefixes";
+import { userHasIamPrefix } from "@/lib/iam/has-menu";
 import type { UserRole } from "@/types";
 
-// Modul Ticketing (EPIC-023) — pengaturan master hanya super_admin;
-// operasional loket/gate/kasir keluar (Fase B) ikut role POS.
+/** @deprecated Gate memakai menu IAM. Konstanta tetap agar call site lama compile. */
 export const TICKETING_ADMIN_ROLES: UserRole[] = ["super_admin"];
 export const TICKETING_OPERATOR_ROLES: UserRole[] = [
   "super_admin",
@@ -19,11 +20,22 @@ export const TICKETING_OPERATOR_ROLES: UserRole[] = [
 
 export type TicketingUser = { id: string; role: UserRole };
 
+function ticketingMenusForAccess(access: readonly string[]): readonly string[] {
+  if (access.some((item) => item.includes(".") || item === "ticketing")) {
+    return access;
+  }
+  if (access.includes("pos")) return IAM.ticketingOperator;
+  if (access.includes("pos_supervisor")) return IAM.ticketingReports;
+  return IAM.ticketingAdmin;
+}
+
 /**
- * Guard role modul Ticketing. Mengembalikan NextResponse (401/403) bila
- * tidak berwenang, atau user yang lolos — pola requireSalesFunnelRole.
+ * Guard modul Ticketing via grant IAM (bukan daftar role).
+ * Argumen role lama di-map ke prefix menu agar 44 route tidak diubah satu-satu.
  */
-export async function requireTicketingRole(roles: UserRole[]): Promise<
+export async function requireTicketingRole(
+  access: readonly string[] = TICKETING_ADMIN_ROLES
+): Promise<
   { error: NextResponse; user: null } | { error: null; user: TicketingUser }
 > {
   const user = await getApiUser();
@@ -36,7 +48,8 @@ export async function requireTicketingRole(roles: UserRole[]): Promise<
       user: null,
     };
   }
-  if (!roles.includes(user.role)) {
+  const prefixes = ticketingMenusForAccess(access);
+  if (!(await userHasIamPrefix(user.id, user.role, prefixes))) {
     return {
       error: NextResponse.json(
         { success: false, error: "Insufficient permissions" },

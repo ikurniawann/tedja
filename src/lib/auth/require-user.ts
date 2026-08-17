@@ -7,7 +7,12 @@ import { loadUserWarehouses } from "@/lib/users/user-warehouses";
 import { resolveActiveStallFromCookies } from "@/lib/auth/active-stall";
 import { getStallAccess } from "@/lib/auth/stall-access";
 import { resolveRoleIds } from "@/lib/iam/get-user-menus";
-import { hasIamMenuCode, loadGrantedMenuCodes } from "@/lib/iam/has-menu";
+import {
+  hasAnyIamMenuPrefix,
+  hasIamMenuCode,
+  loadGrantedMenuCodes,
+  loadGrantedMenuCodesForUser,
+} from "@/lib/iam/has-menu";
 import { CENTRAL_CASHIER_MENU } from "@/lib/pos/central-cashier";
 
 const PROFILE_SELECT =
@@ -202,10 +207,26 @@ export const requireUser = cache(async (): Promise<AuthUser> => {
   return user;
 });
 
+/**
+ * @deprecated Pakai requireIamPage. Super_admin selalu lolos — bypass IAM.
+ */
 export async function requireRole(roles: UserRole[]): Promise<AuthUser> {
   const user = await requireUser();
   if (user.role !== "super_admin" && !roles.includes(user.role)) {
     redirect("/dashboard");
+  }
+  return user;
+}
+
+/** Gate halaman pakai grant IAM. Redirect bila prefix tidak di-grant. */
+export async function requireIamPage(
+  prefixes: readonly string[],
+  fallbackHref = "/dashboard"
+): Promise<AuthUser> {
+  const user = await requireUser();
+  const granted = await loadGrantedMenuCodesForUser(user.id, user.role);
+  if (!hasAnyIamMenuPrefix(granted, prefixes)) {
+    redirect(fallbackHref);
   }
   return user;
 }

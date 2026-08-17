@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireApiRole, ApiError } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import type { UserRole } from "@/types";
 import { getSetting, setSetting } from "@/lib/settings/app-settings";
 import {
@@ -17,7 +18,7 @@ const ROLES: UserRole[] = ["super_admin", "direksi"];
 
 export async function GET() {
   try {
-    await requireApiRole(ROLES);
+    await requireIamMenuPrefix(IAM.settingsBusiness);
     const config = parseSalesTarget(await getSetting(SALES_TARGET_SETTING_KEY));
     return NextResponse.json({ data: { config } });
   } catch (error) {
@@ -29,7 +30,7 @@ export async function GET() {
 
 export async function PUT(request: NextRequest) {
   try {
-    await requireApiRole(ROLES);
+    await requireIamMenuPrefix(IAM.settingsBusiness);
     const body = (await request.json()) as { harianRp?: unknown; bulananRp?: unknown };
 
     const sanitized = sanitizeSalesTargetInput(body);

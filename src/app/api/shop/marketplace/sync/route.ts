@@ -4,7 +4,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { requireApiRole, ApiError } from '@/lib/api/auth';
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { queryOne } from '@/lib/db';
 import {
   pullMarketplaceOrders,
@@ -18,7 +19,7 @@ export async function POST(request: NextRequest) {
     const cronToken = process.env.MARKETPLACE_SYNC_TOKEN;
     const headerToken = request.headers.get('x-sync-token');
     if (!(cronToken && headerToken === cronToken)) {
-      await requireApiRole(['super_admin', 'admin']);
+      await requireIamMenuPrefix(IAM.shop);
     }
 
     const body = (await request.json().catch(() => ({}))) as { account_id?: string };

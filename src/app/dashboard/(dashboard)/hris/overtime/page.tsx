@@ -1,8 +1,9 @@
-import { requireRole } from "@/lib/auth/require-user";
+import { requireIamPage } from "@/lib/auth/require-user";
+import { IAM } from "@/lib/iam/prefixes";
 import { OvertimePage } from "@/features/hris/overtime";
 
 // HRIS → Kepegawaian → Lembur: approval pengajuan + penugasan perusahaan.
 export default async function HrisOvertimePage() {
-  await requireRole(["super_admin", "admin", "hrd"]);
+  await requireIamPage(IAM.hrisKepegawaian);
   return <OvertimePage />;
 }

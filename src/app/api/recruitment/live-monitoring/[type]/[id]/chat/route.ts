@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireApiRole, ApiError } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { queryOne } from "@/lib/db";
 import {
   fetchChatMessages,
@@ -32,7 +33,7 @@ export async function GET(
   { params }: { params: Promise<{ type: string; id: string }> }
 ) {
   try {
-    await requireApiRole([...MONITOR_ROLES]);
+    await requireIamMenuPrefix(IAM.hrisRecruitment);
     const { type, id } = await params;
     const session = await resolveSession(type, id);
     if (!session) return NextResponse.json({ error: "Sesi tidak ditemukan" }, { status: 404 });
@@ -54,7 +55,7 @@ export async function POST(
   { params }: { params: Promise<{ type: string; id: string }> }
 ) {
   try {
-    const user = await requireApiRole([...MONITOR_ROLES]);
+    const user = await requireIamMenuPrefix(IAM.hrisRecruitment);
     const { type, id } = await params;
     const session = await resolveSession(type, id);
     if (!session) return NextResponse.json({ error: "Sesi tidak ditemukan" }, { status: 404 });

@@ -68,15 +68,17 @@ export default function LoginPage() {
     setLoading(true);
     setError("");
 
-    const { data: authData, error } = await db.auth.signInWithPassword({
-      email,
-      password,
-    });
+    try {
+      const { data: authData, error } = await db.auth.signInWithPassword({
+        email,
+        password,
+      });
 
-    if (error) {
-      setError(error.message);
-      setLoading(false);
-    } else {
+      if (error || !authData.user?.id) {
+        setError(error?.message || "Login failed");
+        return;
+      }
+
       const { data: profile } = await db
         .from("users")
         .select("role")
@@ -95,6 +97,10 @@ export default function LoginPage() {
       }
       setTransitioning(true);
       window.setTimeout(() => router.replace(target), 450);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Login failed");
+    } finally {
+      setLoading(false);
     }
   };
 

@@ -137,20 +137,40 @@ function browserAuth() {
       };
     },
     async signInWithPassword(credentials: { email: string; password: string }) {
-      const res = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(credentials),
-      });
-      const json = await res.json();
-      if (!res.ok) return { data: { user: null, session: null }, error: { message: json.error || "Login failed" } };
-      return {
-        data: {
-          user: json.data.user,
-          session: json.data.session,
-        },
-        error: null,
-      };
+      try {
+        const res = await fetch("/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(credentials),
+        });
+        const text = await res.text();
+        let json: { error?: string; message?: string; data?: { user?: unknown; session?: unknown } } = {};
+        if (text) {
+          try {
+            json = JSON.parse(text) as typeof json;
+          } catch {
+            json = { error: text.slice(0, 180) || "Login failed" };
+          }
+        }
+        if (!res.ok) {
+          return {
+            data: { user: null, session: null },
+            error: { message: json.error || json.message || `Login failed (${res.status})` },
+          };
+        }
+        return {
+          data: {
+            user: json.data?.user,
+            session: json.data?.session,
+          },
+          error: null,
+        };
+      } catch (err) {
+        return {
+          data: { user: null, session: null },
+          error: { message: err instanceof Error ? err.message : "Login failed" },
+        };
+      }
     },
     async signOut() {
       await fetch("/api/auth/logout", { method: "POST" });

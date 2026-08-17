@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireApiRole, ApiError } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { query } from "@/lib/db";
 
 /**
@@ -18,7 +19,7 @@ const MONITOR_ROLES = ["super_admin", "admin", "hrd"] as const;
 
 export async function GET(_req: NextRequest) {
   try {
-    await requireApiRole([...MONITOR_ROLES]);
+    await requireIamMenuPrefix(IAM.hrisRecruitment);
 
     const rows = await query(
       `SELECT 'psikotes' AS session_type, s.id AS session_id, s.started_at,

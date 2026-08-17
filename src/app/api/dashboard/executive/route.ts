@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { requireApiRole, ApiError } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import type { UserRole } from "@/types";
 import {
   EXECUTIVE_DASHBOARD_ROLES,
@@ -24,7 +25,7 @@ let cached: { at: number; data: ExecutiveDashboard; target: SalesTargetConfig } 
 
 export async function GET() {
   try {
-    await requireApiRole([...EXECUTIVE_DASHBOARD_ROLES] as UserRole[]);
+    await requireIamMenuPrefix(IAM.dashboard);
 
     if (cached && Date.now() - cached.at < CACHE_TTL_MS) {
       return NextResponse.json({ data: cached.data, target: cached.target, cached: true });

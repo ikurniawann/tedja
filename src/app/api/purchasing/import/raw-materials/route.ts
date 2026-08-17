@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerPgClient } from "@/lib/pg/create-client";
 import { queryOne } from "@/lib/db";
-import { requireApiRole, ApiError } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import {
   getApiUserScope,
   importBusinessIds,
@@ -231,13 +232,7 @@ async function upsertUnitConversions(
 
 export async function POST(request: NextRequest) {
   try {
-    const user = await requireApiRole([
-      "admin",
-      "purchasing_admin",
-      "purchasing_staff",
-      "purchasing_manager",
-      "super_admin",
-    ]);
+    const user = await requireIamMenuPrefix(IAM.items);
 
     const scope = await getApiUserScope();
     const { companyId, branchId } = importBusinessIds(scope);

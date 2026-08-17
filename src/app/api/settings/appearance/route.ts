@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ApiError, requireApiRole, requireApiUser } from "@/lib/api/auth";
+import { ApiError, getApiUser, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { getApiUserScope } from "@/lib/api/scope";
 import {
   canAccessAppearanceCompany,
@@ -10,11 +11,19 @@ import {
 } from "@/lib/theme/company-appearance";
 import { parseAppearanceTokens } from "@/lib/theme/appearance-tokens";
 
-const WRITE_ROLES = ["super_admin", "admin"] as const;
-
 export async function GET(request: NextRequest) {
   try {
-    await requireApiUser();
+    const user = await getApiUser();
+    if (!user) {
+      return NextResponse.json({
+        data: {
+          company_id: null,
+          company_name: null,
+          companies: [],
+          theme: parseAppearanceTokens(null),
+        },
+      });
+    }
     const scope = await getApiUserScope();
     if (!scope) throw ApiError.unauthorized("Authentication required");
 
@@ -59,7 +68,7 @@ export async function GET(request: NextRequest) {
 
 export async function PUT(request: NextRequest) {
   try {
-    const user = await requireApiRole([...WRITE_ROLES]);
+    const user = await requireIamMenuPrefix(IAM.settingsAppearance);
     const scope = await getApiUserScope();
     if (!scope) throw ApiError.unauthorized("Authentication required");
 

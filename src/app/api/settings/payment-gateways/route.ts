@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { ApiError, requireApiRole } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { createServerPgClient } from "@/lib/pg/create-client";
 import {
   shouldKeepExistingSecret,
@@ -14,7 +15,7 @@ function apiErrorMessage(error: unknown) {
 
 export async function GET() {
   try {
-    await requireApiRole(["super_admin", "admin"]);
+    await requireIamMenuPrefix(IAM.settingsPaymentGateways);
     const db = await createServerPgClient();
     const { data, error } = await db
       .from("payment_gateways", "configuration")
@@ -45,7 +46,7 @@ const updateSchema = z.object({
 
 export async function PUT(request: NextRequest) {
   try {
-    const user = await requireApiRole(["super_admin", "admin"]);
+    const user = await requireIamMenuPrefix(IAM.settingsPaymentGateways);
     const body = updateSchema.parse(await request.json());
     const db = await createServerPgClient();
 

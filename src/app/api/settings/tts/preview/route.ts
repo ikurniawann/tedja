@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireApiRole, ApiError } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { TTS_PREVIEW_TEXT, isTtsProviderId } from "@/lib/tts/catalog";
 import { TtsNotConfiguredError, synthesizeSpeech } from "@/lib/tts/synthesize";
 
@@ -16,7 +17,7 @@ const MAX_PREVIEW_CHARS = 300;
 
 export async function POST(request: NextRequest) {
   try {
-    await requireApiRole(["super_admin", "admin"]);
+    await requireIamMenuPrefix(IAM.settingsIntegrations);
 
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
 

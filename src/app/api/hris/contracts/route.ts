@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireApiRole, ApiError } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { query, queryOne } from "@/lib/db";
 import {
   CONTRACT_SORT_COLUMNS,
@@ -17,7 +18,7 @@ const ROLES = ["super_admin", "admin", "hrd"] as const;
 
 export async function GET(req: NextRequest) {
   try {
-    await requireApiRole([...ROLES]);
+    await requireIamMenuPrefix(IAM.hris);
     const params = parseContractListParams(req.nextUrl.searchParams);
 
     const where: string[] = [];

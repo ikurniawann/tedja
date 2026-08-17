@@ -6,12 +6,15 @@ import { randomInt } from "crypto";
 import { NextResponse } from "next/server";
 import { getApiUser } from "@/lib/api/auth";
 import { getApiUserScope } from "@/lib/api/scope";
+import { IAM } from "@/lib/iam/prefixes";
+import { userHasIamPrefix } from "@/lib/iam/has-menu";
 import {
   resolveTicketingVenue,
   venueNotConfiguredResponse,
 } from "@/lib/ticketing/server";
 import type { UserRole } from "@/types";
 
+/** @deprecated Gate memakai menu IAM promo / crm.promo. */
 export const PROMO_MANAGER_ROLES: UserRole[] = ["super_admin", "marketing"];
 
 export type PromoContext = {
@@ -20,12 +23,8 @@ export type PromoContext = {
   branchId: string;
 };
 
-/**
- * Guard + resolusi venue utk route promo (pola requireTicketingContext —
- * resolver venue di-reuse karena promo ber-scope venue yang sama).
- */
 export async function requirePromoContext(
-  roles: UserRole[] = PROMO_MANAGER_ROLES
+  _roles: UserRole[] = PROMO_MANAGER_ROLES
 ): Promise<
   { error: NextResponse; ctx: null } | { error: null; ctx: PromoContext }
 > {
@@ -39,7 +38,7 @@ export async function requirePromoContext(
       ctx: null,
     };
   }
-  if (!roles.includes(user.role)) {
+  if (!(await userHasIamPrefix(user.id, user.role, IAM.promo))) {
     return {
       error: NextResponse.json(
         { success: false, error: "Insufficient permissions" },

@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { z } from "zod";
-import { ApiError, requireApiRole } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import {
   getApiUserScope,
   validateWarehouseForReceivingScope,
@@ -15,7 +16,7 @@ const querySchema = z.object({
 
 export async function GET(request: NextRequest) {
   try {
-    await requireApiRole([...OPNAME_ROLES]);
+    await requireIamMenuPrefix(IAM.itemsInventory);
     const scope = await getApiUserScope();
     const params = querySchema.parse(
       Object.fromEntries(new URL(request.url).searchParams)

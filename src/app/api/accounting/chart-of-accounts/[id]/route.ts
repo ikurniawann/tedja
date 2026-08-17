@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { ApiError, requireApiRole } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { createServerPgClient } from "@/lib/pg/create-client";
 import {
   getApiUserScope,
@@ -77,7 +78,7 @@ function mapRow(row: Record<string, unknown>) {
 
 export async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
-    const user = await requireApiRole([...ACCOUNTING_API_ROLES]);
+    const user = await requireIamMenuPrefix(IAM.accounting);
     const { id } = await params;
     const body = payloadSchema.parse(await request.json());
     const db = await createServerPgClient();
@@ -163,7 +164,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
 export async function DELETE(_request: NextRequest, { params }: RouteParams) {
   try {
-    const user = await requireApiRole([...ACCOUNTING_API_ROLES]);
+    const user = await requireIamMenuPrefix(IAM.accounting);
     const { id } = await params;
     const db = await createServerPgClient();
     const scope = await getApiUserScope();

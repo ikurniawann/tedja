@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ApiError, requireApiRole } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { createPgClient } from "@/lib/pg/create-client";
 import { resetUserEmployeePassword } from "@/lib/users/user-service";
 
@@ -9,7 +10,7 @@ interface RouteParams {
 
 export async function POST(_request: NextRequest, { params }: RouteParams) {
   try {
-    await requireApiRole(["super_admin", "admin"]);
+    await requireIamMenuPrefix(IAM.settingsUsers);
     const { id } = await params;
     const db = createPgClient();
 

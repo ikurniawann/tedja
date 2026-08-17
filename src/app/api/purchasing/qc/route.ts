@@ -1,13 +1,8 @@
 import { createServerPgClient } from "@/lib/pg/create-client";
 import { NextRequest } from "next/server";
 import { z } from "zod";
-import {
-  requireApiRole,
-  ApiError,
-  successResponse,
-  createdResponse,
-  paginatedResponse,
-} from "@/lib/api/auth";
+import { ApiError, successResponse, createdResponse, paginatedResponse, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { submitGrnQcInspection } from "@/lib/purchasing/grn-qc";
 import { resolveOverallQcStatus } from "@/lib/purchasing/grn-qc-utils";
 import {
@@ -88,14 +83,7 @@ function mapInspectionRow(row: Record<string, unknown>) {
 // GET /api/purchasing/qc — list QC inspections (grn_qc_inspections)
 export async function GET(request: NextRequest) {
   try {
-    await requireApiRole([
-      "admin",
-      "purchasing_admin",
-      "purchasing_staff",
-      "warehouse_staff",
-      "purchasing_manager",
-      "super_admin",
-    ]);
+    await requireIamMenuPrefix(IAM.items);
     const db = await createServerPgClient();
 
     const url = new URL(request.url);
@@ -158,14 +146,7 @@ export async function GET(request: NextRequest) {
 // POST /api/purchasing/qc — submit QC via grn_qc_inspections
 export async function POST(request: NextRequest) {
   try {
-    const user = await requireApiRole([
-      "admin",
-      "purchasing_admin",
-      "purchasing_staff",
-      "warehouse_staff",
-      "purchasing_manager",
-      "super_admin",
-    ]);
+    const user = await requireIamMenuPrefix(IAM.items);
     const db = await createServerPgClient();
 
     const body = await request.json();

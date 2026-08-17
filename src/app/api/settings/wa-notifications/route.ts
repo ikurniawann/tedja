@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireApiRole, ApiError } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import type { UserRole } from "@/types";
 import { SETTING_KEYS, getSetting, setSetting } from "@/lib/settings/app-settings";
 import {
@@ -22,7 +23,7 @@ const ALLOWED_ROLES: UserRole[] = ["super_admin", "direksi"];
 
 export async function GET() {
   try {
-    await requireApiRole(ALLOWED_ROLES);
+    await requireIamMenuPrefix(IAM.settingsIntegrations);
     const config = parseWaNotifConfig(await getSetting(WA_NOTIF_SETTING_KEY));
     // Penerima laporan tutup kasir — daftar terpisah dari recipients notifikasi
     // owner: audiensnya beda (supervisor/finance), tapi diatur di halaman sama.
@@ -46,7 +47,7 @@ export async function GET() {
 
 export async function PUT(request: NextRequest) {
   try {
-    await requireApiRole(ALLOWED_ROLES);
+    await requireIamMenuPrefix(IAM.settingsIntegrations);
     const body = (await request.json()) as Partial<WaNotifConfig>;
 
     // Mulai dari yang tersimpan supaya PUT parsial tidak menghapus field lain.

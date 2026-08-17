@@ -4,7 +4,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { requireApiRole, ApiError } from '@/lib/api/auth';
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { query, queryOne } from '@/lib/db';
 import {
   releaseOrderReservations,
@@ -22,7 +23,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requireApiRole(['super_admin', 'admin']);
+    await requireIamMenuPrefix(IAM.shop);
     const { id } = await params;
     if (!z.string().uuid().safeParse(id).success) {
       return NextResponse.json({ success: false, error: 'Order tidak ditemukan' }, { status: 404 });
@@ -61,7 +62,7 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requireApiRole(['super_admin', 'admin']);
+    await requireIamMenuPrefix(IAM.shop);
     const { id } = await params;
     if (!z.string().uuid().safeParse(id).success) {
       return NextResponse.json({ success: false, error: 'Order tidak ditemukan' }, { status: 404 });

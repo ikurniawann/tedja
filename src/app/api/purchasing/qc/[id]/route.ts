@@ -1,6 +1,7 @@
 import { createServerPgClient } from "@/lib/pg/create-client";
 import { NextRequest } from "next/server";
-import { requireApiRole, ApiError, successResponse } from "@/lib/api/auth";
+import { ApiError, successResponse, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 
 function mapQcStatus(
   status: string | null | undefined
@@ -16,14 +17,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requireApiRole([
-      "admin",
-      "purchasing_admin",
-      "purchasing_staff",
-      "warehouse_staff",
-      "purchasing_manager",
-      "super_admin",
-    ]);
+    await requireIamMenuPrefix(IAM.items);
     const db = await createServerPgClient();
     const { id } = await params;
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireApiRole, ApiError } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import {
   DEEPSEEK_DEFAULTS,
   OPENAI_DEFAULTS,
@@ -31,7 +32,7 @@ const PROVIDER_KEYS = {
 
 export async function GET() {
   try {
-    await requireApiRole(["super_admin", "admin"]);
+    await requireIamMenuPrefix(IAM.settingsIntegrations);
     const s = await getSettings([
       SETTING_KEYS.DEEPSEEK_API_KEY,
       SETTING_KEYS.DEEPSEEK_MODEL,
@@ -92,7 +93,7 @@ async function applyProviderConfig(
 
 export async function PUT(request: NextRequest) {
   try {
-    await requireApiRole(["super_admin", "admin"]);
+    await requireIamMenuPrefix(IAM.settingsIntegrations);
     const body = await request.json();
     const { api_key, model, base_url, openai } = body ?? {};
 

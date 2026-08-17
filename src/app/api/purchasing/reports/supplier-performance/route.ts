@@ -1,7 +1,8 @@
 import { createServerPgClient } from "@/lib/pg/create-client";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { requireApiRole, ApiError, successResponse } from "@/lib/api/auth";
+import { ApiError, successResponse, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { formatRupiah } from "@/lib/purchasing/utils";
 
 // GET /api/purchasing/reports/supplier-performance
@@ -35,13 +36,7 @@ function qualityFromReject(rejectRate: number) {
 
 export async function GET(request: NextRequest) {
   try {
-    await requireApiRole([
-      "admin",
-      "super_admin",
-      "purchasing_admin",
-      "purchasing_manager",
-      "purchasing_staff",
-    ]);
+    await requireIamMenuPrefix(IAM.items);
     const db = await createServerPgClient();
 
     const { searchParams } = new URL(request.url);

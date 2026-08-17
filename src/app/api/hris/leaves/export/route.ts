@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerPgClient } from "@/lib/pg/create-client";
-import { ApiError, requireApiRole } from '@/lib/api/auth';
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 
 // Bulk leave export is HR-only.
 const HR_EXPORT_ROLES = ['super_admin', 'hrd'] as const;
@@ -11,7 +12,7 @@ const HR_EXPORT_ROLES = ['super_admin', 'hrd'] as const;
  */
 export async function GET(request: NextRequest) {
   try {
-    await requireApiRole([...HR_EXPORT_ROLES]);
+    await requireIamMenuPrefix(IAM.hris);
     const db = await createServerPgClient();
     
     // Get query params

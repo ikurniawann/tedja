@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
-import { ApiError, requireApiRole } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { withTransaction } from "@/lib/db";
 import { insertFinishedGoodsMovementSql } from "@/lib/inventory/finished-goods-movements";
 import { fetchProductStockOpnameDetail } from "@/lib/inventory/product-stock-opname";
@@ -15,7 +16,7 @@ type RouteContext = { params: Promise<{ id: string }> };
 
 export async function POST(_request: NextRequest, context: RouteContext) {
   try {
-    const user = await requireApiRole([...OPNAME_ROLES]);
+    const user = await requireIamMenuPrefix(IAM.itemsInventory);
     const { id } = await context.params;
     const detail = await fetchProductStockOpnameDetail(id);
 

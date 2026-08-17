@@ -2,12 +2,8 @@ import { createServerPgClient } from "@/lib/pg/create-client";
 import { createPgClient } from "@/lib/pg/create-client";
 import { NextRequest } from "next/server";
 import { z } from "zod";
-import {
-  requireApiRole,
-  ApiError,
-  createdResponse,
-  paginatedResponse,
-} from "@/lib/api/auth";
+import { ApiError, createdResponse, paginatedResponse, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import {
   generateGrnNumber,
   validateDeliveryCanReceive,
@@ -172,14 +168,7 @@ function normalizeQcOnItem<T extends {
 
 export async function GET(request: NextRequest) {
   try {
-    const user = await requireApiRole([
-      "warehouse_staff",
-      "warehouse_admin",
-      "purchasing_admin",
-      "purchasing_staff",
-      "qc_staff",
-      "admin",
-    ]);
+    const user = await requireIamMenuPrefix(IAM.items);
     const db = await createServerPgClient();
 
     const { searchParams } = new URL(request.url);
@@ -299,14 +288,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const user = await requireApiRole([
-      "warehouse_staff",
-      "warehouse_admin",
-      "purchasing_admin",
-      "purchasing_staff",
-      "admin",
-      "super_admin",
-    ]);
+    const user = await requireIamMenuPrefix(IAM.items);
     const db = await createServerPgClient();
     // Use admin client to bypass RLS for all internal PO/delivery reads
     const adminDb = createPgClient();

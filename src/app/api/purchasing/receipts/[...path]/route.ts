@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ApiError, requireApiRole } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { readPrivateFile } from "@/lib/storage-private";
 
 /**
@@ -14,7 +15,7 @@ export async function GET(
   { params }: { params: Promise<{ path: string[] }> }
 ) {
   try {
-    await requireApiRole([...VIEW_ROLES]);
+    await requireIamMenuPrefix(IAM.items);
     const { path: segments } = await params;
 
     const decoded = segments.map(decodeURIComponent);

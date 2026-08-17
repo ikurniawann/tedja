@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerPgClient } from "@/lib/pg/create-client";
-import { ApiError, requireApiRole } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { approvePurchaseReturn } from "@/lib/purchasing/purchase-return-service";
 
 // PATCH /api/purchasing/returns/[id]/approve
@@ -9,12 +10,7 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const approver = await requireApiRole([
-      "admin",
-      "super_admin",
-      "purchasing_admin",
-      "purchasing_manager",
-    ]);
+    const approver = await requireIamMenuPrefix(IAM.items);
 
     const db = await createServerPgClient();
     const returnId = (await params).id;

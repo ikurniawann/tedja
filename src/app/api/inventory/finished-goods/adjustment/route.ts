@@ -1,7 +1,8 @@
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { createServerPgClient } from "@/lib/pg/create-client";
-import { ApiError, requireApiRole } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { getApiUserScope } from "@/lib/api/scope";
 import { adjustProductStock } from "@/lib/inventory/product-adjustment";
 
@@ -15,7 +16,7 @@ const adjustmentSchema = z.object({
 
 export async function POST(request: NextRequest) {
   try {
-    const user = await requireApiRole([...ADJUST_ROLES]);
+    const user = await requireIamMenuPrefix(IAM.itemsInventory);
     const scope = await getApiUserScope();
     const body = await request.json();
     const validated = adjustmentSchema.parse(body);

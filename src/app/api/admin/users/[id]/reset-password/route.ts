@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createPgClient } from "@/lib/pg/create-client";
-import { ApiError, requireApiRole } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 
 export async function POST(
   request: Request,
@@ -8,7 +9,7 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
-    const actor = await requireApiRole(["super_admin"]);
+    const actor = await requireIamMenuPrefix(IAM.settingsUsers);
     const db = createPgClient();
 
     const { data: authUser, error: authError } = await db.auth.admin.getUserById(id);

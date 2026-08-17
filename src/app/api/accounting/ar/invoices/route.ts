@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ApiError, requireApiRole } from "@/lib/api/auth";
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { getApiUserScope } from "@/lib/api/scope";
 import { ACCOUNTING_API_ROLES } from "@/lib/accounting/coa-types";
 import { requireAccountingCompanyId } from "@/lib/accounting/company-scope";
@@ -14,7 +15,7 @@ function errMsg(error: unknown) {
 
 export async function GET(request: NextRequest) {
   try {
-    const user = await requireApiRole([...ACCOUNTING_API_ROLES]);
+    const user = await requireIamMenuPrefix(IAM.accounting);
     const scope = await getApiUserScope();
     const companyId = requireAccountingCompanyId(scope);
     // Lazy sync terkirim B2B → AR

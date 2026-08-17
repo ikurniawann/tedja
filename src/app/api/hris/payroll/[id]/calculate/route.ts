@@ -9,7 +9,8 @@ import { calculatePayroll } from '@/lib/payroll/calculator';
 import { loadEmployeePayrollInput } from '@/lib/payroll/inputs';
 import { loadPayrollConfig } from '@/lib/payroll/config';
 import { loadHolidayIndex } from '@/lib/hris/holidays-db';
-import { ApiError, requireApiRole } from '@/lib/api/auth';
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { PAYROLL_MANAGE_ROLES } from '@/lib/payroll/roles';
 import { canCalculateRun } from '@/lib/payroll/run-status';
 
@@ -23,7 +24,7 @@ interface RouteParams {
 
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
-    await requireApiRole([...PAYROLL_MANAGE_ROLES]);
+    await requireIamMenuPrefix(IAM.hrisCompensation);
     const db = await createServerPgClient();
     const { id } = await params;
 

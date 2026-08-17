@@ -8,7 +8,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerPgClient } from "@/lib/pg/create-client";
 import { withTransaction } from "@/lib/db";
-import { ApiError, requireApiRole } from '@/lib/api/auth';
+import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { IAM } from "@/lib/iam/prefixes";
 import { PAYROLL_MANAGE_ROLES } from '@/lib/payroll/roles';
 import {
   allocateLoanPayment,
@@ -30,7 +31,7 @@ interface RouteParams {
 
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
-    await requireApiRole([...PAYROLL_MANAGE_ROLES]);
+    await requireIamMenuPrefix(IAM.hrisCompensation);
     const db = await createServerPgClient();
     const { id } = await params;
 
@@ -105,7 +106,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
 export async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
-    const apiUser = await requireApiRole([...PAYROLL_MANAGE_ROLES]);
+    const apiUser = await requireIamMenuPrefix(IAM.hrisCompensation);
     const db = await createServerPgClient();
     const { id } = await params;
     const body = await request.json();
@@ -365,7 +366,7 @@ async function markRunPaidAndSettleLoans(
 
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
-    await requireApiRole([...PAYROLL_MANAGE_ROLES]);
+    await requireIamMenuPrefix(IAM.hrisCompensation);
     const db = await createServerPgClient();
     const { id } = await params;
 
