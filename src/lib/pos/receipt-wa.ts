@@ -61,6 +61,11 @@ export interface OrderReceiptInput {
   change: number;
   discountAmount?: number;
   customerName?: string | null;
+  /**
+   * EPIC-040 — baris penutup dari pos_receipt_settings. Absen/kosong =
+   * fallback teks lama "Terima kasih atas kunjungan Anda 🙏".
+   */
+  footerLines?: string[];
 }
 
 export function buildOrderReceiptMessage(input: OrderReceiptInput): string {
@@ -84,7 +89,11 @@ export function buildOrderReceiptMessage(input: OrderReceiptInput): string {
   baris.push(`Pembayaran: ${metodeBayar(input.paymentMethod)}`);
   if (input.change > 0) baris.push(`Kembalian: ${rupiah(input.change)}`);
 
-  baris.push("", "Terima kasih atas kunjungan Anda 🙏");
+  const footer =
+    input.footerLines && input.footerLines.length > 0
+      ? input.footerLines
+      : ["Terima kasih atas kunjungan Anda 🙏"];
+  baris.push("", ...footer);
   return baris.join("\n");
 }
 

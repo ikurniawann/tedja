@@ -1,6 +1,6 @@
 # EPIC-040: Konfigurasi Struk POS — Header & Footer Bisa Dikonfigurasi
 
-status: on-progress
+status: ready-for-qa
 environment: dev
 phase: 1
 priority: P1
@@ -40,41 +40,41 @@ Pola yang sudah mapan untuk ditiru:
 
 ### 1. Backend: tabel `pos.pos_receipt_settings` + API GET/PUT
 
-- [ ] Migrasi delta: tabel `pos.pos_receipt_settings` — kolom minimal:
+- [x] Migrasi delta: tabel `pos.pos_receipt_settings` — kolom minimal:
       `header_lines jsonb` (array string: nama usaha, alamat, telepon/IG),
       `footer_lines jsonb` (array string: ucapan penutup, WiFi, promo),
       `show_stall_name boolean`, `branch_id uuid null`, `warehouse_id uuid null`,
       `is_active`, timestamps. Baris global = branch/warehouse NULL;
       resolusi fallback: warehouse → branch → global (pola billing-settings).
-- [ ] `src/lib/pos/receipt-settings.ts`: loader + `normalizeReceiptSettings()`
+- [x] `src/lib/pos/receipt-settings.ts`: loader + `normalizeReceiptSettings()`
       + `DEFAULT_RECEIPT_SETTINGS` (default = perilaku sekarang: tanpa header
       identitas, footer WA "Terima kasih atas kunjungan Anda 🙏") + unit test.
-- [ ] Route `GET/PUT /api/settings/receipt` — guard menu `settings.business`.
+- [x] Route `GET/PUT /api/settings/receipt` — guard menu `settings.business`.
       Sanitasi: batasi jumlah baris (mis. ≤ 6 per bagian) dan panjang per baris
       (lebar kertas 80mm ≈ 42 kolom; potong/validasi di server).
 
 ### 2. UI: bagian "Konfigurasi Struk" di Settings → Business
 
-- [ ] Section baru di `/dashboard/settings/business`: editor baris header dan
+- [x] Section baru di `/dashboard/settings/business`: editor baris header dan
       footer (tambah/hapus/urut), pilih scope (global / per stall),
       toggle tampilkan nama stall.
-- [ ] Preview struk live di samping form (pakai renderer yang sama dengan
+- [x] Preview struk live di samping form (pakai renderer yang sama dengan
       cetak asli, bukan mock terpisah — supaya preview = hasil print).
-- [ ] Grant permission: menu `settings.business` sudah ada; pastikan role
+- [x] Grant permission: menu `settings.business` sudah ada; pastikan role
       admin mendapat akses section ini tanpa migrasi menu baru.
 
 ### 3. Integrasi cetak: ketiga jalur membaca konfigurasi
 
-- [ ] `ReceiptPayload` ditambah `receiptHeader?: string[]` dan
+- [x] `ReceiptPayload` ditambah `receiptHeader?: string[]` dan
       `receiptFooter?: string[]`; pemanggil (cashier-page, restaurant,
       preview-bill, topup) memuat settings via query TanStack + meneruskannya.
-- [ ] HTML print (`printThermalReceipt`): header identitas dicetak di atas
+- [x] HTML print (`printThermalReceipt`): header identitas dicetak di atas
       `--- {COPY} ---`, footer di bawah total — hanya bila dikonfigurasi;
       payload tanpa konfigurasi mencetak persis seperti sekarang.
-- [ ] ESC/POS (`buildReceiptLines`): baris header/footer masuk output worker
+- [x] ESC/POS (`buildReceiptLines`): baris header/footer masuk output worker
       (center via `formatReceiptRow`); update `PrintReceipt.test.ts` dan
       `print-receipt-layout.test.ts`.
-- [ ] Struk WhatsApp (`receipt-wa.ts`): footer hardcode diganti baca
+- [x] Struk WhatsApp (`receipt-wa.ts`): footer hardcode diganti baca
       konfigurasi, fallback ke teks sekarang.
 
 ## Acceptance Criteria

@@ -7,6 +7,7 @@ import {
   printBytesViaRawBt,
 } from "@/lib/pos/rawbt-print";
 import { encodeEscPosLines, formatReceiptRow, RECEIPT_DIVIDER } from "@/lib/pos/thermal-escpos";
+import { resolveReceiptSettings } from "@/lib/pos/receipt-settings";
 import { printBytesToPairedThermal } from "@/lib/pos/thermal-serial";
 import {
   buildReceiptItemLines,
@@ -53,12 +54,34 @@ export interface ReceiptPayload {
    * Tidak pernah dicetak di copy dapur/bar — kode = uang.
    */
   giftCards?: Array<{ code: string; initial_value: number; expires_at: string | null }>;
+  /**
+   * EPIC-040 — identitas usaha dari pos_receipt_settings (nama, alamat,
+   * kontak) dan penutup (terima kasih, WiFi, promo). Hanya customer copy &
+   * preview bill; copy dapur/bar sengaja tidak memuatnya (hemat kertas).
+   * Absen/kosong = struk tampil persis seperti sebelum EPIC-040.
+   */
+  receiptHeader?: string[];
+  receiptFooter?: string[];
+  /**
+   * false = sembunyikan baris "Stall: …" di struk CUSTOMER/preview.
+   * Copy dapur/bar selalu mencetaknya — dapur perlu tahu asal order.
+   */
+  receiptShowStallName?: boolean;
 }
 
 export type ThermalPrintLabel = "KITCHEN" | "BAR" | "CUSTOMER" | "PREVIEW_BILL";
 
 function formatCurrency(n: number) {
   return "Rp " + new Intl.NumberFormat("id-ID", { minimumFractionDigits: 0 }).format(Math.abs(n));
+}
+
+/** Baris header/footer struk berasal dari input admin — escape sebelum masuk HTML. */
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 /** "Tax" + rate percent → "Tax (10%)" supaya pembeli tahu tarifnya. */
@@ -85,10 +108,18 @@ export function buildReceiptEscPosLayout(
   const isBar = label === "BAR";
   const isPreviewBill = label === "PREVIEW_BILL";
   const heading = isPreviewBill ? "PREVIEW BILL" : label;
-  const lines: Array<{ text: string; align: "left" | "center" }> = [
+  const showIdentity = !isKitchen && !isBar;
+  const headerLines = showIdentity ? (payload.receiptHeader ?? []) : [];
+  const footerLines = showIdentity ? (payload.receiptFooter ?? []) : [];
+  const lines: Array<{ text: string; align: "left" | "center" }> = [];
+  if (headerLines.length > 0) {
+    for (const line of headerLines) lines.push({ text: line, align: "center" });
+    lines.push({ text: RECEIPT_DIVIDER, align: "left" });
+  }
+  lines.push(
     { text: `--- ${heading} ---`, align: "center" },
     { text: payload.orderType.replace(/_/g, "-").toUpperCase(), align: "center" },
-  ];
+  );
   if (payload.table) lines.push({ text: payload.table, align: "center" });
   if (payload.queueNumber) {
     lines.push({ text: `ANTRIAN ${payload.queueNumber}`, align: "center" });
@@ -101,7 +132,7 @@ export function buildReceiptEscPosLayout(
   if (payload.customerName) {
     lines.push({ text: `Customer: ${payload.customerName}`, align: "center" });
   }
-  if (payload.stallName) {
+  if (payload.stallName && (!showIdentity || payload.receiptShowStallName !== false)) {
     lines.push({ text: `Stall: ${payload.stallName}`, align: "center" });
   }
   if (isPreviewBill) {
@@ -187,6 +218,10 @@ export function buildReceiptEscPosLayout(
   if (payload.notes) {
     lines.push({ text: RECEIPT_DIVIDER, align: "left" });
     lines.push({ text: `Catatan: ${payload.notes}`, align: "left" });
+  }
+  if (footerLines.length > 0) {
+    lines.push({ text: RECEIPT_DIVIDER, align: "left" });
+    for (const line of footerLines) lines.push({ text: line, align: "center" });
   }
   lines.push({ text: RECEIPT_DIVIDER, align: "left" });
   lines.push({ text: `--- ${heading} COPY ---`, align: "center" });
@@ -299,6 +334,25 @@ export function buildReceiptHtml(payload: ReceiptPayload, label: ThermalPrintLab
   const heading = isPreviewBill ? "PREVIEW BILL" : label;
   const title = isPreviewBill ? "PREVIEW BILL" : label;
 
+  const showIdentity = !isKitchen && !isBar;
+  const headerBlockHtml =
+    showIdentity && payload.receiptHeader?.length
+      ? payload.receiptHeader
+          .map((line, i) =>
+            i === 0
+              ? `<div class="center" style="font-weight:bold;font-size:14px">${escapeHtml(line)}</div>`
+              : `<div class="center" style="font-size:11px">${escapeHtml(line)}</div>`
+          )
+          .join("") + `<div class="divider"></div>`
+      : "";
+  const footerBlockHtml =
+    showIdentity && payload.receiptFooter?.length
+      ? `<div class="divider"></div>` +
+        payload.receiptFooter
+          .map((line) => `<div class="center" style="font-size:11px">${escapeHtml(line)}</div>`)
+          .join("")
+      : "";
+
   const receiptSubtotal = payload.subtotal ?? itemsSubtotal(items);
   const visibleDiscountLines = (payload.discountLines ?? []).filter((d) => d.amount > 0);
   const discountRowsHtml =
@@ -364,6 +418,7 @@ export function buildReceiptHtml(payload: ReceiptPayload, label: ThermalPrintLab
   </head>
   <body>
     <div class="ticket">
+    ${headerBlockHtml}
     <h1>--- ${heading} ---</h1>
     <div class="big">${orderType.replace(/_/g, "-").toUpperCase()}</div>
     ${table ? `<div class="center">${table}</div>` : ""}
@@ -371,7 +426,7 @@ export function buildReceiptHtml(payload: ReceiptPayload, label: ThermalPrintLab
     <div class="center">${receiptDocumentLabel(payload)}</div>
     <div class="center">${new Date().toLocaleTimeString("id-ID")}</div>
     ${customerName ? `<div class="center">Customer: ${customerName}</div>` : ""}
-    ${stallName ? `<div class="center">Stall: ${stallName}</div>` : ""}
+    ${stallName && (!showIdentity || payload.receiptShowStallName !== false) ? `<div class="center">Stall: ${stallName}</div>` : ""}
     ${isPreviewBill ? `<div class="center">PRE-SETTLEMENT · UNPAID</div>` : ""}
     <div class="divider"></div>
 
@@ -415,6 +470,7 @@ export function buildReceiptHtml(payload: ReceiptPayload, label: ThermalPrintLab
 
     ${notes ? `<div class="divider"></div>
     <div><strong>Catatan:</strong> ${notes}</div>` : ""}
+    ${footerBlockHtml}
     <div class="divider"></div>
     <div class="center">--- ${heading} COPY ---</div>
     </div>
@@ -422,7 +478,57 @@ export function buildReceiptHtml(payload: ReceiptPayload, label: ThermalPrintLab
 </html>`;
 }
 
-export async function printThermalReceipt(payload: ReceiptPayload, label: ThermalPrintLabel) {
+/**
+ * EPIC-040 — cache konfigurasi struk di sisi kasir. Satu fetch per menit
+ * cukup: konfigurasi jarang berubah, dan print tidak boleh menunggu network
+ * lama (fetch gagal = struk tampil tanpa header/footer, bukan gagal print).
+ */
+let receiptSettingsCache: { rows: Array<Record<string, unknown>>; at: number } | null = null;
+
+async function fetchReceiptSettingsRows(): Promise<Array<Record<string, unknown>>> {
+  if (receiptSettingsCache && Date.now() - receiptSettingsCache.at < 60_000) {
+    return receiptSettingsCache.rows;
+  }
+  try {
+    const res = await fetch("/api/pos/receipt-settings", { cache: "no-store" });
+    const json = await res.json();
+    const rows = res.ok && json?.success ? (json.data as Array<Record<string, unknown>>) : [];
+    receiptSettingsCache = { rows, at: Date.now() };
+    return rows;
+  } catch {
+    return receiptSettingsCache?.rows ?? [];
+  }
+}
+
+/**
+ * Lengkapi payload dengan header/footer dari konfigurasi bila pemanggil belum
+ * mengisinya. Scope diambil dari warehouse item keranjang (satu stall → config
+ * stall itu; campuran/kosong → global). Branch-level dilewati di sisi klien —
+ * kasir tidak tahu branch id; config per-branch tetap terpakai di jalur WA
+ * yang resolve server-side.
+ */
+async function decorateReceiptPayload(payload: ReceiptPayload): Promise<ReceiptPayload> {
+  if (payload.receiptHeader !== undefined || payload.receiptFooter !== undefined) {
+    return payload;
+  }
+  const rows = await fetchReceiptSettingsRows();
+  if (rows.length === 0) return payload;
+  const warehouseIds = [
+    ...new Set(payload.items.map((item) => item.warehouse_id).filter(Boolean)),
+  ];
+  const settings = resolveReceiptSettings(rows, {
+    warehouseId: warehouseIds.length === 1 ? (warehouseIds[0] as string) : null,
+  });
+  return {
+    ...payload,
+    receiptHeader: settings.header_lines,
+    receiptFooter: settings.footer_lines,
+    receiptShowStallName: settings.show_stall_name,
+  };
+}
+
+export async function printThermalReceipt(rawPayload: ReceiptPayload, label: ThermalPrintLabel) {
+  const payload = await decorateReceiptPayload(rawPayload);
   const escPos = buildReceiptEscPosBytes(payload, label);
 
   // 1) Android Chrome → RawBT ESC/POS intent
