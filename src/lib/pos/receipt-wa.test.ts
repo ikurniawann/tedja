@@ -67,6 +67,17 @@ describe("buildOrderReceiptMessage", () => {
       buildOrderReceiptMessage({ ...dasar, discountAmount: 5_000 })
     ).toContain("Diskon");
   });
+
+  it("footer ikut konfigurasi struk; tanpa konfigurasi pakai teks lama (EPIC-040)", () => {
+    expect(buildOrderReceiptMessage(dasar)).toContain("Terima kasih atas kunjungan Anda");
+    const pesan = buildOrderReceiptMessage({
+      ...dasar,
+      footerLines: ["Sampai jumpa lagi!", "WiFi: SULU-GUEST"],
+    });
+    expect(pesan).toContain("Sampai jumpa lagi!");
+    expect(pesan).toContain("WiFi: SULU-GUEST");
+    expect(pesan).not.toContain("Terima kasih atas kunjungan Anda");
+  });
 });
 
 describe("buildTopupReceiptMessage", () => {
