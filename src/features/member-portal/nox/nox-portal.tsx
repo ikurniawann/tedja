@@ -69,6 +69,82 @@ export function NoxPortal() {
   const [lore, setLore] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
+  /* Dialog detail (keputusan owner 2026-08-18): nomor transaksi di History
+   * serta baris Nama/Tier/Kunjungan di Profile bisa diklik. Order & kunjungan
+   * di-fetch saat dialog dibuka; profil & tier sudah ada di state member. */
+  const [detail, setDetail] = useState<
+    | { type: "order"; id: string; nomor: string }
+    | { type: "profile" }
+    | { type: "tier" }
+    | { type: "visits" }
+    | null
+  >(null);
+  const [orderDetail, setOrderDetail] = useState<{
+    order: {
+      order_number: string;
+      ordered_at: string;
+      total_amount: number;
+      discount_amount: number;
+      discount_reason: string | null;
+      payment_method: string | null;
+      venue_name: string | null;
+      subtotal: number;
+    };
+    items: Array<{
+      product_name: string;
+      quantity: number;
+      unit_price: number;
+      discount_amount: number;
+      total_amount: number;
+    }>;
+    xp_earned: number;
+  } | null>(null);
+  const [visitsData, setVisitsData] = useState<{
+    visit_count: number;
+    venues: Array<{
+      venue_name: string;
+      order_count: number;
+      day_count: number;
+      last_visit_at: string;
+    }>;
+  } | null>(null);
+  const [detailBusy, setDetailBusy] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
+
+  const openOrderDetail = useCallback(async (id: string, nomor: string) => {
+    setDetail({ type: "order", id, nomor });
+    setOrderDetail(null);
+    setDetailError(null);
+    setDetailBusy(true);
+    try {
+      const res = await fetch(`/api/member-portal/orders/${id}`, { cache: "no-store" });
+      const json = await res.json();
+      if (!res.ok || !json.success) throw new Error(json.error || "Gagal memuat detail");
+      setOrderDetail(json.data);
+    } catch (err) {
+      setDetailError(err instanceof Error ? err.message : "Gagal memuat detail");
+    } finally {
+      setDetailBusy(false);
+    }
+  }, []);
+
+  const openVisits = useCallback(async () => {
+    setDetail({ type: "visits" });
+    setDetailError(null);
+    if (visitsData) return;
+    setDetailBusy(true);
+    try {
+      const res = await fetch("/api/member-portal/visits", { cache: "no-store" });
+      const json = await res.json();
+      if (!res.ok || !json.success) throw new Error(json.error || "Gagal memuat kunjungan");
+      setVisitsData(json.data);
+    } catch (err) {
+      setDetailError(err instanceof Error ? err.message : "Gagal memuat kunjungan");
+    } finally {
+      setDetailBusy(false);
+    }
+  }, [visitsData]);
+
   /* Login OTP di dalam Nox (Fase C) — memakai endpoint portal member yang
    * sudah ada: POST /otp {phone} lalu POST /verify {phone, code} yang
    * menanam cookie member_session. Setelah verifikasi, reload() menarik
@@ -198,7 +274,7 @@ export function NoxPortal() {
     };
 
     const onWheel = (e: WheelEvent) => {
-      if (!entered || wheelLock.current || lore) return;
+      if (!entered || wheelLock.current || lore || detail) return;
       if (Math.abs(e.deltaY) < 18) return;
       wheelLock.current = true;
       stepFrom(e.deltaY > 0 ? 1 : -1);
@@ -206,9 +282,14 @@ export function NoxPortal() {
     };
     const onKey = (e: KeyboardEvent) => {
       if (!entered) return;
+      if (e.key === "Escape") {
+        setLore(null);
+        setDetail(null);
+        return;
+      }
+      if (detail) return; // panah utk scroll isi dialog, bukan pindah mode
       if (["ArrowDown", "PageDown", "ArrowRight"].includes(e.key)) stepFrom(1);
       if (["ArrowUp", "PageUp", "ArrowLeft"].includes(e.key)) stepFrom(-1);
-      if (e.key === "Escape") setLore(null);
     };
     window.addEventListener("wheel", onWheel, { passive: true });
     window.addEventListener("keydown", onKey);
@@ -216,7 +297,7 @@ export function NoxPortal() {
       window.removeEventListener("wheel", onWheel);
       window.removeEventListener("keydown", onKey);
     };
-  }, [entered, lore]);
+  }, [entered, lore, detail]);
 
   /* Parallax + kursor kustom: satu loop rAF menggerakkan latar, karakter, dan
    * cincin kursor. Di layar sentuh loop tetap jalan (untuk parallax netral)
@@ -439,7 +520,13 @@ export function NoxPortal() {
           <h2>Citizen Profile</h2>
           <p className="sub">Your identity inside Wounderland.</p>
           <div className="list">
-            <div className="list-row interactive">
+            <div
+              className="list-row interactive"
+              role="button"
+              tabIndex={0}
+              onClick={() => setDetail({ type: "profile" })}
+              onKeyDown={(e) => e.key === "Enter" && setDetail({ type: "profile" })}
+            >
               <div className="list-icon">ID</div>
               <div>
                 <b>{member?.profile.name ?? "Citizen"}</b>
@@ -447,7 +534,13 @@ export function NoxPortal() {
               </div>
               <span className="pill">{member?.memberType === "card" ? "Kartu" : "Member"}</span>
             </div>
-            <div className="list-row interactive">
+            <div
+              className="list-row interactive"
+              role="button"
+              tabIndex={0}
+              onClick={() => setDetail({ type: "tier" })}
+              onKeyDown={(e) => e.key === "Enter" && setDetail({ type: "tier" })}
+            >
               <div className="list-icon">✦</div>
               <div>
                 <b>{member?.tier?.name ?? "Tier"}</b>
@@ -459,7 +552,13 @@ export function NoxPortal() {
               </div>
               <span className="pill">{angka(totalXp)} XP</span>
             </div>
-            <div className="list-row interactive">
+            <div
+              className="list-row interactive"
+              role="button"
+              tabIndex={0}
+              onClick={() => void openVisits()}
+              onKeyDown={(e) => e.key === "Enter" && void openVisits()}
+            >
               <div className="list-icon">↗</div>
               <div>
                 <b>Kunjungan</b>
@@ -541,7 +640,14 @@ export function NoxPortal() {
               </div>
             )}
             {ready?.orders.slice(0, 6).map((order) => (
-              <div className="list-row" key={order.id}>
+              <div
+                className="list-row interactive"
+                key={order.id}
+                role="button"
+                tabIndex={0}
+                onClick={() => void openOrderDetail(order.id, order.orderNumber)}
+                onKeyDown={(e) => e.key === "Enter" && void openOrderDetail(order.id, order.orderNumber)}
+              >
                 <div className="list-icon">A</div>
                 <div>
                   <b>{order.orderNumber}</b>
@@ -594,6 +700,173 @@ export function NoxPortal() {
             <div className="tagline">{activeLore.tag}</div>
             <h2>{activeLore.title}</h2>
             <p>{activeLore.text}</p>
+          </div>
+        )}
+      </div>
+
+      {/* Dialog detail: order / profil / tier / kunjungan — kaca yang sama
+          dengan lore, isi berbeda. Tutup: backdrop, tombol ×, atau Escape. */}
+      <div className={`overlay${detail ? " open" : ""}`} onClick={() => setDetail(null)}>
+        {detail && (
+          <div className="lore detail" onClick={(e) => e.stopPropagation()}>
+            <button className="close interactive" aria-label="Close" onClick={() => setDetail(null)}>
+              ×
+            </button>
+
+            {detail.type === "order" && (
+              <>
+                <div className="tagline">Citizen History / Detail</div>
+                <h2>{detail.nomor}</h2>
+                {detailBusy && <p>Memuat detail…</p>}
+                {detailError && <p className="detail-error">{detailError}</p>}
+                {orderDetail && (
+                  <>
+                    <p>
+                      {tanggal(orderDetail.order.ordered_at)}
+                      {orderDetail.order.venue_name ? ` · ${orderDetail.order.venue_name}` : ""}
+                    </p>
+                    <div className="detail-rows">
+                      {orderDetail.items.map((item, i) => (
+                        <div className="detail-row" key={i}>
+                          <span>
+                            {angka(item.quantity)}x {item.product_name}
+                            <small>
+                              @ Rp {angka(item.unit_price)}
+                              {item.discount_amount > 0
+                                ? ` · diskon Rp ${angka(item.discount_amount)}`
+                                : ""}
+                            </small>
+                          </span>
+                          <b>Rp {angka(item.total_amount)}</b>
+                        </div>
+                      ))}
+                      <div className="detail-row sum">
+                        <span>Subtotal</span>
+                        <b>Rp {angka(orderDetail.order.subtotal)}</b>
+                      </div>
+                      {orderDetail.order.discount_amount > 0 && (
+                        <div className="detail-row diskon">
+                          <span>
+                            Diskon
+                            {orderDetail.order.discount_reason
+                              ? ` (${orderDetail.order.discount_reason})`
+                              : ""}
+                          </span>
+                          <b>−Rp {angka(orderDetail.order.discount_amount)}</b>
+                        </div>
+                      )}
+                      <div className="detail-row total">
+                        <span>Total</span>
+                        <b>Rp {angka(orderDetail.order.total_amount)}</b>
+                      </div>
+                      {orderDetail.xp_earned > 0 && (
+                        <div className="detail-row xp">
+                          <span>XP didapat</span>
+                          <b>+{angka(orderDetail.xp_earned)} XP</b>
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
+              </>
+            )}
+
+            {detail.type === "profile" && member && (
+              <>
+                <div className="tagline">Citizen Profile / Detail</div>
+                <h2>{member.profile.name ?? "Citizen"}</h2>
+                <div className="detail-rows">
+                  {(
+                    [
+                      ["Telepon", member.profile.phone],
+                      ["Email", member.profile.email],
+                      [
+                        "Tanggal lahir",
+                        member.profile.birthDate
+                          ? new Date(member.profile.birthDate).toLocaleDateString("id-ID", {
+                              dateStyle: "long",
+                            })
+                          : null,
+                      ],
+                      ["Gender", member.profile.gender],
+                      ["Kota", member.profile.city],
+                      ["Tipe member", member.memberType === "card" ? "Kartu" : "Terdaftar"],
+                      ["Tier", member.tier?.name ?? null],
+                    ] as Array<[string, string | null]>
+                  ).map(([label, value]) => (
+                    <div className="detail-row" key={label}>
+                      <span>{label}</span>
+                      <b>{value ?? "—"}</b>
+                    </div>
+                  ))}
+                </div>
+                <p className="detail-note">
+                  Data belum lengkap? Perbarui lewat kasir saat berkunjung.
+                </p>
+              </>
+            )}
+
+            {detail.type === "tier" && member && (
+              <>
+                <div className="tagline">Citizen Status / XP</div>
+                <h2>{member.tier?.name ?? "Tier"}</h2>
+                <p>
+                  {angka(totalXp)} XP terkumpul
+                  {member.nextTier
+                    ? ` — ${angka(member.nextTier.xpNeeded)} XP lagi menuju ${member.nextTier.name}`
+                    : " — tier tertinggi tercapai"}
+                </p>
+                <div className="detail-rows">
+                  {member.tiers.map((tier) => {
+                    const tercapai = totalXp >= tier.minLifetimeXp;
+                    const aktif = tier.code === member.tier?.code;
+                    return (
+                      <div className={`detail-row${aktif ? " total" : ""}`} key={tier.code}>
+                        <span>
+                          {tercapai ? "✦" : "○"} {tier.name}
+                          <small>
+                            {angka(tier.minLifetimeXp)} XP · diskon {tier.discountPercent}%
+                          </small>
+                        </span>
+                        <b>{aktif ? "Saat ini" : tercapai ? "Tercapai" : ""}</b>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+
+            {detail.type === "visits" && (
+              <>
+                <div className="tagline">Citizen Journey</div>
+                <h2>Kunjungan</h2>
+                {detailBusy && <p>Memuat…</p>}
+                {detailError && <p className="detail-error">{detailError}</p>}
+                {visitsData && (
+                  <>
+                    <p>{angka(visitsData.visit_count)} kunjungan tercatat di Wounderland.</p>
+                    <div className="detail-rows">
+                      {visitsData.venues.length === 0 && (
+                        <div className="detail-row">
+                          <span>Belum ada transaksi — kunjungan pertama Anda akan tercatat di sini.</span>
+                        </div>
+                      )}
+                      {visitsData.venues.map((venue) => (
+                        <div className="detail-row" key={venue.venue_name}>
+                          <span>
+                            {venue.venue_name}
+                            <small>
+                              {angka(venue.order_count)} transaksi · {angka(venue.day_count)} hari
+                            </small>
+                          </span>
+                          <b>{tanggal(venue.last_visit_at)}</b>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </>
+            )}
           </div>
         )}
       </div>

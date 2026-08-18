@@ -96,6 +96,13 @@ export async function GET() {
               xp_needed: Math.max(0, Number(nextTier.min_lifetime_xp) - totalXp),
             }
           : null,
+        // Tangga tier lengkap — untuk dialog progres XP di portal Nox.
+        tiers: tiers.map((tier) => ({
+          code: tier.code,
+          name: tier.name,
+          min_lifetime_xp: Number(tier.min_lifetime_xp) || 0,
+          discount_percent: Number(tier.discount_percent) || 0,
+        })),
         completion: {
           ...completion,
           missing_labels: completion.missing.map((key) => PROFILE_FIELD_LABELS[key]),

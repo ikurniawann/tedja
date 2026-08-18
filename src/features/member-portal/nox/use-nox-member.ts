@@ -11,7 +11,17 @@ import { DEFAULT_POS_LOYALTY_SETTINGS, idrToArkDisplay } from "@/lib/pos/loyalty
  */
 
 export interface NoxMemberData {
-  profile: { id: string; name: string | null; phone: string | null };
+  profile: {
+    id: string;
+    name: string | null;
+    phone: string | null;
+    email: string | null;
+    birthDate: string | null;
+    gender: string | null;
+    city: string | null;
+  };
+  /** Tangga tier lengkap (urut rank) — untuk dialog progres XP. */
+  tiers: Array<{ code: string; name: string; minLifetimeXp: number; discountPercent: number }>;
   memberType: string | null;
   coins: number;
   /** Saldo mentah dalam Rupiah — untuk baris "≈ Rp …" di kartu wallet. */
@@ -124,7 +134,17 @@ export function useNoxMember(): { state: NoxMemberState; reload: () => void } {
             id: d.profile?.id ?? "",
             name: d.profile?.name ?? null,
             phone: d.profile?.phone ?? null,
+            email: d.profile?.email ?? null,
+            birthDate: d.profile?.birth_date ?? null,
+            gender: d.profile?.gender ?? null,
+            city: d.profile?.city ?? null,
           },
+          tiers: ((d.tiers ?? []) as Array<Record<string, unknown>>).map((t) => ({
+            code: String(t.code ?? ""),
+            name: String(t.name ?? ""),
+            minLifetimeXp: Number(t.min_lifetime_xp) || 0,
+            discountPercent: Number(t.discount_percent) || 0,
+          })),
           memberType: d.member_type ?? null,
           coins: idrToArkDisplay(Number(d.ark_coin_balance) || 0, arkRate),
           coinsIdr: Number(d.ark_coin_balance) || 0,
