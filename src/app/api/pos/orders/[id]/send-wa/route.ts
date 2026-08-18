@@ -8,6 +8,10 @@ import {
   normalizeWaPhone,
 } from "@/lib/pos/receipt-wa";
 import { formatPaymentMethodLabel } from "@/features/pos/reports/utils/transaction-labels";
+import {
+  loadPosReceiptSettingsRows,
+  resolveReceiptSettings,
+} from "@/lib/pos/receipt-settings";
 
 /**
  * POST /api/pos/orders/[id]/send-wa — kirim struk digital via WhatsApp.
@@ -41,6 +45,7 @@ export async function POST(
       .select(
         `id, order_number, ordered_at, total_amount, discount_amount,
          payment_method, payment_method_code, payment_method_name, amount_paid, payment_status,
+         branch_id, warehouse_id,
          customer:pos_customers(name, phone),
          items:pos_order_items(product_name, quantity, total_amount)`
       )
@@ -73,6 +78,12 @@ export async function POST(
       "SELECT name FROM configuration.companies ORDER BY created_at LIMIT 1"
     );
 
+    // EPIC-040: footer struk WA ikut konfigurasi, scope stall si order.
+    const receiptSettings = resolveReceiptSettings(await loadPosReceiptSettingsRows(db), {
+      warehouseId: (order as { warehouse_id?: string | null }).warehouse_id ?? null,
+      branchId: (order as { branch_id?: string | null }).branch_id ?? null,
+    });
+
     const items = ((order.items as Array<{
       product_name: string;
       quantity: number | string;
@@ -98,6 +109,7 @@ export async function POST(
       change: Math.max(0, paid - total),
       discountAmount: Number(order.discount_amount) || 0,
       customerName: customer?.name ?? null,
+      footerLines: receiptSettings.footer_lines,
     });
 
     const result = await sendWhatsAppText(
