@@ -25,7 +25,11 @@
 *{box-sizing:border-box}
 html,body{width:100%;height:100%;margin:0;background:#080b17;color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;overflow:hidden}
 button{font:inherit}
-#app{position:relative;width:100vw;height:100vh;min-width:1024px;min-height:640px;overflow:hidden;background:#070914;isolation:isolate}
+/* overflow:clip (dengan fallback hidden): lab-bg lebih lebar dari viewport,
+ * dan focus/scrollIntoView bisa menggeser scrollLeft container overflow:hidden
+ * secara programatik — di HP seluruh panggung tergeser ±47px ke kiri.
+ * clip melarang SEMUA scroll, termasuk yang programatik. */
+#app{position:relative;width:100vw;height:100vh;min-width:1024px;min-height:640px;overflow:hidden;overflow:clip;background:#070914;isolation:isolate}
 
 /* world */
 .world{position:absolute;inset:-6%;overflow:hidden;z-index:0;transform:translate3d(0,0,0)}
@@ -126,7 +130,7 @@ button{font:inherit}
 .cursor-dot,.cursor-ring{position:fixed;left:0;top:0;pointer-events:none;z-index:9999;border-radius:50%;transform:translate(-50%,-50%);mix-blend-mode:difference}.cursor-dot{width:5px;height:5px;background:white}.cursor-ring{width:34px;height:34px;border:1px solid rgba(255,255,255,.75);transition:width .2s ease,height .2s ease,background .2s ease,border-color .2s ease}.cursor-ring.active{width:52px;height:52px;border-color:var(--pink);background:rgba(247,2,145,.08)}
 
 /* entry */
-.entry{position:absolute;inset:0;z-index:100;background:#080b17;display:grid;place-items:center;transition:opacity .8s var(--ease),visibility .8s ease}.entry.hide{opacity:0;visibility:hidden;pointer-events:none}.entry-inner{text-align:center;width:470px}.entry-logo{width:230px;height:auto;margin-bottom:28px}.entry-kicker{font-size:10px;letter-spacing:.22em;color:rgba(255,255,255,.45);text-transform:uppercase}.entry h1{font-size:30px;margin:8px 0 8px}.entry p{font-size:12px;color:rgba(255,255,255,.58);line-height:1.6;margin:0 auto 22px;max-width:330px}.enter-btn{border:1px solid rgba(247,2,145,.65);background:rgba(247,2,145,.12);color:#fff;padding:13px 18px;border-radius:999px;letter-spacing:.13em;text-transform:uppercase;font-size:10px;cursor:pointer;transition:.3s ease}.enter-btn:hover{background:var(--pink);box-shadow:0 0 35px rgba(247,2,145,.20)}.entry-line{height:1px;background:linear-gradient(90deg,transparent,rgba(247,2,145,.8),transparent);margin:25px auto;width:290px;position:relative;overflow:hidden}.entry-line::after{content:"";position:absolute;left:-40%;width:30%;height:100%;background:white;animation:load 1.8s ease-in-out infinite}@keyframes load{to{left:110%}}
+.entry{position:absolute;inset:0;z-index:100;background:#080b17;display:grid;place-items:center;transition:opacity .8s var(--ease),visibility .8s ease}.entry.hide{opacity:0;visibility:hidden;pointer-events:none}.entry-inner{text-align:center;width:min(470px,calc(100vw - 32px))}.entry-logo{width:230px;height:auto;margin-bottom:28px}.entry-kicker{font-size:10px;letter-spacing:.22em;color:rgba(255,255,255,.45);text-transform:uppercase}.entry h1{font-size:30px;margin:8px 0 8px}.entry p{font-size:12px;color:rgba(255,255,255,.58);line-height:1.6;margin:0 auto 22px;max-width:330px}.enter-btn{border:1px solid rgba(247,2,145,.65);background:rgba(247,2,145,.12);color:#fff;padding:13px 18px;border-radius:999px;letter-spacing:.13em;text-transform:uppercase;font-size:10px;cursor:pointer;transition:.3s ease}.enter-btn:hover{background:var(--pink);box-shadow:0 0 35px rgba(247,2,145,.20)}.entry-line{height:1px;background:linear-gradient(90deg,transparent,rgba(247,2,145,.8),transparent);margin:25px auto;width:290px;position:relative;overflow:hidden}.entry-line::after{content:"";position:absolute;left:-40%;width:30%;height:100%;background:white;animation:load 1.8s ease-in-out infinite}@keyframes load{to{left:110%}}
 
 /* transition state */
 #app.transitioning .hero-copy,#app.transitioning .side-stack,#app.transitioning .bottom-tray,#app.transitioning .mode-panel.active{opacity:.15;transform:translateY(8px);filter:blur(4px)}
@@ -206,6 +210,20 @@ button{font:inherit}
   #app[data-mode="coins"] .character-wrap,
   #app[data-mode="history"] .character-wrap,
   #app[data-mode="profile"] .character-wrap{left:auto;right:-18%;bottom:64px;transform:scale(.94)}
+
+  /* Temuan review mobile (2026-08-18):
+   * - Hotspot lore adalah hiasan khusus-kursor; di HP lingkarannya melayang
+   *   MENUTUPI baris transaksi/profil dan tap-nya membuka fiksi, bukan fungsi.
+   * - Maskot + bayangannya menimpa kartu wallet & panel di panggung sempit
+   *   (tangannya menutupi tombol "Lihat →"). Suasana kalah penting dari
+   *   keterbacaan konten di layar 375px. */
+  .hotspot,.character-wrap,.shadow{display:none}
+
+  /* Label nav versi desktop adalah tooltip hover — di layar sentuh tidak
+   * pernah muncul, tab bar jadi ikon-saja yang harus ditebak. Jadikan label
+   * statis kecil di bawah ikon. */
+  .nav-item{display:flex;flex-direction:column;align-items:center;gap:3px;height:auto;padding:7px 2px}
+  .nav-item span{position:static;opacity:1;transform:none;background:none;border:0;padding:0;font-size:9px;letter-spacing:.06em;pointer-events:none}
 }
 
 /* Perangkat tanpa hover/kursor halus: hiasan kursor tidak pernah relevan */

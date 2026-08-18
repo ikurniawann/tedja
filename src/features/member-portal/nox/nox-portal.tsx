@@ -511,9 +511,11 @@ export function NoxPortal() {
                     <b>{TXN_LABELS[txn.type] ?? txn.type}</b>
                     <small>{tanggal(txn.createdAt)}</small>
                   </div>
+                  {/* Math.abs: amount debit sudah negatif dari API — tanpa ini
+                      tanda minus dobel ("−-2") tercetak di riwayat. */}
                   <strong className={`tx-amount ${kredit ? "pos" : "neg"}`}>
                     {kredit ? "+" : "−"}
-                    {angka(txn.amount)}
+                    {angka(Math.abs(txn.amount))}
                   </strong>
                 </div>
               );
