@@ -693,9 +693,6 @@ export function NoxPortal() {
                 </>
               )}
               {loginError && <div className="entry-error">{loginError}</div>}
-              <div className="entry-alt">
-                Bermasalah? <a href="/member/classic">Pakai portal klasik</a>
-              </div>
             </>
           ) : state.status === "error" ? (
             <>
