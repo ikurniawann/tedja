@@ -465,6 +465,34 @@ input.arkiv-glass-input.arkiv-glass-input::placeholder {
   -webkit-text-fill-color: rgba(255, 255, 255, 0.3) !important;
 }
 
+/* Input login portal member Nox (/member): global rule input:not():not() di
+   atas memutihkan semua input dengan !important, jadi gaya .entry-input di
+   nox.css (dua kali dicoba diperbaiki di sana) tidak pernah menang. Penawar
+   pakai pola yang sama dgn .arkiv-glass-input — kelas ganda + ditulis
+   belakangan. Warna menyamai tombol .enter-btn di bawahnya. */
+input.entry-input.entry-input,
+input.entry-input.entry-input:hover {
+  background: rgba(247, 2, 145, 0.12) !important;
+  background-color: rgba(247, 2, 145, 0.12) !important;
+  border-color: rgba(247, 2, 145, 0.65) !important;
+  color: #fffde7 !important;
+  -webkit-text-fill-color: #fffde7 !important;
+  box-shadow: none !important;
+}
+
+input.entry-input.entry-input:focus,
+input.entry-input.entry-input:focus-visible {
+  background: rgba(247, 2, 145, 0.16) !important;
+  background-color: rgba(247, 2, 145, 0.16) !important;
+  border-color: rgba(247, 2, 145, 0.72) !important;
+  outline: none !important;
+}
+
+input.entry-input.entry-input::placeholder {
+  color: rgba(255, 253, 231, 0.62) !important;
+  -webkit-text-fill-color: rgba(255, 253, 231, 0.62) !important;
+}
+
 
 input[data-combobox-search="true"],
 input[data-combobox-search="true"]:focus,
