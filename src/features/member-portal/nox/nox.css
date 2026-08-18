@@ -131,6 +131,20 @@ button{font:inherit}
 .overlay{position:absolute;inset:0;z-index:40;display:grid;place-items:center;background:rgba(2,4,10,.34);backdrop-filter:blur(8px);opacity:0;visibility:hidden;transition:.35s ease;pointer-events:none}.overlay.open{opacity:1;visibility:visible;pointer-events:auto}.lore{width:min(520px,44vw);padding:24px;border-radius:22px;border:1px solid rgba(255,255,255,.22);background:rgba(15,20,37,.58);backdrop-filter:blur(28px) saturate(1.2);box-shadow:0 30px 100px rgba(0,0,0,.36);position:relative}.lore h2{margin:0 0 8px;font-size:28px}.lore p{margin:0;color:rgba(255,255,255,.7);font-size:13px;line-height:1.6}.lore .close{position:absolute;top:14px;right:14px;width:35px;height:35px;border-radius:50%;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.05);color:#fff;cursor:pointer}.lore .tagline{color:var(--pink);font-size:10px;letter-spacing:.15em;text-transform:uppercase;margin-bottom:9px}
 
 /* custom cursor */
+/* Dialog detail (order / profil / tier / kunjungan) — kaca lore, isi data.
+ * Keputusan owner 2026-08-18: riwayat & baris profil bisa diklik. */
+.lore.detail{max-height:82vh;overflow-y:auto}
+.detail-rows{margin-top:14px;display:flex;flex-direction:column}
+.detail-row{display:flex;align-items:baseline;justify-content:space-between;gap:14px;padding:9px 0;border-bottom:1px dashed rgba(255,255,255,.12);font-size:13px}
+.detail-row span small{display:block;color:var(--muted);font-size:11px;margin-top:1px}
+.detail-row b{white-space:nowrap;font-weight:700}
+.detail-row.sum{border-bottom:0;padding-bottom:2px;color:var(--muted)}
+.detail-row.diskon{border-bottom:0}.detail-row.diskon b{color:var(--salmon)}
+.detail-row.total{border-bottom:0;font-size:15px}.detail-row.total b{color:var(--pink)}
+.detail-row.xp{border-bottom:0}.detail-row.xp b{color:var(--mint)}
+.detail-error{color:#ff8aa8;font-size:12px}
+.detail-note{margin-top:12px;font-size:11px;color:var(--muted)}
+
 .cursor-dot,.cursor-ring{position:fixed;left:0;top:0;pointer-events:none;z-index:9999;border-radius:50%;transform:translate(-50%,-50%);mix-blend-mode:difference}.cursor-dot{width:5px;height:5px;background:white}.cursor-ring{width:34px;height:34px;border:1px solid rgba(255,255,255,.75);transition:width .2s ease,height .2s ease,background .2s ease,border-color .2s ease}.cursor-ring.active{width:52px;height:52px;border-color:var(--pink);background:rgba(247,2,145,.08)}
 
 /* entry */
