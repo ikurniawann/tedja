@@ -292,6 +292,7 @@ export function NoxPortal() {
   const ready = state.status === "ready" ? state : null;
   const member = ready?.member ?? null;
   const coins = member ? angka(member.coins) : "—";
+  const coinsRp = member ? angka(member.coinsIdr) : null;
   const displayName = (member?.profile.name || member?.profile.phone || "CITIZEN").toUpperCase();
 
   // "Level" prototipe = tier membership. Progres bar = posisi XP di antara
@@ -412,12 +413,14 @@ export function NoxPortal() {
                 <div>
                   <small>Current balance</small>
                   <strong>{coins}</strong>
+                  {coinsRp !== null && <small className="wallet-rp">≈ Rp {coinsRp}</small>}
                 </div>
               </div>
               <button className="action interactive" onClick={() => goMode("coins")}>
                 Lihat →
               </button>
             </div>
+            <div className="wallet-hint">Top-up di kasir mana pun</div>
           </section>
         </aside>
 
@@ -489,6 +492,7 @@ export function NoxPortal() {
               <div>
                 <small>Current balance</small>
                 <strong>{coins}</strong>
+                {coinsRp !== null && <small className="wallet-rp">≈ Rp {coinsRp}</small>}
               </div>
             </div>
           </div>
@@ -511,9 +515,11 @@ export function NoxPortal() {
                     <b>{TXN_LABELS[txn.type] ?? txn.type}</b>
                     <small>{tanggal(txn.createdAt)}</small>
                   </div>
+                  {/* Math.abs: amount debit sudah negatif dari API — tanpa ini
+                      tanda minus dobel ("−-2") tercetak di riwayat. */}
                   <strong className={`tx-amount ${kredit ? "pos" : "neg"}`}>
                     {kredit ? "+" : "−"}
-                    {angka(txn.amount)}
+                    {angka(Math.abs(txn.amount))}
                   </strong>
                 </div>
               );
