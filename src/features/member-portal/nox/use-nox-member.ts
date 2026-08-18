@@ -14,6 +14,8 @@ export interface NoxMemberData {
   profile: { id: string; name: string | null; phone: string | null };
   memberType: string | null;
   coins: number;
+  /** Saldo mentah dalam Rupiah — untuk baris "≈ Rp …" di kartu wallet. */
+  coinsIdr: number;
   totalXp: number;
   visitCount: number;
   tier: { code: string; name: string; discountPercent: number } | null;
@@ -125,6 +127,7 @@ export function useNoxMember(): { state: NoxMemberState; reload: () => void } {
           },
           memberType: d.member_type ?? null,
           coins: idrToArkDisplay(Number(d.ark_coin_balance) || 0, arkRate),
+          coinsIdr: Number(d.ark_coin_balance) || 0,
           totalXp: Number(d.total_xp) || 0,
           visitCount: Number(d.visit_count) || 0,
           tier: d.tier

@@ -96,6 +96,10 @@ button{font:inherit}
 .wallet{display:flex;align-items:center;justify-content:space-between;gap:16px}
 .coin-big{display:flex;align-items:center;gap:13px}.coin-medal{width:48px;height:48px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#fff0a6,#f5a000 65%,#9a5a00);border:3px solid #ffd34e;color:#2a1b00;display:grid;place-items:center;font-weight:1000;font-size:23px;box-shadow:0 0 20px rgba(255,186,0,.24)}
 .coin-big strong{font-size:36px;letter-spacing:-.03em}.coin-big small{display:block;color:var(--muted);font-size:9px;letter-spacing:.12em;text-transform:uppercase}
+/* Nilai rupiah pendamping ARK + petunjuk top-up — arahan owner 2026-08-18:
+ * wallet adalah elemen paling menonjol kedua setelah identitas Nox. */
+.wallet-rp{display:block;color:var(--muted);font-size:11px;letter-spacing:.02em;text-transform:none;margin-top:1px}
+.wallet-hint{margin-top:10px;padding-top:9px;border-top:1px dashed rgba(255,255,255,.14);color:var(--muted);font-size:9px;letter-spacing:.14em;text-transform:uppercase}
 .action{border:1px solid rgba(247,2,145,.65);background:rgba(247,2,145,.25);color:white;border-radius:10px;padding:9px 14px;font-size:11px;cursor:pointer;transition:.25s ease;position:relative;z-index:2}.action:hover{background:rgba(247,2,145,.62);box-shadow:0 0 24px rgba(247,2,145,.2)}
 .mission{background:linear-gradient(135deg,rgba(206,231,212,.28),rgba(13,18,34,.28));}
 .mission p{margin:0 0 9px;font-size:12px}.mission-row{display:grid;grid-template-columns:1fr 70px;gap:12px;align-items:end}.mini-progress{height:8px;border-radius:99px;background:rgba(0,0,0,.34);overflow:hidden}.mini-progress span{display:block;width:0%;height:100%;background:var(--mint);transition:width .8s var(--ease)}
@@ -198,6 +202,12 @@ button{font:inherit}
   .character-wrap{left:auto;right:-14%;bottom:64px;width:62vw;height:52vh}
 
   .side-stack{left:16px;right:16px;top:auto;bottom:150px;width:auto}
+  /* Hierarki mobile per arahan owner: wallet #2 — glow pink + saldo dominan;
+   * XP #3 — kartu dipadatkan supaya tidak bersaing dengan wallet. */
+  .side-stack .wallet-card{border-color:rgba(247,2,145,.45);box-shadow:0 0 30px rgba(247,2,145,.14),inset 0 1px rgba(255,255,255,.08)}
+  .stat-glass{margin-top:14px;padding:10px 13px}
+  .stat-glass .xp-meta{font-size:9px}
+  .citizen-tag{margin-top:8px;font-size:11px;padding:5px 10px}
   .bottom-tray,.journey,.scroll-hint{display:none}
 
   /* Panel mode = lembar penuh di atas tab bar */
@@ -212,12 +222,16 @@ button{font:inherit}
   #app[data-mode="profile"] .character-wrap{left:auto;right:-18%;bottom:64px;transform:scale(.94)}
 
   /* Temuan review mobile (2026-08-18):
-   * - Hotspot lore adalah hiasan khusus-kursor; di HP lingkarannya melayang
-   *   MENUTUPI baris transaksi/profil dan tap-nya membuka fiksi, bukan fungsi.
-   * - Maskot + bayangannya menimpa kartu wallet & panel di panggung sempit
-   *   (tangannya menutupi tombol "Lihat →"). Suasana kalah penting dari
-   *   keterbacaan konten di layar 375px. */
-  .hotspot,.character-wrap,.shadow{display:none}
+   * hotspot lore adalah hiasan khusus-kursor — di HP lingkarannya melayang
+   * MENUTUPI baris transaksi/profil dan tap-nya membuka fiksi, bukan fungsi.
+   * Bayangan maskot memakai koordinat desktop, jadi ikut disembunyikan. */
+  .hotspot,.shadow{display:none}
+
+  /* Arahan owner 2026-08-18: tema Nox tetap kental — maskot TAMPIL di
+   * dashboard sebagai identitas #1, lalu memudar saat panel data terbuka
+   * supaya wallet/riwayat terbaca penuh di panggung 375px. */
+  .character-wrap{transition:opacity .45s ease,visibility .45s ease}
+  #app:not([data-mode="dashboard"]) .character-wrap{opacity:0;visibility:hidden}
 
   /* Label nav versi desktop adalah tooltip hover — di layar sentuh tidak
    * pernah muncul, tab bar jadi ikon-saja yang harus ditebak. Jadikan label
