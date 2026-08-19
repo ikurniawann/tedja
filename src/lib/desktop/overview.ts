@@ -164,12 +164,14 @@ async function fetchSalesPulse(): Promise<SalesPulse> {
   // Rentang -7 hari (bukan -6) supaya hari yang sama minggu lalu ikut terambil
   // untuk pembanding mingguan; sparkline tetap memakai 7 titik terakhir.
   const rows = await query<{ tanggal: string; omzet: string; pesanan: string }>(
-    `SELECT (ordered_at AT TIME ZONE 'Asia/Jakarta')::date::text AS tanggal,
+    // ordered_at NULLABLE: COALESCE ke created_at supaya order lama tidak
+    // hilang diam-diam dari omzet hanya karena kolomnya kosong.
+    `SELECT (COALESCE(ordered_at, created_at) AT TIME ZONE 'Asia/Jakarta')::date::text AS tanggal,
             COALESCE(sum(total_amount), 0)::float8 AS omzet,
             count(*)::int AS pesanan
        FROM pos.pos_orders
-      WHERE ordered_at >= ($1::date - interval '7 days')
-        AND ordered_at < ($1::date + interval '1 day')
+      WHERE COALESCE(ordered_at, created_at) >= ($1::date - interval '7 days')
+        AND COALESCE(ordered_at, created_at) < ($1::date + interval '1 day')
         AND payment_status = 'paid'
         AND status::text NOT IN ('cancelled', 'voided', 'merged')
       GROUP BY 1
@@ -204,7 +206,7 @@ async function fetchSalesPulse(): Promise<SalesPulse> {
               count(*) FILTER (WHERE COALESCE(i.cost_total, 0) = 0)::int AS item_tanpa_modal
          FROM pos.pos_order_items i
          JOIN pos.pos_orders o ON o.id = i.order_id
-        WHERE (o.ordered_at AT TIME ZONE 'Asia/Jakarta')::date = $1::date
+        WHERE (COALESCE(o.ordered_at, o.created_at) AT TIME ZONE 'Asia/Jakarta')::date = $1::date
           AND o.payment_status = 'paid'
           AND o.status::text NOT IN ('cancelled', 'voided', 'merged')`,
       [today]

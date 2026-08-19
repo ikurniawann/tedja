@@ -162,8 +162,8 @@ export const ASSISTANT_TOOLS: AssistantTool[] = [
                 COALESCE(sum(total_amount), 0)::float AS total_omzet,
                 COALESCE(avg(total_amount), 0)::float AS rata_rata
            FROM pos.pos_orders
-          WHERE ordered_at >= $1::date
-            AND ordered_at < ($2::date + interval '1 day')
+          WHERE COALESCE(ordered_at, created_at) >= $1::date
+            AND COALESCE(ordered_at, created_at) < ($2::date + interval '1 day')
             AND payment_status = 'paid'
             AND status::text NOT IN ('cancelled', 'voided', 'merged')`,
         [dari, sampai]
