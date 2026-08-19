@@ -620,6 +620,24 @@ export function DesktopMonitorBoard({
                     <div className="text-white/40">Pesanan</div>
                     <div className="mt-0.5 text-sm font-bold">{d.pulsaBisnis.hariIni.pesanan}</div>
                   </div>
+                  {d.pulsaBisnis.labaKotorHariIni && (
+                    <div>
+                      <div className="text-white/40">
+                        Laba kotor
+                        {d.pulsaBisnis.labaKotorHariIni.itemTanpaModal > 0 && (
+                          <span
+                            className="ml-1 cursor-help text-amber-300/80"
+                            title={`${d.pulsaBisnis.labaKotorHariIni.itemTanpaModal} item belum punya harga modal — laba kotor lebih tinggi dari seharusnya`}
+                          >
+                            ⚠
+                          </span>
+                        )}
+                      </div>
+                      <div className="mt-0.5 text-sm font-bold">
+                        {formatRupiah(d.pulsaBisnis.labaKotorHariIni.laba)}
+                      </div>
+                    </div>
+                  )}
                   <div>
                     <div className="text-white/40">Rata-rata</div>
                     <div className="mt-0.5 text-sm font-bold">{formatRupiah(d.pulsaBisnis.hariIni.rataRata)}</div>
