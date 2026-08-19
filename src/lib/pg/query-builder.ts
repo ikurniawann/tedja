@@ -403,6 +403,7 @@ export class QueryBuilder<T = any> implements PromiseLike<PgResult<T>> {
 
   private async exec(): Promise<PgResult<T>> {
     const params: any[] = [];
+    let totalCount: number | null = null;
     try {
       let sql = "";
       if (this.action === "select") {
@@ -411,6 +412,13 @@ export class QueryBuilder<T = any> implements PromiseLike<PgResult<T>> {
           const { rows } = await this.pool.query(sql, params);
           return { data: null, error: null, count: rows[0]?.count ?? 0, status: 200 };
         }
+        if (this.wantCount) {
+          const countParams: any[] = [];
+          const countSql = `SELECT count(*)::int AS count FROM ${this.qt()} ${this.buildWhere(countParams)}`;
+          const countResult = await this.pool.query(countSql, countParams);
+          totalCount = countResult.rows[0]?.count ?? 0;
+        }
+
         const selectList = await this.buildSelectList(this.selectStr, params);
         sql = `SELECT ${selectList} FROM ${this.qt()} ${this.buildWhere(params)}${this.buildOrderLimit(params)}`;
       } else if (this.action === "insert") {
@@ -428,7 +436,12 @@ export class QueryBuilder<T = any> implements PromiseLike<PgResult<T>> {
 
       const { rows } = await this.pool.query(sql, params);
       let data: any = rows;
-      const count = this.wantCount ? rows.length : null;
+      const count =
+        this.action === "select" && this.wantCount
+          ? (typeof totalCount === "number" ? totalCount : rows.length)
+          : this.wantCount
+            ? rows.length
+            : null;
       if (this.singleMode) {
         if (rows.length === 0) {
           if (this.singleMode === "maybe") return { data: null, error: null, count, status: 200 };
