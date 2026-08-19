@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPool } from "@/lib/db";
+import { isDevBypassCode } from "@/lib/member-portal/dev-bypass";
 import {
   hashSecret,
   normalizePhoneDigits,
@@ -28,28 +29,39 @@ export async function POST(request: NextRequest) {
     }
 
     const pool = getPool();
-    const { rows: otps } = await pool.query(
-      `SELECT id, code_hash, attempts, expires_at, consumed_at
+
+    /* Bypass dev lokal (lihat lib/member-portal/dev-bypass): melewati
+     * pemeriksaan record OTP, TIDAK melewati pencarian member — nomor yang
+     * bukan member tetap ditolak. Mati total di produksi. */
+    const devBypass = isDevBypassCode(code);
+    if (devBypass) {
+      console.warn(`[member-portal] OTP dev bypass dipakai untuk ${phone}`);
+    }
+
+    const { rows: otps } = devBypass
+      ? { rows: [] as Array<Record<string, unknown>> }
+      : await pool.query(
+          `SELECT id, code_hash, attempts, expires_at, consumed_at
        FROM crm.member_portal_otp
        WHERE phone = $1
        ORDER BY created_at DESC LIMIT 1`,
-      [phone]
-    );
+          [phone]
+        );
     const otp = otps[0];
-    if (!otp || otp.consumed_at || new Date(otp.expires_at) < new Date()) {
+    if (!devBypass && (!otp || otp.consumed_at || new Date(otp.expires_at) < new Date())) {
       return NextResponse.json(
         { success: false, error: "Kode kedaluwarsa — minta kode baru" },
         { status: 400 }
       );
     }
-    if (otp.attempts >= OTP_MAX_ATTEMPTS) {
+    if (!devBypass && otp.attempts >= OTP_MAX_ATTEMPTS) {
       return NextResponse.json(
         { success: false, error: "Terlalu banyak percobaan — minta kode baru" },
         { status: 429 }
       );
     }
 
-    if (otp.code_hash !== hashSecret(code)) {
+    if (!devBypass && otp.code_hash !== hashSecret(code)) {
       await pool.query(
         `UPDATE crm.member_portal_otp SET attempts = attempts + 1 WHERE id = $1`,
         [otp.id]
@@ -76,10 +88,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    await pool.query(
-      `UPDATE crm.member_portal_otp SET consumed_at = now() WHERE id = $1`,
-      [otp.id]
-    );
+    if (!devBypass) {
+      await pool.query(
+        `UPDATE crm.member_portal_otp SET consumed_at = now() WHERE id = $1`,
+        [otp.id]
+      );
+    }
     await pool.query(
       `UPDATE pos.pos_customers
        SET wa_verified_at = COALESCE(wa_verified_at, now()), updated_at = now()
