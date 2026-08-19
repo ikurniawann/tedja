@@ -41,7 +41,7 @@ export const MONITOR_WIDGETS: Array<{ key: MonitorWidgetKey; title: string; desc
   { key: "omzet", title: "Pendapatan", description: "Total per periode, komposisi sumber & proyeksi." },
   { key: "promo", title: "Dampak Promo", description: "Diskon yang keluar vs omzet yang dibawanya." },
   { key: "tamu", title: "Tamu di Meja", description: "Jumlah tamu yang sedang duduk saat ini." },
-  { key: "pulsa", title: "Pulsa Bisnis", description: "Omzet & pesanan hari ini vs kemarin." },
+  { key: "pulsa", title: "Ringkasan Transaksi", description: "Omzet & pesanan hari ini vs kemarin." },
   { key: "tim", title: "Tim Hari Ini", description: "Hadir, terlambat, belum absen, dan cuti." },
   { key: "keputusan", title: "Perlu Keputusan", description: "Pengajuan & dokumen yang menunggu approval." },
   { key: "stok", title: "Stok Menipis", description: "Bahan baku di bawah batas minimum." },
@@ -588,7 +588,7 @@ export function DesktopMonitorBoard({
     pulsa: d && visibility.pulsa && (
         <Card
           wide
-          title="Pulsa Bisnis"
+          title="Ringkasan Transaksi"
           subtitle="POS · hari ini vs kemarin"
           href="/dashboard/pos"
           onGo={go}

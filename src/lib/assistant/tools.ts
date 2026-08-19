@@ -154,7 +154,7 @@ export const ASSISTANT_TOOLS: AssistantTool[] = [
       const dari = argDate(args, "dari") ?? todayJakarta();
       const sampai = argDate(args, "sampai") ?? dari;
       // Definisi omzet tunggal (keputusan owner 2026-08-19): uang yang sudah
-      // dibayar. Sama persis dengan widget Pulsa Bisnis & Laporan Profit —
+      // dibayar. Sama persis dengan widget Ringkasan Transaksi & Laporan Profit —
       // owner tidak boleh mendapat dua angka berbeda untuk pertanyaan yang
       // sama. Sebelumnya di sini order belum dibayar ikut terhitung.
       const [row] = await query(
