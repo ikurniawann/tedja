@@ -153,15 +153,19 @@ export const ASSISTANT_TOOLS: AssistantTool[] = [
     run: async (args) => {
       const dari = argDate(args, "dari") ?? todayJakarta();
       const sampai = argDate(args, "sampai") ?? dari;
+      // Definisi omzet tunggal (keputusan owner 2026-08-19): uang yang sudah
+      // dibayar. Sama persis dengan widget Pulsa Bisnis & Laporan Profit —
+      // owner tidak boleh mendapat dua angka berbeda untuk pertanyaan yang
+      // sama. Sebelumnya di sini order belum dibayar ikut terhitung.
       const [row] = await query(
         `SELECT count(*)::int AS jumlah_pesanan,
                 COALESCE(sum(total_amount), 0)::float AS total_omzet,
                 COALESCE(avg(total_amount), 0)::float AS rata_rata
            FROM pos.pos_orders
-          WHERE created_at >= $1::date
-            AND created_at < ($2::date + interval '1 day')
-            AND status <> 'cancelled'
-            AND voided_at IS NULL`,
+          WHERE COALESCE(ordered_at, created_at) >= $1::date
+            AND COALESCE(ordered_at, created_at) < ($2::date + interval '1 day')
+            AND payment_status = 'paid'
+            AND status::text NOT IN ('cancelled', 'voided', 'merged')`,
         [dari, sampai]
       );
       return { dari, sampai, ...row };

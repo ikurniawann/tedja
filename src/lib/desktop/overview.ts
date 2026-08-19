@@ -31,6 +31,14 @@ export type { PeriodSummary } from "./period";
 
 export interface SalesPulse {
   hariIni: { omzet: number; pesanan: number; rataRata: number };
+  /**
+   * Laba kotor hari ini = omzet − COGS dari snapshot harga modal per item.
+   * BUKAN laba bersih: beban operasional (gaji/sewa/listrik) hanya ada di
+   * jurnal akuntansi, tidak bisa dihitung harian.
+   * `itemTanpaModal` > 0 berarti sebagian produk belum punya harga modal,
+   * sehingga labanya optimistis palsu — widget menandainya, tidak diam saja.
+   */
+  labaKotorHariIni: { laba: number; itemTanpaModal: number } | null;
   kemarin: { omzet: number; pesanan: number };
   /** Hari yang sama minggu lalu (H-7) — pembanding pola mingguan (Fase C). */
   mingguLalu: { omzet: number; pesanan: number };
@@ -145,19 +153,27 @@ export function todayJakarta(now = new Date()): string {
 
 async function fetchSalesPulse(): Promise<SalesPulse> {
   const today = todayJakarta();
-  // Filter identik dengan tool Do `penjualan_periode`: pesanan batal & void
-  // tidak dihitung.
+  // Omzet = uang yang BENAR-BENAR masuk (keputusan owner 2026-08-19).
+  // Definisi disamakan dengan Laporan Profit & tool Do `penjualan_periode`:
+  //   payment_status='paid' AND status NOT IN (cancelled, voided, merged)
+  // Sebelumnya filter di sini tidak memeriksa pembayaran sama sekali, jadi
+  // order yang belum dibayar ikut terhitung sebagai omzet — dan 'merged'
+  // (checkout multi-stall yang digabung) terhitung dobel.
+  // Memakai ordered_at, bukan created_at: laporan profit memakai kolom itu,
+  // dan itu waktu transaksi kasir yang sebenarnya.
   // Rentang -7 hari (bukan -6) supaya hari yang sama minggu lalu ikut terambil
   // untuk pembanding mingguan; sparkline tetap memakai 7 titik terakhir.
   const rows = await query<{ tanggal: string; omzet: string; pesanan: string }>(
-    `SELECT (created_at AT TIME ZONE 'Asia/Jakarta')::date::text AS tanggal,
+    // ordered_at NULLABLE: COALESCE ke created_at supaya order lama tidak
+    // hilang diam-diam dari omzet hanya karena kolomnya kosong.
+    `SELECT (COALESCE(ordered_at, created_at) AT TIME ZONE 'Asia/Jakarta')::date::text AS tanggal,
             COALESCE(sum(total_amount), 0)::float8 AS omzet,
             count(*)::int AS pesanan
        FROM pos.pos_orders
-      WHERE created_at >= ($1::date - interval '7 days')
-        AND created_at < ($1::date + interval '1 day')
-        AND status <> 'cancelled'
-        AND voided_at IS NULL
+      WHERE COALESCE(ordered_at, created_at) >= ($1::date - interval '7 days')
+        AND COALESCE(ordered_at, created_at) < ($1::date + interval '1 day')
+        AND payment_status = 'paid'
+        AND status::text NOT IN ('cancelled', 'voided', 'merged')
       GROUP BY 1
       ORDER BY 1`,
     [today]
@@ -180,12 +196,38 @@ async function fetchSalesPulse(): Promise<SalesPulse> {
     .slice(0, 10);
   const mingguLalu = byDate.get(mingguLaluTgl) ?? { omzet: 0, pesanan: 0 };
 
+  // Laba kotor hari ini dari snapshot biaya per item (kolom yang sama dipakai
+  // Laporan Profit). Gagal query = null, bukan 0: "belum bisa dihitung" beda
+  // artinya dengan "tidak untung", dan widget harus jujur soal itu.
+  let labaKotorHariIni: SalesPulse["labaKotorHariIni"] = null;
+  try {
+    const [laba] = await query<{ laba: string; item_tanpa_modal: string }>(
+      `SELECT COALESCE(sum(i.total_amount - COALESCE(i.cost_total, 0)), 0)::float8 AS laba,
+              count(*) FILTER (WHERE COALESCE(i.cost_total, 0) = 0)::int AS item_tanpa_modal
+         FROM pos.pos_order_items i
+         JOIN pos.pos_orders o ON o.id = i.order_id
+        WHERE (COALESCE(o.ordered_at, o.created_at) AT TIME ZONE 'Asia/Jakarta')::date = $1::date
+          AND o.payment_status = 'paid'
+          AND o.status::text NOT IN ('cancelled', 'voided', 'merged')`,
+      [today]
+    );
+    if (laba) {
+      labaKotorHariIni = {
+        laba: Number(laba.laba) || 0,
+        itemTanpaModal: Number(laba.item_tanpa_modal) || 0,
+      };
+    }
+  } catch {
+    labaKotorHariIni = null;
+  }
+
   return {
     hariIni: {
       omzet: hariIni.omzet,
       pesanan: hariIni.pesanan,
       rataRata: hariIni.pesanan > 0 ? hariIni.omzet / hariIni.pesanan : 0,
     },
+    labaKotorHariIni,
     kemarin: { omzet: kemarin.omzet, pesanan: kemarin.pesanan },
     mingguLalu: { omzet: mingguLalu.omzet, pesanan: mingguLalu.pesanan },
     tujuhHari,
