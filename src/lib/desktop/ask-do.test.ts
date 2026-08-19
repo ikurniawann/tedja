@@ -12,6 +12,7 @@ function withPulsa(hariIni: number, kemarin: number, mingguLalu = 0): DesktopOve
     ...kosong,
     pulsaBisnis: {
       hariIni: { omzet: hariIni, pesanan: 5, rataRata: hariIni / 5 },
+      labaKotorHariIni: null,
       kemarin: { omzet: kemarin, pesanan: 4 },
       mingguLalu: { omzet: mingguLalu, pesanan: 3 },
       tujuhHari: [],
