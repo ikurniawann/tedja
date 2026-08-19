@@ -145,6 +145,15 @@ button{font:inherit}
 .detail-error{color:#ff8aa8;font-size:12px}
 .detail-note{margin-top:12px;font-size:11px;color:var(--muted)}
 
+/* Kursor pixel-hand Nox (aset owner, 2026-08-19): dot/ring bulat prototipe
+ * diganti tangan pixel mint. PNG 25x32 di-raster dari noxcursor.svg — Safari
+ * tidak mendukung cursor SVG, jadi PNG yang dipasang; latar transparan.
+ * Hotspot 2,0 = ujung jari telunjuk (dihitung dari piksel non-transparan
+ * teratas). Selector #app * menang atas cursor:pointer milik tombol
+ * (specificity id) sehingga satu tangan konsisten di seluruh portal. */
+#app,#app *{cursor:url('/member-nox/cursor-hand.png') 2 0,auto}
+.cursor-dot,.cursor-ring{display:none}
+
 .cursor-dot,.cursor-ring{position:fixed;left:0;top:0;pointer-events:none;z-index:9999;border-radius:50%;transform:translate(-50%,-50%);mix-blend-mode:difference}.cursor-dot{width:5px;height:5px;background:white}.cursor-ring{width:34px;height:34px;border:1px solid rgba(255,255,255,.75);transition:width .2s ease,height .2s ease,background .2s ease,border-color .2s ease}.cursor-ring.active{width:52px;height:52px;border-color:var(--pink);background:rgba(247,2,145,.08)}
 
 /* entry */
