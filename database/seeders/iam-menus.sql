@@ -81,6 +81,7 @@ INSERT INTO iam.menus (code, menu_name, route_path, icon, menu_type, order_numbe
   ('pos.reports.rush-hour', 'Rush Hour', '/dashboard/pos/reports/rush-hour', 'clock', 'sidebar', 26, '{"actions":["read"]}'::jsonb),
   ('pos.reports.product-sales', 'Penjualan Produk', '/dashboard/pos/reports/product-sales', 'cube', 'sidebar', 28, '{"actions":["read"]}'::jsonb),
   ('pos.reports.voids', 'Laporan Void', '/dashboard/pos/reports/voids', 'document-text', 'sidebar', 27, '{"actions":["read"]}'::jsonb),
+  ('pos.reports.payment-methods', 'Jenis Pembayaran', '/dashboard/pos/reports/payment-methods', 'credit-card', 'sidebar', 29, '{"actions":["read"]}'::jsonb),
   ('pos.reports.closing', 'Tutup Kasir', '/dashboard/pos/reports/closing', 'document-text', 'sidebar', 30, '{"actions":["read"]}'::jsonb),
   ('hris.master.positions', 'Jabatan', '/dashboard/master/positions', 'briefcase', 'sidebar', 20, '{"actions":["read"]}'::jsonb),
   ('hris.performance.logbook-list', 'Logbook List', '/dashboard/hris/logbook-list', 'clipboard', 'sidebar', 30, '{"actions":["read"]}'::jsonb),
@@ -234,6 +235,7 @@ WHERE deleted_at IS NULL
     -- POS reports Transaksi + Penjualan Produk (23 Jul 2026 — gap whitelist):
     'pos.reports.transactions', 'pos.reports.product-sales',
     'pos.reports.rush-hour', 'pos.reports.voids',
+    'pos.reports.payment-methods',
     -- Items Reports (moved from purchasing.reports, 27 Jul 2026):
     'items.reports', 'items.reports.stock-card', 'items.reports.inventory-valuation',
     'items.reports.po-summary', 'items.reports.po-detail', 'items.reports.supplier-performance',

@@ -5,6 +5,7 @@ import type {
   ProductSalesReportParams,
   RushHourReportParams,
   VoidReportParams,
+  PaymentMethodsReportParams,
 } from "./types";
 
 export const reportsQueryKeys = {
@@ -18,4 +19,6 @@ export const reportsQueryKeys = {
   rushHour: (params: RushHourReportParams) =>
     ["pos", "reports", "rush-hour", params] as const,
   voids: (params: VoidReportParams) => ["pos", "reports", "voids", params] as const,
+  paymentMethods: (params: PaymentMethodsReportParams) =>
+    ["pos", "reports", "payment-methods", params] as const,
 };
