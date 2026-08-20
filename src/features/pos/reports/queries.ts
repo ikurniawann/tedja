@@ -8,6 +8,7 @@ import {
   getProductSalesReport,
   getRushHourReport,
   getVoidReport,
+  getPaymentMethodsReport,
 } from "./api";
 import { reportsQueryKeys } from "./query-keys";
 import type {
@@ -17,6 +18,7 @@ import type {
   ProductSalesReportParams,
   RushHourReportParams,
   VoidReportParams,
+  PaymentMethodsReportParams,
 } from "./types";
 
 export const useProfitReport = (params: ProfitReportParams) =>
@@ -63,6 +65,14 @@ export const useVoidReport = (params: VoidReportParams) =>
   useQuery({
     queryKey: reportsQueryKeys.voids(params),
     queryFn: () => getVoidReport(params),
+    placeholderData: keepPreviousData,
+    enabled: Boolean(params.date_from && params.date_to),
+  });
+
+export const usePaymentMethodsReport = (params: PaymentMethodsReportParams) =>
+  useQuery({
+    queryKey: reportsQueryKeys.paymentMethods(params),
+    queryFn: () => getPaymentMethodsReport(params),
     placeholderData: keepPreviousData,
     enabled: Boolean(params.date_from && params.date_to),
   });
