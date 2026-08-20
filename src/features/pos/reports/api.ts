@@ -11,6 +11,8 @@ import type {
   RushHourReportParams,
   VoidReport,
   VoidReportParams,
+  PaymentMethodsReport,
+  PaymentMethodsReportParams,
 } from "./types";
 
 export type * from "./types";
@@ -107,4 +109,23 @@ export async function getVoidReport(params: VoidReportParams): Promise<VoidRepor
     throw new Error(payload.error || "Gagal memuat laporan void");
   }
   return payload.data as VoidReport;
+}
+
+export async function getPaymentMethodsReport(
+  params: PaymentMethodsReportParams
+): Promise<PaymentMethodsReport> {
+  const sp = new URLSearchParams({
+    date_from: params.date_from,
+    date_to: params.date_to,
+    granularity: params.granularity || "day",
+  });
+  if (params.warehouse_id) sp.set("warehouse_id", params.warehouse_id);
+  const response = await fetch(`/api/pos/reports/payment-methods?${sp.toString()}`, {
+    cache: "no-store",
+  });
+  const payload = await response.json();
+  if (!response.ok || !payload.success || !payload.data) {
+    throw new Error(payload.error || "Gagal memuat laporan jenis pembayaran");
+  }
+  return payload.data as PaymentMethodsReport;
 }
