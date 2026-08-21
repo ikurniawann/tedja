@@ -11,6 +11,7 @@ import {
   branchScopeOr,
   validateProductWarehouseScope,
 } from "@/lib/api/scope";
+import { getApiStallScope } from "@/lib/api/stall-scope";
 import { syncPurchasingProductToPos } from "@/lib/pos/purchasing-sync";
 import { resolvePosStation } from "@/lib/pos/kitchen-station";
 import { withProductHppReview } from "@/lib/purchasing/product-hpp-review";
@@ -73,7 +74,12 @@ export async function GET(request: NextRequest) {
 
     const search = searchParams.get("search");
     const isActive = searchParams.get("is_active");
-    const warehouseId = searchParams.get("warehouse_id");
+    // Param eksplisit menang (mis. picker POS); selain itu ikut stall aktif
+    // sidebar supaya ganti stall benar-benar mengubah daftar produk.
+    const stallScope = await getApiStallScope();
+    const warehouseId =
+      searchParams.get("warehouse_id") ??
+      (stallScope.mode === "stall" ? stallScope.warehouseId : null);
     const hppReview = searchParams.get("hpp_review") === "true";
     const page = parseInt(searchParams.get("page") || "1");
     const limit = parseInt(searchParams.get("limit") || "20");

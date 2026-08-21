@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createServerPgClient } from "@/lib/pg/create-client";
+import { rawMaterialStockSource } from "@/lib/api/stall-scope";
 
 type PurchaseOrderKpiRow = {
   total?: number | null;
@@ -40,6 +41,14 @@ export async function GET(request: Request) {
   try {
     const db = await createServerPgClient();
     const { searchParams } = new URL(request.url);
+
+    // KPI stok & stock alert mengikuti stall aktif di sidebar.
+    const { view: stockView, warehouseId } = await rawMaterialStockSource();
+    let lowStockQuery = db
+      .from(stockView)
+      .select("id", { count: "exact", head: true })
+      .in("status_stok", ["MENIPIS", "HABIS"]);
+    if (warehouseId) lowStockQuery = lowStockQuery.eq("warehouse_id", warehouseId);
 
     // Get date range from query params
     const startDate = searchParams.get("start_date");
@@ -87,10 +96,7 @@ export async function GET(request: Request) {
         .select("id, total, grand_total, created_at")
         .gte("created_at", prevMonthStart.toISOString())
         .lte("created_at", prevMonthEnd.toISOString()),
-      db
-        .from("v_raw_materials_stock")
-        .select("id", { count: "exact", head: true })
-        .in("status_stok", ["MENIPIS", "HABIS"]),
+      lowStockQuery,
       db
         .from("v_purchase_orders")
         .select("id", { count: "exact", head: true })
@@ -144,10 +150,13 @@ export async function GET(request: Request) {
 
     // ── Stock Alerts ───────────────────────────────────────────────────────
 
-    const { data: stockAlertsData } = await db
-      .from("v_raw_materials_stock")
+    let stockAlertsQuery = db
+      .from(stockView)
       .select("id, nama, kategori, qty_onhand, min_stock, satuan")
-      .in("status_stok", ["MENIPIS", "HABIS"])
+      .in("status_stok", ["MENIPIS", "HABIS"]);
+    if (warehouseId) stockAlertsQuery = stockAlertsQuery.eq("warehouse_id", warehouseId);
+
+    const { data: stockAlertsData } = await stockAlertsQuery
       .order("qty_onhand", { ascending: true })
       .limit(10);
 

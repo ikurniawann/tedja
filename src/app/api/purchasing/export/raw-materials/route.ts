@@ -6,6 +6,7 @@ import {
   companyScopeOr,
   branchScopeOr,
 } from "@/lib/api/scope";
+import { getApiStallScope } from "@/lib/api/stall-scope";
 import { query } from "@/lib/db";
 import {
   buildRawMaterialWorkbook,
@@ -56,6 +57,19 @@ export async function GET() {
       }
     }
 
+    // Stok awal yang diekspor mengikuti stall aktif di sidebar, agar isi file
+    // sama dengan tabel yang sedang dilihat. Mode "Semua Stall" tetap memakai
+    // gudang MAIN seperti template impor.
+    const stallScope = await getApiStallScope();
+    let warehouseJoin = `wh.branch_id = rm.branch_id
+        AND wh.code = 'MAIN'
+        AND wh.is_active = true`;
+    if (stallScope.mode === "stall") {
+      params.push(stallScope.warehouseId);
+      warehouseJoin = `wh.id = $${params.length}
+        AND wh.is_active = true`;
+    }
+
     const rows = await query<ExportRow>(
       `SELECT
          rm.kode,
@@ -77,9 +91,7 @@ export async function GET() {
        LEFT JOIN item.units ub ON ub.id = rm.satuan_besar_id
        LEFT JOIN item.units uk ON uk.id = rm.satuan_kecil_id
        LEFT JOIN configuration.warehouses wh
-         ON wh.branch_id = rm.branch_id
-        AND wh.code = 'MAIN'
-        AND wh.is_active = true
+         ON ${warehouseJoin}
        LEFT JOIN inventory.inventory inv
          ON inv.raw_material_id = rm.id
         AND inv.warehouse_id = wh.id
