@@ -10,6 +10,7 @@ import {
   branchScopeOr,
   effectiveBranchId,
 } from "@/lib/api/scope";
+import { rawMaterialStockSource } from "@/lib/api/stall-scope";
 
 // GET /api/purchasing/inventory
 export async function GET(request: NextRequest) {
@@ -21,11 +22,13 @@ export async function GET(request: NextRequest) {
     const belowMinimum = searchParams.get("below_minimum") === "true";
     const search = searchParams.get("search");
 
+    const { view: stockView, warehouseId } = await rawMaterialStockSource();
     let query = db
-      .from("v_raw_materials_stock")
+      .from(stockView)
       .select("*")
       .eq("is_active", true)
       .is("deleted_at", null);
+    if (warehouseId) query = query.eq("warehouse_id", warehouseId);
 
     const companyOr = companyScopeOr(scope);
     if (companyOr) query = query.or(companyOr);

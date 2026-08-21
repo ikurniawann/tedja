@@ -4,6 +4,7 @@
 
 import { NextRequest } from "next/server";
 import { createServerPgClient } from "@/lib/pg/create-client";
+import { rawMaterialStockSource } from "@/lib/api/stall-scope";
 
 // GET /api/purchasing/inventory/:id
 export async function GET(
@@ -15,11 +16,10 @@ export async function GET(
     const db = await createServerPgClient();
 
     // Get inventory dengan detail bahan
-    const { data: inventory, error: invError } = await db
-      .from("v_raw_materials_stock")
-      .select("*")
-      .eq("id", id)
-      .single();
+    const { view: stockView, warehouseId } = await rawMaterialStockSource();
+    let inventoryQuery = db.from(stockView).select("*").eq("id", id);
+    if (warehouseId) inventoryQuery = inventoryQuery.eq("warehouse_id", warehouseId);
+    const { data: inventory, error: invError } = await inventoryQuery.single();
 
     if (invError) {
       if (invError.code === "PGRST116") {

@@ -16,6 +16,7 @@ import {
   getApiUserScope,
   isRowInBusinessScope,
 } from "@/lib/api/scope";
+import { rawMaterialStockSource } from "@/lib/api/stall-scope";
 import { deriveLegacyCoaEnum } from "@/lib/purchasing/raw-material-coa";
 
 const coaAccountCode = z
@@ -71,11 +72,10 @@ export async function GET(
     const scope = await getApiUserScope();
 
     // Get material dengan stok info
-    const { data, error } = await db
-      .from("v_raw_materials_stock")
-      .select("*")
-      .eq("id", id)
-      .single();
+    const { view: stockView, warehouseId } = await rawMaterialStockSource();
+    let detailQuery = db.from(stockView).select("*").eq("id", id);
+    if (warehouseId) detailQuery = detailQuery.eq("warehouse_id", warehouseId);
+    const { data, error } = await detailQuery.single();
 
     if (error) {
       if (error.code === "PGRST116") {

@@ -23,6 +23,7 @@ import {
   deriveLegacyCoaEnum,
   resolveDefaultCoaForCategory,
 } from "@/lib/purchasing/raw-material-coa";
+import { rawMaterialStockSource } from "@/lib/api/stall-scope";
 
 const coaAccountCode = z
   .string()
@@ -72,6 +73,9 @@ export async function GET(request: NextRequest) {
   try {
     const db = await createServerPgClient();
     const scope = await getApiUserScope();
+    // Stok bersifat per-stall: pakai view berdimensi warehouse saat ada stall
+    // aktif, dan view agregat saat mode "Semua Stall".
+    const { view: stockView, warehouseId } = await rawMaterialStockSource();
     const { searchParams } = new URL(request.url);
 
     // Query params
@@ -115,9 +119,10 @@ export async function GET(request: NextRequest) {
 
     // Build query
     let query = db
-      .from("v_raw_materials_stock")
+      .from(stockView)
       .select("*", { count: "exact" })
       .is("deleted_at", null);
+    if (warehouseId) query = query.eq("warehouse_id", warehouseId);
 
     // Business scope: company + branch (bahan baku level branch)
     const companyOr = companyScopeOr(scope);
@@ -129,9 +134,10 @@ export async function GET(request: NextRequest) {
 
     // Summary counts (scope + search/kategori; ignore below_minimum so cards stay global KPIs)
     let summaryBase = db
-      .from("v_raw_materials_stock")
+      .from(stockView)
       .select("status_stok")
       .is("deleted_at", null);
+    if (warehouseId) summaryBase = summaryBase.eq("warehouse_id", warehouseId);
     if (companyOr) summaryBase = summaryBase.or(companyOr);
     if (branchOr) summaryBase = summaryBase.or(branchOr);
     summaryBase = applyListFilters(summaryBase, { includeBelowMinimum: false });

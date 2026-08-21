@@ -3,6 +3,7 @@
 // ============================================
 
 import { createServerPgClient } from "@/lib/pg/create-client";
+import { rawMaterialStockSource } from "@/lib/api/stall-scope";
 
 function toNumber(value: unknown) {
   const numeric = Number(value);
@@ -15,11 +16,16 @@ export async function GET() {
     const db = await createServerPgClient();
 
     // Get semua inventory aktif dengan stok > 0
-    const { data, error } = await db
-      .from("v_raw_materials_stock")
+    const { view: stockView, warehouseId } = await rawMaterialStockSource();
+    let valuationQuery = db
+      .from(stockView)
       .select("*")
-      .eq("is_active", true)
-      .order("kategori", { ascending: true });
+      .eq("is_active", true);
+    if (warehouseId) valuationQuery = valuationQuery.eq("warehouse_id", warehouseId);
+
+    const { data, error } = await valuationQuery.order("kategori", {
+      ascending: true,
+    });
 
     if (error) throw error;
 
