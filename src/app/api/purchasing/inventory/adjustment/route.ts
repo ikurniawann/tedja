@@ -122,6 +122,7 @@ export async function POST(request: NextRequest) {
     if (updateError) throw updateError;
 
     if (qtyDiff !== 0) {
+      const referenceId = crypto.randomUUID();
       const { error: movementError } = await db.from("inventory_movements").insert({
         inventory_id: inventoryId,
         raw_material_id: validated.raw_material_id,
@@ -134,6 +135,7 @@ export async function POST(request: NextRequest) {
         branch_id: currentInv.branch_id ?? null,
         warehouse_id: currentInv.warehouse_id ?? validated.warehouse_id,
         reference_type: "adjustment",
+        reference_id: referenceId,
         alasan:
           validated.notes ||
           `Penyesuaian stok: ${qtyDiff > 0 ? "+" : ""}${qtyDiff}`,
@@ -142,6 +144,59 @@ export async function POST(request: NextRequest) {
       });
 
       if (movementError) throw movementError;
+
+      let accountingNote: string | null = null;
+      try {
+        const {
+          AccountingPostError,
+          postStockAdjustmentAccounting,
+        } = await import("@/lib/inventory/accounting-posting");
+
+        const companyRow = currentInv.branch_id
+          ? await (
+              await import("@/lib/db")
+            ).queryOne<{ company_id: string }>(
+              `SELECT company_id FROM configuration.branches WHERE id = $1`,
+              [currentInv.branch_id]
+            )
+          : null;
+
+        const accounting = await postStockAdjustmentAccounting({
+          companyId: companyRow?.company_id ?? material?.company_id ?? null,
+          userId: user.id,
+          documentId: referenceId,
+          entryDate: new Date().toISOString().slice(0, 10),
+          rawMaterialId: validated.raw_material_id,
+          qtyDiff,
+          unitCost: Number(currentInv.unit_cost || 0),
+          notes: validated.notes,
+        });
+        accountingNote = accounting.note;
+      } catch (err) {
+        const { AccountingPostError } = await import(
+          "@/lib/inventory/accounting-posting"
+        );
+        if (err instanceof AccountingPostError) {
+          console.error("[adjustment] accounting post failed:", err.message);
+          accountingNote = err.message;
+        } else {
+          throw err;
+        }
+      }
+
+      return Response.json({
+        success: true,
+        data: updatedInv,
+        message: accountingNote
+          ? `Stok berhasil disesuaikan (${accountingNote})`
+          : "Stok berhasil disesuaikan",
+        accounting_note: accountingNote,
+        adjustment: {
+          qty_before: qtyBefore,
+          qty_after: validated.qty_actual,
+          qty_diff: qtyDiff,
+        },
+      });
     }
 
     return Response.json({

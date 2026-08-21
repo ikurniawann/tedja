@@ -79,54 +79,83 @@ export async function getRawMaterialDetail(
 // ─── Create ──────────────────────────────────────────────────────────────────
 
 export interface CreateRawMaterialInput {
-  kode_bahan: string;
-  nama_bahan: string;
+  kode?: string | null;
+  nama?: string;
+  /** @deprecated gunakan `kode` */
+  kode_bahan?: string;
+  /** @deprecated gunakan `nama` */
+  nama_bahan?: string;
   kategori?: string;
+  deskripsi?: string | null;
   satuan_besar_id: string;
   satuan_kecil_id?: string;
+  harga_beli?: number;
   konversi_factor?: number;
   stok_minimum?: number;
   stok_maximum?: number;
   shelf_life_days?: number;
   storage_condition?: string;
-  coa_production?: string;
-  coa_rnd?: string;
-  coa_asset?: string;
+  coa_production?: string | null;
+  coa_rnd?: string | null;
+  coa_asset?: string | null;
+  unit_conversions?: Array<{
+    satuan_id: string;
+    qty_in_base_unit: number;
+    is_base?: boolean;
+  }>;
 }
 
 export async function createRawMaterial(
   input: CreateRawMaterialInput
 ): Promise<{ success: boolean; data: RawMaterial; message: string }> {
+  const body = {
+    ...input,
+    kode: input.kode ?? input.kode_bahan ?? null,
+    nama: input.nama ?? input.nama_bahan,
+  };
   return fetchApi(`${BASE}`, {
     method: "POST",
-    body: JSON.stringify(input),
+    body: JSON.stringify(body),
   });
 }
 
 // ─── Update ─────────────────────────────────────────────────────────────────
 
 export interface UpdateRawMaterialInput {
+  nama?: string;
+  /** @deprecated gunakan `nama` */
   nama_bahan?: string;
   kategori?: string;
+  deskripsi?: string | null;
   satuan_besar_id?: string;
   satuan_kecil_id?: string | null;
+  harga_beli?: number;
   konversi_factor?: number;
   stok_minimum?: number;
   stok_maximum?: number | null;
   shelf_life_days?: number;
   storage_condition?: string;
-  coa_production?: string;
-  coa_rnd?: string;
-  coa_asset?: string;
+  coa_production?: string | null;
+  coa_rnd?: string | null;
+  coa_asset?: string | null;
+  unit_conversions?: Array<{
+    satuan_id: string;
+    qty_in_base_unit: number;
+    is_base?: boolean;
+  }>;
 }
 
 export async function updateRawMaterial(
   id: string,
   input: UpdateRawMaterialInput
 ): Promise<{ success: boolean; data: RawMaterial; message: string; warning?: string | null }> {
+  const body = {
+    ...input,
+    nama: input.nama ?? input.nama_bahan,
+  };
   return fetchApi(`${BASE}/${id}`, {
     method: "PUT",
-    body: JSON.stringify(input),
+    body: JSON.stringify(body),
   });
 }
 
