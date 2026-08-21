@@ -1,8 +1,12 @@
 import { NextRequest } from "next/server";
 import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
 import { IAM } from "@/lib/iam/prefixes";
-import { withTransaction } from "@/lib/db";
+import { queryOne, withTransaction } from "@/lib/db";
 import { fetchStockOpnameDetail } from "@/lib/inventory/stock-opname";
+import {
+  AccountingPostError,
+  postStockOpnameAccounting,
+} from "@/lib/inventory/accounting-posting";
 
 const OPNAME_ROLES = ["super_admin", "warehouse_admin", "purchasing_admin"] as const;
 
@@ -135,17 +139,59 @@ export async function POST(_request: NextRequest, context: RouteContext) {
         [
           detail.id,
           detail.lines.length,
-          detail.lines.filter((l) => toNumber(l.qty_variance) !== 0).length,
+          detail.lines.filter((l) => {
+            const counted = toNumber(l.qty_counted);
+            return counted - l.qty_system !== 0;
+          }).length,
           user.id,
         ]
       );
     });
 
+    let accountingNote: string | null = null;
+    try {
+      const companyRow = detail.branch_id
+        ? await queryOne<{ company_id: string }>(
+            `SELECT company_id FROM configuration.branches WHERE id = $1`,
+            [detail.branch_id]
+          )
+        : null;
+
+      const varianceLines = detail.lines.map((line) => {
+        const qtyAfter = toNumber(line.qty_counted);
+        return {
+          raw_material_id: line.raw_material_id,
+          qty_diff: qtyAfter - line.qty_system,
+          unit_cost: toNumber(line.unit_cost),
+          material_nama: line.material_nama,
+        };
+      });
+
+      const accounting = await postStockOpnameAccounting({
+        companyId: companyRow?.company_id ?? null,
+        userId: user.id,
+        opnameId: detail.id,
+        opnameNumber: detail.opname_number,
+        opnameDate: String(detail.opname_date).slice(0, 10),
+        lines: varianceLines,
+      });
+      accountingNote = accounting.note;
+    } catch (err) {
+      if (err instanceof AccountingPostError) {
+        console.error("[stock-opname] accounting post failed:", err.message);
+        accountingNote = err.message;
+      } else {
+        throw err;
+      }
+    }
+
     const updated = await fetchStockOpnameDetail(id);
+    const baseMessage = "Stock opname selesai dan stok telah disesuaikan";
     return Response.json({
       success: true,
       data: updated,
-      message: "Stock opname selesai dan stok telah disesuaikan",
+      message: accountingNote ? `${baseMessage} (${accountingNote})` : baseMessage,
+      accounting_note: accountingNote,
     });
   } catch (error: unknown) {
     if (error instanceof ApiError) return error.toResponse();

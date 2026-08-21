@@ -80,6 +80,14 @@ export interface PaginatedResponse<T> {
     total: number;
     total_pages: number;
   };
+  summary?: RawMaterialStockSummary;
+}
+
+export interface RawMaterialStockSummary {
+  total: number;
+  aman: number;
+  menipis: number;
+  habis: number;
 }
 
 export interface POListParams {

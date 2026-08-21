@@ -19,3 +19,66 @@ rollback-development:
 
 rollback-production:
   variables: {COMPOSE_SERVICE_NAME: "arkiv"}
+
+# ---------------------------------------------------------------------------
+# Local cache override — see docs/ci-cache.md for the full writeup.
+#
+# ci-cd-template's build_job does `docker build --cache-from "$IMAGE:$CHANNEL"`,
+# which can only ever reuse layers from the FINAL stage (the only one pushed
+# to the registry) — deps/builder (pnpm install, pnpm build) never get a cache
+# hit, cold or not. Only `script:` is redeclared here — GitLab's include-merge
+# keeps stage/image/services/rules/environment from the template job
+# untouched (same deep-merge pattern as the COMPOSE_SERVICE_NAME overrides
+# above: local wins per key, the rest comes from the include).
+#
+# Registry cache export (--cache-to) needs the docker-container buildx
+# driver — this fleet's default "docker" driver has no containerd snapshotter
+# and fails with "Cache export is not supported for the docker driver"
+# (confirmed 2026-08-20). `cibuilder` is a pre-provisioned docker-container
+# builder on GITLAB-RUNNER (host-socket mode, reachable via the
+# /root/.docker/buildx volume mount added to its config.toml). WIT-HQ — the
+# other runner that can pick up this project's untagged jobs — builds through
+# an ephemeral dind service instead of the host socket, so it can never see
+# a host-side builder; the `docker buildx inspect cibuilder` check below
+# fails there and falls back to the original template behavior (still
+# correct, just without the registry cache win). Nothing breaks either way.
+.cached_build_script: &cached_build_script
+  - |
+    if docker -H unix:///var/run/docker.sock info >/dev/null 2>&1; then
+      echo "Host Docker socket available on this runner -- using it directly, skipping dind."
+      export DOCKER_HOST=unix:///var/run/docker.sock
+    else
+      echo "No usable host socket on this runner -- waiting for the dind service instead."
+      export DOCKER_HOST=tcp://docker:2375
+      until docker info >/dev/null 2>&1; do sleep 1; done
+    fi
+  - echo "$REGISTRY_DEPLOY_TOKEN" | docker login -u "$REGISTRY_DEPLOY_USER" --password-stdin "$DOCKER_REGISTRY_PUSH"
+  - |
+    if [ -f package.json ]; then
+      if [ -z "${RUNTIME_CONFIG_CONTENT:-}" ]; then
+        echo "ERROR: RUNTIME_CONFIG_CONTENT is empty (required for Node/Next.js builds)"
+        exit 1
+      fi
+      printf %s "$RUNTIME_CONFIG_CONTENT" > .env
+    fi
+  - |
+    if docker buildx inspect cibuilder >/dev/null 2>&1; then
+      echo "cibuilder available on this runner -- building with registry cache export (all stages, mode=max)."
+      docker buildx build --builder cibuilder \
+        --cache-to "type=registry,ref=$CI_REGISTRY_IMAGE_PUSH:buildcache-$CHANNEL,mode=max" \
+        --cache-from "type=registry,ref=$CI_REGISTRY_IMAGE_PUSH:buildcache-$CHANNEL" \
+        -t "$CI_REGISTRY_IMAGE_PUSH:$CI_COMMIT_TAG" \
+        -t "$CI_REGISTRY_IMAGE_PUSH:$CHANNEL" \
+        --push .
+    else
+      echo "cibuilder not available on this runner -- falling back to the ci-cd-template default (no registry cache)."
+      docker build --cache-from "$CI_REGISTRY_IMAGE_PUSH:$CHANNEL" -t "$CI_REGISTRY_IMAGE_PUSH:$CI_COMMIT_TAG" -t "$CI_REGISTRY_IMAGE_PUSH:$CHANNEL" .
+      docker push "$CI_REGISTRY_IMAGE_PUSH:$CI_COMMIT_TAG"
+      docker push "$CI_REGISTRY_IMAGE_PUSH:$CHANNEL"
+    fi
+
+build-development:
+  script: *cached_build_script
+
+build-production:
+  script: *cached_build_script
