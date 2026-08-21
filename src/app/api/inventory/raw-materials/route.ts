@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { resolveWarehouseFilter } from "@/lib/api/stall-scope";
 import { createServerPgClient } from "@/lib/pg/create-client";
 import { paginatedResponse } from "@/lib/api/auth";
 import {
@@ -71,7 +72,9 @@ export async function GET(request: NextRequest) {
     const scope = await getApiUserScope();
     const { searchParams } = new URL(request.url);
     const params = querySchema.parse(Object.fromEntries(searchParams));
-    const { search, status, page, limit, warehouse_id: warehouseIdParam } = params;
+    const { search, status, page, limit } = params;
+    // Filter gudang eksplisit menang; selain itu ikut stall aktif di sidebar.
+    const warehouseIdParam = await resolveWarehouseFilter(params.warehouse_id);
 
     if (warehouseIdParam) {
       const warehouseCheck = await validateWarehouseForReceivingScope(

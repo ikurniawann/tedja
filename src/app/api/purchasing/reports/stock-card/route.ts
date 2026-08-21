@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { resolveWarehouseFilter } from "@/lib/api/stall-scope";
 import { z } from "zod";
 import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
 import { IAM } from "@/lib/iam/prefixes";
@@ -482,7 +483,13 @@ export async function GET(request: NextRequest) {
     await requireIamMenuPrefix(IAM.items);
     const db = createPgClient();
     const { searchParams } = new URL(request.url);
-    const params = querySchema.parse(Object.fromEntries(searchParams));
+    const parsed = querySchema.parse(Object.fromEntries(searchParams));
+    // Filter gudang eksplisit menang; selain itu ikut stall aktif di sidebar.
+    const params = {
+      ...parsed,
+      warehouse_id:
+        (await resolveWarehouseFilter(parsed.warehouse_id)) ?? undefined,
+    };
     const dateFrom = params.date_from ? startOfDay(params.date_from) : undefined;
     const dateTo = params.date_to ? endOfDay(params.date_to) : undefined;
 

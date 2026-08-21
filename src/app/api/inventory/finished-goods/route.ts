@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { resolveWarehouseFilter } from "@/lib/api/stall-scope";
 import { createServerPgClient } from "@/lib/pg/create-client";
 import { paginatedResponse } from "@/lib/api/auth";
 import {
@@ -14,7 +15,12 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const search = searchParams.get("search") || "";
     const status = searchParams.get("status") || "";
-    const warehouseId = searchParams.get("warehouse_id") || "";
+    // "all" = permintaan eksplisit semua gudang; selain itu ikut stall aktif.
+    const warehouseParam = searchParams.get("warehouse_id") || "";
+    const warehouseId =
+      warehouseParam === "all"
+        ? "all"
+        : (await resolveWarehouseFilter(warehouseParam)) ?? "";
     const page = Number(searchParams.get("page") || 1);
     const limit = Number(searchParams.get("limit") || 20);
     const offset = (page - 1) * limit;
