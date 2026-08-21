@@ -3,18 +3,18 @@ import { cookies } from "next/headers";
 import { clearSessionCookie, destroySession } from "@/lib/auth/session";
 import { SESSION_COOKIE } from "@/lib/auth/constants";
 
-export async function POST() {
+export async function POST(request: Request) {
   const store = await cookies();
   const token = store.get(SESSION_COOKIE)?.value;
   await destroySession(token);
   const response = NextResponse.json({ success: true });
-  clearSessionCookie(response);
+  clearSessionCookie(response, request);
   return response;
 }
 
 // Dipakai requireUser() saat cookie session ada tapi tidak valid lagi —
 // tanpa ini browser terjebak redirect loop /login ↔ /dashboard.
-export async function GET() {
+export async function GET(request: Request) {
   const store = await cookies();
   const token = store.get(SESSION_COOKIE)?.value;
   await destroySession(token);
@@ -24,6 +24,6 @@ export async function GET() {
     status: 307,
     headers: { Location: "/login" },
   });
-  clearSessionCookie(response);
+  clearSessionCookie(response, request);
   return response;
 }

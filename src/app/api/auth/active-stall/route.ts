@@ -8,6 +8,7 @@ import {
   findActiveStall,
 } from "@/lib/auth/active-stall";
 import { getStallAccess } from "@/lib/auth/stall-access";
+import { isSecureRequest } from "@/lib/auth/secure-cookie";
 import { queryOne } from "@/lib/db";
 
 const bodySchema = z.object({
@@ -42,7 +43,7 @@ export async function POST(request: NextRequest) {
       response.cookies.set(ACTIVE_STALL_COOKIE, ACTIVE_STALL_ALL, {
         httpOnly: true,
         sameSite: "lax",
-        secure: process.env.NODE_ENV === "production",
+        secure: isSecureRequest(request),
         path: "/",
         maxAge: 60 * 60 * 24 * 30,
       });
@@ -71,7 +72,7 @@ export async function POST(request: NextRequest) {
     response.cookies.set(ACTIVE_STALL_COOKIE, stall.id, {
       httpOnly: true,
       sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
+      secure: isSecureRequest(request),
       path: "/",
       maxAge: 60 * 60 * 24 * 30,
     });

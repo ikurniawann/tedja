@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
       data: { id: target.id, email: target.email, role: target.role, full_name: target.full_name },
       message: `Logged in as ${target.full_name}`,
     });
-    setSessionCookie(response, token, expiresAt);
+    setSessionCookie(response, token, expiresAt, request);
     return response;
   } catch (error) {
     if (error instanceof ApiError) return error.toResponse();
