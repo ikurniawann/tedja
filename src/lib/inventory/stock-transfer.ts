@@ -135,6 +135,7 @@ export type ExecuteStockTransferResult = {
   transfer_number: string;
   reference_id: string;
   qty: number;
+  unit_cost: number;
   source_warehouse: WarehouseInfo;
   dest_warehouse: WarehouseInfo;
 };
@@ -286,6 +287,7 @@ export async function executeStockTransfer(
     transfer_number: transferNumber,
     reference_id: referenceId,
     qty,
+    unit_cost: unitCost,
     source_warehouse: source,
     dest_warehouse: dest,
   };

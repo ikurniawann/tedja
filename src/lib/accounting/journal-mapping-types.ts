@@ -4,6 +4,7 @@ export const JOURNAL_MODULES = [
   "PAYROLL",
   "PINJAMAN",
   "SALES",
+  "INVENTORY",
 ] as const;
 export type JournalModule = (typeof JOURNAL_MODULES)[number];
 
@@ -62,6 +63,11 @@ export const JOURNAL_EVENT_CODES = [
   "PINJAMAN_REPAYMENT",
   "SALE_AR_INVOICE",
   "SALE_AR_RECEIPT",
+  "STOCK_OPNAME_SHORTAGE",
+  "STOCK_OPNAME_SURPLUS",
+  "STOCK_ADJUSTMENT_SHORTAGE",
+  "STOCK_ADJUSTMENT_SURPLUS",
+  "STOCK_TRANSFER",
 ] as const;
 export type JournalEventCode = (typeof JOURNAL_EVENT_CODES)[number];
 
@@ -168,6 +174,31 @@ export const JOURNAL_EVENT_META: Record<
     name: "Sale AR Receipt",
     module: "SALES",
     description: "Penerimaan pembayaran piutang customer",
+  },
+  STOCK_OPNAME_SHORTAGE: {
+    name: "Stock Opname — Shortage",
+    module: "INVENTORY",
+    description: "Selisih opname kurang (spoil/waste vs inventori)",
+  },
+  STOCK_OPNAME_SURPLUS: {
+    name: "Stock Opname — Surplus",
+    module: "INVENTORY",
+    description: "Selisih opname lebih (inventori vs koreksi spoil)",
+  },
+  STOCK_ADJUSTMENT_SHORTAGE: {
+    name: "Stock Adjustment — Shortage",
+    module: "INVENTORY",
+    description: "Penyesuaian stok kurang",
+  },
+  STOCK_ADJUSTMENT_SURPLUS: {
+    name: "Stock Adjustment — Surplus",
+    module: "INVENTORY",
+    description: "Penyesuaian stok lebih",
+  },
+  STOCK_TRANSFER: {
+    name: "Stock Transfer",
+    module: "INVENTORY",
+    description: "Transfer stok antar gudang (audit nilai inventori)",
   },
 };
 

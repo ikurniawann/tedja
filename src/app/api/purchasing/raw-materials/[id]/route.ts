@@ -10,11 +10,31 @@ import {
   throwIfDbError,
   UNIT_CONVERSION_SELECT,
   prepareMaterialBody,
+  normalizeCoaAccountCode,
 } from "../_helpers";
 import {
   getApiUserScope,
   isRowInBusinessScope,
 } from "@/lib/api/scope";
+import { deriveLegacyCoaEnum } from "@/lib/purchasing/raw-material-coa";
+
+const coaAccountCode = z
+  .string()
+  .max(20)
+  .nullish()
+  .transform((v, ctx) => {
+    if (v === undefined) return undefined;
+    if (v == null || v === "") return null;
+    const code = normalizeCoaAccountCode(v);
+    if (!code) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Kode Chart of Accounts tidak valid (gunakan 7 digit, mis. 1301001)",
+      });
+      return z.NEVER;
+    }
+    return code;
+  });
 
 const materialSchema = z.object({
   nama: z.string().min(1).max(100).optional(),
@@ -29,6 +49,10 @@ const materialSchema = z.object({
   shelf_life_days: z.number().min(0).optional().nullable(),
   storage_condition: z.string().max(20).optional().nullable(),
   is_active: z.boolean().optional(),
+  coa: z.enum(["PRODUCTION", "RND", "ASSET"]).optional().nullable(),
+  coa_production: coaAccountCode,
+  coa_rnd: coaAccountCode,
+  coa_asset: coaAccountCode,
   unit_conversions: z.array(z.object({
     satuan_id: z.string().uuid(),
     qty_in_base_unit: z.number().min(0.000001),
@@ -168,11 +192,33 @@ export async function PUT(
 
     const { unit_conversions, ...materialPayload } = validated;
 
+    const nextProduction =
+      materialPayload.coa_production !== undefined
+        ? materialPayload.coa_production
+        : existingMaterial.coa_production;
+    const nextRnd =
+      materialPayload.coa_rnd !== undefined
+        ? materialPayload.coa_rnd
+        : existingMaterial.coa_rnd;
+    const nextAsset =
+      materialPayload.coa_asset !== undefined
+        ? materialPayload.coa_asset
+        : existingMaterial.coa_asset;
+    const coa =
+      materialPayload.coa !== undefined
+        ? materialPayload.coa
+        : deriveLegacyCoaEnum({
+            coa_production: nextProduction,
+            coa_rnd: nextRnd,
+            coa_asset: nextAsset,
+          }) ?? existingMaterial.coa;
+
     // Update data
     const { data, error } = await db
       .from("raw_materials")
       .update({
         ...materialPayload,
+        coa,
         updated_at: new Date().toISOString(),
       })
       .eq("id", id)

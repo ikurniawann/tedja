@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,10 +13,12 @@ import { PurchasingListSection } from "@/modules/purchasing/components/list/Purc
 import { PurchasingTablePagination } from "@/modules/purchasing/components/pagination/PurchasingTablePagination";
 import {
   AlertCircle,
+  CheckCircle2,
   Eye,
   Filter,
   Loader2,
   Package,
+  PackageX,
   Pencil,
   Plus,
   Search,
@@ -103,25 +105,17 @@ export function RawMaterialsPage() {
   const loading = listQuery.isLoading;
   const total = listQuery.data?.pagination.total ?? 0;
   const totalPages = listQuery.data?.pagination.total_pages ?? 1;
+  const stockSummary = listQuery.data?.summary ?? {
+    total: 0,
+    aman: 0,
+    menipis: 0,
+    habis: 0,
+  };
 
   const deleteMutation = useDeleteRawMaterial();
   const statusMutation = useUpdateRawMaterialStatus();
   const isDeleting = deleteMutation.isPending;
   const statusUpdatingId = statusMutation.isPending ? statusMutation.variables?.id ?? null : null;
-
-  const stockSummary = useMemo(() => {
-    return materials.reduce(
-      (acc, material) => {
-        const status = material.status_stok ?? "AMAN";
-        if (status === "MENIPIS") acc.low += 1;
-        else if (status === "HABIS") acc.out += 1;
-        else acc.safe += 1;
-        if (material.is_active !== false) acc.active += 1;
-        return acc;
-      },
-      { safe: 0, low: 0, out: 0, active: 0 }
-    );
-  }, [materials]);
 
   useEffect(() => {
     if (listQuery.isError) {
@@ -261,18 +255,56 @@ export function RawMaterialsPage() {
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         {[
-          { label: "Total Bahan", value: total, className: "text-gray-900" },
-          { label: "Stok Aman", value: stockSummary.safe, className: "text-emerald-700" },
-          { label: "Stok Menipis", value: stockSummary.low, className: "text-amber-700" },
-          { label: "Stok Habis", value: stockSummary.out, className: "text-red-700" },
-        ].map((stat) => (
-          <Card key={stat.label} className="border-gray-200/70 shadow-xs">
-            <CardContent className="p-4">
-              <p className="text-xs font-medium text-gray-500">{stat.label}</p>
-              <p className={`mt-1 text-2xl font-bold ${stat.className}`}>{stat.value}</p>
-            </CardContent>
-          </Card>
-        ))}
+          {
+            label: "Total Bahan",
+            value: stockSummary.total,
+            className: "text-gray-900",
+            iconWrap: "bg-primary/10 text-primary",
+            icon: Package,
+          },
+          {
+            label: "Stok Aman",
+            value: stockSummary.aman,
+            className: "text-emerald-700",
+            iconWrap: "bg-emerald-50 text-emerald-600",
+            icon: CheckCircle2,
+          },
+          {
+            label: "Stok Menipis",
+            value: stockSummary.menipis,
+            className: "text-amber-700",
+            iconWrap: "bg-amber-50 text-amber-600",
+            icon: AlertCircle,
+          },
+          {
+            label: "Stok Habis",
+            value: stockSummary.habis,
+            className: "text-red-700",
+            iconWrap: "bg-red-50 text-red-600",
+            icon: PackageX,
+          },
+        ].map((stat) => {
+          const Icon = stat.icon;
+          return (
+            <Card key={stat.label} className="border-gray-200/70 shadow-xs">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <span
+                    className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${stat.iconWrap}`}
+                  >
+                    <Icon className="h-5 w-5" />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-xs font-medium text-gray-500">{stat.label}</p>
+                    <p className={`mt-0.5 text-2xl font-bold tabular-nums ${stat.className}`}>
+                      {stat.value.toLocaleString("id-ID")}
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
       </div>
 
       <PurchasingListSection
@@ -458,17 +490,17 @@ export function RawMaterialsPage() {
                             <div className="flex flex-wrap gap-1">
                               {material.coa_production && (
                                 <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-700">
-                                  Produksi
+                                  Produksi {material.coa_production}
                                 </Badge>
                               )}
                               {material.coa_rnd && (
                                 <Badge variant="outline" className="border-sky-200 bg-sky-50 text-sky-700">
-                                  Riset & Pengembangan
+                                  R&amp;D {material.coa_rnd}
                                 </Badge>
                               )}
                               {material.coa_asset && (
                                 <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700">
-                                  Aset
+                                  Aset {material.coa_asset}
                                 </Badge>
                               )}
                               {!material.coa_production && !material.coa_rnd && !material.coa_asset && (
