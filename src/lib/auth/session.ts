@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import type { NextRequest, NextResponse } from "next/server";
 import { query, queryOne } from "@/lib/db";
 import { SESSION_COOKIE, SESSION_TTL_DAYS } from "@/lib/auth/constants";
+import { isSecureRequest } from "@/lib/auth/secure-cookie";
 
 export interface SessionUser {
   id: string;
@@ -19,10 +20,10 @@ function newToken() {
   return crypto.randomBytes(32).toString("hex");
 }
 
-export function sessionCookieOptions(expires: Date) {
+export function sessionCookieOptions(expires: Date, secure: boolean) {
   return {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure,
     sameSite: "lax" as const,
     path: "/",
     expires,
@@ -90,12 +91,24 @@ export async function getSessionUserFromCookies() {
   return loadUserBySessionToken(token);
 }
 
-export function setSessionCookie(response: NextResponse, token: string, expiresAt: Date) {
-  response.cookies.set(SESSION_COOKIE, token, sessionCookieOptions(expiresAt));
+export function setSessionCookie(
+  response: NextResponse,
+  token: string,
+  expiresAt: Date,
+  request: Request
+) {
+  response.cookies.set(
+    SESSION_COOKIE,
+    token,
+    sessionCookieOptions(expiresAt, isSecureRequest(request))
+  );
 }
 
-export function clearSessionCookie(response: NextResponse) {
-  response.cookies.set(SESSION_COOKIE, "", { ...sessionCookieOptions(new Date(0)), maxAge: 0 });
+export function clearSessionCookie(response: NextResponse, request: Request) {
+  response.cookies.set(SESSION_COOKIE, "", {
+    ...sessionCookieOptions(new Date(0), isSecureRequest(request)),
+    maxAge: 0,
+  });
 }
 
 export async function authenticateCredentials(email: string, password: string) {

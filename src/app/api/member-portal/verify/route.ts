@@ -92,7 +92,7 @@ export async function POST(request: NextRequest) {
       success: true,
       data: { name: customers[0].name },
     });
-    response.cookies.set(MEMBER_SESSION_COOKIE, token, memberSessionCookieOptions);
+    response.cookies.set(MEMBER_SESSION_COOKIE, token, memberSessionCookieOptions(request));
     return response;
   } catch (error) {
     console.error("Error verifying member OTP:", error);

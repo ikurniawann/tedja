@@ -2,6 +2,7 @@ import { randomBytes } from "crypto";
 import { cookies } from "next/headers";
 import { getPool } from "@/lib/db";
 import { hashSecret } from "./otp";
+import { isSecureRequest } from "@/lib/auth/secure-cookie";
 
 /**
  * Sesi portal member — cookie `member_session` TERPISAH total dari
@@ -58,10 +59,12 @@ export async function destroyMemberSession(): Promise<void> {
 }
 
 /** Opsi cookie sesi member (dipakai route saat set/clear). */
-export const memberSessionCookieOptions = {
-  httpOnly: true,
-  secure: process.env.NODE_ENV === "production",
-  sameSite: "lax" as const,
-  path: "/",
-  maxAge: MEMBER_SESSION_TTL_MS / 1000,
-};
+export function memberSessionCookieOptions(request: Request) {
+  return {
+    httpOnly: true,
+    secure: isSecureRequest(request),
+    sameSite: "lax" as const,
+    path: "/",
+    maxAge: MEMBER_SESSION_TTL_MS / 1000,
+  };
+}
