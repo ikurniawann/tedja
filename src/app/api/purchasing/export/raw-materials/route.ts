@@ -58,11 +58,15 @@ export async function GET() {
     }
 
     // Stok awal yang diekspor mengikuti stall aktif di sidebar, agar isi file
-    // sama dengan tabel yang sedang dilihat. Mode "Semua Stall" tetap memakai
-    // gudang MAIN seperti template impor.
+    // sama dengan tabel yang sedang dilihat.
+    //
+    // Mode "Semua Stall" jatuh ke gudang default cabang (`is_default`), bukan
+    // ke kode 'MAIN' seperti sebelumnya: kode itu tidak ada di setiap cabang —
+    // di produksi gudang utamanya `WH-01` — sehingga join-nya kosong dan file
+    // keluar dengan `stall_code=MAIN` yang ditolak saat diimpor balik.
     const stallScope = await getApiStallScope();
     let warehouseJoin = `wh.branch_id = rm.branch_id
-        AND wh.code = 'MAIN'
+        AND wh.is_default = true
         AND wh.is_active = true`;
     if (stallScope.mode === "stall") {
       params.push(stallScope.warehouseId);
@@ -84,7 +88,9 @@ export async function GET() {
          rm.coa,
          COALESCE(rm.harga_beli, 0) AS harga_beli,
          COALESCE(inv.qty_available, 0) AS opening_stock,
-         COALESCE(wh.code, 'MAIN') AS stall_code,
+         -- Kosong bila cabang tidak punya gudang default; impor akan
+         -- me-resolve lokasinya sendiri, sementara kode palsu akan ditolak.
+         COALESCE(wh.code, '') AS stall_code,
          rm.deskripsi,
          CASE WHEN rm.is_active THEN 'active' ELSE 'inactive' END AS status
        FROM item.raw_materials rm
@@ -115,7 +121,8 @@ export async function GET() {
         coa: row.coa ?? "",
         harga_beli: row.harga_beli ?? 0,
         opening_stock: row.opening_stock ?? 0,
-        stall_code: row.stall_code || "MAIN",
+        // Jangan paksa "MAIN" — kode itu belum tentu ada di cabang manapun.
+        stall_code: row.stall_code ?? "",
         deskripsi: row.deskripsi ?? "",
         status: row.status,
       }))
