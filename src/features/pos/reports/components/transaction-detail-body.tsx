@@ -65,6 +65,8 @@ export type TransactionOrderDetail = {
   voided_by_name?: string | null;
   manual_discount_type?: string | null;
   manual_discount_value?: number | string | null;
+  stall_name?: string | null;
+  stall_code?: string | null;
 };
 
 /**
@@ -176,7 +178,14 @@ export function TransactionDetailBody({
             label="Waktu"
             value={formatDateTime(detail?.ordered_at ?? row?.ordered_at)}
           />
-          <DetailField label="Stall" value={row ? formatStallName(row) : "—"} />
+          <DetailField
+            label="Stall"
+            value={
+              detail?.stall_name?.trim() ||
+              detail?.stall_code?.trim() ||
+              (row ? formatStallName(row) : "—")
+            }
+          />
           <DetailField
             label="Tipe"
             value={formatOrderTypeLabel(detail?.order_type)}
