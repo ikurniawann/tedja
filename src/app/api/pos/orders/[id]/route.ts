@@ -279,9 +279,12 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     // the customer row and rejects an insufficient balance in-transaction, so a
     // failed/insufficient deduction never leaves a paid order without the
     // matching coin debit (previously the failure was swallowed).
+    // EPIC-041: RPC mengembalikan saldo SETELAH potong — snapshot dibawa ke
+    // respons utk baris "Sisa saldo" di struk (sama seperti jalur POST).
+    let arkBalanceAfter: number | null = null;
     if (numericArkUsed > 0) {
       if (existing.customer_id) {
-        const { error: coinError } = await db.rpc('update_ark_coin_balance', {
+        const { data: coinBalance, error: coinError } = await db.rpc('update_ark_coin_balance', {
           p_customer_id: existing.customer_id,
           p_amount: -numericArkUsed,
           p_type: 'payment',
@@ -295,6 +298,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
             { status: 400 }
           );
         }
+
+        arkBalanceAfter = Number(coinBalance);
+        if (!Number.isFinite(arkBalanceAfter)) arkBalanceAfter = null;
       }
     }
 
@@ -396,10 +402,25 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       });
     }
 
+    // EPIC-041 task 2: total XP member SETELAH award, utk baris "Total XP"
+    // di struk (mirror jalur POST /api/pos/orders).
+    let xpTotalAfter: number | null = null;
+    if (data.customer_id && crmXp) {
+      const { data: xpCustomer } = await db
+        .from('pos_customers')
+        .select('total_xp')
+        .eq('id', data.customer_id)
+        .maybeSingle();
+      const totalXp = Number((xpCustomer as { total_xp?: unknown } | null)?.total_xp);
+      xpTotalAfter = Number.isFinite(totalXp) ? totalXp : null;
+    }
+
     return NextResponse.json({
       success: true,
       data,
       crm_xp: crmXp,
+      ark_balance_after: arkBalanceAfter,
+      xp_total_after: xpTotalAfter,
       message: accountingNote || undefined,
     });
   } catch (error: unknown) {
