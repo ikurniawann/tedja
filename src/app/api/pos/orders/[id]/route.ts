@@ -435,6 +435,19 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     // voided_by → users (kolomnya tidak berpola <alias>_id, embed shim tidak
     // bisa menebak join-nya).
     const detail = data as Record<string, unknown>;
+    // EPIC-041 lanjutan (temuan owner: "Stall: —"): nama stall di-resolve dari
+    // warehouse_id order. Satu order = satu stall by design (keranjang
+    // lintas stall dipecah jadi beberapa order anak lewat checkout).
+    if (detail?.warehouse_id) {
+      const { data: stall } = await db
+        .from('warehouses')
+        .select('name, code')
+        .eq('id', detail.warehouse_id)
+        .maybeSingle();
+      const stallRow = stall as { name?: string; code?: string } | null;
+      detail.stall_name = stallRow?.name ?? null;
+      detail.stall_code = stallRow?.code ?? null;
+    }
     if (detail?.cashier_id) {
       const { data: cashier } = await db
         .from('employees')
