@@ -1,4 +1,5 @@
 import { formatReceiptRow } from "@/lib/pos/thermal-escpos";
+import { idrToArkDisplay } from "@/lib/pos/loyalty-settings";
 
 export function groupCartItemsByStallName<
   T extends {
@@ -56,9 +57,22 @@ function formatReceiptCurrency(n: number) {
 
 export function buildReceiptItemLines(
   items: ReceiptLineItem[],
-  options?: { withPrices?: boolean; headerStallName?: string | null }
+  options?: {
+    withPrices?: boolean;
+    headerStallName?: string | null;
+    /**
+     * EPIC-041 lanjutan: pembayaran ARK Coin — tiap harga item diberi baris
+     * konversi "(N ARK)" di bawahnya. arkRate 0/absen jatuh ke default
+     * idrToArkDisplay (aturan pembulatan yang sama dgn portal member).
+     */
+    showArk?: boolean;
+    arkRate?: number;
+  }
 ): Array<{ text: string; align: "left" | "center" }> {
   const withPrices = Boolean(options?.withPrices);
+  const showArk = Boolean(options?.showArk);
+  const arkOf = (idr: number) =>
+    `(${idrToArkDisplay(idr, options?.arkRate ?? 0).toLocaleString("id-ID")} ARK)`;
   const headerStall = String(options?.headerStallName || "").trim();
   const groups = groupCartItemsByStallName(items);
   const showHeaders = groups.length >= 2;
@@ -75,6 +89,9 @@ export function buildReceiptItemLines(
           text: formatReceiptRow(`${item.quantity}x ${item.name}`, formatReceiptCurrency(unit * qty)),
           align: "left",
         });
+        if (showArk) {
+          lines.push({ text: formatReceiptRow("", arkOf(unit * qty)), align: "left" });
+        }
         if (qty > 1) {
           lines.push({ text: `  @ ${formatReceiptCurrency(unit)}`, align: "left" });
         }

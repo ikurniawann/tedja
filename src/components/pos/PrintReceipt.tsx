@@ -130,6 +130,10 @@ export function buildReceiptEscPosLayout(
   const showIdentity = !isKitchen && !isBar;
   const headerLines = showIdentity ? (payload.receiptHeader ?? []) : [];
   const footerLines = showIdentity ? (payload.receiptFooter ?? []) : [];
+  // Pembayaran ARK: seluruh harga (item, subtotal, total) diberi konversi ARK.
+  // arkPaid fallback ke total — pembayaran ark_coin selalu penuh (1 metode).
+  const isArkPayment = showIdentity && !isPreviewBill && payload.paymentMethod === "ark_coin";
+  const arkPaidValue = payload.arkPaid || (isArkPayment ? payload.total : 0);
   const lines: Array<{ text: string; align: "left" | "center" }> = [];
   if (headerLines.length > 0) {
     for (const line of headerLines) lines.push({ text: line, align: "center" });
@@ -163,6 +167,8 @@ export function buildReceiptEscPosLayout(
     ...buildReceiptItemLines(payload.items, {
       withPrices: !isKitchen && !isBar,
       headerStallName: payload.stallName,
+      showArk: isArkPayment,
+      arkRate: payload.arkRate,
     })
   );
 
@@ -170,6 +176,12 @@ export function buildReceiptEscPosLayout(
     lines.push({ text: RECEIPT_DIVIDER, align: "left" });
     const subtotal = payload.subtotal ?? itemsSubtotal(payload.items);
     lines.push({ text: formatReceiptRow("Subtotal", formatCurrency(subtotal)), align: "left" });
+    if (isArkPayment) {
+      lines.push({
+        text: formatReceiptRow("", `(${formatArk(subtotal, payload.arkRate)})`),
+        align: "left",
+      });
+    }
     const discountLines = (payload.discountLines ?? []).filter((d) => d.amount > 0);
     if (discountLines.length > 0) {
       for (const d of discountLines) {
@@ -206,6 +218,12 @@ export function buildReceiptEscPosLayout(
       text: formatReceiptRow("TOTAL", formatCurrency(payload.total)),
       align: "left",
     });
+    if (isArkPayment) {
+      lines.push({
+        text: formatReceiptRow("", `(${formatArk(payload.total, payload.arkRate)})`),
+        align: "left",
+      });
+    }
     if (isPreviewBill) {
       lines.push({ text: formatReceiptRow("Status", "UNPAID"), align: "left" });
     } else {
@@ -227,10 +245,10 @@ export function buildReceiptEscPosLayout(
 
   // EPIC-041 task 1-2 — blok ARK & XP, hanya struk customer yang sudah bayar.
   if (showIdentity && !isPreviewBill) {
-    if (payload.paymentMethod === "ark_coin" && (payload.arkPaid ?? 0) > 0) {
+    if (isArkPayment) {
       lines.push({ text: RECEIPT_DIVIDER, align: "left" });
       lines.push({ text: formatReceiptRow("Harga", formatArk(payload.total, payload.arkRate)), align: "left" });
-      lines.push({ text: formatReceiptRow("Dibayar ARK", formatArk(payload.arkPaid ?? 0, payload.arkRate)), align: "left" });
+      lines.push({ text: formatReceiptRow("Dibayar ARK", formatArk(arkPaidValue, payload.arkRate)), align: "left" });
       if (payload.arkBalanceAfter != null) {
         lines.push({
           text: formatReceiptRow(
@@ -342,6 +360,10 @@ export function buildReceiptHtml(payload: ReceiptPayload, label: ThermalPrintLab
   } = payload;
 
   const isKitchenCopy = label === "KITCHEN" || label === "BAR";
+  // Pembayaran ARK: item, subtotal, dan total diberi konversi ARK; arkPaid
+  // fallback ke total karena pembayaran ark_coin selalu penuh (satu metode).
+  const isArkPayment = !isKitchenCopy && label !== "PREVIEW_BILL" && paymentMethod === "ark_coin";
+  const arkPaidValue = payload.arkPaid || (isArkPayment ? total : 0);
   const stallGroups = groupCartItemsByStallName(items);
   const showStallHeaders = stallGroups.length >= 2;
   const colSpan = isKitchenCopy ? 2 : 3;
@@ -365,7 +387,7 @@ export function buildReceiptHtml(payload: ReceiptPayload, label: ThermalPrintLab
         ${item.modifierNames?.length ? `<br><small style="color:#555">${item.modifierNames.join(", ")}</small>` : ""}
         ${item.notes ? `<br><em style="color:#555">* ${item.notes}</em>` : ""}
       </td>
-      ${!isKitchenCopy ? `<td style="vertical-align:top;text-align:right;white-space:nowrap;padding:3px 2px">${formatCurrency(lineTotal)}</td>` : ""}
+      ${!isKitchenCopy ? `<td style="vertical-align:top;text-align:right;white-space:nowrap;padding:3px 2px">${formatCurrency(lineTotal)}${isArkPayment ? `<br><small style="color:#555">(${formatArk(lineTotal, payload.arkRate)})</small>` : ""}</td>` : ""}
     </tr>
     <tr><td colspan="${colSpan}"><div style="border-top:1px dashed #ccc;margin:2px 0"></div></td></tr>
   `;
@@ -480,10 +502,10 @@ export function buildReceiptHtml(payload: ReceiptPayload, label: ThermalPrintLab
     ${!isKitchen && !isBar ? `
       <table>${itemsHtml}</table>
       <div class="divider"></div>
-      <div class="row"><span>Subtotal</span><span>${formatCurrency(receiptSubtotal)}</span></div>
+      <div class="row"><span>Subtotal</span><span style="text-align:right">${formatCurrency(receiptSubtotal)}${isArkPayment ? `<br><small style="color:#555">(${formatArk(receiptSubtotal, payload.arkRate)})</small>` : ""}</span></div>
       ${discountRowsHtml}
       ${chargeRowsHtml}
-      <div class="row total"><span>TOTAL</span><span>${formatCurrency(total)}</span></div>
+      <div class="row total"><span>TOTAL</span><span style="text-align:right">${formatCurrency(total)}${isArkPayment ? `<br><small style="font-weight:normal;font-size:11px;color:#555">(${formatArk(total, payload.arkRate)})</small>` : ""}</span></div>
       ${
         isPreviewBill
           ? `<div class="row"><span>Status</span><span>UNPAID</span></div>`
@@ -496,10 +518,10 @@ export function buildReceiptHtml(payload: ReceiptPayload, label: ThermalPrintLab
 
     ${
       /* EPIC-041 task 1 — blok ARK, struk customer yang sudah bayar saja */
-      showIdentity && !isPreviewBill && payload.paymentMethod === "ark_coin" && (payload.arkPaid ?? 0) > 0
+      isArkPayment
         ? `<div class="divider"></div>
     <div class="row"><span>Harga</span><span>${formatArk(payload.total, payload.arkRate)}</span></div>
-    <div class="row"><span>Dibayar ARK</span><span>${formatArk(payload.arkPaid ?? 0, payload.arkRate)}</span></div>
+    <div class="row"><span>Dibayar ARK</span><span>${formatArk(arkPaidValue, payload.arkRate)}</span></div>
     ${payload.arkBalanceAfter != null ? `<div class="row"><span>Sisa saldo</span><span>${formatArk(payload.arkBalanceAfter, payload.arkRate)} (${formatCurrency(payload.arkBalanceAfter)})</span></div>` : ""}`
         : ""
     }
@@ -593,11 +615,7 @@ async function fetchArkRate(): Promise<number> {
 async function decorateReceiptPayload(payload: ReceiptPayload): Promise<ReceiptPayload> {
   // Kurs ARK diisi terpisah dari header/footer — hanya bila struk memang
   // memuat blok ARK dan pemanggil belum menyuplai kursnya.
-  if (
-    payload.paymentMethod === "ark_coin" &&
-    (payload.arkPaid ?? 0) > 0 &&
-    payload.arkRate === undefined
-  ) {
+  if (payload.paymentMethod === "ark_coin" && payload.arkRate === undefined) {
     payload = { ...payload, arkRate: await fetchArkRate() };
   }
   if (payload.receiptHeader !== undefined || payload.receiptFooter !== undefined) {
