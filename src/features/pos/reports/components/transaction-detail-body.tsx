@@ -21,6 +21,9 @@ type OrderItemDetail = {
   quantity?: number | string | null;
   unit_price?: number | string | null;
   total_amount?: number | string | null;
+  discount_type?: string | null;
+  discount_value?: number | string | null;
+  discount_amount?: number | string | null;
   variants?: Array<{ name?: string | null }>;
   modifiers?: Array<{ name?: string | null }>;
 };
@@ -60,7 +63,25 @@ export type TransactionOrderDetail = {
   voided_at?: string | null;
   created_by_name?: string | null;
   voided_by_name?: string | null;
+  manual_discount_type?: string | null;
+  manual_discount_value?: number | string | null;
 };
+
+/**
+ * Label diskon dengan persennya (EPIC-041 task 5): tipe percent → "Diskon (10%)",
+ * selain itu tetap "Diskon". Value persen dari kasir bisa string numerik.
+ */
+export function discountLabel(
+  type?: string | null,
+  value?: number | string | null
+): string {
+  const pct = Number(value);
+  if (type === "percent" && Number.isFinite(pct) && pct > 0) {
+    const rounded = Number.isInteger(pct) ? pct : Math.round(pct * 100) / 100;
+    return `Diskon (${rounded}%)`;
+  }
+  return "Diskon";
+}
 
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat("id-ID", {
@@ -165,6 +186,7 @@ export function TransactionDetailBody({
             label="Pelanggan"
             value={detail?.customer?.name?.trim() || "Walk-in"}
           />
+          <DetailField label="Kasir" value={detail?.created_by_name || "—"} />
           {detail?.customer?.phone ? (
             <DetailField label="Telepon" value={detail.customer.phone} />
           ) : null}
@@ -243,7 +265,7 @@ export function TransactionDetailBody({
             value={formatCurrency(toNumber(detail?.subtotal))}
           />
           <DetailField
-            label="Diskon"
+            label={discountLabel(detail?.manual_discount_type, detail?.manual_discount_value)}
             value={formatCurrency(toNumber(detail?.discount_amount))}
           />
           <DetailField
@@ -368,7 +390,15 @@ export function TransactionDetailBody({
                     </td>
                     <td className="px-3 py-2.5 text-right">{formatQty(toNumber(item.quantity))}</td>
                     <td className="px-3 py-2.5 text-right text-muted-foreground">
-                      {formatCurrency(toNumber(item.unit_price))}
+                      <div>{formatCurrency(toNumber(item.unit_price))}</div>
+                      {toNumber(item.discount_amount) > 0 ? (
+                        <div className="text-xs text-rose-600">
+                          {item.discount_type === "percent" &&
+                          toNumber(item.discount_value) > 0
+                            ? `diskon ${toNumber(item.discount_value)}%`
+                            : `diskon ${formatCurrency(toNumber(item.discount_amount))}`}
+                        </div>
+                      ) : null}
                     </td>
                     <td className="px-3 py-2.5 text-right font-medium">
                       {formatCurrency(toNumber(item.total_amount))}

@@ -6,7 +6,6 @@ import {
   ArrowLeft,
   Ban,
   CheckCircle,
-  ChefHat,
   Clock,
   CreditCard,
   ExternalLink,
@@ -91,62 +90,52 @@ const formatDate = (dateString: string) =>
     minute: "2-digit",
   }).format(new Date(dateString));
 
-function StatusBadge({ status }: { status?: string | null }) {
-  const value = String(status || "");
-  const map: Record<
-    string,
-    { label: string; className: string; icon: typeof Clock }
-  > = {
-    pending: {
-      label: "Pending",
-      className: "bg-amber-50 text-amber-800",
-      icon: Clock,
-    },
-    preparing: {
-      label: "Preparing",
-      className: "bg-sky-50 text-sky-800",
-      icon: ChefHat,
-    },
-    ready: {
-      label: "Ready",
-      className: "bg-violet-50 text-violet-800",
-      icon: CheckCircle,
-    },
-    completed: {
-      label: "Completed",
-      className: "bg-emerald-50 text-emerald-800",
-      icon: CheckCircle,
-    },
-    cancelled: {
-      label: "Cancelled",
-      className: "bg-red-50 text-red-700",
-      icon: XCircle,
-    },
-    voided: {
-      label: "Voided",
-      className: "bg-muted text-muted-foreground",
-      icon: XCircle,
-    },
-    merged: {
-      label: "Merged",
-      className: "bg-indigo-50 text-indigo-800",
-      icon: Merge,
-    },
+/**
+ * Badge status di LIST = status PEMBAYARAN, bukan status dapur (EPIC-041
+ * task 6, keputusan owner): alur kasir membuat order lunas berstatus
+ * fulfilment 'pending' (baru 'completed' setelah KDS men-serve semua item),
+ * jadi badge "Pending" pada order lunas menyesatkan. Status dapur tetap
+ * bisa dilihat di order detail ("Status dapur").
+ */
+function PaymentStatusBadge({ order, paid }: { order: Order; paid: boolean }) {
+  const status = String(order.status || "");
+  const map: Record<string, { label: string; className: string; icon: typeof Clock }> = {
+    voided: { label: "Void", className: "bg-muted text-muted-foreground", icon: XCircle },
+    cancelled: { label: "Cancelled", className: "bg-red-50 text-red-700", icon: XCircle },
+    merged: { label: "Merged", className: "bg-indigo-50 text-indigo-800", icon: Merge },
   };
-  const meta = map[value] || {
-    label: value || "Unknown",
-    className: "bg-muted text-muted-foreground",
-    icon: Clock,
-  };
+  const meta =
+    map[status] ??
+    (paid
+      ? { label: "Lunas", className: "bg-emerald-50 text-emerald-800", icon: CheckCircle }
+      : { label: "Belum bayar", className: "bg-amber-50 text-amber-800", icon: Clock });
   const Icon = meta.icon;
   return (
-    <Badge
-      variant="secondary"
-      className={cn("gap-1 font-medium capitalize", meta.className)}
-    >
+    <Badge variant="secondary" className={cn("gap-1 font-medium", meta.className)}>
       <Icon className="h-3 w-3" />
       {meta.label}
     </Badge>
+  );
+}
+
+/** Order yang dapurnya masih jalan — apa pun status bayarnya. */
+function isKitchenOpen(order: Order) {
+  return ["pending", "preparing", "ready"].includes(String(order.status || ""));
+}
+
+function isPaid(order: Order) {
+  return (
+    (order.payment_status === "paid" || order.status === "completed") &&
+    order.status !== "voided" &&
+    order.status !== "cancelled"
+  );
+}
+
+/** Belum bayar yang MASIH hidup — void/cancel/merged bukan "belum bayar". */
+function isUnpaid(order: Order) {
+  return (
+    !isPaid(order) &&
+    !["voided", "cancelled", "merged"].includes(String(order.status || ""))
   );
 }
 
@@ -197,12 +186,14 @@ function printOrderReceipt(order: Order) {
   void printThermalReceipt(orderToReceiptPayload(order), "CUSTOMER");
 }
 
+// Filter berbasis pembayaran (EPIC-041 task 6). "kitchen_open" menggantikan
+// pending/preparing/ready yang ambigu — untuk operasional yang ingin melihat
+// order yang dapurnya belum selesai, terlepas dari status bayar.
 const STATUS_FILTERS = [
   "all",
-  "pending",
-  "preparing",
-  "ready",
-  "completed",
+  "paid",
+  "unpaid",
+  "kitchen_open",
   "voided",
 ] as const;
 
@@ -272,18 +263,12 @@ export function OrdersPage() {
     });
   }
 
-  const isPaid = (order: Order) =>
-    (order.payment_status === "paid" || order.status === "completed") &&
-    order.status !== "voided" &&
-    order.status !== "cancelled";
-
   const statusCounts = useMemo(
     () => ({
       all: orders.length,
-      pending: orders.filter((o) => o.status === "pending").length,
-      preparing: orders.filter((o) => o.status === "preparing").length,
-      ready: orders.filter((o) => o.status === "ready").length,
-      completed: orders.filter((o) => isPaid(o)).length,
+      paid: orders.filter((o) => isPaid(o)).length,
+      unpaid: orders.filter((o) => isUnpaid(o)).length,
+      kitchen_open: orders.filter((o) => isKitchenOpen(o)).length,
       voided: orders.filter((o) => o.status === "voided").length,
     }),
     [orders]
@@ -301,9 +286,10 @@ export function OrdersPage() {
         order.cashier_id?.toLowerCase().includes(q);
       const matchesStatus =
         statusFilter === "all" ||
-        (statusFilter === "completed"
-          ? isPaid(order)
-          : order.status === statusFilter);
+        (statusFilter === "paid" && isPaid(order)) ||
+        (statusFilter === "unpaid" && isUnpaid(order)) ||
+        (statusFilter === "kitchen_open" && isKitchenOpen(order)) ||
+        (statusFilter === "voided" && order.status === "voided");
       return matchesSearch && matchesStatus;
     });
   }, [orders, searchTerm, statusFilter]);
@@ -463,14 +449,13 @@ export function OrdersPage() {
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
         {(
           [
             ["all", "Semua", statusCounts.all, "text-foreground"],
-            ["pending", "Pending", statusCounts.pending, "text-amber-700"],
-            ["preparing", "Preparing", statusCounts.preparing, "text-sky-700"],
-            ["ready", "Ready", statusCounts.ready, "text-violet-700"],
-            ["completed", "Lunas", statusCounts.completed, "text-emerald-700"],
+            ["paid", "Lunas", statusCounts.paid, "text-emerald-700"],
+            ["unpaid", "Belum bayar", statusCounts.unpaid, "text-amber-700"],
+            ["kitchen_open", "Dapur belum selesai", statusCounts.kitchen_open, "text-sky-700"],
             ["voided", "Void", statusCounts.voided, "text-muted-foreground"],
           ] as const
         ).map(([key, label, count, tone]) => (
@@ -602,24 +587,7 @@ export function OrdersPage() {
                         {formatCurrency(total)}
                       </td>
                       <td className="px-4 py-3">
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <StatusBadge status={order.status} />
-                          {paid ? (
-                            <Badge
-                              variant="secondary"
-                              className="bg-emerald-50 font-medium text-emerald-800"
-                            >
-                              Lunas
-                            </Badge>
-                          ) : (
-                            <Badge
-                              variant="secondary"
-                              className="bg-amber-50 font-medium text-amber-800"
-                            >
-                              Belum bayar
-                            </Badge>
-                          )}
-                        </div>
+                        <PaymentStatusBadge order={order} paid={paid} />
                       </td>
                       <td
                         className="w-px whitespace-nowrap px-3 py-3"
