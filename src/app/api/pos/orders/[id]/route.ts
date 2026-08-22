@@ -429,6 +429,29 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
     if (error) throw error;
 
+    // EPIC-041 task 4: resolve nama kasir & pelaku void — UI detail sudah
+    // punya slot created_by_name/voided_by_name tapi tidak pernah terisi.
+    // Lookup terpisah, bukan embed: cashier_id → hrd_employees, sedangkan
+    // voided_by → users (kolomnya tidak berpola <alias>_id, embed shim tidak
+    // bisa menebak join-nya).
+    const detail = data as Record<string, unknown>;
+    if (detail?.cashier_id) {
+      const { data: cashier } = await db
+        .from('employees')
+        .select('full_name')
+        .eq('id', detail.cashier_id)
+        .maybeSingle();
+      detail.created_by_name = (cashier as { full_name?: string } | null)?.full_name ?? null;
+    }
+    if (detail?.voided_by) {
+      const { data: voider } = await db
+        .from('users')
+        .select('full_name')
+        .eq('id', detail.voided_by)
+        .maybeSingle();
+      detail.voided_by_name = (voider as { full_name?: string } | null)?.full_name ?? null;
+    }
+
     return NextResponse.json({ success: true, data });
   } catch (error: unknown) {
     console.error('Error fetching order:', error);
