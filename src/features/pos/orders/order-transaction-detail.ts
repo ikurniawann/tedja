@@ -56,9 +56,20 @@ export function mergeBillTransactionDetail(
   const sum = (key: keyof Order) =>
     orders.reduce((total, order) => total + toNumber(order[key]), 0);
 
+  // Checkout multi-stall: field "Stall" memuat SEMUA stall anak-ordernya
+  // ("Yakitori Stall, Rice bowl Stall"), bukan hanya stall order pertama.
+  const stallNames = [
+    ...new Set(
+      orders
+        .map((order) => (order.stall_name || "").trim())
+        .filter(Boolean)
+    ),
+  ];
+
   return {
     ...source,
     checkout_number: source.checkout_number || primary?.checkout_number,
+    stall_name: stallNames.length > 0 ? stallNames.join(", ") : source.stall_name,
     subtotal: sum("subtotal"),
     discount_amount: sum("discount_amount"),
     tax_amount: sum("tax_amount"),
