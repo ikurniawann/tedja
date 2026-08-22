@@ -1736,6 +1736,11 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
           customerName: selectedCustomer?.name,
           discountAmount,
           taxAmount,
+          // EPIC-041: snapshot ARK/XP dari respons pembayaran utk struk
+          arkPaid: method === 'ark_coin' ? arkCapped : 0,
+          arkBalanceAfter: data.ark_balance_after ?? null,
+          xpEarned: data.crm_xp?.xpAwarded,
+          xpTotalAfter: data.xp_total_after ?? null,
           ...receiptExtras,
         };
         storeResultPayload(receipt);
@@ -1815,6 +1820,9 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         discountAmount,
         taxAmount,
         chargesBreakdown: billCharges.breakdown,
+        // Offline: tanpa respons server, saldo/XP tidak diketahui — hanya
+        // nominal ARK yang dipakai; baris "Sisa saldo" sengaja dilewati.
+        arkPaid: method === 'ark_coin' ? arkCapped : 0,
         ...receiptExtras,
       };
       storeResultPayload(receipt);

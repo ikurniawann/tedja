@@ -23,6 +23,25 @@ describe("mergeBillTransactionDetail", () => {
     expect(merged.total_amount).toBe(30_000);
     expect(merged.discount_amount).toBe(5_000);
   });
+
+  it("gabungkan semua stall anak-order di field Stall", () => {
+    const merged = mergeBillTransactionDetail(
+      { id: "a", stall_name: "Yakitori Stall" },
+      [
+        { id: "a", stall_name: "Yakitori Stall" },
+        { id: "b", stall_name: "Rice bowl Stall" },
+        { id: "c", stall_name: "Yakitori Stall" },
+      ]
+    );
+    expect(merged.stall_name).toBe("Yakitori Stall, Rice bowl Stall");
+  });
+
+  it("single order tidak mengubah stall", () => {
+    const merged = mergeBillTransactionDetail({ id: "a", stall_name: "Yakitori Stall" }, [
+      { id: "a", stall_name: "Yakitori Stall" },
+    ]);
+    expect(merged.stall_name).toBe("Yakitori Stall");
+  });
 });
 
 describe("flattenOrderItems", () => {

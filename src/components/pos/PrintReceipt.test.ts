@@ -85,6 +85,24 @@ describe("receipt header/footer dari konfigurasi (EPIC-040)", () => {
     ).toBe(false);
   });
 
+  it("pembayaran ARK: item, subtotal, total diberi konversi ARK (EPIC-041 lanjutan)", () => {
+    const arkPayload: ReceiptPayload = {
+      ...mixedPayload,
+      paymentMethod: "ark_coin",
+      arkRate: 1000,
+    };
+    const lines = buildReceiptLines(arkPayload, "CUSTOMER");
+    // 20.000 → 20 ARK (item), 38.000 → 38 ARK (subtotal & total)
+    expect(lines.some((l) => l.includes("(20 ARK)"))).toBe(true);
+    expect(lines.some((l) => l.includes("(18 ARK)"))).toBe(true);
+    expect(lines.filter((l) => l.trim() === "(38 ARK)").length).toBe(2);
+    // arkPaid absen → fallback ke total; blok ARK tetap tercetak
+    expect(lines.some((l) => l.startsWith("Dibayar ARK") && l.includes("38 ARK"))).toBe(true);
+    // non-ARK & copy dapur bebas dari konversi
+    expect(buildReceiptLines(mixedPayload, "CUSTOMER").some((l) => l.includes("ARK)"))).toBe(false);
+    expect(buildReceiptLines(arkPayload, "KITCHEN").some((l) => l.includes("ARK"))).toBe(false);
+  });
+
   it("blok XP: +N dan total member — hanya bila ada XP (EPIC-041)", () => {
     const xpPayload: ReceiptPayload = { ...mixedPayload, xpEarned: 8, xpTotalAfter: 508 };
     const lines = buildReceiptLines(xpPayload, "CUSTOMER");
