@@ -1202,8 +1202,12 @@ export async function POST(request: NextRequest) {
       orderData.payment_status = 'paid';
     }
 
+    // EPIC-041 task 1: RPC mengembalikan saldo SETELAH potong — snapshot ini
+    // dibawa ke respons utk dicetak di struk. Bukan query terpisah: saldo bisa
+    // berubah oleh transaksi lain di sela-selanya.
+    let arkBalanceAfter: number | null = null;
     if (payWithArk) {
-      const { error: coinError } = await db.rpc('update_ark_coin_balance', {
+      const { data: coinBalance, error: coinError } = await db.rpc('update_ark_coin_balance', {
         p_customer_id: customer_id,
         p_amount: -arkUsed,
         p_type: 'payment',
@@ -1225,6 +1229,9 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
+
+      arkBalanceAfter = Number(coinBalance);
+      if (!Number.isFinite(arkBalanceAfter)) arkBalanceAfter = null;
 
       const { error: markPaidErr } = await db
         .from('pos_orders')
@@ -1373,6 +1380,21 @@ export async function POST(request: NextRequest) {
       paymentMethod: payment_method,
     });
 
+    // EPIC-041 task 2: total XP member SETELAH award, utk baris "Total XP"
+    // di struk. XP transaksinya sendiri dibawa via crm_xp.xpAwarded — TIDAK
+    // ditulis ke pos_orders: tabel itu tidak punya kolom xp_earned (catatan
+    // XP per order hidup di pos_xp_transactions).
+    let xpTotalAfter: number | null = null;
+    if (customer_id) {
+      const { data: xpCustomer } = await db
+        .from('pos_customers')
+        .select('total_xp')
+        .eq('id', customer_id)
+        .maybeSingle();
+      const totalXp = Number((xpCustomer as { total_xp?: unknown } | null)?.total_xp);
+      xpTotalAfter = Number.isFinite(totalXp) ? totalXp : null;
+    }
+
     // ── EPIC-034 Fase B — kartu terbit setelah order LUNAS ─────────────
     // Idempoten per order (retry tidak menggandakan kartu). Gagal terbit
     // TIDAK membatalkan order yang sudah dibayar — kasir diberi peringatan
@@ -1455,6 +1477,10 @@ export async function POST(request: NextRequest) {
         success: true,
         data: completeOrder || orderData,
         crm_xp: crmXp,
+        // EPIC-041: snapshot utk struk — saldo ARK setelah potong (Rupiah,
+        // konversi ARK di klien via ark_rate) & total XP member setelah award.
+        ark_balance_after: arkBalanceAfter,
+        xp_total_after: xpTotalAfter,
         message: accountingNote || undefined,
         ...(sellsGiftCard
           ? { gift_cards: giftCardsIssued, gift_card_error: giftCardIssueError }

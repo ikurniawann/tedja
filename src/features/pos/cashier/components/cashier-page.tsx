@@ -1877,6 +1877,12 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         taxAmount,
         chargesBreakdown: billCharges.breakdown,
         giftCards: res.giftCards,
+        // EPIC-041 task 1-2 — blok ARK & XP di struk, dari snapshot respons
+        // pembayaran (bukan fetch susulan yang bisa balapan).
+        arkPaid: method === 'ark_coin' ? arkCapped : 0,
+        arkBalanceAfter: res.arkBalanceAfter ?? null,
+        xpEarned: res.xpEarned,
+        xpTotalAfter: res.xpTotalAfter ?? null,
         ...receiptExtras,
       };
       storeResultPayload(receipt);
