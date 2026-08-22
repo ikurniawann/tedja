@@ -130,9 +130,43 @@ export async function POST(request: NextRequest) {
       userId: user.id,
     });
 
+    let accountingNote: string | null = null;
+    try {
+      const {
+        AccountingPostError,
+        postStockTransferAccounting,
+      } = await import("@/lib/inventory/accounting-posting");
+
+      const accounting = await postStockTransferAccounting({
+        companyId: material?.company_id ?? null,
+        userId: user.id,
+        transferId: result.reference_id,
+        transferNumber: result.transfer_number,
+        entryDate: new Date().toISOString().slice(0, 10),
+        rawMaterialId: validated.raw_material_id,
+        qty: result.qty,
+        unitCost: result.unit_cost,
+        sourceWarehouseName: result.source_warehouse.name,
+        destWarehouseName: result.dest_warehouse.name,
+      });
+      accountingNote = accounting.note;
+    } catch (err) {
+      const { AccountingPostError } = await import(
+        "@/lib/inventory/accounting-posting"
+      );
+      if (err instanceof AccountingPostError) {
+        console.error("[transfer] accounting post failed:", err.message);
+        accountingNote = err.message;
+      } else {
+        throw err;
+      }
+    }
+
+    const baseMessage = `Stock transferred successfully (${result.transfer_number})`;
     return Response.json({
       success: true,
-      message: `Stock transferred successfully (${result.transfer_number})`,
+      message: accountingNote ? `${baseMessage} (${accountingNote})` : baseMessage,
+      accounting_note: accountingNote,
       data: result,
     });
   } catch (error: unknown) {

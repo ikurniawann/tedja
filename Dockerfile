@@ -1,3 +1,14 @@
+# syntax=docker/dockerfile:1
+# ^ required for the `RUN --mount=type=cache` lines below (BuildKit Dockerfile
+# frontend directive, must be the first line). See docs/ci-cache.md for why
+# these two mounts exist: the fleet's `docker build --cache-from <tag>` can
+# only ever pull layers from the FINAL stage (the only one pushed to the
+# registry) -- deps/builder here never get a cache hit through --cache-from,
+# no matter how small the change. These mounts sidestep that entirely: BuildKit
+# keeps them as persistent local cache on the runner's own disk, independent
+# of --cache-from/--cache-to, so pnpm install/build stay incremental even
+# without the registry cache export.
+
 FROM node:22-alpine AS deps
 WORKDIR /app
 # corepack ships with node:22; pinning the version here keeps CI byte-identical
@@ -6,7 +17,8 @@ RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 # Only the manifest + lockfile + .npmrc, so this layer (the slow one) is reused
 # from --cache-from on every build where dependencies didn't change.
 COPY package.json pnpm-lock.yaml .npmrc ./
-RUN pnpm install --frozen-lockfile
+RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
+    pnpm install --frozen-lockfile
 
 FROM node:22-alpine AS builder
 WORKDIR /app
@@ -17,7 +29,8 @@ ENV NODE_ENV=production
 # NEXT_PUBLIC_* are read from the .env the CI build job renders out of
 # RUNTIME_CONFIG_CONTENT and inlined into the client bundle right here — see
 # the note in .dockerignore about why .env must NOT be excluded.
-RUN pnpm build
+RUN --mount=type=cache,target=/app/.next/cache \
+    pnpm build
 
 FROM node:22-alpine AS runner
 WORKDIR /app

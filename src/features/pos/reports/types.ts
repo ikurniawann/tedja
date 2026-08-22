@@ -354,3 +354,59 @@ export interface VoidReport {
   };
   rows: VoidReportRow[];
 }
+
+export type PaymentMethodsReportGranularity = "day" | "month" | "year";
+
+export interface PaymentMethodsReportParams {
+  date_from: string;
+  date_to: string;
+  warehouse_id?: string;
+  granularity?: PaymentMethodsReportGranularity;
+}
+
+export interface PaymentMethodsReportMethodRow {
+  method_key: string;
+  payment_method: string | null;
+  payment_method_code: string | null;
+  payment_method_name: string | null;
+  label: string;
+  amount: number;
+  payment_count: number;
+  order_count: number;
+  pct: number;
+}
+
+export interface PaymentMethodsReportSeriesCell {
+  method_key: string;
+  label: string;
+  amount: number;
+  payment_count: number;
+}
+
+export interface PaymentMethodsReportSeriesRow {
+  period: string;
+  label: string;
+  total_amount: number;
+  payment_count: number;
+  by_method: PaymentMethodsReportSeriesCell[];
+}
+
+export interface PaymentMethodsReport {
+  filters: {
+    date_from: string;
+    date_to: string;
+    warehouse_id: string | null;
+    granularity: PaymentMethodsReportGranularity;
+  };
+  stall_options: ReportStallOption[];
+  stall_locked: boolean;
+  summary: {
+    total_amount: number;
+    payment_count: number;
+    order_count: number;
+    method_count: number;
+  };
+  by_method: PaymentMethodsReportMethodRow[];
+  method_columns: Array<{ method_key: string; label: string }>;
+  series: PaymentMethodsReportSeriesRow[];
+}

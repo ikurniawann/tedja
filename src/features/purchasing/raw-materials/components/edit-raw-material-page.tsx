@@ -24,6 +24,10 @@ import {
 import { useUpdateRawMaterial } from "../mutations";
 import { RawMaterialUnitConversionsEditor } from "@/modules/purchasing/components/raw-materials/RawMaterialUnitConversionsEditor";
 import { toLookupOptions } from "../master-lookups";
+import {
+  RawMaterialCoaFields,
+  applyCategoryCoaDefaults,
+} from "./raw-material-coa-fields";
 
 function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
@@ -115,9 +119,9 @@ export function EditRawMaterialPage() {
         id: materialId,
         payload: {
           ...formData,
-          coa_production: formData.coa_production || undefined,
-          coa_rnd: formData.coa_rnd || undefined,
-          coa_asset: formData.coa_asset || undefined,
+          coa_production: formData.coa_production || null,
+          coa_rnd: formData.coa_rnd || null,
+          coa_asset: formData.coa_asset || null,
           unit_conversions: (formData.unit_conversions || [])
             .filter((conversion) => conversion.satuan_id && conversion.qty_in_base_unit > 0)
             .map((conversion) => ({
@@ -182,7 +186,19 @@ export function EditRawMaterialPage() {
                     <Combobox
                       options={categoryOptions}
                       value={formData.kategori || ""}
-                      onChange={(v) => setFormData({ ...formData, kategori: v as MaterialCategory })}
+                      onChange={(v) => {
+                        const kategori = v as MaterialCategory;
+                        const coa = applyCategoryCoaDefaults(
+                          kategori,
+                          {
+                            coa_production: formData.coa_production,
+                            coa_rnd: formData.coa_rnd,
+                            coa_asset: formData.coa_asset,
+                          },
+                          formData.kategori
+                        );
+                        setFormData({ ...formData, kategori, ...coa });
+                      }}
                       placeholder={masterLoading ? "Memuat kategori..." : "Pilih kategori..."}
                       searchPlaceholder="Cari kategori..."
                       emptyMessage="Kategori tidak ditemukan"
@@ -399,50 +415,16 @@ export function EditRawMaterialPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="coa_production" className="text-xs">
-                  Produksi
-                </Label>
-                <Input
-                  id="coa_production"
-                  value={formData.coa_production}
-                  onChange={(e) => setFormData({ ...formData, coa_production: e.target.value })}
-                  placeholder="Contoh: 5-1001"
-                  maxLength={50}
-                  className="h-9 text-sm"
-                />
-                <p className="text-xs text-gray-500">Kode akun untuk pemakaian produksi</p>
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="coa_rnd" className="text-xs">
-                  Riset &amp; Pengembangan
-                </Label>
-                <Input
-                  id="coa_rnd"
-                  value={formData.coa_rnd}
-                  onChange={(e) => setFormData({ ...formData, coa_rnd: e.target.value })}
-                  placeholder="Contoh: 5-2001"
-                  maxLength={50}
-                  className="h-9 text-sm"
-                />
-                <p className="text-xs text-gray-500">Kode akun untuk pemakaian riset &amp; pengembangan</p>
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="coa_asset" className="text-xs">
-                  Aset
-                </Label>
-                <Input
-                  id="coa_asset"
-                  value={formData.coa_asset}
-                  onChange={(e) => setFormData({ ...formData, coa_asset: e.target.value })}
-                  placeholder="Contoh: 1-3001"
-                  maxLength={50}
-                  className="h-9 text-sm"
-                />
-                <p className="text-xs text-gray-500">Kode akun untuk pencatatan aset</p>
-              </div>
-            </div>
+            <RawMaterialCoaFields
+              value={{
+                coa_production: formData.coa_production,
+                coa_rnd: formData.coa_rnd,
+                coa_asset: formData.coa_asset,
+              }}
+              onChange={(coa) => setFormData({ ...formData, ...coa })}
+              kategori={formData.kategori}
+              disabled={isSubmitting}
+            />
           </CardContent>
         </Card>
 

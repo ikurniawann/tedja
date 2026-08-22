@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { resolveWarehouseFilter } from "@/lib/api/stall-scope";
 import { z } from "zod";
 import { createServerPgClient } from "@/lib/pg/create-client";
 import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
@@ -59,9 +60,10 @@ export async function GET(request: NextRequest) {
       values.push(`%${params.search}%`);
       idx++;
     }
-    if (params.warehouse_id) {
+    const warehouseFilter = await resolveWarehouseFilter(params.warehouse_id);
+    if (warehouseFilter) {
       conditions.push(`pso.warehouse_id = $${idx++}`);
-      values.push(params.warehouse_id);
+      values.push(warehouseFilter);
     }
 
     const scopeFilter = buildOpnameScopeFilter(scope, "pso", idx);

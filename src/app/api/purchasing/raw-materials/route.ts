@@ -10,6 +10,7 @@ import {
   throwIfDbError,
   UNIT_CONVERSION_SELECT,
   prepareMaterialBody,
+  normalizeCoaAccountCode,
 } from "./_helpers";
 import {
   getApiUserScope,
@@ -18,6 +19,29 @@ import {
   effectiveCompanyId,
   effectiveBranchId,
 } from "@/lib/api/scope";
+import {
+  deriveLegacyCoaEnum,
+  resolveDefaultCoaForCategory,
+} from "@/lib/purchasing/raw-material-coa";
+import { rawMaterialStockSource } from "@/lib/api/stall-scope";
+
+const coaAccountCode = z
+  .string()
+  .max(20)
+  .nullish()
+  .transform((v, ctx) => {
+    if (v === undefined) return undefined;
+    if (v == null || v === "") return null;
+    const code = normalizeCoaAccountCode(v);
+    if (!code) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Kode Chart of Accounts tidak valid (gunakan 7 digit, mis. 1301001)",
+      });
+      return z.NEVER;
+    }
+    return code;
+  });
 
 // Validation schema
 const materialSchema = z.object({
@@ -34,6 +58,9 @@ const materialSchema = z.object({
   shelf_life_days: z.number().min(0).optional().nullable(),
   storage_condition: z.string().max(20).optional().nullable(),
   coa: z.enum(["PRODUCTION", "RND", "ASSET"]).optional().nullable(),
+  coa_production: coaAccountCode,
+  coa_rnd: coaAccountCode,
+  coa_asset: coaAccountCode,
   unit_conversions: z.array(z.object({
     satuan_id: z.string().uuid(),
     qty_in_base_unit: z.number().min(0.000001),
@@ -46,6 +73,9 @@ export async function GET(request: NextRequest) {
   try {
     const db = await createServerPgClient();
     const scope = await getApiUserScope();
+    // Stok bersifat per-stall: pakai view berdimensi warehouse saat ada stall
+    // aktif, dan view agregat saat mode "Semua Stall".
+    const { view: stockView, warehouseId } = await rawMaterialStockSource();
     const { searchParams } = new URL(request.url);
 
     // Query params
@@ -59,11 +89,40 @@ export async function GET(request: NextRequest) {
     const sortBy = searchParams.get("sort_by") || "nama";
     const sortDir = searchParams.get("sort_dir")?.toUpperCase() === "DESC" ? "DESC" : "ASC";
 
+    // Filters shared by list + summary (status filter applied only to list)
+    type Filterable = {
+      or: (filter: string) => Filterable;
+      eq: (column: string, value: string | boolean) => Filterable;
+    };
+    const applyListFilters = <T extends Filterable>(
+      q: T,
+      opts?: { includeBelowMinimum?: boolean }
+    ): T => {
+      let next: Filterable = q;
+      if (search) {
+        next = next.or(`nama.ilike.%${search}%,kode.ilike.%${search}%`);
+      }
+      if (kategori) {
+        next = next.eq("kategori", kategori);
+      }
+      if (satuan_besar_id) {
+        next = next.eq("satuan_besar_id", satuan_besar_id);
+      }
+      if (isActive !== null) {
+        next = next.eq("is_active", isActive === "true");
+      }
+      if (opts?.includeBelowMinimum && belowMinimum === "true") {
+        next = next.or(`status_stok.eq.MENIPIS,status_stok.eq.HABIS`);
+      }
+      return next as T;
+    };
+
     // Build query
     let query = db
-      .from("v_raw_materials_stock")
+      .from(stockView)
       .select("*", { count: "exact" })
       .is("deleted_at", null);
+    if (warehouseId) query = query.eq("warehouse_id", warehouseId);
 
     // Business scope: company + branch (bahan baku level branch)
     const companyOr = companyScopeOr(scope);
@@ -71,21 +130,31 @@ export async function GET(request: NextRequest) {
     const branchOr = branchScopeOr(scope);
     if (branchOr) query = query.or(branchOr);
 
-    // Filters
-    if (search) {
-      query = query.or(`nama.ilike.%${search}%,kode.ilike.%${search}%`);
+    query = applyListFilters(query, { includeBelowMinimum: true });
+
+    // Summary counts (scope + search/kategori; ignore below_minimum so cards stay global KPIs)
+    let summaryBase = db
+      .from(stockView)
+      .select("status_stok")
+      .is("deleted_at", null);
+    if (warehouseId) summaryBase = summaryBase.eq("warehouse_id", warehouseId);
+    if (companyOr) summaryBase = summaryBase.or(companyOr);
+    if (branchOr) summaryBase = summaryBase.or(branchOr);
+    summaryBase = applyListFilters(summaryBase, { includeBelowMinimum: false });
+
+    const { data: statusRows, error: summaryError } = await summaryBase;
+    if (summaryError) {
+      console.error("Database error fetching raw material summary:", summaryError);
+      throwIfDbError(summaryError);
     }
-    if (kategori) {
-      query = query.eq("kategori", kategori);
-    }
-    if (satuan_besar_id) {
-      query = query.eq("satuan_besar_id", satuan_besar_id);
-    }
-    if (isActive !== null) {
-      query = query.eq("is_active", isActive === "true");
-    }
-    if (belowMinimum === "true") {
-      query = query.or(`status_stok.eq.MENIPIS,status_stok.eq.HABIS`);
+
+    const summary = { total: 0, aman: 0, menipis: 0, habis: 0 };
+    for (const row of statusRows || []) {
+      summary.total += 1;
+      const status = String((row as { status_stok?: string | null }).status_stok || "AMAN");
+      if (status === "MENIPIS") summary.menipis += 1;
+      else if (status === "HABIS") summary.habis += 1;
+      else summary.aman += 1;
     }
 
     // Pagination
@@ -137,6 +206,7 @@ export async function GET(request: NextRequest) {
         total: count || 0,
         total_pages: Math.ceil((count || 0) / limit),
       },
+      summary,
     });
   } catch (error: unknown) {
     console.error("Error fetching raw materials:", error);
@@ -204,12 +274,25 @@ export async function POST(request: NextRequest) {
 
     const { unit_conversions, ...materialPayload } = validated;
 
+    const defaults = resolveDefaultCoaForCategory(validated.kategori);
+    const coa_production =
+      materialPayload.coa_production ?? defaults.coa_production;
+    const coa_rnd = materialPayload.coa_rnd ?? null;
+    const coa_asset = materialPayload.coa_asset ?? defaults.coa_asset;
+    const coa =
+      materialPayload.coa ??
+      deriveLegacyCoaEnum({ coa_production, coa_rnd, coa_asset });
+
     // Insert data
     const { data, error } = await db
       .from("raw_materials")
       .insert({
         ...materialPayload,
         kode: finalKode,
+        coa,
+        coa_production,
+        coa_rnd,
+        coa_asset,
         company_id: companyId,
         branch_id: branchId,
         is_active: true,

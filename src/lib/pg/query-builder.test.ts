@@ -45,6 +45,31 @@ describe("QueryBuilder buildReturning", () => {
   });
 });
 
+describe("QueryBuilder count with pagination", () => {
+  it("returns total row count, not page length, when count exact is requested with range", async () => {
+    const captured: { sql: string; params: unknown[] }[] = [];
+    const fakePool = {
+      query: async (sql: string, queryParams: unknown[] = []) => {
+        captured.push({ sql, params: queryParams });
+        if (sql.includes("count(*)")) {
+          return { rows: [{ count: 266 }] };
+        }
+        return { rows: Array.from({ length: 10 }, (_, i) => ({ id: `row-${i}` })) };
+      },
+    } as any;
+
+    const result = await new QueryBuilder("v_raw_materials_stock", "public", fakePool)
+      .select("*", { count: "exact" })
+      .is("deleted_at", null)
+      .range(0, 9);
+
+    expect(result.error).toBeNull();
+    expect(result.data).toHaveLength(10);
+    expect(result.count).toBe(266);
+    expect(captured.some((entry) => entry.sql.includes("count(*)"))).toBe(true);
+  });
+});
+
 describe("QueryBuilder embed FK hints", () => {
   it("parses PostgREST table!fk_hint syntax for self-referential joins", async () => {
     const result = await new QueryBuilder("employees")

@@ -8,6 +8,7 @@ import {
   companyScopeOr,
   getApiUserScope,
 } from "@/lib/api/scope";
+import { rawMaterialStockSource } from "@/lib/api/stall-scope";
 
 function toNumber(value: unknown) {
   const numeric = Number(value);
@@ -59,11 +60,13 @@ export async function GET() {
     const db = createPgClient();
     const scope = await getApiUserScope();
 
+    const { view: stockView, warehouseId } = await rawMaterialStockSource();
     let wipQuery = db
-      .from("v_raw_materials_stock")
+      .from(stockView)
       .select("*")
       .eq("material_type", "WIP")
       .is("deleted_at", null);
+    if (warehouseId) wipQuery = wipQuery.eq("warehouse_id", warehouseId);
     const companyOr = companyScopeOr(scope);
     if (companyOr) wipQuery = wipQuery.or(companyOr);
     const branchOr = branchScopeOr(scope);

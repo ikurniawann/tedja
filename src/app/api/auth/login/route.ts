@@ -25,7 +25,7 @@ export async function POST(request: Request) {
         session: { access_token: token, expires_at: expiresAt.toISOString() },
       },
     });
-    setSessionCookie(response, token, expiresAt);
+    setSessionCookie(response, token, expiresAt, request);
     return response;
   } catch (err: any) {
     console.error("[auth/login] POST failed:", err);
