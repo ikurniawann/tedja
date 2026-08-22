@@ -8,6 +8,7 @@ import {
 } from "@/lib/pos/rawbt-print";
 import { encodeEscPosLines, formatReceiptRow, RECEIPT_DIVIDER } from "@/lib/pos/thermal-escpos";
 import { resolveReceiptSettings } from "@/lib/pos/receipt-settings";
+import { idrToArkDisplay } from "@/lib/pos/loyalty-settings";
 import { printBytesToPairedThermal } from "@/lib/pos/thermal-serial";
 import {
   buildReceiptItemLines,
@@ -67,12 +68,30 @@ export interface ReceiptPayload {
    * Copy dapur/bar selalu mencetaknya — dapur perlu tahu asal order.
    */
   receiptShowStallName?: boolean;
+  /**
+   * EPIC-041 task 1 — blok ARK Coin di struk customer (hanya pembayaran
+   * ark_coin): harga & dibayar dalam ARK, plus sisa saldo. Nilai dalam
+   * RUPIAH (satuan simpanan); konversi ke ARK saat render via arkRate.
+   * arkBalanceAfter = snapshot respons pembayaran; reprint lama tanpa
+   * snapshot → baris sisa saldo dilewati, bukan menebak.
+   */
+  arkPaid?: number;
+  arkBalanceAfter?: number | null;
+  arkRate?: number;
+  /** EPIC-041 task 2 — XP transaksi ini & total XP member (bila member). */
+  xpEarned?: number;
+  xpTotalAfter?: number | null;
 }
 
 export type ThermalPrintLabel = "KITCHEN" | "BAR" | "CUSTOMER" | "PREVIEW_BILL";
 
 function formatCurrency(n: number) {
   return "Rp " + new Intl.NumberFormat("id-ID", { minimumFractionDigits: 0 }).format(Math.abs(n));
+}
+
+/** Rupiah → "N ARK" utk struk; rate 0/absen jatuh ke default idrToArkDisplay. */
+function formatArk(amountIdr: number, arkRate?: number) {
+  return `${idrToArkDisplay(amountIdr, arkRate ?? 0).toLocaleString("id-ID")} ARK`;
 }
 
 /** Baris header/footer struk berasal dari input admin — escape sebelum masuk HTML. */
@@ -200,6 +219,34 @@ export function buildReceiptEscPosLayout(
       if (payload.change > 0) {
         lines.push({
           text: formatReceiptRow("Kembalian", formatCurrency(payload.change)),
+          align: "left",
+        });
+      }
+    }
+  }
+
+  // EPIC-041 task 1-2 — blok ARK & XP, hanya struk customer yang sudah bayar.
+  if (showIdentity && !isPreviewBill) {
+    if (payload.paymentMethod === "ark_coin" && (payload.arkPaid ?? 0) > 0) {
+      lines.push({ text: RECEIPT_DIVIDER, align: "left" });
+      lines.push({ text: formatReceiptRow("Harga", formatArk(payload.total, payload.arkRate)), align: "left" });
+      lines.push({ text: formatReceiptRow("Dibayar ARK", formatArk(payload.arkPaid ?? 0, payload.arkRate)), align: "left" });
+      if (payload.arkBalanceAfter != null) {
+        lines.push({
+          text: formatReceiptRow(
+            "Sisa saldo",
+            `${formatArk(payload.arkBalanceAfter, payload.arkRate)} (${formatCurrency(payload.arkBalanceAfter)})`
+          ),
+          align: "left",
+        });
+      }
+    }
+    if ((payload.xpEarned ?? 0) > 0) {
+      lines.push({ text: RECEIPT_DIVIDER, align: "left" });
+      lines.push({ text: formatReceiptRow("XP didapat", `+${payload.xpEarned} XP`), align: "left" });
+      if (payload.xpTotalAfter != null) {
+        lines.push({
+          text: formatReceiptRow("Total XP", `${Math.round(payload.xpTotalAfter).toLocaleString("id-ID")} XP`),
           align: "left",
         });
       }
@@ -448,6 +495,25 @@ export function buildReceiptHtml(payload: ReceiptPayload, label: ThermalPrintLab
     `}
 
     ${
+      /* EPIC-041 task 1 — blok ARK, struk customer yang sudah bayar saja */
+      showIdentity && !isPreviewBill && payload.paymentMethod === "ark_coin" && (payload.arkPaid ?? 0) > 0
+        ? `<div class="divider"></div>
+    <div class="row"><span>Harga</span><span>${formatArk(payload.total, payload.arkRate)}</span></div>
+    <div class="row"><span>Dibayar ARK</span><span>${formatArk(payload.arkPaid ?? 0, payload.arkRate)}</span></div>
+    ${payload.arkBalanceAfter != null ? `<div class="row"><span>Sisa saldo</span><span>${formatArk(payload.arkBalanceAfter, payload.arkRate)} (${formatCurrency(payload.arkBalanceAfter)})</span></div>` : ""}`
+        : ""
+    }
+
+    ${
+      /* EPIC-041 task 2 — XP transaksi + total XP member */
+      showIdentity && !isPreviewBill && (payload.xpEarned ?? 0) > 0
+        ? `<div class="divider"></div>
+    <div class="row"><span>XP didapat</span><span>+${payload.xpEarned} XP</span></div>
+    ${payload.xpTotalAfter != null ? `<div class="row"><span>Total XP</span><span>${Math.round(payload.xpTotalAfter).toLocaleString("id-ID")} XP</span></div>` : ""}`
+        : ""
+    }
+
+    ${
       !isKitchen && !isBar && !isPreviewBill && giftCards && giftCards.length > 0
         ? `<div class="divider"></div>
     <div class="center"><strong>GIFT CARD</strong></div>
@@ -507,7 +573,33 @@ async function fetchReceiptSettingsRows(): Promise<Array<Record<string, unknown>
  * kasir tidak tahu branch id; config per-branch tetap terpakai di jalur WA
  * yang resolve server-side.
  */
+/** EPIC-041: kurs ARK utk blok struk — cache 60 dtk, senasib dengan settings struk. */
+let arkRateCache: { rate: number; at: number } | null = null;
+
+async function fetchArkRate(): Promise<number> {
+  if (arkRateCache && Date.now() - arkRateCache.at < 60_000) return arkRateCache.rate;
+  try {
+    const res = await fetch("/api/pos/loyalty-settings", { cache: "no-store" });
+    const json = await res.json();
+    const rate = Number(json?.data?.ark_rate);
+    const value = Number.isFinite(rate) && rate > 0 ? rate : 0;
+    arkRateCache = { rate: value, at: Date.now() };
+    return value;
+  } catch {
+    return arkRateCache?.rate ?? 0;
+  }
+}
+
 async function decorateReceiptPayload(payload: ReceiptPayload): Promise<ReceiptPayload> {
+  // Kurs ARK diisi terpisah dari header/footer — hanya bila struk memang
+  // memuat blok ARK dan pemanggil belum menyuplai kursnya.
+  if (
+    payload.paymentMethod === "ark_coin" &&
+    (payload.arkPaid ?? 0) > 0 &&
+    payload.arkRate === undefined
+  ) {
+    payload = { ...payload, arkRate: await fetchArkRate() };
+  }
   if (payload.receiptHeader !== undefined || payload.receiptFooter !== undefined) {
     return payload;
   }
