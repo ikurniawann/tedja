@@ -63,6 +63,41 @@ describe("receipt header/footer dari konfigurasi (EPIC-040)", () => {
     expect(buildReceiptLines(mixedPayload, "CUSTOMER")[0]).toBe("--- CUSTOMER ---");
   });
 
+  it("blok ARK: harga, dibayar, sisa saldo — hanya pembayaran ark_coin (EPIC-041)", () => {
+    const arkPayload: ReceiptPayload = {
+      ...mixedPayload,
+      paymentMethod: "ark_coin",
+      total: 2400,
+      arkPaid: 2400,
+      arkBalanceAfter: 200,
+      arkRate: 1000,
+    };
+    const lines = buildReceiptLines(arkPayload, "CUSTOMER");
+    expect(lines.some((l) => l.startsWith("Harga") && l.includes("2 ARK"))).toBe(true);
+    expect(lines.some((l) => l.startsWith("Dibayar ARK") && l.includes("2 ARK"))).toBe(true);
+    expect(lines.some((l) => l.startsWith("Sisa saldo") && l.includes("0 ARK") && l.includes("Rp 200"))).toBe(true);
+    // copy dapur & pembayaran non-ARK tidak memuat blok ini
+    expect(buildReceiptLines(arkPayload, "KITCHEN").some((l) => l.includes("Sisa saldo"))).toBe(false);
+    expect(
+      buildReceiptLines({ ...arkPayload, paymentMethod: "cash" }, "CUSTOMER").some((l) =>
+        l.includes("Dibayar ARK")
+      )
+    ).toBe(false);
+  });
+
+  it("blok XP: +N dan total member — hanya bila ada XP (EPIC-041)", () => {
+    const xpPayload: ReceiptPayload = { ...mixedPayload, xpEarned: 8, xpTotalAfter: 508 };
+    const lines = buildReceiptLines(xpPayload, "CUSTOMER");
+    expect(lines.some((l) => l.startsWith("XP didapat") && l.includes("+8 XP"))).toBe(true);
+    expect(lines.some((l) => l.startsWith("Total XP") && l.includes("508 XP"))).toBe(true);
+    expect(buildReceiptLines(xpPayload, "KITCHEN").some((l) => l.includes("XP"))).toBe(false);
+    expect(
+      buildReceiptLines({ ...mixedPayload, xpEarned: 0, xpTotalAfter: 508 }, "CUSTOMER").some(
+        (l) => l.includes("XP")
+      )
+    ).toBe(false);
+  });
+
   it("receiptShowStallName=false menyembunyikan baris Stall hanya di customer copy", () => {
     const withStall: ReceiptPayload = {
       ...decorated,

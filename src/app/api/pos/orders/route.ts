@@ -32,7 +32,7 @@ import {
   loadPosProductWarehouseIds,
   resolvePosSellStallForUser,
 } from '@/lib/pos/pos-sell-stall-server';
-import { withTransaction } from '@/lib/db';
+import { queryOne, withTransaction } from '@/lib/db';
 import {
   PromoRejectedError,
   capturePromoRedemption,
@@ -344,13 +344,41 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // EPIC-041 lanjutan (temuan owner: "Stall: —"): nama stall per order —
+    // satu query untuk semua warehouse unik, dilekatkan ke tiap baris. Tagihan
+    // gabungan multi-stall menampilkan stall lewat order anaknya masing-masing.
+    const stallIds = Array.from(
+      new Set(
+        orderRows
+          .map((order) => order.warehouse_id)
+          .filter((value): value is string => typeof value === 'string' && isUuid(value))
+      )
+    );
+    let stallById = new Map<string, { name?: string | null; code?: string | null }>();
+    if (stallIds.length > 0) {
+      const { data: stalls, error: stallError } = await db
+        .from('warehouses')
+        .select('id, name, code')
+        .in('id', stallIds);
+      if (stallError) throw stallError;
+      stallById = new Map(
+        ((stalls || []) as Array<{ id: string; name?: string | null; code?: string | null }>).map(
+          (stall) => [String(stall.id), { name: stall.name, code: stall.code }]
+        )
+      );
+    }
+
     const ordersWithTables = orderRows.map((order) => {
       const checkout =
         typeof order.checkout_id === 'string' ? checkoutById.get(order.checkout_id) : null;
+      const stall =
+        typeof order.warehouse_id === 'string' ? stallById.get(order.warehouse_id) : null;
       return {
         ...order,
         checkout_number: checkout?.checkout_number || order.checkout_number || null,
         table: order.table_id ? tableById.get(order.table_id) || null : null,
+        stall_name: stall?.name ?? null,
+        stall_code: stall?.code ?? null,
       };
     });
 
@@ -442,7 +470,7 @@ export async function POST(request: NextRequest) {
         warehouseByProduct,
         orderType: order_type,
         customerId: customer_id,
-        cashierId: cashier_id || await resolveCashierId(),
+        cashierId: await resolveCashierId(sessionUserId, cashier_id),
         serverId: server_id,
         tableId: table_id,
         guestCount: body.guest_count,
@@ -518,7 +546,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: itemStallCheck.message }, { status: 400 });
     }
 
-    const effectiveCashierId = cashier_id || await resolveCashierId();
+    const effectiveCashierId = await resolveCashierId(sessionUserId, cashier_id);
     const splits = Array.isArray(body.splits) ? body.splits : [];
 
     const db = createPgClient();
@@ -1202,8 +1230,12 @@ export async function POST(request: NextRequest) {
       orderData.payment_status = 'paid';
     }
 
+    // EPIC-041 task 1: RPC mengembalikan saldo SETELAH potong — snapshot ini
+    // dibawa ke respons utk dicetak di struk. Bukan query terpisah: saldo bisa
+    // berubah oleh transaksi lain di sela-selanya.
+    let arkBalanceAfter: number | null = null;
     if (payWithArk) {
-      const { error: coinError } = await db.rpc('update_ark_coin_balance', {
+      const { data: coinBalance, error: coinError } = await db.rpc('update_ark_coin_balance', {
         p_customer_id: customer_id,
         p_amount: -arkUsed,
         p_type: 'payment',
@@ -1225,6 +1257,9 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
+
+      arkBalanceAfter = Number(coinBalance);
+      if (!Number.isFinite(arkBalanceAfter)) arkBalanceAfter = null;
 
       const { error: markPaidErr } = await db
         .from('pos_orders')
@@ -1373,6 +1408,21 @@ export async function POST(request: NextRequest) {
       paymentMethod: payment_method,
     });
 
+    // EPIC-041 task 2: total XP member SETELAH award, utk baris "Total XP"
+    // di struk. XP transaksinya sendiri dibawa via crm_xp.xpAwarded — TIDAK
+    // ditulis ke pos_orders: tabel itu tidak punya kolom xp_earned (catatan
+    // XP per order hidup di pos_xp_transactions).
+    let xpTotalAfter: number | null = null;
+    if (customer_id) {
+      const { data: xpCustomer } = await db
+        .from('pos_customers')
+        .select('total_xp')
+        .eq('id', customer_id)
+        .maybeSingle();
+      const totalXp = Number((xpCustomer as { total_xp?: unknown } | null)?.total_xp);
+      xpTotalAfter = Number.isFinite(totalXp) ? totalXp : null;
+    }
+
     // ── EPIC-034 Fase B — kartu terbit setelah order LUNAS ─────────────
     // Idempoten per order (retry tidak menggandakan kartu). Gagal terbit
     // TIDAK membatalkan order yang sudah dibayar — kasir diberi peringatan
@@ -1455,6 +1505,10 @@ export async function POST(request: NextRequest) {
         success: true,
         data: completeOrder || orderData,
         crm_xp: crmXp,
+        // EPIC-041: snapshot utk struk — saldo ARK setelah potong (Rupiah,
+        // konversi ARK di klien via ark_rate) & total XP member setelah award.
+        ark_balance_after: arkBalanceAfter,
+        xp_total_after: xpTotalAfter,
         message: accountingNote || undefined,
         ...(sellsGiftCard
           ? { gift_cards: giftCardsIssued, gift_card_error: giftCardIssueError }
@@ -1481,8 +1535,24 @@ export async function POST(request: NextRequest) {
   }
 }
 
-async function resolveCashierId(): Promise<string> {
-  // In production, map session user to hrd.employees.id
-  // For now, return a fallback/demo ID
-  return '00000000-0000-0000-0000-000000000001';
+/**
+ * Kasir sebenarnya = karyawan milik SESI login, bukan input klien (EPIC-041
+ * lanjutan, temuan owner: "Kasir: —" di semua order). Klien selama ini
+ * mengirim id dummy 00000000-…-001 hardcode, jadi tidak pernah ada kasir
+ * sungguhan tercatat. Urutan: karyawan sesi → cashier_id klien (bila bukan
+ * dummy) → dummy sebagai upaya terakhir (kolomnya NOT NULL).
+ */
+const FALLBACK_CASHIER_ID = '00000000-0000-0000-0000-000000000001';
+
+async function resolveCashierId(
+  sessionUserId: string,
+  clientCashierId?: string | null
+): Promise<string> {
+  const employee = await queryOne<{ id: string }>(
+    `SELECT id FROM hris.employees WHERE user_id = $1 LIMIT 1`,
+    [sessionUserId]
+  ).catch(() => null);
+  if (employee?.id) return employee.id;
+  if (clientCashierId && clientCashierId !== FALLBACK_CASHIER_ID) return clientCashierId;
+  return FALLBACK_CASHIER_ID;
 }

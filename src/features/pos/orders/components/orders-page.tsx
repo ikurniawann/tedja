@@ -798,7 +798,11 @@ function OrderDetail({
                     {child.order_number || "—"}
                   </div>
                   <div className="text-xs text-muted-foreground">
-                    {child.items?.length || 0} item
+                    {(() => {
+                      const stall = (child as { stall_name?: string | null }).stall_name;
+                      const count = `${child.items?.length || 0} item`;
+                      return stall ? `${stall} · ${count}` : count;
+                    })()}
                   </div>
                 </div>
                 <div className="shrink-0 text-sm font-semibold tabular-nums text-foreground">
