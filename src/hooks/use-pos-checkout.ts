@@ -30,6 +30,9 @@ export interface PaymentResult {
   snapshotTable: string | null;
   snapshotNotes: string;
   xpEarned?: number;
+  /** EPIC-041 — saldo ARK (Rupiah) setelah potong & total XP member, utk struk. */
+  arkBalanceAfter?: number | null;
+  xpTotalAfter?: number | null;
   /** EPIC-034 Fase B — kartu yang terbit dari order ini (kode dicetak struk). */
   giftCards?: Array<{ code: string; initial_value: number; expires_at: string | null }>;
   /** Terisi bila order LUNAS tapi kartu gagal terbit — wajib ditampilkan. */
@@ -230,6 +233,14 @@ export function usePosCheckout() {
         }
 
         const change = paymentMethod === "cash" ? (parseFloat(cashReceived) || 0) - total : 0;
+        // EPIC-041: snapshot struk dari respons pembayaran (bukan fetch kedua).
+        // XP transaksi diambil dari crm_xp — pos_orders tidak punya kolom
+        // xp_earned, jadi data.xp_earned selalu undefined.
+        const extras = response as unknown as {
+          ark_balance_after?: number | null;
+          xp_total_after?: number | null;
+          crm_xp?: { xpAwarded?: number };
+        };
         const data = (response.data || {}) as {
           checkout_id?: string;
           checkout_number?: string;
@@ -251,7 +262,9 @@ export function usePosCheckout() {
           queueNumber: ids.queueNumber ?? data.queue_number ?? null,
           total,
           change,
-          xpEarned: data.xp_earned,
+          xpEarned: data.xp_earned ?? extras.crm_xp?.xpAwarded,
+          arkBalanceAfter: extras.ark_balance_after ?? null,
+          xpTotalAfter: extras.xp_total_after ?? null,
           giftCards: "gift_cards" in response ? response.gift_cards : undefined,
           giftCardError: "gift_card_error" in response ? response.gift_card_error ?? null : null,
           ...snap,

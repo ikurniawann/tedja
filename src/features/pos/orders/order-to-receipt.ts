@@ -73,5 +73,10 @@ export function orderToReceiptPayload(order: Order): ReceiptPayload {
     discountAmount: Number(order.discount_amount) || 0,
     taxAmount: Number(order.tax_amount) || 0,
     chargesBreakdown: order.charges_breakdown || undefined,
+    // EPIC-041: reprint memuat ARK terpakai dari baris order. Sisa saldo,
+    // XP, dan total XP SENGAJA tidak diisi — semuanya snapshot saat bayar
+    // (XP hidup di pos_xp_transactions, bukan kolom order), dan struk
+    // reprint tidak boleh menebak nilai historis.
+    arkPaid: Number((order as { ark_coins_used?: number | string }).ark_coins_used) || 0,
   };
 }
