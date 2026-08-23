@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import "./nox.css";
 import { CREDIT_TXN_TYPES, useNoxMember } from "./use-nox-member";
+import { idrToArkDisplay, isArkCoinMethod } from "@/lib/pos/loyalty-settings";
 
 /**
  * Portal member "Nox Lab" — port React dari prototipe membernox.html.
@@ -87,6 +88,7 @@ export function NoxPortal() {
       discount_amount: number;
       discount_reason: string | null;
       payment_method: string | null;
+      ark_coins_used: number;
       venue_name: string | null;
       subtotal: number;
     };
@@ -98,6 +100,7 @@ export function NoxPortal() {
       total_amount: number;
     }>;
     xp_earned: number;
+    ark_rate: number;
   } | null>(null);
   const [visitsData, setVisitsData] = useState<{
     visit_count: number;
@@ -655,7 +658,7 @@ export function NoxPortal() {
                 </div>
                 <span className="pill">
                   {order.unit === "ark"
-                    ? `${angka(order.totalAmount)} ARK`
+                    ? `Rp ${angka(order.totalIdr)} / ${angka(order.totalAmount)} ARK`
                     : `Rp ${angka(order.totalAmount)}`}
                 </span>
               </div>
@@ -719,7 +722,18 @@ export function NoxPortal() {
                 <h2>{detail.nomor}</h2>
                 {detailBusy && <p>Memuat detail…</p>}
                 {detailError && <p className="detail-error">{detailError}</p>}
-                {orderDetail && (
+                {orderDetail && (() => {
+                  /* Samakan dengan struk kasir (keputusan owner 2026-08-23):
+                     transaksi ARK Coin menampilkan konversi "Rp X / N Ark
+                     Coin" di tiap item, Subtotal, Total, plus Dibayar ARK. */
+                  const pakaiArk = isArkCoinMethod(orderDetail.order.payment_method);
+                  const keArk = (idr: number) =>
+                    `${angka(idrToArkDisplay(idr, orderDetail.ark_rate))} Ark Coin`;
+                  const hargaRp = (idr: number) =>
+                    pakaiArk ? `Rp ${angka(idr)} / ${keArk(idr)}` : `Rp ${angka(idr)}`;
+                  const arkDibayar =
+                    orderDetail.order.ark_coins_used || orderDetail.order.total_amount;
+                  return (
                   <>
                     <p>
                       {tanggal(orderDetail.order.ordered_at)}
@@ -737,12 +751,12 @@ export function NoxPortal() {
                                 : ""}
                             </small>
                           </span>
-                          <b>Rp {angka(item.total_amount)}</b>
+                          <b>{hargaRp(item.total_amount)}</b>
                         </div>
                       ))}
                       <div className="detail-row sum">
                         <span>Subtotal</span>
-                        <b>Rp {angka(orderDetail.order.subtotal)}</b>
+                        <b>{hargaRp(orderDetail.order.subtotal)}</b>
                       </div>
                       {orderDetail.order.discount_amount > 0 && (
                         <div className="detail-row diskon">
@@ -757,8 +771,14 @@ export function NoxPortal() {
                       )}
                       <div className="detail-row total">
                         <span>Total</span>
-                        <b>Rp {angka(orderDetail.order.total_amount)}</b>
+                        <b>{hargaRp(orderDetail.order.total_amount)}</b>
                       </div>
+                      {pakaiArk && (
+                        <div className="detail-row">
+                          <span>Dibayar ARK</span>
+                          <b>{angka(idrToArkDisplay(arkDibayar, orderDetail.ark_rate))} ARK</b>
+                        </div>
+                      )}
                       {orderDetail.xp_earned > 0 && (
                         <div className="detail-row xp">
                           <span>XP didapat</span>
@@ -767,7 +787,8 @@ export function NoxPortal() {
                       )}
                     </div>
                   </>
-                )}
+                  );
+                })()}
               </>
             )}
 
