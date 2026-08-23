@@ -142,6 +142,11 @@ export async function POST(request: NextRequest) {
           queue_number: result.queueNumber,
           order_ids: result.orderIds,
         },
+        // EPIC-041: snapshot ARK/XP utk struk — dibaca use-pos-checkout dari
+        // level atas respons (sama seperti POST /api/pos/orders).
+        ark_balance_after: result.arkBalanceAfter ?? null,
+        xp_total_after: result.xpTotalAfter ?? null,
+        crm_xp: result.xpAwarded ? { xpAwarded: result.xpAwarded } : null,
       },
       { status: 201 }
     );
