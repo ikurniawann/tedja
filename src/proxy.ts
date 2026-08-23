@@ -38,12 +38,17 @@ export async function proxy(request: NextRequest) {
 
   const { pathname } = request.nextUrl;
 
-  // /api/* must pass through untouched: the portal calls /api/member-portal/*
-  // with absolute paths in ~30 places, and prefixing those would 404 the whole
-  // portal while the pages themselves still rendered.
+  // /api/* tidak boleh di-rewrite (portal memanggil /api/member-portal/*
+  // dengan path absolut), TAPI tetap lewat updateSession: gerbang auth +
+  // validasi Bearer token Open API (EPIC-042) harus berlaku di host member
+  // juga — tanpa ini route API tanpa cek sesi terbuka lewat host member.
+  // /api/member-portal ada di daftar publik, jadi portal tidak terganggu.
+  if (pathname.startsWith("/api")) {
+    return updateSession(request);
+  }
   // /member/* is already correct -- links in the app emit absolute /member/...
   // paths, so they must not get prefixed twice.
-  if (pathname.startsWith("/api") || pathname.startsWith("/member")) {
+  if (pathname.startsWith("/member")) {
     return NextResponse.next();
   }
 

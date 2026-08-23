@@ -80,15 +80,34 @@ async function loadUserBySessionToken(token: string): Promise<SessionUser | null
 
 export async function getSessionUserFromRequest(request: NextRequest) {
   const token = request.cookies.get(SESSION_COOKIE)?.value;
-  if (!token) return null;
-  return loadUserBySessionToken(token);
+  if (token) return loadUserBySessionToken(token);
+  // EPIC-042: fallback Bearer token (Open API) — path+method langsung dari
+  // request, scope dicek di dalam loadUserByApiToken.
+  const { extractBearerToken, loadUserByApiToken } = await import("@/lib/auth/api-token");
+  const bearer = extractBearerToken(request.headers.get("authorization"));
+  if (!bearer) return null;
+  // audit=false: audit kanonik sudah terjadi di middleware.
+  return loadUserByApiToken(bearer, {
+    pathname: request.nextUrl.pathname,
+    method: request.method,
+  });
 }
 
 export async function getSessionUserFromCookies() {
   const store = await cookies();
   const token = store.get(SESSION_COOKIE)?.value;
-  if (!token) return null;
-  return loadUserBySessionToken(token);
+  if (token) return loadUserBySessionToken(token);
+  // EPIC-042: fallback Bearer token. Route handler tidak tahu path/method-nya
+  // sendiri — proxy (middleware) menyuntik x-pathname + x-request-method.
+  const { headers } = await import("next/headers");
+  const hdrs = await headers();
+  const { extractBearerToken, loadUserByApiToken } = await import("@/lib/auth/api-token");
+  const bearer = extractBearerToken(hdrs.get("authorization"));
+  if (!bearer) return null;
+  return loadUserByApiToken(bearer, {
+    pathname: hdrs.get("x-pathname") || "/api",
+    method: hdrs.get("x-request-method") || "POST",
+  });
 }
 
 export function setSessionCookie(
