@@ -115,9 +115,9 @@ export function ApiTokensPage() {
   };
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold">Open API Tokens</h1>
+        <h2 className="text-lg font-semibold">Open API Tokens</h2>
         <p className="text-sm text-muted-foreground">
           Akses API untuk sistem eksternal (agent, integrasi). Kirim header{" "}
           <code className="rounded bg-muted px-1">Authorization: Bearer arkiv_…</code>. Spesifikasi
