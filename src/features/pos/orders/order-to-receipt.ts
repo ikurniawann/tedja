@@ -80,3 +80,50 @@ export function orderToReceiptPayload(order: Order): ReceiptPayload {
     arkPaid: Number((order as { ark_coins_used?: number | string }).ark_coins_used) || 0,
   };
 }
+
+/**
+ * Cetak ulang checkout multi-stall (fix 2026-08-23): reprint dulu hanya
+ * memuat SATU anak-order (order yang diklik) sehingga item stall lain hilang
+ * dari struk — apa pun metode bayarnya. Payload ini menggabungkan SEMUA
+ * anak-order: item diberi stallName masing-masing (struk menampilkan label
+ * [Stall] per item), angka-angka dijumlah, identitas dari keluarga checkout.
+ */
+export function checkoutFamilyToReceiptPayload(orders: Order[]): ReceiptPayload {
+  const primary = orders[0];
+  const sum = (pick: (o: Order) => unknown) =>
+    orders.reduce((total, o) => total + (Number(pick(o)) || 0), 0);
+
+  const items: PosCartItem[] = orders.flatMap((child) => {
+    const stallName =
+      (child as { stall_name?: string | null }).stall_name?.trim() || null;
+    return orderToReceiptPayload(child).items.map((item, index) => ({
+      ...item,
+      id: `${child.id}-${item.id}-${index}`,
+      stallName: stallName ?? undefined,
+      warehouse_id: (child as { warehouse_id?: string | null }).warehouse_id ?? undefined,
+      warehouse_name: stallName ?? undefined,
+    }));
+  });
+
+  const paidChild = orders.find((o) => o.payment_method) ?? primary;
+
+  return {
+    orderId: primary.id,
+    orderNumber: primary.order_number,
+    checkoutNumber:
+      (primary as { checkout_number?: string | null }).checkout_number || undefined,
+    queueNumber: primary.queue_number,
+    orderType: primary.order_type || "dine_in",
+    table: primary.table?.table_number || null,
+    items,
+    notes: primary.notes || "",
+    total: sum((o) => o.total_amount),
+    change: sum((o) => o.change_amount),
+    paymentMethod: paidChild.payment_method || "unpaid",
+    customerName: primary.customer?.name,
+    subtotal: sum((o) => (o as { subtotal?: number | string }).subtotal),
+    discountAmount: sum((o) => o.discount_amount),
+    taxAmount: sum((o) => o.tax_amount),
+    arkPaid: sum((o) => (o as { ark_coins_used?: number | string }).ark_coins_used),
+  };
+}
