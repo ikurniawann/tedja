@@ -51,7 +51,7 @@ import { formatPaymentMethodLabel } from "@/features/pos/reports/utils/transacti
 import { cn } from "@/lib/utils";
 
 import type { Order, OrderListParams } from "../types";
-import { orderToReceiptPayload } from "../order-to-receipt";
+import { checkoutFamilyToReceiptPayload, orderToReceiptPayload } from "../order-to-receipt";
 import { useOrderList } from "../queries";
 import { firstDayOfMonthWib, todayWib } from "@/lib/pos/report-dates";
 import {
@@ -182,8 +182,14 @@ function PaymentBadge({
   );
 }
 
-function printOrderReceipt(order: Order) {
-  void printThermalReceipt(orderToReceiptPayload(order), "CUSTOMER");
+function printOrderReceipt(order: Order, siblings: Order[] = []) {
+  // Checkout multi-stall: cetak SEMUA anak-order (fix 2026-08-23) — dulu
+  // hanya order yang diklik, item stall lain hilang dari struk reprint.
+  const payload =
+    siblings.length > 1
+      ? checkoutFamilyToReceiptPayload(siblings)
+      : orderToReceiptPayload(order);
+  void printThermalReceipt(payload, "CUSTOMER");
 }
 
 // Filter berbasis pembayaran (EPIC-041 task 6). "kitchen_open" menggantikan
@@ -729,7 +735,7 @@ export function OrdersPage() {
               className="border-gray-200/80"
               onClick={() => {
                 if (!selectedOrder) return;
-                printOrderReceipt(selectedOrder);
+                printOrderReceipt(selectedOrder, selectedSiblings);
               }}
             >
               <Printer className="mr-2 h-4 w-4" />

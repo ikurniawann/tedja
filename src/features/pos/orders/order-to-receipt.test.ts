@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { orderToReceiptPayload } from "@/features/pos/orders/order-to-receipt";
+import {
+  checkoutFamilyToReceiptPayload,
+  orderToReceiptPayload,
+} from "@/features/pos/orders/order-to-receipt";
 import type { Order } from "@/features/pos/orders/types";
 
 describe("orderToReceiptPayload", () => {
@@ -76,5 +79,52 @@ describe("orderToReceiptPayload", () => {
     const payload = orderToReceiptPayload(order);
     expect(payload.items[0]?.variantName).toBe("Large");
     expect(payload.items[0]?.modifierNames).toBeUndefined();
+  });
+});
+
+describe("checkoutFamilyToReceiptPayload", () => {
+  it("menggabungkan semua anak-order: item ber-stall, angka dijumlah", () => {
+    const family = [
+      {
+        id: "a",
+        order_number: "POS-1",
+        checkout_number: "CHK-9",
+        queue_number: "007",
+        order_type: "dine_in",
+        payment_method: "qris",
+        subtotal: 20_000,
+        total_amount: 20_000,
+        discount_amount: 0,
+        tax_amount: 0,
+        change_amount: 0,
+        stall_name: "Yakitori Stall",
+        items: [
+          { product_id: "p1", product_name: "Negima", quantity: 1, unit_price: 20_000, total_amount: 20_000 },
+        ],
+      },
+      {
+        id: "b",
+        order_number: "POS-2",
+        order_type: "dine_in",
+        payment_method: "qris",
+        subtotal: 70_000,
+        total_amount: 60_000,
+        discount_amount: 10_000,
+        tax_amount: 0,
+        change_amount: 0,
+        stall_name: "Rice bowl Stall",
+        items: [
+          { product_id: "p2", product_name: "Gyutan Donburi", quantity: 1, unit_price: 70_000, total_amount: 70_000 },
+        ],
+      },
+    ] as never[];
+    const payload = checkoutFamilyToReceiptPayload(family);
+    expect(payload.items).toHaveLength(2);
+    expect(payload.items.map((i) => i.stallName)).toEqual(["Yakitori Stall", "Rice bowl Stall"]);
+    expect(payload.checkoutNumber).toBe("CHK-9");
+    expect(payload.total).toBe(80_000);
+    expect(payload.subtotal).toBe(90_000);
+    expect(payload.discountAmount).toBe(10_000);
+    expect(payload.paymentMethod).toBe("qris");
   });
 });
