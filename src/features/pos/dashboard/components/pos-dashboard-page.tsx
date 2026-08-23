@@ -206,9 +206,9 @@ export function PosDashboardPage() {
             </FadeIn>
             <FadeIn delay={0.25}>
               <MetricCard
-                title="ARK Earned"
+                title="ARK Masuk"
                 value={formatArk(arkXp?.totalArkEarned || 0)}
-                helper="ARK coins earned from completed orders"
+                helper="Top-up & bonus koin member periode ini"
                 icon={Sparkles}
               />
             </FadeIn>
