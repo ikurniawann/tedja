@@ -239,12 +239,8 @@ export function createPgClient(ctx?: {
 }) {
   const resolveUser = async () => {
     if (ctx?.request) return getSessionUserFromRequest(ctx.request);
-    if (ctx?.cookies) {
-      const token = ctx.cookies.get("arkiv_session")?.value;
-      if (!token) return null;
-      const { getSessionUserFromCookies } = await import("@/lib/auth/session");
-      return getSessionUserFromCookies();
-    }
+    // EPIC-042: jangan short-circuit saat cookie absen — getSessionUserFrom-
+    // Cookies juga menangani fallback Bearer token (Open API).
     return getSessionUserFromCookies();
   };
 

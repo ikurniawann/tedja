@@ -48,9 +48,30 @@ export function isPublicAuthPath(pathname: string): boolean {
 export async function updateSession(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const hasSession = Boolean(request.cookies.get(SESSION_COOKIE)?.value);
+  // EPIC-042: request API dgn Bearer token Open API (arkiv_...) divalidasi DI
+  // SINI (proxy Next 16 = Node runtime, DB bisa diakses) — wajib, karena
+  // sebagian route lama tidak punya cek sesi sendiri dan mengandalkan gerbang
+  // middleware. Token tidak dikenal / scope tidak cocok → 401 sebelum route.
+  const bearerMatch =
+    pathname.startsWith("/api/") &&
+    /^Bearer\s+(arkiv_\S+)$/i.exec(request.headers.get("authorization") ?? "");
+  let hasApiBearer = false;
+  if (bearerMatch && !hasSession) {
+    const { verifyApiTokenRequest } = await import("@/lib/auth/api-token");
+    hasApiBearer = await verifyApiTokenRequest(bearerMatch[1], {
+      pathname,
+      method: request.method,
+    });
+    if (!hasApiBearer) {
+      return NextResponse.json(
+        { success: false, error: "Token tidak valid atau scope tidak mengizinkan" },
+        { status: 401 }
+      );
+    }
+  }
   const isPublicRoute = isPublicAuthPath(pathname);
 
-  if (!hasSession && !isPublicRoute) {
+  if (!hasSession && !hasApiBearer && !isPublicRoute) {
     if (pathname.startsWith("/api/")) {
       return NextResponse.json(
         { success: false, error: "Authentication required" },
@@ -70,7 +91,9 @@ export async function updateSession(request: NextRequest) {
 
   // Teruskan pathname ke server component (guard role ESS-only membacanya via
   // `headers()`) — middleware Edge tak punya role, jadi enforcement di layout.
+  // x-request-method dipakai pengecekan scope token Open API (EPIC-042).
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set("x-pathname", pathname);
+  requestHeaders.set("x-request-method", request.method);
   return NextResponse.next({ request: { headers: requestHeaders } });
 }
