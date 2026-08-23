@@ -74,13 +74,11 @@ export function buildReceiptItemLines(
   const arkOf = (idr: number) =>
     `(${idrToArkDisplay(idr, options?.arkRate ?? 0).toLocaleString("id-ID")} ARK)`;
   const headerStall = String(options?.headerStallName || "").trim();
+  // Item tetap dikelompokkan per stall, tapi TANPA baris judul "--- Stall ---":
+  // label [Stall] per item sudah cukup (keputusan owner 2026-08-23, hemat kertas).
   const groups = groupCartItemsByStallName(items);
-  const showHeaders = groups.length >= 2;
   const lines: Array<{ text: string; align: "left" | "center" }> = [];
   for (const group of groups) {
-    if (showHeaders) {
-      lines.push({ text: `--- ${group.stallName} ---`, align: "center" });
-    }
     for (const item of group.items) {
       const qty = Number(item.quantity) || 0;
       const unit = Number(item.price) || 0;
@@ -98,7 +96,7 @@ export function buildReceiptItemLines(
       } else {
         lines.push({ text: `${item.quantity}x ${item.name}`, align: "left" });
       }
-      const itemStall = item.stallName?.trim() || "";
+      const itemStall = item.stallName?.trim() || item.warehouse_name?.trim() || "";
       if (itemStall && itemStall !== headerStall) {
         lines.push({ text: `  [${itemStall}]`, align: "left" });
       }

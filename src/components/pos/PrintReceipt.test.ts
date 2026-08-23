@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { buildReceiptLines, type ReceiptPayload } from "./PrintReceipt";
+import {
+  buildReceiptEscPosBytes,
+  buildReceiptHtml,
+  buildReceiptLines,
+  type ReceiptPayload,
+} from "./PrintReceipt";
+import { MEMBER_PORTAL_URL } from "@/lib/pos/member-qr";
 
 const mixedPayload: ReceiptPayload = {
   checkoutNumber: "CHK-20260815-0001",
@@ -19,14 +25,16 @@ const mixedPayload: ReceiptPayload = {
 };
 
 describe("buildReceiptLines mixed checkout", () => {
-  it("prints one checkout number, stall sections, one total, and one tender", () => {
+  it("prints one checkout number, per-item stall tags, one total, and one tender", () => {
     const lines = buildReceiptLines(mixedPayload, "CUSTOMER");
     expect(lines).toContain("Checkout #CHK-20260815-0001");
     expect(lines).toContain("ANTRIAN A7");
-    expect(lines).toContain("--- Kopi Nusantara ---");
-    expect(lines).toContain("1x Americano");
-    expect(lines).toContain("--- Bakery ---");
-    expect(lines).toContain("1x Croissant");
+    // Header "--- Stall ---" dihapus — label [Stall] per item sudah cukup
+    expect(lines.some((line) => line.includes("--- Kopi Nusantara ---"))).toBe(false);
+    expect(lines.some((line) => line.startsWith("1x Americano"))).toBe(true);
+    expect(lines).toContain("  [Kopi Nusantara]");
+    expect(lines.some((line) => line.startsWith("1x Croissant"))).toBe(true);
+    expect(lines).toContain("  [Bakery]");
     expect(lines.filter((line) => line.startsWith("TOTAL")).length).toBe(1);
     expect(lines.some((line) => line.includes("Bayar (CASH)"))).toBe(true);
     expect(lines.some((line) => line.startsWith("Order #"))).toBe(false);
@@ -126,5 +134,30 @@ describe("receipt header/footer dari konfigurasi (EPIC-040)", () => {
     expect(buildReceiptLines(withStall, "KITCHEN")).toContain("Stall: Yakitori Stall");
     const shown: ReceiptPayload = { ...withStall, receiptShowStallName: true };
     expect(buildReceiptLines(shown, "CUSTOMER")).toContain("Stall: Yakitori Stall");
+  });
+});
+
+describe("QR member portal di bawah struk", () => {
+  const bytesToAscii = (bytes: Uint8Array) =>
+    Array.from(bytes)
+      .map((b) => String.fromCharCode(b))
+      .join("");
+
+  it("ESC/POS customer copy memuat perintah QR + URL; dapur/bar tidak", () => {
+    const ascii = bytesToAscii(buildReceiptEscPosBytes(mixedPayload, "CUSTOMER"));
+    // GS ( k fn 165 pilih model QR — penanda blok QR dimulai
+    expect(ascii).toContain("\x1d\x28\x6b\x04\x00\x31\x41\x32\x00");
+    expect(ascii).toContain(MEMBER_PORTAL_URL);
+    expect(ascii).toContain("member.suluinwounderland.com");
+    const kitchen = bytesToAscii(buildReceiptEscPosBytes(mixedPayload, "KITCHEN"));
+    expect(kitchen).not.toContain(MEMBER_PORTAL_URL);
+  });
+
+  it("HTML customer copy memuat SVG QR + caption; dapur tidak", () => {
+    const html = buildReceiptHtml(mixedPayload, "CUSTOMER");
+    expect(html).toContain("viewBox=\"0 0 29 29\"");
+    expect(html).toContain("member.suluinwounderland.com");
+    const kitchen = buildReceiptHtml(mixedPayload, "KITCHEN");
+    expect(kitchen).not.toContain("viewBox=\"0 0 29 29\"");
   });
 });

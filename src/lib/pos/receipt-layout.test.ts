@@ -57,24 +57,27 @@ describe("receiptDocumentLabel", () => {
 });
 
 describe("buildReceiptItemLines", () => {
-  it("inserts a stall section header when the cart is mixed", () => {
+  it("cart campuran: tanpa header '--- Stall ---', cukup label [Stall] per item", () => {
     const lines = buildReceiptItemLines([
       { name: "Americano", quantity: 1, warehouse_name: "Kopi Nusantara" },
       { name: "Croissant", quantity: 2, warehouse_name: "Bakery" },
     ]);
     expect(lines.map((line) => line.text)).toEqual([
-      "--- Kopi Nusantara ---",
       "1x Americano",
-      "--- Bakery ---",
+      "  [Kopi Nusantara]",
       "2x Croissant",
+      "  [Bakery]",
     ]);
   });
 
-  it("omits stall headers for a single-stall cart", () => {
-    const lines = buildReceiptItemLines([
-      { name: "Americano", quantity: 1, warehouse_name: "Kopi Nusantara" },
-      { name: "Latte", quantity: 1, warehouse_name: "Kopi Nusantara" },
-    ]);
+  it("label [Stall] disembunyikan bila sama dengan stall di header struk", () => {
+    const lines = buildReceiptItemLines(
+      [
+        { name: "Americano", quantity: 1, warehouse_name: "Kopi Nusantara" },
+        { name: "Latte", quantity: 1, warehouse_name: "Kopi Nusantara" },
+      ],
+      { headerStallName: "Kopi Nusantara" }
+    );
     expect(lines.map((line) => line.text)).toEqual(["1x Americano", "1x Latte"]);
   });
 });
