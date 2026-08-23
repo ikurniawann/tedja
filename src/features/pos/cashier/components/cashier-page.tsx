@@ -3032,6 +3032,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         submitting={processingPayment || submitting}
         isMixedCart={isMixedCart}
         isCheckoutBill={Boolean(paymentCheckoutId)}
+        payingOrderId={paymentOrderId}
         onPrepareMixedQrisCheckout={
           isMixedCart
             ? async () => {

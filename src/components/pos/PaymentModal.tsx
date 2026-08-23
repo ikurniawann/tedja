@@ -145,6 +145,12 @@ interface Props {
   isMixedCart?: boolean;
   /** Paying an existing table/central checkout — ARK/NFC/gift are not wired. */
   isCheckoutBill?: boolean;
+  /**
+   * Bayar open bill: id order tersimpan. QRIS diikat ke order ini supaya
+   * nominal QR dipaksa server = total bill TERSIMPAN (insiden 2026-08-23:
+   * keranjang layar bisa berubah setelah open bill tanpa tersimpan).
+   */
+  payingOrderId?: string | null;
   onPrepareMixedQrisCheckout?: () => Promise<{
     checkout_id: string;
     checkout_number?: string;
@@ -168,6 +174,7 @@ export function PaymentModal({
   onCfdPayment,
   isMixedCart = false,
   isCheckoutBill = false,
+  payingOrderId = null,
   onPrepareMixedQrisCheckout,
 }: Props) {
   const methodsQuery = usePaymentMethods(true);
@@ -424,6 +431,7 @@ export function PaymentModal({
           buildPosQrisCreateBody({
             amount: totalAfterArk,
             checkoutId,
+            orderId: payingOrderId,
           })
         ),
       });
@@ -464,7 +472,7 @@ export function PaymentModal({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, method, totalAfterArk, isMixedCart]);
+  }, [open, method, totalAfterArk, isMixedCart, payingOrderId]);
 
   // QRIS lunas di Xendit → checkout otomatis, sama seperti tunai.
   useEffect(() => {
