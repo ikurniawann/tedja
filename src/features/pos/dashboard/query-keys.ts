@@ -1,6 +1,7 @@
-import type { DashboardPeriod } from "./types";
+import type { DashboardPeriod, DashboardRange } from "./types";
 
 export const dashboardQueryKeys = {
   all: ["pos", "dashboard"] as const,
-  summary: (period: DashboardPeriod) => ["pos", "dashboard", "summary", period] as const,
+  summary: (period: DashboardPeriod, range?: DashboardRange | null) =>
+    ["pos", "dashboard", "summary", period, range?.from ?? null, range?.to ?? null] as const,
 };

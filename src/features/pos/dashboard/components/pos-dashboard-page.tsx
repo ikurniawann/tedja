@@ -101,7 +101,27 @@ function MetricCard({
 
 export function PosDashboardPage() {
   const [selectedPeriod, setSelectedPeriod] = useState<DashboardPeriod>("today");
-  const { data, isLoading, isFetching, error } = usePosDashboard(selectedPeriod);
+  /* Rentang custom (owner 2026-08-23): Start/End Date di sebelah tombol
+   * periode. draft = isian input; activeRange = yang benar-benar di-query
+   * (baru terkirim setelah kedua tanggal terisi & valid). */
+  const [draftRange, setDraftRange] = useState<{ from: string; to: string }>({
+    from: "",
+    to: "",
+  });
+  const [activeRange, setActiveRange] = useState<{ from: string; to: string } | null>(null);
+  const { data, isLoading, isFetching, error } = usePosDashboard(selectedPeriod, activeRange);
+
+  const applyRange = (next: { from: string; to: string }) => {
+    setDraftRange(next);
+    if (next.from && next.to && next.from <= next.to) {
+      setActiveRange({ ...next });
+    }
+  };
+  const pickPeriod = (period: DashboardPeriod) => {
+    setSelectedPeriod(period);
+    setActiveRange(null);
+    setDraftRange({ from: "", to: "" });
+  };
 
   const loading = isLoading || isFetching;
   const errorMessage = error instanceof Error ? error.message : "";
@@ -112,8 +132,9 @@ export function PosDashboardPage() {
   const topLoyalMembers = data?.topLoyalMembers ?? [];
   const recentOrders = data?.recentOrders ?? [];
 
-  const periodLabel =
-    selectedPeriod === "today" ? "today" : selectedPeriod === "week" ? "this week" : "this month";
+  const periodLabel = activeRange
+    ? `${activeRange.from} – ${activeRange.to}`
+    : selectedPeriod === "today" ? "today" : selectedPeriod === "week" ? "this week" : "this month";
 
   return (
     <TooltipProvider>
@@ -122,15 +143,15 @@ export function PosDashboardPage() {
         title="POS Dashboard"
         description="Sales overview, loyalty activity, and recent orders"
         actions={
-          <div className="flex w-full flex-wrap gap-2 sm:w-auto">
+          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
             {PERIOD_OPTIONS.map((option) => (
               <Button
                 key={option.value}
                 type="button"
                 variant="outline"
-                onClick={() => setSelectedPeriod(option.value)}
+                onClick={() => pickPeriod(option.value)}
                 className={
-                  selectedPeriod === option.value
+                  selectedPeriod === option.value && !activeRange
                     ? "h-9 rounded-lg border-primary bg-primary px-3 text-sm font-semibold text-white shadow-sm hover:border-primary/90 hover:bg-primary/90"
                     : "purchasing-secondary-button h-9 px-3 text-sm"
                 }
@@ -138,6 +159,30 @@ export function PosDashboardPage() {
                 {option.label}
               </Button>
             ))}
+            {/* Rentang custom (owner 2026-08-23) — aktif begitu kedua tanggal terisi */}
+            <div
+              className={`flex items-center gap-1 rounded-lg border px-2 py-1 ${
+                activeRange ? "border-primary bg-primary/5" : "border-gray-200/80"
+              }`}
+            >
+              <input
+                type="date"
+                aria-label="Start date"
+                value={draftRange.from}
+                max={draftRange.to || undefined}
+                onChange={(e) => applyRange({ ...draftRange, from: e.target.value })}
+                className="h-7 bg-transparent text-sm text-gray-700 outline-none"
+              />
+              <span className="text-xs text-gray-400">–</span>
+              <input
+                type="date"
+                aria-label="End date"
+                value={draftRange.to}
+                min={draftRange.from || undefined}
+                onChange={(e) => applyRange({ ...draftRange, to: e.target.value })}
+                className="h-7 bg-transparent text-sm text-gray-700 outline-none"
+              />
+            </div>
           </div>
         }
       />

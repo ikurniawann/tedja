@@ -740,7 +740,15 @@ export async function updateOrderPayment(
 
 // ============ DASHBOARD ============
 
-export async function getDashboardStats(period?: 'today' | 'week' | 'month') {
+export async function getDashboardStats(
+  period?: 'today' | 'week' | 'month',
+  range?: { from: string; to: string }
+) {
+  if (range) {
+    return fetchAPI<{ success: boolean; data: any }>(
+      `/dashboard?period=custom&date_from=${encodeURIComponent(range.from)}&date_to=${encodeURIComponent(range.to)}`
+    );
+  }
   return fetchAPI<{ success: boolean; data: any }>(`/dashboard?period=${period || 'today'}`);
 }
 
