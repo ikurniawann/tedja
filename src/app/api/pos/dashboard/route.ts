@@ -237,9 +237,12 @@ export async function GET(request: NextRequest) {
         total: toNumber(order.total_amount),
         status: order.status || "pending",
         payment_status: order.payment_status || "unpaid",
-        time: new Date(order.ordered_at).toLocaleTimeString("en-US", {
+        // WIB eksplisit — tanpa timeZone, jam ikut TZ server production (UTC)
+        // dan Recent Orders tampil 7 jam lebih awal dari kenyataan.
+        time: new Date(order.ordered_at).toLocaleTimeString("id-ID", {
           hour: "2-digit",
           minute: "2-digit",
+          timeZone: "Asia/Jakarta",
         }),
       })
     );
