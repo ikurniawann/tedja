@@ -9,6 +9,11 @@ import {
 import { encodeEscPosLines, formatReceiptRow, RECEIPT_DIVIDER } from "@/lib/pos/thermal-escpos";
 import { resolveReceiptSettings } from "@/lib/pos/receipt-settings";
 import { idrToArkDisplay } from "@/lib/pos/loyalty-settings";
+import {
+  MEMBER_PORTAL_QR_CAPTION,
+  MEMBER_PORTAL_QR_SVG,
+  MEMBER_PORTAL_URL,
+} from "@/lib/pos/member-qr";
 import { printBytesToPairedThermal } from "@/lib/pos/thermal-serial";
 import {
   buildReceiptItemLines,
@@ -298,7 +303,14 @@ export function buildReceiptEscPosBytes(
   payload: ReceiptPayload,
   label: ThermalPrintLabel,
 ): Uint8Array {
-  return encodeEscPosLines(buildReceiptEscPosLayout(payload, label));
+  // QR member portal di paling bawah — struk customer/preview saja; copy
+  // dapur/bar tidak perlu (hemat kertas, tidak dibawa pembeli).
+  const withQr = label !== "KITCHEN" && label !== "BAR";
+  return encodeEscPosLines(buildReceiptEscPosLayout(payload, label), {
+    qr: withQr
+      ? { data: MEMBER_PORTAL_URL, caption: MEMBER_PORTAL_QR_CAPTION }
+      : undefined,
+  });
 }
 
 /**
@@ -364,24 +376,23 @@ export function buildReceiptHtml(payload: ReceiptPayload, label: ThermalPrintLab
   // fallback ke total karena pembayaran ark_coin selalu penuh (satu metode).
   const isArkPayment = !isKitchenCopy && label !== "PREVIEW_BILL" && paymentMethod === "ark_coin";
   const arkPaidValue = payload.arkPaid || (isArkPayment ? total : 0);
+  // Item dikelompokkan per stall tanpa baris judul "--- Stall ---": label
+  // [Stall] per item sudah cukup (keputusan owner 2026-08-23, hemat kertas).
   const stallGroups = groupCartItemsByStallName(items);
-  const showStallHeaders = stallGroups.length >= 2;
   const colSpan = isKitchenCopy ? 2 : 3;
   const itemsHtml = stallGroups
     .map((group) => {
-      const header = showStallHeaders
-        ? `<tr><td colspan="${colSpan}" style="text-align:center;font-weight:bold;padding:6px 2px">--- ${group.stallName} ---</td></tr>`
-        : "";
       const rows = group.items
         .map((item) => {
           const qty = Number(item.quantity) || 0;
           const lineTotal = (Number(item.price) || 0) * qty;
+          const itemStall = item.stallName?.trim() || item.warehouse_name?.trim() || "";
           return `
     <tr>
       <td style="width:28px;vertical-align:top;font-weight:bold;padding:3px 2px">${item.quantity}x</td>
       <td style="padding:3px 2px">
         <strong>${item.name}</strong>
-        ${item.stallName && item.stallName !== stallName ? `<br><small style="color:#0369a1;font-weight:600">[${item.stallName}]</small>` : ""}
+        ${itemStall && itemStall !== stallName ? `<br><small style="color:#0369a1;font-weight:600">[${itemStall}]</small>` : ""}
         ${!isKitchenCopy && qty > 1 ? `<br><small style="color:#555">@ ${formatCurrency(Number(item.price) || 0)}</small>` : ""}
         ${item.variantName ? `<br><small style="color:#555">${item.variantName}</small>` : ""}
         ${item.modifierNames?.length ? `<br><small style="color:#555">${item.modifierNames.join(", ")}</small>` : ""}
@@ -393,7 +404,7 @@ export function buildReceiptHtml(payload: ReceiptPayload, label: ThermalPrintLab
   `;
         })
         .join("");
-      return `${header}${rows}`;
+      return rows;
     })
     .join("");
 
@@ -561,6 +572,15 @@ export function buildReceiptHtml(payload: ReceiptPayload, label: ThermalPrintLab
     ${footerBlockHtml}
     <div class="divider"></div>
     <div class="center">--- ${heading} COPY ---</div>
+    ${
+      /* QR member portal di paling bawah — hanya struk customer/preview */
+      !isKitchen && !isBar
+        ? `<div style="margin-top:8px;text-align:center">
+      <div style="width:24mm;margin:0 auto">${MEMBER_PORTAL_QR_SVG}</div>
+      <div style="font-size:10px;margin-top:3px">${MEMBER_PORTAL_QR_CAPTION}</div>
+    </div>`
+        : ""
+    }
     </div>
   </body>
 </html>`;
