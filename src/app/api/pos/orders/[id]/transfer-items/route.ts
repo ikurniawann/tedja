@@ -3,6 +3,11 @@ import { createPgClient } from "@/lib/pg/create-client";
 import { getPosSession } from "@/lib/api/auth";
 import { allocateQueueNumber } from "@/lib/pos/queue-number";
 import { canAppendTransferItems } from "@/lib/pos/table-sale-target";
+import {
+  billBlocksItemMoves,
+  logOrderItemMove,
+  type BillPaymentSnapshot,
+} from "@/lib/pos/bill-item-moves";
 
 const ACTIVE_STATUSES = ["pending", "confirmed", "preparing", "ready", "served"];
 
@@ -140,7 +145,7 @@ export async function POST(
 
     const { data: source, error: sourceErr } = await db
       .from("pos_orders")
-      .select("id, status, table_id, discount_amount, tax_amount, company_id, branch_id, checkout_id, sold_from")
+      .select("id, order_number, status, payment_status, amount_paid, table_id, discount_amount, tax_amount, company_id, branch_id, checkout_id, sold_from")
       .eq("id", sourceOrderId)
       .single();
 
@@ -154,6 +159,20 @@ export async function POST(
     if (!ACTIVE_STATUSES.includes(String(source.status))) {
       return Response.json(
         { success: false, error: "Source order cannot transfer items" },
+        { status: 400 }
+      );
+    }
+
+    // Insiden 2026-08-23: bill sudah dibayar tapi itemnya masih bisa dipindah
+    // → total dihitung ulang, amount_paid tidak, data tak lagi cocok dengan
+    // struk. Begitu ada uang masuk, isi bill terkunci.
+    const sourceBlocked = billBlocksItemMoves(source as BillPaymentSnapshot);
+    if (sourceBlocked) {
+      return Response.json(
+        {
+          success: false,
+          error: `Bill ${(source as { order_number?: string }).order_number || ""} ${sourceBlocked} — item tidak bisa dipindah`,
+        },
         { status: 400 }
       );
     }
@@ -205,19 +224,36 @@ export async function POST(
 
     const existingTargets = await db
       .from("pos_orders")
-      .select("id, status, checkout_id, sold_from")
+      .select("id, order_number, status, payment_status, amount_paid, checkout_id, sold_from")
       .eq("table_id", target_table_id)
       .in("status", ACTIVE_STATUSES)
       .order("ordered_at", { ascending: false });
 
     const compatibleTarget = ((existingTargets.data || []) as Array<{
       id: string;
+      order_number?: string | null;
+      payment_status?: string | null;
+      amount_paid?: number | string | null;
       checkout_id?: string | null;
       sold_from?: string | null;
     }>).find((row) => canAppendTransferItems(sourceBill, row));
 
+    let targetOrderNumber: string | null = null;
     if (compatibleTarget) {
+      // Bill tujuan yang sudah dibayar juga terkunci — item baru akan
+      // menaikkan total tanpa pembayaran tambahan (insiden 2026-08-23).
+      const targetBlocked = billBlocksItemMoves(compatibleTarget);
+      if (targetBlocked) {
+        return Response.json(
+          {
+            success: false,
+            error: `Bill tujuan ${compatibleTarget.order_number || ""} ${targetBlocked} — tidak bisa menerima item`,
+          },
+          { status: 400 }
+        );
+      }
       targetOrderId = compatibleTarget.id;
+      targetOrderNumber = compatibleTarget.order_number ?? null;
       if (await orderHasUnpaidSplits(db, targetOrderId)) {
         return Response.json(
           {
@@ -286,6 +322,7 @@ export async function POST(
       }
 
       targetOrderId = newOrder.id;
+      targetOrderNumber = orderNumber;
       createdTarget = true;
 
       await db
@@ -320,6 +357,14 @@ export async function POST(
       ((sourceItems || []) as OrderItemRow[]).map((row) => [row.id, row])
     );
 
+    const movedItems: Array<{
+      id: string;
+      product_name: string | null;
+      quantity: number;
+      unit_price: number;
+      total_amount: number;
+    }> = [];
+
     for (const req of items) {
       const itemId = String(req.order_item_id || "");
       const qty = Math.floor(Number(req.qty) || 0);
@@ -343,6 +388,17 @@ export async function POST(
 
       const unitPrice = Number(row.unit_price) || 0;
       const availableQty = Number(row.quantity) || 0;
+
+      movedItems.push({
+        id: row.id,
+        product_name: row.product_name ?? null,
+        quantity: qty,
+        unit_price: unitPrice,
+        total_amount:
+          availableQty > 0
+            ? (Number(row.total_amount || row.subtotal || 0) / availableQty) * qty
+            : unitPrice * qty,
+      });
 
       if (qty === availableQty) {
         const { error: moveErr } = await db
@@ -417,6 +473,18 @@ export async function POST(
 
     const sourceTotals = await recalculateOrderTotals(db, sourceOrderId);
     await recalculateOrderTotals(db, targetOrderId);
+
+    // Audit trail (insiden 2026-08-23): siapa memindahkan item apa, dari/ke
+    // bill mana. Gagal menulis log tidak membatalkan transfer.
+    await logOrderItemMove({
+      action: "transfer",
+      sourceOrderId,
+      sourceOrderNumber: (source as { order_number?: string | null }).order_number ?? null,
+      targetOrderId,
+      targetOrderNumber,
+      items: movedItems,
+      movedBy: sessionUserId,
+    });
 
     if (sourceTotals.itemCount === 0) {
       await db
