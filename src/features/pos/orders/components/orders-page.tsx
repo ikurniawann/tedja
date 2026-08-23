@@ -197,7 +197,13 @@ const STATUS_FILTERS = [
   "voided",
 ] as const;
 
-const ORDER_LIST_LIMIT = 300;
+/**
+ * Keputusan owner 2026-08-23: TANPA batasan — semua order sesuai filter
+ * dimuat (dulu 300 terbaru saja, membuat kartu "Semua" menyesatkan: tampil
+ * 315 padahal bulan berjalan 771). Server memagari di 10.000 baris demi
+ * keselamatan browser; rentang normal tidak akan menyentuhnya.
+ */
+const ORDER_LIST_LIMIT = 10_000;
 
 type PeriodPreset = "today" | "7d" | "month";
 
