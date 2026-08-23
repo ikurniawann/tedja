@@ -71,8 +71,10 @@ export function buildReceiptItemLines(
 ): Array<{ text: string; align: "left" | "center" }> {
   const withPrices = Boolean(options?.withPrices);
   const showArk = Boolean(options?.showArk);
+  // Format inline "Rp 25.000 / 25 Ark Coin" (permintaan owner 2026-08-23),
+  // bukan baris terpisah di bawah harga.
   const arkOf = (idr: number) =>
-    `(${idrToArkDisplay(idr, options?.arkRate ?? 0).toLocaleString("id-ID")} ARK)`;
+    `${idrToArkDisplay(idr, options?.arkRate ?? 0).toLocaleString("id-ID")} Ark Coin`;
   const headerStall = String(options?.headerStallName || "").trim();
   // Item tetap dikelompokkan per stall, tapi TANPA baris judul "--- Stall ---":
   // label [Stall] per item sudah cukup (keputusan owner 2026-08-23, hemat kertas).
@@ -83,13 +85,13 @@ export function buildReceiptItemLines(
       const qty = Number(item.quantity) || 0;
       const unit = Number(item.price) || 0;
       if (withPrices) {
+        const priceText = showArk
+          ? `${formatReceiptCurrency(unit * qty)} / ${arkOf(unit * qty)}`
+          : formatReceiptCurrency(unit * qty);
         lines.push({
-          text: formatReceiptRow(`${item.quantity}x ${item.name}`, formatReceiptCurrency(unit * qty)),
+          text: formatReceiptRow(`${item.quantity}x ${item.name}`, priceText),
           align: "left",
         });
-        if (showArk) {
-          lines.push({ text: formatReceiptRow("", arkOf(unit * qty)), align: "left" });
-        }
         if (qty > 1) {
           lines.push({ text: `  @ ${formatReceiptCurrency(unit)}`, align: "left" });
         }
