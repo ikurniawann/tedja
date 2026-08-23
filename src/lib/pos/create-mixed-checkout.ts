@@ -147,6 +147,14 @@ export type MixedCheckoutResult = {
   checkoutNumber: string;
   queueNumber: string;
   orderIds: string[];
+  /**
+   * EPIC-041: snapshot utk struk — saldo ARK sesudah potong (dari RPC, bukan
+   * query terpisah), XP transaksi ini, dan total XP member sesudah award.
+   * null/undefined bila bukan pembayaran ARK / bukan member.
+   */
+  arkBalanceAfter?: number | null;
+  xpAwarded?: number;
+  xpTotalAfter?: number | null;
 };
 
 type BuiltLine = MixedCheckoutItem & {
@@ -1022,8 +1030,8 @@ async function finalizePaidChildren(input: {
   paymentMethod: string;
   branchId?: string | null;
   alreadyHadChildren?: boolean;
-}) {
-  if (input.orderIds.length === 0) return;
+}): Promise<{ xpAwarded: number }> {
+  if (input.orderIds.length === 0) return { xpAwarded: 0 };
   const db = createPgClient();
   const { data: orders } = await db
     .from("pos_orders")
@@ -1082,9 +1090,12 @@ async function finalizePaidChildren(input: {
     await syncPosCustomerOrderStats(db, input.customerId, total);
   }
 
+  // EPIC-041 task 2: kumpulkan XP yang ter-award per anak-order supaya struk
+  // checkout bisa mencetak "XP didapat" (sebelumnya hasilnya dibuang).
+  let xpAwarded = 0;
   for (const order of orders || []) {
     const childItems = itemsByOrder.get(String(order.id)) || [];
-    await awardCrmXpForPosOrder(db, {
+    const crmXp = await awardCrmXpForPosOrder(db, {
       orderId: String(order.id),
       customerId: input.customerId || null,
       totalAmount: toNumber(order.total_amount),
@@ -1092,6 +1103,7 @@ async function finalizePaidChildren(input: {
       outletId: input.branchId,
       paymentMethod: input.paymentMethod,
     });
+    xpAwarded += Number(crmXp?.xpAwarded) || 0;
     try {
       const { postPosSaleAccountingJournals } = await import("@/lib/pos/accounting-posting");
       await postPosSaleAccountingJournals({
@@ -1108,6 +1120,7 @@ async function finalizePaidChildren(input: {
       }
     }
   }
+  return { xpAwarded };
 }
 
 function snapshotFromInput(
@@ -1627,8 +1640,11 @@ export async function createMixedCheckout(
       };
     });
 
+    // EPIC-041: RPC mengembalikan saldo SETELAH potong — snapshot dibawa ke
+    // respons utk baris "Sisa saldo" di struk (sama seperti jalur POST order).
+    let arkBalanceAfter: number | null = null;
     if (paymentMethod === "ark_coin" && input.customerId && created.orderIds[0]) {
-      const { error: coinError } = await db.rpc("update_ark_coin_balance", {
+      const { data: coinBalance, error: coinError } = await db.rpc("update_ark_coin_balance", {
         p_customer_id: input.customerId,
         p_amount: -arkUsed,
         p_type: "payment",
@@ -1665,21 +1681,39 @@ export async function createMixedCheckout(
             : "Gagal memproses ARK Coin"
         );
       }
+
+      arkBalanceAfter = Number(coinBalance);
+      if (!Number.isFinite(arkBalanceAfter)) arkBalanceAfter = null;
     }
 
     merchClaims = [];
 
+    let xpAwarded = 0;
+    let xpTotalAfter: number | null = null;
     if (isPaidSale && insertChildren) {
-      await finalizePaidChildren({
+      const finalized = await finalizePaidChildren({
         orderIds: created.orderIds,
         customerId: input.customerId,
         sessionUserId: input.sessionUserId,
         paymentMethod,
         branchId,
       });
+      xpAwarded = finalized.xpAwarded;
+
+      // EPIC-041 task 2: total XP member SETELAH award utk baris "Total XP"
+      // di struk (mirror jalur POST /api/pos/orders).
+      if (input.customerId && xpAwarded > 0) {
+        const { data: xpCustomer } = await db
+          .from("pos_customers")
+          .select("total_xp")
+          .eq("id", input.customerId)
+          .maybeSingle();
+        const totalXp = Number((xpCustomer as { total_xp?: unknown } | null)?.total_xp);
+        xpTotalAfter = Number.isFinite(totalXp) ? totalXp : null;
+      }
     }
 
-    return created;
+    return { ...created, arkBalanceAfter, xpAwarded, xpTotalAfter };
   } catch (error) {
     if (merchClaims.length > 0) {
       await restoreMerchandiseStock(db, merchClaims).catch((restoreErr) =>

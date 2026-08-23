@@ -93,22 +93,31 @@ describe("receipt header/footer dari konfigurasi (EPIC-040)", () => {
     ).toBe(false);
   });
 
-  it("pembayaran ARK: item, subtotal, total diberi konversi ARK (EPIC-041 lanjutan)", () => {
-    const arkPayload: ReceiptPayload = {
-      ...mixedPayload,
-      paymentMethod: "ark_coin",
-      arkRate: 1000,
-    };
-    const lines = buildReceiptLines(arkPayload, "CUSTOMER");
-    // 20.000 → 20 ARK (item), 38.000 → 38 ARK (subtotal & total)
-    expect(lines.some((l) => l.includes("(20 ARK)"))).toBe(true);
-    expect(lines.some((l) => l.includes("(18 ARK)"))).toBe(true);
-    expect(lines.filter((l) => l.trim() === "(38 ARK)").length).toBe(2);
-    // arkPaid absen → fallback ke total; blok ARK tetap tercetak
-    expect(lines.some((l) => l.startsWith("Dibayar ARK") && l.includes("38 ARK"))).toBe(true);
-    // non-ARK & copy dapur bebas dari konversi
-    expect(buildReceiptLines(mixedPayload, "CUSTOMER").some((l) => l.includes("ARK)"))).toBe(false);
-    expect(buildReceiptLines(arkPayload, "KITCHEN").some((l) => l.includes("ARK"))).toBe(false);
+  it("pembayaran ARK: harga item, subtotal, total inline 'Rp X / N Ark Coin'", () => {
+    // Struk live membawa LABEL metode ("ARK Coin"), bukan kode 'ark_coin' —
+    // deteksi harus tetap jalan (bug produksi 2026-08-23).
+    for (const method of ["ark_coin", "ARK Coin"]) {
+      const arkPayload: ReceiptPayload = {
+        ...mixedPayload,
+        paymentMethod: method,
+        arkRate: 1000,
+      };
+      const lines = buildReceiptLines(arkPayload, "CUSTOMER");
+      expect(lines.some((l) => l.includes("Rp 20.000 / 20 Ark Coin"))).toBe(true);
+      expect(lines.some((l) => l.includes("Rp 18.000 / 18 Ark Coin"))).toBe(true);
+      expect(
+        lines.some((l) => l.startsWith("Subtotal") && l.includes("Rp 38.000 / 38 Ark Coin"))
+      ).toBe(true);
+      expect(
+        lines.some((l) => l.startsWith("TOTAL") && l.includes("Rp 38.000 / 38 Ark Coin"))
+      ).toBe(true);
+      // arkPaid absen → fallback ke total; blok ARK tetap tercetak
+      expect(lines.some((l) => l.startsWith("Dibayar ARK") && l.includes("38 ARK"))).toBe(true);
+      // copy dapur bebas dari konversi & harga
+      expect(buildReceiptLines(arkPayload, "KITCHEN").some((l) => l.includes("Ark Coin"))).toBe(false);
+    }
+    // non-ARK bebas dari konversi
+    expect(buildReceiptLines(mixedPayload, "CUSTOMER").some((l) => l.includes("Ark Coin"))).toBe(false);
   });
 
   it("blok XP: +N dan total member — hanya bila ada XP (EPIC-041)", () => {
