@@ -1,5 +1,11 @@
 export type DashboardPeriod = "today" | "week" | "month";
 
+/** Rentang tanggal custom (YYYY-MM-DD, inklusif) — tombol Start/End Date. */
+export interface DashboardRange {
+  from: string;
+  to: string;
+}
+
 export interface DashboardStats {
   todayRevenue: number;
   todayOrders: number;

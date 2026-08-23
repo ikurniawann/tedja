@@ -2,7 +2,24 @@ import { NextRequest, NextResponse } from "next/server";
 import { createPgClient } from "@/lib/pg/create-client";
 import { getPosSession } from "@/lib/api/auth";
 
-type Period = "today" | "week" | "month";
+type Period = "today" | "week" | "month" | "custom";
+
+/**
+ * Rentang custom (permintaan owner 2026-08-23): ?period=custom&date_from=
+ * YYYY-MM-DD&date_to=YYYY-MM-DD — batas hari penuh WIB, inklusif dua sisi.
+ * null bila format/urutan tidak valid; dibatasi maks 366 hari.
+ */
+function getCustomRange(dateFrom: string, dateTo: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateFrom) || !/^\d{4}-\d{2}-\d{2}$/.test(dateTo)) {
+    return null;
+  }
+  const startDate = new Date(`${dateFrom}T00:00:00+07:00`);
+  const endDate = new Date(`${dateTo}T23:59:59.999+07:00`);
+  if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) return null;
+  if (endDate < startDate) return null;
+  if (endDate.getTime() - startDate.getTime() > 366 * 24 * 60 * 60 * 1000) return null;
+  return { startDate, endDate };
+}
 
 /** Order dibatalkan/di-void/di-merge: uangnya tidak dihitung sebagai revenue. */
 const VOIDED_STATUSES = new Set(["cancelled", "voided", "merged"]);
@@ -105,8 +122,22 @@ export async function GET(request: NextRequest) {
   try {
     const db = createPgClient();
     const searchParams = request.nextUrl.searchParams;
-    const period = (searchParams.get("period") || "today") as Period;
-    const { startDate, endDate } = getPeriodRange(period);
+    let period = (searchParams.get("period") || "today") as Period;
+    let range: { startDate: Date; endDate: Date } | null = null;
+    if (period === "custom") {
+      range = getCustomRange(
+        searchParams.get("date_from") || "",
+        searchParams.get("date_to") || ""
+      );
+      if (!range) {
+        return NextResponse.json(
+          { success: false, error: "Rentang tanggal tidak valid (maks 366 hari, format YYYY-MM-DD)" },
+          { status: 400 }
+        );
+      }
+    }
+    if (period === "custom" && !range) period = "today";
+    const { startDate, endDate } = range ?? getPeriodRange(period as Exclude<Period, "custom">);
     const { prevStart, prevEnd } = getPreviousPeriodRange(startDate, endDate);
 
     const startIso = startDate.toISOString();
@@ -231,15 +262,18 @@ export async function GET(request: NextRequest) {
         cashier_id?: string | null;
       }) => ({
         id: order.order_number || order.id,
-        cashier:
-          cashierNameById.get(String(order.cashier_id || "")) ||
-          String(order.id).slice(0, 8),
+        // "—" bila kasir tidak ter-resolve (mis. data lama ber-cashier dummy)
+        // — potongan hex order id hanya membingungkan pembaca.
+        cashier: cashierNameById.get(String(order.cashier_id || "")) || "—",
         total: toNumber(order.total_amount),
         status: order.status || "pending",
         payment_status: order.payment_status || "unpaid",
-        time: new Date(order.ordered_at).toLocaleTimeString("en-US", {
+        // WIB eksplisit — tanpa timeZone, jam ikut TZ server production (UTC)
+        // dan Recent Orders tampil 7 jam lebih awal dari kenyataan.
+        time: new Date(order.ordered_at).toLocaleTimeString("id-ID", {
           hour: "2-digit",
           minute: "2-digit",
+          timeZone: "Asia/Jakarta",
         }),
       })
     );
