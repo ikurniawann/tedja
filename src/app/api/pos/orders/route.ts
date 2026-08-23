@@ -91,9 +91,13 @@ const ORDER_LIST_PAYMENT_METHODS = new Set([
 ]);
 
 function clampOrderListLimit(raw: string | null) {
+  // Keputusan owner 2026-08-23: daftar order harus memuat SEMUA baris sesuai
+  // filter — 'all' (atau angka besar) diterima. Plafon 10.000 hanya pagar
+  // keselamatan browser/respons, bukan pemotong data periode normal.
+  if (raw === 'all') return 10_000;
   const parsed = parseInt(raw || '50', 10);
   if (!Number.isFinite(parsed)) return 50;
-  return Math.min(Math.max(parsed, 1), 500);
+  return Math.min(Math.max(parsed, 1), 10_000);
 }
 
 type PosOrderItemRequest = {
