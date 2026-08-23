@@ -145,6 +145,15 @@ describe("mixed cart payment UI", () => {
       amount: 15000,
     });
     expect(buildPosQrisCreateBody({ amount: 15000 })).toEqual({ amount: 15000 });
+    // Bayar open bill: QR terikat order (insiden 2026-08-23); checkout menang
+    // bila keduanya ada (mixed bill).
+    expect(buildPosQrisCreateBody({ amount: 15000, orderId: "ord-1" })).toEqual({
+      order_id: "ord-1",
+      amount: 15000,
+    });
+    expect(
+      buildPosQrisCreateBody({ amount: 15000, checkoutId: "chk-1", orderId: "ord-1" })
+    ).toEqual({ checkout_id: "chk-1", amount: 15000 });
   });
 
   it("never allows mixed QRIS confirm until Xendit is paid and checkoutId exists", () => {

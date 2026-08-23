@@ -4,6 +4,11 @@ import { createPgClient } from "@/lib/pg/create-client";
 import { findSupervisorByPin } from "@/lib/pos/supervisor-pin";
 import { getPosSession } from "@/lib/api/auth";
 import { canAppendTransferItems } from "@/lib/pos/table-sale-target";
+import {
+  billBlocksItemMoves,
+  logOrderItemMove,
+  type BillPaymentSnapshot,
+} from "@/lib/pos/bill-item-moves";
 
 function errorMessage(error: unknown, fallback = "Merge failed") {
   if (error instanceof Error && error.message) return error.message;
@@ -91,13 +96,13 @@ export async function POST(
 
     const { data: source, error: sourceErr } = await db
       .from("pos_orders")
-      .select("id, status, table_id, discount_amount, tax_amount, checkout_id, sold_from")
+      .select("id, order_number, status, payment_status, amount_paid, table_id, discount_amount, tax_amount, checkout_id, sold_from")
       .eq("id", sourceOrderId)
       .single();
 
     const { data: target, error: targetErr } = await db
       .from("pos_orders")
-      .select("id, status, discount_amount, tax_amount, checkout_id, sold_from")
+      .select("id, order_number, status, payment_status, amount_paid, discount_amount, tax_amount, checkout_id, sold_from")
       .eq("id", target_order_id)
       .single();
 
@@ -122,6 +127,30 @@ export async function POST(
     if (blockedStatuses.includes(target.status as string)) {
       return Response.json(
         { success: false, error: "Target order cannot receive merge" },
+        { status: 400 }
+      );
+    }
+
+    // Insiden 2026-08-23: bill yang sudah dibayar tidak boleh di-merge — total
+    // target dihitung ulang tanpa menyentuh amount_paid, data tak lagi cocok
+    // dengan struk. Begitu ada uang masuk, isi bill terkunci.
+    const sourceBlocked = billBlocksItemMoves(source as BillPaymentSnapshot);
+    if (sourceBlocked) {
+      return Response.json(
+        {
+          success: false,
+          error: `Bill ${(source as { order_number?: string }).order_number || ""} ${sourceBlocked} — tidak bisa digabung`,
+        },
+        { status: 400 }
+      );
+    }
+    const targetBlocked = billBlocksItemMoves(target as BillPaymentSnapshot);
+    if (targetBlocked) {
+      return Response.json(
+        {
+          success: false,
+          error: `Bill tujuan ${(target as { order_number?: string }).order_number || ""} ${targetBlocked} — tidak bisa menerima gabungan`,
+        },
         { status: 400 }
       );
     }
@@ -162,6 +191,12 @@ export async function POST(
         { status: 400 }
       );
     }
+
+    // Snapshot item SEBELUM dipindah — bahan audit trail.
+    const { data: sourceItemRows } = await db
+      .from("pos_order_items")
+      .select("id, product_name, quantity, unit_price, total_amount")
+      .eq("order_id", sourceOrderId);
 
     const { error: moveErr } = await db
       .from("pos_order_items")
@@ -249,6 +284,24 @@ export async function POST(
           .eq("id", source.table_id);
       }
     }
+
+    // Audit trail (insiden 2026-08-23): siapa menggabung bill apa ke mana,
+    // item apa saja yang ikut pindah. Gagal log tidak membatalkan merge.
+    await logOrderItemMove({
+      action: "merge",
+      sourceOrderId,
+      sourceOrderNumber: (source as { order_number?: string | null }).order_number ?? null,
+      targetOrderId: target_order_id,
+      targetOrderNumber: (target as { order_number?: string | null }).order_number ?? null,
+      items: (sourceItemRows || []) as Array<{
+        id: string;
+        product_name: string | null;
+        quantity: number;
+        unit_price: number;
+        total_amount: number;
+      }>,
+      movedBy: sessionUserId,
+    });
 
     return Response.json({
       success: true,

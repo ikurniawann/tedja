@@ -110,9 +110,18 @@ export function buildCheckoutBillPayBody(input: {
 export function buildPosQrisCreateBody(input: {
   amount: number;
   checkoutId?: string | null;
-}): { amount: number; checkout_id?: string } {
+  /**
+   * Insiden 2026-08-23: bayar open bill — QR WAJIB terikat ke order supaya
+   * server memaksa nominal = total bill TERSIMPAN, bukan keranjang di layar
+   * (keranjang bisa berubah setelah open bill tanpa tersimpan ke DB).
+   */
+  orderId?: string | null;
+}): { amount: number; checkout_id?: string; order_id?: string } {
   if (input.checkoutId) {
     return { checkout_id: input.checkoutId, amount: input.amount };
+  }
+  if (input.orderId) {
+    return { order_id: input.orderId, amount: input.amount };
   }
   return { amount: input.amount };
 }

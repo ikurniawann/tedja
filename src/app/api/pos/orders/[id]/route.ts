@@ -140,6 +140,40 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       );
     }
 
+    // Insiden 2026-08-23 (POS-20260823-0132/0138): keranjang layar kasir bisa
+    // menyimpang dari bill tersimpan setelah open bill — QRIS ditagih dari
+    // total layar lalu order ditandai lunas dengan nominal yang tidak cocok.
+    // Guard: nominal pelunasan HARUS cocok dengan total bill tersimpan —
+    // tunai boleh lebih (kembalian), non-tunai wajib sama persis. ARK/NFC/
+    // gift card punya validasi khususnya sendiri di atas/di bawah.
+    const settlingNow =
+      (updateData.payment_status === 'paid' || payment_status === 'paid') &&
+      existing.payment_status !== 'paid';
+    const methodHandlesOwnAmount = ['ark_coin', 'nfc_tab', 'gift_card'].includes(
+      String(effectiveMethod || '')
+    );
+    if (settlingNow && !methodHandlesOwnAmount && amount_paid !== undefined) {
+      const fmt = (n: number) => Math.round(n).toLocaleString('id-ID');
+      if (numericAmountPaid + numericArkUsed < orderTotal - 0.5) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Nominal pembayaran (${fmt(numericAmountPaid)}) kurang dari total bill ${existing.order_number || ''} (${fmt(orderTotal)})`,
+          },
+          { status: 400 }
+        );
+      }
+      if (effectiveMethod !== 'cash' && Math.abs(numericAmountPaid - orderTotal) > 1) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Nominal pembayaran (${fmt(numericAmountPaid)}) tidak sama dengan total bill tersimpan ${existing.order_number || ''} (${fmt(orderTotal)}) — muat ulang bill sebelum menagih`,
+          },
+          { status: 409 }
+        );
+      }
+    }
+
     // NFC Tab (EPIC-023 Fase C): bayar open bill dengan memindahkan tagihan
     // ke tab visit — charge dulu (transaksional + idempotent per order),
     // baru order ditandai paid. Order yang sudah paid tidak di-charge ulang.
