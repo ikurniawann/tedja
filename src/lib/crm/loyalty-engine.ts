@@ -754,6 +754,129 @@ function itemAmount(item: PosOrderItemInput) {
 }
 
 /**
+ * Tarik kembali XP order yang di-void (keputusan owner 2026-08-23): saldo ARK
+ * di-refund, statistik belanja dikoreksi, maka XP juga harus dibatalkan.
+ *
+ * Cara kerja: jumlahkan baris `earn` ledger yang mereferensikan order-order
+ * tsb, tulis satu baris `reverse` per order (idempoten via idempotency_key
+ * `pos:order:<id>:void_reverse` — retry void tidak dobel-tarik), turunkan
+ * pos_customers.total_xp (kanonik) + mirror lifetime_xp profil (clamp ≥ 0,
+ * sesuai constraint ledger), lalu sinkron ulang tier — tier BISA turun.
+ */
+export async function reverseCrmXpForVoidedOrders(
+  db: DbClient,
+  payload: { orderIds: string[]; voidReason?: string | null }
+): Promise<{ xpReversed: number }> {
+  if (payload.orderIds.length === 0) return { xpReversed: 0 };
+
+  try {
+    const { data: earnRows, error: earnError } = await db
+      .from("crm_xp_ledger")
+      .select("id, customer_id, member_id, xp_delta, outlet_id, company_id, branch_id, reference_id")
+      .eq("reference_table", "pos_orders")
+      .eq("direction", "earn")
+      .in("reference_id", payload.orderIds);
+    if (earnError) throw earnError;
+    if (!earnRows || earnRows.length === 0) return { xpReversed: 0 };
+
+    const reverseKeys = payload.orderIds.map((id) => `pos:order:${id}:void_reverse`);
+    const { data: existingReverse } = await db
+      .from("crm_xp_ledger")
+      .select("idempotency_key")
+      .in("idempotency_key", reverseKeys);
+    const alreadyReversed = new Set(
+      ((existingReverse ?? []) as Array<{ idempotency_key?: unknown }>).map((row) =>
+        String(row.idempotency_key)
+      )
+    );
+
+    type EarnRow = {
+      customer_id: string;
+      member_id: string;
+      xp_delta: number | string;
+      outlet_id: string | null;
+      company_id: string | null;
+      branch_id: string | null;
+      reference_id: string;
+    };
+    const xpByOrder = new Map<string, { xp: number; row: EarnRow }>();
+    for (const raw of earnRows as EarnRow[]) {
+      const orderId = String(raw.reference_id);
+      if (alreadyReversed.has(`pos:order:${orderId}:void_reverse`)) continue;
+      const entry = xpByOrder.get(orderId) ?? { xp: 0, row: raw };
+      entry.xp += toNumber(raw.xp_delta);
+      xpByOrder.set(orderId, entry);
+    }
+    if (xpByOrder.size === 0) return { xpReversed: 0 };
+
+    const first = [...xpByOrder.values()][0].row;
+    const customerId = String(first.customer_id);
+
+    let xpReversed = 0;
+    for (const [orderId, entry] of xpByOrder) {
+      if (entry.xp <= 0) continue;
+
+      const { data: customer } = await db
+        .from("pos_customers")
+        .select("total_xp")
+        .eq("id", customerId)
+        .maybeSingle();
+      const lifetimeBefore = toNumber((customer as PosCustomerLoyaltyRow | null)?.total_xp);
+      // Clamp: XP member tidak boleh negatif (constraint ledger juga menolak).
+      const delta = Math.min(entry.xp, lifetimeBefore);
+      if (delta <= 0) continue;
+      const lifetimeAfter = lifetimeBefore - delta;
+
+      const { error: ledgerError } = await db.from("crm_xp_ledger").insert({
+        member_id: entry.row.member_id,
+        customer_id: customerId,
+        direction: "reverse",
+        source_channel: "pos",
+        source_type: "order_void",
+        source_id: orderId,
+        outlet_id: entry.row.outlet_id,
+        company_id: entry.row.company_id,
+        branch_id: entry.row.branch_id,
+        xp_delta: -delta,
+        balance_before: lifetimeBefore,
+        balance_after: lifetimeAfter,
+        lifetime_before: lifetimeBefore,
+        lifetime_after: lifetimeAfter,
+        reference_table: "pos_orders",
+        reference_id: orderId,
+        idempotency_key: `pos:order:${orderId}:void_reverse`,
+        description: `Pembatalan XP — void order${payload.voidReason ? ` (${payload.voidReason})` : ""}`,
+        metadata: { void: true },
+      });
+      if (ledgerError) {
+        // 23505 = reversal sudah tercatat oleh proses lain — bukan error.
+        if ((ledgerError as { code?: string }).code === "23505") continue;
+        throw ledgerError;
+      }
+
+      await db
+        .from("pos_customers")
+        .update({ total_xp: lifetimeAfter, updated_at: new Date().toISOString() })
+        .eq("id", customerId);
+      await db
+        .from("crm_member_profiles")
+        .update({ lifetime_xp: lifetimeAfter, loyalty_score: lifetimeAfter })
+        .eq("id", entry.row.member_id);
+
+      xpReversed += delta;
+    }
+
+    if (xpReversed > 0) {
+      await syncTierAfterEarn(db, customerId);
+    }
+    return { xpReversed };
+  } catch (error) {
+    if (isMissingCrmSchema(error)) return { xpReversed: 0 };
+    throw error;
+  }
+}
+
+/**
  * Free XP kelengkapan profil 100% (EPIC-011 Fase D, keputusan owner #9):
  * berlaku SEMUA tipe member, sekali seumur hidup, TANPA multiplier tier
  * (nominal apa adanya dari crm_settings.profile_completion_free_xp).

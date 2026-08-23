@@ -48,6 +48,11 @@ export interface NoxOrder {
   totalAmount: number;
   /** Order yang dibayar ARK Coin tampil sebagai koin; sisanya tetap Rupiah. */
   unit: "ark" | "idr";
+  /**
+   * Rupiah asli order — utk order ARK tampil berdampingan dgn konversinya
+   * ("Rp 80.000 / 80 ARK"), sama seperti struk (keputusan owner 2026-08-23).
+   */
+  totalIdr: number;
   createdAt: string;
 }
 
@@ -121,6 +126,7 @@ export function useNoxMember(): { state: NoxMemberState; reload: () => void } {
             orderNumber: row.order_number,
             totalAmount: paidWithArk ? idrToArkDisplay(totalIdr, arkRate) : totalIdr,
             unit: paidWithArk ? ("ark" as const) : ("idr" as const),
+            totalIdr,
             createdAt: row.created_at,
           };
         });
