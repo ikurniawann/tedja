@@ -191,59 +191,109 @@ export async function GET(request: NextRequest) {
       .sort((a, b) => b.sold - a.sold)
       .slice(0, 5);
 
-    const { data: recentOrdersRaw } = await db
+    // Recent Orders dulu SELALU kosong: embed `cashier:hrd_employees(...)`
+    // memakai alias yang tidak terdaftar di schema-map shim, query gagal
+    // diam-diam (bug sekeluarga dengan "Kasir: —" di order detail). Nama
+    // kasir kini diresolve terpisah dari hris.employees per cashier_id.
+    const { data: recentOrdersRaw, error: recentErr } = await db
       .from("pos_orders")
-      .select(`
-        id,
-        order_number,
-        total_amount,
-        status,
-        payment_status,
-        ordered_at,
-        cashier:hrd_employees(full_name)
-      `)
+      .select("id, order_number, total_amount, status, payment_status, ordered_at, cashier_id")
       .order("ordered_at", { ascending: false })
       .limit(8);
+    if (recentErr) console.error("[pos] dashboard recent orders:", recentErr.message);
 
-    const recentOrders = (recentOrdersRaw ?? []).map((order) => ({
-      id: order.order_number || order.id,
-      cashier:
-        (order.cashier as { full_name?: string } | null)?.full_name ||
-        String(order.id).slice(0, 8),
-      total: toNumber(order.total_amount),
-      status: order.status || "pending",
-      payment_status: order.payment_status || "unpaid",
-      time: new Date(order.ordered_at).toLocaleTimeString("en-US", {
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
-    }));
+    const cashierIds = [
+      ...new Set(
+        (recentOrdersRaw ?? [])
+          .map((order: { cashier_id?: string | null }) => order.cashier_id)
+          .filter(Boolean)
+      ),
+    ] as string[];
+    const cashierNameById = new Map<string, string>();
+    if (cashierIds.length > 0) {
+      const { data: cashierRows } = await db
+        .from("employees")
+        .select("id, full_name")
+        .in("id", cashierIds);
+      for (const row of (cashierRows ?? []) as Array<{ id: string; full_name?: string | null }>) {
+        if (row.full_name) cashierNameById.set(String(row.id), row.full_name);
+      }
+    }
+
+    const recentOrders = (recentOrdersRaw ?? []).map(
+      (order: {
+        id: string;
+        order_number?: string | null;
+        total_amount?: number | string | null;
+        status?: string | null;
+        payment_status?: string | null;
+        ordered_at: string;
+        cashier_id?: string | null;
+      }) => ({
+        id: order.order_number || order.id,
+        cashier:
+          cashierNameById.get(String(order.cashier_id || "")) ||
+          String(order.id).slice(0, 8),
+        total: toNumber(order.total_amount),
+        status: order.status || "pending",
+        payment_status: order.payment_status || "unpaid",
+        time: new Date(order.ordered_at).toLocaleTimeString("en-US", {
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+      })
+    );
 
     const totalArkUsed = paidOrders.reduce((sum, order) => sum + toNumber(order.ark_coins_used), 0);
     const arkPaymentOrders = paidOrders.filter(
       (order) => order.payment_method === "ark_coin" || toNumber(order.ark_coins_used) > 0
     ).length;
 
-    const { data: arkEarnedRows } = await db
-      .from("pos_orders")
-      .select("ark_coins_earned")
-      .eq("payment_status", "paid")
-      .not("status", "in", VOIDED_STATUSES_SQL)
-      .gte("ordered_at", startIso)
-      .lte("ordered_at", endIso);
+    // "ARK Masuk": koin yang MASUK ke wallet member pada periode ini —
+    // top-up + bonus. Kolom pos_orders.ark_coins_earned tidak pernah ditulis
+    // siapa pun (fitur cashback per order tidak ada), jadi metrik lama abadi 0.
+    const { data: arkCreditRows } = await db
+      .from("pos_wallet_transactions")
+      .select("amount, type, created_at")
+      .in("type", ["topup", "topup_bonus", "bonus"])
+      .gte("created_at", startIso)
+      .lte("created_at", endIso);
 
-    const totalArkEarned = (arkEarnedRows ?? []).reduce(
-      (sum, order) => sum + toNumber(order.ark_coins_earned),
+    const totalArkEarned = (arkCreditRows ?? []).reduce(
+      (sum: number, row: { amount?: number | string | null }) =>
+        sum + Math.abs(toNumber(row.amount)),
       0
     );
 
-    const { data: xpRows } = await db
+    // XP dicatat di crm_xp_ledger (loyalty engine) — pos_xp_transactions hanya
+    // data lama (bug yang sama dengan detail order portal member): keduanya
+    // dijumlah karena berasal dari era berbeda, tidak dobel hitung.
+    const { data: xpLedgerRows } = await db
+      .from("crm_xp_ledger")
+      .select("xp_delta, created_at")
+      .eq("source_channel", "pos")
+      .eq("direction", "earn")
+      .gte("created_at", startIso)
+      .lte("created_at", endIso);
+
+    const { data: xpLegacyRows } = await db
       .from("pos_xp_transactions")
       .select("xp_earned, created_at")
       .gte("created_at", startIso)
       .lte("created_at", endIso);
 
-    const totalXpEarned = (xpRows ?? []).reduce((sum, row) => sum + toNumber(row.xp_earned), 0);
+    const xpRows = [
+      ...(xpLedgerRows ?? []).map((row) => ({
+        xp_earned: toNumber((row as { xp_delta?: unknown }).xp_delta),
+        created_at: String((row as { created_at?: unknown }).created_at),
+      })),
+      ...(xpLegacyRows ?? []).map((row) => ({
+        xp_earned: toNumber((row as { xp_earned?: unknown }).xp_earned),
+        created_at: String((row as { created_at?: unknown }).created_at),
+      })),
+    ];
+
+    const totalXpEarned = xpRows.reduce((sum, row) => sum + toNumber(row.xp_earned), 0);
 
     const { count: membersWithXp } = await db
       .from("pos_customers")
