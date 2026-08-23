@@ -22,7 +22,7 @@ export async function DELETE(
         { status: 403 }
       );
     }
-    await requireIamMenuPrefix(IAM.settingsUsers);
+    await requireIamMenuPrefix(IAM.settingsIntegrations);
 
     const { id } = await params;
     const rows = await query(
