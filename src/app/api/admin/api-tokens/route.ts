@@ -12,7 +12,7 @@ import {
 /**
  * EPIC-042: kelola Open API token (list + create).
  *
- * HANYA sesi manusia (cookie) dengan menu settings.users — token TIDAK bisa
+ * HANYA sesi manusia (cookie) dengan menu settings.integrations — token TIDAK bisa
  * membuat/mencabut token (mencegah agent memperbanyak aksesnya sendiri).
  */
 
@@ -28,7 +28,7 @@ async function requireHumanTokenAdmin() {
       { status: 403 }
     );
   }
-  await requireIamMenuPrefix(IAM.settingsUsers);
+  await requireIamMenuPrefix(IAM.settingsIntegrations);
   return sessionUser;
 }
 

@@ -36,14 +36,14 @@ langsung — CRUD penuh — tanpa membajak sesi manusia.
 
 ### Guardrail
 - **Token tidak bisa mengelola token** (403) — mencegah agent memperbanyak
-  aksesnya sendiri. Kelola token = sesi manusia + menu `settings.users`.
+  aksesnya sendiri. Kelola token = sesi manusia + menu `settings.integrations`.
 - Guardrail bisnis tidak terlompati: void tetap butuh PIN supervisor, dst.
 - Audit: satu baris per request di `configuration.api_token_request_logs`
   (method, path, allowed) + `last_used_at` per token.
 - Revoke = soft delete (`revoked_at`) — jejak audit utuh, efek seketika.
 
 ### Kelola token
-- UI: Dashboard → Settings → **API Tokens** (`/dashboard/settings/api-tokens`).
+- UI: Dashboard → Settings → **Integrasi** (`/dashboard/settings/integrations`), section "Open API Tokens" — keputusan owner 2026-08-23; halaman terpisah dihapus.
 - API: `GET/POST /api/admin/api-tokens`, `DELETE /api/admin/api-tokens/:id`.
 
 ### OpenAPI spec
@@ -60,7 +60,7 @@ halaman admin menampilkan peringatan migrasi).
 
 ## Integrasi OpenClaw (ringkas)
 
-1. Admin buat token di Settings → API Tokens (scope `*` untuk akses penuh),
+1. Admin buat token di Settings → Integrasi (section Open API Tokens) (scope `*` untuk akses penuh),
    salin sekali.
 2. Konfigurasi agent: base URL `https://dashboard.suluinwounderland.com`,
    header `Authorization: Bearer <token>`.
