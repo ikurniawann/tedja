@@ -20,9 +20,13 @@ import { getSettings, SETTING_KEYS } from "@/lib/settings/app-settings";
 const createSchema = z.object({
   amount: z.number().positive().max(999_999_999).optional(),
   checkout_id: z.string().uuid().optional(),
-}).refine((value) => value.amount != null || Boolean(value.checkout_id), {
-  message: "Nominal tidak valid",
-});
+  // Insiden 2026-08-23: bayar open bill — QR terikat order, nominal dipaksa
+  // dari total bill TERSIMPAN (keranjang layar bisa menyimpang dari DB).
+  order_id: z.string().uuid().optional(),
+}).refine(
+  (value) => value.amount != null || Boolean(value.checkout_id) || Boolean(value.order_id),
+  { message: "Nominal tidak valid" }
+);
 
 function isGatewayConfigError(error: unknown) {
   const message = error instanceof Error ? error.message : "";
@@ -56,6 +60,69 @@ export async function POST(request: NextRequest) {
     }
 
     const db = createPgClient();
+
+    let amount = parsed.data.amount;
+    let referenceId = `pos-${randomUUID()}`;
+    const checkoutId = parsed.data.checkout_id;
+    const orderId = !checkoutId ? parsed.data.order_id : undefined;
+
+    // Validasi bill dilakukan SEBELUM memuat gateway: selisih nominal harus
+    // ketahuan duluan, bukan tersembunyi di balik error konfigurasi Xendit.
+    if (orderId) {
+      const { data: order, error: orderError } = await db
+        .from("pos_orders")
+        .select("id, order_number, total_amount, payment_status, xendit_qr_id, xendit_external_id")
+        .eq("id", orderId)
+        .maybeSingle();
+      if (orderError) throw orderError;
+      if (!order) {
+        return NextResponse.json(
+          { success: false, error: "Order tidak ditemukan" },
+          { status: 404 }
+        );
+      }
+      if (String(order.payment_status) === "paid") {
+        return NextResponse.json(
+          { success: false, error: `Bill ${order.order_number || ""} sudah lunas` },
+          { status: 400 }
+        );
+      }
+      const orderTotal = Number(order.total_amount) || 0;
+      if (orderTotal <= 0) {
+        return NextResponse.json(
+          { success: false, error: "Nominal tidak valid" },
+          { status: 400 }
+        );
+      }
+      // Nominal dari klien hanya boleh MENGONFIRMASI total tersimpan.
+      // Selisih = keranjang layar tidak sama dengan bill di sistem.
+      if (amount != null && Math.abs(amount - orderTotal) > 1) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Total di layar (${Math.round(amount).toLocaleString("id-ID")}) tidak sama dengan bill tersimpan ${order.order_number || ""} (${Math.round(orderTotal).toLocaleString("id-ID")}) — muat ulang bill sebelum menagih QRIS`,
+          },
+          { status: 409 }
+        );
+      }
+      amount = orderTotal;
+      referenceId = `pos-ord-${orderId}`;
+
+      const { error: reserveError } = await db
+        .from("pos_orders")
+        .update({
+          xendit_external_id: referenceId,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", orderId);
+      if (reserveError) {
+        return NextResponse.json(
+          { success: false, error: "Gagal menyimpan QRIS order" },
+          { status: 500 }
+        );
+      }
+    }
+
     let xendit;
     try {
       xendit = await loadActiveXenditConfig(db);
@@ -70,10 +137,6 @@ export async function POST(request: NextRequest) {
       }
       throw err;
     }
-
-    let amount = parsed.data.amount;
-    let referenceId = `pos-${randomUUID()}`;
-    const checkoutId = parsed.data.checkout_id;
 
     if (checkoutId) {
       const { data: checkout, error: checkoutError } = await db
@@ -199,6 +262,24 @@ export async function POST(request: NextRequest) {
         console.error("[pos] save checkout qris ids:", saveError.message);
         return NextResponse.json(
           { success: false, error: "Gagal menyimpan QRIS checkout" },
+          { status: 500 }
+        );
+      }
+    }
+
+    if (orderId) {
+      const { error: saveOrderError } = await db
+        .from("pos_orders")
+        .update({
+          xendit_qr_id: qr.id,
+          xendit_external_id: qr.reference_id,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", orderId);
+      if (saveOrderError) {
+        console.error("[pos] save order qris ids:", saveOrderError.message);
+        return NextResponse.json(
+          { success: false, error: "Gagal menyimpan QRIS order" },
           { status: 500 }
         );
       }
