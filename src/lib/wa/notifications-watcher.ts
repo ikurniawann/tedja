@@ -14,6 +14,7 @@
 import { query } from "@/lib/db";
 import { loadGatewayConfig, sendGatewayText } from "@/lib/whatsapp/gateway";
 import { buildDesktopOverview } from "@/lib/desktop/overview";
+import { buildFlashReportMessage, gatherFlashReportData } from "./flash-report";
 import {
   SALES_TARGET_SETTING_KEY,
   parseSalesTarget,
@@ -74,10 +75,24 @@ async function maybeSendDigest(): Promise<void> {
   if (existing.length > 0) return;
 
   const overview = await buildDesktopOverview();
+
+  // Daily Flash Report (permintaan owner 2026-08-23): format laporan manual
+  // Operations, dengan data H-1 PENUH — digest terkirim pagi hari sehingga
+  // hari berjalan belum bisa dilaporkan utuh. Gagal membangun flash report
+  // tidak menggagalkan digest (fallback ke ringkasan lama saja).
+  const kemarin = todayWib(new Date(Date.now() - 24 * 60 * 60 * 1000));
+  let flashSection = "";
+  try {
+    const flashData = await gatherFlashReportData(kemarin);
+    flashSection = `${buildFlashReportMessage(flashData, kemarin)}\n\n`;
+  } catch (err) {
+    console.error("[wa-notif] gagal membangun flash report:", err);
+  }
+
   const result = await sendOwnerNotification({
     type: "digest",
     dedupKey: digestDedupKey(date),
-    message: buildDigestMessage(overview, date),
+    message: `${flashSection}${buildDigestMessage(overview, date)}`,
     config,
   });
   if (result.sent) {
