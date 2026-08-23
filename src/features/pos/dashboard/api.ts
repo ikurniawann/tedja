@@ -1,10 +1,13 @@
 import { getDashboardStats } from "@/lib/pos-api";
-import type { DashboardBundle, DashboardPeriod } from "./types";
+import type { DashboardBundle, DashboardPeriod, DashboardRange } from "./types";
 
 export type * from "./types";
 
-export async function getPosDashboard(period: DashboardPeriod = "today"): Promise<DashboardBundle> {
-  const res = await getDashboardStats(period);
+export async function getPosDashboard(
+  period: DashboardPeriod = "today",
+  range?: DashboardRange | null
+): Promise<DashboardBundle> {
+  const res = await getDashboardStats(period, range ?? undefined);
   if (!res.success || !res.data) {
     throw new Error((res as { error?: string }).error || "Failed to load dashboard data");
   }
