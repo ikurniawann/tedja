@@ -19,8 +19,25 @@ function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Unknown error";
 }
 
-async function resolveCashierId(): Promise<string> {
-  return "00000000-0000-0000-0000-000000000001";
+/**
+ * Kasir dari SESI (hris.employees.user_id) — sama dengan POST /api/pos/orders.
+ * Nilai kiriman klien hanya dipakai bila bukan dummy; dulu stub ini selalu
+ * mengembalikan dummy sehingga semua anak-order checkout tercatat "Kasir: —".
+ */
+const FALLBACK_CASHIER_ID = "00000000-0000-0000-0000-000000000001";
+
+async function resolveCashierId(
+  sessionUserId: string,
+  clientCashierId?: string | null
+): Promise<string> {
+  const { queryOne } = await import("@/lib/db");
+  const employee = await queryOne<{ id: string }>(
+    `SELECT id FROM hris.employees WHERE user_id = $1 LIMIT 1`,
+    [sessionUserId]
+  ).catch(() => null);
+  if (employee?.id) return employee.id;
+  if (clientCashierId && clientCashierId !== FALLBACK_CASHIER_ID) return clientCashierId;
+  return FALLBACK_CASHIER_ID;
 }
 
 type CheckoutBody = {
@@ -107,7 +124,7 @@ export async function POST(request: NextRequest) {
       warehouseByProduct,
       orderType: body.order_type,
       customerId: body.customer_id,
-      cashierId: body.cashier_id || (await resolveCashierId()),
+      cashierId: await resolveCashierId(sessionUserId, body.cashier_id),
       serverId: body.server_id,
       tableId: body.table_id,
       guestCount: body.guest_count,
