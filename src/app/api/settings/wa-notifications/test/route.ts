@@ -11,7 +11,7 @@ import { WA_NOTIF_SETTING_KEY, parseWaNotifConfig } from "@/lib/wa/notifications
  * owner mengandalkan notifikasi sungguhan.
  */
 
-export async function POST() {
+export async function POST(request: Request) {
   try {
     await requireIamMenuPrefix(IAM.settingsIntegrations);
 
@@ -31,19 +31,36 @@ export async function POST() {
       );
     }
 
+    // Mode flash (owner 2026-08-23): kirim Daily Flash Report SUNGGUHAN
+    // sebagai uji — default data hari INI (berjalan), atau ?date=YYYY-MM-DD.
+    const body = (await request.json().catch(() => ({}))) as {
+      flash?: boolean;
+      date?: string;
+    };
+
     const now = new Date().toLocaleString("id-ID", {
       timeZone: "Asia/Jakarta",
       dateStyle: "medium",
       timeStyle: "short",
     });
+
+    let message =
+      `Arkiv OS — pesan uji notifikasi.\n` +
+      `Nomor ini akan menerima notifikasi bisnis otomatis.\n${now} WIB`;
+    if (body.flash) {
+      const { buildFlashReportMessage, gatherFlashReportData } = await import(
+        "@/lib/wa/flash-report"
+      );
+      const { todayWib } = await import("@/lib/wa/notifications-messages");
+      const dateWib =
+        body.date && /^\d{4}-\d{2}-\d{2}$/.test(body.date) ? body.date : todayWib();
+      const data = await gatherFlashReportData(dateWib);
+      message = `${buildFlashReportMessage(data, dateWib)}\n\n_(uji kirim manual ${now} WIB — data ${dateWib})_`;
+    }
+
     const results = [];
     for (const target of config.recipients) {
-      const result = await sendGatewayText(gateway, {
-        target,
-        message:
-          `Arkiv OS — pesan uji notifikasi.\n` +
-          `Nomor ini akan menerima notifikasi bisnis otomatis.\n${now} WIB`,
-      });
+      const result = await sendGatewayText(gateway, { target, message });
       results.push({ target, success: result.success, reason: result.reason ?? null });
     }
 

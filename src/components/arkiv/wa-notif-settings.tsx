@@ -202,11 +202,15 @@ export function WaNotifSettingsPanel({ tone = "dark" }: { tone?: WaNotifTone } =
     }
   };
 
-  const sendTest = async () => {
+  const sendTest = async (flash = false) => {
     setTesting(true);
     setTestResult(null);
     try {
-      const res = await fetch("/api/settings/wa-notifications/test", { method: "POST" });
+      const res = await fetch("/api/settings/wa-notifications/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(flash ? { flash: true } : {}),
+      });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Gagal mengirim tes");
       const results = json.data.results as Array<{ target: string; success: boolean; reason: string | null }>;
@@ -425,12 +429,21 @@ export function WaNotifSettingsPanel({ tone = "dark" }: { tone?: WaNotifTone } =
         </button>
         <button
           type="button"
-          onClick={sendTest}
+          onClick={() => void sendTest(false)}
           disabled={testing || config.recipients.length === 0}
           title={config.recipients.length === 0 ? "Tambahkan dan simpan nomor dulu" : "Kirim pesan uji ke semua nomor tersimpan"}
           className={`rounded-xl px-5 py-2 text-sm font-semibold transition disabled:opacity-50 ${ui.testBtn}`}
         >
           {testing ? "Mengirim…" : "Kirim Tes"}
+        </button>
+        <button
+          type="button"
+          onClick={() => void sendTest(true)}
+          disabled={testing || config.recipients.length === 0}
+          title="Kirim Daily Flash Report berisi data hari ini (berjalan) ke semua nomor tersimpan"
+          className={`rounded-xl px-5 py-2 text-sm font-semibold transition disabled:opacity-50 ${ui.testBtn}`}
+        >
+          {testing ? "Mengirim…" : "Kirim Flash Report (uji)"}
         </button>
         {saved && <span className={`text-sm ${ui.ok}`}>Tersimpan ✓</span>}
         <span className={`ml-auto text-[11px] ${ui.faint}`}>Kirim Tes memakai nomor yang TERSIMPAN, bukan yang belum di-Simpan.</span>
