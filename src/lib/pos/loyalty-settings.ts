@@ -121,6 +121,16 @@ export function idrToArkDisplay(amountIdr: number, arkRate: number) {
   return Math.sign(ark) * Math.round(Math.abs(ark));
 }
 
+/**
+ * Deteksi pembayaran ARK Coin dari string metode APA PUN yang sampai ke struk:
+ * kode internal 'ark_coin' ATAU label tampilan "ARK Coin" (formatPaymentMethod-
+ * Label / katalog). Struk kasir live mengirim labelnya, bukan kodenya — cek
+ * `=== "ark_coin"` saja membuat konversi ARK tidak pernah tercetak di sana.
+ */
+export function isArkCoinMethod(method?: string | null) {
+  return /^ark[\s_-]?coins?$/i.test(String(method || "").trim());
+}
+
 export function calculateTopupXp(amountIdr: number, settings: Pick<
   PosLoyaltySettings,
   "topup_xp_enabled" | "topup_xp_mode" | "topup_xp_value" | "topup_xp_amount_step"
