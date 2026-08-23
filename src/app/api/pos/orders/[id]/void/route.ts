@@ -17,6 +17,7 @@ import {
   voidIssuedGiftCardsForPosOrder,
 } from '@/lib/giftcard/giftcard-server';
 import { voidFnbOrderFromTab } from '@/lib/ticketing/tab-server';
+import { reverseCrmXpForVoidedOrders } from '@/lib/crm/loyalty-engine';
 import { buildVoidBesarMessage, voidDedupKey } from '@/lib/wa/notifications-messages';
 import { fireOwnerNotification, getWaNotifConfig } from '@/lib/wa/notifications-sender';
 
@@ -233,6 +234,16 @@ export async function POST(
         .update({ status: 'cancelled', updated_at: now })
         .eq('order_id', row.id)
         .eq('status', 'pending');
+    }
+
+    // XP ikut dibatalkan saat void (keputusan owner 2026-08-23) — idempoten
+    // di dalam helper. Kegagalan di sini tidak membatalkan void yang sudah
+    // jadi (refund ARK & stempel sudah selesai), cukup tercatat di log.
+    if (paidRows.length > 0) {
+      await reverseCrmXpForVoidedOrders(db, {
+        orderIds: voidIds,
+        voidReason,
+      }).catch((xpErr) => console.error('[pos] void XP reversal failed:', xpErr));
     }
 
     const stats = resolveCustomerStatsReversal({
