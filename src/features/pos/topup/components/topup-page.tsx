@@ -179,6 +179,7 @@ export function TopupPage() {
     email?: string;
     enroll_member: boolean;
     nfc_uid?: string;
+    is_kol?: boolean;
   }) {
     const response = await saveCustomer({
       name: payload.name,
@@ -187,6 +188,7 @@ export function TopupPage() {
       membership_tier: 'regular',
       enroll_member: payload.enroll_member,
       nfc_uid: payload.nfc_uid,
+      is_kol: payload.is_kol,
     });
     await refetch();
     const created = response.data;
