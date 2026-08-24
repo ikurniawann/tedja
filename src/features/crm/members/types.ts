@@ -9,6 +9,9 @@ export type CrmCustomer = {
   total_spent: number;
   visit_count: number;
   is_active: boolean;
+  /** EPIC-043 — flag KOL + kuota komplimen bulanan (Rp; null = tanpa batas). */
+  is_kol?: boolean;
+  kol_monthly_limit_idr?: number | null;
 };
 
 export type CrmMember = {
@@ -164,6 +167,9 @@ export interface UpdateMemberPayload {
     phone: string | null;
     email: string | null;
     is_active: boolean;
+    /** EPIC-043 — flag KOL + kuota komplimen bulanan (null = tanpa batas). */
+    is_kol?: boolean;
+    kol_monthly_limit_idr?: number | null;
   };
   member?: {
     tier_id?: string;

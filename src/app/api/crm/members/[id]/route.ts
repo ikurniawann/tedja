@@ -65,6 +65,9 @@ const updateMemberSchema = z.object({
     phone: z.string().trim().max(40).nullable().optional(),
     email: z.string().trim().email().or(z.literal("")).nullable().optional(),
     is_active: z.boolean().optional(),
+    /** EPIC-043 — flag KOL + kuota komplimen bulanan (Rp gross; null = tanpa batas). */
+    is_kol: z.boolean().optional(),
+    kol_monthly_limit_idr: z.number().nonnegative().max(999_999_999).nullable().optional(),
   }).optional(),
   member: z.object({
     tier_id: z.string().uuid().optional(),
@@ -84,6 +87,11 @@ function normalizeCustomer(customer: CustomerRow) {
     total_spent: toNumber(customer.total_spent),
     visit_count: toNumber(customer.visit_count),
     is_active: customer.is_active !== false,
+    is_kol: (customer as { is_kol?: boolean }).is_kol === true,
+    kol_monthly_limit_idr:
+      (customer as { kol_monthly_limit_idr?: number | string | null }).kol_monthly_limit_idr == null
+        ? null
+        : toNumber((customer as { kol_monthly_limit_idr?: number | string | null }).kol_monthly_limit_idr),
   };
 }
 

@@ -45,6 +45,9 @@ type EditForm = {
   tierId: string;
   status: string;
   customerActive: boolean;
+  /** EPIC-043 — KOL: komplimen gratis otomatis di kasir + kuota bulanan. */
+  isKol: boolean;
+  kolLimit: string;
 };
 
 const numberFormat = new Intl.NumberFormat("id-ID");
@@ -144,6 +147,8 @@ export function CrmMemberDetailPage() {
     tierId: "",
     status: "active",
     customerActive: true,
+    isKol: false,
+    kolLimit: "",
   });
   const [saveStatus, setSaveStatus] = useState<{ loading: boolean; error: string | null; success: string | null }>({
     loading: false,
@@ -245,6 +250,11 @@ export function CrmMemberDetailPage() {
       tierId: activeTiers.find((tier) => tier.code === member.tier?.code)?.id ?? "",
       status: member.status || "active",
       customerActive: member.customer?.is_active !== false,
+      isKol: member.customer?.is_kol === true,
+      kolLimit:
+        member.customer?.kol_monthly_limit_idr != null
+          ? String(member.customer.kol_monthly_limit_idr)
+          : "",
     });
   }, [activeTiers, member]);
 
@@ -330,6 +340,11 @@ export function CrmMemberDetailPage() {
             phone: editForm.phone || null,
             email: editForm.email || null,
             is_active: editForm.customerActive,
+            is_kol: editForm.isKol,
+            kol_monthly_limit_idr:
+              editForm.isKol && editForm.kolLimit.trim() !== ""
+                ? Number(editForm.kolLimit)
+                : null,
           },
           member: crmProfileReady
             ? {
@@ -530,6 +545,33 @@ export function CrmMemberDetailPage() {
                   />
                   Customer aktif
                 </label>
+                <label className="flex h-10 items-center gap-3 self-end rounded-md border border-slate-300 px-3 text-sm text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={editForm.isKol}
+                    onChange={(event) => setEditForm((current) => ({ ...current, isKol: event.target.checked }))}
+                    className="size-4 rounded border-slate-300"
+                  />
+                  KOL (komplimen gratis)
+                </label>
+                {editForm.isKol && (
+                  <label className="text-sm text-slate-700">
+                    Kuota komplimen / bulan (Rp)
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={editForm.kolLimit}
+                      onChange={(event) =>
+                        setEditForm((current) => ({
+                          ...current,
+                          kolLimit: event.target.value.replace(/\D/g, ""),
+                        }))
+                      }
+                      placeholder="Kosong = tanpa batas"
+                      className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3"
+                    />
+                  </label>
+                )}
               </div>
 
               {saveStatus.error && (
