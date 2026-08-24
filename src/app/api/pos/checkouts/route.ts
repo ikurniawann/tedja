@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPosSession } from "@/lib/api/auth";
-import { validateKolComp } from "@/lib/pos/comp-orders";
+import { validateKolComp } from "@/lib/pos/comp-orders-server";
 import { getApiUserScope } from "@/lib/api/scope";
 import { checkProductPrivileges } from "@/lib/crm/product-privilege";
 import { createPgClient } from "@/lib/pg/create-client";
