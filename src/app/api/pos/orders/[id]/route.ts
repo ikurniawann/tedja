@@ -87,7 +87,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
     const { data: existing, error: fetchErr } = await db
       .from('pos_orders')
-      .select('customer_id, payment_status, payment_method, subtotal, total_amount, order_number, company_id, branch_id, queue_number, status, xendit_qr_id, xendit_external_id')
+      .select('customer_id, payment_status, payment_method, subtotal, total_amount, order_number, company_id, branch_id, queue_number, status, checkout_id, xendit_qr_id, xendit_external_id')
       .eq('id', orderId)
       .single();
 
@@ -99,6 +99,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     // PIN supervisor (padanan digital tanda tangan di struk). Seluruh order
     // digratiskan: diskon = subtotal, total & dibayar 0, penyetuju tercatat.
     let ownerComp: { supervisorId: string; supervisorName: string } | null = null;
+    let ownerCompFamily: { checkoutId: string; siblingIds: string[] } | null = null;
     if (String(body.comp_type || '') === 'owner_comp') {
       if (payment_status !== 'paid') {
         return NextResponse.json(
@@ -144,6 +145,33 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       updateData.comp_type = 'owner_comp';
       updateData.comp_approved_by = ownerComp.supervisorId;
       updateData.comp_approved_name = ownerComp.supervisorName;
+
+      // Checkout gabungan (CHK): SELURUH anak-order digratiskan — bukan
+      // hanya order yang diklik (laporan owner 2026-08-24: sebelumnya hanya
+      // satu anak yang ter-comp). Saudara-saudaranya + baris checkout
+      // dibereskan setelah update utama sukses (lihat blok compFamily).
+      if ((existing as { checkout_id?: string | null }).checkout_id) {
+        const checkoutId = String((existing as { checkout_id?: string | null }).checkout_id);
+        const { data: siblings } = await db
+          .from('pos_orders')
+          .select('id, subtotal, payment_status, status')
+          .eq('checkout_id', checkoutId)
+          .neq('id', orderId);
+        ownerCompFamily = {
+          checkoutId,
+          siblingIds: ((siblings ?? []) as Array<{
+            id: string;
+            payment_status?: string | null;
+            status?: string | null;
+          }>)
+            .filter(
+              (row) =>
+                row.payment_status !== 'paid' &&
+                !['cancelled', 'voided', 'merged'].includes(String(row.status || ''))
+            )
+            .map((row) => row.id),
+        };
+      }
     }
 
     // 1 pembayaran = 1 metode (EPIC-011): ARK Coin tidak boleh dicampur metode
@@ -415,6 +443,64 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         );
       }
       throw error;
+    }
+
+    // EPIC-043 (owner comp keluarga CHK): gratiskan juga seluruh saudara
+    // anak-order + stempel checkout-nya. Dilakukan SETELAH update utama
+    // sukses supaya kegagalan parsial tidak menyisakan order utama unpaid.
+    if (ownerComp && ownerCompFamily) {
+      const now = new Date().toISOString();
+      for (const siblingId of ownerCompFamily.siblingIds) {
+        const { data: sib } = await db
+          .from('pos_orders')
+          .select('subtotal, total_amount')
+          .eq('id', siblingId)
+          .maybeSingle();
+        const sibGross =
+          Number((sib as { subtotal?: number | string } | null)?.subtotal) ||
+          Number((sib as { total_amount?: number | string } | null)?.total_amount) ||
+          0;
+        const { error: sibErr } = await db
+          .from('pos_orders')
+          .update({
+            payment_status: 'paid',
+            discount_amount: sibGross,
+            discount_reason: 'Owner Comp',
+            total_amount: 0,
+            amount_paid: 0,
+            change_amount: 0,
+            comp_type: 'owner_comp',
+            comp_approved_by: ownerComp.supervisorId,
+            comp_approved_name: ownerComp.supervisorName,
+            updated_at: now,
+          })
+          .eq('id', siblingId);
+        if (sibErr) {
+          console.error(`[pos] owner comp sibling gagal: ${siblingId}:`, sibErr.message);
+        }
+      }
+      const { data: chkAgg } = await db
+        .from('pos_orders')
+        .select('subtotal')
+        .eq('checkout_id', ownerCompFamily.checkoutId);
+      const chkGross = ((chkAgg ?? []) as Array<{ subtotal?: number | string }>).reduce(
+        (sum, row) => sum + (Number(row.subtotal) || 0),
+        0
+      );
+      const { error: chkErr } = await db
+        .from('pos_checkouts')
+        .update({
+          payment_status: 'paid',
+          discount_amount: chkGross,
+          total_amount: 0,
+          amount_paid: 0,
+          change_amount: 0,
+          updated_at: now,
+        })
+        .eq('id', ownerCompFamily.checkoutId);
+      if (chkErr) {
+        console.error('[pos] owner comp checkout stamp gagal:', chkErr.message);
+      }
     }
 
     // EPIC-039 Fase A — order batal → kembalikan stok merchandise yang
