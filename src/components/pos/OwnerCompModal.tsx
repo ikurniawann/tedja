@@ -26,11 +26,14 @@ import type { Order } from '@/lib/pos-api';
 interface OwnerCompModalProps {
   open: boolean;
   order: Order | null;
+  /** Keluarga checkout gabungan (CHK): nilai yang tampil & digratiskan =
+   *  SELURUH anak-order (server menggratiskan sekeluarga). */
+  siblings?: Order[];
   onClose: () => void;
   onSuccess?: () => void;
 }
 
-export function OwnerCompModal({ open, order, onClose, onSuccess }: OwnerCompModalProps) {
+export function OwnerCompModal({ open, order, siblings = [], onClose, onSuccess }: OwnerCompModalProps) {
   const [pin, setPin] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -102,15 +105,35 @@ export function OwnerCompModal({ open, order, onClose, onSuccess }: OwnerCompMod
           <DialogPanelBody className="space-y-4">
             {order ? (
               <div className="rounded-xl border border-gray-200/70 bg-muted/50 p-3 text-sm">
-                <p>
-                  <span className="font-medium">Order:</span> {order.order_number}
-                </p>
-                <p>
-                  <span className="font-medium">Nilai bill:</span> Rp{' '}
-                  {Number(
-                    (order as { subtotal?: number | string }).subtotal ?? order.total_amount ?? 0
-                  ).toLocaleString('id-ID')}
-                </p>
+                {(() => {
+                  const family = siblings.length > 1 ? siblings : [order];
+                  const gross = family.reduce(
+                    (sum, o) =>
+                      sum +
+                      (Number((o as { subtotal?: number | string }).subtotal) ||
+                        Number(o.total_amount) ||
+                        0),
+                    0
+                  );
+                  const checkoutNumber =
+                    siblings.length > 1
+                      ? (family[0] as { checkout_number?: string | null }).checkout_number ?? null
+                      : null;
+                  return (
+                    <>
+                      <p>
+                        <span className="font-medium">Order:</span>{' '}
+                        {checkoutNumber
+                          ? `${checkoutNumber} (gabungan ${family.length} order)`
+                          : order.order_number}
+                      </p>
+                      <p>
+                        <span className="font-medium">Nilai bill:</span> Rp{' '}
+                        {gross.toLocaleString('id-ID')}
+                      </p>
+                    </>
+                  );
+                })()}
               </div>
             ) : null}
 
