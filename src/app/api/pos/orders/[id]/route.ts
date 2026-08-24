@@ -14,6 +14,7 @@ import { ensureQueueNumber } from '@/lib/pos/queue-number';
 import { AccountingPostError } from '@/lib/pos/accounting-posting';
 import { isFocPaymentMethod, resolvePaymentCatalogStamp } from '@/lib/pos/payment-methods';
 import { verifySupervisorPinServer } from '@/lib/pos/supervisor-pin-server';
+import { notifyCompTransaction } from '@/lib/wa/comp-notification';
 import { sanitizeXenditRef } from '@/lib/pos/xendit-ids';
 import { assertQrisSaleMaySettle } from '@/lib/pos/qris-settle-guard';
 
@@ -538,6 +539,31 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       if (chkErr) {
         console.error('[pos] owner comp checkout stamp gagal:', chkErr.message);
       }
+
+      // Notifikasi WA owner (2026-08-24): satu pesan utk seluruh keluarga CHK.
+      void notifyCompTransaction({
+        compType: 'owner_comp',
+        orderNumber: existing.order_number || orderId,
+        orderCount: 1 + ownerCompFamily.siblingIds.length,
+        grossIdr: chkGross,
+        approvedName: ownerComp.supervisorName,
+      });
+    } else if (ownerComp) {
+      // Owner Comp order tunggal → notifikasi WA owner.
+      void notifyCompTransaction({
+        compType: 'owner_comp',
+        orderNumber: existing.order_number || orderId,
+        grossIdr: Number(existing.subtotal) || Number(existing.total_amount) || 0,
+        approvedName: ownerComp.supervisorName,
+      });
+    } else if (focComp) {
+      // Metode FOC pada open bill → notifikasi WA owner.
+      void notifyCompTransaction({
+        compType: 'foc_comp',
+        orderNumber: existing.order_number || orderId,
+        grossIdr: Number(existing.subtotal) || Number(existing.total_amount) || 0,
+        approvedName: String(updateData.comp_approved_name || '') || null,
+      });
     }
 
     // EPIC-039 Fase A — order batal → kembalikan stok merchandise yang

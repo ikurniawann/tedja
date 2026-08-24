@@ -6,6 +6,7 @@ import {
 } from "@/lib/pos/create-mixed-checkout";
 import { isFocPaymentMethod } from "@/lib/pos/payment-methods";
 import { verifySupervisorPinServer } from "@/lib/pos/supervisor-pin-server";
+import { notifyCompTransaction } from "@/lib/wa/comp-notification";
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Unknown error";
@@ -75,6 +76,31 @@ export async function POST(
       paymentMethodName: body.payment_method_name,
       compApproved,
     });
+    // Notifikasi WA owner (2026-08-24): setiap FOC yang disetujui dikabarkan.
+    if (compApproved) {
+      void (async () => {
+        const { queryOne } = await import("@/lib/db");
+        const [agg, chk] = await Promise.all([
+          queryOne<{ gross: string }>(
+            `SELECT COALESCE(SUM(subtotal), 0) AS gross
+             FROM pos.pos_orders WHERE id = ANY($1::uuid[])`,
+            [result.orderIds]
+          ),
+          queryOne<{ checkout_number: string | null }>(
+            `SELECT checkout_number FROM pos.pos_checkouts WHERE id = $1`,
+            [checkoutId]
+          ),
+        ]);
+        await notifyCompTransaction({
+          compType: "foc_comp",
+          orderNumber: chk?.checkout_number || checkoutId,
+          orderCount: result.orderIds.length || undefined,
+          grossIdr: Number(agg?.gross) || 0,
+          approvedName: compApproved.name,
+        });
+      })().catch((err) => console.error("[wa-comp] notif complete gagal:", err));
+    }
+
     return NextResponse.json({
       success: true,
       data: {
