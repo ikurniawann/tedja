@@ -421,10 +421,24 @@ export function TransactionReportPage() {
                         </Badge>
                       </td>
                       <td className="px-3 py-3 text-muted-foreground">
-                        {formatPaymentMethodLabel(row.payment_method, {
-                          code: row.payment_method_code,
-                          name: row.payment_method_name,
-                        })}
+                        {row.comp_type ? (
+                          <Badge
+                            variant="outline"
+                            className="border-amber-300/80 bg-amber-50 text-amber-800"
+                            title={
+                              row.comp_type === "owner_comp" && row.comp_approved_name
+                                ? `Disetujui: ${row.comp_approved_name}`
+                                : undefined
+                            }
+                          >
+                            {row.comp_type === "kol_comp" ? "KOL Comp" : "Owner Comp"}
+                          </Badge>
+                        ) : (
+                          formatPaymentMethodLabel(row.payment_method, {
+                            code: row.payment_method_code,
+                            name: row.payment_method_name,
+                          })
+                        )}
                       </td>
                       <td className="px-3 py-3 text-right font-medium">
                         {formatCurrency(row.total_amount)}

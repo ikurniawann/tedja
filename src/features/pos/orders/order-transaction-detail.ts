@@ -42,6 +42,9 @@ export function orderToTransactionRow(order: OrderWithReportFields): Transaction
     sold_from: order.sold_from ?? null,
     xendit_qr_id: order.xendit_qr_id ?? null,
     xendit_external_id: order.xendit_external_id ?? null,
+    comp_type: (order as { comp_type?: string | null }).comp_type ?? null,
+    comp_approved_name:
+      (order as { comp_approved_name?: string | null }).comp_approved_name ?? null,
   };
 }
 
@@ -70,6 +73,16 @@ export function mergeBillTransactionDetail(
     ...source,
     checkout_number: source.checkout_number || primary?.checkout_number,
     stall_name: stallNames.length > 0 ? stallNames.join(", ") : source.stall_name,
+    comp_type:
+      source.comp_type ??
+      orders.map((o) => (o as { comp_type?: string | null }).comp_type).find(Boolean) ??
+      null,
+    comp_approved_name:
+      source.comp_approved_name ??
+      orders
+        .map((o) => (o as { comp_approved_name?: string | null }).comp_approved_name)
+        .find(Boolean) ??
+      null,
     subtotal: sum("subtotal"),
     discount_amount: sum("discount_amount"),
     tax_amount: sum("tax_amount"),
