@@ -46,3 +46,18 @@ describe("isCompType / monthStartWibIso", () => {
     );
   });
 });
+
+describe("FOC comp type", () => {
+  it("mengakui foc_comp sebagai komplimen", () => {
+    expect(isCompType("foc_comp")).toBe(true);
+  });
+
+  it("label struk FOC menyertakan penyetuju", () => {
+    expect(compReceiptLabel("foc_comp", "Ricky")).toBe(
+      "FOC (FREE OF CHARGE) — Disetujui: Ricky"
+    );
+    expect(compReceiptLabel("foc_comp", null)).toBe(
+      "FOC (FREE OF CHARGE) — Disetujui: -"
+    );
+  });
+});

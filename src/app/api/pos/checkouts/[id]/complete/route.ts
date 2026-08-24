@@ -77,7 +77,10 @@ export async function POST(
     });
     return NextResponse.json({
       success: true,
-      data: { order_ids: result.orderIds },
+      data: {
+        order_ids: result.orderIds,
+        comp_approved_name: compApproved?.name ?? null,
+      },
     });
   } catch (error: unknown) {
     if (error instanceof MixedCheckoutError) {

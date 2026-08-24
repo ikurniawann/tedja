@@ -426,12 +426,16 @@ export function TransactionReportPage() {
                             variant="outline"
                             className="border-amber-300/80 bg-amber-50 text-amber-800"
                             title={
-                              row.comp_type === "owner_comp" && row.comp_approved_name
+                              row.comp_approved_name
                                 ? `Disetujui: ${row.comp_approved_name}`
                                 : undefined
                             }
                           >
-                            {row.comp_type === "kol_comp" ? "KOL Comp" : "Owner Comp"}
+                            {row.comp_type === "kol_comp"
+                              ? "KOL Comp"
+                              : row.comp_type === "foc_comp"
+                                ? "FOC"
+                                : "Owner Comp"}
                           </Badge>
                         ) : (
                           formatPaymentMethodLabel(row.payment_method, {
