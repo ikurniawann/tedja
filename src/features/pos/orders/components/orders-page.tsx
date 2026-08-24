@@ -37,6 +37,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { VoidModal } from "@/components/pos/VoidModal";
+import { OwnerCompModal } from "@/components/pos/OwnerCompModal";
 import { canVoidOrderStatus } from "@/lib/pos/void-order";
 import {
   canOpenOrderInCashier,
@@ -244,6 +245,7 @@ export function OrdersPage() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [fetchedDetail, setFetchedDetail] = useState<TransactionOrderDetail | null>(null);
   const [showVoidModal, setShowVoidModal] = useState(false);
+  const [showOwnerCompModal, setShowOwnerCompModal] = useState(false);
 
   useEffect(() => {
     if (!isError) return;
@@ -729,6 +731,19 @@ export function OrdersPage() {
                 Void
               </Button>
             ) : null}
+            {selectedOrder && isUnpaid(selectedOrder) ? (
+              <Button
+                type="button"
+                variant="outline"
+                className="border-gray-200/80"
+                onClick={() => {
+                  setShowDetailModal(false);
+                  setShowOwnerCompModal(true);
+                }}
+              >
+                Owner Comp
+              </Button>
+            ) : null}
             <Button
               type="button"
               variant="outline"
@@ -752,6 +767,17 @@ export function OrdersPage() {
           </DialogFooter>
         </DialogPanel>
       </Dialog>
+
+      <OwnerCompModal
+        open={showOwnerCompModal}
+        order={selectedOrder}
+        onClose={() => setShowOwnerCompModal(false)}
+        onSuccess={() => {
+          void refetch();
+          setSelectedOrder(null);
+          setSelectedSiblings([]);
+        }}
+      />
 
       <VoidModal
         open={showVoidModal}

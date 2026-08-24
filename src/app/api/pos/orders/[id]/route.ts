@@ -19,6 +19,9 @@ import { assertQrisSaleMaySettle } from '@/lib/pos/qris-settle-guard';
 type OrderPatchBody = {
   status?: string;
   payment_status?: string;
+  /** EPIC-043 — 'owner_comp': open bill diselesaikan gratis dgn PIN supervisor. */
+  comp_type?: string;
+  supervisor_pin?: string;
   payment_method?: string;
   amount_paid?: number | string;
   ark_coins_used?: number | string;
@@ -84,12 +87,63 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
     const { data: existing, error: fetchErr } = await db
       .from('pos_orders')
-      .select('customer_id, payment_status, payment_method, total_amount, order_number, company_id, branch_id, queue_number, status, xendit_qr_id, xendit_external_id')
+      .select('customer_id, payment_status, payment_method, subtotal, total_amount, order_number, company_id, branch_id, queue_number, status, xendit_qr_id, xendit_external_id')
       .eq('id', orderId)
       .single();
 
     if (fetchErr || !existing) {
       return NextResponse.json({ success: false, error: 'Order tidak ditemukan' }, { status: 404 });
+    }
+
+    // EPIC-043: Owner Comp — open bill diselesaikan GRATIS dengan persetujuan
+    // PIN supervisor (padanan digital tanda tangan di struk). Seluruh order
+    // digratiskan: diskon = subtotal, total & dibayar 0, penyetuju tercatat.
+    let ownerComp: { supervisorId: string; supervisorName: string } | null = null;
+    if (String(body.comp_type || '') === 'owner_comp') {
+      if (payment_status !== 'paid') {
+        return NextResponse.json(
+          { success: false, error: 'owner_comp hanya berlaku saat pelunasan open bill' },
+          { status: 400 }
+        );
+      }
+      if (existing.payment_status === 'paid') {
+        return NextResponse.json(
+          { success: false, error: 'Bill sudah dibayar — tidak bisa diubah jadi komplimen' },
+          { status: 400 }
+        );
+      }
+      const pin = String(body.supervisor_pin || '').trim();
+      if (!pin) {
+        return NextResponse.json(
+          { success: false, error: 'Owner Comp membutuhkan PIN supervisor' },
+          { status: 400 }
+        );
+      }
+      const { findSupervisorByPin } = await import('@/lib/pos/supervisor-pin');
+      const { data: supervisorRows } = await db
+        .from('users')
+        .select('id, full_name, role, pos_pin')
+        .eq('role', 'pos_supervisor');
+      const supervisor = await findSupervisorByPin(supervisorRows ?? [], pin);
+      if (!supervisor) {
+        return NextResponse.json(
+          { success: false, error: 'PIN supervisor tidak valid' },
+          { status: 403 }
+        );
+      }
+      ownerComp = {
+        supervisorId: supervisor.id,
+        supervisorName: supervisor.full_name || 'Supervisor',
+      };
+      const gross = Number(existing.subtotal) || Number(existing.total_amount) || 0;
+      updateData.discount_amount = gross;
+      updateData.discount_reason = 'Owner Comp';
+      updateData.total_amount = 0;
+      updateData.amount_paid = 0;
+      updateData.change_amount = 0;
+      updateData.comp_type = 'owner_comp';
+      updateData.comp_approved_by = ownerComp.supervisorId;
+      updateData.comp_approved_name = ownerComp.supervisorName;
     }
 
     // 1 pembayaran = 1 metode (EPIC-011): ARK Coin tidak boleh dicampur metode
@@ -152,7 +206,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     const methodHandlesOwnAmount = ['ark_coin', 'nfc_tab', 'gift_card'].includes(
       String(effectiveMethod || '')
     );
-    if (settlingNow && !methodHandlesOwnAmount && amount_paid !== undefined) {
+    // ownerComp: total baru saja di-nol-kan di updateData — guard nominal
+    // membandingkan ke total LAMA sehingga wajib dilewati utk komplimen.
+    if (settlingNow && !methodHandlesOwnAmount && !ownerComp && amount_paid !== undefined) {
       const fmt = (n: number) => Math.round(n).toLocaleString('id-ID');
       if (numericAmountPaid + numericArkUsed < orderTotal - 0.5) {
         return NextResponse.json(

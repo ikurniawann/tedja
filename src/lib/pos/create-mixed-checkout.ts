@@ -140,6 +140,8 @@ export type CreateMixedCheckoutInput = {
   existingCheckoutId?: string | null;
   paymentMethodCode?: string | null;
   paymentMethodName?: string | null;
+  /** EPIC-043 — 'kol_comp': seluruh anak-order distempel komplimen KOL. */
+  compType?: string | null;
 };
 
 export type MixedCheckoutResult = {
@@ -789,6 +791,8 @@ async function insertChildOrder(
     notes: string | null;
     specialRequests: string | null;
     orderStatus: "pending" | "completed";
+    /** EPIC-043 — 'kol_comp' distempel ke tiap anak-order checkout KOL. */
+    compType?: string | null;
   }
 ): Promise<string> {
   const id = randomUUID();
@@ -800,14 +804,14 @@ async function insertChildOrder(
        customer_id, cashier_id, server_id, table_id, guest_count, shift_id,
        subtotal, discount_amount, discount_reason, tax_amount, service_charge_amount,
        other_charges_amount, charges_breakdown, total_amount, amount_paid, change_amount,
-       notes, special_requests, ordered_at, completed_at
+       notes, special_requests, ordered_at, completed_at, comp_type
      ) VALUES (
        $1,$2,$3,$4::pos_order_type,$28::pos_order_status,$5::pos_payment_status,$6::pos_payment_method,
        $7,$8,$9,$10,'central',
        $11,$12,$13,$14,$15,$16,
        $17,$18,$19,$20,$21,
        $22,'[]'::jsonb,$23,$24,$25,
-       $26,$27, now(), $29
+       $26,$27, now(), $29, $30
      )`,
     [
       id,
@@ -839,6 +843,7 @@ async function insertChildOrder(
       row.specialRequests,
       orderStatus,
       orderStatus === "completed" ? new Date() : null,
+      row.compType ?? null,
     ]
   );
   return id;
@@ -930,6 +935,7 @@ async function insertChildrenForCheckout(
     warehouseByProduct: Map<string, string | null>;
     merchClaimedIds: Set<string>;
     costMap: Map<string, { cost_price?: number | string | null }>;
+    compType?: string | null;
   }
 ): Promise<string[]> {
   const lines = buildLines(input.snapshot.items, input.warehouseByProduct);
@@ -997,6 +1003,7 @@ async function insertChildrenForCheckout(
       notes: input.snapshot.notes,
       specialRequests: input.snapshot.specialRequests,
       orderStatus,
+      compType: input.compType ?? null,
     });
     await insertChildItems(
       client,
@@ -1622,6 +1629,7 @@ export async function createMixedCheckout(
           warehouseByProduct: input.warehouseByProduct,
           merchClaimedIds,
           costMap,
+          compType: input.compType ?? null,
         });
       }
 
