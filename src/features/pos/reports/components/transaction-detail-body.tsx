@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
+import { compReceiptLabel } from "@/lib/pos/comp-orders";
 import type { TransactionReportRow } from "../types";
 import {
   formatKitchenStatusLabel,
@@ -67,6 +68,9 @@ export type TransactionOrderDetail = {
   manual_discount_value?: number | string | null;
   stall_name?: string | null;
   stall_code?: string | null;
+  /** EPIC-043 — komplimen + penyetuju (owner comp). */
+  comp_type?: string | null;
+  comp_approved_name?: string | null;
 };
 
 /**
@@ -196,6 +200,19 @@ export function TransactionDetailBody({
             value={detail?.customer?.name?.trim() || "Walk-in"}
           />
           <DetailField label="Kasir" value={detail?.created_by_name || "—"} />
+          {(detail?.comp_type ?? row?.comp_type) ? (
+            <DetailField
+              label="Komplimen"
+              value={
+                <span className="font-semibold text-amber-700">
+                  {compReceiptLabel(
+                    detail?.comp_type ?? row?.comp_type,
+                    detail?.comp_approved_name ?? row?.comp_approved_name
+                  )}
+                </span>
+              }
+            />
+          ) : null}
           {detail?.customer?.phone ? (
             <DetailField label="Telepon" value={detail.customer.phone} />
           ) : null}
