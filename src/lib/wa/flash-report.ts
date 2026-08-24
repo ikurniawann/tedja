@@ -29,6 +29,8 @@ export interface FlashReportData {
   kolCompTx: number;
   ownerCompIdr: number;
   ownerCompTx: number;
+  focCompIdr: number;
+  focCompTx: number;
   guestCount: number;
   byStall: Array<{ name: string; revenue: number; pcs: number }>;
   byCategory: Array<{ name: string; revenue: number; pcs: number }>;
@@ -62,6 +64,8 @@ export async function gatherFlashReportData(dateWib: string): Promise<FlashRepor
         kol_comp_tx: string;
         owner_comp_idr: string;
         owner_comp_tx: string;
+        foc_comp_idr: string;
+        foc_comp_tx: string;
         guest_count: string;
       }>(
         `SELECT COALESCE(SUM(o.subtotal), 0) AS revenue,
@@ -75,6 +79,8 @@ export async function gatherFlashReportData(dateWib: string): Promise<FlashRepor
                 COUNT(*) FILTER (WHERE o.comp_type = 'kol_comp') AS kol_comp_tx,
                 COALESCE(SUM(o.subtotal) FILTER (WHERE o.comp_type = 'owner_comp'), 0) AS owner_comp_idr,
                 COUNT(*) FILTER (WHERE o.comp_type = 'owner_comp') AS owner_comp_tx,
+                COALESCE(SUM(o.subtotal) FILTER (WHERE o.comp_type = 'foc_comp'), 0) AS foc_comp_idr,
+                COUNT(*) FILTER (WHERE o.comp_type = 'foc_comp') AS foc_comp_tx,
                 COALESCE(SUM(COALESCE(NULLIF(o.guest_count, 0), 1)), 0) AS guest_count
          FROM pos.pos_orders o
          LEFT JOIN pos.pos_customers c ON c.id = o.customer_id
@@ -169,6 +175,8 @@ export async function gatherFlashReportData(dateWib: string): Promise<FlashRepor
     kolCompTx: Number(s?.kol_comp_tx) || 0,
     ownerCompIdr: Number(s?.owner_comp_idr) || 0,
     ownerCompTx: Number(s?.owner_comp_tx) || 0,
+    focCompIdr: Number(s?.foc_comp_idr) || 0,
+    focCompTx: Number(s?.foc_comp_tx) || 0,
     guestCount: Number(s?.guest_count) || 0,
     byStall,
     byCategory: categoryRows.map((row) => ({
@@ -207,6 +215,9 @@ export function buildFlashReportMessage(data: FlashReportData, dateWib: string):
     `Disc 100% : ${data.fullDiscountTx} Transaksi`,
     ...(data.kolCompTx > 0
       ? [`KOL Comp : ${rp(data.kolCompIdr)} (${data.kolCompTx} Trx)`]
+      : []),
+    ...(data.focCompTx > 0
+      ? [`Komplimen FOC : ${rp(data.focCompIdr)} (${data.focCompTx} Trx)`]
       : []),
     ...(data.ownerCompTx > 0
       ? [`Owner Comp : ${rp(data.ownerCompIdr)} (${data.ownerCompTx} Trx)`]

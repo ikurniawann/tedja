@@ -9,11 +9,13 @@
 
 export const KOL_COMP = "kol_comp";
 export const OWNER_COMP = "owner_comp";
-export const COMP_TYPES = [KOL_COMP, OWNER_COMP] as const;
+/** Metode bayar FOC (Free of Charge) — digerbang PIN supervisor di server. */
+export const FOC_COMP = "foc_comp";
+export const COMP_TYPES = [KOL_COMP, OWNER_COMP, FOC_COMP] as const;
 export type CompType = (typeof COMP_TYPES)[number];
 
 export function isCompType(value: unknown): value is CompType {
-  return value === KOL_COMP || value === OWNER_COMP;
+  return value === KOL_COMP || value === OWNER_COMP || value === FOC_COMP;
 }
 
 /** Label struk/laporan per jenis komplimen. */
@@ -24,6 +26,9 @@ export function compReceiptLabel(
   if (compType === KOL_COMP) return "KOL COMPLIMENTARY — GRATIS";
   if (compType === OWNER_COMP) {
     return `OWNER COMP — Disetujui: ${approvedName?.trim() || "-"}`;
+  }
+  if (compType === FOC_COMP) {
+    return `FOC (FREE OF CHARGE) — Disetujui: ${approvedName?.trim() || "-"}`;
   }
   return null;
 }

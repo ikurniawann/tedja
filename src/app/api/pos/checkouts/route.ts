@@ -179,6 +179,25 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // FOC = komplimen: pendapatan diakui 0 — diskon 100% dari gross item,
+    // pajak/service digugurkan, total & dibayar 0, comp_type foc_comp
+    // distempel ke checkout + seluruh anak-order.
+    const focOverrides = compApproved
+      ? {
+          discountAmount: items.reduce(
+            (sum, item) => sum + (Number(item.subtotal ?? item.total_amount) || 0),
+            0
+          ),
+          discountReason: "FOC",
+          taxAmount: 0,
+          serviceChargeAmount: 0,
+          otherChargesAmount: 0,
+          totalAmount: 0,
+          amountPaid: 0,
+          compType: "foc_comp",
+        }
+      : null;
+
     const result = await createMixedCheckout({
       items: items as MixedCheckoutItem[],
       warehouseByProduct,
@@ -210,6 +229,7 @@ export async function POST(request: NextRequest) {
       sessionUserId,
       compType,
       compApproved,
+      ...(focOverrides ?? {}),
     });
 
     return NextResponse.json(
@@ -220,6 +240,7 @@ export async function POST(request: NextRequest) {
           checkout_number: result.checkoutNumber,
           queue_number: result.queueNumber,
           order_ids: result.orderIds,
+          comp_approved_name: compApproved?.name ?? null,
         },
         // EPIC-041: snapshot ARK/XP utk struk — dibaca use-pos-checkout dari
         // level atas respons (sama seperti POST /api/pos/orders).

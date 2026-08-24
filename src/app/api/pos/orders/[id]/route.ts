@@ -235,33 +235,11 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     const methodHandlesOwnAmount = ['ark_coin', 'nfc_tab', 'gift_card'].includes(
       String(effectiveMethod || '')
     );
-    // ownerComp: total baru saja di-nol-kan di updateData — guard nominal
-    // membandingkan ke total LAMA sehingga wajib dilewati utk komplimen.
-    if (settlingNow && !methodHandlesOwnAmount && !ownerComp && amount_paid !== undefined) {
-      const fmt = (n: number) => Math.round(n).toLocaleString('id-ID');
-      if (numericAmountPaid + numericArkUsed < orderTotal - 0.5) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: `Nominal pembayaran (${fmt(numericAmountPaid)}) kurang dari total bill ${existing.order_number || ''} (${fmt(orderTotal)})`,
-          },
-          { status: 400 }
-        );
-      }
-      if (effectiveMethod !== 'cash' && Math.abs(numericAmountPaid - orderTotal) > 1) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: `Nominal pembayaran (${fmt(numericAmountPaid)}) tidak sama dengan total bill tersimpan ${existing.order_number || ''} (${fmt(orderTotal)}) — muat ulang bill sebelum menagih`,
-          },
-          { status: 409 }
-        );
-      }
-    }
-
     // Metode FOC (Free of Charge) — keputusan owner 2026-08-24: pelunasan
-    // dengan metode FOC wajib disetujui PIN supervisor; penyetuju dicatat
-    // di comp_approved_by/name (kolom migrasi 015) sebagai jejak audit.
+    // dengan metode FOC wajib disetujui PIN supervisor. Pengakuannya sama
+    // seperti Owner Comp: pendapatan 0 — diskon 100% dari gross, total &
+    // dibayar 0, penyetuju tercatat di comp_approved_by/name (migrasi 015).
+    let focComp = false;
     if (
       settlingNow &&
       !ownerComp &&
@@ -281,8 +259,40 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
           { status: 403 }
         );
       }
+      focComp = true;
+      const gross = Number(existing.subtotal) || Number(existing.total_amount) || 0;
+      updateData.discount_amount = gross;
+      updateData.discount_reason = 'FOC';
+      updateData.total_amount = 0;
+      updateData.amount_paid = 0;
+      updateData.change_amount = 0;
+      updateData.comp_type = 'foc_comp';
       updateData.comp_approved_by = approver.id;
       updateData.comp_approved_name = approver.name;
+    }
+
+    // ownerComp/focComp: total baru saja di-nol-kan di updateData — guard
+    // nominal membandingkan ke total LAMA sehingga wajib dilewati utk komplimen.
+    if (settlingNow && !methodHandlesOwnAmount && !ownerComp && !focComp && amount_paid !== undefined) {
+      const fmt = (n: number) => Math.round(n).toLocaleString('id-ID');
+      if (numericAmountPaid + numericArkUsed < orderTotal - 0.5) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Nominal pembayaran (${fmt(numericAmountPaid)}) kurang dari total bill ${existing.order_number || ''} (${fmt(orderTotal)})`,
+          },
+          { status: 400 }
+        );
+      }
+      if (effectiveMethod !== 'cash' && Math.abs(numericAmountPaid - orderTotal) > 1) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Nominal pembayaran (${fmt(numericAmountPaid)}) tidak sama dengan total bill tersimpan ${existing.order_number || ''} (${fmt(orderTotal)}) — muat ulang bill sebelum menagih`,
+          },
+          { status: 409 }
+        );
+      }
     }
 
     // NFC Tab (EPIC-023 Fase C): bayar open bill dengan memindahkan tagihan
