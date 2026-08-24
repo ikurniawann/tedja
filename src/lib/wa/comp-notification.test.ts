@@ -27,6 +27,7 @@ describe("comp-notification", () => {
     );
     expect(msg).toContain("Komplimen FOC (Free of Charge)");
     expect(msg).toContain("Order : POS-20260824-0044");
+    expect(msg).toContain("Customer : -");
     expect(msg).toContain("Nilai : Rp 20.000");
     expect(msg).toContain("Disetujui : Ricky Ardiansyah");
     expect(msg).toContain("WIB");
@@ -39,9 +40,11 @@ describe("comp-notification", () => {
       orderCount: 2,
       grossIdr: 105000,
       approvedName: null,
+      customerName: "Budi Santoso",
     });
     expect(msg).toContain("Komplimen Owner Comp");
     expect(msg).toContain("Order : CHK-20260824-0010 (2 order)");
+    expect(msg).toContain("Customer : Budi Santoso");
     expect(msg).toContain("Nilai : Rp 105.000");
     expect(msg).toContain("Disetujui : -");
   });

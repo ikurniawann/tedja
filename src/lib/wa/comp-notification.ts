@@ -27,6 +27,10 @@ export interface CompNotifInput {
   /** Nilai gross (subtotal) yang digratiskan, dalam Rupiah. */
   grossIdr: number;
   approvedName?: string | null;
+  /** Nama customer bila sudah diketahui pemanggil. */
+  customerName?: string | null;
+  /** Bila nama belum ada: id pos_customers utk di-lookup sebelum kirim. */
+  customerId?: string | null;
 }
 
 export function compNotifLabel(compType: CompNotifInput["compType"]): string {
@@ -51,10 +55,26 @@ export function buildCompNotifMessage(
   return [
     `Arkiv OS — Komplimen ${compNotifLabel(input.compType)}`,
     `Order : ${orderLine}`,
+    `Customer : ${input.customerName?.trim() || "-"}`,
     `Nilai : ${rp(input.grossIdr)}`,
     `Disetujui : ${input.approvedName?.trim() || "-"}`,
     `${waktu} WIB`,
   ].join("\n");
+}
+
+/** Lookup nama customer (best-effort) bila pemanggil hanya punya id-nya. */
+async function resolveCustomerName(input: CompNotifInput): Promise<string | null> {
+  if (input.customerName?.trim()) return input.customerName.trim();
+  if (!input.customerId) return null;
+  try {
+    const res = await getPool().query<{ name: string | null }>(
+      `SELECT name FROM pos.pos_customers WHERE id = $1`,
+      [input.customerId]
+    );
+    return res.rows[0]?.name?.trim() || null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -63,7 +83,10 @@ export function buildCompNotifMessage(
  */
 export async function notifyCompTransaction(input: CompNotifInput): Promise<void> {
   try {
-    const message = buildCompNotifMessage(input);
+    const message = buildCompNotifMessage({
+      ...input,
+      customerName: await resolveCustomerName(input),
+    });
     const dedupKey = `comp:${input.compType}:${input.orderNumber}`.slice(0, 160);
 
     // Klaim dedup SEBELUM kirim — route terpanggil dua kali → satu pesan.

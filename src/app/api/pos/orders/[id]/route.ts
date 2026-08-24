@@ -547,6 +547,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         orderCount: 1 + ownerCompFamily.siblingIds.length,
         grossIdr: chkGross,
         approvedName: ownerComp.supervisorName,
+        customerId: existing.customer_id || null,
       });
     } else if (ownerComp) {
       // Owner Comp order tunggal → notifikasi WA owner.
@@ -555,6 +556,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         orderNumber: existing.order_number || orderId,
         grossIdr: Number(existing.subtotal) || Number(existing.total_amount) || 0,
         approvedName: ownerComp.supervisorName,
+        customerId: existing.customer_id || null,
       });
     } else if (focComp) {
       // Metode FOC pada open bill → notifikasi WA owner.
@@ -563,6 +565,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         orderNumber: existing.order_number || orderId,
         grossIdr: Number(existing.subtotal) || Number(existing.total_amount) || 0,
         approvedName: String(updateData.comp_approved_name || '') || null,
+        customerId: existing.customer_id || null,
       });
     }
 

@@ -241,6 +241,7 @@ export async function POST(request: NextRequest) {
         orderCount: result.orderIds.length || undefined,
         grossIdr: focOverrides.discountAmount,
         approvedName: compApproved.name,
+        customerId: body.customer_id || null,
       });
     }
 
