@@ -45,6 +45,7 @@ import { cancelCheckout } from "@/lib/pos-api";
 import {
   cashierMethodFromHandler,
   DEFAULT_POS_PAYMENT_METHODS,
+  isFocPaymentMethod,
 } from "@/lib/pos/payment-methods";
 import { usePaymentMethods } from "@/features/pos/payment-methods";
 
@@ -120,6 +121,8 @@ interface Props {
     xenditExternalId?: string;
     paymentMethodCode?: string;
     paymentMethodName?: string;
+    /** PIN supervisor — terisi saat metode FOC (diverifikasi ulang server). */
+    supervisorPin?: string;
   }) => void | Promise<void>;
   submitting?: boolean;
   formatCurrency: (v: number) => string;
@@ -229,6 +232,10 @@ export function PaymentModal({
     onClose();
   };
 
+  // Metode FOC (Free of Charge) — wajib PIN supervisor (owner 2026-08-24);
+  // verifikasi sesungguhnya di server, input di sini hanya mengumpulkan PIN.
+  const [supervisorPin, setSupervisorPin] = useState("");
+
   // EPIC-034 Fase C — kode gift card diketik/di-scan kasir
   const [giftCodeInput, setGiftCodeInput] = useState("");
   const [giftChecking, setGiftChecking] = useState(false);
@@ -259,6 +266,13 @@ export function PaymentModal({
         requiresCashInput: option.requires_cash_input,
       }));
   }, [methodsQuery.data, onCheckGiftCard, onCheckNfcTab]);
+
+  // Metode FOC terdeteksi dari kode/nama katalog — tagihan digratiskan,
+  // jadi input tunai disembunyikan dan konfirmasi digerbang PIN supervisor.
+  const selectedOption = paymentOptions.find(
+    (option) => option.code === selectedCode
+  );
+  const focSelected = isFocPaymentMethod(selectedCode, selectedOption?.title);
 
   const checkGiftCode = async (rawCode: string) => {
     const code = rawCode.trim().toUpperCase();
@@ -319,6 +333,7 @@ export function PaymentModal({
       setTabResult(null);
       setGiftCodeInput("");
       setGiftResult(null);
+      setSupervisorPin("");
       setQris(null);
       setQrisUnavailable(false);
       setQrisError(null);
@@ -563,6 +578,9 @@ export function PaymentModal({
   }, [open, method, cashAmount, change, totalAfterArk, qris, qrisLoading, onCfdPayment]);
 
   const isValid = (() => {
+    if (focSelected) {
+      return /^\d{4,6}$/.test(supervisorPin.trim());
+    }
     if (method === "cash") {
       return cashAmount >= totalAfterArk;
     }
@@ -618,6 +636,7 @@ export function PaymentModal({
                     if (blocked) return;
                     setSelectedCode(option.code);
                     setMethod(option.cashierKey);
+                    setSupervisorPin("");
                     if (option.cashierKey === "ark_coin" && !selectedCustomer) {
                       onTapNFC();
                     }
@@ -649,7 +668,32 @@ export function PaymentModal({
             })}
           </div>
 
-          {method === "cash" && (
+          {focSelected && (
+            <div className="space-y-3 rounded-xl border border-amber-200/80 bg-amber-50/60 p-4">
+              <label className="text-sm font-medium text-foreground">
+                PIN Supervisor
+              </label>
+              <Input
+                type="password"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                maxLength={6}
+                placeholder="••••"
+                value={supervisorPin}
+                onChange={(e) =>
+                  setSupervisorPin(e.target.value.replace(/\D/g, ""))
+                }
+                disabled={submitting}
+                className="h-11 border-amber-200/80 bg-white text-base tracking-widest"
+              />
+              <p className="text-xs leading-snug text-muted-foreground">
+                Metode FOC (Free of Charge) membutuhkan persetujuan supervisor —
+                nama penyetuju tercatat di transaksi.
+              </p>
+            </div>
+          )}
+
+          {method === "cash" && !focSelected && (
             <div className="space-y-3 rounded-xl border border-gray-200/70 bg-muted/30 p-4">
               <div className="flex items-center justify-between gap-2">
                 <label className="text-sm font-medium text-foreground">
@@ -961,8 +1005,8 @@ export function PaymentModal({
                   xenditQrId: method === "qris" ? qris?.qr_id : undefined,
                   xenditExternalId: method === "qris" ? qris?.reference_id : undefined,
                   paymentMethodCode: selectedCode,
-                  paymentMethodName: paymentOptions.find((option) => option.code === selectedCode)
-                    ?.title,
+                  paymentMethodName: selectedOption?.title,
+                  supervisorPin: focSelected ? supervisorPin.trim() : undefined,
                 });
               }}
             >

@@ -199,3 +199,22 @@ export function isDrawerCashMethod(input: {
   if (code) return code === "cash";
   return String(input.paymentMethod || "").trim().toLowerCase() === "cash";
 }
+
+/**
+ * Metode FOC (Free of Charge) — metode kustom buatan admin yang menandai
+ * tagihan digratiskan. Keputusan owner 2026-08-24: pemakaiannya WAJIB
+ * disetujui PIN supervisor (gerbang di server, penyetuju tercatat di
+ * comp_approved_by/name). Dicocokkan dari kode ATAU nama karena metode
+ * kustom bebas dinamai admin ("FOC", "F.O.C", "Free of Charge").
+ */
+const FOC_CODE_RE = /^foc$|^free[_-]?of[_-]?charge$/;
+const FOC_NAME_RE = /^\s*f\.?\s?o\.?\s?c\.?\s*$|free\s*of\s*charge/i;
+
+export function isFocPaymentMethod(
+  code?: string | null,
+  name?: string | null
+): boolean {
+  const normalizedCode = String(code || "").trim().toLowerCase();
+  if (normalizedCode && FOC_CODE_RE.test(normalizedCode)) return true;
+  return Boolean(name && FOC_NAME_RE.test(String(name)));
+}

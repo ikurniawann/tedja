@@ -37,7 +37,7 @@ export interface CashierOrder {
 }
 
 export interface PayOpenOrderPayload {
-  status: string;
+  status?: string;
   payment_status: string;
   payment_method: string;
   amount_paid: number;
@@ -50,6 +50,8 @@ export interface PayOpenOrderPayload {
   xendit_external_id?: string;
   payment_method_code?: string;
   payment_method_name?: string;
+  /** PIN supervisor — wajib saat metode bayar FOC (Free of Charge). */
+  supervisor_pin?: string;
 }
 
 export async function listCashierTables(): Promise<PosTable[]> {

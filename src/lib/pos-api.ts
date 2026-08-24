@@ -506,6 +506,8 @@ export interface CreateOrderRequest {
   xendit_external_id?: string;
   payment_method_code?: string;
   payment_method_name?: string;
+  /** PIN supervisor — wajib saat metode bayar FOC (Free of Charge). */
+  supervisor_pin?: string;
 }
 
 export interface IssuedGiftCardResponse {
@@ -553,6 +555,8 @@ export async function completeCheckout(
     amount_paid: number;
     payment_method_code?: string;
     payment_method_name?: string;
+    /** PIN supervisor — wajib saat metode bayar FOC (Free of Charge). */
+    supervisor_pin?: string;
   }
 ) {
   return fetchAPI<{ success: boolean; data: { order_ids: string[] }; error?: string }>(

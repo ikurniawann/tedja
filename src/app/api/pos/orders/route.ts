@@ -58,7 +58,8 @@ import {
   normalizeStation,
 } from '@/lib/pos/kitchen-station';
 import { AccountingPostError } from '@/lib/pos/accounting-posting';
-import { resolvePaymentCatalogStamp } from '@/lib/pos/payment-methods';
+import { isFocPaymentMethod, resolvePaymentCatalogStamp } from '@/lib/pos/payment-methods';
+import { verifySupervisorPinServer } from '@/lib/pos/supervisor-pin-server';
 import { sanitizeXenditRef } from '@/lib/pos/xendit-ids';
 import { assertQrisSaleMaySettle } from '@/lib/pos/qris-settle-guard';
 import {
@@ -163,6 +164,8 @@ type PosOrderBody = {
   payment_method_name?: string;
   /** EPIC-043: 'kol_comp' = komplimen KOL (divalidasi server, gratis penuh). */
   comp_type?: string;
+  /** PIN supervisor — wajib saat metode bayar FOC (Free of Charge). */
+  supervisor_pin?: string;
 };
 
 type PosOrderRow = {
@@ -1018,6 +1021,26 @@ export async function POST(request: NextRequest) {
       compType = 'kol_comp';
     }
 
+    // Metode FOC (Free of Charge) — keputusan owner 2026-08-24: penjualan
+    // dengan metode FOC wajib disetujui PIN supervisor; penyetuju dicatat.
+    let focApprover: { id: string; name: string } | null = null;
+    if (isFocPaymentMethod(body.payment_method_code, body.payment_method_name)) {
+      const pin = String(body.supervisor_pin || '').trim();
+      if (!pin) {
+        return NextResponse.json(
+          { success: false, error: 'Metode FOC membutuhkan PIN supervisor' },
+          { status: 400 }
+        );
+      }
+      focApprover = await verifySupervisorPinServer(pin);
+      if (!focApprover) {
+        return NextResponse.json(
+          { success: false, error: 'PIN supervisor tidak valid' },
+          { status: 403 }
+        );
+      }
+    }
+
     const payWithArk = arkUsed > 0 && Boolean(customer_id);
     // Order ARK/NFC Tab/Gift Card dibuat pending dulu; paid setelah
     // debit/charge sukses
@@ -1084,6 +1107,9 @@ export async function POST(request: NextRequest) {
           name: body.payment_method_name,
         }),
         ...(compType ? { comp_type: compType } : {}),
+        ...(focApprover
+          ? { comp_approved_by: focApprover.id, comp_approved_name: focApprover.name }
+          : {}),
       })
       .select()
       .single();
