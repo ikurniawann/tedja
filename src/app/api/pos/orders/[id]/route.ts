@@ -246,6 +246,13 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       !ownerComp &&
       isFocPaymentMethod(body.payment_method_code, body.payment_method_name)
     ) {
+      // Keputusan owner 2026-08-24: FOC WAJIB ber-customer/member.
+      if (!existing.customer_id) {
+        return NextResponse.json(
+          { success: false, error: 'Metode FOC membutuhkan customer/member — pasangkan customer ke bill dulu' },
+          { status: 400 }
+        );
+      }
       const pin = String(body.supervisor_pin || '').trim();
       if (!pin) {
         return NextResponse.json(

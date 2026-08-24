@@ -1325,6 +1325,10 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     // Metode FOC (Free of Charge) — wajib PIN supervisor, diverifikasi server.
     const focSelected = isFocPaymentMethod(catalogCode, catalogName);
     const focPin = overrides?.supervisorPin?.trim() || '';
+    if (focSelected && !selectedCustomer) {
+      toast.error('Metode FOC membutuhkan customer/member — pilih customer dulu');
+      return;
+    }
     if (focSelected && !focPin) {
       toast.error('Metode FOC membutuhkan PIN supervisor');
       return;
