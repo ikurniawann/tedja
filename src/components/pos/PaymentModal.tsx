@@ -579,7 +579,8 @@ export function PaymentModal({
 
   const isValid = (() => {
     if (focSelected) {
-      return /^\d{4,6}$/.test(supervisorPin.trim());
+      // FOC wajib ber-customer/member (owner 2026-08-24) + PIN supervisor.
+      return Boolean(selectedCustomer) && /^\d{4,6}$/.test(supervisorPin.trim());
     }
     if (method === "cash") {
       return cashAmount >= totalAfterArk;
@@ -637,7 +638,11 @@ export function PaymentModal({
                     setSelectedCode(option.code);
                     setMethod(option.cashierKey);
                     setSupervisorPin("");
-                    if (option.cashierKey === "ark_coin" && !selectedCustomer) {
+                    const pickedFoc = isFocPaymentMethod(option.code, option.title);
+                    if (
+                      (option.cashierKey === "ark_coin" || pickedFoc) &&
+                      !selectedCustomer
+                    ) {
                       onTapNFC();
                     }
                   }}
@@ -668,11 +673,23 @@ export function PaymentModal({
             })}
           </div>
 
-          {focSelected && (
+          {focSelected && !selectedCustomer && (
+            <div className="rounded-xl border border-red-200/80 bg-red-50/70 p-4 text-sm text-red-700">
+              Metode FOC membutuhkan customer/member — pilih customer dulu
+              sebelum melanjutkan.
+            </div>
+          )}
+
+          {focSelected && selectedCustomer && (
             <div className="space-y-3 rounded-xl border border-amber-200/80 bg-amber-50/60 p-4">
-              <label className="text-sm font-medium text-foreground">
-                PIN Supervisor
-              </label>
+              <div className="flex items-center justify-between gap-2">
+                <label className="text-sm font-medium text-foreground">
+                  PIN Supervisor
+                </label>
+                <span className="max-w-[50%] truncate text-xs text-muted-foreground">
+                  Customer: {selectedCustomer.name || "Member"}
+                </span>
+              </div>
               <Input
                 type="password"
                 inputMode="numeric"

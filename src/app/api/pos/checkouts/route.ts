@@ -164,6 +164,13 @@ export async function POST(request: NextRequest) {
     // dengan metode FOC wajib disetujui PIN supervisor; penyetuju dicatat.
     let compApproved: { id: string; name: string } | null = null;
     if (isFocPaymentMethod(body.payment_method_code, body.payment_method_name)) {
+      // Keputusan owner 2026-08-24: FOC WAJIB ber-customer/member.
+      if (!body.customer_id) {
+        return NextResponse.json(
+          { success: false, error: "Metode FOC membutuhkan customer/member — pilih customer dulu" },
+          { status: 400 }
+        );
+      }
       const pin = String(body.supervisor_pin || "").trim();
       if (!pin) {
         return NextResponse.json(
