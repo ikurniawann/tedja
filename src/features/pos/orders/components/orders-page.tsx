@@ -190,7 +190,11 @@ function printOrderReceipt(order: Order, siblings: Order[] = []) {
     siblings.length > 1
       ? checkoutFamilyToReceiptPayload(siblings)
       : orderToReceiptPayload(order);
-  void printThermalReceipt(payload, "CUSTOMER");
+  // Bill BELUM dibayar dicetak sebagai PREVIEW BILL (EPIC-043): memuat blok
+  // tanda tangan "Disetujui/Nama" — arsip persetujuan Owner Comp untuk open
+  // bill tanpa meja yang tidak lewat dialog Pre Settlement restaurant.
+  const label = isUnpaid(order) ? "PREVIEW_BILL" : "CUSTOMER";
+  void printThermalReceipt(payload, label);
 }
 
 // Filter berbasis pembayaran (EPIC-041 task 6). "kitchen_open" menggantikan
