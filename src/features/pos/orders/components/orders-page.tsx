@@ -846,6 +846,7 @@ export function OrdersPage() {
       <OwnerCompModal
         open={showOwnerCompModal}
         order={selectedOrder}
+        siblings={selectedSiblings}
         onClose={() => setShowOwnerCompModal(false)}
         onSuccess={() => {
           void refetch();
@@ -857,6 +858,7 @@ export function OrdersPage() {
       <VoidModal
         open={showVoidModal}
         order={selectedOrder}
+        siblings={selectedSiblings}
         onClose={() => {
           setShowVoidModal(false);
           setSelectedOrder(null);
