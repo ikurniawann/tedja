@@ -29,6 +29,8 @@ export type CreateCustomerPayload = {
   email?: string;
   enroll_member: boolean;
   nfc_uid?: string;
+  /** EPIC-043 — tandai customer sebagai KOL (komplimen gratis di kasir). */
+  is_kol?: boolean;
 };
 
 interface Props {
@@ -67,6 +69,7 @@ export function CustomerSearchModal({
   const [nfcUid, setNfcUid] = useState("");
   const [nfcUidLocked, setNfcUidLocked] = useState(false);
   const [enrollMember, setEnrollMember] = useState(true);
+  const [isKol, setIsKol] = useState(false);
   const [saving, setSaving] = useState(false);
   const [linkingId, setLinkingId] = useState<string | null>(null);
   const [formError, setFormError] = useState("");
@@ -92,6 +95,7 @@ export function CustomerSearchModal({
     setNfcUid("");
     setNfcUidLocked(false);
     setEnrollMember(true);
+    setIsKol(false);
     setFormError("");
     setSaving(false);
     setLinkingId(null);
@@ -174,6 +178,7 @@ export function CustomerSearchModal({
         email: email.trim() || undefined,
         enroll_member: enrollMember,
         nfc_uid: cleanNfcUid || undefined,
+        is_kol: isKol,
       });
       resetAll();
       onSearchChange("");
@@ -546,6 +551,25 @@ export function CustomerSearchModal({
                   </span>
                   <span className="block text-xs text-muted-foreground">
                     Enables membership benefits and XP on purchases.
+                  </span>
+                </span>
+              </label>
+
+              <label className="flex items-start gap-3 rounded-xl border border-amber-300/60 bg-amber-50/60 p-3.5">
+                <input
+                  type="checkbox"
+                  checked={isKol}
+                  onChange={(e) => setIsKol(e.target.checked)}
+                  disabled={busy}
+                  className="mt-0.5 h-4 w-4 accent-amber-600"
+                />
+                <span>
+                  <span className="block text-sm font-semibold text-foreground">
+                    KOL (komplimen gratis)
+                  </span>
+                  <span className="block text-xs text-muted-foreground">
+                    Order customer ini bisa digratiskan &amp; tercatat sebagai komplimen KOL.
+                    Kuota bulanan diatur di CRM &rarr; Members.
                   </span>
                 </span>
               </label>
