@@ -965,7 +965,28 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    if (!isNfcTab && !payWithGiftCard && paidAmount + arkUsed < serverTotal) {
+
+    // Metode FOC (Free of Charge) — keputusan owner 2026-08-24: penjualan
+    // dengan metode FOC wajib disetujui PIN supervisor; penyetuju dicatat.
+    let focApprover: { id: string; name: string } | null = null;
+    if (isFocPaymentMethod(body.payment_method_code, body.payment_method_name)) {
+      const pin = String(body.supervisor_pin || '').trim();
+      if (!pin) {
+        return NextResponse.json(
+          { success: false, error: 'Metode FOC membutuhkan PIN supervisor' },
+          { status: 400 }
+        );
+      }
+      focApprover = await verifySupervisorPinServer(pin);
+      if (!focApprover) {
+        return NextResponse.json(
+          { success: false, error: 'PIN supervisor tidak valid' },
+          { status: 403 }
+        );
+      }
+    }
+
+    if (!isNfcTab && !payWithGiftCard && !focApprover && paidAmount + arkUsed < serverTotal) {
       return NextResponse.json({ success: false, error: 'Payment insufficient' }, { status: 400 });
     }
 
@@ -1021,25 +1042,6 @@ export async function POST(request: NextRequest) {
       compType = 'kol_comp';
     }
 
-    // Metode FOC (Free of Charge) — keputusan owner 2026-08-24: penjualan
-    // dengan metode FOC wajib disetujui PIN supervisor; penyetuju dicatat.
-    let focApprover: { id: string; name: string } | null = null;
-    if (isFocPaymentMethod(body.payment_method_code, body.payment_method_name)) {
-      const pin = String(body.supervisor_pin || '').trim();
-      if (!pin) {
-        return NextResponse.json(
-          { success: false, error: 'Metode FOC membutuhkan PIN supervisor' },
-          { status: 400 }
-        );
-      }
-      focApprover = await verifySupervisorPinServer(pin);
-      if (!focApprover) {
-        return NextResponse.json(
-          { success: false, error: 'PIN supervisor tidak valid' },
-          { status: 403 }
-        );
-      }
-    }
 
     const payWithArk = arkUsed > 0 && Boolean(customer_id);
     // Order ARK/NFC Tab/Gift Card dibuat pending dulu; paid setelah
@@ -1107,8 +1109,22 @@ export async function POST(request: NextRequest) {
           name: body.payment_method_name,
         }),
         ...(compType ? { comp_type: compType } : {}),
+        // FOC = komplimen: pendapatan diakui 0 — diskon 100% dari gross,
+        // pajak/service digugurkan (tidak ada pembayaran), penyetuju dicatat.
         ...(focApprover
-          ? { comp_approved_by: focApprover.id, comp_approved_name: focApprover.name }
+          ? {
+              discount_amount: serverSubtotal,
+              discount_reason: 'FOC',
+              tax_amount: 0,
+              service_charge_amount: 0,
+              other_charges_amount: 0,
+              total_amount: 0,
+              amount_paid: 0,
+              change_amount: 0,
+              comp_type: 'foc_comp',
+              comp_approved_by: focApprover.id,
+              comp_approved_name: focApprover.name,
+            }
           : {}),
       })
       .select()
@@ -1460,15 +1476,19 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // FOC: total tersimpan 0 — statistik belanja & XP ikut 0 (komplimen
+    // bukan belanja customer).
+    const settledTotal = focApprover ? 0 : serverTotal;
+
     // Statistik kunjungan/belanja untuk semua metode pembayaran
     if (customer_id) {
-      await syncPosCustomerOrderStats(db, customer_id, serverTotal);
+      await syncPosCustomerOrderStats(db, customer_id, settledTotal);
     }
 
     const crmXp = await awardCrmXpForPosOrder(db, {
       orderId: orderData.id,
       customerId: customer_id || null,
-      totalAmount: serverTotal,
+      totalAmount: settledTotal,
       items: orderItems,
       outletId: body.branch_id || venue.branchId,
       paymentMethod: payment_method,

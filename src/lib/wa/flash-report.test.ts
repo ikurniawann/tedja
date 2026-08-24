@@ -12,6 +12,8 @@ const contoh: FlashReportData = {
   kolCompTx: 3,
   ownerCompIdr: 0,
   ownerCompTx: 0,
+  focCompIdr: 120_000,
+  focCompTx: 2,
   guestCount: 70,
   byStall: [
     { name: "Es Cekek Corner", revenue: 2_570_500, pcs: 103 },
@@ -41,6 +43,7 @@ describe("buildFlashReportMessage", () => {
     expect(msg).toContain("Disc 100% : 13 Transaksi");
     // EPIC-043: komplimen dipecah per jenis; baris muncul hanya bila ada
     expect(msg).toContain("KOL Comp : Rp 350.000 (3 Trx)");
+    expect(msg).toContain("Komplimen FOC : Rp 120.000 (2 Trx)");
     expect(msg).not.toContain("Owner Comp");
     expect(msg).toContain("No of Guest : 70 Pax");
     // 3.806.000 / 70 = 54.371 — cocok dengan laporan manual
@@ -66,6 +69,8 @@ describe("buildFlashReportMessage", () => {
         kolCompTx: 0,
         ownerCompIdr: 0,
         ownerCompTx: 0,
+        focCompIdr: 0,
+        focCompTx: 0,
         guestCount: 0,
         byStall: [],
         byCategory: [],

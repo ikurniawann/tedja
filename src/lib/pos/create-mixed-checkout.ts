@@ -1816,14 +1816,16 @@ export async function completeMixedCheckout(
 
   const existing = await db
     .from("pos_orders")
-    .select("id, total_amount")
+    .select("id, total_amount, subtotal")
     .eq("checkout_id", checkoutId);
   const existingChildren = ((existing.data || []) as Array<{
     id: string;
     total_amount?: string | number | null;
+    subtotal?: string | number | null;
   }>).map((row) => ({
     id: String(row.id),
     total: toNumber(row.total_amount),
+    subtotal: toNumber(row.subtotal),
   }));
   const existingIds = existingChildren.map((row) => row.id);
 
@@ -1876,13 +1878,22 @@ export async function completeMixedCheckout(
 
   if (existingIds.length > 0) {
     const now = new Date().toISOString();
+    // FOC (compApproved): pendapatan diakui 0 — checkout & seluruh anak
+    // digratiskan (diskon 100% dari gross), sama seperti Owner Comp.
+    const focGross = existingChildren.reduce(
+      (sum, row) => sum + (row.subtotal || row.total),
+      0
+    );
     const { error: payCheckoutErr } = await db
       .from("pos_checkouts")
       .update({
         payment_status: "paid",
         payment_method: resolved.paymentMethod,
-        amount_paid: resolved.amountPaid,
-        change_amount: resolved.changeAmount,
+        amount_paid: tender.compApproved ? 0 : resolved.amountPaid,
+        change_amount: tender.compApproved ? 0 : resolved.changeAmount,
+        ...(tender.compApproved
+          ? { discount_amount: focGross, total_amount: 0 }
+          : {}),
         ...catalog,
         updated_at: now,
       })
@@ -1902,13 +1913,18 @@ export async function completeMixedCheckout(
         .update({
           payment_status: "paid",
           payment_method: resolved.paymentMethod,
-          amount_paid: paidParts[index] ?? 0,
-          change_amount: index === 0 ? resolved.changeAmount : 0,
+          amount_paid: tender.compApproved ? 0 : (paidParts[index] ?? 0),
+          change_amount:
+            tender.compApproved ? 0 : index === 0 ? resolved.changeAmount : 0,
           xendit_qr_id: preview.xendit_qr_id || null,
           xendit_external_id: preview.xendit_external_id || null,
           ...catalog,
           ...(tender.compApproved
             ? {
+                discount_amount: child.subtotal || child.total,
+                discount_reason: "FOC",
+                total_amount: 0,
+                comp_type: "foc_comp",
                 comp_approved_by: tender.compApproved.id,
                 comp_approved_name: tender.compApproved.name,
               }
@@ -1956,16 +1972,42 @@ export async function completeMixedCheckout(
         throw new MixedCheckoutError("Checkout tidak punya item untuk diselesaikan", 409);
       }
 
-      await client.query(
-        `UPDATE pos.pos_checkouts
-         SET payment_status = 'paid',
-             payment_method = $2::pos_payment_method,
-             amount_paid = $3,
-             change_amount = $4,
-             updated_at = now()
-         WHERE id = $1`,
-        [checkoutId, resolved.paymentMethod, resolved.amountPaid, resolved.changeAmount]
-      );
+      // FOC (compApproved): checkout digratiskan — diskon 100% dari gross
+      // item snapshot, pajak/service gugur, total & dibayar 0.
+      const focSnapshotGross = tender.compApproved
+        ? snapshot.items.reduce((sum, item) => {
+            const line = item as { subtotal?: unknown; total_amount?: unknown };
+            return sum + toNumber(line.subtotal ?? line.total_amount);
+          }, 0)
+        : 0;
+      if (tender.compApproved) {
+        await client.query(
+          `UPDATE pos.pos_checkouts
+           SET payment_status = 'paid',
+               payment_method = $2::pos_payment_method,
+               amount_paid = 0,
+               change_amount = 0,
+               discount_amount = $3,
+               tax_amount = 0,
+               service_charge_amount = 0,
+               other_charges_amount = 0,
+               total_amount = 0,
+               updated_at = now()
+           WHERE id = $1`,
+          [checkoutId, resolved.paymentMethod, focSnapshotGross]
+        );
+      } else {
+        await client.query(
+          `UPDATE pos.pos_checkouts
+           SET payment_status = 'paid',
+               payment_method = $2::pos_payment_method,
+               amount_paid = $3,
+               change_amount = $4,
+               updated_at = now()
+           WHERE id = $1`,
+          [checkoutId, resolved.paymentMethod, resolved.amountPaid, resolved.changeAmount]
+        );
+      }
 
       const warehouseByProduct = new Map(
         Object.entries(snapshot.warehouseByProduct || {})
@@ -1983,8 +2025,17 @@ export async function completeMixedCheckout(
         ...checkout,
         payment_status: "paid",
         payment_method: resolved.paymentMethod,
-        amount_paid: resolved.amountPaid,
-        change_amount: resolved.changeAmount,
+        amount_paid: tender.compApproved ? 0 : resolved.amountPaid,
+        change_amount: tender.compApproved ? 0 : resolved.changeAmount,
+        ...(tender.compApproved
+          ? {
+              discount_amount: focSnapshotGross,
+              tax_amount: 0,
+              service_charge_amount: 0,
+              other_charges_amount: 0,
+              total_amount: 0,
+            }
+          : {}),
       };
       const orderIds = await insertChildrenForCheckout(client, {
         checkout: settledCheckout,
@@ -1993,6 +2044,7 @@ export async function completeMixedCheckout(
         warehouseByProduct,
         merchClaimedIds: new Set(merchClaims.map((claim) => claim.productId)),
         costMap,
+        compType: tender.compApproved ? "foc_comp" : null,
         compApproved: tender.compApproved ?? null,
       });
       if (checkout.xendit_qr_id || checkout.xendit_external_id) {

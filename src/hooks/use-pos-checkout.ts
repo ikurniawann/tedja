@@ -37,6 +37,8 @@ export interface PaymentResult {
   giftCards?: Array<{ code: string; initial_value: number; expires_at: string | null }>;
   /** Terisi bila order LUNAS tapi kartu gagal terbit — wajib ditampilkan. */
   giftCardError?: string | null;
+  /** Metode FOC — nama supervisor penyetuju dari server, utk label struk. */
+  compApprovedName?: string | null;
 }
 
 export function usePosCheckout() {
@@ -259,6 +261,7 @@ export function usePosCheckout() {
           id?: string;
           order_number?: string;
           xp_earned?: number;
+          comp_approved_name?: string | null;
         };
         const ids = mapPaidSaleToReceiptIds(data);
 
@@ -276,6 +279,7 @@ export function usePosCheckout() {
           xpTotalAfter: extras.xp_total_after ?? null,
           giftCards: "gift_cards" in response ? response.gift_cards : undefined,
           giftCardError: "gift_card_error" in response ? response.gift_card_error ?? null : null,
+          compApprovedName: data.comp_approved_name ?? null,
           ...snap,
         };
       } catch (err: unknown) {

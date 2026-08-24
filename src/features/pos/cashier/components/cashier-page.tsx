@@ -1678,7 +1678,13 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
           paymentMethodCode: catalogCode,
           paymentMethodName: catalogName,
         });
-        await completeCheckout(paymentCheckoutId, { ...tender, ...focFields });
+        const completeRes = await completeCheckout(paymentCheckoutId, {
+          ...tender,
+          ...focFields,
+        });
+        const focApprovedName =
+          (completeRes.data as { comp_approved_name?: string | null } | undefined)
+            ?.comp_approved_name ?? null;
         const receipt: ReceiptPayload = {
           orderId: paymentCheckoutId,
           orderNumber: payingOrderNumber || paymentCheckoutId,
@@ -1694,6 +1700,17 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
           customerName: selectedCustomer?.name,
           discountAmount,
           taxAmount,
+          // FOC = komplimen: struk menampilkan diskon 100% + total 0 + label
+          // penyetuju (server sudah menggratiskan checkout & anak-ordernya).
+          ...(focSelected
+            ? {
+                total: 0,
+                change: 0,
+                discountAmount: payTotal,
+                compType: 'foc_comp',
+                compApprovedName: focApprovedName,
+              }
+            : {}),
         };
         storeResultPayload(receipt);
         if (selectedCustomer) void refetchCustomers();
@@ -1760,6 +1777,18 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
           xpEarned: data.crm_xp?.xpAwarded,
           xpTotalAfter: data.xp_total_after ?? null,
           ...receiptExtras,
+          // FOC = komplimen: total 0, diskon 100%, label penyetuju di struk.
+          ...(focSelected
+            ? {
+                total: 0,
+                change: 0,
+                discountAmount: payTotal,
+                compType: 'foc_comp',
+                compApprovedName:
+                  (data.data as { comp_approved_name?: string | null } | undefined)
+                    ?.comp_approved_name ?? null,
+              }
+            : {}),
         };
         storeResultPayload(receipt);
         // Saldo ARK/XP customer berubah di server — segarkan cache kasir
@@ -1911,6 +1940,16 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         xpEarned: res.xpEarned,
         xpTotalAfter: res.xpTotalAfter ?? null,
         ...receiptExtras,
+        // FOC = komplimen: total 0, diskon 100%, label penyetuju di struk.
+        ...(focSelected
+          ? {
+              total: 0,
+              change: 0,
+              discountAmount: res.total,
+              compType: 'foc_comp',
+              compApprovedName: res.compApprovedName ?? null,
+            }
+          : {}),
       };
       storeResultPayload(receipt);
       toast.success(
