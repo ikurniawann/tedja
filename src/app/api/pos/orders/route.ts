@@ -68,7 +68,7 @@ import {
 } from '@/lib/pos/manual-discount';
 import { evaluateActiveOffersForPosCart } from '@/lib/promo/offer-pos';
 import { parseReportDateRange } from '@/lib/pos/report-stall-filter';
-import { validateKolComp } from '@/lib/pos/comp-orders';
+import { validateKolComp } from '@/lib/pos/comp-orders-server';
 
 const ORDER_LIST_STATUSES = new Set([
   'pending',
