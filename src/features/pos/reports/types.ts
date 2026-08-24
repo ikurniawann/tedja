@@ -148,6 +148,9 @@ export interface TransactionReportRow {
   sold_from?: string | null;
   xendit_qr_id?: string | null;
   xendit_external_id?: string | null;
+  /** EPIC-043 — 'kol_comp' | 'owner_comp' + nama penyetuju (owner comp). */
+  comp_type?: string | null;
+  comp_approved_name?: string | null;
 }
 
 export interface TransactionReportSummary {
