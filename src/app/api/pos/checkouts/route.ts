@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPosSession } from "@/lib/api/auth";
+import { validateKolComp } from "@/lib/pos/comp-orders";
 import { getApiUserScope } from "@/lib/api/scope";
 import { checkProductPrivileges } from "@/lib/crm/product-privilege";
 import { createPgClient } from "@/lib/pg/create-client";
@@ -67,6 +68,8 @@ type CheckoutBody = {
   splits?: unknown[];
   branch_id?: string;
   shift_id?: string;
+  /** EPIC-043 — 'kol_comp': komplimen KOL utk checkout multi-stall. */
+  comp_type?: string;
 };
 
 export async function POST(request: NextRequest) {
@@ -119,6 +122,39 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: privilege.message }, { status: 403 });
     }
 
+    // EPIC-043: komplimen KOL utk checkout multi-stall — validasi server
+    // (flag is_kol + kuota) sebelum checkout dibuat; total harus 0.
+    let compType: string | null = null;
+    if (body.comp_type != null && String(body.comp_type) !== "") {
+      if (String(body.comp_type) !== "kol_comp") {
+        return NextResponse.json(
+          { success: false, error: "comp_type tidak dikenal utk checkout" },
+          { status: 400 }
+        );
+      }
+      if (!body.customer_id) {
+        return NextResponse.json(
+          { success: false, error: "Komplimen KOL membutuhkan customer" },
+          { status: 400 }
+        );
+      }
+      const gross = items.reduce(
+        (sum, item) => sum + (Number(item.subtotal ?? item.total_amount) || 0),
+        0
+      );
+      if ((Number(body.total_amount) || 0) > 0.5) {
+        return NextResponse.json(
+          { success: false, error: "Komplimen KOL harus menggratiskan seluruh order (total 0)" },
+          { status: 400 }
+        );
+      }
+      const kol = await validateKolComp({ customerId: body.customer_id, grossIdr: gross });
+      if (!kol.ok) {
+        return NextResponse.json({ success: false, error: kol.reason }, { status: 403 });
+      }
+      compType = "kol_comp";
+    }
+
     const result = await createMixedCheckout({
       items: items as MixedCheckoutItem[],
       warehouseByProduct,
@@ -148,6 +184,7 @@ export async function POST(request: NextRequest) {
       branchId: body.branch_id || scope?.branchId,
       shiftId: body.shift_id,
       sessionUserId,
+      compType,
     });
 
     return NextResponse.json(

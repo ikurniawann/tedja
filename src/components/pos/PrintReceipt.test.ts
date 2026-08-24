@@ -146,6 +146,38 @@ describe("receipt header/footer dari konfigurasi (EPIC-040)", () => {
   });
 });
 
+describe("komplimen di struk (EPIC-043)", () => {
+  it("KOL: label gratis menggantikan baris Bayar", () => {
+    const lines = buildReceiptLines(
+      { ...mixedPayload, total: 0, discountAmount: 38000, compType: "kol_comp" },
+      "CUSTOMER"
+    );
+    expect(lines).toContain("KOL COMPLIMENTARY — GRATIS");
+    expect(lines.some((l) => l.startsWith("Bayar ("))).toBe(false);
+  });
+
+  it("Owner: label memuat nama penyetuju", () => {
+    const lines = buildReceiptLines(
+      {
+        ...mixedPayload,
+        total: 0,
+        discountAmount: 38000,
+        compType: "owner_comp",
+        compApprovedName: "Ricky Ardiansyah",
+      },
+      "CUSTOMER"
+    );
+    expect(lines).toContain("OWNER COMP — Disetujui: Ricky Ardiansyah");
+  });
+
+  it("preview bill memuat blok tanda tangan", () => {
+    const lines = buildReceiptLines(mixedPayload, "PREVIEW_BILL");
+    expect(lines).toContain("Disetujui:");
+    expect(lines).toContain("____________________");
+    expect(lines.some((l) => l.startsWith("Nama:"))).toBe(true);
+  });
+});
+
 describe("QR member portal di bawah struk", () => {
   const bytesToAscii = (bytes: Uint8Array) =>
     Array.from(bytes)

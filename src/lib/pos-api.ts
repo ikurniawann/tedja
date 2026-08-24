@@ -124,6 +124,8 @@ export interface Customer {
   discount_percent?: number; // Dari konfigurasi crm_membership_tiers (EPIC-011)
   member_type?: 'registered' | 'card';
   nfc_uid?: string | null;
+  /** EPIC-043 — customer KOL: order digratiskan otomatis (server validasi + kuota). */
+  is_kol?: boolean;
 }
 
 export async function getCustomers(params?: { search?: string; phone?: string; nfc_uid?: string }) {
@@ -455,6 +457,8 @@ export interface Order {
 }
 
 export interface CreateOrderRequest {
+  /** EPIC-043 — 'kol_comp': komplimen KOL (server validasi flag & kuota). */
+  comp_type?: string;
   order_type: 'dine_in' | 'takeaway' | 'delivery' | 'self_order';
   customer_id?: string;
   cashier_id: string;
@@ -698,7 +702,7 @@ export async function getCustomerFavoriteProducts(customerId: string, products: 
 export async function updateOrderStatus(
   orderId: string,
   status: string,
-  additionalData?: { payment_status?: string; payment_method?: string; amount_paid?: number; ark_coins_used?: number; cancelled_reason?: string; nfc_tab_uid?: string; xendit_qr_id?: string; xendit_external_id?: string; payment_method_code?: string; payment_method_name?: string }
+  additionalData?: { payment_status?: string; payment_method?: string; amount_paid?: number; ark_coins_used?: number; cancelled_reason?: string; nfc_tab_uid?: string; xendit_qr_id?: string; xendit_external_id?: string; payment_method_code?: string; payment_method_name?: string; comp_type?: string; supervisor_pin?: string }
 ) {
   const response = await fetch(`/api/pos/orders/${orderId}`, {
     method: 'PATCH',

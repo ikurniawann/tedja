@@ -68,6 +68,7 @@ import {
 } from '@/lib/pos/manual-discount';
 import { evaluateActiveOffersForPosCart } from '@/lib/promo/offer-pos';
 import { parseReportDateRange } from '@/lib/pos/report-stall-filter';
+import { validateKolComp } from '@/lib/pos/comp-orders';
 
 const ORDER_LIST_STATUSES = new Set([
   'pending',
@@ -160,6 +161,8 @@ type PosOrderBody = {
   xendit_external_id?: string;
   payment_method_code?: string;
   payment_method_name?: string;
+  /** EPIC-043: 'kol_comp' = komplimen KOL (divalidasi server, gratis penuh). */
+  comp_type?: string;
 };
 
 type PosOrderRow = {
@@ -983,6 +986,38 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // EPIC-043: komplimen KOL — gratis OTOMATIS utk customer bertanda is_kol,
+    // divalidasi server (bukan kepercayaan ke kasir): customer wajib KOL,
+    // kuota bulanan (bila diset) cukup, dan diskonnya menggratiskan SELURUH
+    // order. owner_comp tidak lewat sini — hanya via pelunasan open bill.
+    let compType: string | null = null;
+    if (body.comp_type != null && String(body.comp_type) !== '') {
+      const requested = String(body.comp_type);
+      if (requested !== 'kol_comp') {
+        return NextResponse.json(
+          { success: false, error: 'comp_type tidak dikenal utk pembuatan order (owner_comp hanya via pelunasan open bill)' },
+          { status: 400 }
+        );
+      }
+      if (!customer_id) {
+        return NextResponse.json(
+          { success: false, error: 'Komplimen KOL membutuhkan customer' },
+          { status: 400 }
+        );
+      }
+      if (serverTotal > 0.5) {
+        return NextResponse.json(
+          { success: false, error: 'Komplimen KOL harus menggratiskan seluruh order (total 0)' },
+          { status: 400 }
+        );
+      }
+      const kol = await validateKolComp({ customerId: customer_id, grossIdr: serverSubtotal });
+      if (!kol.ok) {
+        return NextResponse.json({ success: false, error: kol.reason }, { status: 403 });
+      }
+      compType = 'kol_comp';
+    }
+
     const payWithArk = arkUsed > 0 && Boolean(customer_id);
     // Order ARK/NFC Tab/Gift Card dibuat pending dulu; paid setelah
     // debit/charge sukses
@@ -1048,6 +1083,7 @@ export async function POST(request: NextRequest) {
           code: body.payment_method_code,
           name: body.payment_method_name,
         }),
+        ...(compType ? { comp_type: compType } : {}),
       })
       .select()
       .single();
