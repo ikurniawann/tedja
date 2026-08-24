@@ -24,6 +24,11 @@ export interface FlashReportData {
   discount: number;
   citizenCardTx: number;
   fullDiscountTx: number;
+  /** EPIC-043 — nilai GROSS (subtotal) & jumlah transaksi komplimen. */
+  kolCompIdr: number;
+  kolCompTx: number;
+  ownerCompIdr: number;
+  ownerCompTx: number;
   guestCount: number;
   byStall: Array<{ name: string; revenue: number; pcs: number }>;
   byCategory: Array<{ name: string; revenue: number; pcs: number }>;
@@ -53,6 +58,10 @@ export async function gatherFlashReportData(dateWib: string): Promise<FlashRepor
         nett: string;
         citizen_card_tx: string;
         full_discount_tx: string;
+        kol_comp_idr: string;
+        kol_comp_tx: string;
+        owner_comp_idr: string;
+        owner_comp_tx: string;
         guest_count: string;
       }>(
         `SELECT COALESCE(SUM(o.subtotal), 0) AS revenue,
@@ -62,6 +71,10 @@ export async function gatherFlashReportData(dateWib: string): Promise<FlashRepor
                 COUNT(*) FILTER (
                   WHERE o.subtotal > 0 AND o.discount_amount >= o.subtotal
                 ) AS full_discount_tx,
+                COALESCE(SUM(o.subtotal) FILTER (WHERE o.comp_type = 'kol_comp'), 0) AS kol_comp_idr,
+                COUNT(*) FILTER (WHERE o.comp_type = 'kol_comp') AS kol_comp_tx,
+                COALESCE(SUM(o.subtotal) FILTER (WHERE o.comp_type = 'owner_comp'), 0) AS owner_comp_idr,
+                COUNT(*) FILTER (WHERE o.comp_type = 'owner_comp') AS owner_comp_tx,
                 COALESCE(SUM(COALESCE(NULLIF(o.guest_count, 0), 1)), 0) AS guest_count
          FROM pos.pos_orders o
          LEFT JOIN pos.pos_customers c ON c.id = o.customer_id
@@ -152,6 +165,10 @@ export async function gatherFlashReportData(dateWib: string): Promise<FlashRepor
     discount: Number(s?.discount) || 0,
     citizenCardTx: Number(s?.citizen_card_tx) || 0,
     fullDiscountTx: Number(s?.full_discount_tx) || 0,
+    kolCompIdr: Number(s?.kol_comp_idr) || 0,
+    kolCompTx: Number(s?.kol_comp_tx) || 0,
+    ownerCompIdr: Number(s?.owner_comp_idr) || 0,
+    ownerCompTx: Number(s?.owner_comp_tx) || 0,
     guestCount: Number(s?.guest_count) || 0,
     byStall,
     byCategory: categoryRows.map((row) => ({
@@ -188,6 +205,12 @@ export function buildFlashReportMessage(data: FlashReportData, dateWib: string):
     `Discount : ${rp(data.discount)}`,
     `SULU Citizen : ${data.citizenCardTx} Card`,
     `Disc 100% : ${data.fullDiscountTx} Transaksi`,
+    ...(data.kolCompTx > 0
+      ? [`KOL Comp : ${rp(data.kolCompIdr)} (${data.kolCompTx} Trx)`]
+      : []),
+    ...(data.ownerCompTx > 0
+      ? [`Owner Comp : ${rp(data.ownerCompIdr)} (${data.ownerCompTx} Trx)`]
+      : []),
     ``,
     `No of Guest : ${data.guestCount} Pax`,
     `Average/Pax : ${rp(avgPerPax)}`,

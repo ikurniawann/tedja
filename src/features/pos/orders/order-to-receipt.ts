@@ -78,6 +78,10 @@ export function orderToReceiptPayload(order: Order): ReceiptPayload {
     // (XP hidup di pos_xp_transactions, bukan kolom order), dan struk
     // reprint tidak boleh menebak nilai historis.
     arkPaid: Number((order as { ark_coins_used?: number | string }).ark_coins_used) || 0,
+    // EPIC-043 — reprint komplimen tetap berlabel (KOL/Owner + penyetuju).
+    compType: (order as { comp_type?: string | null }).comp_type ?? null,
+    compApprovedName:
+      (order as { comp_approved_name?: string | null }).comp_approved_name ?? null,
   };
 }
 
@@ -125,5 +129,13 @@ export function checkoutFamilyToReceiptPayload(orders: Order[]): ReceiptPayload 
     discountAmount: sum((o) => o.discount_amount),
     taxAmount: sum((o) => o.tax_amount),
     arkPaid: sum((o) => (o as { ark_coins_used?: number | string }).ark_coins_used),
+    compType:
+      orders
+        .map((o) => (o as { comp_type?: string | null }).comp_type)
+        .find(Boolean) ?? null,
+    compApprovedName:
+      orders
+        .map((o) => (o as { comp_approved_name?: string | null }).comp_approved_name)
+        .find(Boolean) ?? null,
   };
 }

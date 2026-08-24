@@ -72,7 +72,7 @@ export function usePosCheckout() {
       cart: PosCartItem[];
       orderType: string;
       selectedTable: string | null;
-      selectedCustomer: { id: string; discount?: number } | null;
+      selectedCustomer: { id: string; discount?: number; is_kol?: boolean } | null;
       paymentMethod: string;
       cashReceived: string;
       includeTax: boolean;
@@ -219,6 +219,11 @@ export function usePosCheckout() {
           xendit_external_id: xenditExternalId,
           payment_method_code: paymentMethodCode,
           payment_method_name: paymentMethodName,
+          // EPIC-043: customer KOL + order digratiskan penuh oleh kasir →
+          // otomatis distempel komplimen KOL (server memvalidasi flag+kuota).
+          ...(selectedCustomer?.is_kol && total === 0 && subtotal > 0
+            ? { comp_type: 'kol_comp' }
+            : {}),
         };
 
         const response = useCheckout
