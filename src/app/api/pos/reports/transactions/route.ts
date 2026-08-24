@@ -35,6 +35,8 @@ type TransactionRow = {
   xendit_external_id: string | null;
   /** Tanggal WIB (YYYY-MM-DD) — dihitung DB supaya konsisten dengan filter. */
   hari_wib: string;
+  comp_type?: string | null;
+  comp_approved_name?: string | null;
 };
 
 type TopProductRow = {
@@ -122,6 +124,8 @@ export async function GET(request: NextRequest) {
          COALESCE(w_order.name, stall_from_item.stall_name) AS stall_name,
          o.checkout_id,
          o.sold_from,
+         (to_jsonb(o) ->> 'comp_type') AS comp_type,
+         (to_jsonb(o) ->> 'comp_approved_name') AS comp_approved_name,
          chk.checkout_number,
          COALESCE(o.xendit_qr_id, chk.xendit_qr_id) AS xendit_qr_id,
          COALESCE(o.xendit_external_id, chk.xendit_external_id) AS xendit_external_id
@@ -303,6 +307,8 @@ export async function GET(request: NextRequest) {
           sold_from: row.sold_from,
           xendit_qr_id: row.xendit_qr_id,
           xendit_external_id: row.xendit_external_id,
+          comp_type: row.comp_type ?? null,
+          comp_approved_name: row.comp_approved_name ?? null,
         })),
       },
     });
