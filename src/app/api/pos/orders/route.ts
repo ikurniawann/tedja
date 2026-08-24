@@ -1194,6 +1194,7 @@ export async function POST(request: NextRequest) {
         orderNumber,
         grossIdr: serverSubtotal,
         approvedName: focApprover.name,
+        customerId: customer_id || null,
       });
     }
 
