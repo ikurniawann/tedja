@@ -86,8 +86,8 @@ export async function POST(
              FROM pos.pos_orders WHERE id = ANY($1::uuid[])`,
             [result.orderIds]
           ),
-          queryOne<{ checkout_number: string | null }>(
-            `SELECT checkout_number FROM pos.pos_checkouts WHERE id = $1`,
+          queryOne<{ checkout_number: string | null; customer_id: string | null }>(
+            `SELECT checkout_number, customer_id FROM pos.pos_checkouts WHERE id = $1`,
             [checkoutId]
           ),
         ]);
@@ -97,6 +97,7 @@ export async function POST(
           orderCount: result.orderIds.length || undefined,
           grossIdr: Number(agg?.gross) || 0,
           approvedName: compApproved.name,
+          customerId: chk?.customer_id || null,
         });
       })().catch((err) => console.error("[wa-comp] notif complete gagal:", err));
     }
