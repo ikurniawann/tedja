@@ -224,7 +224,9 @@ function periodRange(preset: PeriodPreset) {
 export function OrdersPage() {
   const searchParams = useSearchParams();
   const posReturn = posHomeFromOrders(searchParams);
-  const initialPeriod = periodRange("month");
+  // Default buka halaman = HARI INI (keputusan owner 2026-08-24); rentang
+  // lain tinggal klik preset/filter.
+  const initialPeriod = periodRange("today");
   const [dateFrom, setDateFrom] = useState(initialPeriod.date_from);
   const [dateTo, setDateTo] = useState(initialPeriod.date_to);
   const [paymentStatus, setPaymentStatus] = useState("");
@@ -275,6 +277,7 @@ export function OrdersPage() {
       payment_method: (next?.payment_method ?? paymentMethod) || undefined,
       limit: ORDER_LIST_LIMIT,
     });
+    setPage(1);
   }
 
   const statusCounts = useMemo(
@@ -311,6 +314,18 @@ export function OrdersPage() {
   const groupedOrders = useMemo(
     () => groupOrdersByCheckout(filteredOrders),
     [filteredOrders]
+  );
+
+  /* Pagination tabel (owner 2026-08-24): semua data periode tetap dimuat
+   * (kartu status menghitung dari total sebenarnya), tabel dipotong per
+   * halaman supaya rentang panjang tetap ringan digulir. */
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const pageCount = Math.max(1, Math.ceil(groupedOrders.length / pageSize));
+  const currentPage = Math.min(page, pageCount);
+  const pagedOrders = useMemo(
+    () => groupedOrders.slice((currentPage - 1) * pageSize, currentPage * pageSize),
+    [groupedOrders, currentPage, pageSize]
   );
 
   const openDetail = (order: Order, siblings: Order[] = []) => {
@@ -476,7 +491,10 @@ export function OrdersPage() {
           <button
             key={key}
             type="button"
-            onClick={() => setStatusFilter(key)}
+            onClick={() => {
+              setStatusFilter(key);
+              setPage(1);
+            }}
             className={cn(
               "rounded-xl border bg-white p-3.5 text-left shadow-xs transition-colors",
               statusFilter === key
@@ -500,7 +518,10 @@ export function OrdersPage() {
               <Input
                 placeholder="Cari nomor order, checkout, antrian, atau pelanggan…"
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={(e) => {
+                  setSearchTerm(e.target.value);
+                  setPage(1);
+                }}
                 className="h-10 border-gray-200/80 bg-white pl-10"
               />
             </div>
@@ -540,7 +561,7 @@ export function OrdersPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {groupedOrders.map((row) => {
+                  {pagedOrders.map((row) => {
                     const order = row.kind === "single" ? row.order : row.orders[0];
                     if (!order) return null;
                     const isMixed = row.kind === "checkout";
@@ -670,6 +691,56 @@ export function OrdersPage() {
               </table>
             </div>
           )}
+
+          {groupedOrders.length > 0 ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-200/70 pt-3">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <span>Baris per halaman</span>
+                <select
+                  value={pageSize}
+                  onChange={(e) => {
+                    setPageSize(Number(e.target.value));
+                    setPage(1);
+                  }}
+                  className="h-8 rounded-md border border-gray-200/80 bg-white px-2 text-sm"
+                >
+                  {[25, 50, 100].map((size) => (
+                    <option key={size} value={size}>
+                      {size}
+                    </option>
+                  ))}
+                </select>
+                <span>
+                  {(currentPage - 1) * pageSize + 1}–
+                  {Math.min(currentPage * pageSize, groupedOrders.length)} dari{" "}
+                  {groupedOrders.length} tagihan
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={currentPage <= 1}
+                  onClick={() => setPage(currentPage - 1)}
+                >
+                  Sebelumnya
+                </Button>
+                <span className="text-sm text-muted-foreground">
+                  Hal {currentPage} / {pageCount}
+                </span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={currentPage >= pageCount}
+                  onClick={() => setPage(currentPage + 1)}
+                >
+                  Berikutnya
+                </Button>
+              </div>
+            </div>
+          ) : null}
         </CardContent>
       </Card>
 
