@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPosSession } from "@/lib/api/auth";
 import { validateKolComp } from "@/lib/pos/comp-orders-server";
+import { isFocPaymentMethod } from "@/lib/pos/payment-methods";
+import { verifySupervisorPinServer } from "@/lib/pos/supervisor-pin-server";
 import { getApiUserScope } from "@/lib/api/scope";
 import { checkProductPrivileges } from "@/lib/crm/product-privilege";
 import { createPgClient } from "@/lib/pg/create-client";
@@ -70,6 +72,8 @@ type CheckoutBody = {
   shift_id?: string;
   /** EPIC-043 — 'kol_comp': komplimen KOL utk checkout multi-stall. */
   comp_type?: string;
+  /** PIN supervisor — wajib saat metode bayar FOC (Free of Charge). */
+  supervisor_pin?: string;
 };
 
 export async function POST(request: NextRequest) {
@@ -155,6 +159,26 @@ export async function POST(request: NextRequest) {
       compType = "kol_comp";
     }
 
+    // Metode FOC (Free of Charge) — keputusan owner 2026-08-24: checkout
+    // dengan metode FOC wajib disetujui PIN supervisor; penyetuju dicatat.
+    let compApproved: { id: string; name: string } | null = null;
+    if (isFocPaymentMethod(body.payment_method_code, body.payment_method_name)) {
+      const pin = String(body.supervisor_pin || "").trim();
+      if (!pin) {
+        return NextResponse.json(
+          { success: false, error: "Metode FOC membutuhkan PIN supervisor" },
+          { status: 400 }
+        );
+      }
+      compApproved = await verifySupervisorPinServer(pin);
+      if (!compApproved) {
+        return NextResponse.json(
+          { success: false, error: "PIN supervisor tidak valid" },
+          { status: 403 }
+        );
+      }
+    }
+
     const result = await createMixedCheckout({
       items: items as MixedCheckoutItem[],
       warehouseByProduct,
@@ -185,6 +209,7 @@ export async function POST(request: NextRequest) {
       shiftId: body.shift_id,
       sessionUserId,
       compType,
+      compApproved,
     });
 
     return NextResponse.json(

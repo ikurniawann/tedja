@@ -12,7 +12,8 @@ import {
 } from '@/lib/giftcard/giftcard-server';
 import { ensureQueueNumber } from '@/lib/pos/queue-number';
 import { AccountingPostError } from '@/lib/pos/accounting-posting';
-import { resolvePaymentCatalogStamp } from '@/lib/pos/payment-methods';
+import { isFocPaymentMethod, resolvePaymentCatalogStamp } from '@/lib/pos/payment-methods';
+import { verifySupervisorPinServer } from '@/lib/pos/supervisor-pin-server';
 import { sanitizeXenditRef } from '@/lib/pos/xendit-ids';
 import { assertQrisSaleMaySettle } from '@/lib/pos/qris-settle-guard';
 
@@ -256,6 +257,32 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
           { status: 409 }
         );
       }
+    }
+
+    // Metode FOC (Free of Charge) — keputusan owner 2026-08-24: pelunasan
+    // dengan metode FOC wajib disetujui PIN supervisor; penyetuju dicatat
+    // di comp_approved_by/name (kolom migrasi 015) sebagai jejak audit.
+    if (
+      settlingNow &&
+      !ownerComp &&
+      isFocPaymentMethod(body.payment_method_code, body.payment_method_name)
+    ) {
+      const pin = String(body.supervisor_pin || '').trim();
+      if (!pin) {
+        return NextResponse.json(
+          { success: false, error: 'Metode FOC membutuhkan PIN supervisor' },
+          { status: 400 }
+        );
+      }
+      const approver = await verifySupervisorPinServer(pin);
+      if (!approver) {
+        return NextResponse.json(
+          { success: false, error: 'PIN supervisor tidak valid' },
+          { status: 403 }
+        );
+      }
+      updateData.comp_approved_by = approver.id;
+      updateData.comp_approved_name = approver.name;
     }
 
     // NFC Tab (EPIC-023 Fase C): bayar open bill dengan memindahkan tagihan
