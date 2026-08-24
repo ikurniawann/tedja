@@ -3,6 +3,7 @@ import { getPosSession } from "@/lib/api/auth";
 import { validateKolComp } from "@/lib/pos/comp-orders-server";
 import { isFocPaymentMethod } from "@/lib/pos/payment-methods";
 import { verifySupervisorPinServer } from "@/lib/pos/supervisor-pin-server";
+import { notifyCompTransaction } from "@/lib/wa/comp-notification";
 import { getApiUserScope } from "@/lib/api/scope";
 import { checkProductPrivileges } from "@/lib/crm/product-privilege";
 import { createPgClient } from "@/lib/pg/create-client";
@@ -231,6 +232,17 @@ export async function POST(request: NextRequest) {
       compApproved,
       ...(focOverrides ?? {}),
     });
+
+    // Notifikasi WA owner (2026-08-24): setiap FOC yang disetujui dikabarkan.
+    if (compApproved && focOverrides) {
+      void notifyCompTransaction({
+        compType: "foc_comp",
+        orderNumber: result.checkoutNumber,
+        orderCount: result.orderIds.length || undefined,
+        grossIdr: focOverrides.discountAmount,
+        approvedName: compApproved.name,
+      });
+    }
 
     return NextResponse.json(
       {

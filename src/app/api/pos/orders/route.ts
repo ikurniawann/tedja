@@ -60,6 +60,7 @@ import {
 import { AccountingPostError } from '@/lib/pos/accounting-posting';
 import { isFocPaymentMethod, resolvePaymentCatalogStamp } from '@/lib/pos/payment-methods';
 import { verifySupervisorPinServer } from '@/lib/pos/supervisor-pin-server';
+import { notifyCompTransaction } from '@/lib/wa/comp-notification';
 import { sanitizeXenditRef } from '@/lib/pos/xendit-ids';
 import { assertQrisSaleMaySettle } from '@/lib/pos/qris-settle-guard';
 import {
@@ -1184,6 +1185,16 @@ export async function POST(request: NextRequest) {
         ).catch(() => {});
       }
       return NextResponse.json({ success: false, error: orderInsertErr?.message || 'Failed to create order' }, { status: 500 });
+    }
+
+    // Notifikasi WA owner (2026-08-24): setiap FOC yang disetujui dikabarkan.
+    if (focApprover) {
+      void notifyCompTransaction({
+        compType: 'foc_comp',
+        orderNumber,
+        grossIdr: serverSubtotal,
+        approvedName: focApprover.name,
+      });
     }
 
     // Debit saldo ARK atomik (fix bug: checkout langsung sebelumnya tidak
