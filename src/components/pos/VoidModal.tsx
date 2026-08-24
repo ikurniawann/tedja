@@ -28,11 +28,15 @@ const VOID_REASONS = [
 interface VoidModalProps {
   open: boolean;
   order: Order | null;
+  /** Keluarga checkout gabungan (CHK) — dialog menampilkan TOTAL gabungan.
+   *  Server memang mem-void sekeluarga; dulu dialog hanya menampilkan satu
+   *  anak-order sehingga nominalnya menyesatkan (laporan owner 2026-08-24). */
+  siblings?: Order[];
   onClose: () => void;
   onSuccess?: () => void;
 }
 
-export function VoidModal({ open, order, onClose, onSuccess }: VoidModalProps) {
+export function VoidModal({ open, order, siblings = [], onClose, onSuccess }: VoidModalProps) {
   const [pin, setPin] = useState('');
   const [reasonCode, setReasonCode] = useState('');
   const [customReason, setCustomReason] = useState('');
@@ -40,6 +44,12 @@ export function VoidModal({ open, order, onClose, onSuccess }: VoidModalProps) {
   const [error, setError] = useState('');
 
   const paid = order ? isPaidPosOrder(order) : false;
+  const family = siblings.length > 1 ? siblings : order ? [order] : [];
+  const familyTotal = family.reduce((sum, o) => sum + (Number(o.total_amount) || 0), 0);
+  const checkoutNumber =
+    siblings.length > 1
+      ? (family[0] as { checkout_number?: string | null }).checkout_number ?? null
+      : null;
   const reason =
     reasonCode === 'lainnya'
       ? customReason.trim()
@@ -116,11 +126,14 @@ export function VoidModal({ open, order, onClose, onSuccess }: VoidModalProps) {
             {order ? (
               <div className="rounded-xl border border-gray-200/70 bg-muted/50 p-3 text-sm">
                 <p>
-                  <span className="font-medium">Order:</span> {order.order_number}
+                  <span className="font-medium">Order:</span>{' '}
+                  {checkoutNumber
+                    ? `${checkoutNumber} (gabungan ${family.length} order)`
+                    : order.order_number}
                 </p>
                 <p>
                   <span className="font-medium">Total:</span> Rp{' '}
-                  {order.total_amount?.toLocaleString('id-ID')}
+                  {familyTotal.toLocaleString('id-ID')}
                 </p>
                 <p>
                   <span className="font-medium">Status:</span>{' '}
