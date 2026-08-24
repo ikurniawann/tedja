@@ -126,6 +126,10 @@ export async function POST(request: NextRequest) {
       enroll_member = false,
       nfc_uid,
     } = body;
+    // EPIC-043: ceklis KOL dari dialog Add Customer kasir/top-up. Hanya
+    // dipakai bila dikirim eksplisit — update tanpa field ini tidak
+    // mengubah status KOL yang sudah ada.
+    const isKol = typeof body.is_kol === 'boolean' ? body.is_kol : undefined;
     const normalizedPhone = normalizePhone(String(phone || ''));
     const normalizedName = String(name || '').trim();
     const normalizedEmail = String(email || '').trim();
@@ -176,6 +180,7 @@ export async function POST(request: NextRequest) {
           ...(normalizedNfcUid && existingCustomer.member_type !== 'card'
             ? { member_type: 'card', card_issued_at: new Date().toISOString() }
             : {}),
+          ...(isKol !== undefined ? { is_kol: isKol } : {}),
         })
         .eq('id', existingCustomer.id)
         .select(CUSTOMER_SELECT)
@@ -196,6 +201,7 @@ export async function POST(request: NextRequest) {
           ...(normalizedNfcUid
             ? { member_type: 'card', card_issued_at: new Date().toISOString() }
             : {}),
+          ...(isKol !== undefined ? { is_kol: isKol } : {}),
         })
         .select(CUSTOMER_SELECT)
         .single();
