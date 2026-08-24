@@ -69,6 +69,7 @@ import {
 } from '../api';
 import { completeCheckout, type ProductSku } from '@/lib/pos-api';
 import { formatPaymentMethodLabel } from '@/features/pos/reports/utils/transaction-labels';
+import { isFocPaymentMethod } from '@/lib/pos/payment-methods';
 import { MerchSkuPickerDialog } from '@/components/pos/MerchSkuPickerDialog';
 import { useCashierCheckout, useCashierOrder, useCashierTables, useCustomerFavoriteProducts } from '../queries';
 import { usePayOpenOrder } from '../mutations';
@@ -1312,6 +1313,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     xenditExternalId?: string;
     paymentMethodCode?: string;
     paymentMethodName?: string;
+    supervisorPin?: string;
   }) => {
     if (processingPayment) return;
     if (cart.items.length === 0) return;
@@ -1320,6 +1322,18 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     const method = overrides?.method ?? paymentMethod;
     const catalogCode = overrides?.paymentMethodCode;
     const catalogName = overrides?.paymentMethodName;
+    // Metode FOC (Free of Charge) — wajib PIN supervisor, diverifikasi server.
+    const focSelected = isFocPaymentMethod(catalogCode, catalogName);
+    const focPin = overrides?.supervisorPin?.trim() || '';
+    if (focSelected && !focPin) {
+      toast.error('Metode FOC membutuhkan PIN supervisor');
+      return;
+    }
+    if (focSelected && !isOnline) {
+      toast.error('Metode FOC membutuhkan koneksi — PIN supervisor diverifikasi server');
+      return;
+    }
+    const focFields = focSelected ? { supervisor_pin: focPin } : {};
     const receiptMethod = formatPaymentMethodLabel(method, {
       code: catalogCode,
       name: catalogName,
@@ -1637,7 +1651,8 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     }
 
     if (method === 'ark_coin' && !selectedCustomer) { setShowNFC(true); return; }
-    if (method === 'cash' && (parseFloat(cashValue) || 0) < payTotal) {
+    // FOC: tidak ada uang diterima — lewati validasi nominal tunai.
+    if (method === 'cash' && !focSelected && (parseFloat(cashValue) || 0) < payTotal) {
       toast.error('Nominal tunai kurang dari total tagihan');
       return;
     }
@@ -1663,7 +1678,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
           paymentMethodCode: catalogCode,
           paymentMethodName: catalogName,
         });
-        await completeCheckout(paymentCheckoutId, tender);
+        await completeCheckout(paymentCheckoutId, { ...tender, ...focFields });
         const receipt: ReceiptPayload = {
           orderId: paymentCheckoutId,
           orderNumber: payingOrderNumber || paymentCheckoutId,
@@ -1721,6 +1736,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
             xendit_qr_id: overrides?.xenditQrId,
             xendit_external_id: overrides?.xenditExternalId,
             ...catalogFields,
+            ...focFields,
           },
         });
 
@@ -1862,6 +1878,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       xenditExternalId: overrides?.xenditExternalId,
       paymentMethodCode: catalogCode,
       paymentMethodName: catalogName,
+      supervisorPin: focSelected ? focPin : undefined,
     });
 
     if (res.success) {
@@ -3083,6 +3100,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
           xenditExternalId,
           paymentMethodCode,
           paymentMethodName,
+          supervisorPin,
         }) => {
           setPaymentMethod(method);
           setCashReceived(cashReceived);
@@ -3100,6 +3118,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
             xenditExternalId,
             paymentMethodCode,
             paymentMethodName,
+            supervisorPin,
           });
         }}
         formatCurrency={formatCurrency}

@@ -68,6 +68,7 @@ export function usePosCheckout() {
       xenditExternalId,
       paymentMethodCode,
       paymentMethodName,
+      supervisorPin,
     }: {
       cart: PosCartItem[];
       orderType: string;
@@ -99,6 +100,8 @@ export function usePosCheckout() {
       xenditExternalId?: string;
       paymentMethodCode?: string;
       paymentMethodName?: string;
+      /** PIN supervisor — wajib saat metode bayar FOC (diverifikasi server). */
+      supervisorPin?: string;
     }): Promise<PaymentResult> => {
       const snap = {
         snapshotCart: [...cart],
@@ -219,6 +222,7 @@ export function usePosCheckout() {
           xendit_external_id: xenditExternalId,
           payment_method_code: paymentMethodCode,
           payment_method_name: paymentMethodName,
+          supervisor_pin: supervisorPin || undefined,
           // EPIC-043: customer KOL + order digratiskan penuh oleh kasir →
           // otomatis distempel komplimen KOL (server memvalidasi flag+kuota).
           ...(selectedCustomer?.is_kol && total === 0 && subtotal > 0

@@ -4,6 +4,8 @@ import {
   MixedCheckoutError,
   completeMixedCheckout,
 } from "@/lib/pos/create-mixed-checkout";
+import { isFocPaymentMethod } from "@/lib/pos/payment-methods";
+import { verifySupervisorPinServer } from "@/lib/pos/supervisor-pin-server";
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Unknown error";
@@ -14,6 +16,8 @@ type CompleteCheckoutBody = {
   amount_paid?: number | string;
   payment_method_code?: string;
   payment_method_name?: string;
+  /** PIN supervisor — wajib saat metode bayar FOC (Free of Charge). */
+  supervisor_pin?: string;
 };
 
 export async function POST(
@@ -44,11 +48,32 @@ export async function POST(
         ? null
         : Number(body.amount_paid);
 
+    // Metode FOC (Free of Charge) — keputusan owner 2026-08-24: pelunasan
+    // checkout dengan metode FOC wajib disetujui PIN supervisor.
+    let compApproved: { id: string; name: string } | null = null;
+    if (isFocPaymentMethod(body.payment_method_code, body.payment_method_name)) {
+      const pin = String(body.supervisor_pin || "").trim();
+      if (!pin) {
+        return NextResponse.json(
+          { success: false, error: "Metode FOC membutuhkan PIN supervisor" },
+          { status: 400 }
+        );
+      }
+      compApproved = await verifySupervisorPinServer(pin);
+      if (!compApproved) {
+        return NextResponse.json(
+          { success: false, error: "PIN supervisor tidak valid" },
+          { status: 403 }
+        );
+      }
+    }
+
     const result = await completeMixedCheckout(checkoutId, {
       paymentMethod: body.payment_method,
       amountPaid,
       paymentMethodCode: body.payment_method_code,
       paymentMethodName: body.payment_method_name,
+      compApproved,
     });
     return NextResponse.json({
       success: true,

@@ -142,6 +142,8 @@ export type CreateMixedCheckoutInput = {
   paymentMethodName?: string | null;
   /** EPIC-043 — 'kol_comp': seluruh anak-order distempel komplimen KOL. */
   compType?: string | null;
+  /** Metode FOC — supervisor penyetuju (tercatat di comp_approved_by/name). */
+  compApproved?: { id: string; name: string } | null;
 };
 
 export type MixedCheckoutResult = {
@@ -449,6 +451,8 @@ export type CompleteMixedCheckoutTender = {
   amountPaid?: number | null;
   paymentMethodCode?: string | null;
   paymentMethodName?: string | null;
+  /** Metode FOC — supervisor penyetuju (sudah diverifikasi route). */
+  compApproved?: { id: string; name: string } | null;
 };
 
 export type CompleteMixedCheckoutOptions = {
@@ -793,6 +797,9 @@ async function insertChildOrder(
     orderStatus: "pending" | "completed";
     /** EPIC-043 — 'kol_comp' distempel ke tiap anak-order checkout KOL. */
     compType?: string | null;
+    /** Metode FOC — supervisor penyetuju, jejak audit per anak-order. */
+    compApprovedBy?: string | null;
+    compApprovedName?: string | null;
   }
 ): Promise<string> {
   const id = randomUUID();
@@ -804,14 +811,16 @@ async function insertChildOrder(
        customer_id, cashier_id, server_id, table_id, guest_count, shift_id,
        subtotal, discount_amount, discount_reason, tax_amount, service_charge_amount,
        other_charges_amount, charges_breakdown, total_amount, amount_paid, change_amount,
-       notes, special_requests, ordered_at, completed_at, comp_type
+       notes, special_requests, ordered_at, completed_at, comp_type,
+       comp_approved_by, comp_approved_name
      ) VALUES (
        $1,$2,$3,$4::pos_order_type,$28::pos_order_status,$5::pos_payment_status,$6::pos_payment_method,
        $7,$8,$9,$10,'central',
        $11,$12,$13,$14,$15,$16,
        $17,$18,$19,$20,$21,
        $22,'[]'::jsonb,$23,$24,$25,
-       $26,$27, now(), $29, $30
+       $26,$27, now(), $29, $30,
+       $31, $32
      )`,
     [
       id,
@@ -844,6 +853,8 @@ async function insertChildOrder(
       orderStatus,
       orderStatus === "completed" ? new Date() : null,
       row.compType ?? null,
+      row.compApprovedBy ?? null,
+      row.compApprovedName ?? null,
     ]
   );
   return id;
@@ -936,6 +947,7 @@ async function insertChildrenForCheckout(
     merchClaimedIds: Set<string>;
     costMap: Map<string, { cost_price?: number | string | null }>;
     compType?: string | null;
+    compApproved?: { id: string; name: string } | null;
   }
 ): Promise<string[]> {
   const lines = buildLines(input.snapshot.items, input.warehouseByProduct);
@@ -1004,6 +1016,8 @@ async function insertChildrenForCheckout(
       specialRequests: input.snapshot.specialRequests,
       orderStatus,
       compType: input.compType ?? null,
+      compApprovedBy: input.compApproved?.id ?? null,
+      compApprovedName: input.compApproved?.name ?? null,
     });
     await insertChildItems(
       client,
@@ -1630,6 +1644,7 @@ export async function createMixedCheckout(
           merchClaimedIds,
           costMap,
           compType: input.compType ?? null,
+          compApproved: input.compApproved ?? null,
         });
       }
 
@@ -1892,6 +1907,12 @@ export async function completeMixedCheckout(
           xendit_qr_id: preview.xendit_qr_id || null,
           xendit_external_id: preview.xendit_external_id || null,
           ...catalog,
+          ...(tender.compApproved
+            ? {
+                comp_approved_by: tender.compApproved.id,
+                comp_approved_name: tender.compApproved.name,
+              }
+            : {}),
           updated_at: now,
         })
         .eq("id", child.id)
@@ -1972,6 +1993,7 @@ export async function completeMixedCheckout(
         warehouseByProduct,
         merchClaimedIds: new Set(merchClaims.map((claim) => claim.productId)),
         costMap,
+        compApproved: tender.compApproved ?? null,
       });
       if (checkout.xendit_qr_id || checkout.xendit_external_id) {
         try {

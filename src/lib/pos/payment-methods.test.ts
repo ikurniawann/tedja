@@ -3,6 +3,7 @@ import {
   canRenamePaymentMethodCode,
   cashierMethodFromHandler,
   isDrawerCashMethod,
+  isFocPaymentMethod,
   isManualPaymentHandler,
   resolvePaymentCatalogStamp,
   slugifyPaymentMethodCode,
@@ -68,5 +69,29 @@ describe("isDrawerCashMethod", () => {
         paymentMethodCode: "transfer_bca",
       })
     ).toBe(false);
+  });
+});
+
+describe("isFocPaymentMethod", () => {
+  it("matches FOC by code slug", () => {
+    expect(isFocPaymentMethod("foc")).toBe(true);
+    expect(isFocPaymentMethod("FOC")).toBe(true);
+    expect(isFocPaymentMethod("free_of_charge")).toBe(true);
+    expect(isFocPaymentMethod("free-of-charge")).toBe(true);
+  });
+
+  it("matches FOC by display name when code is custom", () => {
+    expect(isFocPaymentMethod(null, "FOC")).toBe(true);
+    expect(isFocPaymentMethod(undefined, "F.O.C")).toBe(true);
+    expect(isFocPaymentMethod("gratis", "Free of Charge")).toBe(true);
+  });
+
+  it("does not match regular methods", () => {
+    expect(isFocPaymentMethod("cash", "Cash")).toBe(false);
+    expect(isFocPaymentMethod("qris", "QRIS")).toBe(false);
+    expect(isFocPaymentMethod("transfer_bca", "Transfer BCA")).toBe(false);
+    // "focus" / nama yang kebetulan mengandung huruf f-o-c tidak boleh kena
+    expect(isFocPaymentMethod("focus_pay", "Focus Pay")).toBe(false);
+    expect(isFocPaymentMethod(null, "Kartu Officer")).toBe(false);
   });
 });
