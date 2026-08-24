@@ -16,7 +16,7 @@ function normalizeNfcUid(value: unknown) {
 }
 
 const CUSTOMER_SELECT =
-  'id, name, phone, email, membership_tier, member_type, ark_coin_balance, total_xp, visit_count, is_active, nfc_uid';
+  'id, name, phone, email, membership_tier, member_type, ark_coin_balance, total_xp, visit_count, is_active, nfc_uid, is_kol';
 
 type PgClient = ReturnType<typeof createPgClient>;
 

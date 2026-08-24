@@ -9,6 +9,7 @@ import {
 import { encodeEscPosLines, formatReceiptRow, RECEIPT_DIVIDER } from "@/lib/pos/thermal-escpos";
 import { resolveReceiptSettings } from "@/lib/pos/receipt-settings";
 import { idrToArkDisplay, isArkCoinMethod } from "@/lib/pos/loyalty-settings";
+import { compReceiptLabel } from "@/lib/pos/comp-orders";
 import {
   MEMBER_PORTAL_QR_CAPTION,
   MEMBER_PORTAL_QR_SVG,
@@ -86,6 +87,9 @@ export interface ReceiptPayload {
   /** EPIC-041 task 2 — XP transaksi ini & total XP member (bila member). */
   xpEarned?: number;
   xpTotalAfter?: number | null;
+  /** EPIC-043 — komplimen: 'kol_comp' | 'owner_comp' + nama penyetuju. */
+  compType?: string | null;
+  compApprovedName?: string | null;
 }
 
 export type ThermalPrintLabel = "KITCHEN" | "BAR" | "CUSTOMER" | "PREVIEW_BILL";
@@ -238,6 +242,13 @@ export function buildReceiptEscPosLayout(
     });
     if (isPreviewBill) {
       lines.push({ text: formatReceiptRow("Status", "UNPAID"), align: "left" });
+    } else if (payload.compType) {
+      // EPIC-043 — komplimen: tanpa baris Bayar/Kembalian; labelnya tegas.
+      lines.push({ text: RECEIPT_DIVIDER, align: "left" });
+      lines.push({
+        text: compReceiptLabel(payload.compType, payload.compApprovedName) || "COMPLIMENTARY",
+        align: "center",
+      });
     } else {
       lines.push({
         text: formatReceiptRow(
@@ -252,6 +263,15 @@ export function buildReceiptEscPosLayout(
           align: "left",
         });
       }
+    }
+    if (isPreviewBill) {
+      // EPIC-043 — open bill (mis. Owner) diteken saat disetujui gratis;
+      // blok tanda tangan di setiap preview bill.
+      lines.push({ text: "", align: "left" });
+      lines.push({ text: "Disetujui:", align: "left" });
+      lines.push({ text: "", align: "left" });
+      lines.push({ text: "____________________", align: "left" });
+      lines.push({ text: "Nama: ______________", align: "left" });
     }
   }
 
@@ -527,8 +547,14 @@ export function buildReceiptHtml(payload: ReceiptPayload, label: ThermalPrintLab
       <div class="row total"><span>TOTAL</span><span style="text-align:right">${formatCurrency(total)}${isArkPayment ? `<br><small style="font-weight:normal;font-size:11px;color:#555">/ ${formatArkCoin(total, payload.arkRate)}</small>` : ""}</span></div>
       ${
         isPreviewBill
-          ? `<div class="row"><span>Status</span><span>UNPAID</span></div>`
-          : `<div class="row"><span>Bayar (${paymentMethod.toUpperCase()})</span><span>${formatCurrency(total + change)}</span></div>
+          ? `<div class="row"><span>Status</span><span>UNPAID</span></div>
+      <div style="margin-top:14px">Disetujui:</div>
+      <div style="margin-top:22px">____________________</div>
+      <div>Nama: ______________</div>`
+          : payload.compType
+            ? `<div class="divider"></div>
+      <div class="center" style="font-weight:bold">${escapeHtml(compReceiptLabel(payload.compType, payload.compApprovedName) || "COMPLIMENTARY")}</div>`
+            : `<div class="row"><span>Bayar (${paymentMethod.toUpperCase()})</span><span>${formatCurrency(total + change)}</span></div>
       ${change > 0 ? `<div class="row"><span>Kembalian</span><span>${formatCurrency(change)}</span></div>` : ""}`
       }
     ` : `
