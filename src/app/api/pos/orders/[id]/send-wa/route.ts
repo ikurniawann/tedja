@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createPgClient } from "@/lib/pg/create-client";
 import { getPosSession } from "@/lib/api/auth";
-import { queryOne } from "@/lib/db";
+import { query, queryOne } from "@/lib/db";
 import { sendWhatsAppText } from "@/lib/whatsapp";
 import {
   buildOrderReceiptMessage,
@@ -45,7 +45,7 @@ export async function POST(
       .select(
         `id, order_number, ordered_at, total_amount, discount_amount,
          payment_method, payment_method_code, payment_method_name, amount_paid, payment_status,
-         branch_id, warehouse_id,
+         branch_id, warehouse_id, checkout_id,
          customer:pos_customers(name, phone),
          items:pos_order_items(product_name, quantity, total_amount)`
       )
@@ -84,7 +84,7 @@ export async function POST(
       branchId: (order as { branch_id?: string | null }).branch_id ?? null,
     });
 
-    const items = ((order.items as Array<{
+    let items = ((order.items as Array<{
       product_name: string;
       quantity: number | string;
       total_amount: number | string;
@@ -92,13 +92,77 @@ export async function POST(
       name: item.product_name,
       quantity: Number(item.quantity) || 1,
       total: Number(item.total_amount) || 0,
+      stallName: null as string | null,
     }));
 
-    const total = Number(order.total_amount) || 0;
-    const paid = Number(order.amount_paid) || 0;
+    let total = Number(order.total_amount) || 0;
+    let paid = Number(order.amount_paid) || 0;
+    let discount = Number(order.discount_amount) || 0;
+    let receiptNumber = String(order.order_number ?? orderId);
+
+    // Transaksi gabungan (checkout CHK): order ini hanya SATU anak dari
+    // beberapa stall. Struk harus memuat item SELURUH stall beserta total
+    // gabungannya — laporan owner 2026-08-25: sebelumnya hanya item satu
+    // stall yang terkirim sehingga struk pelanggan tidak lengkap.
+    const checkoutId = (order as { checkout_id?: string | null }).checkout_id;
+    if (checkoutId) {
+      const family = await query<{
+        id: string;
+        order_number: string | null;
+        total_amount: string | number | null;
+        discount_amount: string | number | null;
+        amount_paid: string | number | null;
+        stall_name: string | null;
+      }>(
+        `SELECT o.id, o.order_number, o.total_amount, o.discount_amount,
+                o.amount_paid, w.name AS stall_name
+           FROM pos.pos_orders o
+           LEFT JOIN configuration.warehouses w ON w.id = o.warehouse_id
+          WHERE o.checkout_id = $1
+            AND o.status NOT IN ('cancelled', 'voided', 'merged')
+          ORDER BY o.order_number`,
+        [checkoutId]
+      );
+
+      if (family.length > 1) {
+        const familyIds = family.map((row) => row.id);
+        const familyItems = await query<{
+          order_id: string;
+          product_name: string | null;
+          quantity: string | number | null;
+          total_amount: string | number | null;
+        }>(
+          `SELECT order_id, product_name, quantity, total_amount
+             FROM pos.pos_order_items
+            WHERE order_id = ANY($1::uuid[])
+            ORDER BY order_id, id`,
+          [familyIds]
+        );
+        const stallById = new Map(family.map((row) => [row.id, row.stall_name]));
+
+        items = familyItems.map((item) => ({
+          name: item.product_name || "Item",
+          quantity: Number(item.quantity) || 1,
+          total: Number(item.total_amount) || 0,
+          stallName: stallById.get(item.order_id) ?? null,
+        }));
+        const sum = (pick: (r: (typeof family)[number]) => unknown) =>
+          family.reduce((acc, row) => acc + (Number(pick(row)) || 0), 0);
+        total = sum((r) => r.total_amount);
+        discount = sum((r) => r.discount_amount);
+        paid = sum((r) => r.amount_paid);
+
+        const checkout = await queryOne<{ checkout_number: string | null }>(
+          `SELECT checkout_number FROM pos.pos_checkouts WHERE id = $1`,
+          [checkoutId]
+        );
+        if (checkout?.checkout_number) receiptNumber = checkout.checkout_number;
+      }
+    }
+
     const message = buildOrderReceiptMessage({
       outletName: outlet?.name ?? "Kasir",
-      orderNumber: String(order.order_number ?? orderId),
+      orderNumber: receiptNumber,
       orderedAt: String(order.ordered_at ?? new Date().toISOString()),
       items,
       total,
@@ -107,7 +171,7 @@ export async function POST(
         name: order.payment_method_name,
       }),
       change: Math.max(0, paid - total),
-      discountAmount: Number(order.discount_amount) || 0,
+      discountAmount: discount,
       customerName: customer?.name ?? null,
       footerLines: receiptSettings.footer_lines,
     });

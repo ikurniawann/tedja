@@ -55,7 +55,16 @@ export interface OrderReceiptInput {
   outletName: string;
   orderNumber: string;
   orderedAt: string;
-  items: Array<{ name: string; quantity: number; total: number }>;
+  /**
+   * Item struk. `stallName` diisi untuk transaksi gabungan (checkout CHK)
+   * supaya pelanggan melihat item SETIAP stall, dikelompokkan per stall.
+   */
+  items: Array<{
+    name: string;
+    quantity: number;
+    total: number;
+    stallName?: string | null;
+  }>;
   total: number;
   paymentMethod: string;
   change: number;
@@ -77,8 +86,30 @@ export function buildOrderReceiptMessage(input: OrderReceiptInput): string {
   if (input.customerName) baris.push(`Pelanggan: ${input.customerName}`);
 
   baris.push("");
-  for (const item of input.items) {
-    baris.push(`${item.quantity}x ${item.name} — ${rupiah(item.total)}`);
+  // Transaksi gabungan (CHK) memuat item dari beberapa stall — kelompokkan
+  // per stall supaya jelas, tapi transaksi satu stall tetap tampil datar.
+  const stallNames = [
+    ...new Set(
+      input.items.map((item) => item.stallName?.trim() || "").filter(Boolean)
+    ),
+  ];
+  if (stallNames.length > 1) {
+    for (const stall of stallNames) {
+      baris.push(`_${stall}_`);
+      for (const item of input.items) {
+        if ((item.stallName?.trim() || "") !== stall) continue;
+        baris.push(`${item.quantity}x ${item.name} — ${rupiah(item.total)}`);
+      }
+    }
+    // Item tanpa stall (mis. data lama) tetap ikut tercetak, jangan hilang.
+    const tanpaStall = input.items.filter((item) => !item.stallName?.trim());
+    for (const item of tanpaStall) {
+      baris.push(`${item.quantity}x ${item.name} — ${rupiah(item.total)}`);
+    }
+  } else {
+    for (const item of input.items) {
+      baris.push(`${item.quantity}x ${item.name} — ${rupiah(item.total)}`);
+    }
   }
   baris.push("");
 
