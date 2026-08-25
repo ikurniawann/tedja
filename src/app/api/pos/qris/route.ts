@@ -68,6 +68,15 @@ export async function POST(request: NextRequest) {
 
     // Validasi bill dilakukan SEBELUM memuat gateway: selisih nominal harus
     // ketahuan duluan, bukan tersembunyi di balik error konfigurasi Xendit.
+    // Baris QRIS-nya sendiri (reuse vs create) dikeputuskan SETELAH gateway
+    // dimuat — lihat blok di bawah, simetris dengan pola checkout.
+    let orderRow: {
+      id: string;
+      order_number: string | null;
+      total_amount: number | string | null;
+      xendit_qr_id: string | null;
+      xendit_external_id: string | null;
+    } | null = null;
     if (orderId) {
       const { data: order, error: orderError } = await db
         .from("pos_orders")
@@ -106,21 +115,7 @@ export async function POST(request: NextRequest) {
         );
       }
       amount = orderTotal;
-      referenceId = `pos-ord-${orderId}`;
-
-      const { error: reserveError } = await db
-        .from("pos_orders")
-        .update({
-          xendit_external_id: referenceId,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", orderId);
-      if (reserveError) {
-        return NextResponse.json(
-          { success: false, error: "Gagal menyimpan QRIS order" },
-          { status: 500 }
-        );
-      }
+      orderRow = order;
     }
 
     let xendit;
@@ -136,6 +131,96 @@ export async function POST(request: NextRequest) {
         );
       }
       throw err;
+    }
+
+    // Bug #1 fix (insiden 2026-08-25): QR order sebelumnya SELALU dibuat baru
+    // dengan reference_id deterministik (pos-ord-${orderId}), tanpa cek QR
+    // yang sudah ada — beda dgn checkout di bawah yang sudah reuse. Efeknya:
+    // begitu effect layar kasir re-run (mis. totalAfterArk goyang sedikit
+    // krn floating point/diskon), endpoint ini dipanggil ulang, Xendit
+    // menolak reference_id duplikat, dan bill nyangkut tanpa QR yang valid.
+    // Pola reuse sekarang disamakan persis dengan checkout.
+    if (orderId && orderRow) {
+      const qrisAction = resolveCheckoutQrisAction({
+        xendit_qr_id: orderRow.xendit_qr_id,
+        xendit_external_id: orderRow.xendit_external_id,
+      });
+      let reusedOrderQr: Awaited<ReturnType<typeof getXenditQrCode>> | null = null;
+      if (qrisAction !== "create") {
+        try {
+          reusedOrderQr =
+            qrisAction === "reuse_qr_id"
+              ? await getXenditQrCode(xendit.secretKey, String(orderRow.xendit_qr_id))
+              : await getXenditQrCodeByReferenceId(
+                  xendit.secretKey,
+                  String(orderRow.xendit_external_id)
+                );
+        } catch (lookupErr) {
+          // QA 2026-08-25: reservasi lama (xendit_external_id tersimpan) tapi
+          // QR-nya sendiri gagal terbentuk di Xendit (mis. koneksi putus
+          // tepat setelah reservasi) — reuse lookup akan SELALU gagal &
+          // bill nyangkut permanen kalau berhenti di sini. Anggap reservasi
+          // basi, lanjut ke jalur create baru di bawah.
+          console.warn(
+            `[pos] qris reuse lookup miss, falling back to create: order=${orderId}`,
+            lookupErr instanceof Error ? lookupErr.message : lookupErr
+          );
+        }
+      }
+      if (reusedOrderQr) {
+        if (qrisAction === "lookup_external_id" && reusedOrderQr.id && !orderRow.xendit_qr_id) {
+          const { error: healError } = await db
+            .from("pos_orders")
+            .update({
+              xendit_qr_id: reusedOrderQr.id,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", orderId);
+          if (healError) {
+            return NextResponse.json(
+              { success: false, error: "Gagal menyimpan QRIS order" },
+              { status: 500 }
+            );
+          }
+        }
+        return NextResponse.json({
+          success: true,
+          data: {
+            qr_id: String(reusedOrderQr.id || orderRow.xendit_qr_id || ""),
+            reference_id: String(
+              (reusedOrderQr as { reference_id?: unknown }).reference_id ||
+                orderRow.xendit_external_id ||
+                ""
+            ),
+            qr_string: String((reusedOrderQr as { qr_string?: unknown }).qr_string || ""),
+            amount:
+              Number(
+                (reusedOrderQr as { amount?: unknown }).amount != null
+                  ? (reusedOrderQr as { amount?: unknown }).amount
+                  : amount
+              ) || amount,
+            expires_at: (reusedOrderQr as { expires_at?: unknown }).expires_at
+              ? String((reusedOrderQr as { expires_at?: unknown }).expires_at)
+              : null,
+            order_id: orderId,
+          },
+        });
+      }
+
+      referenceId = `pos-ord-${orderId}`;
+      const { error: reserveError } = await db
+        .from("pos_orders")
+        .update({
+          xendit_external_id: referenceId,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", orderId);
+      if (reserveError) {
+        return NextResponse.json(
+          { success: false, error: "Gagal menyimpan QRIS order" },
+          { status: 500 }
+        );
+      }
     }
 
     if (checkoutId) {
@@ -171,19 +256,32 @@ export async function POST(request: NextRequest) {
         xendit_qr_id: checkout.xendit_qr_id,
         xendit_external_id: checkout.xendit_external_id,
       });
+      let reusedCheckoutQr: Awaited<ReturnType<typeof getXenditQrCode>> | null = null;
       if (qrisAction !== "create") {
-        const remote =
-          qrisAction === "reuse_qr_id"
-            ? await getXenditQrCode(xendit.secretKey, String(checkout.xendit_qr_id))
-            : await getXenditQrCodeByReferenceId(
-                xendit.secretKey,
-                String(checkout.xendit_external_id)
-              );
-        if (qrisAction === "lookup_external_id" && remote.id && !checkout.xendit_qr_id) {
+        try {
+          reusedCheckoutQr =
+            qrisAction === "reuse_qr_id"
+              ? await getXenditQrCode(xendit.secretKey, String(checkout.xendit_qr_id))
+              : await getXenditQrCodeByReferenceId(
+                  xendit.secretKey,
+                  String(checkout.xendit_external_id)
+                );
+        } catch (lookupErr) {
+          // QA 2026-08-25: sama seperti order — reservasi lama bisa basi
+          // kalau pembuatan QR sebelumnya gagal network setelah reservasi
+          // tersimpan. Jangan deadlock permanen; lanjut ke jalur create baru.
+          console.warn(
+            `[pos] qris reuse lookup miss, falling back to create: checkout=${checkoutId}`,
+            lookupErr instanceof Error ? lookupErr.message : lookupErr
+          );
+        }
+      }
+      if (reusedCheckoutQr) {
+        if (qrisAction === "lookup_external_id" && reusedCheckoutQr.id && !checkout.xendit_qr_id) {
           const { error: healError } = await db
             .from("pos_checkouts")
             .update({
-              xendit_qr_id: remote.id,
+              xendit_qr_id: reusedCheckoutQr.id,
               updated_at: new Date().toISOString(),
             })
             .eq("id", checkoutId);
@@ -197,21 +295,21 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({
           success: true,
           data: {
-            qr_id: String(remote.id || checkout.xendit_qr_id || ""),
+            qr_id: String(reusedCheckoutQr.id || checkout.xendit_qr_id || ""),
             reference_id: String(
-              (remote as { reference_id?: unknown }).reference_id ||
+              (reusedCheckoutQr as { reference_id?: unknown }).reference_id ||
                 checkout.xendit_external_id ||
                 ""
             ),
-            qr_string: String((remote as { qr_string?: unknown }).qr_string || ""),
+            qr_string: String((reusedCheckoutQr as { qr_string?: unknown }).qr_string || ""),
             amount:
               Number(
-                (remote as { amount?: unknown }).amount != null
-                  ? (remote as { amount?: unknown }).amount
+                (reusedCheckoutQr as { amount?: unknown }).amount != null
+                  ? (reusedCheckoutQr as { amount?: unknown }).amount
                   : amount
               ) || amount,
-            expires_at: (remote as { expires_at?: unknown }).expires_at
-              ? String((remote as { expires_at?: unknown }).expires_at)
+            expires_at: (reusedCheckoutQr as { expires_at?: unknown }).expires_at
+              ? String((reusedCheckoutQr as { expires_at?: unknown }).expires_at)
               : null,
             checkout_id: checkoutId,
           },
@@ -300,6 +398,7 @@ export async function POST(request: NextRequest) {
         amount: qr.amount,
         expires_at: qr.expires_at,
         ...(checkoutId ? { checkout_id: checkoutId } : {}),
+        ...(orderId ? { order_id: orderId } : {}),
         merchant_name:
           identity[SETTING_KEYS.QRIS_MERCHANT_NAME] ||
           identity[SETTING_KEYS.COMPANY_LEGAL_NAME] ||

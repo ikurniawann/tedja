@@ -6,6 +6,7 @@ import {
   resolveXenditPaidWebhookAction,
 } from "@/lib/pos/create-mixed-checkout";
 import { creditPendingTopup } from "@/lib/pos/topup-credit";
+import { settleOrderQrisPayment } from "@/lib/pos/settle-order-qris";
 import {
   extractXenditWebhookToken,
   loadActiveXenditConfig,
@@ -118,10 +119,37 @@ export async function POST(request: NextRequest) {
       childCount = (children || []).length;
     }
 
+    // Bug #2 fix (insiden 2026-08-25): QRIS diikat ke SATU order open bill
+    // (bukan checkout) sejak 2026-08-23 — webhook belum pernah mengenali
+    // kasus ini, jadi pembayaran yang lunas di Xendit tidak pernah
+    // auto-settle di sini (hanya lewat polling client, yang gagal kalau tab
+    // kasir ditutup). Dicari HANYA kalau bukan topup & bukan checkout.
+    let standaloneOrderId: string | null = null;
+    if (!txId && !checkoutId && parsed.referenceId) {
+      try {
+        const { data: order, error: orderLookupError } = await db
+          .from("pos_orders")
+          .select("id")
+          .eq("xendit_external_id", parsed.referenceId)
+          .maybeSingle();
+        if (orderLookupError) {
+          console.warn("[xendit webhook] order lookup skipped:", orderLookupError.message);
+        } else if (order?.id) {
+          standaloneOrderId = String(order.id);
+        }
+      } catch (error) {
+        console.warn(
+          "[xendit webhook] order lookup skipped:",
+          error instanceof Error ? error.message : error
+        );
+      }
+    }
+
     const action = resolveXenditPaidWebhookAction({
       topupId: txId,
       checkoutId,
       childCount,
+      orderId: standaloneOrderId,
     });
 
     if (action.type === "credit_topup" && txId) {
@@ -159,6 +187,17 @@ export async function POST(request: NextRequest) {
         data: {
           checkout_id: action.checkoutId,
           order_ids: result.orderIds,
+        },
+      });
+    }
+
+    if (action.type === "complete_order") {
+      const result = await settleOrderQrisPayment(db, action.orderId);
+      return NextResponse.json({
+        success: true,
+        data: {
+          order_id: action.orderId,
+          settle_status: result.status,
         },
       });
     }
