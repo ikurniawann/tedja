@@ -61,6 +61,53 @@ describe("buildOrderReceiptMessage", () => {
     expect(pesan.toUpperCase()).toContain("QRIS");
   });
 
+  it("transaksi gabungan: item SEMUA stall ikut, dikelompokkan per stall", () => {
+    const pesan = buildOrderReceiptMessage({
+      ...dasar,
+      orderNumber: "CHK-20260825-0012",
+      items: [
+        { name: "Cofe Peach", quantity: 1, total: 36_000, stallName: "Yakitori Stall" },
+        { name: "Matchaaa Pistachio", quantity: 1, total: 36_000, stallName: "Rice bowl Stall" },
+        { name: "Gyoza", quantity: 2, total: 40_000, stallName: "Dumpling Stall" },
+      ],
+      total: 112_000,
+    });
+    // tiap stall punya judulnya sendiri
+    expect(pesan).toContain("_Yakitori Stall_");
+    expect(pesan).toContain("_Rice bowl Stall_");
+    expect(pesan).toContain("_Dumpling Stall_");
+    // dan TIDAK ada produk yang hilang
+    expect(pesan).toContain("1x Cofe Peach");
+    expect(pesan).toContain("1x Matchaaa Pistachio");
+    expect(pesan).toContain("2x Gyoza");
+    expect(pesan).toContain("Rp 112.000");
+  });
+
+  it("transaksi satu stall tetap tampil datar tanpa judul stall", () => {
+    const pesan = buildOrderReceiptMessage({
+      ...dasar,
+      items: [
+        { name: "Kopi Susu", quantity: 2, total: 36_000, stallName: "Yakitori Stall" },
+        { name: "Croissant", quantity: 1, total: 28_000, stallName: "Yakitori Stall" },
+      ],
+    });
+    expect(pesan).not.toContain("_Yakitori Stall_");
+    expect(pesan).toContain("2x Kopi Susu");
+    expect(pesan).toContain("1x Croissant");
+  });
+
+  it("item tanpa nama stall tetap ikut tercetak di transaksi gabungan", () => {
+    const pesan = buildOrderReceiptMessage({
+      ...dasar,
+      items: [
+        { name: "Cofe Peach", quantity: 1, total: 36_000, stallName: "Yakitori Stall" },
+        { name: "Gyoza", quantity: 1, total: 20_000, stallName: "Dumpling Stall" },
+        { name: "Item Lama", quantity: 1, total: 10_000 },
+      ],
+    });
+    expect(pesan).toContain("1x Item Lama");
+  });
+
   it("diskon tampil hanya bila ada", () => {
     expect(buildOrderReceiptMessage(dasar)).not.toContain("Diskon");
     expect(
