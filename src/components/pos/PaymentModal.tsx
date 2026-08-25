@@ -40,6 +40,7 @@ import {
   mayConfirmMixedQris,
   mixedQrisCheckoutIdForAmount,
   shouldSkipQrisPrepare,
+  shouldStopQrisAutoRetry,
 } from "@/lib/pos/central-cashier";
 import { cancelCheckout } from "@/lib/pos-api";
 import {
@@ -203,6 +204,11 @@ export function PaymentModal({
   const [qrisUnavailable, setQrisUnavailable] = useState(false);
   const [qrisError, setQrisError] = useState<string | null>(null);
   const [qrisPaid, setQrisPaid] = useState(false);
+  // Bug #3 fix (insiden 2026-08-25): pesan error saat settle QRIS gagal
+  // berulang — Xendit sudah bilang lunas tapi server terus menolak
+  // (mis. 409 nominal berubah). Berhenti auto-retry, tampilkan ke kasir.
+  const [qrisSettleError, setQrisSettleError] = useState<string | null>(null);
+  const qrisConfirmAttempts = useRef(0);
   const [mixedQrisCheckout, setMixedQrisCheckout] = useState<{
     checkout_id: string;
     checkout_number?: string;
@@ -470,6 +476,8 @@ export function PaymentModal({
         nmid: body.data.nmid ?? null,
       });
       setQrisPaid(false);
+      setQrisSettleError(null);
+      qrisConfirmAttempts.current = 0;
       qrisConfirmStarted.current = false;
     };
 
@@ -489,9 +497,63 @@ export function PaymentModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, method, totalAfterArk, isMixedCart, payingOrderId]);
 
+  // Bug #3 fix (insiden 2026-08-25): satu tempat utk memicu settle QRIS,
+  // dipakai baik oleh poll otomatis maupun tombol "Coba lagi" manual. Kalau
+  // settle di server terus gagal (Xendit sudah lunas tapi PATCH order
+  // menolak — mis. total bill berubah), JANGAN retry tanpa batas: itu bikin
+  // kasir/pelanggan melihat "menyelesaikan…" berputar selamanya. Setelah
+  // QRIS_MAX_AUTO_CONFIRM_ATTEMPTS gagal, berhenti otomatis dan tampilkan
+  // errornya — kasir yang putuskan lewat retry manual.
+  const runQrisConfirm = (payload: Parameters<typeof onConfirm>[0]) => {
+    qrisConfirmStarted.current = true;
+    setQrisPaid(true);
+    void Promise.resolve(onConfirmRef.current(payload))
+      .then(() => {
+        qrisConfirmAttempts.current = 0;
+      })
+      .catch((err: unknown) => {
+        qrisConfirmAttempts.current += 1;
+        if (shouldStopQrisAutoRetry(qrisConfirmAttempts.current)) {
+          const message =
+            err instanceof Error ? err.message : "Gagal menyelesaikan pembayaran QRIS";
+          setQrisSettleError(message);
+          // qrisConfirmStarted TETAP true — cegah poll auto-retry lagi;
+          // kasir lanjut lewat tombol "Coba lagi" (retryQrisSettle).
+        } else {
+          qrisConfirmStarted.current = false;
+          setQrisPaid(false);
+        }
+      });
+  };
+
+  const retryQrisSettle = () => {
+    if (!qris?.qr_id) return;
+    setQrisSettleError(null);
+    qrisConfirmAttempts.current = 0;
+    runQrisConfirm({
+      method: "qris",
+      cashReceived: "",
+      arkToUse,
+      checkoutId: mixedQrisCheckout?.checkout_id,
+      checkoutNumber: mixedQrisCheckout?.checkout_number,
+      queueNumber: mixedQrisCheckout?.queue_number,
+      xenditQrId: qris.qr_id,
+      xenditExternalId: qris.reference_id,
+      paymentMethodCode: "qris",
+      paymentMethodName: "QRIS",
+    });
+  };
+
   // QRIS lunas di Xendit → checkout otomatis, sama seperti tunai.
   useEffect(() => {
-    if (!open || method !== "qris" || !qris?.qr_id || qrisUnavailable || submitting) {
+    if (
+      !open ||
+      method !== "qris" ||
+      !qris?.qr_id ||
+      qrisUnavailable ||
+      submitting ||
+      qrisSettleError
+    ) {
       return;
     }
     if (qrisConfirmStarted.current) return;
@@ -513,24 +575,17 @@ export function PaymentModal({
           ) {
             return;
           }
-          qrisConfirmStarted.current = true;
-          setQrisPaid(true);
-          void Promise.resolve(
-            onConfirmRef.current({
-              method: "qris",
-              cashReceived: "",
-              arkToUse,
-              checkoutId: mixedQrisCheckout?.checkout_id,
-              checkoutNumber: mixedQrisCheckout?.checkout_number,
-              queueNumber: mixedQrisCheckout?.queue_number,
-              xenditQrId: qris.qr_id,
-              xenditExternalId: qris.reference_id,
-              paymentMethodCode: "qris",
-              paymentMethodName: "QRIS",
-            })
-          ).catch(() => {
-            qrisConfirmStarted.current = false;
-            setQrisPaid(false);
+          runQrisConfirm({
+            method: "qris",
+            cashReceived: "",
+            arkToUse,
+            checkoutId: mixedQrisCheckout?.checkout_id,
+            checkoutNumber: mixedQrisCheckout?.checkout_number,
+            queueNumber: mixedQrisCheckout?.queue_number,
+            xenditQrId: qris.qr_id,
+            xenditExternalId: qris.reference_id,
+            paymentMethodCode: "qris",
+            paymentMethodName: "QRIS",
           });
         }
       } catch {
@@ -547,15 +602,26 @@ export function PaymentModal({
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [open, method, qris?.qr_id, qrisUnavailable, submitting, arkToUse, mixedQrisCheckout, isMixedCart]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    open,
+    method,
+    qris?.qr_id,
+    qrisUnavailable,
+    submitting,
+    qrisSettleError,
+    arkToUse,
+    mixedQrisCheckout,
+    isMixedCart,
+  ]);
 
   useEffect(() => {
-    if (qrisWasSubmitting.current && !submitting && qrisPaid && open) {
+    if (qrisWasSubmitting.current && !submitting && qrisPaid && open && !qrisSettleError) {
       qrisConfirmStarted.current = false;
       setQrisPaid(false);
     }
     qrisWasSubmitting.current = submitting;
-  }, [submitting, qrisPaid, open]);
+  }, [submitting, qrisPaid, open, qrisSettleError]);
 
   const cashAmount = parseIdrDigits(cashReceived);
   const change = method === "cash" ? cashAmount - totalAfterArk : 0;
@@ -980,14 +1046,24 @@ export function PaymentModal({
             Cancel
           </Button>
           {waitForQris ? (
-            <Button
-              type="button"
-              className="bg-primary hover:bg-primary/90"
-              disabled
-            >
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              {qrisPaid || submitting ? "Processing…" : "Menunggu pembayaran…"}
-            </Button>
+            qrisSettleError ? (
+              <Button
+                type="button"
+                className="bg-primary hover:bg-primary/90"
+                onClick={retryQrisSettle}
+              >
+                Coba lagi
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                className="bg-primary hover:bg-primary/90"
+                disabled
+              >
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                {qrisPaid || submitting ? "Processing…" : "Menunggu pembayaran…"}
+              </Button>
+            )
           ) : (
             <Button
               type="button"
@@ -1055,22 +1131,44 @@ export function PaymentModal({
               <div className="text-2xl font-bold tabular-nums text-gray-900">
                 {formatCurrency(qris.amount)}
               </div>
-              <p className="mt-1 inline-flex items-center gap-2 text-xs text-muted-foreground">
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                {qrisPaid || submitting
-                  ? "Pembayaran diterima, menyelesaikan…"
-                  : "Menunggu pembayaran pelanggan…"}
-              </p>
+              {qrisSettleError ? (
+                <p className="mt-1 flex items-center justify-center gap-2 text-xs font-medium text-destructive">
+                  <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                  <span>Pembayaran diterima Xendit, tapi gagal disimpan: {qrisSettleError}</span>
+                </p>
+              ) : (
+                <p className="mt-1 inline-flex items-center gap-2 text-xs text-muted-foreground">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  {qrisPaid || submitting
+                    ? "Pembayaran diterima, menyelesaikan…"
+                    : "Menunggu pembayaran pelanggan…"}
+                </p>
+              )}
             </div>
-            <Button
-              type="button"
-              variant="outline"
-              className="border-white/40 bg-white/90 hover:bg-white"
-              disabled={qrisPaid || submitting}
-              onClick={() => setMethod("cash")}
-            >
-              Pilih metode lain
-            </Button>
+            {qrisSettleError ? (
+              // Bug #3 fix (insiden 2026-08-25): uang SUDAH diterima Xendit —
+              // jangan tawarkan "Pilih metode lain" di sini (risiko tagih
+              // dobel). Hanya retry manual; kalau terus gagal, kasir tahu
+              // persis kenapa (pesan error server) dan bisa panggil
+              // supervisor alih-alih menatap spinner tanpa penjelasan.
+              <Button
+                type="button"
+                className="bg-primary hover:bg-primary/90"
+                onClick={retryQrisSettle}
+              >
+                Coba lagi
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                variant="outline"
+                className="border-white/40 bg-white/90 hover:bg-white"
+                disabled={qrisPaid || submitting}
+                onClick={() => setMethod("cash")}
+              >
+                Pilih metode lain
+              </Button>
+            )}
           </div>
         </div>
       ) : null}

@@ -625,6 +625,52 @@ describe("resolveXenditPaidWebhookAction", () => {
       })
     ).toEqual({ type: "noop_checkout", checkoutId: "chk-1" });
   });
+
+  // Bug #2 (insiden 2026-08-25): QRIS diikat ke satu order open bill —
+  // webhook harus mengenali & menyelesaikannya, bukan diabaikan.
+  it("completes a standalone order when it matches and no checkout matched", () => {
+    expect(
+      resolveXenditPaidWebhookAction({
+        topupId: null,
+        checkoutId: null,
+        childCount: 0,
+        orderId: "ord-1",
+      })
+    ).toEqual({ type: "complete_order", orderId: "ord-1" });
+  });
+
+  it("prefers checkout over a standalone order when both are somehow present", () => {
+    expect(
+      resolveXenditPaidWebhookAction({
+        topupId: null,
+        checkoutId: "chk-1",
+        childCount: 0,
+        orderId: "ord-1",
+      })
+    ).toEqual({ type: "complete_checkout", checkoutId: "chk-1" });
+  });
+
+  it("prefers topup over a standalone order when both are somehow present", () => {
+    expect(
+      resolveXenditPaidWebhookAction({
+        topupId: "tx-1",
+        checkoutId: null,
+        childCount: 0,
+        orderId: "ord-1",
+      })
+    ).toEqual({ type: "credit_topup" });
+  });
+
+  it("still ignores when neither topup, checkout, nor order matched", () => {
+    expect(
+      resolveXenditPaidWebhookAction({
+        topupId: null,
+        checkoutId: null,
+        childCount: 0,
+        orderId: null,
+      })
+    ).toEqual({ type: "ignore" });
+  });
 });
 
 describe("resolveCompleteCheckoutTender", () => {
