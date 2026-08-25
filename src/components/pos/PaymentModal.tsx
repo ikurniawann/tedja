@@ -39,6 +39,7 @@ import {
   isMixedUnsupportedTender,
   mayConfirmMixedQris,
   mixedQrisCheckoutIdForAmount,
+  shouldPrepareOrderForQris,
   shouldSkipQrisPrepare,
   shouldStopQrisAutoRetry,
 } from "@/lib/pos/central-cashier";
@@ -160,6 +161,18 @@ interface Props {
     checkout_number?: string;
     queue_number?: string | null;
   }>;
+  /**
+   * Bug #5 fix (insiden 2026-08-25): jual instan via QRIS (bukan open bill,
+   * bukan checkout multi-stall) — dipanggil SEBELUM QR dibuat supaya order
+   * tersimpan 'unpaid' duluan (mirror onPrepareMixedQrisCheckout), sehingga
+   * kalau settle gagal setelah customer bayar, order tetap ada & bisa
+   * diselesaikan manual — bukan hilang tanpa jejak.
+   */
+  onPrepareOrderQris?: () => Promise<{
+    order_id: string;
+    order_number?: string;
+    queue_number?: string | null;
+  }>;
 }
 
 export function PaymentModal({
@@ -180,6 +193,7 @@ export function PaymentModal({
   isCheckoutBill = false,
   payingOrderId = null,
   onPrepareMixedQrisCheckout,
+  onPrepareOrderQris,
 }: Props) {
   const methodsQuery = usePaymentMethods(true);
   const [method, setMethod] = useState<PaymentMethod>("cash");
@@ -209,6 +223,15 @@ export function PaymentModal({
   // (mis. 409 nominal berubah). Berhenti auto-retry, tampilkan ke kasir.
   const [qrisSettleError, setQrisSettleError] = useState<string | null>(null);
   const qrisConfirmAttempts = useRef(0);
+  // Bug #5 fix (insiden 2026-08-25): order 'unpaid' yang dibuat via
+  // onPrepareOrderQris sebelum QR jual-instan dimunculkan.
+  const [preparedOrderQris, setPreparedOrderQris] = useState<{
+    order_id: string;
+    order_number?: string;
+    queue_number?: string | null;
+  } | null>(null);
+  const preparedOrderQrisRef = useRef(preparedOrderQris);
+  preparedOrderQrisRef.current = preparedOrderQris;
   const [mixedQrisCheckout, setMixedQrisCheckout] = useState<{
     checkout_id: string;
     checkout_number?: string;
@@ -401,6 +424,12 @@ export function PaymentModal({
   useEffect(() => {
     setGiftResult(null);
   }, [total]);
+  // Bug #5 fix (insiden 2026-08-25): total berubah (item ditambah/dihapus)
+  // sebelum bayar → order 'unpaid' yang sempat disiapkan tidak lagi cocok
+  // dengan cart; lupakan supaya effect di bawah menyiapkan yang baru.
+  useEffect(() => {
+    setPreparedOrderQris(null);
+  }, [totalAfterArk]);
   // Buat QR dinamis saat QRIS dipilih. Gagal → jangan settle; kasir pilih
   // metode lain. Confirm QRIS hanya lewat poll Xendit (bukan klik manual).
   useEffect(() => {
@@ -445,6 +474,28 @@ export function PaymentModal({
         }
       }
 
+      // Bug #5 fix (insiden 2026-08-25): jual instan single-stall — bikin
+      // order 'unpaid' DULU supaya QR selalu terikat ke order tersimpan,
+      // sama seperti checkout multi-stall di atas. Kalau bayar gagal
+      // ter-settle, order tetap ada di Orders (bukan orphan tanpa jejak).
+      let orderId = payingOrderId || preparedOrderQrisRef.current?.order_id || null;
+      if (
+        shouldPrepareOrderForQris({
+          method,
+          isMixedCart,
+          payingOrderId,
+          hasPreparedOrder: Boolean(preparedOrderQrisRef.current),
+        })
+      ) {
+        if (!onPrepareOrderQris) {
+          throw new Error("Penjualan QRIS membutuhkan persiapan order");
+        }
+        const prepared = await onPrepareOrderQris();
+        if (cancelled) return;
+        setPreparedOrderQris(prepared);
+        orderId = prepared.order_id;
+      }
+
       const res = await fetch("/api/pos/qris", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -452,7 +503,7 @@ export function PaymentModal({
           buildPosQrisCreateBody({
             amount: totalAfterArk,
             checkoutId,
-            orderId: payingOrderId,
+            orderId,
           })
         ),
       });
