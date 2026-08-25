@@ -13,6 +13,7 @@ import {
   buildCheckoutBillPayBody,
   mapPaidSaleToReceiptIds,
   mayConfirmMixedQris,
+  shouldStopQrisAutoRetry,
   shouldWaitForQrisConfirm,
   mixedQrisCheckoutIdForAmount,
   resolveAddCatalogItem,
@@ -198,6 +199,22 @@ describe("mixed cart payment UI", () => {
         qrisPaid: false,
       })
     ).toBe(true);
+  });
+
+  // Bug #3 (insiden 2026-08-25): tanpa batas ini, auto-confirm QRIS retry
+  // selamanya kalau settle di server terus gagal — kasir melihat "menyelesaikan…"
+  // berputar terus meski Xendit sudah bilang lunas.
+  describe("shouldStopQrisAutoRetry", () => {
+    it("keeps retrying below the attempt cap", () => {
+      expect(shouldStopQrisAutoRetry(0)).toBe(false);
+      expect(shouldStopQrisAutoRetry(1)).toBe(false);
+      expect(shouldStopQrisAutoRetry(2)).toBe(false);
+    });
+
+    it("stops once the cap is reached", () => {
+      expect(shouldStopQrisAutoRetry(3)).toBe(true);
+      expect(shouldStopQrisAutoRetry(4)).toBe(true);
+    });
   });
 
   it("blocks single-stall QRIS confirm until Xendit poll says paid", () => {

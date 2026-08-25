@@ -139,6 +139,17 @@ export function mayConfirmMixedQris(input: {
   return true;
 }
 
+// Bug #3 (insiden 2026-08-25): auto-confirm QRIS sebelumnya retry TANPA
+// batas begitu Xendit bilang lunas — kalau settle di server terus gagal
+// (mis. total bill berubah setelah QR dibuat), kasir/pelanggan melihat
+// "Pembayaran diterima, menyelesaikan…" berputar SELAMANYA meski uang
+// sudah masuk. Batasi percobaan otomatis; sisanya kasir yang putuskan.
+export const QRIS_MAX_AUTO_CONFIRM_ATTEMPTS = 3;
+
+export function shouldStopQrisAutoRetry(attempts: number): boolean {
+  return attempts >= QRIS_MAX_AUTO_CONFIRM_ATTEMPTS;
+}
+
 /** Keep Confirm disabled for QRIS until poll marks paid — including while QR is still created. */
 export function shouldWaitForQrisConfirm(input: {
   method: string;

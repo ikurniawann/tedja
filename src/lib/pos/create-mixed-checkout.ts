@@ -432,18 +432,27 @@ export type XenditPaidWebhookAction =
   | { type: "credit_topup" }
   | { type: "complete_checkout"; checkoutId: string }
   | { type: "noop_checkout"; checkoutId: string }
+  | { type: "complete_order"; orderId: string }
   | { type: "ignore" };
 
 export function resolveXenditPaidWebhookAction(input: {
   topupId?: string | null;
   checkoutId?: string | null;
   childCount: number;
+  // Bug #2 fix (insiden 2026-08-25): QRIS yang diikat ke SATU order open
+  // bill (bukan checkout gabungan) — webhook sebelumnya tidak punya jalur
+  // untuk kasus ini sama sekali, cuma bisa "ignore".
+  orderId?: string | null;
 }): XenditPaidWebhookAction {
   if (input.topupId) return { type: "credit_topup" };
   const checkoutId = String(input.checkoutId || "").trim();
-  if (!checkoutId) return { type: "ignore" };
-  if (input.childCount > 0) return { type: "noop_checkout", checkoutId };
-  return { type: "complete_checkout", checkoutId };
+  if (checkoutId) {
+    if (input.childCount > 0) return { type: "noop_checkout", checkoutId };
+    return { type: "complete_checkout", checkoutId };
+  }
+  const orderId = String(input.orderId || "").trim();
+  if (orderId) return { type: "complete_order", orderId };
+  return { type: "ignore" };
 }
 
 export type CompleteMixedCheckoutTender = {
