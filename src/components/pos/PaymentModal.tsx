@@ -368,6 +368,14 @@ export function PaymentModal({
       setQrisError(null);
       setQrisPaid(false);
       setMixedQrisCheckout(null);
+      // Bug #5 review fix (insiden 2026-08-25): preparedOrderQris cuma
+      // direset saat totalAfterArk berubah, padahal modal ini tidak pernah
+      // di-remount antar transaksi (tidak ada `key` di cashier-page.tsx).
+      // Kalau kasir tutup modal tanpa bayar lalu buka cart lain yang
+      // kebetulan totalnya sama dan pilih QRIS lagi, order lama yang basi
+      // bisa kepakai ulang. Reset di sini juga supaya selalu bersih di
+      // ketiga titik: tutup modal, ganti metode, dan total berubah.
+      setPreparedOrderQris(null);
       qrisConfirmStarted.current = false;
     }
   }, [open]);
@@ -388,6 +396,7 @@ export function PaymentModal({
       setQrisPaid(false);
       setQrisUnavailable(false);
       setQrisError(null);
+      setPreparedOrderQris(null);
       qrisConfirmStarted.current = false;
     }
   }, [isMixedCart, isCheckoutBill, method]);
@@ -406,6 +415,7 @@ export function PaymentModal({
     setQrisPaid(false);
     setQrisUnavailable(false);
     setQrisError(null);
+    setPreparedOrderQris(null);
     qrisConfirmStarted.current = false;
   }, [totalAfterArk]);
 
@@ -424,12 +434,6 @@ export function PaymentModal({
   useEffect(() => {
     setGiftResult(null);
   }, [total]);
-  // Bug #5 fix (insiden 2026-08-25): total berubah (item ditambah/dihapus)
-  // sebelum bayar → order 'unpaid' yang sempat disiapkan tidak lagi cocok
-  // dengan cart; lupakan supaya effect di bawah menyiapkan yang baru.
-  useEffect(() => {
-    setPreparedOrderQris(null);
-  }, [totalAfterArk]);
   // Buat QR dinamis saat QRIS dipilih. Gagal → jangan settle; kasir pilih
   // metode lain. Confirm QRIS hanya lewat poll Xendit (bukan klik manual).
   useEffect(() => {
