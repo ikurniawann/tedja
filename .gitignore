@@ -54,3 +54,4 @@ storage/uploads/
 storage/private/
 # cache OCR tesseract.js (diunduh runtime)
 *.traineddata
+.worktrees/
