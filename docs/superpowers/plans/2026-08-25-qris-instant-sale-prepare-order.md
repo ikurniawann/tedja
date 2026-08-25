@@ -714,7 +714,9 @@ Replace with:
   };
 ```
 
-- [ ] **Step 6: Add the `onAbandonOrderQris` prop**
+- [ ] **Step 6: Add the `onAbandonOrderQris` prop, and call it from the SAME two existing consolidated effects Task 3 already patched — do not add a new standalone effect**
+
+> **Why this step was rewritten (2026-08-25):** the original version of this step added a brand-new standalone `useEffect(..., [method])` calling `abandonPreparedOrderQris()`. A Task 3 review round caught the identical anti-pattern for `preparedOrderQris`'s state reset (a new one-off effect duplicating logic that belongs in this file's existing consolidated reset effects) and the fix was to integrate into the three pre-existing effects instead — see Task 3 Step 4's amended history. This file already has an established, working precedent for exactly this "abandon on close / abandon on method-switch" need: `abandonPreparedMixedQris()` (the mixed-cart equivalent) is called directly inside the SAME `[open]` effect and the SAME `[isMixedCart, isCheckoutBill, method]` effect that Task 3 Step 4 already added `setPreparedOrderQris(null);` to. Follow that established pattern — do not reintroduce a standalone effect.
 
 In the Props interface, right after the `onPrepareOrderQris` block added in Task 3 Step 1, add:
 
@@ -728,21 +730,14 @@ In the Props interface, right after the `onPrepareOrderQris` block added in Task
 
 And destructure it alongside `onPrepareOrderQris` in Task 3 Step 2's replacement (add `onAbandonOrderQris,` on its own line right after `onPrepareOrderQris,`).
 
-Also call `abandonPreparedOrderQris()` whenever `method` changes away from `"qris"` — find the method-select handler in the render body (search for `setMethod(` calls triggered by the payment-method tab buttons) and, for this task, simplest safe approach: add a `useEffect` right after the state declarations from Task 3 Step 3:
+Then, in the SAME two effects Task 3 Step 4 already modified, add one `abandonPreparedOrderQris();` call each, placed immediately next to the existing `abandonPreparedMixedQris();` call already in each of those effect bodies (same line grouping, same style — no new effect, no new dependency array):
 
-```ts
-  // Bug #5 fix (insiden 2026-08-25): kasir ganti metode dari QRIS ke yang
-  // lain SEBELUM bayar — order 'unpaid' yang sempat disiapkan jadi tidak
-  // relevan lagi, batalkan supaya stok yang diklaim tidak nyangkut.
-  useEffect(() => {
-    if (method !== "qris") {
-      abandonPreparedOrderQris();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [method]);
-```
+1. The `[open]` effect — inside `if (!open) { abandonPreparedMixedQris(); ... }`, add `abandonPreparedOrderQris();` right after `abandonPreparedMixedQris();`.
+2. The `[isMixedCart, isCheckoutBill, method]` effect — inside `if (method !== "qris") { abandonPreparedMixedQris(); ... }`, add `abandonPreparedOrderQris();` right after `abandonPreparedMixedQris();`.
 
-Place this effect after `abandonPreparedOrderQris` is defined (so after Step 5's block — since `abandonPreparedOrderQris` is a plain function recreated each render, referencing it from an effect below its definition in the same component body is fine in JS, function declarations aren't needed here since this is inside a function component body evaluated top-to-bottom per render; keep the `useEffect` textually after the `handleClose` block).
+Read the current file to get the exact surrounding lines before editing (Task 3's fix commit changed these two effects' exact content — search for `abandonPreparedMixedQris();` to find both call sites; there are exactly two, one per effect). `abandonPreparedOrderQris` must be defined (Step 5, above) before either effect runs — since effects are plain functions evaluated at render time referencing another same-render function by closure, definition order in the component body only matters if it's above both effects textually; keep Step 5's `abandonPreparedOrderQris` definition where Step 5 places it (before these two effects appear later in the file) and verify with a read that this ordering holds after Task 3's fix commit.
+
+Note: `abandonPreparedOrderQris()` itself already calls `setPreparedOrderQris(null)` (Step 5's code) — this is a harmless redundant reset alongside the `setPreparedOrderQris(null)` Task 3 Step 4 already placed in these same two effects; the only NEW effect of adding it here is triggering the network abandon call (`onAbandonOrderQris`) that Task 3 intentionally did not add.
 
 - [ ] **Step 7: Typecheck and lint**
 
