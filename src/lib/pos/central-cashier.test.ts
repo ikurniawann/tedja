@@ -13,6 +13,7 @@ import {
   buildCheckoutBillPayBody,
   mapPaidSaleToReceiptIds,
   mayConfirmMixedQris,
+  shouldPrepareOrderForQris,
   shouldStopQrisAutoRetry,
   shouldWaitForQrisConfirm,
   mixedQrisCheckoutIdForAmount,
@@ -214,6 +215,67 @@ describe("mixed cart payment UI", () => {
     it("stops once the cap is reached", () => {
       expect(shouldStopQrisAutoRetry(3)).toBe(true);
       expect(shouldStopQrisAutoRetry(4)).toBe(true);
+    });
+  });
+
+  // Bug #5 (insiden 2026-08-25): QRIS "jual instan" (bukan open bill, bukan
+  // checkout multi-stall) tidak punya order tersimpan sebelum QR muncul —
+  // kalau order gagal dibuat setelah customer bayar, uangnya orphan tanpa
+  // jejak. Fix: bikin order 'unpaid' dulu (mirror pola checkout), baru QR.
+  describe("shouldPrepareOrderForQris", () => {
+    it("prepares an order for a plain single-stall QRIS sale", () => {
+      expect(
+        shouldPrepareOrderForQris({
+          method: "qris",
+          isMixedCart: false,
+          payingOrderId: null,
+          hasPreparedOrder: false,
+        })
+      ).toBe(true);
+    });
+
+    it("skips prepare once an order is already prepared", () => {
+      expect(
+        shouldPrepareOrderForQris({
+          method: "qris",
+          isMixedCart: false,
+          payingOrderId: null,
+          hasPreparedOrder: true,
+        })
+      ).toBe(false);
+    });
+
+    it("skips prepare when paying an existing open bill", () => {
+      expect(
+        shouldPrepareOrderForQris({
+          method: "qris",
+          isMixedCart: false,
+          payingOrderId: "ord-1",
+          hasPreparedOrder: false,
+        })
+      ).toBe(false);
+    });
+
+    it("skips prepare for mixed-cart (checkout handles its own prepare)", () => {
+      expect(
+        shouldPrepareOrderForQris({
+          method: "qris",
+          isMixedCart: true,
+          payingOrderId: null,
+          hasPreparedOrder: false,
+        })
+      ).toBe(false);
+    });
+
+    it("skips prepare for non-QRIS methods", () => {
+      expect(
+        shouldPrepareOrderForQris({
+          method: "cash",
+          isMixedCart: false,
+          payingOrderId: null,
+          hasPreparedOrder: false,
+        })
+      ).toBe(false);
     });
   });
 
