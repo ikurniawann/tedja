@@ -150,6 +150,27 @@ export function shouldStopQrisAutoRetry(attempts: number): boolean {
   return attempts >= QRIS_MAX_AUTO_CONFIRM_ATTEMPTS;
 }
 
+// Bug #5 fix (insiden 2026-08-25): QRIS "jual instan" (bukan open bill,
+// bukan checkout multi-stall) sebelumnya membuat order BARU muncul di DB
+// setelah pembayaran dikonfirmasi — kalau proses itu gagal (validasi,
+// sesi habis, tab ditutup), uang yang sudah diterima Xendit jadi orphan
+// tanpa jejak apapun (4 kasus, Rp77.500, hari ini). Fix: order dibuat
+// 'unpaid' DULU (mirror pola checkout multi-stall), baru QR diikat ke
+// order itu — kalau gagal SETELAH bayar, order tetap ada & bisa
+// diselesaikan manual dari Orders, bukan hilang.
+export function shouldPrepareOrderForQris(input: {
+  method: string;
+  isMixedCart: boolean;
+  payingOrderId?: string | null;
+  hasPreparedOrder: boolean;
+}): boolean {
+  if (input.method !== "qris") return false;
+  if (input.isMixedCart) return false;
+  if (input.payingOrderId) return false;
+  if (input.hasPreparedOrder) return false;
+  return true;
+}
+
 /** Keep Confirm disabled for QRIS until poll marks paid — including while QR is still created. */
 export function shouldWaitForQrisConfirm(input: {
   method: string;

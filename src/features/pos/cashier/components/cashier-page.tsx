@@ -67,7 +67,7 @@ import {
   saveCustomer,
   createSplitOrder,
 } from '../api';
-import { completeCheckout, type ProductSku } from '@/lib/pos-api';
+import { completeCheckout, updateOrderStatus, type ProductSku } from '@/lib/pos-api';
 import { formatPaymentMethodLabel } from '@/features/pos/reports/utils/transaction-labels';
 import { isFocPaymentMethod } from '@/lib/pos/payment-methods';
 import { MerchSkuPickerDialog } from '@/components/pos/MerchSkuPickerDialog';
@@ -1309,6 +1309,9 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     checkoutId?: string;
     checkoutNumber?: string;
     queueNumber?: string | null;
+    /** Bug #5 fix (insiden 2026-08-25) — order disiapkan onPrepareOrderQris. */
+    orderId?: string;
+    orderNumber?: string;
     xenditQrId?: string;
     xenditExternalId?: string;
     paymentMethodCode?: string;
@@ -1316,7 +1319,12 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     supervisorPin?: string;
   }) => {
     if (processingPayment) return;
-    if (cart.items.length === 0) return;
+    // Bug #5 fix (insiden 2026-08-25): order QRIS jual instan yang sudah
+    // disiapkan (unpaid) TIDAK boleh dijegal oleh guard "cart kosong" —
+    // cart di layar bisa saja sudah dikosongkan di render lain sementara
+    // order 'unpaid'-nya masih menunggu settle. Guard cart-kosong hanya
+    // relevan utk jalur create-baru (bukan settle order yang sudah ada).
+    if (cart.items.length === 0 && !overrides?.orderId && !paymentOrderId) return;
     if (!requireActiveShift()) return;
 
     const method = overrides?.method ?? paymentMethod;
@@ -1738,7 +1746,8 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       }
     }
 
-    if (paymentOrderId) {
+    const targetOrderId = paymentOrderId || overrides?.orderId || null;
+    if (targetOrderId) {
       if (promoApplied) {
         toast.error('Kode promo belum didukung untuk pembayaran open bill — hapus kode dulu');
         setProcessingPayment(false);
@@ -1748,7 +1757,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       const paidAmount = method === 'cash' ? (parseFloat(cashValue) || payTotal) : payTotal;
       try {
         const data = await payOpenOrderMutation.mutateAsync({
-          orderId: paymentOrderId,
+          orderId: targetOrderId,
           payload: {
             payment_status: 'paid',
             payment_method: paymentMethodForApi,
@@ -1762,8 +1771,8 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         });
 
         const receipt: ReceiptPayload = {
-          orderId: paymentOrderId,
-          orderNumber: payingOrderNumber || data.data?.order_number || paymentOrderId,
+          orderId: targetOrderId,
+          orderNumber: payingOrderNumber || overrides?.orderNumber || data.data?.order_number || targetOrderId,
           queueNumber: data.data?.queue_number || null,
           orderType: cart.orderType,
           table: selectedTableDisplay,
@@ -3130,6 +3139,57 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
               }
             : undefined
         }
+        onPrepareOrderQris={async () => {
+          // Bug #5 fix (insiden 2026-08-25): jual instan single-stall via
+          // QRIS — order dibuat 'unpaid' DULU (item + stok BOM/merchandise
+          // diklaim di sini, lewat endpoint open-bill yang sama dgn table
+          // order), baru QR diikat ke order itu. Kalau settle gagal
+          // setelah customer bayar, order tetap ADA — bukan orphan.
+          const res = await openBill({
+            order_type: cart.orderType as 'dine_in' | 'takeaway' | 'delivery' | 'self_order',
+            customer_id: selectedCustomer?.id,
+            table_id: effectiveTableId || undefined,
+            guest_count: normalizeGuestCount(guestCount),
+            items: cart.items.map((item) => ({
+              product_id: item.productId,
+              sku_id: item.skuId,
+              product_name: item.name,
+              product_sku: item.skuCode || item.productId,
+              quantity: item.quantity,
+              unit_price: item.price,
+              subtotal: item.price * item.quantity,
+              total_amount: item.price * item.quantity,
+            })),
+            subtotal: cart.subtotal,
+            discount_amount: discountAmount,
+            tax_amount: taxAmount,
+            service_charge_amount: serviceChargeAmount,
+            other_charges_amount: otherChargesAmount,
+            charges_breakdown: billCharges.breakdown,
+            total_amount: total,
+            notes: cart.notes,
+            membership_discount_pct: membershipDiscount,
+            shift_id: shift?.id || undefined,
+          });
+          if (!res.success || !res.data?.id) {
+            throw new Error(res.error || 'Gagal menyiapkan order QRIS');
+          }
+          return {
+            order_id: res.data.id,
+            order_number: res.data.order_number,
+            queue_number: res.data.queue_number ?? null,
+          };
+        }}
+        onAbandonOrderQris={async (orderId) => {
+          // Bug #5 fix (insiden 2026-08-25): kasir batal QRIS sebelum bayar
+          // — 'cancelled' mengembalikan stok BOM/merchandise otomatis
+          // (lihat blok `if (status === 'cancelled')` di PATCH order/[id]).
+          await updateOrderStatus(orderId, 'cancelled', {
+            cancelled_reason: 'QRIS dibatalkan sebelum dibayar',
+          }).catch((err) => {
+            console.error(`[pos] abandon prepared QRIS order ${orderId} failed:`, err);
+          });
+        }}
         onConfirm={async ({
           method,
           cashReceived,
@@ -3139,6 +3199,8 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
           checkoutId,
           checkoutNumber,
           queueNumber,
+          orderId,
+          orderNumber,
           xenditQrId,
           xenditExternalId,
           paymentMethodCode,
@@ -3157,6 +3219,8 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
             checkoutId,
             checkoutNumber,
             queueNumber,
+            orderId,
+            orderNumber,
             xenditQrId,
             xenditExternalId,
             paymentMethodCode,
