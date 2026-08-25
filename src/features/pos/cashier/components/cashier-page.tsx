@@ -1309,6 +1309,9 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     checkoutId?: string;
     checkoutNumber?: string;
     queueNumber?: string | null;
+    /** Bug #5 fix (insiden 2026-08-25) — order disiapkan onPrepareOrderQris. */
+    orderId?: string;
+    orderNumber?: string;
     xenditQrId?: string;
     xenditExternalId?: string;
     paymentMethodCode?: string;
@@ -1316,7 +1319,12 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     supervisorPin?: string;
   }) => {
     if (processingPayment) return;
-    if (cart.items.length === 0) return;
+    // Bug #5 fix (insiden 2026-08-25): order QRIS jual instan yang sudah
+    // disiapkan (unpaid) TIDAK boleh dijegal oleh guard "cart kosong" —
+    // cart di layar bisa saja sudah dikosongkan di render lain sementara
+    // order 'unpaid'-nya masih menunggu settle. Guard cart-kosong hanya
+    // relevan utk jalur create-baru (bukan settle order yang sudah ada).
+    if (cart.items.length === 0 && !overrides?.orderId && !paymentOrderId) return;
     if (!requireActiveShift()) return;
 
     const method = overrides?.method ?? paymentMethod;
@@ -1738,7 +1746,8 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       }
     }
 
-    if (paymentOrderId) {
+    const targetOrderId = paymentOrderId || overrides?.orderId || null;
+    if (targetOrderId) {
       if (promoApplied) {
         toast.error('Kode promo belum didukung untuk pembayaran open bill — hapus kode dulu');
         setProcessingPayment(false);
@@ -1748,7 +1757,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
       const paidAmount = method === 'cash' ? (parseFloat(cashValue) || payTotal) : payTotal;
       try {
         const data = await payOpenOrderMutation.mutateAsync({
-          orderId: paymentOrderId,
+          orderId: targetOrderId,
           payload: {
             payment_status: 'paid',
             payment_method: paymentMethodForApi,
@@ -1762,8 +1771,8 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         });
 
         const receipt: ReceiptPayload = {
-          orderId: paymentOrderId,
-          orderNumber: payingOrderNumber || data.data?.order_number || paymentOrderId,
+          orderId: targetOrderId,
+          orderNumber: payingOrderNumber || overrides?.orderNumber || data.data?.order_number || targetOrderId,
           queueNumber: data.data?.queue_number || null,
           orderType: cart.orderType,
           table: selectedTableDisplay,
@@ -3190,6 +3199,8 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
           checkoutId,
           checkoutNumber,
           queueNumber,
+          orderId,
+          orderNumber,
           xenditQrId,
           xenditExternalId,
           paymentMethodCode,
@@ -3208,6 +3219,8 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
             checkoutId,
             checkoutNumber,
             queueNumber,
+            orderId,
+            orderNumber,
             xenditQrId,
             xenditExternalId,
             paymentMethodCode,
