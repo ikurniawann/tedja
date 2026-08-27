@@ -12,7 +12,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { AlertTriangle, CalendarOff, Camera, Clock, RefreshCw, Users } from "lucide-react";
+import { AlertTriangle, CalendarOff, Clock, RefreshCw, Users } from "lucide-react";
+import { SelfiePhotoDialog } from "./selfie-photo-dialog";
 import { LEAVE_TYPE_LABELS } from "@/types/hris";
 import { fetchDailyRoster } from "../api";
 import type { DailyRosterData, RosterEmployee, RosterStatus } from "../types";
@@ -54,19 +55,6 @@ function formatShiftTime(time: string): string {
   return time.slice(0, 5).replace(":", ".");
 }
 
-function SelfieLink({ path, label }: { path: string | null; label: string }) {
-  if (!path) return null;
-  return (
-    <button
-      onClick={() => window.open(`/api/hris/attendance/photo/${path}`, "_blank")}
-      className="inline-flex items-center gap-0.5 text-xs text-blue-600 hover:underline"
-      title={`Lihat selfie ${label}`}
-    >
-      <Camera className="w-3 h-3" /> {label}
-    </button>
-  );
-}
-
 function RosterRow({ emp, isToday }: { emp: RosterEmployee; isToday: boolean }) {
   const meta = STATUS_META[emp.status];
   const overdue = emp.is_overdue && isToday;
@@ -106,8 +94,22 @@ function RosterRow({ emp, isToday }: { emp: RosterEmployee; isToday: boolean }) 
             Pulang <span className="font-medium">{formatTimeWib(emp.attendance.clock_out)}</span>
           </p>
           <div className="mt-0.5 flex justify-end gap-2">
-            <SelfieLink path={emp.attendance.clock_in_photo_url} label="masuk" />
-            <SelfieLink path={emp.attendance.clock_out_photo_url} label="pulang" />
+            <SelfiePhotoDialog
+              path={emp.attendance.clock_in_photo_url}
+              label="masuk"
+              employeeName={emp.full_name}
+              time={formatTimeWib(emp.attendance.clock_in)}
+              showLabel
+              emptyFallback={null}
+            />
+            <SelfiePhotoDialog
+              path={emp.attendance.clock_out_photo_url}
+              label="pulang"
+              employeeName={emp.full_name}
+              time={formatTimeWib(emp.attendance.clock_out)}
+              showLabel
+              emptyFallback={null}
+            />
           </div>
         </div>
       ) : emp.leave ? (
