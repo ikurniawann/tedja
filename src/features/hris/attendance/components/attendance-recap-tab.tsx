@@ -14,7 +14,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Camera, Clock, Download } from "lucide-react";
+import { Clock, Download } from "lucide-react";
+import { SelfiePhotoDialog } from "./selfie-photo-dialog";
 import {
   exportAttendanceCsv,
   fetchActiveEmployees,
@@ -70,19 +71,6 @@ function formatTimeWib(value: string | null): string {
     minute: "2-digit",
     timeZone: "Asia/Jakarta",
   });
-}
-
-function SelfieButton({ path, label }: { path: string | null; label: string }) {
-  if (!path) return <span className="text-gray-300">—</span>;
-  return (
-    <button
-      onClick={() => window.open(`/api/hris/attendance/photo/${path}`, "_blank")}
-      className="inline-flex items-center gap-0.5 text-blue-600 hover:underline"
-      title={`Selfie ${label}`}
-    >
-      <Camera className="w-3.5 h-3.5" />
-    </button>
-  );
 }
 
 export function AttendanceRecapTab() {
@@ -326,8 +314,18 @@ export function AttendanceRecapTab() {
                       </td>
                       <td className="p-3">
                         <div className="flex gap-2">
-                          <SelfieButton path={row.clock_in_photo_url} label="masuk" />
-                          <SelfieButton path={row.clock_out_photo_url} label="pulang" />
+                          <SelfiePhotoDialog
+                            path={row.clock_in_photo_url}
+                            label="masuk"
+                            employeeName={row.employee?.full_name ?? null}
+                            time={formatTimeWib(row.clock_in)}
+                          />
+                          <SelfiePhotoDialog
+                            path={row.clock_out_photo_url}
+                            label="pulang"
+                            employeeName={row.employee?.full_name ?? null}
+                            time={formatTimeWib(row.clock_out)}
+                          />
                         </div>
                       </td>
                     </tr>
