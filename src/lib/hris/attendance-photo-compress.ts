@@ -1,5 +1,3 @@
-import sharp from "sharp";
-
 /**
  * Kompresi selfie absensi untuk PDF rekap (lanjutan permintaan owner
  * 2026-08-29): foto kamera ponsel bisa beberapa MB per lembar — rekap
@@ -20,6 +18,10 @@ export async function compressAttendancePhoto(
   mime: string
 ): Promise<{ data: Buffer; mime: string } | null> {
   try {
+    // Import dinamis: sharp modul native — bila gagal termuat di suatu
+    // lingkungan, kompresi dilewati dan ekspor tetap jalan (foto asli
+    // dipakai bila formatnya didukung pdfkit).
+    const { default: sharp } = await import("sharp");
     const compressed = await sharp(data)
       .rotate() // terapkan orientasi EXIF sebelum metadata dibuang
       .resize({ width: MAX_WIDTH_PX, withoutEnlargement: true })
