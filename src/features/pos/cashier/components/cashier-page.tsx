@@ -481,6 +481,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
 
   /* Load existing open bill when redirected from Orders */
   useEffect(() => {
+    if (!cart.hydrated) return;
     if (paymentCheckoutId) return;
     if (!paymentOrderId || !paymentOrder || loadedPaymentOrderRef.current === paymentOrderId) return;
 
@@ -511,10 +512,11 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     setPayingOrderNumber(order.order_number || null);
     setPaymentMethod('cash');
     setCashReceived(String(Number(order.total_amount || 0)));
-  }, [paymentCheckoutId, paymentOrderId, paymentOrder, cart]);
+  }, [cart.hydrated, paymentCheckoutId, paymentOrderId, paymentOrder, cart]);
 
   /* Load a collapsed kasir-pusat checkout as one bill. */
   useEffect(() => {
+    if (!cart.hydrated) return;
     if (!paymentCheckoutId || !paymentCheckout || loadedPaymentCheckoutRef.current === paymentCheckoutId) {
       return;
     }
@@ -552,7 +554,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
     setPayingOrderNumber(paymentCheckout.order_number || paymentCheckout.checkout_number || null);
     setPaymentMethod('cash');
     setCashReceived(String(Number(paymentCheckout.total_amount || 0)));
-  }, [paymentCheckoutId, paymentCheckout, cart]);
+  }, [cart.hydrated, paymentCheckoutId, paymentCheckout, cart]);
 
   const resetFreshCashierRef = useRef(false);
   useEffect(() => {
@@ -2197,6 +2199,7 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
         membership_discount_pct: selectedCustomer?.discount || 0,
         promo_discount: isAppend ? 0 : promoApplied?.discount ?? 0,
         promo_code: isAppend ? undefined : promoApplied?.code,
+        offer_discount: isAppend ? 0 : offerDiscount,
         tax_amount: isAppend ? 0 : taxAmount,
         service_charge_amount: isAppend ? 0 : serviceChargeAmount,
         other_charges_amount: isAppend ? 0 : otherChargesAmount,
@@ -3150,18 +3153,47 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
             customer_id: selectedCustomer?.id,
             table_id: effectiveTableId || undefined,
             guest_count: normalizeGuestCount(guestCount),
+            reuse_unpaid_checkout: false,
             items: cart.items.map((item) => ({
               product_id: item.productId,
               sku_id: item.skuId,
               product_name: item.name,
               product_sku: item.skuCode || item.productId,
+              variants: item.variantName
+                ? [{ name: item.variantName, group: 'Size', price: item.variantPriceAdj || 0 }]
+                : [],
+              modifiers:
+                item.modifierNames?.map((name, idx) => ({ name, group: `Option-${idx}` })) || [],
               quantity: item.quantity,
-              unit_price: item.price,
+              unit_price: Number(
+                item.price - (item.variantPriceAdj || 0) - (item.modifierPriceAdj || 0)
+              ),
+              variant_price_adjustment: item.variantPriceAdj || 0,
+              modifier_price_adjustment: item.modifierPriceAdj || 0,
               subtotal: item.price * item.quantity,
+              discount_type: item.discount_type ?? null,
+              discount_value: item.discount_value ?? null,
               total_amount: item.price * item.quantity,
+              station: item.station,
+              kitchen_notes: item.notes,
             })),
             subtotal: cart.subtotal,
             discount_amount: discountAmount,
+            discount_reason: [
+              itemDiscountTotal > 0 ? 'ITEM line discounts' : null,
+              ...offerEval.applied.map((a) => `OFFER ${a.name}`),
+              membershipDiscount > 0 ? `MEMBER ${membershipDiscount}%` : null,
+              promoApplied ? `PROMO ${promoApplied.code}` : null,
+              cart.manual_discount_type && cart.manual_discount_value
+                ? cart.manual_discount_type === 'percent'
+                  ? `MANUAL ${cart.manual_discount_value}%`
+                  : `MANUAL Rp ${Math.floor(cart.manual_discount_value)}`
+                : null,
+            ]
+              .filter(Boolean)
+              .join('; ') || undefined,
+            manual_discount_type: cart.manual_discount_type,
+            manual_discount_value: cart.manual_discount_value,
             tax_amount: taxAmount,
             service_charge_amount: serviceChargeAmount,
             other_charges_amount: otherChargesAmount,
@@ -3169,6 +3201,9 @@ function CashierPageNewContent({ variant }: { variant: CashierPageVariant }) {
             total_amount: total,
             notes: cart.notes,
             membership_discount_pct: membershipDiscount,
+            promo_discount: promoApplied?.discount ?? 0,
+            promo_code: promoApplied?.code,
+            offer_discount: offerDiscount,
             shift_id: shift?.id || undefined,
           });
           if (!res.success || !res.data?.id) {

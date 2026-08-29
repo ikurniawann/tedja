@@ -360,6 +360,8 @@ export interface OpenBillRequest {
   membership_discount_pct?: number;
   promo_discount?: number;
   promo_code?: string;
+  offer_discount?: number;
+  reuse_unpaid_checkout?: boolean;
 }
 
 export async function openBill(payload: OpenBillRequest) {

@@ -42,6 +42,43 @@ export function resolveOpenBillCheckoutId(input: {
   return fromTable || null;
 }
 
+/**
+ * QRIS jual instan harus bikin bill BARU. Default true supaya "Order lagi"
+ * tetap menempel ke checkout meja yang belum lunas.
+ */
+export function shouldReuseUnpaidOpenBillCheckout(raw: unknown): boolean {
+  if (raw === false || raw === "false" || raw === 0 || raw === "0") return false;
+  return true;
+}
+
+export function resolveUnpaidCheckoutForOpenBill(input: {
+  reuseUnpaidCheckout: boolean;
+  explicitCheckoutId?: string | null;
+  tableUnpaidCheckoutId?: string | null;
+}): string | null {
+  return resolveOpenBillCheckoutId({
+    explicitCheckoutId: input.explicitCheckoutId,
+    tableUnpaidCheckoutId: input.reuseUnpaidCheckout
+      ? input.tableUnpaidCheckoutId
+      : null,
+  });
+}
+
+/** Layar kasir sudah menampilkan offer; persist angka itu, jangan dihitung ulang beda. */
+export function resolveOpenBillOfferDiscount(input: {
+  clientOfferDiscount?: number | string | null;
+  serverOfferDiscount: number;
+}): number {
+  if (input.clientOfferDiscount == null || input.clientOfferDiscount === "") {
+    return Math.max(0, Number(input.serverOfferDiscount) || 0);
+  }
+  const n = Number(input.clientOfferDiscount);
+  if (!Number.isFinite(n)) {
+    return Math.max(0, Number(input.serverOfferDiscount) || 0);
+  }
+  return Math.max(0, n);
+}
+
 export function resolveTableSaleTarget(input: {
   saleKind: TableSaleKind;
   unpaidCentralCheckoutId?: string | null;
