@@ -76,15 +76,15 @@ async function maybeSendDigest(): Promise<void> {
 
   const overview = await buildDesktopOverview();
 
-  // Daily Flash Report (permintaan owner 2026-08-23): format laporan manual
-  // Operations, dengan data H-1 PENUH — digest terkirim pagi hari sehingga
-  // hari berjalan belum bisa dilaporkan utuh. Gagal membangun flash report
+  // Daily Flash Report (owner 2026-08-23, dikoreksi 2026-08-30): data
+  // HARI INI — digest terkirim di digestHour (default 22:00 WIB, jam
+  // tutup) sehingga tanggal laporan = tanggal terima. Dulu keliru H-1
+  // (asumsi digest pagi) sehingga tanggal laporan selalu mundur. Gagal membangun flash report
   // tidak menggagalkan digest (fallback ke ringkasan lama saja).
-  const kemarin = todayWib(new Date(Date.now() - 24 * 60 * 60 * 1000));
   let flashSection = "";
   try {
-    const flashData = await gatherFlashReportData(kemarin);
-    flashSection = `${buildFlashReportMessage(flashData, kemarin)}\n\n`;
+    const flashData = await gatherFlashReportData(date);
+    flashSection = `${buildFlashReportMessage(flashData, date)}\n\n`;
   } catch (err) {
     console.error("[wa-notif] gagal membangun flash report:", err);
   }
