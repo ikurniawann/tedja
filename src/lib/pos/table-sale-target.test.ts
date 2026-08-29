@@ -7,7 +7,10 @@ import {
   resolvePaidMixedOnOccupiedTable,
   newCartItemsForOpenBillAppend,
   resolveOpenBillCheckoutId,
+  resolveOpenBillOfferDiscount,
   resolveTableSaleTarget,
+  resolveUnpaidCheckoutForOpenBill,
+  shouldReuseUnpaidOpenBillCheckout,
 } from "./table-sale-target";
 
 describe("resolveTableSaleTarget", () => {
@@ -83,6 +86,46 @@ describe("resolveTableSaleTarget", () => {
         tableUnpaidCheckoutId: null,
       })
     ).toBeNull();
+  });
+
+  it("does not append a QRIS instant sale onto the table's unpaid checkout", () => {
+    expect(shouldReuseUnpaidOpenBillCheckout(false)).toBe(false);
+    expect(shouldReuseUnpaidOpenBillCheckout(undefined)).toBe(true);
+    expect(
+      resolveUnpaidCheckoutForOpenBill({
+        reuseUnpaidCheckout: false,
+        explicitCheckoutId: null,
+        tableUnpaidCheckoutId: "chk-table",
+      })
+    ).toBeNull();
+    expect(
+      resolveUnpaidCheckoutForOpenBill({
+        reuseUnpaidCheckout: true,
+        explicitCheckoutId: null,
+        tableUnpaidCheckoutId: "chk-table",
+      })
+    ).toBe("chk-table");
+  });
+
+  it("keeps the cashier on-screen offer amount when saving the QRIS bill", () => {
+    expect(
+      resolveOpenBillOfferDiscount({
+        clientOfferDiscount: 30_000,
+        serverOfferDiscount: 0,
+      })
+    ).toBe(30_000);
+    expect(
+      resolveOpenBillOfferDiscount({
+        clientOfferDiscount: null,
+        serverOfferDiscount: 15_000,
+      })
+    ).toBe(15_000);
+    expect(
+      resolveOpenBillOfferDiscount({
+        clientOfferDiscount: 0,
+        serverOfferDiscount: 15_000,
+      })
+    ).toBe(0);
   });
 
   it("appends a 1-stall kasir pusat open-bill onto that table's unpaid checkout", () => {

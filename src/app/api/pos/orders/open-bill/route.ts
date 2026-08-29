@@ -18,8 +18,10 @@ import {
   resolveOrderSoldFrom,
 } from '@/lib/pos/create-mixed-checkout';
 import {
-  resolveOpenBillCheckoutId,
+  resolveOpenBillOfferDiscount,
   resolveTableSaleTarget,
+  resolveUnpaidCheckoutForOpenBill,
+  shouldReuseUnpaidOpenBillCheckout,
 } from "@/lib/pos/table-sale-target";
 import {
   assertOrderItemsMatchSellStall,
@@ -85,6 +87,13 @@ type OpenBillBody = {
   /** Preview only — promo hold happens at pay time */
   promo_discount?: number | string;
   promo_code?: string;
+  /** Nominal offer yang sudah tampil di kasir — diprioritaskan atas hitungan ulang server. */
+  offer_discount?: number | string;
+  /**
+   * Default true (Order lagi menempel ke bill meja).
+   * QRIS jual instan kirim false supaya tidak menggabung bill lama.
+   */
+  reuse_unpaid_checkout?: boolean;
 };
 
 type PrintJobItem = {
@@ -163,8 +172,11 @@ export async function POST(request: NextRequest) {
       isCentralCashier: gate.hasCentralMenu && gate.canCentralCheckout,
     });
 
+    const reuseUnpaidCheckout = shouldReuseUnpaidOpenBillCheckout(
+      body.reuse_unpaid_checkout
+    );
     let unpaidCentralCheckoutId: string | null = null;
-    if (soldFrom === "central" && table_id) {
+    if (reuseUnpaidCheckout && soldFrom === "central" && table_id) {
       const lookup = createPgClient();
       let existingQuery = lookup
         .from("pos_checkouts")
@@ -183,7 +195,8 @@ export async function POST(request: NextRequest) {
         .maybeSingle();
       unpaidCentralCheckoutId = existingCheckout.data?.id ?? null;
     }
-    unpaidCentralCheckoutId = resolveOpenBillCheckoutId({
+    unpaidCentralCheckoutId = resolveUnpaidCheckoutForOpenBill({
+      reuseUnpaidCheckout,
       explicitCheckoutId: body.checkout_id,
       tableUnpaidCheckoutId: unpaidCentralCheckoutId,
     });
@@ -239,7 +252,8 @@ export async function POST(request: NextRequest) {
           shiftId: shift_id,
           sessionUserId,
           forceInsertChildren: true,
-          reuseUnpaidTableCheckout: Boolean(table_id || unpaidCentralCheckoutId),
+          reuseUnpaidTableCheckout:
+            reuseUnpaidCheckout && Boolean(table_id || unpaidCentralCheckoutId),
           existingCheckoutId: unpaidCentralCheckoutId,
           companyId: scope?.companyId,
           branchId: scope?.branchId,
@@ -372,7 +386,10 @@ export async function POST(request: NextRequest) {
               : Number(item.discount_value),
         };
       }),
-      offer_discount: offerEval.offer_discount,
+      offer_discount: resolveOpenBillOfferDiscount({
+        clientOfferDiscount: body.offer_discount,
+        serverOfferDiscount: offerEval.offer_discount,
+      }),
       membership_pct: membershipPct,
       promo_discount: promoDiscountPreview,
       manual_discount_type: manualType,

@@ -446,7 +446,7 @@ export function PaymentModal({
     setQrisPaid(false);
     setQrisUnavailable(false);
     setQrisError(null);
-    setPreparedOrderQris(null);
+    abandonPreparedOrderQris();
     qrisConfirmStarted.current = false;
   }, [totalAfterArk]);
 
@@ -526,7 +526,10 @@ export function PaymentModal({
           throw new Error("Penjualan QRIS membutuhkan persiapan order");
         }
         const prepared = await onPrepareOrderQris();
-        if (cancelled) return;
+        if (cancelled) {
+          void onAbandonOrderQris?.(prepared.order_id).catch(() => {});
+          return;
+        }
         setPreparedOrderQris(prepared);
         orderId = prepared.order_id;
       }
