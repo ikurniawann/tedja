@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createPgClient } from "@/lib/pg/create-client";
 import { getWorkforceActor } from "@/lib/hris/workforce-auth";
+import { notifyLeaveRequestWa } from "@/lib/hris/leave-wa";
 import { loadHolidayIndex } from "@/lib/hris/holidays-db";
 import { describeLeaveDays } from "@/lib/hris/holidays";
 import { z } from 'zod';
@@ -255,7 +256,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // TODO: Send notification to manager (WhatsApp/Email)
+    // Notifikasi WA ke atasan langsung (permintaan owner 2026-08-30) —
+    // fire-and-forget: gagal kirim tidak menggagalkan pengajuannya.
+    void notifyLeaveRequestWa({
+      leaveId: String(data.id),
+      employeeId: empId,
+      employeeName: employee.full_name,
+      leaveType: validated.leave_type,
+      startDate: validated.start_date,
+      endDate: validated.end_date,
+      totalDays,
+      reason: validated.reason ?? null,
+    });
 
     return NextResponse.json({
       message: 'Leave request submitted successfully',
