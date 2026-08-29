@@ -3,7 +3,8 @@ import { query } from "@/lib/db";
 /**
  * Daily Flash Report (permintaan owner 2026-08-23) — meniru laporan manual
  * tim Operations, dikirim otomatis lewat digest WA pagi hari dengan data
- * H-1 PENUH (digest terkirim jam `digestHour`; hari berjalan belum selesai).
+ * HARI INI — digest terkirim di `digestHour` (default 22:00 WIB, jam tutup),
+ * sehingga tanggal laporan = tanggal terima (koreksi owner 2026-08-30).
  *
  * Definisi angka (dari contoh manual Operations):
  * - Revenue      = Σ subtotal (harga sebelum diskon) order LUNAS non-void
