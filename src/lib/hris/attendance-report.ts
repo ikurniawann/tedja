@@ -1,0 +1,350 @@
+import PDFDocument from "pdfkit";
+import * as XLSX from "xlsx";
+
+/**
+ * Pembangkit laporan rekap absensi (permintaan owner 2026-08-28):
+ * HR kesulitan membaca CSV — ekspor kini tersedia sebagai Excel yang rapi
+ * dan PDF ber-foto selfie. Keduanya mengikuti filter karyawan + periode
+ * yang sudah ada di halaman rekap.
+ *
+ * Mengikuti pola payslip-pdf.ts: dokumen dibangun di server (pdfkit),
+ * bukan window.print(), supaya hasilnya sama di perangkat mana pun.
+ * Modul ini murni — foto dimuat lewat `photoLoader` yang disuntik route,
+ * sehingga bisa diuji tanpa storage.
+ */
+
+const MONTHS = [
+  "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+  "Juli", "Agustus", "September", "Oktober", "November", "Desember",
+];
+
+export interface AttendanceReportRow {
+  date: string; // YYYY-MM-DD
+  employeeName: string;
+  nip: string | null;
+  department: string | null;
+  position: string | null;
+  clockIn: string | null; // ISO timestamp
+  clockOut: string | null;
+  workHours: number | null;
+  status: string | null;
+  isLate: boolean;
+  lateMinutes: number;
+  notes: string | null;
+  clockInPhotoPath: string | null;
+  clockOutPhotoPath: string | null;
+}
+
+export interface AttendanceReportMeta {
+  companyName: string;
+  /** "1–31 Agustus 2026" atau rentang bebas yang sudah diformat. */
+  periodLabel: string;
+  /** Nama karyawan bila difilter satu orang; null = semua karyawan. */
+  employeeLabel: string | null;
+  generatedAt: Date;
+}
+
+export function formatTanggalId(iso: string): string {
+  const d = new Date(`${iso}T00:00:00+07:00`);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString("id-ID", {
+    weekday: "short",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    timeZone: "Asia/Jakarta",
+  });
+}
+
+export function formatJamWib(iso: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleTimeString("id-ID", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Asia/Jakarta",
+  });
+}
+
+/** "2026-08-01".."2026-08-31" → "1–31 Agustus 2026" (label periode manusiawi). */
+export function buildPeriodLabel(startDate: string, endDate: string): string {
+  const s = new Date(`${startDate}T00:00:00+07:00`);
+  const e = new Date(`${endDate}T00:00:00+07:00`);
+  if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime())) {
+    return `${startDate} s.d. ${endDate}`;
+  }
+  const sd = s.getDate();
+  const ed = e.getDate();
+  const sm = MONTHS[s.getMonth()];
+  const em = MONTHS[e.getMonth()];
+  const sy = s.getFullYear();
+  const ey = e.getFullYear();
+  if (sy === ey && sm === em) return `${sd}–${ed} ${sm} ${sy}`;
+  if (sy === ey) return `${sd} ${sm} – ${ed} ${em} ${sy}`;
+  return `${sd} ${sm} ${sy} – ${ed} ${em} ${ey}`;
+}
+
+const STATUS_LABELS: Record<string, string> = {
+  present: "Hadir",
+  late: "Terlambat",
+  absent: "Tidak Hadir",
+  leave: "Cuti/Izin",
+  sick: "Sakit",
+  holiday: "Libur",
+};
+
+export function statusLabel(status: string | null): string {
+  if (!status) return "—";
+  return STATUS_LABELS[status] ?? status;
+}
+
+/* ================================================================== */
+/* Excel                                                               */
+/* ================================================================== */
+
+export function buildAttendanceXlsx(
+  rows: AttendanceReportRow[],
+  meta: AttendanceReportMeta
+): Buffer {
+  const header = [
+    "Tanggal", "Nama Karyawan", "NIP", "Departemen", "Jabatan",
+    "Jam Masuk", "Jam Pulang", "Jam Kerja", "Status",
+    "Terlambat (menit)", "Catatan",
+  ];
+
+  const aoa: unknown[][] = [
+    [`${meta.companyName} — Rekap Absensi`],
+    [`Periode: ${meta.periodLabel}`],
+    [`Karyawan: ${meta.employeeLabel ?? "Semua Karyawan"}`],
+    [
+      `Dicetak: ${meta.generatedAt.toLocaleString("id-ID", {
+        dateStyle: "medium",
+        timeStyle: "short",
+        timeZone: "Asia/Jakarta",
+      })} WIB`,
+    ],
+    [],
+    header,
+    ...rows.map((row) => [
+      formatTanggalId(row.date),
+      row.employeeName,
+      row.nip ?? "-",
+      row.department ?? "-",
+      row.position ?? "-",
+      formatJamWib(row.clockIn),
+      formatJamWib(row.clockOut),
+      row.workHours ?? 0,
+      statusLabel(row.status),
+      row.isLate ? row.lateMinutes : 0,
+      row.notes ?? "",
+    ]),
+  ];
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws["!cols"] = [
+    { wch: 18 }, { wch: 26 }, { wch: 20 }, { wch: 18 }, { wch: 18 },
+    { wch: 10 }, { wch: 11 }, { wch: 9 }, { wch: 12 }, { wch: 16 },
+    { wch: 30 },
+  ];
+  // Judul membentang selebar tabel supaya tidak terpotong kolom A.
+  ws["!merges"] = [0, 1, 2, 3].map((r) => ({
+    s: { r, c: 0 },
+    e: { r, c: header.length - 1 },
+  }));
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Rekap Absensi");
+  return XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
+}
+
+/* ================================================================== */
+/* PDF ber-foto                                                        */
+/* ================================================================== */
+
+const COLOR_TEXT = "#111827";
+const COLOR_MUTED = "#6b7280";
+const COLOR_LINE = "#d1d5db";
+const COLOR_HEAD = "#1f3864";
+const COLOR_ZEBRA = "#f3f5fa";
+const COLOR_LATE = "#b91c1c";
+
+type Doc = InstanceType<typeof PDFDocument>;
+
+/** Muat foto selfie sebagai buffer siap-embed; null = tanpa foto. */
+export type AttendancePhotoLoader = (
+  path: string
+) => Promise<{ data: Buffer; mime: string } | null>;
+
+// pdfkit hanya menerima JPEG & PNG; selfie webp dilewati dengan placeholder.
+const EMBEDDABLE_MIME = /jpe?g|png/i;
+
+// Lebar kolom (total 770pt utk A4 landscape margin 36).
+const COLS = [
+  { key: "tanggal", label: "Tanggal", w: 78 },
+  { key: "nama", label: "Karyawan", w: 128 },
+  { key: "masuk", label: "Masuk", w: 46 },
+  { key: "pulang", label: "Pulang", w: 46 },
+  { key: "jam", label: "Jam", w: 34 },
+  { key: "status", label: "Status", w: 74 },
+  { key: "fotoMasuk", label: "Foto Masuk", w: 92 },
+  { key: "fotoPulang", label: "Foto Pulang", w: 92 },
+  { key: "catatan", label: "Catatan", w: 180 },
+] as const;
+
+const PAGE_MARGIN = 36;
+const ROW_H = 74; // foto 62pt + padding
+const HEAD_H = 22;
+const PHOTO_H = 62;
+
+function drawTableHeader(doc: Doc, y: number): number {
+  let x = PAGE_MARGIN;
+  doc.rect(PAGE_MARGIN, y, COLS.reduce((s, c) => s + c.w, 0), HEAD_H).fill(COLOR_HEAD);
+  doc.font("Helvetica-Bold").fontSize(8).fillColor("#ffffff");
+  for (const col of COLS) {
+    doc.text(col.label, x + 4, y + 7, { width: col.w - 8, lineBreak: false });
+    x += col.w;
+  }
+  return y + HEAD_H;
+}
+
+function drawDocHeader(doc: Doc, meta: AttendanceReportMeta): number {
+  doc.font("Helvetica-Bold").fontSize(14).fillColor(COLOR_TEXT);
+  doc.text(`${meta.companyName} — Rekap Absensi`, PAGE_MARGIN, PAGE_MARGIN);
+  doc.font("Helvetica").fontSize(9).fillColor(COLOR_MUTED);
+  doc.text(
+    `Periode: ${meta.periodLabel}   ·   Karyawan: ${meta.employeeLabel ?? "Semua Karyawan"}   ·   Dicetak: ${meta.generatedAt.toLocaleString(
+      "id-ID",
+      { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Jakarta" }
+    )} WIB`,
+    PAGE_MARGIN,
+    PAGE_MARGIN + 20
+  );
+  return PAGE_MARGIN + 40;
+}
+
+export async function buildAttendancePdf(
+  rows: AttendanceReportRow[],
+  meta: AttendanceReportMeta,
+  photoLoader: AttendancePhotoLoader
+): Promise<Buffer> {
+  const doc = new PDFDocument({
+    size: "A4",
+    layout: "landscape",
+    margin: PAGE_MARGIN,
+    info: { Title: `Rekap Absensi — ${meta.periodLabel}` },
+  });
+  const chunks: Buffer[] = [];
+  doc.on("data", (chunk: Buffer) => chunks.push(chunk));
+  const done = new Promise<Buffer>((resolve) =>
+    doc.on("end", () => resolve(Buffer.concat(chunks)))
+  );
+
+  const pageBottom = doc.page.height - PAGE_MARGIN;
+  let y = drawDocHeader(doc, meta);
+  y = drawTableHeader(doc, y);
+
+  const drawPhoto = async (
+    path: string | null,
+    x: number,
+    rowY: number,
+    w: number
+  ) => {
+    const boxW = w - 8;
+    if (!path) {
+      doc.font("Helvetica").fontSize(8).fillColor(COLOR_MUTED);
+      doc.text("—", x + 4, rowY + ROW_H / 2 - 4, { width: boxW, align: "center" });
+      return;
+    }
+    const photo = await photoLoader(path);
+    if (!photo || !EMBEDDABLE_MIME.test(photo.mime)) {
+      doc.font("Helvetica").fontSize(7).fillColor(COLOR_MUTED);
+      doc.text("foto tidak dapat", x + 4, rowY + ROW_H / 2 - 9, { width: boxW, align: "center" });
+      doc.text("ditampilkan", x + 4, rowY + ROW_H / 2 + 1, { width: boxW, align: "center" });
+      return;
+    }
+    try {
+      doc.image(photo.data, x + 4, rowY + (ROW_H - PHOTO_H) / 2, {
+        fit: [boxW, PHOTO_H],
+        align: "center",
+        valign: "center",
+      });
+    } catch {
+      doc.font("Helvetica").fontSize(7).fillColor(COLOR_MUTED);
+      doc.text("foto rusak", x + 4, rowY + ROW_H / 2 - 4, { width: boxW, align: "center" });
+    }
+  };
+
+  for (const [index, row] of rows.entries()) {
+    if (y + ROW_H > pageBottom) {
+      doc.addPage();
+      y = drawTableHeader(doc, PAGE_MARGIN);
+    }
+
+    const tableW = COLS.reduce((s, c) => s + c.w, 0);
+    if (index % 2 === 1) {
+      doc.rect(PAGE_MARGIN, y, tableW, ROW_H).fill(COLOR_ZEBRA);
+    }
+
+    let x = PAGE_MARGIN;
+    const textY = y + 8;
+    const put = (
+      text: string,
+      w: number,
+      opts: { bold?: boolean; color?: string; sub?: string | null } = {}
+    ) => {
+      doc
+        .font(opts.bold ? "Helvetica-Bold" : "Helvetica")
+        .fontSize(8)
+        .fillColor(opts.color ?? COLOR_TEXT);
+      doc.text(text, x + 4, textY, { width: w - 8 });
+      if (opts.sub) {
+        doc.font("Helvetica").fontSize(7).fillColor(COLOR_MUTED);
+        doc.text(opts.sub, x + 4, textY + 11, { width: w - 8 });
+      }
+      x += w;
+    };
+
+    put(formatTanggalId(row.date), COLS[0].w);
+    put(row.employeeName, COLS[1].w, {
+      bold: true,
+      sub: [row.nip, row.department].filter(Boolean).join(" · ") || null,
+    });
+    put(formatJamWib(row.clockIn), COLS[2].w);
+    put(formatJamWib(row.clockOut), COLS[3].w);
+    put(row.workHours != null ? `${row.workHours}` : "—", COLS[4].w);
+    put(
+      row.isLate ? `${statusLabel(row.status)} +${row.lateMinutes}m` : statusLabel(row.status),
+      COLS[5].w,
+      { color: row.isLate ? COLOR_LATE : COLOR_TEXT }
+    );
+
+    await drawPhoto(row.clockInPhotoPath, x, y, COLS[6].w);
+    x += COLS[6].w;
+    await drawPhoto(row.clockOutPhotoPath, x, y, COLS[7].w);
+    x += COLS[7].w;
+
+    doc.font("Helvetica").fontSize(8).fillColor(COLOR_TEXT);
+    doc.text(row.notes ?? "", x + 4, textY, {
+      width: COLS[8].w - 8,
+      height: ROW_H - 14,
+      ellipsis: true,
+    });
+
+    y += ROW_H;
+    doc
+      .moveTo(PAGE_MARGIN, y)
+      .lineTo(PAGE_MARGIN + tableW, y)
+      .strokeColor(COLOR_LINE)
+      .lineWidth(0.5)
+      .stroke();
+  }
+
+  if (rows.length === 0) {
+    doc.font("Helvetica").fontSize(10).fillColor(COLOR_MUTED);
+    doc.text("Tidak ada data absensi pada periode ini.", PAGE_MARGIN, y + 16);
+  }
+
+  doc.end();
+  return done;
+}
