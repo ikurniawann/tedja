@@ -19,6 +19,7 @@ import { SelfiePhotoDialog } from "./selfie-photo-dialog";
 import {
   exportAttendanceCsv,
   fetchActiveEmployees,
+  type AttendanceExportFormat,
   fetchAttendanceList,
   type EmployeeOption,
 } from "../api";
@@ -86,7 +87,7 @@ export function AttendanceRecapTab() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [stats, setStats] = useState<MonthStats | null>(null);
-  const [exporting, setExporting] = useState(false);
+  const [exporting, setExporting] = useState<AttendanceExportFormat | null>(null);
 
   useEffect(() => {
     fetchActiveEmployees()
@@ -137,18 +138,24 @@ export function AttendanceRecapTab() {
     setPage(1);
   }, [filterEmployee, month, lateOnly]);
 
-  async function handleExport() {
-    setExporting(true);
+  // Permintaan owner 2026-08-28: HR kesulitan membaca CSV — sediakan juga
+  // Excel yang rapi dan PDF ber-foto selfie. Ketiganya mengikuti filter
+  // karyawan + periode (bulan) yang sedang dipilih di halaman ini.
+  async function handleExport(format: AttendanceExportFormat) {
+    setExporting(format);
     try {
-      const blob = await exportAttendanceCsv({
-        employee_id: filterEmployee,
-        start_date: range.start,
-        end_date: range.end,
-      });
+      const blob = await exportAttendanceCsv(
+        {
+          employee_id: filterEmployee,
+          start_date: range.start,
+          end_date: range.end,
+        },
+        format
+      );
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `absensi_${month}.csv`;
+      a.download = `rekap-absensi_${month}.${format}`;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
@@ -156,7 +163,7 @@ export function AttendanceRecapTab() {
     } catch (err) {
       alert("Export gagal: " + (err instanceof Error ? err.message : "unknown"));
     } finally {
-      setExporting(false);
+      setExporting(null);
     }
   }
 
@@ -211,15 +218,37 @@ export function AttendanceRecapTab() {
               </Select>
             </div>
             <div className="flex items-end">
-              <Button
-                variant="outline"
-                className="w-full"
-                onClick={handleExport}
-                disabled={exporting}
-              >
-                <Download className="w-4 h-4 mr-1.5" />
-                {exporting ? "Mengekspor…" : "Export CSV"}
-              </Button>
+              <div className="flex w-full gap-2">
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => handleExport("xlsx")}
+                  disabled={exporting !== null}
+                  title="Unduh rekap sebagai Excel yang rapi"
+                >
+                  <Download className="w-4 h-4 mr-1.5" />
+                  {exporting === "xlsx" ? "Mengekspor…" : "Excel"}
+                </Button>
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => handleExport("pdf")}
+                  disabled={exporting !== null}
+                  title="Unduh rekap sebagai PDF berikut foto selfie"
+                >
+                  <Download className="w-4 h-4 mr-1.5" />
+                  {exporting === "pdf" ? "Mengekspor…" : "PDF + Foto"}
+                </Button>
+                <Button
+                  variant="ghost"
+                  className="flex-none px-3"
+                  onClick={() => handleExport("csv")}
+                  disabled={exporting !== null}
+                  title="Unduh data mentah CSV"
+                >
+                  {exporting === "csv" ? "…" : "CSV"}
+                </Button>
+              </div>
             </div>
           </div>
         </CardContent>

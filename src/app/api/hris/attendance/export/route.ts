@@ -2,6 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerPgClient } from "@/lib/pg/create-client";
 import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
 import { IAM } from "@/lib/iam/prefixes";
+import { queryOne } from "@/lib/db";
+import { readPrivateFile } from "@/lib/storage-private";
+import {
+  buildAttendancePdf,
+  buildAttendanceXlsx,
+  buildPeriodLabel,
+  type AttendanceReportRow,
+} from "@/lib/hris/attendance-report";
 
 // Bulk attendance export is HR-only.
 const HR_EXPORT_ROLES = ['super_admin', 'hrd'] as const;
@@ -40,6 +48,8 @@ export async function GET(request: NextRequest) {
         is_late,
         late_minutes,
         notes,
+        clock_in_photo_url,
+        clock_out_photo_url,
         created_at,
         employee:employees!attendance_employee_id_fkey(
           full_name,
@@ -79,6 +89,84 @@ export async function GET(request: NextRequest) {
         { error: 'No attendance data found' },
         { status: 404 }
       );
+    }
+
+    // Excel & PDF (permintaan owner 2026-08-28): HR kesulitan membaca CSV.
+    if (format === 'xlsx' || format === 'pdf') {
+      // Driver pg bisa mengembalikan kolom date sebagai objek Date — normalkan
+      // ke YYYY-MM-DD memakai komponen lokal (toISOString bisa mundur sehari).
+      const toDateStr = (v: unknown): string => {
+        if (v instanceof Date) {
+          const m = String(v.getMonth() + 1).padStart(2, '0');
+          const d = String(v.getDate()).padStart(2, '0');
+          return `${v.getFullYear()}-${m}-${d}`;
+        }
+        return String(v).slice(0, 10);
+      };
+      const rows: AttendanceReportRow[] = (data as Array<Record<string, unknown>>).map((r) => {
+        const emp = r.employee as {
+          full_name?: string; nip?: string | null;
+          department?: { name?: string | null } | null;
+          job_title?: { title?: string | null } | null;
+        } | null;
+        return {
+          date: toDateStr(r.date),
+          employeeName: emp?.full_name || '-',
+          nip: emp?.nip ?? null,
+          department: emp?.department?.name ?? null,
+          position: emp?.job_title?.title ?? null,
+          clockIn: (r.clock_in as string | null) ?? null,
+          clockOut: (r.clock_out as string | null) ?? null,
+          workHours: r.work_hours == null ? null : Number(r.work_hours),
+          status: (r.status as string | null) ?? null,
+          isLate: Boolean(r.is_late),
+          lateMinutes: Number(r.late_minutes) || 0,
+          notes: (r.notes as string | null) ?? null,
+          clockInPhotoPath: (r.clock_in_photo_url as string | null) ?? null,
+          clockOutPhotoPath: (r.clock_out_photo_url as string | null) ?? null,
+        };
+      });
+      // Laporan urut naik per karyawan+tanggal — enak dibaca HR.
+      rows.sort((a, b) =>
+        a.employeeName === b.employeeName
+          ? a.date.localeCompare(b.date)
+          : a.employeeName.localeCompare(b.employeeName)
+      );
+
+      const outlet = await queryOne<{ name: string }>(
+        'SELECT name FROM configuration.companies ORDER BY created_at LIMIT 1'
+      );
+      const meta = {
+        companyName: outlet?.name ?? 'Arkiv OS',
+        periodLabel:
+          startDate && endDate ? buildPeriodLabel(startDate, endDate) : 'Semua tanggal',
+        employeeLabel:
+          employeeId && rows.length > 0 ? rows[0].employeeName : null,
+        generatedAt: new Date(),
+      };
+      const stamp = new Date().toISOString().split('T')[0];
+
+      if (format === 'xlsx') {
+        const buffer = buildAttendanceXlsx(rows, meta);
+        return new NextResponse(new Uint8Array(buffer), {
+          headers: {
+            'Content-Type':
+              'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Content-Disposition': `attachment; filename="rekap-absensi-${stamp}.xlsx"`,
+          },
+        });
+      }
+
+      const buffer = await buildAttendancePdf(rows, meta, async (path) => {
+        const { data: file, mime } = await readPrivateFile(path);
+        return file ? { data: file, mime: mime ?? '' } : null;
+      });
+      return new NextResponse(new Uint8Array(buffer), {
+        headers: {
+          'Content-Type': 'application/pdf',
+          'Content-Disposition': `attachment; filename="rekap-absensi-${stamp}.pdf"`,
+        },
+      });
     }
 
     // Convert to CSV

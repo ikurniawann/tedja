@@ -5,7 +5,12 @@ import type {
   DailyRosterData,
 } from "./types";
 
-export async function exportAttendanceCsv(params: AttendanceExportParams): Promise<Blob> {
+export type AttendanceExportFormat = "csv" | "xlsx" | "pdf";
+
+export async function exportAttendanceCsv(
+  params: AttendanceExportParams,
+  format: AttendanceExportFormat = "csv"
+): Promise<Blob> {
   const search = new URLSearchParams();
   if (params.employee_id && params.employee_id !== "all") {
     search.set("employee_id", params.employee_id);
@@ -15,6 +20,7 @@ export async function exportAttendanceCsv(params: AttendanceExportParams): Promi
   }
   if (params.start_date) search.set("start_date", params.start_date);
   if (params.end_date) search.set("end_date", params.end_date);
+  if (format !== "csv") search.set("format", format);
 
   const response = await fetch(`/api/hris/attendance/export?${search.toString()}`);
   if (!response.ok) {
