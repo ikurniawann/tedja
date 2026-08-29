@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
+import { getWorkforceActor } from "@/lib/hris/workforce-auth";
 import { IAM } from "@/lib/iam/prefixes";
 import { query, queryOne } from "@/lib/db";
 
@@ -9,7 +10,6 @@ import { query, queryOne } from "@/lib/db";
  * POST /api/hris/shifts — buat shift baru
  */
 
-const ROLES = ["super_admin", "admin", "hrd"] as const;
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/;
 
 export interface ShiftRow {
@@ -26,7 +26,12 @@ export interface ShiftRow {
 
 export async function GET() {
   try {
-    await requireIamMenuPrefix(IAM.hris);
+    // Master shift boleh DIBACA semua karyawan ber-akun — dipakai dropdown
+    // pengaturan jadwal tim oleh atasan (2026-08-29). Tulis tetap HR-only.
+    const actor = await getWorkforceActor();
+    if (!actor) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
     const rows = await query<ShiftRow>(
       `SELECT id, name, start_time, end_time, break_minutes,
               late_tolerance_minutes, is_overnight, is_active, sort_order
