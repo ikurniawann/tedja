@@ -1,7 +1,41 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
 import { IAM } from "@/lib/iam/prefixes";
-import { query, withTransaction } from "@/lib/db";
+import { query, queryOne, withTransaction } from "@/lib/db";
+import { getWorkforceActor } from "@/lib/hris/workforce-auth";
+import { isDirectSubordinate } from "@/lib/hris/team";
+
+/**
+ * Permintaan owner 2026-08-29: bukan hanya HRD — supervisor/kepala divisi
+ * (atasan langsung menurut employees.reporting_to) boleh melihat & mengatur
+ * jadwal shift anggota timnya sendiri. Helper ini meloloskan HR via menu
+ * IAM seperti sebelumnya, ATAU atasan langsung karyawan target.
+ */
+async function authorizeShiftManager(
+  targetEmployeeId: string
+): Promise<{ actorName: string } | NextResponse> {
+  try {
+    const user = await requireIamMenuPrefix(IAM.hris);
+    return { actorName: user.full_name };
+  } catch (err) {
+    if (!(err instanceof ApiError)) throw err;
+  }
+  const actor = await getWorkforceActor();
+  if (!actor?.employeeId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  if (!(await isDirectSubordinate(actor.employeeId, targetEmployeeId))) {
+    return NextResponse.json(
+      { error: "Hanya HRD atau atasan langsung yang boleh mengatur jadwal karyawan ini" },
+      { status: 403 }
+    );
+  }
+  const me = await queryOne<{ full_name: string }>(
+    `SELECT full_name FROM hris.employees WHERE id = $1`,
+    [actor.employeeId]
+  );
+  return { actorName: me?.full_name || "Atasan" };
+}
 
 /**
  * GET /api/hris/employees/[id]/shifts — pola jadwal shift karyawan yang
@@ -11,7 +45,6 @@ import { query, withTransaction } from "@/lib/db";
  *     tanggal mulai ≥ effective_from digantikan. Transaksional.
  */
 
-const ROLES = ["super_admin", "admin", "hrd"] as const;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -21,11 +54,12 @@ interface RouteParams {
 
 export async function GET(_req: NextRequest, { params }: RouteParams) {
   try {
-    await requireIamMenuPrefix(IAM.hris);
     const { id } = await params;
     if (!UUID_RE.test(id)) {
       return NextResponse.json({ error: "ID karyawan tidak valid" }, { status: 400 });
     }
+    const auth = await authorizeShiftManager(id);
+    if (auth instanceof NextResponse) return auth;
 
     const rows = await query(
       `SELECT es.id, es.day_of_week, es.shift_id, es.effective_from, es.effective_to,
@@ -51,11 +85,12 @@ interface PutBody {
 
 export async function PUT(req: NextRequest, { params }: RouteParams) {
   try {
-    const user = await requireIamMenuPrefix(IAM.hris);
     const { id } = await params;
     if (!UUID_RE.test(id)) {
       return NextResponse.json({ error: "ID karyawan tidak valid" }, { status: 400 });
     }
+    const auth = await authorizeShiftManager(id);
+    if (auth instanceof NextResponse) return auth;
 
     const body = (await req.json()) as PutBody;
     if (!body.effective_from || !DATE_RE.test(body.effective_from)) {
@@ -99,7 +134,7 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
           `INSERT INTO hris.employee_shifts
              (employee_id, day_of_week, shift_id, effective_from, created_by_name)
            VALUES ($1, $2, $3, $4, $5)`,
-          [id, day.day_of_week, day.shift_id ?? null, effectiveFrom, user.full_name]
+          [id, day.day_of_week, day.shift_id ?? null, effectiveFrom, auth.actorName]
         );
       }
     });
