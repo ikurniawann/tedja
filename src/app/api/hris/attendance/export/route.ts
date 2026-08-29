@@ -10,6 +10,7 @@ import {
   buildPeriodLabel,
   type AttendanceReportRow,
 } from "@/lib/hris/attendance-report";
+import { compressAttendancePhoto } from "@/lib/hris/attendance-photo-compress";
 
 // Bulk attendance export is HR-only.
 const HR_EXPORT_ROLES = ['super_admin', 'hrd'] as const;
@@ -159,7 +160,10 @@ export async function GET(request: NextRequest) {
 
       const buffer = await buildAttendancePdf(rows, meta, async (path) => {
         const { data: file, mime } = await readPrivateFile(path);
-        return file ? { data: file, mime: mime ?? '' } : null;
+        if (!file) return null;
+        // Kompres jadi thumbnail JPEG — rekap sebulan tetap ringan, dan
+        // selfie webp/EXIF-rotated ikut beres (lihat attendance-photo-compress).
+        return compressAttendancePhoto(file, mime ?? '');
       });
       return new NextResponse(new Uint8Array(buffer), {
         headers: {
