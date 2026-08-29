@@ -13,8 +13,11 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: true,
   },
   // tesseract.js spawn worker dari file di node_modules — tidak boleh di-bundle;
-  // pdfkit baca file font AFM dari node_modules saat runtime
-  serverExternalPackages: ["tesseract.js", "unpdf", "mammoth", "pdfkit"],
+  // pdfkit baca file font AFM dari node_modules saat runtime; sharp modul
+  // native (libvips) — bila di-bundle, binary @img/sharp-libvips-* tidak
+  // ikut ter-trace ke standalone dan runtime-nya gagal (insiden ekspor
+  // absensi 2026-08-29: ketiga format 500 di production).
+  serverExternalPackages: ["tesseract.js", "unpdf", "mammoth", "pdfkit", "sharp"],
   turbopack: {
     root: __dirname,
   },
