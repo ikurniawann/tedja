@@ -1,4 +1,4 @@
-# Scripts — Arkiv OS
+# Scripts — Sulu In Wounderland OS
 
 Operational scripts for migrations, IAM, and dev utilities.
 

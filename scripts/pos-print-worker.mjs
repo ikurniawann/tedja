@@ -53,7 +53,7 @@ function renderTicket(job) {
   }
 
   lines.push("--------------------------------");
-  lines.push("ARKIV POS PRINT QUEUE");
+  lines.push("SULU IN WOUNDERLAND POS PRINT QUEUE");
   lines.push("================================");
   return lines.join("\n");
 }

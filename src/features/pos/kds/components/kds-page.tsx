@@ -352,7 +352,7 @@ function KdsPageContent() {
             Ready: {grouped['ready']?.length || 0}
           </span>
         </div>
-        <div className="font-mono">Arkiv POS KDS</div>
+        <div className="font-mono">Sulu In Wounderland POS KDS</div>
       </footer>
     </div>
   );

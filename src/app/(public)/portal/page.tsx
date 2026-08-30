@@ -227,8 +227,8 @@ export default function PortalPage() {
     <div id="top" className="min-h-screen bg-[#f8f9fa] text-[#191c1d] career-roundo">
       <nav className="fixed top-0 z-50 w-full border-b border-[#e1bec6] bg-[#f8f9fa]/95 backdrop-blur">
         <div className="mx-auto flex h-20 max-w-[1280px] items-center justify-between px-4 sm:px-6 lg:px-10">
-          <Link href="/career" className="flex h-full items-center" aria-label="Sulu in Wounderland careers">
-            <img src={logoUrl} alt="Sulu in Wounderland Logo" className="h-full w-auto object-contain" />
+          <Link href="/career" className="flex h-full items-center" aria-label="Sulu In Wounderland careers">
+            <img src={logoUrl} alt="Sulu In Wounderland Logo" className="h-full w-auto object-contain" />
           </Link>
           <Link
             href="/career"
@@ -619,7 +619,7 @@ export default function PortalPage() {
           </form>
 
           <p className="mt-6 text-center text-xs text-[#594047]">
-            Dengan mengirim lamaran, kamu menyetujui kebijakan privasi Sulu in Wounderland
+            Dengan mengirim lamaran, kamu menyetujui kebijakan privasi Sulu In Wounderland
           </p>
         </section>
       </main>
@@ -628,12 +628,12 @@ export default function PortalPage() {
         <div className="mx-auto grid max-w-[1280px] grid-cols-1 gap-8 px-4 sm:px-6 md:grid-cols-2 lg:px-10">
           <div className="space-y-4">
             <div className="flex h-10 items-center">
-              <img src={logoUrl} alt="Sulu in Wounderland Logo" className="h-full w-auto object-contain" />
+              <img src={logoUrl} alt="Sulu In Wounderland Logo" className="h-full w-auto object-contain" />
             </div>
             <p className="max-w-sm text-sm leading-relaxed text-[#594047]">
               Designing emotional experiences at the intersection of technology, art, and service.
             </p>
-            <p className="text-sm text-[#594047]">© 2026 Sulu in Wounderland. All rights reserved.</p>
+            <p className="text-sm text-[#594047]">© 2026 Sulu In Wounderland. All rights reserved.</p>
           </div>
           <div className="flex flex-col justify-between gap-6 md:items-end">
             <div className="flex flex-wrap gap-4">

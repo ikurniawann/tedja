@@ -1,7 +1,7 @@
 {
-  "name": "Arkiv POS Kasir",
+  "name": "Sulu In Wounderland POS Kasir",
   "short_name": "POS Kasir",
-  "description": "Mode tablet / kiosk untuk kasir Arkiv POS",
+  "description": "Mode tablet / kiosk untuk kasir Sulu In Wounderland POS",
   "start_url": "/dashboard/pos/tablet",
   "scope": "/dashboard/pos/",
   "display": "standalone",
