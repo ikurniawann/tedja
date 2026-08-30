@@ -182,10 +182,10 @@ export default function QaReportPage() {
             <nav className="flex items-center justify-between">
               <Link href="/arkiv-os" className="inline-flex items-center gap-3">
                 <span className="flex size-11 items-center justify-center rounded-xl bg-white shadow-sm">
-                  <Image src="/logos/logo.png" alt="Arkiv OS" width={30} height={30} className="h-8 w-auto object-contain" />
+                  <Image src="/logos/logo.png" alt="Sulu In Wounderland OS" width={30} height={30} className="h-8 w-auto object-contain" />
                 </span>
                 <span>
-                  <span className="block text-sm font-bold text-slate-950">Arkiv OS</span>
+                  <span className="block text-sm font-bold text-slate-950">Sulu In Wounderland OS</span>
                   <span className="text-xs font-medium text-slate-500">Quality Assurance Report</span>
                 </span>
               </Link>
@@ -201,7 +201,7 @@ export default function QaReportPage() {
             <div className="max-w-4xl">
               <Badge className="border-pink-200 bg-white text-pink-700">Progress QA berjalan · 24 Mei 2026</Badge>
               <h1 className="mt-5 max-w-4xl text-4xl font-semibold leading-tight text-slate-950 md:text-6xl">
-                QA progress dashboard untuk Arkiv OS development
+                QA progress dashboard untuk Sulu In Wounderland OS development
               </h1>
               <p className="mt-5 max-w-3xl text-base leading-7 text-slate-600 md:text-lg">
                 Ringkasan testing yang sudah dilakukan selama development CRM, POS, Purchasing, Barang Masuk, Recipe/BOM, dan Production Order.

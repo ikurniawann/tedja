@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  formatCompTypeLabel,
   formatKitchenStatusLabel,
   formatOrderTypeLabel,
   formatPaymentMethodLabel,
   formatPaymentStatusLabel,
+  formatReportStallLabel,
   formatSoldFromLabel,
   formatXenditPaymentLabel,
   formatXenditSettlementNote,
@@ -96,5 +98,26 @@ describe("formatXenditPaymentLabel", () => {
   it("does not treat settlement pending as failed pay", () => {
     expect(formatXenditPaymentLabel("paid", "pending")).toBe("Success");
     expect(isQrisPaymentMethod("qris")).toBe(true);
+  });
+});
+
+describe("formatReportStallLabel", () => {
+  it("hides raw UUID stall names", () => {
+    expect(
+      formatReportStallLabel({
+        stall_name: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+        stall_code: "FNB",
+      })
+    ).toBe("FNB");
+    expect(formatReportStallLabel({ stall_name: "Sate", stall_code: "SAT" })).toBe(
+      "Sate"
+    );
+  });
+});
+
+describe("formatCompTypeLabel", () => {
+  it("maps known compliment types", () => {
+    expect(formatCompTypeLabel("foc_comp")).toBe("FOC");
+    expect(formatCompTypeLabel(null)).toBe("");
   });
 });

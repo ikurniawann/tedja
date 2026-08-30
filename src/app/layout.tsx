@@ -9,8 +9,8 @@ import { ActivityLogProvider } from "@/contexts/ActivityLogContext";
 import { ErrorBoundary } from "@/components/error-boundary";
 
 export const metadata: Metadata = {
-  title: "Arkiv",
-  description: "Sistem ERP Terintegrasi: Talent Pool, Purchasing & Inventory Management",
+  title: "Sulu In Wounderland",
+  description: "Sulu In Wounderland OS — ERP terintegrasi untuk operasional bisnis",
   icons: {
     icon: "/favicon.svg",
   },

@@ -45,7 +45,7 @@ export async function POST(request: Request) {
     });
 
     let message =
-      `Arkiv OS — pesan uji notifikasi.\n` +
+      `Sulu In Wounderland OS — pesan uji notifikasi.\n` +
       `Nomor ini akan menerima notifikasi bisnis otomatis.\n${now} WIB`;
     if (body.flash) {
       const { buildFlashReportMessage, gatherFlashReportData } = await import(

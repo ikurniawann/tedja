@@ -17,7 +17,7 @@ import {
 export type { PeriodSummary } from "./period";
 
 /**
- * Data papan monitoring desktop Arkiv OS (EPIC-019 Fase A).
+ * Data papan monitoring desktop Sulu In Wounderland OS (EPIC-019 Fase A).
  *
  * Prinsip:
  * - Definisi angka MENGIKUTI modulnya, bukan menulis ulang: pending approval

@@ -1,6 +1,6 @@
-# Arkiv OS — Purchasing Module
+# Sulu In Wounderland OS — Purchasing Module
 
-Dokumentasi untuk modul Purchasing / Procurement pada Arkiv OS ERP.
+Dokumentasi untuk modul Purchasing / Procurement pada Sulu In Wounderland OS ERP.
 
 ## Business Flow
 

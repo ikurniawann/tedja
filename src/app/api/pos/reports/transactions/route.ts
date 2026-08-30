@@ -6,8 +6,13 @@ import {
   parseReportDateRange,
   resolveReportStallFilter,
 } from "@/lib/pos/report-stall-filter";
+import { posReportXlsxResponse } from "@/lib/pos/report-xlsx";
 import { isRevenueOrder } from "@/lib/pos/revenue-order";
 import { summarizeSales } from "@/lib/pos/sales-summary";
+import {
+  buildTransactionExportSheets,
+  transactionExportFileName,
+} from "@/features/pos/reports/utils/transaction-export";
 
 type TransactionRow = {
   id: string;
@@ -63,6 +68,7 @@ export async function GET(request: NextRequest) {
   try {
     const scope = await getApiUserScope();
     const searchParams = request.nextUrl.searchParams;
+    const wantsXlsx = searchParams.get("format") === "xlsx";
     const range = parseReportDateRange(
       searchParams.get("date_from"),
       searchParams.get("date_to")
@@ -73,31 +79,38 @@ export async function GET(request: NextRequest) {
     );
 
     if (stallFilter.warehouseIds && stallFilter.warehouseIds.length === 0) {
+      const empty = {
+        filters: {
+          date_from: range.dateFrom,
+          date_to: range.dateTo,
+          warehouse_id: stallFilter.selectedWarehouseId,
+        },
+        stall_options: stallFilter.stallOptions,
+        stall_locked: stallFilter.stallLocked,
+        summary: {
+          transactions: 0,
+          total_sales: 0,
+          total_ark_used: 0,
+          revenue: 0,
+          discount: 0,
+          tax: 0,
+          service: 0,
+          nett: 0,
+        },
+        per_stall: [],
+        top_products: [],
+        daily: [],
+        rows: [],
+      };
+      if (wantsXlsx) {
+        return posReportXlsxResponse(
+          buildTransactionExportSheets(empty),
+          transactionExportFileName(empty.filters)
+        );
+      }
       return NextResponse.json({
         success: true,
-        data: {
-          filters: {
-            date_from: range.dateFrom,
-            date_to: range.dateTo,
-            warehouse_id: stallFilter.selectedWarehouseId,
-          },
-          stall_options: stallFilter.stallOptions,
-          stall_locked: stallFilter.stallLocked,
-          summary: {
-            transactions: 0,
-            total_sales: 0,
-            total_ark_used: 0,
-            revenue: 0,
-            discount: 0,
-            tax: 0,
-            service: 0,
-            nett: 0,
-          },
-          per_stall: [],
-          top_products: [],
-          daily: [],
-          rows: [],
-        },
+        data: empty,
       });
     }
 
@@ -259,58 +272,67 @@ export async function GET(request: NextRequest) {
       }));
     }
 
+    const data = {
+      filters: {
+        date_from: range.dateFrom,
+        date_to: range.dateTo,
+        warehouse_id: stallFilter.selectedWarehouseId,
+      },
+      stall_options: stallFilter.stallOptions,
+      stall_locked: stallFilter.stallLocked,
+      summary: {
+        transactions: summary.transactions,
+        // Nama lama dipertahankan untuk kompatibilitas klien yang sudah ada.
+        total_sales: summary.nett,
+        total_ark_used: summary.ark_used,
+        revenue: summary.revenue,
+        discount: summary.discount,
+        tax: summary.tax,
+        service: summary.service,
+        nett: summary.nett,
+      },
+      per_stall: perStall,
+      top_products: topProducts,
+      daily,
+      rows: revenueRows.map((row) => ({
+        id: row.id,
+        order_number: row.order_number,
+        ordered_at: row.ordered_at,
+        status: row.status,
+        payment_status: row.payment_status,
+        payment_method: row.payment_method,
+        payment_method_code: row.payment_method_code,
+        payment_method_name: row.payment_method_name,
+        subtotal: toNumber(row.subtotal),
+        discount_amount: toNumber(row.discount_amount),
+        tax_amount: toNumber(row.tax_amount),
+        service_charge_amount: toNumber(row.service_charge_amount),
+        total_amount: toNumber(row.total_amount),
+        ark_coins_used: toNumber(row.ark_coins_used),
+        cashier_id: row.cashier_id,
+        warehouse_id: row.warehouse_id,
+        stall_code: row.stall_code,
+        stall_name: row.stall_name,
+        checkout_id: row.checkout_id,
+        checkout_number: row.checkout_number,
+        sold_from: row.sold_from,
+        xendit_qr_id: row.xendit_qr_id,
+        xendit_external_id: row.xendit_external_id,
+        comp_type: row.comp_type ?? null,
+        comp_approved_name: row.comp_approved_name ?? null,
+      })),
+    };
+
+    if (wantsXlsx) {
+      return posReportXlsxResponse(
+        buildTransactionExportSheets(data),
+        transactionExportFileName(data.filters)
+      );
+    }
+
     return NextResponse.json({
       success: true,
-      data: {
-        filters: {
-          date_from: range.dateFrom,
-          date_to: range.dateTo,
-          warehouse_id: stallFilter.selectedWarehouseId,
-        },
-        stall_options: stallFilter.stallOptions,
-        stall_locked: stallFilter.stallLocked,
-        summary: {
-          transactions: summary.transactions,
-          // Nama lama dipertahankan untuk kompatibilitas klien yang sudah ada.
-          total_sales: summary.nett,
-          total_ark_used: summary.ark_used,
-          revenue: summary.revenue,
-          discount: summary.discount,
-          tax: summary.tax,
-          service: summary.service,
-          nett: summary.nett,
-        },
-        per_stall: perStall,
-        top_products: topProducts,
-        daily,
-        rows: revenueRows.map((row) => ({
-          id: row.id,
-          order_number: row.order_number,
-          ordered_at: row.ordered_at,
-          status: row.status,
-          payment_status: row.payment_status,
-          payment_method: row.payment_method,
-          payment_method_code: row.payment_method_code,
-          payment_method_name: row.payment_method_name,
-          subtotal: toNumber(row.subtotal),
-          discount_amount: toNumber(row.discount_amount),
-          tax_amount: toNumber(row.tax_amount),
-          service_charge_amount: toNumber(row.service_charge_amount),
-          total_amount: toNumber(row.total_amount),
-          ark_coins_used: toNumber(row.ark_coins_used),
-          cashier_id: row.cashier_id,
-          warehouse_id: row.warehouse_id,
-          stall_code: row.stall_code,
-          stall_name: row.stall_name,
-          checkout_id: row.checkout_id,
-          checkout_number: row.checkout_number,
-          sold_from: row.sold_from,
-          xendit_qr_id: row.xendit_qr_id,
-          xendit_external_id: row.xendit_external_id,
-          comp_type: row.comp_type ?? null,
-          comp_approved_name: row.comp_approved_name ?? null,
-        })),
-      },
+      data,
     });
   } catch (error: unknown) {
     console.error("Error fetching POS transaction report:", error);

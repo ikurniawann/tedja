@@ -63,7 +63,7 @@ export function MemberLoginCard({ onSuccess }: { onSuccess: () => void }) {
       <div className="mp-rise flex flex-col items-center text-center">
         <Image
           src="/logos/sulu-in-wounderland-logo.png"
-          alt="Sulu in Wounderland"
+          alt="Sulu In Wounderland"
           width={112}
           height={112}
           className="size-28 object-contain"

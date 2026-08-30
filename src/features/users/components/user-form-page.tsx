@@ -551,7 +551,7 @@ export function UserFormPage({ mode, employeeId }: UserFormPageProps) {
         <FormSectionCard
           icon={ShieldCheck}
           title="App Access"
-          description="Arkiv login, role, business scope, and approval permissions."
+          description="Sulu In Wounderland login, role, business scope, and approval permissions."
           bodyClassName="p-0"
         >
           <div className="px-5 py-5">

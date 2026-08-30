@@ -9,7 +9,7 @@ export default async function HomePage() {
   if (!user) {
     redirect("/login");
   }
-  // User ESS-only (per IAM) tidak punya desktop Arkiv OS → langsung ke Area Karyawan.
+  // User ESS-only (per IAM) tidak punya desktop Sulu In Wounderland OS → langsung ke Area Karyawan.
   if (await isEssOnlyUser(user.id, user.role)) {
     redirect("/dashboard/me");
   }

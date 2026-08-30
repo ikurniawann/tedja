@@ -261,6 +261,6 @@ export function buildDigestMessage(
   if (lines.length === 2) {
     lines.push("Belum ada data hari ini.");
   }
-  lines.push(``, `Buka desktop Arkiv OS untuk rinciannya.`);
+  lines.push(``, `Buka desktop Sulu In Wounderland OS untuk rinciannya.`);
   return lines.filter((l): l is string => l !== null).join("\n");
 }

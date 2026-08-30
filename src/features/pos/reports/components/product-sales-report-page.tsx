@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { AlertCircle, Loader2, Package, Store, TrendingUp } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -9,8 +10,11 @@ import { Label } from "@/components/ui/label";
 import { PageTransition } from "@/components/motion";
 import { PurchasingListSection } from "@/modules/purchasing/components/list/PurchasingListSection";
 import { PurchasingPageHeader } from "@/modules/purchasing/components/page/purchasing-page-header";
+import { downloadProductSalesReportXlsx } from "../api";
 import { useProductSalesReport } from "../queries";
 import { firstDayOfMonthWib, todayWib } from "@/lib/pos/report-dates";
+import { formatReportStallLabel } from "../utils/transaction-labels";
+import { ReportExportActions, ReportPrintStyles } from "./report-export-actions";
 
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat("id-ID", {
@@ -34,6 +38,7 @@ export function ProductSalesReportPage() {
   });
 
   const { data, isLoading, isFetching, error } = useProductSalesReport(applied);
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     if (!data) return;
@@ -54,15 +59,52 @@ export function ProductSalesReportPage() {
     });
   }
 
+  async function exportExcel() {
+    setExporting(true);
+    try {
+      await downloadProductSalesReportXlsx(applied);
+      toast.success("Excel penjualan produk diunduh");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Gagal mengunduh Excel");
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  const stallLabel = stallLocked
+    ? stallOptions[0]
+      ? `${stallOptions[0].name} (${stallOptions[0].code})`
+      : "Stall"
+    : warehouseId
+      ? stallOptions.find((row) => row.id === warehouseId)?.name || "Stall"
+      : "Semua stall";
+
   return (
     <PageTransition>
       <div className="space-y-5">
-        <PurchasingPageHeader
-          title="Laporan Penjualan Produk"
-          description="Ringkasan qty dan omzet produk POS berdasarkan rentang tanggal dan stall."
-        />
+        <div className="print:hidden">
+          <PurchasingPageHeader
+            title="Laporan Penjualan Produk"
+            description="Ringkasan qty dan omzet produk POS berdasarkan rentang tanggal dan stall."
+            actions={
+              <ReportExportActions
+                canExport={Boolean(data) && !error}
+                exporting={exporting}
+                onPrint={() => window.print()}
+                onExportExcel={() => void exportExcel()}
+              />
+            }
+          />
+        </div>
 
-        <Card className="border-gray-200/70 shadow-xs">
+        <div className="hidden print:block">
+          <h1 className="text-lg font-bold">Laporan Penjualan Produk</h1>
+          <p className="text-sm text-muted-foreground">
+            Periode {applied.date_from} s/d {applied.date_to} · {stallLabel}
+          </p>
+        </div>
+
+        <Card className="border-gray-200/70 shadow-xs print:hidden">
           <CardContent className="grid gap-4 p-4 md:grid-cols-4">
             <div className="space-y-1.5">
               <Label htmlFor="ps-date-from">Tanggal dari</Label>
@@ -111,7 +153,7 @@ export function ProductSalesReportPage() {
         </Card>
 
         {error ? (
-          <div className="flex items-center gap-2 rounded-lg border border-red-200/80 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <div className="flex items-center gap-2 rounded-lg border border-red-200/80 bg-red-50 px-4 py-3 text-sm text-red-700 print:hidden">
             <AlertCircle className="size-4" />
             {error instanceof Error ? error.message : "Gagal memuat laporan"}
           </div>
@@ -162,7 +204,7 @@ export function ProductSalesReportPage() {
                       <td className="px-3 py-3 font-medium text-foreground">{row.product_name}</td>
                       <td className="px-3 py-3 text-muted-foreground">{row.product_sku || "—"}</td>
                       <td className="px-3 py-3 text-muted-foreground">
-                        {row.stall_name || row.stall_code || "—"}
+                        {formatReportStallLabel(row)}
                       </td>
                       <td className="px-3 py-3 text-right">{formatQty(row.quantity)}</td>
                       <td className="px-3 py-3 text-right text-muted-foreground">
@@ -178,6 +220,7 @@ export function ProductSalesReportPage() {
             </table>
           </div>
         </PurchasingListSection>
+        <ReportPrintStyles />
       </div>
     </PageTransition>
   );

@@ -96,6 +96,29 @@ export function formatSoldFromLabel(soldFrom?: string | null) {
   return soldFrom?.trim() || "—";
 }
 
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/** Jangan render UUID mentah di kolom Stall (layar, print, Excel). */
+export function formatReportStallLabel(input: {
+  stall_name?: string | null;
+  stall_code?: string | null;
+}) {
+  const name = String(input.stall_name || "").trim();
+  if (name && !UUID_RE.test(name)) return name;
+  const code = String(input.stall_code || "").trim();
+  if (code && !UUID_RE.test(code)) return code;
+  return "—";
+}
+
+export function formatCompTypeLabel(compType?: string | null) {
+  const value = key(compType);
+  if (value === "kol_comp") return "KOL Comp";
+  if (value === "foc_comp") return "FOC";
+  if (value === "owner_comp") return "Owner Comp";
+  return "";
+}
+
 export function isQrisPaymentMethod(method?: string | null) {
   return key(method) === "qris";
 }
