@@ -129,3 +129,56 @@ export async function getPaymentMethodsReport(
   }
   return payload.data as PaymentMethodsReport;
 }
+
+async function downloadXlsx(url: string, fallbackName: string) {
+  const response = await fetch(url, { cache: "no-store" });
+  if (!response.ok) {
+    const message = await response
+      .json()
+      .then((json) => json.error as string | undefined)
+      .catch(() => undefined);
+    throw new Error(message || "Gagal mengunduh Excel");
+  }
+  const blob = await response.blob();
+  const match = /filename="([^"]+)"/.exec(
+    response.headers.get("Content-Disposition") || ""
+  );
+  const objectUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = objectUrl;
+  anchor.download = match?.[1] || fallbackName;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(objectUrl);
+}
+
+export async function downloadProductSalesReportXlsx(
+  params: ProductSalesReportParams
+): Promise<void> {
+  const sp = new URLSearchParams({
+    date_from: params.date_from,
+    date_to: params.date_to,
+    format: "xlsx",
+  });
+  if (params.warehouse_id) sp.set("warehouse_id", params.warehouse_id);
+  await downloadXlsx(
+    `/api/pos/reports/product-sales?${sp.toString()}`,
+    `penjualan-produk-${params.date_from}_${params.date_to}.xlsx`
+  );
+}
+
+export async function downloadTransactionReportXlsx(
+  params: TransactionReportParams
+): Promise<void> {
+  const sp = new URLSearchParams({
+    date_from: params.date_from,
+    date_to: params.date_to,
+    format: "xlsx",
+  });
+  if (params.warehouse_id) sp.set("warehouse_id", params.warehouse_id);
+  await downloadXlsx(
+    `/api/pos/reports/transactions?${sp.toString()}`,
+    `transaksi-pos-${params.date_from}_${params.date_to}.xlsx`
+  );
+}

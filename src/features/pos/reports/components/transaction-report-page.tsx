@@ -30,6 +30,7 @@ import { PurchasingPageHeader } from "@/modules/purchasing/components/page/purch
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { ApexChart } from "./apex-chart";
+import { downloadTransactionReportXlsx } from "../api";
 import { useTransactionReport } from "../queries";
 import type { TransactionReportRow } from "../types";
 import {
@@ -38,8 +39,10 @@ import {
 } from "./transaction-detail-body";
 import { loadOrderTransactionDetail } from "../utils/load-order-detail";
 import {
+  formatCompTypeLabel,
   formatPaymentMethodLabel,
   formatPaymentStatusLabel,
+  formatReportStallLabel,
   isPaidPaymentStatus,
 } from "../utils/transaction-labels";
 import {
@@ -48,23 +51,7 @@ import {
   type TopProductSort,
 } from "../utils/top-products";
 import { firstDayOfMonthWib, todayWib } from "@/lib/pos/report-dates";
-
-function toNumber(value: unknown) {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : 0;
-}
-
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-/** Jangan render UUID mentah di kolom Stall. */
-function formatStallLabel(row: Pick<TransactionReportRow, "stall_name" | "stall_code">) {
-  const name = row.stall_name?.trim();
-  if (name && !UUID_RE.test(name)) return name;
-  const code = row.stall_code?.trim();
-  if (code && !UUID_RE.test(code)) return code;
-  return "—";
-}
+import { ReportExportActions, ReportPrintStyles } from "./report-export-actions";
 
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat("id-ID", {
@@ -101,6 +88,7 @@ export function TransactionReportPage() {
   const [orderDetail, setOrderDetail] = useState<TransactionOrderDetail | null>(null);
 
   const { data, isLoading, isFetching, error } = useTransactionReport(applied);
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     if (!data) return;
@@ -127,6 +115,26 @@ export function TransactionReportPage() {
     });
   }
 
+  async function exportExcel() {
+    setExporting(true);
+    try {
+      await downloadTransactionReportXlsx(applied);
+      toast.success("Excel transaksi diunduh");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Gagal mengunduh Excel");
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  const stallLabel = stallLocked
+    ? stallOptions[0]
+      ? `${stallOptions[0].name} (${stallOptions[0].code})`
+      : "Stall"
+    : warehouseId
+      ? stallOptions.find((row) => row.id === warehouseId)?.name || "Stall"
+      : "Semua stall";
+
   async function openItemDetail(row: TransactionReportRow) {
     setSelectedRow(row);
     setDetailOpen(true);
@@ -151,12 +159,29 @@ export function TransactionReportPage() {
   return (
     <PageTransition>
       <div className="space-y-5">
-        <PurchasingPageHeader
-          title="Laporan Transaksi"
-          description="Omzet yang sudah tercatat. Kolom Pembayaran = lunas/belum, bukan antrian dapur."
-        />
+        <div className="print:hidden">
+          <PurchasingPageHeader
+            title="Laporan Transaksi"
+            description="Omzet yang sudah tercatat. Kolom Pembayaran = lunas/belum, bukan antrian dapur."
+            actions={
+              <ReportExportActions
+                canExport={Boolean(data) && !error}
+                exporting={exporting}
+                onPrint={() => window.print()}
+                onExportExcel={() => void exportExcel()}
+              />
+            }
+          />
+        </div>
 
-        <Card className="border-gray-200/70 shadow-xs">
+        <div className="hidden print:block">
+          <h1 className="text-lg font-bold">Laporan Transaksi POS</h1>
+          <p className="text-sm text-muted-foreground">
+            Periode {applied.date_from} s/d {applied.date_to} · {stallLabel}
+          </p>
+        </div>
+
+        <Card className="border-gray-200/70 shadow-xs print:hidden">
           <CardContent className="grid gap-4 p-4 md:grid-cols-4">
             <div className="space-y-1.5">
               <Label htmlFor="tx-date-from">Tanggal dari</Label>
@@ -205,7 +230,7 @@ export function TransactionReportPage() {
         </Card>
 
         {error ? (
-          <div className="flex items-center gap-2 rounded-lg border border-red-200/80 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <div className="flex items-center gap-2 rounded-lg border border-red-200/80 bg-red-50 px-4 py-3 text-sm text-red-700 print:hidden">
             <AlertCircle className="size-4" />
             {error instanceof Error ? error.message : "Gagal memuat laporan"}
           </div>
@@ -223,7 +248,7 @@ export function TransactionReportPage() {
         </div>
 
         {/* Tren nett harian + top produk pada filter yang sama */}
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="grid gap-4 lg:grid-cols-2 print:hidden">
           <Card className="border-gray-200/70 shadow-xs">
             <CardContent className="p-4">
               <div className="mb-3 text-sm font-semibold text-foreground">Tren Penjualan Harian (Nett)</div>
@@ -347,7 +372,7 @@ export function TransactionReportPage() {
                   (data?.per_stall ?? []).map((stall) => (
                     <tr key={stall.stall_code ?? stall.stall_name} className="hover:bg-muted/30">
                       <td className="px-3 py-3 font-medium text-foreground">
-                        {formatStallLabel(stall)}
+                        {formatReportStallLabel(stall)}
                       </td>
                       <td className="px-3 py-3 text-right">{stall.transactions}</td>
                       <td className="px-3 py-3 text-right">{stall.quantity}</td>
@@ -376,7 +401,7 @@ export function TransactionReportPage() {
                   <th className="px-3 py-3 text-left font-semibold">Metode</th>
                   <th className="px-3 py-3 text-right font-semibold">Total</th>
                   <th className="px-3 py-3 text-right font-semibold">ARK</th>
-                  <th className="px-3 py-3 text-right font-semibold">Aksi</th>
+                  <th className="px-3 py-3 text-right font-semibold print:hidden">Aksi</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200/70">
@@ -406,7 +431,7 @@ export function TransactionReportPage() {
                       </td>
                       <td className="px-3 py-3 text-muted-foreground">{formatDateTime(row.ordered_at)}</td>
                       <td className="px-3 py-3 text-muted-foreground">
-                        {formatStallLabel(row)}
+                        {formatReportStallLabel(row)}
                       </td>
                       <td className="px-3 py-3">
                         <Badge
@@ -431,11 +456,7 @@ export function TransactionReportPage() {
                                 : undefined
                             }
                           >
-                            {row.comp_type === "kol_comp"
-                              ? "KOL Comp"
-                              : row.comp_type === "foc_comp"
-                                ? "FOC"
-                                : "Owner Comp"}
+                            {formatCompTypeLabel(row.comp_type) || "Comp"}
                           </Badge>
                         ) : (
                           formatPaymentMethodLabel(row.payment_method, {
@@ -450,7 +471,7 @@ export function TransactionReportPage() {
                       <td className="px-3 py-3 text-right text-amber-700">
                         {formatCurrency(row.ark_coins_used)}
                       </td>
-                      <td className="px-3 py-3 text-right">
+                      <td className="px-3 py-3 text-right print:hidden">
                         <Button
                           type="button"
                           variant="outline"
@@ -493,7 +514,7 @@ export function TransactionReportPage() {
               </DialogPanelTitle>
               <DialogPanelDescription>
                 {selectedRow
-                  ? `${formatDateTime(selectedRow.ordered_at)} · ${formatStallLabel(selectedRow)}`
+                  ? `${formatDateTime(selectedRow.ordered_at)} · ${formatReportStallLabel(selectedRow)}`
                   : "Ringkasan pembayaran, item, dan status Xendit"}
               </DialogPanelDescription>
             </DialogPanelHeader>
@@ -522,6 +543,7 @@ export function TransactionReportPage() {
             </DialogFooter>
           </DialogPanel>
         </Dialog>
+        <ReportPrintStyles />
       </div>
     </PageTransition>
   );

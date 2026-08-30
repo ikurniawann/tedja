@@ -6,6 +6,11 @@ import {
   parseReportDateRange,
   resolveReportStallFilter,
 } from "@/lib/pos/report-stall-filter";
+import { posReportXlsxResponse } from "@/lib/pos/report-xlsx";
+import {
+  buildProductSalesExportSheets,
+  productSalesExportFileName,
+} from "@/features/pos/reports/utils/product-sales-export";
 
 type ProductSalesRow = {
   product_id: string | null;
@@ -37,6 +42,7 @@ export async function GET(request: NextRequest) {
   try {
     const scope = await getApiUserScope();
     const searchParams = request.nextUrl.searchParams;
+    const wantsXlsx = searchParams.get("format") === "xlsx";
     const range = parseReportDateRange(
       searchParams.get("date_from"),
       searchParams.get("date_to")
@@ -47,23 +53,30 @@ export async function GET(request: NextRequest) {
     );
 
     if (stallFilter.warehouseIds && stallFilter.warehouseIds.length === 0) {
+      const empty = {
+        filters: {
+          date_from: range.dateFrom,
+          date_to: range.dateTo,
+          warehouse_id: stallFilter.selectedWarehouseId,
+        },
+        stall_options: stallFilter.stallOptions,
+        stall_locked: stallFilter.stallLocked,
+        summary: {
+          products: 0,
+          quantity: 0,
+          revenue: 0,
+        },
+        rows: [],
+      };
+      if (wantsXlsx) {
+        return posReportXlsxResponse(
+          buildProductSalesExportSheets(empty),
+          productSalesExportFileName(empty.filters)
+        );
+      }
       return NextResponse.json({
         success: true,
-        data: {
-          filters: {
-            date_from: range.dateFrom,
-            date_to: range.dateTo,
-            warehouse_id: stallFilter.selectedWarehouseId,
-          },
-          stall_options: stallFilter.stallOptions,
-          stall_locked: stallFilter.stallLocked,
-          summary: {
-            products: 0,
-            quantity: 0,
-            revenue: 0,
-          },
-          rows: [],
-        },
+        data: empty,
       });
     }
 
@@ -119,23 +132,32 @@ export async function GET(request: NextRequest) {
       { products: 0, quantity: 0, revenue: 0 }
     );
 
+    const data = {
+      filters: {
+        date_from: range.dateFrom,
+        date_to: range.dateTo,
+        warehouse_id: stallFilter.selectedWarehouseId,
+      },
+      stall_options: stallFilter.stallOptions,
+      stall_locked: stallFilter.stallLocked,
+      summary: {
+        products: summary.products,
+        quantity: summary.quantity,
+        revenue: Math.round(summary.revenue * 100) / 100,
+      },
+      rows: mapped,
+    };
+
+    if (wantsXlsx) {
+      return posReportXlsxResponse(
+        buildProductSalesExportSheets(data),
+        productSalesExportFileName(data.filters)
+      );
+    }
+
     return NextResponse.json({
       success: true,
-      data: {
-        filters: {
-          date_from: range.dateFrom,
-          date_to: range.dateTo,
-          warehouse_id: stallFilter.selectedWarehouseId,
-        },
-        stall_options: stallFilter.stallOptions,
-        stall_locked: stallFilter.stallLocked,
-        summary: {
-          products: summary.products,
-          quantity: summary.quantity,
-          revenue: Math.round(summary.revenue * 100) / 100,
-        },
-        rows: mapped,
-      },
+      data,
     });
   } catch (error: unknown) {
     console.error("Error fetching POS product sales report:", error);
