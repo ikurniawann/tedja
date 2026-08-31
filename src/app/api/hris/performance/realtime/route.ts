@@ -48,7 +48,7 @@ export async function GET(req: NextRequest) {
         where += ` AND e.id = $3`;
       } else {
         return NextResponse.json({
-          data: { employees: [], year, quarter, months, is_hr: false },
+          data: { employees: [], year, quarter, months, is_hr: false, my_employee_id: null },
         });
       }
     }
@@ -72,7 +72,11 @@ export async function GET(req: NextRequest) {
     );
 
     return NextResponse.json({
-      data: { employees, year, quarter, months, is_hr: actor.isHr },
+      data: {
+        employees, year, quarter, months,
+        is_hr: actor.isHr,
+        my_employee_id: actor.employeeId,
+      },
     });
   } catch (error) {
     console.error("[performance/realtime] GET failed:", error);
