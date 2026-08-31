@@ -430,9 +430,6 @@ export function DeptTasksPage() {
                             <span className={checked ? "text-gray-400 line-through" : "text-gray-800"}>
                               {st.title}
                             </span>
-                            <span className="ml-auto text-xs tabular-nums text-gray-400">
-                              {Math.round(Number(st.weight))}%
-                            </span>
                           </div>
                         );
                       })}
@@ -504,7 +501,7 @@ export function DeptTasksPage() {
             ) : null}
             <div>
               <label className="text-xs font-medium text-gray-600">
-                Sub-task (opsional — bobot otomatis dibagi rata)
+                Sub-task (opsional)
               </label>
               <div className="mt-1 space-y-1.5">
                 {fSubtasks.map((st, i) => (
@@ -538,9 +535,7 @@ export function DeptTasksPage() {
                   </Button>
                   {fSubtasks.filter((st) => st.title.trim()).length > 0 ? (
                     <span className="text-xs text-gray-500">
-                      {fSubtasks.filter((st) => st.title.trim()).length} sub-task ·{" "}
-                      {Math.round(1000 / fSubtasks.filter((st) => st.title.trim()).length) / 10}
-                      % per sub-task
+                      {fSubtasks.filter((st) => st.title.trim()).length} sub-task
                     </span>
                   ) : null}
                 </div>
