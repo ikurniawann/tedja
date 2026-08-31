@@ -11,10 +11,12 @@ import { ToastContainer, useToast } from "@/components/ui/toast";
 import { apiGet, apiPut } from "@/lib/api-client";
 
 /**
- * Konfigurasi KPI per peran (owner 2026-08-30): HRD menceklis indikator
- * mana yang mempengaruhi KPI tiap peran + bobotnya — contoh kasus owner:
- * absen dihitung untuk kasir, tidak untuk HRD. Perubahan berlaku mulai
- * snapshot bulan berikutnya; scorecard final tidak pernah dihitung ulang.
+ * Konfigurasi KPI per DEPARTEMEN (owner 2026-08-31): HRD menceklis
+ * indikator mana yang mempengaruhi KPI tiap departemen + bobotnya —
+ * mis. absen dihitung utk Service, tidak utk Human Resources.
+ * Departemen yang belum dikonfigurasi memakai bawaan (pemetaan peran
+ * lama). Perubahan berlaku mulai snapshot bulan berikutnya; scorecard
+ * final tidak pernah dihitung ulang.
  */
 
 interface Indicator {
@@ -26,33 +28,22 @@ interface Indicator {
   direction: string;
 }
 interface Mapping {
-  role_code: string;
+  department_id: string;
   indicator_id: string;
   weight: number | string;
   updated_by: string | null;
 }
-
-const ROLE_LABELS: Record<string, string> = {
-  pos: "Kasir / POS",
-  pos_supervisor: "Supervisor POS",
-  warehouse_staff: "Staf Gudang",
-  warehouse_admin: "Admin Gudang",
-  purchasing_staff: "Staf Purchasing",
-  purchasing_admin: "Admin Purchasing",
-  purchasing_manager: "Manager Purchasing",
-  finance_staff: "Staf Finance",
-  hrd: "HRD",
-  hiring_manager: "Hiring Manager",
-  qc_staff: "Staf QC",
-  employee: "Karyawan Umum",
-};
+interface Department {
+  id: string;
+  name: string;
+}
 
 export function KpiConfigPage() {
   const { toasts, showToast, removeToast } = useToast();
-  const [roles, setRoles] = useState<string[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
   const [indicators, setIndicators] = useState<Indicator[]>([]);
   const [mappings, setMappings] = useState<Mapping[]>([]);
-  const [activeRole, setActiveRole] = useState<string>("");
+  const [activeDept, setActiveDept] = useState<string>("");
   // Suntingan per peran menimpa baseline dari mapping tersimpan — tanpa
   // effect sinkronisasi, pindah peran tidak kehilangan suntingan.
   const [edits, setEdits] = useState<
@@ -62,14 +53,14 @@ export function KpiConfigPage() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    apiGet<{ data: { roles: string[]; indicators: Indicator[]; mappings: Mapping[] } }>(
-      "/api/hris/kpi-config"
-    )
+    apiGet<{
+      data: { departments: Department[]; indicators: Indicator[]; mappings: Mapping[] };
+    }>("/api/hris/kpi-config")
       .then((res) => {
-        setRoles(res.data.roles);
+        setDepartments(res.data.departments);
         setIndicators(res.data.indicators);
         setMappings(res.data.mappings);
-        setActiveRole((prev) => prev || res.data.roles[0] || "");
+        setActiveDept((prev) => prev || res.data.departments[0]?.id || "");
       })
       .catch((err) =>
         showToast(err instanceof Error ? err.message : "Gagal memuat konfigurasi", "error")
@@ -78,20 +69,24 @@ export function KpiConfigPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const deptConfigured = useMemo(
+    () => mappings.some((m) => m.department_id === activeDept),
+    [mappings, activeDept]
+  );
   const draft = useMemo(() => {
     const next: Record<string, { enabled: boolean; weight: string }> = {};
     for (const ind of indicators) {
       const found = mappings.find(
-        (m) => m.role_code === activeRole && m.indicator_id === ind.id
+        (m) => m.department_id === activeDept && m.indicator_id === ind.id
       );
       next[ind.id] =
-        edits[activeRole]?.[ind.id] ??
+        edits[activeDept]?.[ind.id] ??
         (found
           ? { enabled: true, weight: String(Math.round(Number(found.weight))) }
           : { enabled: false, weight: "10" });
     }
     return next;
-  }, [activeRole, indicators, mappings, edits]);
+  }, [activeDept, indicators, mappings, edits]);
 
   const setDraftItem = (
     indicatorId: string,
@@ -99,8 +94,8 @@ export function KpiConfigPage() {
   ) =>
     setEdits((prev) => ({
       ...prev,
-      [activeRole]: {
-        ...prev[activeRole],
+      [activeDept]: {
+        ...prev[activeDept],
         [indicatorId]: { ...draft[indicatorId], ...patch },
       },
     }));
@@ -117,7 +112,7 @@ export function KpiConfigPage() {
     setSaving(true);
     try {
       const res = await apiPut<{ message: string }>("/api/hris/kpi-config", {
-        role_code: activeRole,
+        department_id: activeDept,
         items: indicators.map((ind) => ({
           indicator_id: ind.id,
           enabled: draft[ind.id]?.enabled ?? false,
@@ -128,7 +123,7 @@ export function KpiConfigPage() {
       // muat ulang mapping supaya pindah-pindah peran konsisten
       const fresh = await apiGet<{ data: { mappings: Mapping[] } }>("/api/hris/kpi-config");
       setMappings(fresh.data.mappings);
-      setEdits((prev) => ({ ...prev, [activeRole]: {} }));
+      setEdits((prev) => ({ ...prev, [activeDept]: {} }));
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Gagal menyimpan", "error");
     } finally {
@@ -145,24 +140,32 @@ export function KpiConfigPage() {
           Konfigurasi KPI
         </h1>
         <p className="mt-1 text-sm text-gray-500">
-          Centang indikator yang mempengaruhi KPI tiap peran beserta bobotnya.
-          Perubahan berlaku mulai perhitungan bulan berikutnya — scorecard yang
-          sudah final tidak berubah.
+          Centang indikator yang mempengaruhi KPI tiap departemen beserta
+          bobotnya. Perubahan berlaku mulai perhitungan bulan berikutnya —
+          scorecard yang sudah final tidak berubah.
         </p>
       </div>
 
       <div className="flex flex-wrap gap-2">
-        {roles.map((role) => (
+        {departments.map((dept) => (
           <Button
-            key={role}
+            key={dept.id}
             size="sm"
-            variant={role === activeRole ? "default" : "outline"}
-            onClick={() => setActiveRole(role)}
+            variant={dept.id === activeDept ? "default" : "outline"}
+            onClick={() => setActiveDept(dept.id)}
           >
-            {ROLE_LABELS[role] ?? role}
+            {dept.name}
           </Button>
         ))}
       </div>
+
+      {!loading && activeDept && !deptConfigured ? (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+          Departemen ini belum punya konfigurasi sendiri — KPI-nya masih
+          memakai bawaan sistem. Centang indikator lalu Simpan untuk
+          mengaturnya.
+        </p>
+      ) : null}
 
       {loading ? (
         <Card>
@@ -232,8 +235,10 @@ export function KpiConfigPage() {
             </span>
           ) : null}
         </p>
-        <Button onClick={handleSave} disabled={saving || loading || !activeRole}>
-          {saving ? "Menyimpan…" : `Simpan ${ROLE_LABELS[activeRole] ?? activeRole}`}
+        <Button onClick={handleSave} disabled={saving || loading || !activeDept}>
+          {saving
+            ? "Menyimpan…"
+            : `Simpan ${departments.find((d) => d.id === activeDept)?.name ?? ""}`}
         </Button>
       </div>
     </div>
