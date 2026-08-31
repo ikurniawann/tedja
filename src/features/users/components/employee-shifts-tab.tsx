@@ -156,7 +156,7 @@ export function EmployeeShiftsTab({ employeeId }: { employeeId: string }) {
                 value={pattern[day]}
                 onChange={(value) => setPattern((p) => ({ ...p, [day]: value }))}
                 placeholder="Pilih shift"
-                className="flex-1"
+                className="h-11 flex-1"
               />
             </div>
           );

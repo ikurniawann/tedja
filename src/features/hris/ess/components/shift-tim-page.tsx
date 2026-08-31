@@ -150,7 +150,10 @@ export function EssShiftTimPage() {
           }
         }}
       >
-        <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
+        {/* sm:max-w — bawaan DialogContent memasang sm:max-w-sm, jadi max-w
+            tanpa prefix sm: kalah dan dialog menyusut (pilihan shift
+            terpotong jadi "L."). */}
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle>Jadwal Shift — {editing?.full_name}</DialogTitle>
           </DialogHeader>
