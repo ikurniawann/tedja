@@ -66,6 +66,34 @@ export function canAccessPath(
   );
 }
 
+function hrefCoversPath(href: string, pathname: string): boolean {
+  if (href === "/dashboard") return pathname === "/dashboard";
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
+
+/**
+ * Halaman cetak PR/PO hidup di `/dashboard/purchasing/print/{pr|po}/:id`
+ * (bukan child dari menu PR/PO). Tanpa alias ini layout me-redirect ke
+ * Beranda karena prefix match gagal.
+ */
+const PRINT_DOCUMENT_OWNERS: ReadonlyArray<{
+  pathPattern: RegExp;
+  menuSuffixes: readonly string[];
+}> = [
+  { pathPattern: /\/print\/pr(?:\/|$)/, menuSuffixes: ["/purchasing/pr", "/approval/pr"] },
+  { pathPattern: /\/print\/po(?:\/|$)/, menuSuffixes: ["/purchasing/po", "/approval/po"] },
+];
+
+function menuOwnsPrintPath(pathname: string, menuHrefs: readonly string[]): boolean {
+  const owners = PRINT_DOCUMENT_OWNERS.find((row) => row.pathPattern.test(pathname));
+  if (!owners) return false;
+  return menuHrefs.some((href) =>
+    owners.menuSuffixes.some(
+      (suffix) => href === suffix || href.endsWith(suffix) || href.includes(`${suffix}/`)
+    )
+  );
+}
+
 /**
  * True bila pathname tercakup salah satu href menu IAM yang di-grant ke
  * user (prefix match). Root "/dashboard" sengaja EXACT-only — banyak role
@@ -76,9 +104,6 @@ export function isPathAllowedByMenus(
   pathname: string,
   menuHrefs: readonly string[]
 ): boolean {
-  return menuHrefs.some((href) =>
-    href === "/dashboard"
-      ? pathname === "/dashboard"
-      : pathname === href || pathname.startsWith(`${href}/`)
-  );
+  if (menuHrefs.some((href) => hrefCoversPath(href, pathname))) return true;
+  return menuOwnsPrintPath(pathname, menuHrefs);
 }

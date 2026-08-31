@@ -115,7 +115,7 @@ function AppSidebarContent({
     <CanUseCentralCashierProvider value={canUseCentralCashier}>
     <PosNfcShell>
     <div
-      className="arkiv-dashboard-theme flex min-h-screen"
+      className="arkiv-dashboard-theme flex min-h-screen print:block print:min-h-0 print:bg-white"
       style={{ background: "var(--page-mesh)" }}
     >
       {mobileOpen && (
@@ -127,7 +127,7 @@ function AppSidebarContent({
       )}
 
       <aside
-        className={`fixed inset-y-0 left-0 z-40 flex transform flex-col shadow-xl transition-all duration-200 ease-in-out lg:relative lg:z-0 lg:flex lg:shrink-0 lg:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-40 flex transform flex-col shadow-xl transition-all duration-200 ease-in-out print:hidden lg:relative lg:z-0 lg:flex lg:shrink-0 lg:translate-x-0 ${
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         } ${collapsed ? "lg:w-20" : "lg:w-64"}`}
         style={{
@@ -150,7 +150,7 @@ function AppSidebarContent({
         <AppSidebarNav navItems={navItems} collapsed={collapsed} onNavigate={closeMobile} />
       </aside>
 
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex min-w-0 flex-1 flex-col print:block">
         <MobileHeader
           navItems={navItems}
           onMenuClick={() => setMobileOpen(true)}
@@ -160,7 +160,7 @@ function AppSidebarContent({
         />
 
         <div
-          className={`hidden items-center justify-between gap-4 px-6 py-3 backdrop-blur-sm lg:flex ${DESKTOP_TOP_BAR_HEIGHT} lg:py-0`}
+          className={`hidden items-center justify-between gap-4 px-6 py-3 backdrop-blur-sm print:hidden lg:flex ${DESKTOP_TOP_BAR_HEIGHT} lg:py-0`}
           style={{
             background: "var(--navbar-background)",
             color: "var(--navbar-foreground)",
@@ -192,7 +192,7 @@ function AppSidebarContent({
           </div>
         </div>
 
-        <main className="flex-1 overflow-auto p-4 transition-all duration-200 lg:p-6">{children}</main>
+        <main className="flex-1 overflow-auto p-4 transition-all duration-200 print:block print:overflow-visible print:p-0 lg:p-6">{children}</main>
 
         {accountOpen && (
           <AccountPopup
@@ -325,7 +325,7 @@ function MobileHeader({
   essOnly: boolean;
 }) {
   return (
-    <header className="border-b border-gray-200 bg-white lg:hidden">
+    <header className="border-b border-gray-200 bg-white print:hidden lg:hidden">
       <div className="flex items-center justify-between gap-2 px-4 py-3">
         <button onClick={onMenuClick} className="shrink-0 rounded-lg p-2 hover:bg-gray-100">
           <Bars3Icon className="h-6 w-6 text-gray-700" />
