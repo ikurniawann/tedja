@@ -245,7 +245,7 @@ export async function collectPoFulfillment(
 
 // ============================================================
 // task_completion — Task Departemen (owner 2026-08-30, MBO/task
-// compliance): tugas ter-APPROVE HRD ÷ tugas jatuh tempo periode.
+// compliance): tugas ter-APPROVE Head Division ÷ tugas jatuh tempo periode.
 // Occurrence ber-assignee dihitung ke karyawan itu; tanpa assignee
 // dihitung ke SIAPA yang menandainya selesai (done_by); occurrence
 // tanpa assignee yang tak pernah dikerjakan dihitung ke seluruh
