@@ -92,10 +92,10 @@ const STATUS_META: Record<OccurrenceRow["status"], { label: string; cls: string 
 // Seksi daftar task (owner 2026-08-31): dipisah per jenis pengulangan.
 // Tiap seksi berwarna beda supaya mudah dipindai (owner 2026-08-31).
 const SECTION_ORDER = [
-  { key: "daily", label: "Harian", cls: "bg-blue-50 text-blue-700 border-blue-100" },
-  { key: "weekly", label: "Mingguan", cls: "bg-emerald-50 text-emerald-700 border-emerald-100" },
-  { key: "monthly", label: "Bulanan", cls: "bg-violet-50 text-violet-700 border-violet-100" },
-  { key: "once", label: "Task Tambahan", cls: "bg-amber-50 text-amber-700 border-amber-100" },
+  { key: "daily", label: "Harian", cls: "bg-blue-50 text-blue-700 border-blue-100", titleCls: "text-blue-800" },
+  { key: "weekly", label: "Mingguan", cls: "bg-emerald-50 text-emerald-700 border-emerald-100", titleCls: "text-emerald-800" },
+  { key: "monthly", label: "Bulanan", cls: "bg-violet-50 text-violet-700 border-violet-100", titleCls: "text-violet-800" },
+  { key: "once", label: "Task Tambahan", cls: "bg-amber-50 text-amber-700 border-amber-100", titleCls: "text-amber-800" },
 ] as const;
 
 /** Grup task yang bisa di-expand — state terbuka/tutup lokal per grup. */
@@ -391,7 +391,7 @@ export function DeptTasksPage() {
                   <>
                     <span className="w-4 text-gray-400">{terbukaGrup ? "▾" : "▸"}</span>
                     <span className="min-w-0 flex-1">
-                      <span className="block text-sm font-medium text-gray-900">
+                      <span className={`block text-sm font-semibold ${section.titleCls}`}>
                         {groupTask.title}
                         <span className="ml-2 text-xs text-gray-400">
                           {RECURRENCE_LABEL[groupTask.recurrence]}
