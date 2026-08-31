@@ -114,26 +114,41 @@ export function EssShiftTimPage() {
                   </div>
                 )}
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-gray-900">
-                    {member.full_name}
+                  <p className="flex items-center gap-2 text-sm font-medium text-gray-900">
+                    <span className="truncate">{member.full_name}</span>
+                    {member.schedule_summary ? (
+                      <span className="inline-flex flex-none items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 ring-1 ring-emerald-200">
+                        ✓ Jadwal aktif
+                      </span>
+                    ) : (
+                      <span className="inline-flex flex-none items-center rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700 ring-1 ring-amber-200">
+                        Belum ada jadwal
+                      </span>
+                    )}
                   </p>
                   <p className="truncate text-xs text-gray-500">
                     {[member.position_title, member.department_name]
                       .filter(Boolean)
                       .join(" · ") || "—"}
                   </p>
-                  <p className="mt-0.5 truncate text-xs text-gray-400">
+                  <p
+                    className={`mt-0.5 truncate text-xs ${
+                      member.schedule_summary ? "text-emerald-700" : "text-gray-400"
+                    }`}
+                  >
                     {member.schedule_summary
-                      ? member.schedule_summary
-                      : "Belum ada pola jadwal"}
+                      ? `${member.schedule_summary}${member.schedule_since ? ` · sejak ${member.schedule_since}` : ""}`
+                      : "Atur pola shift supaya absensinya ternilai benar"}
                   </p>
                 </div>
+                {/* Sudah punya jadwal → tombol netral "Ubah Jadwal"; belum →
+                    tombol utama "Atur Jadwal" supaya yang kosong menonjol. */}
                 <Button
-                  variant="outline"
+                  variant={member.schedule_summary ? "outline" : "default"}
                   size="sm"
                   onClick={() => setEditing(member)}
                 >
-                  Atur Jadwal
+                  {member.schedule_summary ? "Ubah Jadwal" : "Atur Jadwal"}
                 </Button>
               </CardContent>
             </Card>
