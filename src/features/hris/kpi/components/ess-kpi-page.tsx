@@ -1,7 +1,13 @@
 "use client";
 
-import { useState } from "react";
-import { ChartBarIcon, UsersIcon } from "@heroicons/react/24/outline";
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import {
+  ChartBarIcon,
+  ClipboardDocumentCheckIcon,
+  DocumentCheckIcon,
+  UsersIcon,
+} from "@heroicons/react/24/outline";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,6 +28,7 @@ import {
 } from "@/components/ui/select";
 import { SkeletonCard } from "@/components/ui/skeleton-table";
 import { useToast, ToastContainer } from "@/components/ui/toast";
+import { apiGet } from "@/lib/api-client";
 import { useKpiHistory, useKpiTeam } from "../queries";
 import { useSaveKpiRubric } from "../mutations";
 import type { KpiScorecardRow } from "../types";
@@ -41,6 +48,34 @@ const num = (value: number | string | null | undefined): number | null => {
 const periodLabel = (row: KpiScorecardRow) =>
   `${MONTH_LABELS[row.period_month - 1]} ${row.period_year}`;
 
+const MONTH_SHORT = ["", "Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"];
+
+const scoreCls = (v: number | null): string => {
+  if (v === null) return "text-gray-400";
+  if (v >= 90) return "text-emerald-600";
+  if (v >= 75) return "text-blue-600";
+  if (v >= 60) return "text-amber-600";
+  return "text-red-600";
+};
+
+/** Ringkasan kuartal berjalan + review + task hari ini (owner 2026-08-31 —
+ *  menyambungkan KPI Saya dengan Performance Review & Task Departemen). */
+interface QuarterSummary {
+  quarter: number;
+  year: number;
+  months: number[];
+  monthScores: { month: number; score: number | null }[];
+  avg: number | null;
+}
+interface MyReviewSummary {
+  cycleName: string;
+  grand: number | null;
+  category: string | null;
+  status: string;
+  selfDone: boolean;
+  signed: boolean;
+}
+
 /**
  * ESS → KPI Saya: riwayat skor bulanan pribadi (Fase C) + section
  * "Tim Saya" utk atasan langsung menilai rubrik bawahannya (Fase E/MSS).
@@ -51,6 +86,96 @@ export function EssKpiPage() {
   const [teamDetail, setTeamDetail] = useState<KpiScorecardRow | null>(null);
   const [rubricValue, setRubricValue] = useState("");
   const [rubricNotes, setRubricNotes] = useState("");
+
+  // Sambungan ke Performance Review & Task Departemen (owner 2026-08-31):
+  // QTD kuartal berjalan, status review kuartal saya, dan tugas hari ini.
+  const [quarterSummary, setQuarterSummary] = useState<QuarterSummary | null>(null);
+  const [myReview, setMyReview] = useState<MyReviewSummary | null | "none">(null);
+  const [todayTasks, setTodayTasks] = useState<number | null>(null);
+
+  useEffect(() => {
+    interface RtResponse {
+      data: {
+        employees: { id: string; avg_score: number | string | null; months: { month: number; score: number | string | null }[] | null }[];
+        months: number[]; year: number; quarter: number; my_employee_id: string | null;
+      };
+    }
+    apiGet<RtResponse>("/api/hris/performance/realtime")
+      .then((res) => {
+        const d = res.data;
+        const mine = d.employees.find((e) => e.id === d.my_employee_id) ?? d.employees[0];
+        setQuarterSummary({
+          quarter: d.quarter,
+          year: d.year,
+          months: d.months,
+          monthScores: d.months.map((m) => {
+            const found = (mine?.months ?? []).find((row) => row.month === m);
+            const parsed = found?.score === null || found?.score === undefined ? null : Number(found.score);
+            return { month: m, score: Number.isFinite(parsed as number) ? (parsed as number) : null };
+          }),
+          avg: mine?.avg_score === null || mine?.avg_score === undefined ? null : Number(mine.avg_score),
+        });
+      })
+      .catch(() => setQuarterSummary(null));
+
+    interface CyclesResponse {
+      data: { cycles: { id: string; name: string; start_date: string; end_date: string }[] };
+    }
+    interface ReviewsResponse {
+      data: {
+        my_employee_id: string | null;
+        reviews: {
+          employee_id: string; status: string; category: string | null;
+          grand_total_score: number | string | null; self_done: boolean;
+          employee_sign_date: string | null;
+        }[];
+      };
+    }
+    apiGet<CyclesResponse>("/api/hris/performance/cycles")
+      .then(async (res) => {
+        const today = new Date().toISOString().slice(0, 10);
+        const cycle =
+          res.data.cycles.find((c) => c.start_date <= today && today <= c.end_date) ??
+          res.data.cycles[0];
+        if (!cycle) {
+          setMyReview("none");
+          return;
+        }
+        const rev = await apiGet<ReviewsResponse>(
+          `/api/hris/performance/reviews?cycle_id=${cycle.id}`
+        );
+        const mine = rev.data.reviews.find((r) => r.employee_id === rev.data.my_employee_id);
+        if (!mine) {
+          setMyReview("none");
+          return;
+        }
+        const grand = mine.grand_total_score === null ? null : Number(mine.grand_total_score);
+        setMyReview({
+          cycleName: cycle.name,
+          grand: Number.isFinite(grand as number) && grand !== 0 ? grand : null,
+          category: mine.category,
+          status: mine.status,
+          selfDone: mine.self_done,
+          signed: mine.employee_sign_date !== null,
+        });
+      })
+      .catch(() => setMyReview("none"));
+
+    interface TasksResponse {
+      data: { occurrences: { occurrence_date: string; status: string }[] };
+    }
+    const month = new Date().toISOString().slice(0, 7);
+    apiGet<TasksResponse>(`/api/hris/dept-tasks?month=${month}`)
+      .then((res) => {
+        const today = new Date().toISOString().slice(0, 10);
+        setTodayTasks(
+          res.data.occurrences.filter(
+            (o) => o.occurrence_date === today && o.status === "pending"
+          ).length
+        );
+      })
+      .catch(() => setTodayTasks(null));
+  }, []);
 
   const historyQuery = useKpiHistory("me", 12);
   const rows = historyQuery.data?.data ?? [];
@@ -100,8 +225,102 @@ export function EssKpiPage() {
         </h1>
         <p className="text-sm text-muted-foreground">
           Skor kinerja bulanan Anda (0–100), dihitung dari data operasional +
-          penilaian atasan.
+          penilaian atasan — dan menjadi 60% nilai Performance Review kuartalan.
         </p>
+      </div>
+
+      {/* Sambungan kuartal berjalan → Performance Review & Task Departemen */}
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+              KPI Kuartal Berjalan{quarterSummary ? ` — Q${quarterSummary.quarter} ${quarterSummary.year}` : ""}
+            </p>
+            {quarterSummary === null ? (
+              <p className="mt-2 text-sm text-gray-400">Memuat…</p>
+            ) : (
+              <div className="mt-2 flex items-center gap-3">
+                <span className={`text-3xl font-bold ${scoreCls(quarterSummary.avg)}`}>
+                  {quarterSummary.avg === null ? "—" : quarterSummary.avg.toFixed(1)}
+                </span>
+                <div className="flex flex-1 gap-1.5">
+                  {quarterSummary.monthScores.map((m) => (
+                    <span key={m.month} className="flex-1 rounded-md bg-muted/60 px-1 py-1 text-center text-xs">
+                      <span className="block text-[10px] text-gray-400">{MONTH_SHORT[m.month]}</span>
+                      <span className={`font-semibold ${scoreCls(m.score)}`}>
+                        {m.score === null ? "—" : m.score.toFixed(0)}
+                      </span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Link href="/dashboard/hris/performance" className="block">
+          <Card className="h-full transition-colors hover:border-primary/40">
+            <CardContent className="p-4">
+              <p className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                <DocumentCheckIcon className="h-4 w-4" /> Performance Review
+              </p>
+              {myReview === null ? (
+                <p className="mt-2 text-sm text-gray-400">Memuat…</p>
+              ) : myReview === "none" ? (
+                <p className="mt-2 text-sm text-gray-500">
+                  Siklus review belum dibuka HRD. Skor bulanan Anda otomatis
+                  jadi bahan rapor saat siklus dibuka.
+                </p>
+              ) : (
+                <div className="mt-2 space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className={`text-3xl font-bold ${scoreCls(myReview.grand)}`}>
+                      {myReview.grand === null ? "—" : myReview.grand.toFixed(1)}
+                    </span>
+                    {myReview.category ? (
+                      <Badge variant="outline">{myReview.category}</Badge>
+                    ) : null}
+                    <Badge variant={myReview.status === "final" ? "default" : "outline"}>
+                      {myReview.status === "final" ? "Final" : "Draft"}
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    {myReview.cycleName}
+                    {!myReview.selfDone && myReview.status !== "final"
+                      ? " · self assessment belum diisi — tap untuk mengisi"
+                      : !myReview.signed
+                        ? " · belum ditandatangani — tap untuk tanda tangan"
+                        : " · lengkap"}
+                  </p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </Link>
+
+        <Link href="/dashboard/hris/dept-tasks" className="block">
+          <Card className="h-full transition-colors hover:border-primary/40">
+            <CardContent className="p-4">
+              <p className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                <ClipboardDocumentCheckIcon className="h-4 w-4" /> Task Departemen
+              </p>
+              {todayTasks === null ? (
+                <p className="mt-2 text-sm text-gray-400">Memuat…</p>
+              ) : todayTasks === 0 ? (
+                <p className="mt-2 text-sm text-emerald-600">
+                  Semua tugas hari ini beres ✓
+                </p>
+              ) : (
+                <div className="mt-2 flex items-center gap-2">
+                  <span className="text-3xl font-bold text-amber-600">{todayTasks}</span>
+                  <p className="text-sm text-gray-600">
+                    tugas hari ini menunggu diceklis — ikut dihitung ke KPI Anda
+                  </p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </Link>
       </div>
 
       {historyQuery.isLoading && <SkeletonCard />}

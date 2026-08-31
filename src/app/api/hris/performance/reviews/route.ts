@@ -53,6 +53,7 @@ export async function GET(req: NextRequest) {
               r.total_project_score, r.grand_total_score, r.category,
               r.employee_sign_date::text, r.reviewer_sign_date::text,
               r.reviewer_name,
+              (r.self_assessment IS NOT NULL) AS self_done,
               (SELECT count(*) FROM performance.behavioral_review_items i
                WHERE i.review_id = r.id AND i.score IS NOT NULL)::int AS rated_items,
               (SELECT count(*) FROM performance.behavioral_review_items i
