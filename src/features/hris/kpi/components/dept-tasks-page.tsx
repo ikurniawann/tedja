@@ -90,11 +90,12 @@ const STATUS_META: Record<OccurrenceRow["status"], { label: string; cls: string 
 };
 
 // Seksi daftar task (owner 2026-08-31): dipisah per jenis pengulangan.
+// Tiap seksi berwarna beda supaya mudah dipindai (owner 2026-08-31).
 const SECTION_ORDER = [
-  { key: "daily", label: "Harian" },
-  { key: "weekly", label: "Mingguan" },
-  { key: "monthly", label: "Bulanan" },
-  { key: "once", label: "Task Tambahan" },
+  { key: "daily", label: "Harian", cls: "bg-blue-50 text-blue-700 border-blue-100" },
+  { key: "weekly", label: "Mingguan", cls: "bg-emerald-50 text-emerald-700 border-emerald-100" },
+  { key: "monthly", label: "Bulanan", cls: "bg-violet-50 text-violet-700 border-violet-100" },
+  { key: "once", label: "Task Tambahan", cls: "bg-amber-50 text-amber-700 border-amber-100" },
 ] as const;
 
 /** Grup task yang bisa di-expand — state terbuka/tutup lokal per grup. */
@@ -366,7 +367,9 @@ export function DeptTasksPage() {
             return (
               <Card key={section.key}>
                 <CardContent className="p-0">
-                  <div className="border-b bg-muted/50 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  <div
+                    className={`border-b px-4 py-2 text-xs font-semibold uppercase tracking-wide ${section.cls}`}
+                  >
                     {section.label}
                   </div>
                   <div className="divide-y">
