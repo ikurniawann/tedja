@@ -101,7 +101,7 @@ export async function runKpiSnapshot(input: {
   const employees: KpiEmployee[] = employeesRes.rows;
 
   // 2. Katalog + bobot role + target
-  const [indicatorsRes, roleWeightsRes, targetsRes] = await Promise.all([
+  const [indicatorsRes, roleWeightsRes, deptWeightsRes, targetsRes] = await Promise.all([
     pool.query(
       `SELECT id, code, direction, default_target, is_active
        FROM performance.kpi_indicators WHERE is_active = true`
@@ -110,6 +110,12 @@ export async function runKpiSnapshot(input: {
       `SELECT ri.role_code, ri.indicator_id, ri.weight::float AS weight, i.code
        FROM performance.kpi_role_indicators ri
        JOIN performance.kpi_indicators i ON i.id = ri.indicator_id
+       WHERE i.is_active = true`
+    ),
+    pool.query(
+      `SELECT di.department_id, di.indicator_id, di.weight::float AS weight, i.code
+       FROM performance.kpi_department_indicators di
+       JOIN performance.kpi_indicators i ON i.id = di.indicator_id
        WHERE i.is_active = true`
     ),
     pool.query(
@@ -136,6 +142,17 @@ export async function runKpiSnapshot(input: {
     const list = roleComponents.get(row.role_code) ?? [];
     list.push({ code: row.code, indicatorId: row.indicator_id, weight: row.weight });
     roleComponents.set(row.role_code, list);
+  }
+  // Konfigurasi per DEPARTEMEN (owner 2026-08-31) — diutamakan; departemen
+  // yang belum dikonfigurasi memakai pemetaan peran di atas sebagai bawaan.
+  const deptComponents = new Map<
+    string,
+    { code: string; indicatorId: string; weight: number }[]
+  >();
+  for (const row of deptWeightsRes.rows) {
+    const list = deptComponents.get(row.department_id) ?? [];
+    list.push({ code: row.code, indicatorId: row.indicator_id, weight: row.weight });
+    deptComponents.set(row.department_id, list);
   }
 
   // 3. Jalankan kolektor gelombang 1 + 2
@@ -235,8 +252,11 @@ export async function runKpiSnapshot(input: {
 
   for (const employee of employees) {
     if (finalEmployees.has(employee.id)) continue; // beku total
-    const components = roleComponents.get(employee.role_code) ?? [];
-    if (components.length === 0) continue; // role tanpa scorecard (mis. direksi)
+    const components =
+      (employee.department_id ? deptComponents.get(employee.department_id) : undefined) ??
+      roleComponents.get(employee.role_code) ??
+      [];
+    if (components.length === 0) continue; // tanpa konfigurasi (mis. direksi)
 
     const scorecardComponents: ScorecardComponent[] = [];
 
