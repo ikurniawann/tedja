@@ -131,6 +131,7 @@ export async function awardCrmXpForPosOrder(
       .map((item) => item.product_id ?? item.productId ?? null)
       .filter((value): value is string => Boolean(value));
     const productXp = await loadProductXpMap(db, productIds);
+    const label = await orderLabel(db, payload.orderId);
 
     const ledgerIds: string[] = [];
     let xpAwarded = 0;
@@ -175,7 +176,7 @@ export async function awardCrmXpForPosOrder(
         referenceTable: "pos_orders",
         referenceId: payload.orderId,
         idempotencyKey: `pos:order:${payload.orderId}:product:${productId}:${index}`,
-        description: `XP produk POS untuk order ${payload.orderId}`,
+        description: `XP produk POS — order ${label}`,
         metadata: { amount, quantity, product_id: productId },
       });
 
@@ -218,7 +219,7 @@ export async function awardCrmXpForPosOrder(
           referenceTable: "pos_orders",
           referenceId: payload.orderId,
           idempotencyKey: `pos:order:${payload.orderId}:order_amount`,
-          description: `XP transaksi POS untuk order ${payload.orderId}`,
+          description: `XP transaksi POS — order ${label} (${formatRupiah(payload.totalAmount)})`,
           metadata: { amount: payload.totalAmount, source: ruleId ? "crm_xp_rules" : "pos_loyalty_settings" },
         });
 
@@ -311,7 +312,7 @@ export async function awardCrmXpForSplitPayment(
       referenceTable: "pos_order_splits",
       referenceId: payload.splitId,
       idempotencyKey: `pos:split:${payload.splitId}:order_amount`,
-      description: `XP split payment POS untuk order ${payload.orderId}`,
+      description: `XP split payment POS — order ${await orderLabel(db, payload.orderId)} (${formatRupiah(payload.totalAmount)})`,
       metadata: {
         amount: payload.totalAmount,
         order_id: payload.orderId,
@@ -370,7 +371,7 @@ export async function awardCrmXpForTopup(
       referenceTable: "pos_wallet_transactions",
       referenceId: payload.transactionId,
       idempotencyKey: `pos:topup:${payload.transactionId}`,
-      description: `XP topup ARK untuk transaksi ${payload.transactionId}`,
+      description: `XP topup ARK — ${formatRupiah(payload.topupAmountIdr)}`,
       metadata: {
         amount: payload.topupAmountIdr,
         source: "pos_loyalty_settings",
@@ -396,6 +397,29 @@ export async function awardCrmXpForTopup(
       reason: error instanceof Error ? error.message : "crm_xp_error",
     };
   }
+}
+
+/**
+ * Label order untuk deskripsi ledger (owner 2026-08-31): tampilkan nomor
+ * order yang dikenal kasir, bukan UUID internal. Gagal ambil → fallback
+ * potongan UUID supaya penulisan XP tidak pernah terhambat.
+ */
+async function orderLabel(db: DbClient, orderId: string): Promise<string> {
+  try {
+    const { data } = await db
+      .from("pos_orders")
+      .select("order_number")
+      .eq("id", orderId)
+      .maybeSingle();
+    if (data?.order_number) return `#${data.order_number}`;
+  } catch {
+    // deskripsi tidak boleh menggagalkan pemberian XP
+  }
+  return orderId.slice(0, 8);
+}
+
+export function formatRupiah(amount: number): string {
+  return `Rp ${Math.round(amount).toLocaleString("id-ID")}`;
 }
 
 async function loadPosXpRules(db: DbClient): Promise<
