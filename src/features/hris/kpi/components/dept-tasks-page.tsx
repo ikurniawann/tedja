@@ -89,6 +89,39 @@ const STATUS_META: Record<OccurrenceRow["status"], { label: string; cls: string 
   rejected: { label: "Ditolak", cls: "bg-red-100 text-red-700" },
 };
 
+// Seksi daftar task (owner 2026-08-31): dipisah per jenis pengulangan.
+const SECTION_ORDER = [
+  { key: "daily", label: "Harian" },
+  { key: "weekly", label: "Mingguan" },
+  { key: "monthly", label: "Bulanan" },
+  { key: "once", label: "Task Tambahan" },
+] as const;
+
+/** Grup task yang bisa di-expand — state terbuka/tutup lokal per grup. */
+function TaskGroup({
+  header,
+  defaultOpen = false,
+  children,
+}: {
+  header: (open: boolean) => React.ReactNode;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div>
+      <button
+        type="button"
+        className="flex w-full flex-wrap items-center gap-3 px-4 py-3 text-left hover:bg-muted/30"
+        onClick={() => setOpen((v) => !v)}
+      >
+        {header(open)}
+      </button>
+      {open ? children : null}
+    </div>
+  );
+}
+
 const bulanIni = () => {
   const d = new Date(
     new Date().toLocaleString("en-US", { timeZone: "Asia/Jakarta" })
@@ -154,10 +187,6 @@ export function DeptTasksPage() {
     return map;
   }, [data?.checked_items]);
 
-  const taskById = useMemo(
-    () => new Map((data?.tasks ?? []).map((t) => [t.id, t])),
-    [data?.tasks]
-  );
   const todayIso = useMemo(() => {
     const d = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Jakarta" }));
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -232,6 +261,15 @@ export function DeptTasksPage() {
   }
 
   const occurrences = useMemo(() => data?.occurrences ?? [], [data?.occurrences]);
+  const occByTask = useMemo(() => {
+    const map = new Map<string, OccurrenceRow[]>();
+    for (const occ of occurrences) {
+      const list = map.get(occ.task_id) ?? [];
+      list.push(occ);
+      map.set(occ.task_id, list);
+    }
+    return map;
+  }, [occurrences]);
   const ringkas = useMemo(() => {
     const due = occurrences.length;
     const approved = occurrences.filter((o) => o.status === "approved").length;
@@ -319,10 +357,68 @@ export function DeptTasksPage() {
           </CardContent>
         </Card>
       ) : (
-        <Card>
-          <CardContent className="divide-y p-0">
-            {occurrences.map((occ) => {
-              const task = taskById.get(occ.task_id);
+        <div className="space-y-4">
+          {SECTION_ORDER.map((section) => {
+            const sectionTasks = (data?.tasks ?? []).filter(
+              (t) => t.recurrence === section.key && occByTask.has(t.id)
+            );
+            if (sectionTasks.length === 0) return null;
+            return (
+              <Card key={section.key}>
+                <CardContent className="p-0">
+                  <div className="border-b bg-muted/50 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    {section.label}
+                  </div>
+                  <div className="divide-y">
+            {sectionTasks.map((groupTask) => (
+              <TaskGroup
+                key={groupTask.id}
+                defaultOpen={groupTask.recurrence === "once"}
+                header={(terbukaGrup) => {
+              const groupOccs = occByTask.get(groupTask.id) ?? [];
+              const ringkasGrup = {
+                approved: groupOccs.filter((o) => o.status === "approved").length,
+                waiting: groupOccs.filter((o) => o.status === "done").length,
+                total: groupOccs.length,
+              };
+              const adaHariIni = groupOccs.some(
+                (o) => o.occurrence_date === todayIso && o.status !== "approved"
+              );
+              return (
+                  <>
+                    <span className="w-4 text-gray-400">{terbukaGrup ? "▾" : "▸"}</span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-medium text-gray-900">
+                        {groupTask.title}
+                        <span className="ml-2 text-xs text-gray-400">
+                          {RECURRENCE_LABEL[groupTask.recurrence]}
+                          {groupTask.recurrence === "weekly" && groupTask.weekly_day
+                            ? ` · ${HARI[groupTask.weekly_day]}`
+                            : ""}
+                          {groupTask.recurrence === "monthly" && groupTask.monthly_day
+                            ? ` · tgl ${groupTask.monthly_day}`
+                            : ""}
+                        </span>
+                      </span>
+                      <span className="block truncate text-xs text-gray-500">
+                        PJ: {groupTask.assignee_name ?? "Departemen"}
+                      </span>
+                    </span>
+                    {adaHariIni ? (
+                      <Badge className="bg-primary/10 text-primary">Ada tugas hari ini</Badge>
+                    ) : null}
+                    <span className="text-xs tabular-nums text-gray-500">
+                      {ringkasGrup.approved} disetujui
+                      {ringkasGrup.waiting ? ` · ${ringkasGrup.waiting} tunggu review` : ""}
+                      {" · "}
+                      {ringkasGrup.total} jadwal
+                    </span>
+                  </>
+              );
+                }}
+              >
+                    <div className="divide-y border-t bg-muted/10">
+                      {(occByTask.get(groupTask.id) ?? []).map((occ) => {
               const meta = STATUS_META[occ.status];
               const lewatTempo = occ.status === "pending" && occ.occurrence_date < todayIso;
               const bolehTandai =
@@ -336,25 +432,15 @@ export function DeptTasksPage() {
               const terbuka = expandedOcc === occ.id;
               return (
                 <div key={occ.id} className="flex flex-wrap items-center gap-3 px-4 py-3">
-                  <div className="w-24 text-xs tabular-nums text-gray-500">
+                  <div className="w-24 pl-6 text-xs tabular-nums text-gray-600">
                     {occ.occurrence_date.slice(8, 10)}/{occ.occurrence_date.slice(5, 7)}
+                    {occ.occurrence_date === todayIso ? (
+                      <span className="ml-1 font-semibold text-primary">hari ini</span>
+                    ) : null}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-gray-900">
-                      {task?.title ?? "—"}
-                      <span className="ml-2 text-xs text-gray-400">
-                        {task ? RECURRENCE_LABEL[task.recurrence] : ""}
-                        {task?.recurrence === "weekly" && task.weekly_day
-                          ? ` · ${HARI[task.weekly_day]}`
-                          : ""}
-                        {task?.recurrence === "monthly" && task.monthly_day
-                          ? ` · tgl ${task.monthly_day}`
-                          : ""}
-                      </span>
-                    </p>
                     <p className="truncate text-xs text-gray-500">
-                      PJ: {task?.assignee_name ?? "Departemen"}
-                      {occ.done_by_name ? ` · diselesaikan ${occ.done_by_name}` : ""}
+                      {occ.done_by_name ? `diselesaikan ${occ.done_by_name}` : ""}
                       {occ.status === "rejected" && occ.review_notes
                         ? ` · alasan: ${occ.review_notes}`
                         : ""}
@@ -455,8 +541,15 @@ export function DeptTasksPage() {
                 </div>
               );
             })}
-          </CardContent>
-        </Card>
+                    </div>
+              </TaskGroup>
+            ))}
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
       )}
 
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
