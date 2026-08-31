@@ -78,7 +78,7 @@ export async function GET(req: NextRequest) {
     const { start, end } = monthRange(month);
     await ensureOccurrences(departmentId, start, end);
 
-    const [tasks, occurrences, members] = await Promise.all([
+    const [tasks, occurrences, members, subtasks, checkedItems] = await Promise.all([
       query(
         `SELECT t.id, t.title, t.description, t.recurrence, t.weekly_day,
                 t.monthly_day, t.due_date::text, t.is_active,
@@ -105,6 +105,23 @@ export async function GET(req: NextRequest) {
          WHERE department_id = $1 AND is_active ORDER BY full_name`,
         [departmentId]
       ),
+      query(
+        `SELECT st.id, st.task_id, st.title, st.weight, st.sort_order
+         FROM hris.department_task_subtasks st
+         JOIN hris.department_tasks t ON t.id = st.task_id
+         WHERE t.department_id = $1
+         ORDER BY st.task_id, st.sort_order, st.created_at`,
+        [departmentId]
+      ),
+      query(
+        `SELECT oi.occurrence_id, oi.subtask_id, oi.is_checked
+         FROM hris.department_task_occurrence_items oi
+         JOIN hris.department_task_occurrences o ON o.id = oi.occurrence_id
+         JOIN hris.department_tasks t ON t.id = o.task_id
+         WHERE t.department_id = $1
+           AND o.occurrence_date BETWEEN $2 AND $3`,
+        [departmentId, start, end]
+      ),
     ]);
 
     return NextResponse.json({
@@ -113,8 +130,12 @@ export async function GET(req: NextRequest) {
         tasks,
         occurrences,
         members,
+        subtasks,
+        checked_items: checkedItems,
         departments,
         can_manage: me.isHr || me.hasSubordinates,
+        // Review = Head Division departemen ini (atau HRD sbg cadangan).
+        can_review: me.isHr || (me.hasSubordinates && departmentId === me.departmentId),
         is_hr: me.isHr,
         my_employee_id: me.employeeId,
       },
@@ -134,6 +155,8 @@ interface PostBody {
   weekly_day?: number | null;
   monthly_day?: number | null;
   due_date?: string | null;
+  /** Sub-task (owner 2026-08-31): bobot dihitung otomatis dibagi rata. */
+  subtasks?: { title?: string }[];
 }
 
 export async function POST(req: NextRequest) {
@@ -187,6 +210,26 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Sub-task: 100% task dibagi RATA otomatis (owner 2026-08-31 — tanpa
+    // input bobot). Sisa pembulatan ditempel ke sub-task terakhir supaya
+    // totalnya persis 100.00.
+    const subtitles = (body.subtasks ?? [])
+      .map((st) => String(st.title || "").trim())
+      .filter((title) => title.length > 0);
+    if (subtitles.length > 50) {
+      return NextResponse.json({ error: "Maksimal 50 sub-task" }, { status: 400 });
+    }
+    const rata = subtitles.length > 0
+      ? Math.floor((100 / subtitles.length) * 100) / 100
+      : 0;
+    const subtasks = subtitles.map((title, index) => ({
+      title,
+      weight:
+        index === subtitles.length - 1
+          ? Math.round((100 - rata * (subtitles.length - 1)) * 100) / 100
+          : rata,
+    }));
+
     let assignee: string | null = null;
     if (body.assignee_employee_id && UUID_RE.test(body.assignee_employee_id)) {
       const valid = await queryOne<{ id: string }>(
@@ -221,6 +264,16 @@ export async function POST(req: NextRequest) {
         me.fullName ?? "—",
       ]
     );
+
+    if (created?.id && subtasks.length > 0) {
+      for (const [index, st] of subtasks.entries()) {
+        await queryOne(
+          `INSERT INTO hris.department_task_subtasks (task_id, title, weight, sort_order)
+           VALUES ($1, $2, $3, $4) RETURNING id`,
+          [created.id, st.title, st.weight, index]
+        );
+      }
+    }
 
     return NextResponse.json({ message: "Task dibuat", data: { id: created?.id } }, { status: 201 });
   } catch (error) {
