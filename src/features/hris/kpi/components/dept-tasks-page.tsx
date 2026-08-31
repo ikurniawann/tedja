@@ -6,7 +6,6 @@ import { CheckCircle2, ClipboardCheck, Loader2, Plus, XCircle } from "lucide-rea
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Combobox } from "@/components/ui/combobox";
 import {
   Dialog,
@@ -506,37 +505,57 @@ export function DeptTasksPage() {
                     ) : null}
                   </div>
                   {terbuka && subs.length > 0 ? (
-                    <div className="w-full space-y-1.5 rounded-lg bg-muted/40 p-3 pl-8">
+                    <div className="grid w-full grid-cols-1 gap-2 rounded-lg bg-muted/40 p-3 sm:grid-cols-2 lg:grid-cols-3">
                       {subs.map((st) => {
                         const info = checkedByOcc.get(`${occ.id}:${st.id}`);
                         const checked = Boolean(info);
                         const bolehCeklis =
                           occ.status !== "approved" && busyId === null;
                         return (
-                          <div key={st.id} className="flex items-center gap-2 text-sm">
-                            <Checkbox
-                              checked={checked}
-                              disabled={!bolehCeklis}
-                              onCheckedChange={(v) =>
-                                toggleSubtask(occ.id, st.id, v === true)
-                              }
-                            />
-                            <span className={checked ? "text-gray-400 line-through" : "text-gray-800"}>
-                              {st.title}
+                          // Kartu sentuh (owner 2026-08-31): dipakai dari
+                          // HP/tablet — seluruh kartu adalah area tap.
+                          <button
+                            key={st.id}
+                            type="button"
+                            disabled={!bolehCeklis}
+                            onClick={() => toggleSubtask(occ.id, st.id, !checked)}
+                            className={`flex min-h-[64px] items-center gap-3 rounded-xl border-2 p-3 text-left transition-colors ${
+                              checked
+                                ? "border-emerald-300 bg-emerald-50"
+                                : "border-gray-200 bg-white active:bg-gray-50"
+                            } ${bolehCeklis ? "" : "opacity-70"}`}
+                          >
+                            <span
+                              className={`flex h-7 w-7 flex-none items-center justify-center rounded-full border-2 ${
+                                checked
+                                  ? "border-emerald-500 bg-emerald-500 text-white"
+                                  : "border-gray-300 text-transparent"
+                              }`}
+                            >
+                              ✓
                             </span>
-                            {info?.name ? (
-                              <span className="ml-auto text-xs text-gray-400">
-                                ✓ {info.name}
-                                {info.at
-                                  ? ` · ${new Date(info.at).toLocaleString("id-ID", {
-                                      day: "2-digit", month: "short",
-                                      hour: "2-digit", minute: "2-digit",
-                                      timeZone: "Asia/Jakarta",
-                                    })}`
-                                  : ""}
+                            <span className="min-w-0 flex-1">
+                              <span
+                                className={`block text-sm font-medium ${
+                                  checked ? "text-emerald-800" : "text-gray-800"
+                                }`}
+                              >
+                                {st.title}
                               </span>
-                            ) : null}
-                          </div>
+                              {info?.name ? (
+                                <span className="block truncate text-xs text-emerald-600">
+                                  {info.name}
+                                  {info.at
+                                    ? ` · ${new Date(info.at).toLocaleString("id-ID", {
+                                        day: "2-digit", month: "short",
+                                        hour: "2-digit", minute: "2-digit",
+                                        timeZone: "Asia/Jakarta",
+                                      })}`
+                                    : ""}
+                                </span>
+                              ) : null}
+                            </span>
+                          </button>
                         );
                       })}
                     </div>
