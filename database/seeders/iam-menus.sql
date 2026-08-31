@@ -9,6 +9,7 @@ INSERT INTO iam.menus (code, menu_name, route_path, icon, menu_type, order_numbe
   ('ess', 'Area Karyawan', NULL, 'calendar', 'group', 5, '{"actions":["read"]}'::jsonb),
   ('ess.attendance', 'Absensi', '/dashboard/me/absensi', 'calendar', 'sidebar', 10, '{"actions":["read"]}'::jsonb),
   ('ess.leave', 'Izin & Cuti', '/dashboard/me/cuti', 'paper-airplane', 'sidebar', 20, '{"actions":["read"]}'::jsonb),
+  ('ess.team-shifts', 'Shift Tim', '/dashboard/me/shift-tim', 'calendar', 'sidebar', 45, '{"actions":["read","update"]}'::jsonb),
   ('hris', 'HRIS', '/dashboard/hris', 'users', 'group', 10, '{"actions":["read"]}'::jsonb),
   ('items', 'Items', '/dashboard/items', 'cube', 'group', 35, '{"actions":["read"]}'::jsonb),
   ('pos', 'Point of Sales', '/dashboard/pos', 'shopping', 'group', 70, '{"actions":["read"]}'::jsonb),
@@ -220,7 +221,7 @@ WHERE deleted_at IS NULL
     -- Epic 005-012 (ditambahkan 19 Jul 2026 — insiden retire menyapu menu baru;
     -- SETIAP migrasi menu baru WAJIB menambahkan code-nya ke daftar ini):
     'ess.home', 'ess.overtime', 'ess.loans', 'ess.payroll', 'ess.kpi',
-    'ess.announcements',
+    'ess.announcements', 'ess.team-shifts',
     'hris.kepegawaian.overtime', 'hris.kepegawaian.loans',
     'hris.kepegawaian.announcements',
     'hris.performance.kpi-scorecard', 'hris.recruitment.live-monitoring',
