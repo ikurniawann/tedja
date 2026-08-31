@@ -114,7 +114,8 @@ export async function GET(req: NextRequest) {
         [departmentId]
       ),
       query(
-        `SELECT oi.occurrence_id, oi.subtask_id, oi.is_checked
+        `SELECT oi.occurrence_id, oi.subtask_id, oi.is_checked,
+                oi.checked_by_name, oi.checked_at
          FROM hris.department_task_occurrence_items oi
          JOIN hris.department_task_occurrences o ON o.id = oi.occurrence_id
          JOIN hris.department_tasks t ON t.id = o.task_id

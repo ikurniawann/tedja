@@ -58,6 +58,8 @@ interface CheckedItemRow {
   occurrence_id: string;
   subtask_id: string;
   is_checked: boolean;
+  checked_by_name?: string | null;
+  checked_at?: string | null;
 }
 interface PageData {
   department_id: string | null;
@@ -139,13 +141,15 @@ export function DeptTasksPage() {
     }
     return map;
   }, [data?.subtasks]);
+  // key `${occurrence_id}:${subtask_id}` → info pengceklis (jejak audit)
   const checkedByOcc = useMemo(() => {
-    const map = new Map<string, Set<string>>();
+    const map = new Map<string, { name: string | null; at: string | null }>();
     for (const item of data?.checked_items ?? []) {
       if (!item.is_checked) continue;
-      const set = map.get(item.occurrence_id) ?? new Set<string>();
-      set.add(item.subtask_id);
-      map.set(item.occurrence_id, set);
+      map.set(`${item.occurrence_id}:${item.subtask_id}`, {
+        name: item.checked_by_name ?? null,
+        at: item.checked_at ?? null,
+      });
     }
     return map;
   }, [data?.checked_items]);
@@ -324,9 +328,9 @@ export function DeptTasksPage() {
               const bolehTandai =
                 occ.status === "pending" || occ.status === "rejected";
               const subs = subtasksByTask.get(occ.task_id) ?? [];
-              const checkedSet = checkedByOcc.get(occ.id) ?? new Set<string>();
               const progress = subs.reduce(
-                (sum, st) => sum + (checkedSet.has(st.id) ? Number(st.weight) : 0),
+                (sum, st) =>
+                  sum + (checkedByOcc.has(`${occ.id}:${st.id}`) ? Number(st.weight) : 0),
                 0
               );
               const terbuka = expandedOcc === occ.id;
@@ -415,7 +419,8 @@ export function DeptTasksPage() {
                   {terbuka && subs.length > 0 ? (
                     <div className="w-full space-y-1.5 rounded-lg bg-muted/40 p-3 pl-8">
                       {subs.map((st) => {
-                        const checked = checkedSet.has(st.id);
+                        const info = checkedByOcc.get(`${occ.id}:${st.id}`);
+                        const checked = Boolean(info);
                         const bolehCeklis =
                           occ.status !== "approved" && busyId === null;
                         return (
@@ -430,6 +435,18 @@ export function DeptTasksPage() {
                             <span className={checked ? "text-gray-400 line-through" : "text-gray-800"}>
                               {st.title}
                             </span>
+                            {info?.name ? (
+                              <span className="ml-auto text-xs text-gray-400">
+                                ✓ {info.name}
+                                {info.at
+                                  ? ` · ${new Date(info.at).toLocaleString("id-ID", {
+                                      day: "2-digit", month: "short",
+                                      hour: "2-digit", minute: "2-digit",
+                                      timeZone: "Asia/Jakarta",
+                                    })}`
+                                  : ""}
+                              </span>
+                            ) : null}
                           </div>
                         );
                       })}
