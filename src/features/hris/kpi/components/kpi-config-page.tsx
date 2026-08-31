@@ -137,7 +137,7 @@ export function KpiConfigPage() {
       <div>
         <h1 className="flex items-center gap-2 text-2xl font-bold text-gray-900">
           <SlidersHorizontal className="h-6 w-6 text-primary" />
-          Konfigurasi KPI
+          Konfigurasi KPI Department
         </h1>
         <p className="mt-1 text-sm text-gray-500">
           Centang indikator yang mempengaruhi KPI tiap departemen beserta
