@@ -1,5 +1,15 @@
 # Lessons
 
+## Purchasing print pagination
+- Jangan `position: absolute` + `body * { visibility: hidden }` untuk cetak. Pagination browser rusak: header section (Persetujuan) yatim di kaki halaman.
+- `@page { size: A4; margin: 12mm }` + dokumen di normal flow. Chrome: `aside`/`header`/`print:hidden`. Blok tanda tangan pakai `break-inside: avoid`.
+
+## Purchasing print → redirect `/dashboard`
+- Tombol Cetak PR/PO mengarah ke `/dashboard/purchasing/print/{pr|po}/:id` — **sibling** menu IAM (`.../purchasing/pr`), bukan child.
+- Layout dashboard (`isPathAllowedByMenus`) hanya prefix-match href menu. Path print tidak tercakup → redirect `firstMenu` = Beranda `/dashboard`.
+- Jangan andalkan URL print di luar prefix menu. Alias print ke grant PR/PO di `isPathAllowedByMenus`, atau pindahkan route jadi child `.../pr/:id/print`.
+
+
 ## Produk insert — opsi stall
 - Dropdown stall memakai `GET /api/purchasing/warehouses`.
 - Jangan hardcode role. Gate pakai `requireIamMenuPrefix` (grant menu produk/inventory).

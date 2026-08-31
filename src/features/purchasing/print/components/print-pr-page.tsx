@@ -4,6 +4,7 @@ import { formatRupiah, formatDate, getPRStatusLabel } from "@/lib/purchasing/uti
 import { PRItem } from "@/types/purchasing";
 import { PrintFloatingButton } from "@/components/purchasing/print-floating-button";
 import { PrintDocumentTitle } from "@/components/purchasing/print-document-title";
+import { PrintDocumentStyles } from "@/components/purchasing/print-document-styles";
 
 type UserRow = {
   id: string;
@@ -65,63 +66,13 @@ export async function PrintPRPage({ params }: PrintPRPageProps) {
   const printTitle = `Purchase Request - ${pr.pr_number}`;
 
   return (
-    <div className="min-h-screen bg-gray-50 px-4 py-8 text-gray-900 print:bg-white print:p-0">
+    <div className="min-h-screen bg-gray-50 px-4 py-8 text-gray-900 print:min-h-0 print:bg-white print:p-0">
       <PrintDocumentTitle title={printTitle} />
-
-      {/* Print Styles via inline style tag */}
-      <style
-        dangerouslySetInnerHTML={{
-          __html: `
-            @media print {
-              @page {
-                size: A4;
-                margin: 0;
-              }
-              html,
-              body {
-                margin: 0 !important;
-                padding: 0 !important;
-                background: #ffffff !important;
-                print-color-adjust: exact;
-                -webkit-print-color-adjust: exact;
-              }
-              body * {
-                visibility: hidden !important;
-              }
-              .no-print {
-                display: none !important;
-              }
-              .print-root,
-              .print-root * {
-                visibility: visible !important;
-              }
-              .print-root {
-                position: absolute !important;
-                left: 0 !important;
-                top: 0 !important;
-                width: 100% !important;
-                min-height: auto !important;
-                box-sizing: border-box !important;
-                padding: 12mm !important;
-                background: #ffffff !important;
-              }
-              .print-sheet {
-                box-shadow: none !important;
-                border: 0 !important;
-                border-radius: 0 !important;
-                margin: 0 !important;
-                max-width: none !important;
-                width: 100% !important;
-                padding: 12mm !important;
-              }
-            }
-          `,
-        }}
-      />
+      <PrintDocumentStyles />
 
       <main className="print-root print-sheet mx-auto max-w-4xl rounded-2xl border border-gray-200/70 bg-white p-8 shadow-sm">
         {/* Header */}
-        <div className="mb-6 flex items-start justify-between gap-6 border-b border-gray-200/70 pb-5">
+        <div className="print-keep mb-6 flex items-start justify-between gap-6 border-b border-gray-200/70 pb-5">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-pink-600">
               Purchase Request
@@ -141,7 +92,7 @@ export async function PrintPRPage({ params }: PrintPRPageProps) {
         </div>
 
         {/* Document Info */}
-        <section className="mb-6 grid grid-cols-1 gap-4 rounded-xl border border-gray-200/70 bg-gray-50/60 p-4 sm:grid-cols-2">
+        <section className="print-keep mb-6 grid grid-cols-1 gap-4 rounded-xl border border-gray-200/70 bg-gray-50/60 p-4 sm:grid-cols-2">
           <div className="space-y-3">
             <div>
               <p className="text-xs text-gray-500">Tanggal PR</p>
@@ -168,7 +119,7 @@ export async function PrintPRPage({ params }: PrintPRPageProps) {
         </section>
 
         {/* Items Table */}
-        <section className="mb-6 overflow-hidden rounded-xl border border-gray-200/70">
+        <section className="print-table-wrap mb-6 overflow-hidden rounded-xl border border-gray-200/70">
           <table className="w-full border-collapse">
             <thead className="bg-gray-50">
               <tr className="border-b border-gray-200/70">
@@ -213,42 +164,43 @@ export async function PrintPRPage({ params }: PrintPRPageProps) {
 
         {/* Notes */}
         {pr.notes && (
-          <section className="mb-6 rounded-xl border border-gray-200/70 bg-gray-50/60 p-4">
+          <section className="print-keep mb-6 rounded-xl border border-gray-200/70 bg-gray-50/60 p-4">
             <h2 className="text-sm font-semibold text-gray-900">Catatan</h2>
             <p className="mt-2 whitespace-pre-wrap text-sm text-gray-600">{pr.notes}</p>
           </section>
         )}
 
-        {/* Approval Section */}
-        <section className="mt-8">
-          <div className="mb-4 border-b border-gray-200/70 pb-2">
-            <h2 className="text-sm font-semibold text-gray-900">Persetujuan</h2>
-            <p className="text-xs text-gray-500">Approval kebutuhan barang dan kuantitas</p>
-          </div>
-          <div className="grid grid-cols-2 gap-8">
-            <div className="text-center">
-              <p className="mb-12 text-xs text-gray-500">Diajukan oleh,</p>
-              <div className="mx-4 border-t border-gray-300 pt-2">
-                <p className="text-sm font-semibold text-gray-900">{requesterName}</p>
-                <p className="text-xs text-gray-500">Requester</p>
+        <div className="print-keep">
+          <section className="mt-8">
+            <div className="print-break-after-avoid mb-4 border-b border-gray-200/70 pb-2">
+              <h2 className="text-sm font-semibold text-gray-900">Persetujuan</h2>
+              <p className="text-xs text-gray-500">Approval kebutuhan barang dan kuantitas</p>
+            </div>
+            <div className="grid grid-cols-2 gap-8">
+              <div className="text-center">
+                <p className="mb-12 text-xs text-gray-500">Diajukan oleh,</p>
+                <div className="mx-4 border-t border-gray-300 pt-2">
+                  <p className="text-sm font-semibold text-gray-900">{requesterName}</p>
+                  <p className="text-xs text-gray-500">Requester</p>
+                </div>
+              </div>
+              <div className="text-center">
+                <p className="mb-12 text-xs text-gray-500">Disetujui oleh,</p>
+                <div className="mx-4 border-t border-gray-300 pt-2">
+                  <p className="text-sm font-semibold text-gray-900">{approverName}</p>
+                  <p className="text-xs text-gray-500">
+                    Head Department{pr.approved_at_head ? ` (${formatDate(pr.approved_at_head)})` : ""}
+                  </p>
+                </div>
               </div>
             </div>
-            <div className="text-center">
-              <p className="mb-12 text-xs text-gray-500">Disetujui oleh,</p>
-              <div className="mx-4 border-t border-gray-300 pt-2">
-                <p className="text-sm font-semibold text-gray-900">{approverName}</p>
-                <p className="text-xs text-gray-500">
-                  Head Department{pr.approved_at_head ? ` (${formatDate(pr.approved_at_head)})` : ""}
-                </p>
-              </div>
-            </div>
-          </div>
-        </section>
+          </section>
 
-        <footer className="mt-10 border-t border-gray-200/70 pt-4 text-center text-xs text-gray-400">
-          <p>Generated by Aapex Purchasing System</p>
-          <p className="mt-1">Printed: {new Date().toLocaleString("id-ID")}</p>
-        </footer>
+          <footer className="mt-10 border-t border-gray-200/70 pt-4 text-center text-xs text-gray-400">
+            <p>Generated by Aapex Purchasing System</p>
+            <p className="mt-1">Printed: {new Date().toLocaleString("id-ID")}</p>
+          </footer>
+        </div>
       </main>
 
       <PrintFloatingButton />
