@@ -7,6 +7,7 @@ import {
   collectLogbookCompliance,
   collectPoFulfillment,
   collectPosCashVariance,
+  collectTaskCompletion,
   type CollectorMap,
   type CollectorValue,
   type KpiEmployee,
@@ -40,6 +41,7 @@ const EMPLOYEE_COLLECTOR_CODES = [
   "pos_sales_shift",
   "leave_request_discipline",
   "att_late_ratio",
+  "task_completion",
 ] as const;
 
 /** Indikator level-organisasi: satu nilai dibagikan ke pemegang indikator */
@@ -145,6 +147,7 @@ export async function runKpiSnapshot(input: {
     posSalesShift,
     leaveDiscipline,
     attLateRatio,
+    taskCompletion,
     leaveSla,
     vendorPayOntime,
     vendorPaySla,
@@ -157,6 +160,7 @@ export async function runKpiSnapshot(input: {
     collectPosSalesShift(pool, start, end),
     collectLeaveDiscipline(pool, start, end),
     collectAttLateRatio(pool, employees, start, end),
+    collectTaskCompletion(pool, employees, start, end),
     collectLeaveSla(pool, start, end),
     collectVendorPayOntime(pool, start, end),
     collectVendorPaySla(pool, start, end),
@@ -174,6 +178,7 @@ export async function runKpiSnapshot(input: {
     pos_sales_shift: posSalesShift,
     leave_request_discipline: leaveDiscipline,
     att_late_ratio: attLateRatio,
+    task_completion: taskCompletion,
   };
   const orgCollected: Record<(typeof ORG_COLLECTOR_CODES)[number], CollectorValue | null> = {
     leave_sla: leaveSla,

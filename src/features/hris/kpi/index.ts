@@ -5,3 +5,5 @@ export * from "./queries";
 export * from "./mutations";
 export { KpiScorecardPage } from "./components/kpi-scorecard-page";
 export { EssKpiPage } from "./components/ess-kpi-page";
+export { KpiConfigPage } from "./components/kpi-config-page";
+export { DeptTasksPage } from "./components/dept-tasks-page";

@@ -242,3 +242,75 @@ export async function collectPoFulfillment(
   }
   return result;
 }
+
+// ============================================================
+// task_completion — Task Departemen (owner 2026-08-30, MBO/task
+// compliance): tugas ter-APPROVE HRD ÷ tugas jatuh tempo periode.
+// Occurrence ber-assignee dihitung ke karyawan itu; tanpa assignee
+// dihitung ke SIAPA yang menandainya selesai (done_by); occurrence
+// tanpa assignee yang tak pernah dikerjakan dihitung ke seluruh
+// karyawan departemen (tanggung jawab bersama yang terlewat).
+// ============================================================
+export async function collectTaskCompletion(
+  pool: Pool,
+  employees: KpiEmployee[],
+  startIso: string,
+  endIso: string
+): Promise<CollectorMap> {
+  const { rows } = await pool.query<{
+    department_id: string;
+    assignee_employee_id: string | null;
+    done_by: string | null;
+    status: string;
+    jumlah: number;
+  }>(
+    `SELECT t.department_id, t.assignee_employee_id, o.done_by, o.status,
+            count(*)::int AS jumlah
+     FROM hris.department_task_occurrences o
+     JOIN hris.department_tasks t ON t.id = o.task_id
+     WHERE o.occurrence_date BETWEEN $1 AND $2
+     GROUP BY 1, 2, 3, 4`,
+    [startIso, endIso]
+  );
+  if (rows.length === 0) return new Map();
+
+  const perEmployee = new Map<string, { approved: number; due: number }>();
+  const bump = (employeeId: string, approved: number, due: number) => {
+    const cur = perEmployee.get(employeeId) ?? { approved: 0, due: 0 };
+    cur.approved += approved;
+    cur.due += due;
+    perEmployee.set(employeeId, cur);
+  };
+  const deptMembers = new Map<string, string[]>();
+  for (const emp of employees) {
+    if (!emp.department_id) continue;
+    const list = deptMembers.get(emp.department_id) ?? [];
+    list.push(emp.id);
+    deptMembers.set(emp.department_id, list);
+  }
+
+  for (const row of rows) {
+    const approved = row.status === "approved" ? row.jumlah : 0;
+    const owner = row.assignee_employee_id ?? row.done_by;
+    if (owner) {
+      bump(owner, approved, row.jumlah);
+    } else {
+      // tanpa assignee & tak pernah dikerjakan → beban bersama departemen
+      for (const memberId of deptMembers.get(row.department_id) ?? []) {
+        bump(memberId, 0, row.jumlah);
+      }
+    }
+  }
+
+  const result: CollectorMap = new Map();
+  for (const emp of employees) {
+    const agg = perEmployee.get(emp.id);
+    if (!agg || agg.due === 0) continue; // tanpa tugas → indikator null (dikeluarkan)
+    result.set(emp.id, {
+      actual: agg.approved / agg.due,
+      sampleSize: agg.due,
+      sourceDetail: { approved: agg.approved, due: agg.due },
+    });
+  }
+  return result;
+}
