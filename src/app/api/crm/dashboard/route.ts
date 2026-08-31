@@ -164,11 +164,56 @@ export async function GET() {
     if (schemaReady) {
       const { data: ledgerRows, error: ledgerError } = await db
         .from("crm_xp_ledger")
-        .select("id, direction, source_channel, source_type, xp_delta, balance_after, description, created_at, member:crm_member_profiles(member_code, customer_id)")
+        .select("id, direction, source_channel, source_type, xp_delta, balance_after, description, created_at, reference_table, reference_id, metadata, member:crm_member_profiles(member_code, customer_id)")
         .order("created_at", { ascending: false })
         .limit(8);
 
-      if (!ledgerError) recentXpActivity = ledgerRows ?? [];
+      // Rapikan deskripsi lama yang menyimpan UUID internal (owner
+      // 2026-08-31): tampilkan nomor order kasir / nominal topup, bukan
+      // UUID. Baris baru sudah manusiawi sejak ditulis (loyalty-engine);
+      // pemetaan ini menutup riwayat lama tanpa migrasi data.
+      interface LedgerRow {
+        description: string | null;
+        reference_table: string | null;
+        reference_id: string | null;
+        metadata: { amount?: number | string } | null;
+        [key: string]: unknown;
+      }
+      const uuidRe = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+      const rows = (ledgerRows ?? []) as LedgerRow[];
+      const orderIds = [
+        ...new Set(
+          rows
+            .filter((r) => r.reference_table === "pos_orders" && r.reference_id)
+            .map((r) => r.reference_id as string)
+        ),
+      ];
+      const orderNumbers = new Map<string, string>();
+      if (orderIds.length > 0) {
+        const { data: orderRows } = await db
+          .from("pos_orders")
+          .select("id, order_number")
+          .in("id", orderIds);
+        for (const o of (orderRows ?? []) as { id: string; order_number: string | null }[]) {
+          if (o.order_number) orderNumbers.set(o.id, o.order_number);
+        }
+      }
+      if (!ledgerError) {
+        recentXpActivity = rows.map((row) => {
+          const desc = row.description ?? "";
+          if (!uuidRe.test(desc)) return row;
+          const prefix = desc.split(/ untuk /)[0] || desc.replace(uuidRe, "").trim();
+          if (row.reference_table === "pos_orders" && row.reference_id) {
+            const num = orderNumbers.get(row.reference_id);
+            return { ...row, description: `${prefix} — order ${num ? `#${num}` : row.reference_id.slice(0, 8)}` };
+          }
+          const amount = Number(row.metadata?.amount);
+          if (Number.isFinite(amount) && amount > 0) {
+            return { ...row, description: `${prefix} — Rp ${Math.round(amount).toLocaleString("id-ID")}` };
+          }
+          return { ...row, description: desc.replace(uuidRe, desc.match(uuidRe)![0].slice(0, 8)) };
+        });
+      }
     }
 
     if (posMemberFallbackError) throw posMemberFallbackError;
