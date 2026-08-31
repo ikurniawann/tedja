@@ -7,3 +7,4 @@ export { KpiScorecardPage } from "./components/kpi-scorecard-page";
 export { EssKpiPage } from "./components/ess-kpi-page";
 export { KpiConfigPage } from "./components/kpi-config-page";
 export { DeptTasksPage } from "./components/dept-tasks-page";
+export { PerformanceReviewPage } from "./components/performance-review-page";
