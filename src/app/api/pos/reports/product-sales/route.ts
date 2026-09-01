@@ -85,7 +85,9 @@ export async function GET(request: NextRequest) {
       `SELECT
          i.product_id,
          COALESCE(MAX(i.product_name), MAX(pp.name), 'Unknown') AS product_name,
-         COALESCE(MAX(i.product_sku), MAX(pp.sku)) AS product_sku,
+         -- SKU: utamakan kode master (mis. MM-STALL-02-005) — snapshot
+         -- i.product_sku berisi UUID/"SKU-{uuid}" lama yang salah tampil.
+         COALESCE(MAX(p.kode), MAX(pp.sku), MAX(i.product_sku)) AS product_sku,
          p.warehouse_id,
          MAX(w.code) AS stall_code,
          MAX(w.name) AS stall_name,
