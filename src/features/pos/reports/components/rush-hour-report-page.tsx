@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils";
 import {
   RUSH_HOUR_HEATMAP_HOURS,
   RUSH_HOUR_WEEKDAYS,
+  buildHourRangeContribution,
   formatHourLabel,
   rushHourHeatIntensity,
 } from "@/lib/pos/rush-hour";
@@ -54,6 +55,23 @@ export function RushHourReportPage() {
   });
 
   const { data, isLoading, isFetching, error } = useRushHourReport(applied);
+
+  // Kontribusi sales per rentang jam (owner 2026-09-01): pilih jam mulai/
+  // selesai, lihat sumbangannya ke total — mode Amount (omzet) / Quantity
+  // (jumlah item terjual). Dihitung di klien dari data hourly yang sama.
+  const [rangeFrom, setRangeFrom] = useState(7);
+  const [rangeTo, setRangeTo] = useState(12);
+  const [rangeMode, setRangeMode] = useState<"amount" | "quantity">("amount");
+  const rangeContribution = useMemo(() => {
+    if (!data) return null;
+    const summary = {
+      transactions: data.summary.transactions,
+      revenue: data.summary.revenue,
+      quantity: data.summary.quantity ?? 0,
+    };
+    const hourly = data.hourly.map((row) => ({ ...row, quantity: row.quantity ?? 0 }));
+    return buildHourRangeContribution(hourly, summary, rangeFrom, rangeTo);
+  }, [data, rangeFrom, rangeTo]);
 
   useEffect(() => {
     if (!data) return;
@@ -205,6 +223,196 @@ export function RushHourReportPage() {
             icon={Wallet}
           />
         </div>
+
+        <PurchasingListSection
+          icon={Clock}
+          title="Kontribusi Sales — Rentang Jam"
+          description="Pilih rentang jam untuk melihat sumbangannya ke total penjualan, berdasarkan Amount (omzet) atau Quantity (jumlah item terjual)."
+        >
+          <div className="space-y-4 px-4 pb-4">
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="rh-range-from">Dari jam</Label>
+                <select
+                  id="rh-range-from"
+                  value={rangeFrom}
+                  onChange={(e) => {
+                    const v = Number(e.target.value);
+                    setRangeFrom(v);
+                    if (v > rangeTo) setRangeTo(v);
+                  }}
+                  className="flex h-9 w-28 rounded-md border border-border bg-background px-3 text-sm outline-none focus-visible:ring-1 focus-visible:ring-primary/30"
+                >
+                  {Array.from({ length: 24 }, (_, h) => (
+                    <option key={h} value={h}>{formatHourLabel(h)}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="rh-range-to">Sampai jam</Label>
+                <select
+                  id="rh-range-to"
+                  value={rangeTo}
+                  onChange={(e) => {
+                    const v = Number(e.target.value);
+                    setRangeTo(v);
+                    if (v < rangeFrom) setRangeFrom(v);
+                  }}
+                  className="flex h-9 w-28 rounded-md border border-border bg-background px-3 text-sm outline-none focus-visible:ring-1 focus-visible:ring-primary/30"
+                >
+                  {Array.from({ length: 24 }, (_, h) => (
+                    <option key={h} value={h}>{formatHourLabel(h)}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Berdasarkan</Label>
+                <div className="flex overflow-hidden rounded-md border border-border">
+                  <button
+                    type="button"
+                    onClick={() => setRangeMode("amount")}
+                    className={cn(
+                      "px-4 py-2 text-sm font-medium transition-colors",
+                      rangeMode === "amount"
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-background text-muted-foreground hover:bg-muted"
+                    )}
+                  >
+                    Amount
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRangeMode("quantity")}
+                    className={cn(
+                      "px-4 py-2 text-sm font-medium transition-colors",
+                      rangeMode === "quantity"
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-background text-muted-foreground hover:bg-muted"
+                    )}
+                  >
+                    Quantity
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {rangeContribution ? (
+              <>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <Card className="border-primary/30 bg-primary/5 shadow-xs">
+                    <CardContent className="p-4">
+                      <div className="text-3xl font-bold text-primary">
+                        {rangeMode === "amount"
+                          ? rangeContribution.share_revenue
+                          : rangeContribution.share_quantity}
+                        %
+                      </div>
+                      <div className="mt-1 text-sm font-medium text-foreground">
+                        Kontribusi {rangeMode === "amount" ? "omzet" : "quantity"} ·{" "}
+                        {formatHourLabel(rangeContribution.from_hour)}–
+                        {formatHourLabel(rangeContribution.to_hour)}
+                      </div>
+                      <div className="mt-0.5 text-xs text-muted-foreground">
+                        {rangeMode === "amount"
+                          ? `${formatCurrency(rangeContribution.revenue)} dari ${formatCurrency(data?.summary.revenue ?? 0)}`
+                          : `${rangeContribution.quantity.toLocaleString("id-ID")} item dari ${(data?.summary.quantity ?? 0).toLocaleString("id-ID")} item`}
+                      </div>
+                    </CardContent>
+                  </Card>
+                  <Card className="border-gray-200/70 shadow-xs">
+                    <CardContent className="p-4">
+                      <div className="text-3xl font-bold text-foreground">
+                        {rangeMode === "amount"
+                          ? formatCurrency(rangeContribution.revenue)
+                          : rangeContribution.quantity.toLocaleString("id-ID")}
+                      </div>
+                      <div className="mt-1 text-sm text-muted-foreground">
+                        {rangeMode === "amount" ? "Omzet dalam rentang" : "Item terjual dalam rentang"}
+                      </div>
+                      <div className="mt-0.5 text-xs text-muted-foreground">
+                        {rangeContribution.transactions} transaksi ({rangeContribution.share_transactions}% dari total)
+                      </div>
+                    </CardContent>
+                  </Card>
+                  <Card className="border-gray-200/70 shadow-xs">
+                    <CardContent className="p-4">
+                      <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                        <div
+                          className="h-2 rounded-full bg-primary transition-all"
+                          style={{
+                            width: `${Math.min(100, rangeMode === "amount" ? rangeContribution.share_revenue : rangeContribution.share_quantity)}%`,
+                          }}
+                        />
+                      </div>
+                      <div className="mt-3 text-sm text-muted-foreground">
+                        Sisanya{" "}
+                        {Math.round(
+                          (100 -
+                            (rangeMode === "amount"
+                              ? rangeContribution.share_revenue
+                              : rangeContribution.share_quantity)) * 10
+                        ) / 10}
+                        % terjadi di luar {formatHourLabel(rangeContribution.from_hour)}–
+                        {formatHourLabel(rangeContribution.to_hour)}
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-gray-200/70 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                        <th className="px-3 py-2">Jam</th>
+                        <th className="px-3 py-2 text-right">
+                          {rangeMode === "amount" ? "Omzet" : "Item terjual"}
+                        </th>
+                        <th className="px-3 py-2 text-right">Transaksi</th>
+                        <th className="w-1/3 px-3 py-2">Kontribusi ke total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rangeContribution.hours.map((row) => {
+                        const value = rangeMode === "amount" ? row.revenue : row.quantity;
+                        const total =
+                          rangeMode === "amount"
+                            ? data?.summary.revenue ?? 0
+                            : data?.summary.quantity ?? 0;
+                        const share = total > 0 ? Math.round((value / total) * 1000) / 10 : 0;
+                        return (
+                          <tr key={row.hour} className="border-b border-gray-200/70 last:border-0">
+                            <td className="px-3 py-2 font-medium">{row.label}</td>
+                            <td className="px-3 py-2 text-right tabular-nums">
+                              {rangeMode === "amount"
+                                ? formatCurrency(row.revenue)
+                                : row.quantity.toLocaleString("id-ID")}
+                            </td>
+                            <td className="px-3 py-2 text-right tabular-nums">{row.transactions}</td>
+                            <td className="px-3 py-2">
+                              <div className="flex items-center gap-2">
+                                <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
+                                  <div
+                                    className="h-2 rounded-full bg-primary/70"
+                                    style={{ width: `${Math.min(100, share)}%` }}
+                                  />
+                                </div>
+                                <span className="w-12 text-right text-xs tabular-nums text-muted-foreground">
+                                  {share}%
+                                </span>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">Memuat…</p>
+            )}
+          </div>
+        </PurchasingListSection>
 
         <PurchasingListSection
           icon={Clock}

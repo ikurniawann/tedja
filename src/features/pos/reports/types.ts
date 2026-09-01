@@ -227,6 +227,7 @@ export interface RushHourReport {
   summary: {
     transactions: number;
     revenue: number;
+    quantity: number;
     average_ticket: number;
   };
   peak_hour: {
@@ -258,6 +259,7 @@ export interface RushHourReport {
     label: string;
     transactions: number;
     revenue: number;
+    quantity: number;
     average_ticket: number;
   }>;
   weekdays: Array<{
