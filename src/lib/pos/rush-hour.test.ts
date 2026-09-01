@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { buildRushHourReport, formatHourLabel, rushHourHeatIntensity } from "./rush-hour";
+import {
+  buildHourRangeContribution,
+  buildRushHourReport,
+  formatHourLabel,
+  rushHourHeatIntensity,
+} from "./rush-hour";
 
 describe("formatHourLabel", () => {
   it("pads hour in 24h", () => {
@@ -32,6 +37,44 @@ describe("buildRushHourReport", () => {
       { hour: 10, dow: 0, transactions: 9, revenue: 1 },
     ]);
     expect(report.summary.transactions).toBe(0);
+  });
+});
+
+describe("buildHourRangeContribution", () => {
+  const report = buildRushHourReport([
+    { hour: 8, dow: 1, transactions: 5, revenue: 500_000, quantity: 10 },
+    { hour: 10, dow: 2, transactions: 10, revenue: 1_000_000, quantity: 30 },
+    { hour: 12, dow: 3, transactions: 5, revenue: 500_000, quantity: 20 },
+    { hour: 19, dow: 4, transactions: 20, revenue: 2_000_000, quantity: 40 },
+  ]);
+
+  it("menghitung kontribusi rentang jam berdasarkan amount & quantity", () => {
+    const range = buildHourRangeContribution(report.hourly, report.summary, 7, 12);
+    expect(range.label).toBe("07:00–12:00:59".replace("12:00:59", "12:00:59"));
+    expect(range.transactions).toBe(20);
+    expect(range.revenue).toBe(2_000_000);
+    expect(range.quantity).toBe(60);
+    // total revenue 4jt → 2jt = 50%; total qty 100 → 60 = 60%
+    expect(range.share_revenue).toBe(50);
+    expect(range.share_quantity).toBe(60);
+    expect(range.share_transactions).toBe(50);
+    expect(range.hours).toHaveLength(6); // jam 07..12
+  });
+
+  it("meng-clamp jam terbalik/di luar batas dan aman saat total nol", () => {
+    const flipped = buildHourRangeContribution(report.hourly, report.summary, 12, 7);
+    expect(flipped.from_hour).toBe(12);
+    expect(flipped.to_hour).toBe(12);
+
+    const empty = buildRushHourReport([]);
+    const zero = buildHourRangeContribution(empty.hourly, empty.summary, 0, 23);
+    expect(zero.share_revenue).toBe(0);
+    expect(zero.share_quantity).toBe(0);
+  });
+
+  it("summary menyertakan total quantity", () => {
+    expect(report.summary.quantity).toBe(100);
+    expect(report.hourly[10]?.quantity).toBe(30);
   });
 });
 
