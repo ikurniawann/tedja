@@ -31,13 +31,13 @@ export function buildProductSalesExportSheets(
         ["Metrik", "Nilai"],
         ["Produk terjual", report.summary.products],
         ["Total qty", report.summary.quantity],
-        ["Total Revenue", report.summary.revenue],
+        ["Total omzet", report.summary.revenue],
       ],
     },
     {
       name: "Produk",
       rows: [
-        ["Produk", "SKU", "Stall", "Qty", "Orders", "Revenue"],
+        ["Produk", "SKU", "Stall", "Qty", "Orders", "Omzet"],
         ...report.rows.map((row) => [
           row.product_name,
           row.product_sku || "—",
