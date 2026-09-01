@@ -49,7 +49,17 @@ export function ProductSalesReportPage() {
 
   const stallOptions = data?.stall_options ?? [];
   const stallLocked = Boolean(data?.stall_locked);
-  const rows = useMemo(() => data?.rows ?? [], [data?.rows]);
+
+  // Top produk (owner 2026-09-01): urutkan berdasarkan Omzet atau
+  // Quantity, dengan pilihan Top N. Diurutkan di klien dari data yang sama.
+  const [sortBy, setSortBy] = useState<"revenue" | "quantity">("revenue");
+  const [topN, setTopN] = useState<number>(0); // 0 = semua
+  const rows = useMemo(() => {
+    const sorted = [...(data?.rows ?? [])].sort((a, b) =>
+      sortBy === "revenue" ? b.revenue - a.revenue : b.quantity - a.quantity
+    );
+    return topN > 0 ? sorted.slice(0, topN) : sorted;
+  }, [data?.rows, sortBy, topN]);
 
   function applyFilter() {
     setApplied({
@@ -162,14 +172,56 @@ export function ProductSalesReportPage() {
         <div className="grid gap-3 sm:grid-cols-3">
           <Metric title="Produk terjual" value={String(data?.summary.products ?? 0)} icon={Package} />
           <Metric title="Total qty" value={formatQty(data?.summary.quantity ?? 0)} icon={Store} />
-          <Metric title="Total omzet" value={formatCurrency(data?.summary.revenue ?? 0)} icon={TrendingUp} />
+          <Metric title="Total Omzet" value={formatCurrency(data?.summary.revenue ?? 0)} icon={TrendingUp} />
         </div>
 
         <PurchasingListSection
           icon={Package}
           title="Detail penjualan produk"
-          description={`${rows.length} produk untuk periode ${applied.date_from} s/d ${applied.date_to}`}
+          description={`${rows.length} produk untuk periode ${applied.date_from} s/d ${applied.date_to} · diurutkan berdasarkan ${sortBy === "revenue" ? "Omzet" : "Quantity"} tertinggi`}
         >
+          <div className="flex flex-wrap items-center gap-3 px-4 pb-3 print:hidden">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium text-muted-foreground">Top produk berdasarkan</span>
+              <div className="flex overflow-hidden rounded-md border border-border">
+                <button
+                  type="button"
+                  onClick={() => setSortBy("revenue")}
+                  className={
+                    sortBy === "revenue"
+                      ? "bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground"
+                      : "bg-background px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted"
+                  }
+                >
+                  Omzet
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSortBy("quantity")}
+                  className={
+                    sortBy === "quantity"
+                      ? "bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground"
+                      : "bg-background px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted"
+                  }
+                >
+                  Quantity
+                </button>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium text-muted-foreground">Tampilkan</span>
+              <select
+                value={topN}
+                onChange={(e) => setTopN(Number(e.target.value))}
+                className="flex h-8 rounded-md border border-border bg-background px-2 text-xs outline-none focus-visible:ring-1 focus-visible:ring-primary/30"
+              >
+                <option value={0}>Semua produk</option>
+                <option value={10}>Top 10</option>
+                <option value={25}>Top 25</option>
+                <option value={50}>Top 50</option>
+              </select>
+            </div>
+          </div>
           <div className="overflow-x-auto px-4">
             <table className="min-w-full text-sm">
               <thead className="border-b border-gray-200/70 bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
