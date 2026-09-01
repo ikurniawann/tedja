@@ -13,6 +13,7 @@ type HourRow = {
   dow: number | string;
   transactions: number | string;
   revenue: number | string;
+  quantity: number | string;
 };
 
 function toNumber(value: unknown) {
@@ -58,8 +59,14 @@ export async function GET(request: NextRequest) {
          EXTRACT(HOUR FROM o.ordered_at AT TIME ZONE 'Asia/Jakarta')::int AS hour,
          EXTRACT(ISODOW FROM o.ordered_at AT TIME ZONE 'Asia/Jakarta')::int AS dow,
          COUNT(*)::int AS transactions,
-         COALESCE(SUM(o.total_amount), 0)::float8 AS revenue
+         COALESCE(SUM(o.total_amount), 0)::float8 AS revenue,
+         COALESCE(SUM(oi.qty), 0)::float8 AS quantity
        FROM pos.pos_orders o
+       LEFT JOIN (
+         SELECT order_id, SUM(quantity) AS qty
+         FROM pos.pos_order_items
+         GROUP BY order_id
+       ) oi ON oi.order_id = o.id
        WHERE o.ordered_at >= $1::timestamptz
          AND o.ordered_at <= $2::timestamptz
          AND o.status NOT IN ('cancelled', 'voided', 'merged')
@@ -75,6 +82,7 @@ export async function GET(request: NextRequest) {
         dow: toNumber(row.dow),
         transactions: toNumber(row.transactions),
         revenue: toNumber(row.revenue),
+        quantity: toNumber(row.quantity),
       }))
     );
 

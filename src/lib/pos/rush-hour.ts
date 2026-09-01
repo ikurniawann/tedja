@@ -19,6 +19,8 @@ export type RushHourPoint = {
   dow: number;
   transactions: number;
   revenue: number;
+  /** Jumlah item terjual (Σ quantity pos_order_items) — opsional utk kompat. */
+  quantity?: number;
 };
 
 export type RushHourBucket = {
@@ -26,6 +28,7 @@ export type RushHourBucket = {
   label: string;
   transactions: number;
   revenue: number;
+  quantity: number;
   average_ticket: number;
 };
 
@@ -69,6 +72,7 @@ export function buildRushHourReport(points: RushHourPoint[]) {
     label: formatHourLabel(hour),
     transactions: 0,
     revenue: 0,
+    quantity: 0,
     average_ticket: 0,
   }));
   const weekdays: RushHourWeekday[] = RUSH_HOUR_WEEKDAYS.map((day) => ({
@@ -81,6 +85,7 @@ export function buildRushHourReport(points: RushHourPoint[]) {
 
   let totalTransactions = 0;
   let totalRevenue = 0;
+  let totalQuantity = 0;
 
   for (const point of points) {
     const hour = Math.floor(Number(point.hour));
@@ -88,8 +93,10 @@ export function buildRushHourReport(points: RushHourPoint[]) {
     if (hour < 0 || hour > 23 || dow < 1 || dow > 7) continue;
     const transactions = Math.max(0, Number(point.transactions) || 0);
     const revenue = Math.max(0, Number(point.revenue) || 0);
+    const quantity = Math.max(0, Number(point.quantity) || 0);
     hourly[hour].transactions += transactions;
     hourly[hour].revenue += revenue;
+    hourly[hour].quantity += quantity;
     const day = weekdays[dow - 1];
     if (day) {
       day.transactions += transactions;
@@ -105,6 +112,7 @@ export function buildRushHourReport(points: RushHourPoint[]) {
     }
     totalTransactions += transactions;
     totalRevenue += revenue;
+    totalQuantity += quantity;
   }
 
   for (const bucket of hourly) {
@@ -144,6 +152,7 @@ export function buildRushHourReport(points: RushHourPoint[]) {
     summary: {
       transactions: totalTransactions,
       revenue: round2(totalRevenue),
+      quantity: totalQuantity,
       average_ticket: averageTicket(totalRevenue, totalTransactions),
     },
     peak_hour: {
@@ -179,4 +188,55 @@ export function buildRushHourReport(points: RushHourPoint[]) {
 export function rushHourHeatIntensity(value: number, max: number) {
   if (value <= 0 || max <= 0) return 0;
   return value / max;
+}
+
+export type HourRangeContribution = {
+  from_hour: number;
+  to_hour: number;
+  label: string;
+  transactions: number;
+  revenue: number;
+  quantity: number;
+  /** Kontribusi terhadap total keseluruhan, dalam persen 0–100 (1 desimal). */
+  share_revenue: number;
+  share_quantity: number;
+  share_transactions: number;
+  hours: RushHourBucket[];
+};
+
+function sharePct(part: number, total: number) {
+  if (total <= 0) return 0;
+  return Math.round((part / total) * 1000) / 10;
+}
+
+/**
+ * Kontribusi sales sebuah RENTANG JAM (permintaan owner 2026-09-01):
+ * mis. 07:00–12:00 menyumbang berapa % dari total — dihitung ganda
+ * berdasarkan Amount (omzet) dan Quantity (jumlah item terjual).
+ * Jam akhir bersifat inklusif (07–12 = bucket 07:00 s.d. 12:59).
+ */
+export function buildHourRangeContribution(
+  hourly: RushHourBucket[],
+  summary: { transactions: number; revenue: number; quantity: number },
+  fromHour: number,
+  toHour: number
+): HourRangeContribution {
+  const from = Math.min(23, Math.max(0, Math.floor(fromHour)));
+  const to = Math.min(23, Math.max(from, Math.floor(toHour)));
+  const hours = hourly.filter((b) => b.hour >= from && b.hour <= to);
+  const transactions = hours.reduce((sum, b) => sum + b.transactions, 0);
+  const revenue = Math.round(hours.reduce((sum, b) => sum + b.revenue, 0) * 100) / 100;
+  const quantity = hours.reduce((sum, b) => sum + b.quantity, 0);
+  return {
+    from_hour: from,
+    to_hour: to,
+    label: `${formatHourLabel(from)}–${formatHourLabel(to)}:59`,
+    transactions,
+    revenue,
+    quantity,
+    share_revenue: sharePct(revenue, summary.revenue),
+    share_quantity: sharePct(quantity, summary.quantity),
+    share_transactions: sharePct(transactions, summary.transactions),
+    hours,
+  };
 }
