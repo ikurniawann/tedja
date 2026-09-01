@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   AlertCircle,
   Clock,
+  FileSpreadsheet,
   Loader2,
   ReceiptText,
   TrendingUp,
@@ -173,10 +174,33 @@ export function RushHourReportPage() {
                 ))}
               </select>
             </div>
-            <div className="flex items-end">
-              <Button type="button" onClick={applyFilter} disabled={isFetching} className="w-full gap-2">
+            <div className="flex items-end gap-2">
+              <Button type="button" onClick={applyFilter} disabled={isFetching} className="flex-1 gap-2">
                 {(isLoading || isFetching) && <Loader2 className="size-4 animate-spin" />}
                 Terapkan filter
+              </Button>
+              {/* Export memakai filter TERPASANG + rentang jam terpilih,
+                  supaya isi file = apa yang sedang dilihat. */}
+              <Button
+                type="button"
+                variant="outline"
+                className="gap-2"
+                title="Unduh Excel (Ringkasan, Per Jam, Per Hari, Heatmap)"
+                onClick={() => {
+                  const params = new URLSearchParams({
+                    date_from: applied.date_from,
+                    date_to: applied.date_to,
+                    range_from: String(rangeFrom),
+                    range_to: String(rangeTo),
+                  });
+                  if (applied.warehouse_id) params.set("warehouse_id", applied.warehouse_id);
+                  const a = document.createElement("a");
+                  a.href = `/api/pos/reports/rush-hour/export?${params.toString()}`;
+                  a.click();
+                }}
+              >
+                <FileSpreadsheet className="size-4" />
+                Excel
               </Button>
             </div>
           </CardContent>
