@@ -3,6 +3,7 @@
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import {
   getProfitReport,
+  getRevenueCompositionReport,
   getClosingReport,
   getTransactionReport,
   getProductSalesReport,
@@ -13,6 +14,7 @@ import {
 import { reportsQueryKeys } from "./query-keys";
 import type {
   ProfitReportParams,
+  RevenueCompositionReportParams,
   ClosingReportParams,
   TransactionReportParams,
   ProductSalesReportParams,
@@ -25,6 +27,14 @@ export const useProfitReport = (params: ProfitReportParams) =>
   useQuery({
     queryKey: reportsQueryKeys.profit(params),
     queryFn: () => getProfitReport(params),
+    placeholderData: keepPreviousData,
+    enabled: Boolean(params.date_from && params.date_to),
+  });
+
+export const useRevenueCompositionReport = (params: RevenueCompositionReportParams) =>
+  useQuery({
+    queryKey: reportsQueryKeys.revenueComposition(params),
+    queryFn: () => getRevenueCompositionReport(params),
     placeholderData: keepPreviousData,
     enabled: Boolean(params.date_from && params.date_to),
   });

@@ -1,6 +1,8 @@
 import type {
   ProfitReport,
   ProfitReportParams,
+  RevenueCompositionReport,
+  RevenueCompositionReportParams,
   ClosingReport,
   ClosingReportParams,
   TransactionReport,
@@ -181,4 +183,21 @@ export async function downloadTransactionReportXlsx(
     `/api/pos/reports/transactions?${sp.toString()}`,
     `transaksi-pos-${params.date_from}_${params.date_to}.xlsx`
   );
+}
+
+export async function getRevenueCompositionReport(
+  params: RevenueCompositionReportParams
+): Promise<RevenueCompositionReport> {
+  const sp = new URLSearchParams({
+    date_from: params.date_from,
+    date_to: params.date_to,
+  });
+  const response = await fetch(`/api/pos/reports/revenue-composition?${sp.toString()}`, {
+    cache: "no-store",
+  });
+  const payload = await response.json();
+  if (!response.ok || !payload.success || !payload.data) {
+    throw new Error(payload.error || "Gagal memuat laporan komposisi pendapatan");
+  }
+  return payload.data as RevenueCompositionReport;
 }

@@ -415,3 +415,46 @@ export interface PaymentMethodsReport {
   method_columns: Array<{ method_key: string; label: string }>;
   series: PaymentMethodsReportSeriesRow[];
 }
+
+export interface RevenueCompositionBucket {
+  id: string;
+  label: string;
+  quantity: number;
+  sales: number;
+  cost: number;
+  margin: number;
+  cost_pct: number;
+  sales_share_pct: number;
+  qty_share_pct: number;
+}
+
+export interface RevenueCompositionGroup extends RevenueCompositionBucket {
+  categories: RevenueCompositionBucket[];
+}
+
+export interface RevenueCompositionDay {
+  date: string;
+  food: RevenueCompositionBucket;
+  beverage: RevenueCompositionBucket;
+}
+
+export interface RevenueCompositionReport {
+  filters: { date_from: string; date_to: string };
+  summary: {
+    orders: number;
+    items: number;
+    quantity: number;
+    sales: number;
+    cost: number;
+    margin: number;
+    cost_pct: number;
+    zero_cost_items: number;
+  };
+  groups: RevenueCompositionGroup[];
+  daily: RevenueCompositionDay[];
+}
+
+export interface RevenueCompositionReportParams {
+  date_from: string;
+  date_to: string;
+}
