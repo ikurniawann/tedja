@@ -27,6 +27,7 @@ import { PurchasingListSection } from "@/modules/purchasing/components/list/Purc
 import { PurchasingPageHeader } from "@/modules/purchasing/components/page/purchasing-page-header";
 import type { ProfitBucket } from "../types";
 import { useProfitReport } from "../queries";
+import { isPosGroupCategory } from "@/lib/pos/profit-category";
 import {
   ProfitCategoryBarChart,
   ProfitCompositionChart,
@@ -190,6 +191,10 @@ export function ProfitReportPage() {
   const errorMessage = error instanceof Error ? error.message : "";
   const summary = report?.summary;
   const breakdowns = report?.breakdowns;
+  const categoryRows = useMemo(
+    () => (breakdowns?.categories || []).filter((row) => !isPosGroupCategory(row.label)),
+    [breakdowns?.categories]
+  );
 
   return (
     <TooltipProvider>
@@ -297,7 +302,7 @@ export function ProfitReportPage() {
               </div>
 
               <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-                <ProfitCategoryBarChart rows={breakdowns?.categories || []} title="Top Categories" />
+                <ProfitCategoryBarChart rows={categoryRows} title="Top Categories" />
                 <ProfitMarginBarChart rows={breakdowns?.products || []} />
               </div>
 
@@ -312,7 +317,7 @@ export function ProfitReportPage() {
                   icon={BarChart3}
                   title="Category Breakdown"
                   description="Profit contribution by category"
-                  rows={breakdowns?.categories || []}
+                  rows={categoryRows}
                 />
                 <BreakdownTableSection
                   icon={ReceiptText}

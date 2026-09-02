@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createPgClient } from "@/lib/pg/create-client";
 import { getPosSession } from "@/lib/api/auth";
+import { query } from "@/lib/db";
+import {
+  itemCategoryLabelMap,
+  lookupItemCategoryName,
+  resolveProfitCategory,
+} from "@/lib/pos/profit-category";
 
 type PosOrderRow = {
   id: string;
@@ -32,6 +38,11 @@ type PosProductRow = {
 type PosCategoryRow = {
   id: string;
   name?: string | null;
+};
+
+type ItemCategoryRow = {
+  code?: string | null;
+  nama?: string | null;
 };
 
 type ProfitBucket = {
@@ -187,6 +198,34 @@ export async function GET(request: NextRequest) {
       ((categories || []) as PosCategoryRow[]).map((category) => [category.id, category.name || "Tanpa kategori"])
     );
 
+    const itemKategoriRows = productIds.length
+      ? await query<{ id: string; kategori: string | null }>(
+          `SELECT pp.id,
+                  COALESCE(p.kategori, p_sku.kategori) AS kategori
+           FROM pos.pos_products pp
+           LEFT JOIN item.products p
+             ON p.id = pp.source_product_id AND p.deleted_at IS NULL
+           LEFT JOIN item.products p_sku
+             ON pp.source_product_id IS NULL
+            AND pp.sku = ('PUR-' || p_sku.kode)
+            AND p_sku.deleted_at IS NULL
+            AND p_sku.kode IS NOT NULL
+            AND btrim(p_sku.kode) <> ''
+           WHERE pp.id = ANY($1::uuid[])`,
+          [productIds]
+        )
+      : [];
+    const itemKategoriByPosId = new Map(
+      itemKategoriRows.map((row) => [row.id, row.kategori])
+    );
+
+    const { data: itemCategories, error: itemCategoryError } = productIds.length
+      ? await db.from("product_categories").select("code, nama").is("deleted_at", null)
+      : { data: [], error: null };
+    if (itemCategoryError) throw itemCategoryError;
+
+    const itemCategoryLabels = itemCategoryLabelMap((itemCategories || []) as ItemCategoryRow[]);
+
     const productBuckets = new Map<string, ProfitBucket>();
     const categoryBuckets = new Map<string, ProfitBucket>();
     const stationBuckets = new Map<string, ProfitBucket>();
@@ -207,8 +246,18 @@ export async function GET(request: NextRequest) {
       const productId = item.product_id || "unknown-product";
       const productLabel = item.product_name || item.product_sku || "Produk tanpa nama";
       const product = item.product_id ? productById.get(item.product_id) : null;
-      const categoryId = product?.category_id || "uncategorized";
-      const categoryLabel = product?.category_id ? categoryById.get(product.category_id) || "Tanpa kategori" : "Tanpa kategori";
+      const itemCategoryCode = item.product_id
+        ? itemKategoriByPosId.get(item.product_id) || null
+        : null;
+      const category = resolveProfitCategory({
+        itemCategoryCode,
+        itemCategoryName: lookupItemCategoryName(itemCategoryCode, itemCategoryLabels),
+        posCategoryName: product?.category_id
+          ? categoryById.get(product.category_id) || null
+          : null,
+      });
+      const categoryId = category.id;
+      const categoryLabel = category.label;
       const station = item.station || "kitchen";
       const cashierId = order?.cashier_id || "unknown-cashier";
       const date = dateKey(order?.ordered_at);
