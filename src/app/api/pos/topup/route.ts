@@ -36,7 +36,8 @@ function resolveWebhookCallbackUrl(request: NextRequest, configured: string | nu
   return `${origin}/api/payments/xendit/webhook`;
 }
 
-// GET /api/pos/topup/history - Get customer topup history
+// GET /api/pos/topup — riwayat wallet member (topup / bayar / refund / bonus).
+// Tanpa customer_id: fallback topup-only (kompatibel pemanggil lama).
 export async function GET(request: NextRequest) {
   const sessionUserId = await getPosSession();
   if (!sessionUserId) {
@@ -47,7 +48,7 @@ export async function GET(request: NextRequest) {
     const db = createPgClient();
     const searchParams = request.nextUrl.searchParams;
     const customerId = searchParams.get("customer_id");
-    const limit = parseInt(searchParams.get("limit") || "50");
+    const limit = Math.min(100, Math.max(1, Number.parseInt(searchParams.get("limit") || "50", 10) || 50));
 
     let query = db
       .from("pos_wallet_transactions")
@@ -55,19 +56,46 @@ export async function GET(request: NextRequest) {
         *,
         customer:pos_customers(name, phone)
       `)
-      .eq("type", "topup")
       .order("created_at", { ascending: false })
       .limit(limit);
 
     if (customerId) {
       query = query.eq("customer_id", customerId);
+    } else {
+      query = query.eq("type", "topup");
     }
 
     const { data, error } = await query;
-
     if (error) throw error;
 
-    return NextResponse.json({ success: true, data });
+    const rows = (data ?? []) as Array<Record<string, unknown>>;
+    const orderIds = Array.from(
+      new Set(
+        rows
+          .map((row) => (row.order_id != null ? String(row.order_id) : ""))
+          .filter(Boolean)
+      )
+    );
+
+    const orderNumberById = new Map<string, string>();
+    if (orderIds.length > 0) {
+      const { data: orders, error: orderError } = await db
+        .from("pos_orders")
+        .select("id, order_number")
+        .in("id", orderIds);
+      if (orderError) throw orderError;
+      for (const order of (orders ?? []) as Array<{ id: string; order_number?: string | null }>) {
+        if (order.order_number) orderNumberById.set(String(order.id), String(order.order_number));
+      }
+    }
+
+    const enriched = rows.map((row) => ({
+      ...row,
+      order_number:
+        row.order_id != null ? orderNumberById.get(String(row.order_id)) ?? null : null,
+    }));
+
+    return NextResponse.json({ success: true, data: enriched });
   } catch (error: unknown) {
     console.error("Error fetching topup history:", error);
     return NextResponse.json(

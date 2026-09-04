@@ -996,6 +996,37 @@ function paymentMethodLabel(method?: string | null) {
   return value.toUpperCase();
 }
 
+const WALLET_CREDIT_TYPES = new Set(['topup', 'topup_bonus', 'refund', 'bonus']);
+
+function isWalletCredit(type?: string | null) {
+  return WALLET_CREDIT_TYPES.has(String(type || 'topup').toLowerCase());
+}
+
+function walletTypeLabel(type?: string | null) {
+  const value = String(type || 'topup').toLowerCase();
+  if (value === 'topup') return 'Top-up';
+  if (value === 'topup_bonus') return 'Bonus top-up';
+  if (value === 'payment') return 'Pemakaian';
+  if (value === 'refund') return 'Refund';
+  if (value === 'bonus') return 'Bonus';
+  if (value === 'redeem') return 'Redeem';
+  return value;
+}
+
+function walletTypeBadgeClass(type?: string | null) {
+  const value = String(type || 'topup').toLowerCase();
+  if (value === 'payment' || value === 'redeem') {
+    return 'bg-red-50 text-red-700 ring-1 ring-red-200/70';
+  }
+  if (value === 'refund') {
+    return 'bg-sky-50 text-sky-700 ring-1 ring-sky-200/70';
+  }
+  if (value === 'topup_bonus' || value === 'bonus') {
+    return 'bg-violet-50 text-violet-700 ring-1 ring-violet-200/70';
+  }
+  return 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200/70';
+}
+
 function statusLabel(status?: string | null) {
   const value = String(status || 'completed').toLowerCase();
   if (value === 'pending') return 'Pending';
@@ -1015,7 +1046,9 @@ function statusBadgeClass(status?: string | null) {
 }
 
 function canResumeQris(item: TopupHistoryItem) {
+  const type = String(item.type || 'topup').toLowerCase();
   return (
+    type === 'topup' &&
     String(item.status || '').toLowerCase() === 'pending' &&
     String(item.payment_method || '').toLowerCase() === 'qris'
   );
@@ -1044,9 +1077,9 @@ function TopupHistoryCard({
     <div className="rounded-2xl border border-gray-200/70 bg-card">
       <div className="flex items-center gap-2 border-b border-gray-200/70 px-4 py-3">
         <History className="h-4 w-4 text-muted-foreground" />
-        <div className="text-sm font-semibold text-foreground">Top-up history</div>
+        <div className="text-sm font-semibold text-foreground">Riwayat mutasi</div>
         <span className="ml-auto text-xs text-muted-foreground">
-          {loading ? '…' : `${items.length} recent`}
+          {loading ? '…' : `${items.length} terakhir`}
         </span>
       </div>
 
@@ -1054,40 +1087,68 @@ function TopupHistoryCard({
         {loading ? (
           <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />
-            Loading history…
+            Memuat riwayat…
           </div>
         ) : errorMessage ? (
           <div className="py-4 text-sm text-red-600">{errorMessage}</div>
         ) : items.length === 0 ? (
-          <div className="py-6 text-sm text-muted-foreground">No top-up history yet.</div>
+          <div className="py-6 text-sm text-muted-foreground">Belum ada mutasi wallet.</div>
         ) : (
           <div className="divide-y divide-gray-200/70">
             {items.map((item) => {
+              const credit = isWalletCredit(item.type);
+              const amount = Math.abs(Number(item.amount) || 0);
+              const signedLabel = `${credit ? '+' : '−'}${formatCurrency(amount)}`;
+              const signedArk = `${credit ? '+' : '−'}${formatArkAmount(amount, arkRate)}`;
               const pendingQris = canResumeQris(item);
               const busy = actionTopupId === item.id;
+              const type = String(item.type || 'topup').toLowerCase();
+              const showMethod = type === 'topup' || type === 'topup_bonus';
+
               return (
                 <div key={item.id} className="space-y-2 py-3">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <div className="text-sm font-semibold text-foreground">
-                        {formatCurrency(Number(item.amount) || 0)}
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span
+                          className={cn(
+                            'rounded-md px-2 py-0.5 text-[11px] font-semibold',
+                            walletTypeBadgeClass(item.type)
+                          )}
+                        >
+                          {walletTypeLabel(item.type)}
+                        </span>
+                        {type === 'topup' ? (
+                          <span
+                            className={cn(
+                              'rounded-md px-2 py-0.5 text-[11px] font-semibold capitalize',
+                              statusBadgeClass(item.status)
+                            )}
+                          >
+                            {statusLabel(item.status)}
+                          </span>
+                        ) : null}
+                      </div>
+                      <div
+                        className={cn(
+                          'mt-1 text-sm font-semibold',
+                          credit ? 'text-emerald-700' : 'text-red-700'
+                        )}
+                      >
+                        {signedLabel}
                       </div>
                       <div className="mt-0.5 text-xs text-muted-foreground">
-                        {formatArkAmount(Number(item.amount) || 0, arkRate)} ·{' '}
-                        {paymentMethodLabel(item.payment_method)}
+                        {signedArk}
+                        {showMethod ? ` · ${paymentMethodLabel(item.payment_method)}` : null}
+                        {item.order_number ? ` · ${item.order_number}` : null}
                       </div>
                       <div className="mt-0.5 text-xs text-muted-foreground">
                         {formatTopupDate(item.created_at)}
+                        {item.balance_after != null
+                          ? ` · saldo ${formatArkAmount(Number(item.balance_after) || 0, arkRate)}`
+                          : null}
                       </div>
                     </div>
-                    <span
-                      className={cn(
-                        'shrink-0 rounded-md px-2 py-0.5 text-[11px] font-semibold capitalize',
-                        statusBadgeClass(item.status)
-                      )}
-                    >
-                      {statusLabel(item.status)}
-                    </span>
                   </div>
 
                   {pendingQris ? (

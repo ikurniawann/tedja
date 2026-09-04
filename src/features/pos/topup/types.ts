@@ -52,9 +52,20 @@ export interface ProcessTopupPayload {
 
 export type TopupHistoryStatus = "pending" | "completed" | "expired" | "failed" | "cancelled" | string;
 
+export type WalletTxnType =
+  | "topup"
+  | "topup_bonus"
+  | "payment"
+  | "refund"
+  | "bonus"
+  | "redeem"
+  | string;
+
 export interface TopupHistoryItem {
   id: string;
   customer_id?: string;
+  /** Jenis mutasi wallet — topup/payment/refund/bonus/… */
+  type?: WalletTxnType | null;
   amount: number;
   ark_coins?: number;
   balance_before?: number;
@@ -63,6 +74,9 @@ export interface TopupHistoryItem {
   status?: TopupHistoryStatus | null;
   reference_id?: string | null;
   notes?: string | null;
+  order_id?: string | null;
+  /** Diisi API dari join pos_orders bila order_id ada. */
+  order_number?: string | null;
   created_at?: string | null;
   metadata?: {
     qr_string?: string | null;
