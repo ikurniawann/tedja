@@ -1,6 +1,8 @@
 import type { ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 import { compReceiptLabel } from "@/lib/pos/comp-orders";
+import { idrToArk } from "@/lib/pos/loyalty-settings";
+import { useLoyaltySettings } from "@/features/pos/loyalty-settings";
 import type { TransactionReportRow } from "../types";
 import {
   formatKitchenStatusLabel,
@@ -164,6 +166,15 @@ export function TransactionDetailBody({
     name: detail?.payment_method_name || row?.payment_method_name,
   });
   const paid = isPaidPaymentStatus(paymentStatus, kitchenStatus);
+  // Pembayaran ARK Coin (owner 2026-09-04): tampilkan juga nilai ARK-nya —
+  // kurs dari pengaturan loyalitas (1 ARK = Rp ark_rate).
+  const arkUsed = toNumber(detail?.ark_coins_used ?? row?.ark_coins_used);
+  const isArkPayment =
+    String(paymentMethod || "").toLowerCase() === "ark_coin" || arkUsed > 0;
+  const { data: loyaltySettings } = useLoyaltySettings(isArkPayment);
+  const arkRate = loyaltySettings?.ark_rate || 1000;
+  const arkText = (idr: number) =>
+    `${idrToArk(idr, arkRate).toLocaleString("id-ID", { maximumFractionDigits: 2 })} ARK`;
   const showXendit = isQrisPaymentMethod(paymentMethod);
   const externalId = resolveXenditExternalId({
     storedExternalId: detail?.xendit_external_id || row?.xendit_external_id,
@@ -284,7 +295,18 @@ export function TransactionDetailBody({
           <DetailField label="Metode" value={paymentMethodLabel} />
           <DetailField
             label="Total"
-            value={formatCurrency(toNumber(detail?.total_amount ?? row?.total_amount))}
+            value={
+              isArkPayment ? (
+                <span>
+                  {formatCurrency(toNumber(detail?.total_amount ?? row?.total_amount))}
+                  <span className="ml-2 text-xs font-semibold text-amber-700">
+                    {arkText(toNumber(detail?.total_amount ?? row?.total_amount))}
+                  </span>
+                </span>
+              ) : (
+                formatCurrency(toNumber(detail?.total_amount ?? row?.total_amount))
+              )
+            }
           />
           <DetailField
             label="Subtotal"
@@ -312,7 +334,16 @@ export function TransactionDetailBody({
           />
           <DetailField
             label="ARK digunakan"
-            value={formatCurrency(toNumber(detail?.ark_coins_used ?? row?.ark_coins_used))}
+            value={
+              arkUsed > 0 ? (
+                <span>
+                  {formatCurrency(arkUsed)}
+                  <span className="ml-2 text-xs font-semibold text-amber-700">{arkText(arkUsed)}</span>
+                </span>
+              ) : (
+                formatCurrency(arkUsed)
+              )
+            }
             className="sm:col-span-3"
           />
         </dl>
@@ -417,6 +448,9 @@ export function TransactionDetailBody({
                     <td className="px-3 py-2.5 text-right">{formatQty(toNumber(item.quantity))}</td>
                     <td className="px-3 py-2.5 text-right text-muted-foreground">
                       <div>{formatCurrency(toNumber(item.unit_price))}</div>
+                      {isArkPayment ? (
+                        <div className="text-xs text-amber-700">{arkText(toNumber(item.unit_price))}</div>
+                      ) : null}
                       {toNumber(item.discount_amount) > 0 ? (
                         <div className="text-xs text-rose-600">
                           {item.discount_type === "percent" &&
@@ -427,7 +461,10 @@ export function TransactionDetailBody({
                       ) : null}
                     </td>
                     <td className="px-3 py-2.5 text-right font-medium">
-                      {formatCurrency(toNumber(item.total_amount))}
+                      <div>{formatCurrency(toNumber(item.total_amount))}</div>
+                      {isArkPayment ? (
+                        <div className="text-xs font-normal text-amber-700">{arkText(toNumber(item.total_amount))}</div>
+                      ) : null}
                     </td>
                   </tr>
                 ))
