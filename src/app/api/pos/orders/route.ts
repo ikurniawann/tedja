@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto';
+import { resolveOrderItemSkus } from '@/lib/pos/order-item-sku';
 import { NextRequest, NextResponse } from 'next/server';
 import { createPgClient } from "@/lib/pg/create-client";
 import { getPosSession } from '@/lib/api/auth';
@@ -1379,6 +1380,13 @@ export async function POST(request: NextRequest) {
       items.map((item) => String(item.product_id || '')).filter(Boolean)
     );
 
+    // SKU bermakna sejak disimpan (owner 2026-09-04): kode master / sku POS,
+    // bukan UUID product_id. Satu query batch per order.
+    const skuByProduct = new Map(
+      (await resolveOrderItemSkus(db, items.map((it: { product_id?: string | null; product_sku?: string | null }) => ({ product_id: it.product_id, product_sku: it.product_sku }))))
+        .map((it) => [String(it.product_id), it.product_sku] as const)
+    );
+
     const orderItems = items.map((item: PosOrderItemRequest, index: number) => {
       const qty = Number(item.quantity) || 1;
       const unitPrice =
@@ -1405,7 +1413,7 @@ export async function POST(request: NextRequest) {
         product_id: item.product_id,
         sku_id: item.sku_id || null,
         product_name: item.product_name || 'Unknown',
-        product_sku: String(item.product_sku || item.product_id || '').slice(0, 50),
+        product_sku: String(skuByProduct.get(String(item.product_id)) || item.product_sku || item.product_id || '').slice(0, 50),
         variants: item.variants || [],
         modifiers: item.modifiers || [],
         quantity: qty,

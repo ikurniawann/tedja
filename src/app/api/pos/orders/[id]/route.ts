@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { resolveOrderItemSkus } from '@/lib/pos/order-item-sku';
 import { createPgClient } from "@/lib/pg/create-client";
 import { getPosSession } from '@/lib/api/auth';
 import { awardCrmXpForPosOrder, syncPosCustomerOrderStats } from '@/lib/crm/loyalty-engine';
@@ -735,6 +736,14 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       detail.voided_by_name = (voider as { full_name?: string } | null)?.full_name ?? null;
     }
 
+    // SKU item: kolom snapshot sering berisi UUID (owner 2026-09-04) — pakai
+    // kode produk master / sku POS untuk tampilan.
+    if (Array.isArray(detail.items)) {
+      detail.items = await resolveOrderItemSkus(
+        db,
+        detail.items as { product_id?: string | null; product_sku?: string | null }[]
+      );
+    }
     return NextResponse.json({ success: true, data });
   } catch (error: unknown) {
     console.error('Error fetching order:', error);
