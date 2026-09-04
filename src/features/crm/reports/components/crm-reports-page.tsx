@@ -229,6 +229,8 @@ export function CrmReportsPage() {
           loading={loading}
           venues={data?.reconciliation.venues ?? []}
           totals={totals ?? { topup_amount: 0, bonus_amount: 0, spend_amount: 0, net_flow: 0 }}
+          untaggedAmount={data?.reconciliation.untagged_topup_amount ?? 0}
+          untaggedCount={data?.reconciliation.untagged_topup_count ?? 0}
         />
 
         <section className="grid gap-4 xl:grid-cols-2">
@@ -248,10 +250,14 @@ function ReconciliationSection({
   loading,
   venues,
   totals,
+  untaggedAmount = 0,
+  untaggedCount = 0,
 }: {
   loading: boolean;
   venues: NonNullable<ReturnType<typeof useCrmReports>["data"]>["reconciliation"]["venues"];
   totals: { topup_amount: number; bonus_amount: number; spend_amount: number; net_flow: number };
+  untaggedAmount?: number;
+  untaggedCount?: number;
 }) {
   return (
     <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
@@ -322,6 +328,13 @@ function ReconciliationSection({
           </table>
         </div>
       )}
+
+      {untaggedCount > 0 ? (
+        <p className="border-t border-slate-200 px-4 py-2.5 text-xs text-slate-500">
+          Di luar tabel: {formatCurrency(untaggedAmount)} dari {formatNumber(untaggedCount)} topup belum
+          bertanda venue, sehingga tidak bisa direkonsiliasi antar-venue.
+        </p>
+      ) : null}
     </section>
   );
 }
