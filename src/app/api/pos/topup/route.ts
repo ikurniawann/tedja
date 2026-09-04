@@ -4,6 +4,7 @@ import { getPosSession } from "@/lib/api/auth";
 import { awardCrmXpForTopup } from "@/lib/crm/loyalty-engine";
 import { verifySupervisorPinServer, type ApprovedSupervisor } from "@/lib/pos/supervisor-pin-server";
 import { notifyFocTopup } from "@/lib/wa/comp-notification";
+import { resolveTopupVenue } from "@/lib/pos/topup-venue";
 import {
   calculateTopupXp,
   idrToArk,
@@ -125,6 +126,9 @@ export async function POST(request: NextRequest) {
 
     const loyaltySettings = await loadPosLoyaltySettings(db);
     const amountValue = Number(amount) || 0;
+    // Venue topup (owner 2026-09-04): cabang kasir yang login, fallback venue
+    // default CRM — supaya tidak ada lagi topup "tanpa venue" di rekonsiliasi.
+    const venue = await resolveTopupVenue(db, sessionUserId);
 
     if (amountValue < loyaltySettings.topup_min_amount) {
       return NextResponse.json(
@@ -170,6 +174,8 @@ export async function POST(request: NextRequest) {
         .insert({
           customer_id,
           type: "topup",
+          company_id: venue.companyId,
+          branch_id: venue.branchId,
           amount: amountValue,
           ark_coins: arkCoins,
           balance_before: balanceBefore,
@@ -263,6 +269,8 @@ export async function POST(request: NextRequest) {
       .insert({
         customer_id,
         type: "topup",
+        company_id: venue.companyId,
+        branch_id: venue.branchId,
         amount: amountValue,
         ark_coins: arkCoins,
         balance_before: balanceBefore,
