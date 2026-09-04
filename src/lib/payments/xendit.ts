@@ -2,6 +2,9 @@ import { createPgClient } from "@/lib/pg/create-client";
 import type { DbClient } from "@/lib/pg/types";
 import type { PaymentGatewayRow } from "@/lib/configuration/payment-gateways";
 
+/** Base URL API Xendit — bisa di-override (XENDIT_API_BASE_URL) untuk uji lokal dengan mock. */
+const XENDIT_API_BASE = (process.env.XENDIT_API_BASE_URL || "https://api.xendit.co").replace(/\/$/, "");
+
 export type XenditGatewayConfig = {
   secretKey: string;
   webhookToken: string | null;
@@ -70,7 +73,7 @@ export async function createXenditDynamicQr(input: {
   if (input.description) body.description = input.description;
 
   const auth = Buffer.from(`${input.secretKey}:`).toString("base64");
-  const response = await fetch("https://api.xendit.co/qr_codes", {
+  const response = await fetch(`${XENDIT_API_BASE}/qr_codes`, {
     method: "POST",
     headers: {
       Authorization: `Basic ${auth}`,
@@ -142,7 +145,7 @@ export async function getXenditQrCode(
   qrId: string
 ): Promise<Record<string, unknown> & { id: string; status?: string }> {
   const auth = Buffer.from(`${secretKey}:`).toString("base64");
-  const response = await fetch(`https://api.xendit.co/qr_codes/${encodeURIComponent(qrId)}`, {
+  const response = await fetch(`${XENDIT_API_BASE}/qr_codes/${encodeURIComponent(qrId)}`, {
     method: "GET",
     headers: {
       Authorization: `Basic ${auth}`,
@@ -165,7 +168,7 @@ export async function getXenditQrCodeByReferenceId(
 ): Promise<Record<string, unknown> & { id: string; qr_string?: string; amount?: number; expires_at?: string | null }> {
   const auth = Buffer.from(`${secretKey}:`).toString("base64");
   const response = await fetch(
-    `https://api.xendit.co/qr_codes?reference_id=${encodeURIComponent(referenceId)}`,
+    `${XENDIT_API_BASE}/qr_codes?reference_id=${encodeURIComponent(referenceId)}`,
     {
       method: "GET",
       headers: {
@@ -206,7 +209,7 @@ export async function getXenditQrPayments(
 ): Promise<Record<string, unknown>[]> {
   const auth = Buffer.from(`${secretKey}:`).toString("base64");
   const response = await fetch(
-    `https://api.xendit.co/qr_codes/${encodeURIComponent(qrId)}/payments`,
+    `${XENDIT_API_BASE}/qr_codes/${encodeURIComponent(qrId)}/payments`,
     {
       method: "GET",
       headers: {

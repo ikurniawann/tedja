@@ -301,6 +301,33 @@ export function TopupPage() {
     }
   }
 
+  /** Insiden 2026-09-04: bank sudah terpotong tapi saldo belum masuk →
+   * cek langsung ke Xendit dan kredit bila pembayaran tercatat berhasil. */
+  async function handleCheckPayment(item: TopupHistoryItem) {
+    setActionTopupId(item.id);
+    setError('');
+    try {
+      const res = await fetch(`/api/pos/topup/${item.id}/reconcile`, { method: 'POST' });
+      const json = await res.json();
+      if (!res.ok || !json.success) throw new Error(json.error || 'Gagal mengecek pembayaran');
+      if (json.data?.status === 'completed') {
+        toast.success(json.message || 'Pembayaran ditemukan — saldo dikredit');
+        if (json.data.balance_after !== undefined && pendingTopupId === item.id) {
+          finishSuccess(json.data as TopupResult);
+        } else if (customer && json.data.balance_after !== undefined) {
+          setCustomer({ ...customer, ark_coin_balance: Number(json.data.balance_after) });
+        }
+      } else {
+        toast.message(json.message || 'Belum ada pembayaran tercatat di Xendit');
+      }
+      await refetchHistory();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Gagal mengecek pembayaran');
+    } finally {
+      setActionTopupId(null);
+    }
+  }
+
   async function handleShowHistoryQr(item: TopupHistoryItem) {
     if (String(item.status || '').toLowerCase() !== 'pending') {
       toast.error('Only pending QRIS top-ups can be shown again');
@@ -555,6 +582,7 @@ export function TopupPage() {
                 arkRate={arkRate}
                 actionTopupId={actionTopupId}
                 onShowQr={(item) => void handleShowHistoryQr(item)}
+                onCheckPayment={(item) => void handleCheckPayment(item)}
                 onCancel={(item) => void handleCancelTopup(item.id)}
               />
             </div>
@@ -1000,6 +1028,7 @@ function TopupHistoryCard({
   arkRate,
   actionTopupId,
   onShowQr,
+  onCheckPayment,
   onCancel,
 }: {
   items: TopupHistoryItem[];
@@ -1008,6 +1037,7 @@ function TopupHistoryCard({
   arkRate: number;
   actionTopupId?: string | null;
   onShowQr: (item: TopupHistoryItem) => void;
+  onCheckPayment: (item: TopupHistoryItem) => void;
   onCancel: (item: TopupHistoryItem) => void;
 }) {
   return (
@@ -1076,6 +1106,17 @@ function TopupHistoryCard({
                           <QrCode className="mr-1.5 h-3.5 w-3.5" />
                         )}
                         Show QR
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-8 border-emerald-200/80 text-xs text-emerald-700 hover:bg-emerald-50"
+                        disabled={Boolean(actionTopupId)}
+                        title="Sudah bayar tapi saldo belum masuk? Cek langsung ke Xendit"
+                        onClick={() => onCheckPayment(item)}
+                      >
+                        Cek pembayaran
                       </Button>
                       <Button
                         type="button"

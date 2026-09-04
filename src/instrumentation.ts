@@ -21,6 +21,11 @@ export async function register() {
     const { startWaNotifWatcher } = await import("@/lib/wa/notifications-watcher");
     startWaNotifWatcher();
 
+    // Insiden 2026-09-04: topup QRIS yang webhook-nya tidak sampai tetap
+    // dikredit otomatis (rekonsiliasi ke Xendit tiap 2 menit).
+    const { startQrisTopupReconciler } = await import("@/lib/pos/topup-qris-reconcile-watcher");
+    startQrisTopupReconciler();
+
     const { startBookingForfeitWatcher } = await import(
       "@/lib/ticketing/booking-forfeit-watcher"
     );
