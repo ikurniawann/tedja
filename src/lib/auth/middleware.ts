@@ -24,6 +24,9 @@ const PUBLIC_AUTH_PREFIXES = [
   "/api/files",
   "/member",
   "/api/member-portal",
+  // Dataroom: halaman & API link berbagi untuk penerima tanpa akun dashboard
+  "/share",
+  "/api/share",
   "/api/wa/inbound",
   "/api/crm/instagram/webhook",
   "/api/payments/xendit/webhook",

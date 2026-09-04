@@ -1,6 +1,12 @@
-import sharp from "sharp";
-import { PDFDocument, StandardFonts, degrees, rgb } from "pdf-lib";
 import { isWatermarkable } from "@/lib/dataroom/config";
+
+/*
+ * `sharp` (modul native) dan `pdf-lib` dimuat MALAS di dalam fungsi, bukan di
+ * atas file. Insiden production 2026-09-04: impor statis sharp gagal saat
+ * modul route dimuat (binary libvips tidak ter-trace di standalone) →
+ * SEMUA endpoint Dataroom 500 termasuk daftar folder. Dengan impor malas,
+ * kegagalan sharp hanya berdampak pada watermark (jatuh ke file asli).
+ */
 
 /**
  * Watermark saat file dibagikan (opsi per link): teks diagonal berulang
@@ -39,6 +45,7 @@ export function watermarkTileSvg(width: number, height: number, text: string): s
 }
 
 export async function applyImageWatermark(buffer: Buffer, mime: string, text: string): Promise<Buffer> {
+  const sharp = (await import("sharp")).default;
   const base = sharp(buffer).rotate(); // auto-orient EXIF
   const meta = await base.metadata();
   const width = meta.width ?? 0;
@@ -52,6 +59,7 @@ export async function applyImageWatermark(buffer: Buffer, mime: string, text: st
 }
 
 export async function applyPdfWatermark(buffer: Buffer, text: string): Promise<Buffer> {
+  const { PDFDocument, StandardFonts, degrees, rgb } = await import("pdf-lib");
   const doc = await PDFDocument.load(buffer, { ignoreEncryption: true });
   const font = await doc.embedFont(StandardFonts.HelveticaBold);
   // Font standar hanya punya glyph Latin dasar → karakter lain diganti "-"
