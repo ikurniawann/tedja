@@ -29,9 +29,12 @@ export type CrmReportVenueRow = {
   branch_name: string;
   topup_amount: number;
   bonus_amount: number;
+  /** Topup FOC (gratis, marketing) — dipisah dari topup berbayar. */
+  foc_topup_amount: number;
   spend_amount: number;
   other_amount: number;
   topup_count: number;
+  foc_topup_count: number;
   payment_count: number;
   net_flow: number;
 };
@@ -45,6 +48,7 @@ export type CrmReportData = {
     totals: {
       topup_amount: number;
       bonus_amount: number;
+      foc_topup_amount: number;
       spend_amount: number;
       net_flow: number;
     };

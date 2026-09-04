@@ -116,13 +116,17 @@ export type VenueReconciliationRow = {
   branch_id: string | null;
   company_name: string;
   branch_name: string;
+  /** Topup BERBAYAR (cash/QRIS) — kas yang benar-benar masuk. */
   topup_amount: number;
   bonus_amount: number;
+  /** Topup FOC (gratis, marketing) — liabilitas tanpa kas masuk. */
+  foc_topup_amount: number;
   spend_amount: number;
   other_amount: number;
   topup_count: number;
+  foc_topup_count: number;
   payment_count: number;
-  /** (topup + bonus) - spend: >0 = venue masih memegang liabilitas ARK. */
+  /** (topup + bonus + foc) - spend: >0 = venue masih memegang liabilitas ARK. */
   net_flow: number;
 };
 
@@ -163,6 +167,7 @@ export function mapFrequentVisitorRow(row: RawRecord): FrequentVisitorRow {
 export function mapVenueReconciliationRow(row: RawRecord): VenueReconciliationRow {
   const topup = toNumber(row.topup_amount);
   const bonus = toNumber(row.bonus_amount);
+  const foc = toNumber(row.foc_topup_amount);
   const spend = toNumber(row.spend_amount);
   return {
     company_id: asText(row.company_id, "") || null,
@@ -171,17 +176,20 @@ export function mapVenueReconciliationRow(row: RawRecord): VenueReconciliationRo
     branch_name: asText(row.branch_name, "-"),
     topup_amount: topup,
     bonus_amount: bonus,
+    foc_topup_amount: foc,
     spend_amount: spend,
     other_amount: toNumber(row.other_amount),
     topup_count: toNumber(row.topup_count),
+    foc_topup_count: toNumber(row.foc_topup_count),
     payment_count: toNumber(row.payment_count),
-    net_flow: topup + bonus - spend,
+    net_flow: topup + bonus + foc - spend,
   };
 }
 
 export type ReconciliationTotals = {
   topup_amount: number;
   bonus_amount: number;
+  foc_topup_amount: number;
   spend_amount: number;
   net_flow: number;
 };
@@ -191,9 +199,10 @@ export function sumReconciliation(rows: VenueReconciliationRow[]): Reconciliatio
     (acc, row) => ({
       topup_amount: acc.topup_amount + row.topup_amount,
       bonus_amount: acc.bonus_amount + row.bonus_amount,
+      foc_topup_amount: acc.foc_topup_amount + row.foc_topup_amount,
       spend_amount: acc.spend_amount + row.spend_amount,
       net_flow: acc.net_flow + row.net_flow,
     }),
-    { topup_amount: 0, bonus_amount: 0, spend_amount: 0, net_flow: 0 }
+    { topup_amount: 0, bonus_amount: 0, foc_topup_amount: 0, spend_amount: 0, net_flow: 0 }
   );
 }

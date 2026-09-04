@@ -21,7 +21,8 @@ export async function submitTopup(payload: ProcessTopupPayload): Promise<TopupRe
   const res = await processTopup({
     customer_id: payload.customer_id,
     amount: payload.amount,
-    payment_method: payload.payment_method as "qris" | "cash" | "credit",
+    payment_method: payload.payment_method as "qris" | "cash" | "credit" | "foc",
+    supervisor_pin: payload.supervisor_pin,
   });
   if (!res.success || !res.data) {
     throw new Error((res as { error?: string }).error || "Top-up failed");

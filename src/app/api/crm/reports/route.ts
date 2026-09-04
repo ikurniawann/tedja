@@ -71,11 +71,14 @@ export async function GET(request: NextRequest) {
         `SELECT w.company_id, w.branch_id,
                 co.name AS company_name,
                 br.name AS branch_name,
-                COALESCE(SUM(w.amount) FILTER (WHERE w.type = 'topup'), 0) AS topup_amount,
+                -- Topup berbayar (kas masuk) dipisah dari FOC (gratis/marketing).
+                COALESCE(SUM(w.amount) FILTER (WHERE w.type = 'topup' AND COALESCE(w.payment_method, '') <> 'foc'), 0) AS topup_amount,
+                COALESCE(SUM(w.amount) FILTER (WHERE w.type = 'topup' AND w.payment_method = 'foc'), 0) AS foc_topup_amount,
                 COALESCE(SUM(w.amount) FILTER (WHERE w.type = 'topup_bonus'), 0) AS bonus_amount,
                 COALESCE(SUM(w.amount) FILTER (WHERE w.type = 'payment'), 0) AS spend_amount,
                 COALESCE(SUM(w.amount) FILTER (WHERE w.type NOT IN ('topup', 'topup_bonus', 'payment')), 0) AS other_amount,
-                COUNT(*) FILTER (WHERE w.type = 'topup') AS topup_count,
+                COUNT(*) FILTER (WHERE w.type = 'topup' AND COALESCE(w.payment_method, '') <> 'foc') AS topup_count,
+                COUNT(*) FILTER (WHERE w.type = 'topup' AND w.payment_method = 'foc') AS foc_topup_count,
                 COUNT(*) FILTER (WHERE w.type = 'payment') AS payment_count
          FROM pos.pos_wallet_transactions w
          LEFT JOIN configuration.companies co ON co.id = w.company_id
@@ -92,8 +95,8 @@ export async function GET(request: NextRequest) {
       ),
       queryOne(
         `SELECT
-           COALESCE(SUM(amount) FILTER (WHERE type = 'topup'), 0) AS topup_amount,
-           COUNT(*) FILTER (WHERE type = 'topup') AS topup_count
+           COALESCE(SUM(amount) FILTER (WHERE type = 'topup' AND COALESCE(payment_method, '') <> 'foc'), 0) AS topup_amount,
+           COUNT(*) FILTER (WHERE type = 'topup' AND COALESCE(payment_method, '') <> 'foc') AS topup_count
          FROM pos.pos_wallet_transactions
          WHERE created_at >= $1 AND created_at < $2 AND company_id IS NULL`,
         periodParams

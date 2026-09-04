@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { createPgClient } from "@/lib/pg/create-client";
 import { getPosSession } from "@/lib/api/auth";
 import { awardCrmXpForTopup } from "@/lib/crm/loyalty-engine";
+import { verifySupervisorPinServer, type ApprovedSupervisor } from "@/lib/pos/supervisor-pin-server";
+import { notifyFocTopup } from "@/lib/wa/comp-notification";
 import {
   calculateTopupXp,
   idrToArk,
@@ -17,9 +19,10 @@ function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Unknown error";
 }
 
-function resolvePaymentMethod(raw: unknown): "cash" | "qris" | "credit" {
+function resolvePaymentMethod(raw: unknown): "cash" | "qris" | "credit" | "foc" {
   const value = String(raw || "qris").toLowerCase();
   if (value === "cash") return "cash";
+  if (value === "foc") return "foc";
   if (value === "credit" || value === "credit_card") return "credit";
   return "qris";
 }
@@ -88,9 +91,30 @@ export async function POST(request: NextRequest) {
       amount,
       payment_method: rawMethod = "qris",
       xendit_transaction_id,
+      supervisor_pin,
     } = body;
 
     const payment_method = resolvePaymentMethod(rawMethod);
+
+    // FOC (owner 2026-09-01): saldo diberikan GRATIS utk marketing — wajib
+    // PIN supervisor, tidak menghasilkan XP, dan owner dikabari via WA.
+    let focApprover: ApprovedSupervisor | null = null;
+    if (payment_method === "foc") {
+      const pin = String(supervisor_pin || "").trim();
+      if (!pin) {
+        return NextResponse.json(
+          { success: false, error: "Topup FOC membutuhkan PIN supervisor" },
+          { status: 400 }
+        );
+      }
+      focApprover = await verifySupervisorPinServer(pin);
+      if (!focApprover) {
+        return NextResponse.json(
+          { success: false, error: "PIN supervisor tidak valid" },
+          { status: 403 }
+        );
+      }
+    }
 
     if (!customer_id || !amount || amount <= 0) {
       return NextResponse.json(
@@ -126,8 +150,8 @@ export async function POST(request: NextRequest) {
 
     const balanceBefore = Number(customer.ark_coin_balance) || 0;
 
-    // ── Cash / credit: credit wallet immediately ───────────────────────────
-    if (payment_method === "cash" || payment_method === "credit") {
+    // ── Cash / credit / FOC: credit wallet immediately ─────────────────────
+    if (payment_method === "cash" || payment_method === "credit" || payment_method === "foc") {
       const balanceAfter = balanceBefore + amountValue;
 
       // Topup tidak menambah total_spent (CRM: dasar top spender = belanja order saja).
@@ -153,22 +177,47 @@ export async function POST(request: NextRequest) {
           payment_method,
           status: "completed",
           xendit_transaction_id: xendit_transaction_id || null,
-          notes: payment_method === "cash" ? "Cash top-up" : "Card top-up",
-          metadata: { settled_via: "cashier" },
+          notes:
+            payment_method === "foc"
+              ? `FOC top-up (marketing) — disetujui ${focApprover?.name ?? "supervisor"}`
+              : payment_method === "cash"
+                ? "Cash top-up"
+                : "Card top-up",
+          metadata:
+            payment_method === "foc"
+              ? {
+                  settled_via: "foc",
+                  approved_by_id: focApprover?.id ?? null,
+                  approved_by_name: focApprover?.name ?? null,
+                  xp_awarded: false,
+                }
+              : { settled_via: "cashier" },
         })
         .select()
         .single();
 
       if (transactionError) throw transactionError;
 
-      const xpPreview = calculateTopupXp(amountValue, loyaltySettings);
-      const crmXp = transaction?.id
-        ? await awardCrmXpForTopup(db, {
-            customerId: customer_id,
-            topupAmountIdr: amountValue,
-            transactionId: String(transaction.id),
-          })
-        : { status: "skipped" as const, xpAwarded: 0, reason: "missing_transaction" };
+      // FOC: tanpa XP (XP adalah imbalan uang tunai), kabari owner.
+      const xpPreview = payment_method === "foc" ? 0 : calculateTopupXp(amountValue, loyaltySettings);
+      const crmXp =
+        payment_method === "foc"
+          ? { status: "skipped" as const, xpAwarded: 0, reason: "foc_topup" }
+          : transaction?.id
+            ? await awardCrmXpForTopup(db, {
+                customerId: customer_id,
+                topupAmountIdr: amountValue,
+                transactionId: String(transaction.id),
+              })
+            : { status: "skipped" as const, xpAwarded: 0, reason: "missing_transaction" };
+      if (payment_method === "foc" && transaction?.id) {
+        void notifyFocTopup({
+          transactionId: String(transaction.id),
+          amountIdr: amountValue,
+          approvedName: focApprover?.name ?? null,
+          customerId: customer_id,
+        });
+      }
 
       return NextResponse.json(
         {

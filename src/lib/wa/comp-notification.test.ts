@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   COMP_NOTIF_TARGET,
   buildCompNotifMessage,
+  buildFocTopupMessage,
   compNotifLabel,
 } from "./comp-notification";
 
@@ -47,5 +48,23 @@ describe("comp-notification", () => {
     expect(msg).toContain("Customer : Budi Santoso");
     expect(msg).toContain("Nilai : Rp 105.000");
     expect(msg).toContain("Disetujui : -");
+  });
+
+  it("pesan topup FOC memuat customer, nominal, penyetuju, dan penanda tanpa XP", () => {
+    const msg = buildFocTopupMessage(
+      {
+        transactionId: "tx-1",
+        amountIdr: 150000,
+        approvedName: "Erik Hidayat",
+        customerName: "Maudy Ayunda",
+      },
+      new Date("2026-09-01T03:00:00Z")
+    );
+    expect(msg).toContain("Topup FOC (Gratis)");
+    expect(msg).toContain("Customer : Maudy Ayunda");
+    expect(msg).toContain("Rp 150.000");
+    expect(msg).toContain("tanpa XP");
+    expect(msg).toContain("Disetujui : Erik Hidayat");
+    expect(msg).toContain("WIB");
   });
 });
