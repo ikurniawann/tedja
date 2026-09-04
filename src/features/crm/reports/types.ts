@@ -49,6 +49,9 @@ export type CrmReportData = {
       net_flow: number;
     };
     outstanding_balance: number;
+    /** Topup yang belum bertanda venue — di luar tabel per-venue. */
+    untagged_topup_amount?: number;
+    untagged_topup_count?: number;
   };
   members: {
     card: number;
