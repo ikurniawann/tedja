@@ -35,6 +35,7 @@
     "db:seed:items-raw-materials": "node database/seeders/items-raw-materials.js",
     "db:seed:items-products": "node database/seeders/items-products.js",
     "db:seed:items-product-bom": "node database/seeders/items-product-bom.js",
+    "db:seed:items-footwear": "node database/seeders/items-footwear.js",
     "db:seed:items-product-units-menu": "node database/seeders/items-product-units-menu.js",
     "db:seed:items-menu": "node database/seeders/items-menu-tree.js",
     "db:seed:pos-tables": "node database/seeders/pos-tables.js",
