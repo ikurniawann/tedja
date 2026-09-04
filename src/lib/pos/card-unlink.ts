@@ -4,13 +4,16 @@
  * wajib diisi supaya jejak auditnya jelas.
  */
 
+/** Alasan yang bisa dipilih kasir di dialog Unlink. */
 export const CARD_UNLINK_REASONS = ["lost", "returned", "other"] as const;
-export type CardUnlinkReason = (typeof CARD_UNLINK_REASONS)[number];
+/** 'refund' hanya dibuat lewat alur Refund (unlink + permintaan refund). */
+export type CardUnlinkReason = (typeof CARD_UNLINK_REASONS)[number] | "refund";
 
 export const CARD_UNLINK_REASON_LABELS: Record<CardUnlinkReason, string> = {
   lost: "Kartu hilang",
   returned: "Kartu dikembalikan",
   other: "Lainnya",
+  refund: "Refund (kartu dilepas)",
 };
 
 export type CardUnlinkValidation =
