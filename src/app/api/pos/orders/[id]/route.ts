@@ -445,27 +445,48 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     // matching coin debit (previously the failure was swallowed).
     // EPIC-041: RPC mengembalikan saldo SETELAH potong — snapshot dibawa ke
     // respons utk baris "Sisa saldo" di struk (sama seperti jalur POST).
+    //
+    // Guard unpaid→paid saja (insiden 2026-09-04): PATCH ulang / double-submit
+    // pada order yang sudah paid tidak boleh memanggil potong lagi. RPC juga
+    // idempotent per order_id untuk type=payment.
     let arkBalanceAfter: number | null = null;
-    if (numericArkUsed > 0) {
-      if (existing.customer_id) {
-        const { data: coinBalance, error: coinError } = await db.rpc('update_ark_coin_balance', {
-          p_customer_id: existing.customer_id,
-          p_amount: -numericArkUsed,
-          p_type: 'payment',
-          p_order_id: orderId,
-        });
+    const shouldDeductArk =
+      numericArkUsed > 0 &&
+      Boolean(existing.customer_id) &&
+      existing.payment_status !== 'paid';
+    if (shouldDeductArk) {
+      const { data: coinBalance, error: coinError } = await db.rpc('update_ark_coin_balance', {
+        p_customer_id: existing.customer_id,
+        p_amount: -numericArkUsed,
+        p_type: 'payment',
+        p_order_id: orderId,
+      });
 
-        if (coinError) {
-          const insufficient = coinError.message?.includes('Insufficient');
-          return NextResponse.json(
-            { success: false, error: insufficient ? 'Saldo ARK Coin tidak cukup' : 'Gagal memproses ARK Coin' },
-            { status: 400 }
-          );
-        }
-
-        arkBalanceAfter = Number(coinBalance);
-        if (!Number.isFinite(arkBalanceAfter)) arkBalanceAfter = null;
+      if (coinError) {
+        const insufficient = coinError.message?.includes('Insufficient');
+        return NextResponse.json(
+          { success: false, error: insufficient ? 'Saldo ARK Coin tidak cukup' : 'Gagal memproses ARK Coin' },
+          { status: 400 }
+        );
       }
+
+      arkBalanceAfter = Number(coinBalance);
+      if (!Number.isFinite(arkBalanceAfter)) arkBalanceAfter = null;
+    } else if (
+      numericArkUsed > 0 &&
+      existing.customer_id &&
+      existing.payment_status === 'paid'
+    ) {
+      // Order sudah lunas — jangan potong; ambil saldo terkini utk struk bila ada.
+      const { data: customerRow } = await db
+        .from('pos_customers')
+        .select('ark_coin_balance')
+        .eq('id', existing.customer_id)
+        .maybeSingle();
+      const bal = Number(
+        (customerRow as { ark_coin_balance?: number | string } | null)?.ark_coin_balance
+      );
+      arkBalanceAfter = Number.isFinite(bal) ? bal : null;
     }
 
     const { data, error } = await db
