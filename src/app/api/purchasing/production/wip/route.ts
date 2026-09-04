@@ -103,7 +103,7 @@ export async function GET() {
                 total_cost,
                 created_at,
                 production_order_id,
-                production_order:production_order_id(id,nomor_produksi,status)
+                production_order:production_orders!production_order_id(id,nomor_produksi,status)
               `)
               .eq("output_type", "WIP")
               .in("wip_raw_material_id", materialIds)
