@@ -14,7 +14,8 @@ export type WaNotifType =
   | "reviewRendah"
   | "omzetAnjlok"
   | "approvalMenginap"
-  | "kontrakHabis";
+  | "kontrakHabis"
+  | "prMendesak";
 
 export interface WaNotifTypeMeta {
   key: WaNotifType;
@@ -44,6 +45,14 @@ export const WA_NOTIF_TYPES: WaNotifTypeMeta[] = [
     key: "komplain",
     label: "Komplain pelanggan masuk",
     description: "Komplain baru dari WhatsApp Customer Service.",
+    tier: "kritis",
+    defaultOn: true,
+  },
+  {
+    key: "prMendesak",
+    label: "Purchase Request mendesak",
+    description:
+      "PR berprioritas Mendesak dibuat atau diajukan — butuh persetujuan cepat (permintaan owner 2026-09-04).",
     tier: "kritis",
     defaultOn: true,
   },

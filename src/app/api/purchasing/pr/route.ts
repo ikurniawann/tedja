@@ -11,6 +11,7 @@ import {
   type PrWriteItem,
 } from "@/lib/purchasing/pr-schemas";
 import { requireUser } from "@/lib/auth/require-user";
+import { notifyPrMendesak } from "@/lib/purchasing/pr-urgent-notify";
 import {
   getApiUserScope,
   companyScopeOr,
@@ -233,6 +234,26 @@ export async function POST(request: NextRequest) {
       );
     }
     
+
+    // Prioritas Mendesak → WA ke penerima di Settings → Notifikasi WA
+    // (fire-and-forget; tidak mengganggu respons).
+    void notifyPrMendesak({
+      prId: pr.id,
+      prNumber,
+      priority: validated.priority,
+      status: nextStatus,
+      requesterName: user.full_name,
+      departmentId: validated.department_id,
+      totalAmount,
+      requiredDate: validated.required_date || null,
+      notes: validated.notes || null,
+      items: normalizedItems.map((item) => ({
+        description: item.description,
+        qty: item.qty,
+        unit: item.unit,
+      })),
+    });
+
     return NextResponse.json({ data: pr }, { status: 201 });
   } catch (error) {
     console.error("Error creating PR:", error);

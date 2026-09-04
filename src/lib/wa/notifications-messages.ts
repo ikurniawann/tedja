@@ -41,6 +41,8 @@ export const reviewRendahDedupKey = (reviewId: string) => reviewId;
 export const omzetAnjlokDedupKey = (isoWeek: string) => isoWeek;
 export const approvalMenginapDedupKey = (dateWib: string) => dateWib;
 /** Ganti kontrak (end_date baru) = kejadian baru. */
+/** Satu pesan per PR per status (draft & diajukan) — edit draft berulang tidak spam. */
+export const prMendesakDedupKey = (prId: string, status: string) => `${prId}:${status}`;
 export const kontrakHabisDedupKey = (contractId: string, endDate: string) =>
   `${contractId}:${endDate}`;
 
@@ -60,6 +62,40 @@ export function buildVoidBesarMessage(input: {
     `Disetujui: ${input.supervisorName}`,
     ``,
     `Cek POS → Laporan untuk rinciannya.`,
+  ].join("\n");
+}
+
+export interface PrMendesakInput {
+  prNumber: string;
+  /** 'draft' = baru dibuat, 'pending_head' = diajukan minta persetujuan. */
+  status: string;
+  requesterName: string;
+  departmentName?: string | null;
+  totalAmount: number;
+  requiredDate?: string | null;
+  notes?: string | null;
+  items: { description: string; qty: number; unit?: string | null }[];
+}
+
+export function buildPrMendesakMessage(input: PrMendesakInput): string {
+  const submitted = input.status !== "draft";
+  const top = input.items.slice(0, 5).map(
+    (it) => `• ${it.description.slice(0, 60)} — ${it.qty.toLocaleString("id-ID")} ${it.unit ?? ""}`.trimEnd()
+  );
+  const more = input.items.length > 5 ? [`• …dan ${input.items.length - 5} item lain`] : [];
+  return [
+    `🔴 *Purchase Request MENDESAK*`,
+    ``,
+    `${input.prNumber} ${submitted ? "diajukan, menunggu persetujuan" : "dibuat (draft)"}.`,
+    `Pemohon: ${input.requesterName}${input.departmentName ? ` · ${input.departmentName}` : ""}`,
+    `Total estimasi: *${formatRp(input.totalAmount)}*`,
+    `Dibutuhkan: ${input.requiredDate ?? "-"}`,
+    ...(input.notes ? [`Catatan: ${input.notes.slice(0, 200)}`] : []),
+    ``,
+    ...top,
+    ...more,
+    ``,
+    `Buka Purchasing → Purchase Request untuk ${submitted ? "menyetujui" : "meninjau"}.`,
   ].join("\n");
 }
 

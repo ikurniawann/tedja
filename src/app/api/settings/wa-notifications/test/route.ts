@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
 import { IAM } from "@/lib/iam/prefixes";
 import { getSetting } from "@/lib/settings/app-settings";
-import { readGatewayConfig, sendGatewayText } from "@/lib/whatsapp/gateway";
+import { loadGatewayConfig, sendGatewayText } from "@/lib/whatsapp/gateway";
 import { WA_NOTIF_SETTING_KEY, parseWaNotifConfig } from "@/lib/wa/notifications-config";
 
 /**
@@ -23,10 +23,13 @@ export async function POST(request: Request) {
       );
     }
 
-    const gateway = readGatewayConfig();
+    // Sumber konfigurasi HARUS sama dengan notifikasi sungguhan (DB → ENV):
+    // sebelumnya hanya membaca ENV, sehingga tombol uji bisa bilang "belum
+    // dikonfigurasi" padahal gateway di Settings sudah terisi dan bekerja.
+    const gateway = await loadGatewayConfig();
     if (!gateway) {
       return NextResponse.json(
-        { error: "WA Gateway belum dikonfigurasi (WA_GATEWAY_URL/TOKEN)" },
+        { error: "WA Gateway belum dikonfigurasi (Settings → Integrasi atau WA_GATEWAY_URL/TOKEN)" },
         { status: 400 }
       );
     }

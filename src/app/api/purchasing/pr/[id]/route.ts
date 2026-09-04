@@ -1,5 +1,6 @@
 import { createServerPgClient } from "@/lib/pg/create-client";
 import { requireUser } from "@/lib/auth/require-user";
+import { notifyPrMendesak } from "@/lib/purchasing/pr-urgent-notify";
 import { NextRequest, NextResponse } from "next/server";
 import {
   extractPrErrorMessage,
@@ -156,7 +157,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
     const { data: existingPR, error: findError } = await db
       .from("purchase_requests")
-      .select("id, requester_id, status, module_type")
+      .select("id, pr_number, requester_id, status, module_type")
       .eq("id", id)
       .single();
 
@@ -227,6 +228,26 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       .eq("id", id);
 
     if (updateError) throw updateError;
+
+
+    // Draft yang diubah/diajukan dengan prioritas Mendesak → WA owner
+    // (dedup per PR per status, jadi edit berulang tidak spam).
+    void notifyPrMendesak({
+      prId: id,
+      prNumber: existingPR.pr_number ?? id,
+      priority: validated.priority,
+      status: nextStatus,
+      requesterName: user.full_name,
+      departmentId: validated.department_id,
+      totalAmount,
+      requiredDate: validated.required_date || null,
+      notes: validated.notes || null,
+      items: normalizedItems.map((item) => ({
+        description: item.description,
+        qty: item.qty,
+        unit: item.unit,
+      })),
+    });
 
     return NextResponse.json({ data: { id, status: nextStatus } });
   } catch (error) {
