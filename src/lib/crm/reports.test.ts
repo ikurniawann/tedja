@@ -143,6 +143,21 @@ describe("mapVenueReconciliationRow", () => {
   });
 });
 
+describe("mapVenueReconciliationRow — topup FOC", () => {
+  it("FOC dipisah dari topup berbayar tapi tetap menambah liabilitas (net)", () => {
+    const row = mapVenueReconciliationRow({
+      company_id: "co1", branch_id: "br1", company_name: "Sulu", branch_name: "Dago",
+      topup_amount: "500000", foc_topup_amount: "150000", bonus_amount: "0",
+      spend_amount: "100000", other_amount: "0",
+      topup_count: "3", foc_topup_count: "1", payment_count: "2",
+    });
+    expect(row.topup_amount).toBe(500000);
+    expect(row.foc_topup_amount).toBe(150000);
+    expect(row.foc_topup_count).toBe(1);
+    expect(row.net_flow).toBe(550000);
+  });
+});
+
 describe("sumReconciliation", () => {
   it("menjumlahkan seluruh venue", () => {
     const totals = sumReconciliation([
@@ -167,7 +182,8 @@ describe("sumReconciliation", () => {
 
   it("array kosong menghasilkan nol semua", () => {
     expect(sumReconciliation([])).toEqual({
-      topup_amount: 0, bonus_amount: 0, spend_amount: 0, net_flow: 0,
+      topup_amount: 0, bonus_amount: 0,
+      foc_topup_amount: 0, spend_amount: 0, net_flow: 0,
     });
   });
 });

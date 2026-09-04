@@ -88,7 +88,71 @@ export async function notifyCompTransaction(input: CompNotifInput): Promise<void
       customerName: await resolveCustomerName(input),
     });
     const dedupKey = `comp:${input.compType}:${input.orderNumber}`.slice(0, 160);
+    await deliverOwnerNotif(dedupKey, message);
+  } catch (err) {
+    console.error("[wa-comp] notifikasi komplimen error:", err);
+  }
+}
 
+/* ------------------------------------------------------------------ */
+/* Topup FOC (owner 2026-09-01): saldo ARK diberikan gratis utk        */
+/* marketing — sama seperti komplimen, owner harus tahu seketika.      */
+/* ------------------------------------------------------------------ */
+
+export interface FocTopupNotifInput {
+  /** id pos_wallet_transactions — kunci dedup. */
+  transactionId: string;
+  amountIdr: number;
+  approvedName?: string | null;
+  customerName?: string | null;
+  customerId?: string | null;
+}
+
+/** Pure & unit-testable — isi pesan WA topup FOC. */
+export function buildFocTopupMessage(
+  input: FocTopupNotifInput,
+  now: Date = new Date()
+): string {
+  const rp = (n: number) => `Rp ${Math.round(n).toLocaleString("id-ID")}`;
+  const waktu = now.toLocaleString("id-ID", {
+    timeZone: "Asia/Jakarta",
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+  return [
+    "Sulu In Wounderland OS — Topup FOC (Gratis)",
+    `Customer : ${input.customerName?.trim() || "-"}`,
+    `Saldo ARK : ${rp(input.amountIdr)} (tanpa pembayaran, tanpa XP)`,
+    `Disetujui : ${input.approvedName?.trim() || "-"}`,
+    `${waktu} WIB`,
+  ].join("\n");
+}
+
+/** Fire-and-forget: `void notifyFocTopup(...)`. */
+export async function notifyFocTopup(input: FocTopupNotifInput): Promise<void> {
+  try {
+    const message = buildFocTopupMessage({
+      ...input,
+      customerName: await resolveCustomerName({
+        compType: "foc_comp",
+        orderNumber: "",
+        grossIdr: 0,
+        customerName: input.customerName,
+        customerId: input.customerId,
+      }),
+    });
+    await deliverOwnerNotif(`foc-topup:${input.transactionId}`.slice(0, 160), message);
+  } catch (err) {
+    console.error("[wa-comp] notifikasi topup FOC error:", err);
+  }
+}
+
+/**
+ * Pengiriman bersama (komplimen & topup FOC): klaim dedup dulu, kirim ke
+ * nomor owner, lepas klaim bila gagal jelas (timeout = at-most-once).
+ */
+async function deliverOwnerNotif(dedupKey: string, message: string): Promise<void> {
+  {
     // Klaim dedup SEBELUM kirim — route terpanggil dua kali → satu pesan.
     const claim = await getPool().query<{ id: string }>(
       `INSERT INTO configuration.wa_notif_log (notif_type, dedup_key, message, recipients)
@@ -122,7 +186,5 @@ export async function notifyCompTransaction(input: CompNotifInput): Promise<void
       console.error(`[wa-comp] gagal kirim ke ${COMP_NOTIF_TARGET}: ${result.reason}`);
       await release();
     }
-  } catch (err) {
-    console.error("[wa-comp] notifikasi komplimen error:", err);
   }
 }

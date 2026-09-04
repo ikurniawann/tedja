@@ -8,6 +8,7 @@ import {
   Banknote,
   Check,
   Coins,
+  Gift,
   History,
   Loader2,
   MessageCircle,
@@ -66,6 +67,8 @@ export function TopupPage() {
   const [topupRp, setTopupRp] = useState(0);
   const [customRp, setCustomRp] = useState('');
   const [payment, setPayment] = useState<PaymentMethod>('qris');
+  // PIN supervisor utk metode FOC (topup gratis — marketing).
+  const [focPin, setFocPin] = useState('');
   const [showReceipt, setShowReceipt] = useState(false);
   const [waSending, setWaSending] = useState(false);
   const [waSentTo, setWaSentTo] = useState<string | null>(null);
@@ -391,6 +394,11 @@ export function TopupPage() {
 
   async function pay() {
     if (!customer || topupRp < minTopup) return;
+    if (payment === 'foc' && !focPin.trim()) {
+      setError('Topup FOC membutuhkan PIN supervisor');
+      toast.error('Masukkan PIN supervisor untuk topup FOC');
+      return;
+    }
     setStep('processing');
     setError('');
 
@@ -399,7 +407,9 @@ export function TopupPage() {
         customer_id: customer.id,
         amount: topupRp,
         payment_method: payment,
+        supervisor_pin: payment === 'foc' ? focPin.trim() : undefined,
       });
+      setFocPin('');
 
       if (payment === 'qris' && (data.status === 'pending' || data.qr_code_url)) {
         setResult(data);
@@ -637,7 +647,7 @@ export function TopupPage() {
                     <div className="mt-0.5 text-sm font-medium text-amber-600">{formatArk(topupRp)}</div>
                   </div>
 
-                  <div className="grid gap-2 sm:grid-cols-2">
+                  <div className="grid gap-2 sm:grid-cols-3">
                     {[
                       {
                         id: 'qris' as const,
@@ -650,6 +660,12 @@ export function TopupPage() {
                         icon: Banknote,
                         label: 'Cash',
                         desc: 'Cash at cashier — ARK credited instantly',
+                      },
+                      {
+                        id: 'foc' as const,
+                        icon: Gift,
+                        label: 'FOC (Gratis)',
+                        desc: 'Marketing — butuh PIN supervisor, tanpa XP',
                       },
                     ].map((method) => (
                       <button
@@ -673,10 +689,32 @@ export function TopupPage() {
                     ))}
                   </div>
 
+                  {payment === 'foc' ? (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+                      <label htmlFor="foc-pin" className="text-sm font-semibold text-amber-900">
+                        PIN Supervisor
+                      </label>
+                      <p className="mb-2 text-xs text-amber-800">
+                        Topup FOC memberi saldo ARK <strong>gratis</strong> untuk kebutuhan marketing:
+                        tidak ada uang masuk, tidak menghasilkan XP, dan otomatis dikabarkan ke owner.
+                      </p>
+                      <Input
+                        id="foc-pin"
+                        type="password"
+                        inputMode="numeric"
+                        autoComplete="off"
+                        value={focPin}
+                        onChange={(e) => setFocPin(e.target.value)}
+                        placeholder="Masukkan PIN supervisor"
+                        className="h-11 max-w-xs bg-white"
+                      />
+                    </div>
+                  ) : null}
+
                   <Button
                     type="button"
                     onClick={pay}
-                    disabled={topupMutation.isPending}
+                    disabled={topupMutation.isPending || (payment === 'foc' && !focPin.trim())}
                     className="h-11 w-full bg-primary text-sm font-semibold hover:bg-primary/90 sm:w-auto sm:min-w-56"
                   >
                     {topupMutation.isPending ? (
@@ -686,6 +724,8 @@ export function TopupPage() {
                       </>
                     ) : payment === 'cash' ? (
                       `Confirm cash ${formatCurrency(topupRp)}`
+                    ) : payment === 'foc' ? (
+                      `Confirm FOC ${formatCurrency(topupRp)} (gratis)`
                     ) : (
                       `Show QRIS ${formatCurrency(topupRp)}`
                     )}
@@ -838,7 +878,7 @@ export function TopupPage() {
             </div>
             <Line label="Customer" value={customer?.name || customer?.phone || '-'} />
             <Line label="Amount" value={formatCurrency(topupRp)} />
-            <Line label="Method" value={payment === 'cash' ? 'Cash' : 'QRIS'} />
+            <Line label="Method" value={paymentMethodLabel(payment)} />
             <Line label="Previous balance" value={formatArk(result?.balance_before || 0)} />
             <Line label="New balance" value={formatArk(result?.balance_after || 0)} strong />
           </div>
@@ -922,6 +962,7 @@ function paymentMethodLabel(method?: string | null) {
   const value = String(method || '').toLowerCase();
   if (value === 'cash') return 'Cash';
   if (value === 'qris') return 'QRIS';
+  if (value === 'foc') return 'FOC (Gratis)';
   if (value === 'credit' || value === 'credit_card') return 'Card';
   if (!value) return '—';
   return value.toUpperCase();

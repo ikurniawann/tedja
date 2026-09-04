@@ -767,7 +767,8 @@ export async function getDashboardStats(
 export async function processTopup(data: {
   customer_id: string;
   amount: number;
-  payment_method?: 'qris' | 'credit' | 'cash';
+  payment_method?: 'qris' | 'credit' | 'cash' | 'foc';
+  supervisor_pin?: string;
 }) {
   return fetchAPI<{ success: boolean; data: any }>('/topup', {
     method: 'POST',

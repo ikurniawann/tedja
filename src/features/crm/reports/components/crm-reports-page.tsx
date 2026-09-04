@@ -100,6 +100,13 @@ export function CrmReportsPage() {
         tone: "text-violet-700 bg-violet-50",
       },
       {
+        label: "Topup FOC",
+        value: formatCurrency(totals?.foc_topup_amount ?? 0),
+        hint: "Gratis untuk marketing — bukan kas masuk",
+        icon: Coins,
+        tone: "text-amber-700 bg-amber-50",
+      },
+      {
         label: "Belanja ARK Periode",
         value: formatCurrency(totals?.spend_amount ?? 0),
         hint: "ARK dibelanjakan di kasir",
@@ -228,7 +235,7 @@ export function CrmReportsPage() {
         <ReconciliationSection
           loading={loading}
           venues={data?.reconciliation.venues ?? []}
-          totals={totals ?? { topup_amount: 0, bonus_amount: 0, spend_amount: 0, net_flow: 0 }}
+          totals={totals ?? { topup_amount: 0, bonus_amount: 0, foc_topup_amount: 0, spend_amount: 0, net_flow: 0 }}
           untaggedAmount={data?.reconciliation.untagged_topup_amount ?? 0}
           untaggedCount={data?.reconciliation.untagged_topup_count ?? 0}
         />
@@ -255,7 +262,7 @@ function ReconciliationSection({
 }: {
   loading: boolean;
   venues: NonNullable<ReturnType<typeof useCrmReports>["data"]>["reconciliation"]["venues"];
-  totals: { topup_amount: number; bonus_amount: number; spend_amount: number; net_flow: number };
+  totals: { topup_amount: number; bonus_amount: number; foc_topup_amount: number; spend_amount: number; net_flow: number };
   untaggedAmount?: number;
   untaggedCount?: number;
 }) {
@@ -277,12 +284,13 @@ function ReconciliationSection({
         </div>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[760px] text-sm">
+          <table className="w-full min-w-[880px] text-sm">
             <thead>
               <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
                 <th className="px-4 py-3 font-medium">Venue</th>
                 <th className="px-4 py-3 text-right font-medium">Topup</th>
                 <th className="px-4 py-3 text-right font-medium">Bonus</th>
+                <th className="px-4 py-3 text-right font-medium">Topup FOC</th>
                 <th className="px-4 py-3 text-right font-medium">Belanja ARK</th>
                 <th className="px-4 py-3 text-right font-medium">Net</th>
                 <th className="px-4 py-3 text-right font-medium">#Topup</th>
@@ -298,6 +306,7 @@ function ReconciliationSection({
                   </td>
                   <td className="px-4 py-3 text-right text-slate-900">{formatCurrency(venue.topup_amount)}</td>
                   <td className="px-4 py-3 text-right text-slate-600">{formatCurrency(venue.bonus_amount)}</td>
+                  <td className="px-4 py-3 text-right text-amber-700">{formatCurrency(venue.foc_topup_amount ?? 0)}</td>
                   <td className="px-4 py-3 text-right text-slate-900">{formatCurrency(venue.spend_amount)}</td>
                   <td
                     className={`px-4 py-3 text-right font-semibold ${
@@ -316,6 +325,7 @@ function ReconciliationSection({
                 <td className="px-4 py-3">Total</td>
                 <td className="px-4 py-3 text-right">{formatCurrency(totals.topup_amount)}</td>
                 <td className="px-4 py-3 text-right">{formatCurrency(totals.bonus_amount)}</td>
+                <td className="px-4 py-3 text-right text-amber-700">{formatCurrency(totals.foc_topup_amount)}</td>
                 <td className="px-4 py-3 text-right">{formatCurrency(totals.spend_amount)}</td>
                 <td
                   className={`px-4 py-3 text-right ${totals.net_flow >= 0 ? "text-emerald-700" : "text-red-700"}`}
