@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
   try {
     const periodParams = [period.fromIso, period.toIso];
 
-    const [topSpenderRows, frequentVisitorRows, reconciliationRows, summaryRow] = await Promise.all([
+    const [topSpenderRows, frequentVisitorRows, reconciliationRows, untaggedRow, summaryRow] = await Promise.all([
       query(
         `SELECT c.id, c.name, c.phone, c.membership_tier, c.member_type,
                 COUNT(o.id) AS order_count,
@@ -81,8 +81,21 @@ export async function GET(request: NextRequest) {
          LEFT JOIN configuration.companies co ON co.id = w.company_id
          LEFT JOIN configuration.branches br ON br.id = w.branch_id
          WHERE w.created_at >= $1 AND w.created_at < $2
+           -- Transaksi tanpa venue (company_id kosong) tidak bisa
+           -- direkonsiliasi antar-venue, jadi tidak ditampilkan
+           -- (permintaan owner 2026-09-01). Nilainya tetap dilaporkan
+           -- terpisah lewat untagged_* di bawah supaya tidak hilang senyap.
+           AND w.company_id IS NOT NULL
          GROUP BY w.company_id, w.branch_id, co.name, br.name
          ORDER BY topup_amount DESC, spend_amount DESC`,
+        periodParams
+      ),
+      queryOne(
+        `SELECT
+           COALESCE(SUM(amount) FILTER (WHERE type = 'topup'), 0) AS topup_amount,
+           COUNT(*) FILTER (WHERE type = 'topup') AS topup_count
+         FROM pos.pos_wallet_transactions
+         WHERE created_at >= $1 AND created_at < $2 AND company_id IS NULL`,
         periodParams
       ),
       queryOne(
@@ -106,6 +119,10 @@ export async function GET(request: NextRequest) {
           totals: sumReconciliation(reconciliation),
           // Saldo ARK beredar = liabilitas platform saat ini (bukan per periode).
           outstanding_balance: toNumber(summaryRow?.outstanding_balance),
+          // Topup yang belum bertanda venue: tidak masuk tabel per-venue,
+          // tapi tetap dilaporkan agar kasnya tidak hilang dari pandangan.
+          untagged_topup_amount: toNumber(untaggedRow?.topup_amount),
+          untagged_topup_count: toNumber(untaggedRow?.topup_count),
         },
         members: {
           card: toNumber(summaryRow?.card_members),
