@@ -1,4 +1,4 @@
-export type PaymentMethod = "qris" | "cash";
+export type PaymentMethod = "qris" | "cash" | "foc";
 export type TopupStatus =
   | "idle"
   | "enter_amount"
@@ -46,6 +46,8 @@ export interface ProcessTopupPayload {
   customer_id: string;
   amount: number;
   payment_method: string;
+  /** Wajib bila payment_method = 'foc' (topup gratis, butuh persetujuan supervisor). */
+  supervisor_pin?: string;
 }
 
 export type TopupHistoryStatus = "pending" | "completed" | "expired" | "failed" | "cancelled" | string;
