@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createPgClient } from "@/lib/pg/create-client";
 import { getPosSession } from "@/lib/api/auth";
-import { creditPendingTopup } from "@/lib/pos/topup-credit";
-import { getXenditQrCode, loadActiveXenditConfig } from "@/lib/payments/xendit";
+import { reconcilePendingTopup } from "@/lib/pos/topup-qris-reconcile";
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Unknown error";
@@ -39,59 +38,34 @@ export async function GET(
       {}) as Record<string, unknown>;
 
     if (status === "pending") {
-      // Optional: refresh from Xendit if QR already inactive / paid (webhook miss)
-      const qrId = String((tx as { xendit_transaction_id?: string }).xendit_transaction_id || "");
-      if (qrId) {
-        try {
-          const xendit = await loadActiveXenditConfig(db);
-          const remote = await getXenditQrCode(xendit.secretKey, qrId);
-          const remoteStatus = String(remote.status || "").toUpperCase();
-          // When paid, webhook should have fired; if we see SUCCEEDED-like payment metadata, credit.
-          if (remoteStatus === "INACTIVE" || remoteStatus === "COMPLETED") {
-            // Do not auto-credit on INACTIVE alone (could be expired). Only credit via webhook
-            // or explicit payment status fields if present.
-            const paymentStatus = String(
-              (remote as { payment_status?: string }).payment_status || ""
-            ).toUpperCase();
-            if (paymentStatus === "SUCCEEDED" || paymentStatus === "COMPLETED") {
-              const credited = await creditPendingTopup(db, {
-                transactionId: id,
-                xenditPaymentId: String(
-                  (remote as { payment_id?: string }).payment_id || remote.id
-                ),
-                notes: "Top-up QRIS",
-              });
-              if (credited.status === "completed" || credited.status === "already_completed") {
-                const balanceBeforeFallback = Number(tx.balance_before) || 0;
-                const arkCoinsFallback = Number(tx.ark_coins) || 0;
-                return NextResponse.json({
-                  success: true,
-                  data: {
-                    status: "completed",
-                    topup_id: id,
-                    balance_before:
-                      credited.balance_before !== undefined && credited.balance_before !== null
-                        ? credited.balance_before
-                        : balanceBeforeFallback,
-                    balance_after: credited.balance_after,
-                    ark_coins:
-                      credited.ark_coins !== undefined && credited.ark_coins !== null
-                        ? credited.ark_coins
-                        : arkCoinsFallback,
-                    ark_rate: credited.ark_rate,
-                    xp_awarded: credited.xp_awarded || 0,
-                    transaction: credited.transaction,
-                    qr_code_url: metadata.qr_string
-                      ? `https://api.qrserver.com/v1/create-qr-code/?size=320x320&data=${encodeURIComponent(String(metadata.qr_string))}`
-                      : null,
-                  },
-                });
-              }
-            }
-          }
-        } catch {
-          // Ignore poll refresh errors; keep returning pending
+      // Webhook Xendit bisa tidak sampai (insiden 2026-09-04): setiap poll
+      // memastikan langsung ke daftar pembayaran QR di Xendit dan mengkredit
+      // bila sudah dibayar. Error dicatat, tidak lagi ditelan diam-diam.
+      try {
+        const outcome = await reconcilePendingTopup(db, id);
+        if (outcome.status === "credited") {
+          return NextResponse.json({
+            success: true,
+            data: {
+              status: "completed",
+              topup_id: id,
+              balance_before: outcome.balance_before,
+              balance_after: outcome.balance_after,
+              ark_coins: outcome.ark_coins,
+              ark_rate: outcome.ark_rate,
+              xp_awarded: outcome.xp_awarded,
+              transaction: outcome.transaction,
+              qr_code_url: metadata.qr_string
+                ? `https://api.qrserver.com/v1/create-qr-code/?size=320x320&data=${encodeURIComponent(String(metadata.qr_string))}`
+                : null,
+            },
+          });
         }
+        if (outcome.status === "error") {
+          console.warn(`[topup-status] rekonsiliasi ${id} gagal: ${outcome.detail}`);
+        }
+      } catch (err) {
+        console.warn(`[topup-status] rekonsiliasi ${id} error:`, err instanceof Error ? err.message : err);
       }
     }
 
