@@ -16,6 +16,7 @@ export type NavIconName =
   | "reports"
   | "sitemap"
   | "database"
+  | "folder"
   | "building"
   | "identification"
   | "calendar"
