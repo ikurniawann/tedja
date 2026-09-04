@@ -6,7 +6,7 @@ import { normalizeNfcUid } from "@/features/pos/nfc/normalize-nfc-uid";
 /**
  * GET /api/pos/member-cards?search=&nfc_uid=
  * Daftar member yang punya kartu NFC tertaut (untuk halaman Unlink Card)
- * + riwayat unlink terakhir. `nfc_uid` dipakai saat kartu di-tap: hasil
+ * + riwayat unlink terakhir + permintaan refund (owner 2026-09-04). `nfc_uid` dipakai saat kartu di-tap: hasil
  * tepat satu member, atau kosong bila kartu tidak terdaftar / sudah dilepas.
  */
 export async function GET(request: NextRequest) {
@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const [members, recentUnlinks] = await Promise.all([
+    const [members, recentUnlinks, refundRequests] = await Promise.all([
       query(
         `SELECT c.id, c.name, c.phone, c.email, c.membership_tier, c.member_type,
                 c.ark_coin_balance, c.total_xp, c.nfc_uid, c.card_issued_at
@@ -50,11 +50,22 @@ export async function GET(request: NextRequest) {
          ORDER BY l.created_at DESC
          LIMIT 20`
       ),
+      // Permintaan refund: yang menunggu Finance di atas, lalu 30 terakhir.
+      query(
+        `SELECT r.id, r.customer_id, c.name, c.phone, c.ark_coin_balance AS current_balance,
+                r.status, r.requested_amount, r.refunded_amount, r.notes,
+                r.requested_by_name, r.requested_at, r.completed_by_name, r.approved_by_name,
+                r.completed_at, r.completion_notes, r.cancelled_by_name, r.cancelled_at, r.cancel_reason
+         FROM pos.pos_member_refund_requests r
+         JOIN pos.pos_customers c ON c.id = r.customer_id
+         ORDER BY (r.status = 'requested') DESC, r.requested_at DESC
+         LIMIT 50`
+      ),
     ]);
 
     return NextResponse.json({
       success: true,
-      data: { members, recent_unlinks: recentUnlinks },
+      data: { members, recent_unlinks: recentUnlinks, refund_requests: refundRequests },
     });
   } catch (error) {
     console.error("[pos] member-cards GET:", error);
