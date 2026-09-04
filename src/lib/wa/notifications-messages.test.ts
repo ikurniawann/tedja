@@ -19,6 +19,8 @@ import {
   stokHabisDedupKey,
   todayWib,
   voidDedupKey,
+  buildPrMendesakMessage,
+  prMendesakDedupKey,
 } from "./notifications-messages";
 
 const overviewKosong: DesktopOverview = {
@@ -248,5 +250,42 @@ describe("Fase C+D — formatter & kunci baru", () => {
     expect(kontrakHabisDedupKey("k1", "2026-08-01")).not.toBe(
       kontrakHabisDedupKey("k1", "2026-09-01")
     );
+  });
+});
+
+describe("PR mendesak", () => {
+  it("dedup per PR per status", () => {
+    expect(prMendesakDedupKey("pr-1", "draft")).toBe("pr-1:draft");
+    expect(prMendesakDedupKey("pr-1", "pending_head")).toBe("pr-1:pending_head");
+  });
+
+  it("pesan memuat nomor PR, pemohon, total, tanggal butuh, dan item (maks 5)", () => {
+    const msg = buildPrMendesakMessage({
+      prNumber: "PR-202609-0007",
+      status: "pending_head",
+      requesterName: "Erik Hidayat",
+      departmentName: "Produksi",
+      totalAmount: 2500000,
+      requiredDate: "2026-09-06",
+      notes: "Stok kulit habis",
+      items: Array.from({ length: 7 }, (_, i) => ({ description: `Bahan ${i + 1}`, qty: 10, unit: "M" })),
+    });
+    expect(msg).toContain("MENDESAK");
+    expect(msg).toContain("PR-202609-0007 diajukan");
+    expect(msg).toContain("Erik Hidayat · Produksi");
+    expect(msg).toContain("Rp2.500.000");
+    expect(msg).toContain("2026-09-06");
+    expect(msg).toContain("Bahan 5 — 10 M");
+    expect(msg).not.toContain("Bahan 6 —");
+    expect(msg).toContain("dan 2 item lain");
+    expect(msg).toContain("menyetujui");
+  });
+
+  it("draft ditandai sebagai draft dan mengajak meninjau", () => {
+    const msg = buildPrMendesakMessage({
+      prNumber: "PR-1", status: "draft", requesterName: "A", totalAmount: 0, items: [],
+    });
+    expect(msg).toContain("dibuat (draft)");
+    expect(msg).toContain("meninjau");
   });
 });

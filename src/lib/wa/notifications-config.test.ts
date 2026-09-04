@@ -87,3 +87,18 @@ describe("omzetAnjlokPct (Fase D)", () => {
     expect(parseWaNotifConfig(JSON.stringify({ omzetAnjlokPct: 79.5 })).omzetAnjlokPct).toBe(80);
   });
 });
+
+describe("jenis prMendesak (owner 2026-09-04)", () => {
+  it("terdaftar sebagai jenis kritis dan aktif secara default", () => {
+    const meta = WA_NOTIF_TYPES.find((t) => t.key === "prMendesak");
+    expect(meta?.tier).toBe("kritis");
+    expect(meta?.defaultOn).toBe(true);
+    expect(defaultWaNotifConfig().types.prMendesak).toBe(true);
+  });
+
+  it("config lama tanpa kunci prMendesak tetap terbaca (jatuh ke default aktif)", () => {
+    const cfg = parseWaNotifConfig(JSON.stringify({ enabled: true, recipients: ["0812345678"], types: { digest: false } }));
+    expect(cfg.types.prMendesak).toBe(true);
+    expect(cfg.types.digest).toBe(false);
+  });
+});
