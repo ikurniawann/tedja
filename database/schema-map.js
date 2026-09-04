@@ -37,6 +37,8 @@ const DOMAINS = {
   promo: { order: 68, schema: "public", realSchema: "promo" },
   crm: { order: 70, schema: "public", realSchema: "crm" },
   accounting: { order: 75, schema: "public", realSchema: "accounting" },
+  // Dataroom — penyimpanan dokumen + link berbagi (owner 2026-09-04)
+  dataroom: { order: 78, schema: "dataroom", realSchema: "dataroom" },
   core: { order: 90, schema: "public", realSchema: "public" },
 };
 

@@ -59,6 +59,7 @@ export const IAM = {
   ticketingReports: ["ticketing.reports"],
   salesFunnel: ["sales-funnel"],
   promo: ["promo", "crm.promo"],
+  dataroom: ["dataroom"],
 } as const;
 
 export type IamPrefixGroup = (typeof IAM)[keyof typeof IAM];
