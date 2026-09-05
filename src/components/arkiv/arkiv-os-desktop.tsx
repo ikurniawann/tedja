@@ -21,6 +21,9 @@ import {
 } from "./desktop-monitor";
 import type { DesktopOverview as DesktopOverviewData } from "@/lib/desktop/overview";
 import { REPORT_EXPORTS, type ReportExportKey } from "@/lib/pos/report-excel/builders";
+import { DriveDataroomBrowser } from "@/features/dataroom/components/drive-browser";
+import type { DataroomItem, DataroomListing } from "@/features/dataroom/types";
+import { apiGet } from "@/lib/api-client";
 import {
   REPORT_PERIOD_LABELS,
   REPORT_PERIOD_SHORTCUTS,
@@ -65,6 +68,7 @@ import {
   Landmark,
   Plus,
   Loader2,
+  Lock,
   LogIn,
   Plug,
   MessageSquareMore,
@@ -1399,72 +1403,75 @@ function ApplicationWindow({ module, url, onClose }: { module: DesktopModule; ur
   );
 }
 
-const driveFolders = [
-  {
-    name: "HRIS",
-    files: ["Employee master data.xlsx", "Payroll summary.pdf", "KPI review export.csv", "Candidate CV archive.zip"],
-  },
-  {
-    name: "Procurement",
-    files: ["Purchase request report.pdf", "PO pending approval.xlsx", "Supplier price list.csv", "GRN quality control.pdf"],
-  },
-  {
-    name: "POS",
-    files: ["Daily sales report.pdf", "Product catalog.xlsx", "Reservation export.csv", "Customer topup log.pdf"],
-  },
-  {
-    name: "Reports",
-    files: ["Executive dashboard snapshot.pdf", "Inventory valuation.xlsx", "AI assistant summaries.md"],
-  },
-];
+type DriveLocation = { kind: "folder"; folder: DataroomItem } | { kind: "reports" };
 
+/**
+ * Jendela Drive (owner 2026-09-05): lokasi = folder departemen di Dataroom
+ * (root /dashboard/dataroom, sudah difilter hak akses departemen) + Reports.
+ * Klik departemen → isi Dataroom 1:1 dengan dashboard.
+ */
 function FileExplorer({ onClose, isLoggedIn }: { onClose: () => void; isLoggedIn: boolean }) {
-  const [activeFolder, setActiveFolder] = useState(driveFolders[0].name);
-  const folder = driveFolders.find((item) => item.name === activeFolder) ?? driveFolders[0];
+  const [roots, setRoots] = useState<DataroomItem[] | null>(null);
+  const [rootsError, setRootsError] = useState<string | null>(null);
+  const [location, setLocation] = useState<DriveLocation>({ kind: "reports" });
+
+  useEffect(() => {
+    if (!isLoggedIn) return;
+    apiGet<{ data: DataroomListing }>("/api/dataroom/nodes")
+      .then((res) => {
+        const folders = res.data.items.filter((i) => i.kind === "folder");
+        setRoots(folders);
+        setRootsError(null);
+        if (folders[0]) setLocation({ kind: "folder", folder: folders[0] });
+      })
+      .catch((err) => { setRoots([]); setRootsError(err instanceof Error ? err.message : "Gagal memuat Dataroom"); });
+  }, [isLoggedIn]);
+
+  const title = location.kind === "reports" ? "Reports" : location.folder.name;
+  const subtitle = location.kind === "reports"
+    ? "Laporan POS · unduh Excel per rentang tanggal"
+    : "Dataroom · isi sama dengan Dashboard → Dataroom";
+  const locButton = (active: boolean, label: string, onClick: () => void, key: string, lock?: boolean) => (
+    <button key={key} onClick={onClick} className={`mb-1 flex w-full items-center gap-3 rounded-2xl px-3 py-2 text-left text-sm transition hover:bg-white/10 ${active ? "bg-white/14 text-white" : "text-white/65"}`}>
+      <Folder className="size-4 shrink-0 text-pink-200" />
+      <span className="min-w-0 flex-1 truncate">{label}</span>
+      {lock ? <Lock className="size-3 shrink-0 text-amber-200/70" /> : null}
+    </button>
+  );
 
   return (
     <WindowShell title="Sulu In Wounderland Drive" onClose={onClose} className="left-1/2 top-16 h-[min(620px,calc(100vh-120px))] w-[min(860px,calc(100vw-32px))] -translate-x-1/2">
       <div className="flex h-full min-h-[420px]">
-        <aside className="w-56 border-r border-white/10 bg-black/12 p-3">
+        <aside className="flex w-56 flex-col border-r border-white/10 bg-black/12 p-3">
           <div className="mb-3 px-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/35">Locations</div>
-          {driveFolders.map((item) => (
-            <button key={item.name} onClick={() => setActiveFolder(item.name)} className={`mb-1 flex w-full items-center gap-3 rounded-2xl px-3 py-2 text-left text-sm transition hover:bg-white/10 ${activeFolder === item.name ? "bg-white/14 text-white" : "text-white/65"}`}>
-              <Folder className="size-4 text-pink-200" /> {item.name}
-            </button>
-          ))}
-          <div className="mt-5 rounded-3xl border border-white/10 bg-white/8 p-3 text-xs leading-5 text-white/50">
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            {!isLoggedIn ? (
+              <p className="px-3 py-2 text-xs text-white/45">Login untuk melihat folder departemen.</p>
+            ) : roots === null ? (
+              <p className="flex items-center gap-2 px-3 py-2 text-xs text-white/45"><Loader2 className="size-3 animate-spin" /> Memuat…</p>
+            ) : rootsError ? (
+              <p className="px-3 py-2 text-xs text-rose-200/80">{rootsError}</p>
+            ) : roots.length === 0 ? (
+              <p className="px-3 py-2 text-xs text-white/45">Belum ada folder di Dataroom.</p>
+            ) : (
+              roots.map((f) => locButton(location.kind === "folder" && location.folder.id === f.id, f.name, () => setLocation({ kind: "folder", folder: f }), f.id, Boolean(f.departments?.length)))
+            )}
+            <div className="my-2 h-px bg-white/10" />
+            {locButton(location.kind === "reports", "Reports", () => setLocation({ kind: "reports" }), "reports")}
+          </div>
+          <div className="mt-3 rounded-3xl border border-white/10 bg-white/8 p-3 text-xs leading-5 text-white/50">
             {isLoggedIn ? "Connected to Sulu In Wounderland workspace." : "Login required to open or download real files."}
           </div>
         </aside>
         <section className="min-w-0 flex-1 overflow-y-auto p-5">
-          <div className="mb-5 flex items-center justify-between">
-            <div>
-              <h2 className="text-xl font-semibold">{folder.name}</h2>
-              <p className="text-xs text-white/45">{folder.name === "Reports" ? "Laporan POS · unduh Excel per rentang tanggal" : "Sulu In Wounderland Drive · preview explorer"}</p>
-            </div>
-            {folder.name !== "Reports" && (
-              <button className="rounded-2xl border border-white/10 bg-white/8 px-3 py-2 text-xs font-semibold text-white/70 hover:bg-white/12">New Folder</button>
-            )}
+          <div className="mb-5">
+            <h2 className="text-xl font-semibold">{title}</h2>
+            <p className="text-xs text-white/45">{subtitle}</p>
           </div>
-          {folder.name === "Reports" ? (
+          {location.kind === "reports" ? (
             <ReportsExplorer isLoggedIn={isLoggedIn} />
           ) : (
-          <>
-          <div className="grid gap-3 sm:grid-cols-2">
-            {folder.files.map((file) => (
-              <button key={file} className="flex items-center gap-3 rounded-3xl border border-white/10 bg-white/8 p-4 text-left transition hover:bg-white/12">
-                <div className={`grid size-11 place-items-center rounded-2xl bg-gradient-to-br ${pinkAccent}`}><Folder className="size-5" /></div>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-semibold">{file}</div>
-                  <div className="mt-1 text-xs text-white/45">Modified today · Preview</div>
-                </div>
-              </button>
-            ))}
-          </div>
-          <div className="mt-5 rounded-3xl border border-white/10 bg-white/8 p-4 text-sm leading-6 text-white/55">
-            Next phase: connect this explorer to object storage / generated module exports for real download, preview, and permissions.
-          </div>
-          </>
+            <DriveDataroomBrowser key={location.folder.id} rootId={location.folder.id} rootName={location.folder.name} />
           )}
         </section>
       </div>
