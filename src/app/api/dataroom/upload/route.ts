@@ -4,6 +4,7 @@ import { IAM } from "@/lib/iam/prefixes";
 import { DATAROOM_MAX_FILE_BYTES, DATAROOM_QUOTA_BYTES, fitsQuota, formatBytes } from "@/lib/dataroom/config";
 import { createFileNode, getNode, usedBytes } from "@/lib/dataroom/nodes";
 import { deleteDataroomFiles, saveDataroomFile } from "@/lib/dataroom/storage";
+import { createAccessResolver, resolveActor } from "@/lib/dataroom/access";
 
 /**
  * POST /api/dataroom/upload (multipart: file, parent_id?) — satu file per
@@ -20,6 +21,8 @@ export async function POST(request: NextRequest) {
     if (parentId) {
       const parent = await getNode(parentId);
       if (!parent || parent.kind !== "folder") throw ApiError.notFound("Folder tujuan tidak ditemukan");
+      const access = await createAccessResolver(await resolveActor(user));
+      if (!access.allowsFolder(parentId)) throw ApiError.forbidden("Folder ini tidak dibuka untuk departemen Anda");
     }
     if (file.size > DATAROOM_MAX_FILE_BYTES) {
       throw ApiError.badRequest(`Ukuran file melebihi batas ${formatBytes(DATAROOM_MAX_FILE_BYTES)}`);
