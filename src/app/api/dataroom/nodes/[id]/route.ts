@@ -4,6 +4,7 @@ import { ApiError, requireIamAction, validateBody } from "@/lib/api/auth";
 import { IAM } from "@/lib/iam/prefixes";
 import { deleteNodeCascade, getNode, isSameOrDescendant, moveNode, renameNode } from "@/lib/dataroom/nodes";
 import { deleteDataroomFiles } from "@/lib/dataroom/storage";
+import { createAccessResolver, resolveActor } from "@/lib/dataroom/access";
 
 /**
  * PATCH /api/dataroom/nodes/[id] { name? , parent_id? } — ganti nama / pindah.
@@ -16,17 +17,20 @@ const patchSchema = z.object({
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    await requireIamAction(IAM.dataroom, "update");
+    const user = await requireIamAction(IAM.dataroom, "update");
     const { id } = await params;
     const body = await validateBody(request, patchSchema);
     let node = await getNode(id);
     if (!node) throw ApiError.notFound("Item tidak ditemukan");
+    const access = await createAccessResolver(await resolveActor(user));
+    if (!access.allows(node)) throw ApiError.forbidden("Item ini tidak dibuka untuk departemen Anda");
 
     if (body.parent_id !== undefined) {
       const target = body.parent_id;
       if (target) {
         const folder = await getNode(target);
         if (!folder || folder.kind !== "folder") throw ApiError.notFound("Folder tujuan tidak ditemukan");
+        if (!access.allowsFolder(target)) throw ApiError.forbidden("Folder tujuan tidak dibuka untuk departemen Anda");
         if (node.kind === "folder" && (await isSameOrDescendant(target, node.id))) {
           throw ApiError.badRequest("Folder tidak bisa dipindahkan ke dalam dirinya sendiri");
         }
@@ -46,10 +50,12 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
 export async function DELETE(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    await requireIamAction(IAM.dataroom, "delete");
+    const user = await requireIamAction(IAM.dataroom, "delete");
     const { id } = await params;
     const node = await getNode(id);
     if (!node) throw ApiError.notFound("Item tidak ditemukan");
+    const access = await createAccessResolver(await resolveActor(user));
+    if (!access.allows(node)) throw ApiError.forbidden("Item ini tidak dibuka untuk departemen Anda");
     const paths = await deleteNodeCascade(id);
     await deleteDataroomFiles(paths);
     return NextResponse.json({ success: true, data: { deleted: id, files_removed: paths.length } });

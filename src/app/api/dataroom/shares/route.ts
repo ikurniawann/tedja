@@ -6,6 +6,7 @@ import { DATAROOM_MAX_EXPIRY_DAYS, computeExpiry, normalizeEmails } from "@/lib/
 import { getNode } from "@/lib/dataroom/nodes";
 import { createShare, listShares } from "@/lib/dataroom/shares";
 import { sendShareLink, shareUrl } from "@/lib/dataroom/mail";
+import { createAccessResolver, resolveActor } from "@/lib/dataroom/access";
 
 /**
  * GET  /api/dataroom/shares?node_id=  — daftar link (semua bila tanpa node_id).
@@ -14,9 +15,12 @@ import { sendShareLink, shareUrl } from "@/lib/dataroom/mail";
  */
 export async function GET(request: NextRequest) {
   try {
-    await requireIamMenuPrefix(IAM.dataroom);
+    const user = await requireIamMenuPrefix(IAM.dataroom);
     const nodeId = request.nextUrl.searchParams.get("node_id") || null;
-    const rows = await listShares(nodeId);
+    const access = await createAccessResolver(await resolveActor(user));
+    const rows = (await listShares(nodeId)).filter((r) =>
+      access.allows({ id: r.node_id, parent_id: r.node_parent_id, kind: r.node_kind })
+    );
     const data = rows.map(({ pin_hash, ...row }) => ({
       ...row, has_pin: Boolean(pin_hash), url: shareUrl(row.token),
     }));
@@ -44,6 +48,8 @@ export async function POST(request: NextRequest) {
     const body = await validateBody(request, createSchema);
     const node = await getNode(body.node_id);
     if (!node) throw ApiError.notFound("Item tidak ditemukan");
+    const access = await createAccessResolver(await resolveActor(user));
+    if (!access.allows(node)) throw ApiError.forbidden("Item ini tidak dibuka untuk departemen Anda");
     const emails = normalizeEmails(body.emails);
     if (body.access_type === "email" && emails.length === 0) {
       throw ApiError.badRequest("Isi minimal satu email penerima yang valid");
