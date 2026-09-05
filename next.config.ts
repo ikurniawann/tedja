@@ -17,7 +17,7 @@ const nextConfig: NextConfig = {
   // native (libvips) — bila di-bundle, binary @img/sharp-libvips-* tidak
   // ikut ter-trace ke standalone dan runtime-nya gagal (insiden ekspor
   // absensi 2026-08-29: ketiga format 500 di production).
-  serverExternalPackages: ["tesseract.js", "unpdf", "mammoth", "pdfkit", "sharp"],
+  serverExternalPackages: ["tesseract.js", "unpdf", "mammoth", "pdfkit", "sharp", "exceljs"],
   turbopack: {
     root: __dirname,
   },
