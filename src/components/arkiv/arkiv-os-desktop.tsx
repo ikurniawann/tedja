@@ -20,6 +20,14 @@ import {
   type MonitorWidgetKey,
 } from "./desktop-monitor";
 import type { DesktopOverview as DesktopOverviewData } from "@/lib/desktop/overview";
+import { REPORT_EXPORTS, type ReportExportKey } from "@/lib/pos/report-excel/builders";
+import {
+  REPORT_PERIOD_LABELS,
+  REPORT_PERIOD_SHORTCUTS,
+  resolveReportPeriod,
+  validateReportRange,
+  type ReportPeriodShortcut,
+} from "@/lib/pos/report-period";
 import { WaNotifSettingsPanel } from "./wa-notif-settings";
 import {
   MAX_NOTIFICATION_HISTORY,
@@ -46,7 +54,9 @@ import {
   Command,
   Copy,
   CreditCard,
+  Download,
   ExternalLink,
+  FileSpreadsheet,
   Folder,
   Gamepad2,
   GripVertical,
@@ -1426,14 +1436,20 @@ function FileExplorer({ onClose, isLoggedIn }: { onClose: () => void; isLoggedIn
             {isLoggedIn ? "Connected to Sulu In Wounderland workspace." : "Login required to open or download real files."}
           </div>
         </aside>
-        <section className="min-w-0 flex-1 p-5">
+        <section className="min-w-0 flex-1 overflow-y-auto p-5">
           <div className="mb-5 flex items-center justify-between">
             <div>
               <h2 className="text-xl font-semibold">{folder.name}</h2>
-              <p className="text-xs text-white/45">Sulu In Wounderland Drive · preview explorer</p>
+              <p className="text-xs text-white/45">{folder.name === "Reports" ? "Laporan POS · unduh Excel per rentang tanggal" : "Sulu In Wounderland Drive · preview explorer"}</p>
             </div>
-            <button className="rounded-2xl border border-white/10 bg-white/8 px-3 py-2 text-xs font-semibold text-white/70 hover:bg-white/12">New Folder</button>
+            {folder.name !== "Reports" && (
+              <button className="rounded-2xl border border-white/10 bg-white/8 px-3 py-2 text-xs font-semibold text-white/70 hover:bg-white/12">New Folder</button>
+            )}
           </div>
+          {folder.name === "Reports" ? (
+            <ReportsExplorer isLoggedIn={isLoggedIn} />
+          ) : (
+          <>
           <div className="grid gap-3 sm:grid-cols-2">
             {folder.files.map((file) => (
               <button key={file} className="flex items-center gap-3 rounded-3xl border border-white/10 bg-white/8 p-4 text-left transition hover:bg-white/12">
@@ -1448,9 +1464,144 @@ function FileExplorer({ onClose, isLoggedIn }: { onClose: () => void; isLoggedIn
           <div className="mt-5 rounded-3xl border border-white/10 bg-white/8 p-4 text-sm leading-6 text-white/55">
             Next phase: connect this explorer to object storage / generated module exports for real download, preview, and permissions.
           </div>
+          </>
+          )}
         </section>
       </div>
     </WindowShell>
+  );
+}
+
+/**
+ * Drive → Reports (owner 2026-09-05): klik laporan → pilih rentang tanggal
+ * (pintasan Hari ini / Minggu ini / Bulan ini / Tahun ini) → unduh Excel
+ * rapi dari /api/pos/reports/export. Butuh login (sesi dashboard).
+ */
+function ReportsExplorer({ isLoggedIn }: { isLoggedIn: boolean }) {
+  const [selected, setSelected] = useState<ReportExportKey | null>(null);
+  const [shortcut, setShortcut] = useState<ReportPeriodShortcut | null>("month");
+  const [range, setRange] = useState(() => resolveReportPeriod("month"));
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  // Panel tanggal ada di bawah daftar laporan → gulirkan ke panel saat laporan dipilih.
+  useEffect(() => {
+    if (selected) panelRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [selected]);
+
+  const pickShortcut = (key: ReportPeriodShortcut) => {
+    setShortcut(key);
+    setRange(resolveReportPeriod(key));
+    setMessage(null);
+  };
+  const setManual = (patch: Partial<{ date_from: string; date_to: string }>) => {
+    setShortcut(null);
+    setRange((prev) => ({ ...prev, ...patch }));
+    setMessage(null);
+  };
+
+  const download = async () => {
+    if (!selected || busy) return;
+    const invalid = validateReportRange(range.date_from, range.date_to);
+    if (invalid) { setMessage({ kind: "error", text: invalid }); return; }
+    setBusy(true);
+    setMessage(null);
+    try {
+      const qs = new URLSearchParams({ report: selected, date_from: range.date_from, date_to: range.date_to });
+      const res = await fetch(`/api/pos/reports/export?${qs.toString()}`);
+      if (!res.ok || (res.headers.get("content-type") || "").includes("json")) {
+        const json = await res.json().catch(() => ({}));
+        throw new Error(json.error || `Gagal (${res.status})`);
+      }
+      const blob = await res.blob();
+      const disposition = res.headers.get("content-disposition") || "";
+      const name = /filename="([^"]+)"/.exec(disposition)?.[1] || `${selected}.xlsx`;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      setMessage({ kind: "ok", text: `${name} terunduh` });
+    } catch (err) {
+      setMessage({ kind: "error", text: err instanceof Error ? err.message : "Gagal mengunduh" });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const keys = Object.keys(REPORT_EXPORTS) as ReportExportKey[];
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-3 sm:grid-cols-2">
+        {keys.map((key) => {
+          const meta = REPORT_EXPORTS[key];
+          const active = selected === key;
+          return (
+            <button
+              key={key}
+              type="button"
+              onClick={() => { setSelected(key); setMessage(null); }}
+              className={`flex items-center gap-3 rounded-3xl border p-4 text-left transition ${active ? "border-pink-300/70 bg-pink-500/20 ring-1 ring-pink-300/60" : "border-white/10 bg-white/8 hover:bg-white/12"}`}
+            >
+              <div className={`grid size-11 shrink-0 place-items-center rounded-2xl bg-gradient-to-br ${pinkAccent}`}><FileSpreadsheet className="size-5" /></div>
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm font-semibold">{meta.label}</div>
+                <div className="mt-1 line-clamp-2 text-xs text-white/45">{meta.description}</div>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      {selected ? (
+        <div ref={panelRef} className="arkiv-drive-filter rounded-3xl border border-white/10 bg-white/8 p-4">
+          <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
+            <CalendarDays className="size-4 text-pink-200" /> Rentang tanggal — {REPORT_EXPORTS[selected].label}
+          </div>
+          <div className="mb-3 flex flex-wrap gap-2">
+            {REPORT_PERIOD_SHORTCUTS.map((key) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => pickShortcut(key)}
+                className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${shortcut === key ? "border-pink-300/70 bg-pink-500/30 text-white" : "border-white/10 bg-white/8 text-white/70 hover:bg-white/12"}`}
+              >
+                {REPORT_PERIOD_LABELS[key]}
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-end gap-3">
+            <label className="text-xs text-white/60">
+              Dari
+              <input type="date" value={range.date_from} max={range.date_to} onChange={(e) => setManual({ date_from: e.target.value })} className="arkiv-drive-date mt-1 block rounded-xl border border-white/15 px-3 py-2 text-sm font-semibold outline-none focus:border-pink-300/70" />
+            </label>
+            <label className="text-xs text-white/60">
+              Sampai
+              <input type="date" value={range.date_to} min={range.date_from} onChange={(e) => setManual({ date_to: e.target.value })} className="arkiv-drive-date mt-1 block rounded-xl border border-white/15 px-3 py-2 text-sm font-semibold outline-none focus:border-pink-300/70" />
+            </label>
+            <button
+              type="button"
+              onClick={download}
+              disabled={!isLoggedIn || busy}
+              className={`inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r ${pinkAccent} px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-pink-500/30 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50`}
+            >
+              {busy ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
+              {busy ? "Menyiapkan Excel…" : "Download Excel"}
+            </button>
+          </div>
+          <p className={`mt-3 text-xs ${message?.kind === "error" ? "text-rose-300" : message ? "text-emerald-300" : "text-white/45"}`}>
+            {message?.text ?? (isLoggedIn ? "File Excel rapi: judul, ringkasan, tabel berkepala, format Rupiah, beberapa sheet." : "Login dulu untuk mengunduh laporan.")}
+          </p>
+        </div>
+      ) : (
+        <div className="rounded-3xl border border-dashed border-white/15 bg-white/5 p-4 text-sm text-white/55">
+          Pilih laporan di atas, tentukan rentang tanggal, lalu unduh sebagai Excel.
+        </div>
+      )}
+    </div>
   );
 }
 

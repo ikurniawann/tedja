@@ -2810,3 +2810,19 @@ hr {
   .mp-rise, .mp-wallet-sheen { animation: none; }
   .mp-wallet-sheen { opacity: 0; }
 }
+
+/* Desktop → Drive → Reports: input tanggal gelap (aturan input global
+   memaksa latar putih transparan, jadi butuh !important di sini). */
+/* Aturan global input:not():not() di atas memutihkan input dengan !important;
+   kelas berulang (.a.a.a) diciutkan minifier, jadi spesifisitas ditambah lewat
+   leluhur .arkiv-drive-filter + [type="date"]. */
+.arkiv-drive-filter input[type="date"].arkiv-drive-date,
+.arkiv-drive-filter input[type="date"].arkiv-drive-date:hover,
+.arkiv-drive-filter input[type="date"].arkiv-drive-date:focus {
+  background: rgba(17, 24, 39, 0.92) !important;
+  background-color: rgba(17, 24, 39, 0.92) !important;
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+  color-scheme: dark;
+}
+.arkiv-drive-filter input[type="date"].arkiv-drive-date::-webkit-calendar-picker-indicator { filter: invert(1); opacity: 0.8; }
