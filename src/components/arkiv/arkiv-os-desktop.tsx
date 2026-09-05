@@ -1557,7 +1557,7 @@ function ReportsExplorer({ isLoggedIn }: { isLoggedIn: boolean }) {
       </div>
 
       {selected ? (
-        <div ref={panelRef} className="rounded-3xl border border-white/10 bg-white/8 p-4">
+        <div ref={panelRef} className="arkiv-drive-filter rounded-3xl border border-white/10 bg-white/8 p-4">
           <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
             <CalendarDays className="size-4 text-pink-200" /> Rentang tanggal — {REPORT_EXPORTS[selected].label}
           </div>
@@ -1576,11 +1576,11 @@ function ReportsExplorer({ isLoggedIn }: { isLoggedIn: boolean }) {
           <div className="flex flex-wrap items-end gap-3">
             <label className="text-xs text-white/60">
               Dari
-              <input type="date" value={range.date_from} max={range.date_to} onChange={(e) => setManual({ date_from: e.target.value })} className="mt-1 block rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none [color-scheme:dark]" />
+              <input type="date" value={range.date_from} max={range.date_to} onChange={(e) => setManual({ date_from: e.target.value })} className="arkiv-drive-date mt-1 block rounded-xl border border-white/15 px-3 py-2 text-sm font-semibold outline-none focus:border-pink-300/70" />
             </label>
             <label className="text-xs text-white/60">
               Sampai
-              <input type="date" value={range.date_to} min={range.date_from} onChange={(e) => setManual({ date_to: e.target.value })} className="mt-1 block rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none [color-scheme:dark]" />
+              <input type="date" value={range.date_to} min={range.date_from} onChange={(e) => setManual({ date_to: e.target.value })} className="arkiv-drive-date mt-1 block rounded-xl border border-white/15 px-3 py-2 text-sm font-semibold outline-none focus:border-pink-300/70" />
             </label>
             <button
               type="button"
