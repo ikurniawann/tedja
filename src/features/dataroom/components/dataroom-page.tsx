@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type DragEvent, type MouseEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
-  ChevronRight, Download, Eye, FolderInput, FolderOpen, FolderPlus, HardDrive, LayoutGrid, Link2,
-  List, Loader2, MoreVertical, Pencil, Plus, RefreshCw, Search, Share2, Trash2, Upload, UploadCloud,
+  Building2, ChevronRight, Download, Eye, FolderInput, FolderOpen, FolderPlus, HardDrive, LayoutGrid, Link2,
+  List, Loader2, Lock, MoreVertical, Pencil, Plus, RefreshCw, Search, Share2, Trash2, Upload, UploadCloud,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { apiDelete, apiGet, apiPatch, apiPost } from "@/lib/api-client";
 import { formatBytes, isPreviewable } from "@/lib/dataroom/config";
 import { cn } from "@/lib/utils";
+import { AccessDialog } from "@/features/dataroom/components/access-dialog";
 import { ContextMenu, type MenuEntry } from "@/features/dataroom/components/context-menu";
 import { DeleteDialog, MoveDialog, NameDialog } from "@/features/dataroom/components/dialogs";
 import { ItemIcon } from "@/features/dataroom/components/item-icon";
@@ -38,6 +39,7 @@ type Dialog =
   | { kind: "delete"; items: DataroomItem[] }
   | { kind: "share"; item: DataroomItem | null }
   | { kind: "preview"; item: DataroomItem }
+  | { kind: "access"; item: DataroomItem }
   | null;
 
 // Mode tampilan disimpan di localStorage; dibaca lewat external store agar
@@ -83,7 +85,7 @@ export function DataroomPage() {
   const { tasks, enqueue, clearFinished } = useUploadQueue(onUploaded);
 
   const loading = !listing || listing.key !== folderId;
-  const perms = listing?.permissions ?? { create: false, update: false, delete: false };
+  const perms = listing?.permissions ?? { create: false, update: false, delete: false, manage_access: false };
   const items = useMemo(() => {
     const all = listing?.items ?? [];
     const q = search.trim().toLowerCase();
@@ -158,6 +160,9 @@ export function DataroomPage() {
             { key: "download", label: "Unduh", icon: <Download />, onSelect: () => download(item) },
           ]),
       { key: "share", label: "Bagikan", icon: <Share2 />, separatorBefore: true, onSelect: () => setDialog({ kind: "share", item }) },
+      ...(item.kind === "folder" && perms.manage_access
+        ? [{ key: "access", label: "Atur akses departemen", icon: <Building2 />, onSelect: () => setDialog({ kind: "access", item }) }]
+        : []),
       { key: "rename", label: "Ganti nama", icon: <Pencil />, disabled: !perms.update || many, onSelect: () => setDialog({ kind: "rename", item }) },
       { key: "move", label: many ? `Pindahkan ${group.length} item…` : "Pindahkan ke…", icon: <FolderInput />, disabled: !perms.update, onSelect: () => setDialog({ kind: "move", items: group }) },
       { key: "delete", label: many ? `Hapus ${group.length} item` : "Hapus", icon: <Trash2 />, danger: true, separatorBefore: true, disabled: !perms.delete, onSelect: () => setDialog({ kind: "delete", items: group }) },
@@ -255,7 +260,12 @@ export function DataroomPage() {
       <div className="flex flex-wrap items-center gap-3 border-b px-4 py-3 sm:px-6">
         <div className="min-w-[200px] flex-1">
           <h1 className="flex items-center gap-2 text-xl font-semibold"><HardDrive className="h-5 w-5 text-primary" />Dataroom</h1>
-          <p className="hidden text-xs text-muted-foreground sm:block">Simpan & bagikan dokumen perusahaan. Tarik file ke halaman ini untuk mengunggah.</p>
+          <p className="hidden text-xs text-muted-foreground sm:block">
+            Simpan & bagikan dokumen perusahaan. Tarik file ke halaman ini untuk mengunggah.
+            {listing?.actor && !listing.actor.is_admin && (
+              <> · Departemen Anda: <span className="font-medium">{listing.actor.department_name ?? "belum terdaftar di HRIS"}</span></>
+            )}
+          </p>
         </div>
         {usage && (
           <div className="w-52 text-xs" title={`${formatBytes(usage.used)} dari ${formatBytes(usage.quota)}`}>
@@ -377,6 +387,12 @@ export function DataroomPage() {
                 <p className="mt-1 text-[11px] text-muted-foreground">
                   {item.kind === "file" ? formatBytes(item.size_bytes) : "Folder"} · {tanggal(item.updated_at, false)}
                 </p>
+                {item.departments && item.departments.length > 0 && (
+                  <p className="mt-1 flex items-center gap-1 truncate text-[11px] text-amber-700" title={item.departments.map((d) => d.name).join(", ")}>
+                    <Lock className="h-3 w-3 shrink-0" />
+                    <span className="truncate">{item.departments.map((d) => d.name).join(", ")}</span>
+                  </p>
+                )}
               </div>
             ))}
           </div>
@@ -411,7 +427,15 @@ export function DataroomPage() {
                     )}
                   >
                     <td className="px-3 py-2">
-                      <span className="flex items-center gap-2"><ItemIcon kind={item.kind} mime={item.mime} name={item.name} className="h-5 w-5 shrink-0" /><span className="truncate">{item.name}</span></span>
+                      <span className="flex items-center gap-2">
+                        <ItemIcon kind={item.kind} mime={item.mime} name={item.name} className="h-5 w-5 shrink-0" />
+                        <span className="truncate">{item.name}</span>
+                        {item.departments && item.departments.length > 0 && (
+                          <span className="flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] text-amber-700" title={item.departments.map((d) => d.name).join(", ")}>
+                            <Lock className="h-3 w-3" />{item.departments.length === 1 ? item.departments[0].name : `${item.departments.length} departemen`}
+                          </span>
+                        )}
+                      </span>
                     </td>
                     <td className="px-3 py-2 text-muted-foreground">{item.created_by_name ?? "—"}</td>
                     <td className="px-3 py-2 text-muted-foreground">{tanggal(item.updated_at)}</td>
@@ -440,6 +464,9 @@ export function DataroomPage() {
       )}
       {dialog?.kind === "delete" && (
         <DeleteDialog open items={dialog.items} busy={busy} onClose={() => setDialog(null)} onConfirm={() => deleteItems(dialog.items)} />
+      )}
+      {dialog?.kind === "access" && (
+        <AccessDialog open node={dialog.item} onClose={() => setDialog(null)} onSaved={() => load()} />
       )}
       {dialog?.kind === "share" && (
         <ShareDialog open node={dialog.item} canManage={perms.create} onClose={() => setDialog(null)} />

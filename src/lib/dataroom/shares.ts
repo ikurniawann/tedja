@@ -115,7 +115,7 @@ export async function revokeShare(id: string): Promise<boolean> {
 }
 
 export interface ShareListRow extends DataroomShare {
-  node_name: string; node_kind: "folder" | "file"; access_count: number;
+  node_name: string; node_kind: "folder" | "file"; node_parent_id: string | null; access_count: number;
 }
 
 /** Daftar link (untuk satu node, atau semua) + nama node & jumlah akses. */
@@ -124,7 +124,7 @@ export async function listShares(nodeId?: string | null): Promise<ShareListRow[]
   const rows = await query(
     `SELECT s.id, s.token, s.node_id, s.access_type, s.allowed_emails, s.pin_hash, s.watermark, s.expires_at,
             s.revoked_at, s.view_count, s.last_accessed_at, s.created_by, s.created_by_name, s.created_at,
-            n.name AS node_name, n.kind AS node_kind,
+            n.name AS node_name, n.kind AS node_kind, n.parent_id AS node_parent_id,
             (SELECT COUNT(*) FROM dataroom.share_access_logs l WHERE l.share_id = s.id AND l.action IN ('view','download'))::int AS access_count
      FROM dataroom.shares s JOIN dataroom.nodes n ON n.id = s.node_id
      ${where}

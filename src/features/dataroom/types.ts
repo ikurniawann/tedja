@@ -1,3 +1,5 @@
+export interface DepartmentRef { id: string; name: string }
+
 export interface DataroomItem {
   id: string;
   parent_id: string | null;
@@ -8,6 +10,8 @@ export interface DataroomItem {
   created_by_name?: string | null;
   created_at?: string;
   updated_at: string;
+  /** Folder: departemen yang boleh membuka (kosong = semua). */
+  departments?: DepartmentRef[];
 }
 
 export interface DataroomListing {
@@ -15,7 +19,8 @@ export interface DataroomListing {
   items: DataroomItem[];
   ancestors: { id: string; name: string; parent_id: string | null }[];
   usage: { used: number; quota: number; max_file: number };
-  permissions: { create: boolean; update: boolean; delete: boolean };
+  permissions: { create: boolean; update: boolean; delete: boolean; manage_access?: boolean };
+  actor?: { is_admin: boolean; department_name: string | null };
 }
 
 export interface ShareRow {
