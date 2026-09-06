@@ -11,7 +11,7 @@ Prosedurnya mengikuti bagian **Checklist rilis** di dokumen modul.
 |-------|-------|--------|------|-----------|---------|
 | `MODULE-BRANDING` | Merek instance multi-perusahaan | `dev` | [EPIC-045](../epics/EPIC-045-resort-akomodasi.md#module-branding) | — | Aman ke production kapan saja (default tetap Sulu in Wounderland) |
 | `MODULE-RESORT` | Resort & Akomodasi (booking kamar, front office, folio) | `dev` | [EPIC-045](../epics/EPIC-045-resort-akomodasi.md) | `20260906130000_resort_booking.sql` | Menu baru **Resort**; tidak mengubah modul lain |
-| `MODULE-DUSUN-BAMBU` | Tenant Dusun Bambu (data demo lokal) | `dev-only` | [EPIC-046](../epics/EPIC-046-tenant-dusun-bambu.md) | — | **Tidak pernah** ke production: seeder menolak database non-lokal |
+| `MODULE-DUSUN-BAMBU` | Tenant Dusun Bambu (data demo lokal: bisnis, resort penuh, F&B, ticketing) | `dev-only` | [EPIC-046](../epics/EPIC-046-tenant-dusun-bambu.md) | — | **Tidak pernah** ke production: seeder menolak database non-lokal |
 
 ## Arti status
 

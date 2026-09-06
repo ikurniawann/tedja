@@ -38,13 +38,34 @@ daftar aktivitas ada di domain pihak ketiga yang tidak dibaca.
   Resort Front Office.
 - 4 departemen HRIS: Resort & Front Office, Housekeeping, Ticketing &
   Activity, Landscape & Garden.
-- **Resort**: 6 tipe kamar (30 unit), 2 musim tarif (Nataru +25%, libur
-  sekolah +15%), 5 contoh reservasi lintas status beserta folio.
 - 24 meja/saung POS: saung Purbasari, sarang Lutung Kasarung, meja Burangrang.
 - User demo **demo@dusunbambu.id / dusunbambu** (role `admin`, scope cabang
   Dusun Bambu) — ini kunci melihat data tenant kedua.
 
-### 2. `npm run db:seed:dusun-bambu-fnb` — `database/seeders/dusun-bambu-fnb.js`
+### 2. `npm run db:seed:dusun-bambu-resort` — `database/seeders/dusun-bambu-resort.js`
+
+Mengisi **seluruh** modul Resort, dibangkitkan deterministik (RNG ber-seed)
+sehingga dijalankan ulang menghasilkan angka yang sama:
+
+- **6 tipe kamar / 30 unit**: Cabin Area (Single 5, Family 4, Double 3) dan
+  Kampung Layung (Village 8, Deluxe 6, Family 4).
+- **4 musim tarif**: Nataru +25%, libur sekolah +15%, long weekend Agustus
+  +10%, dan promo weekday khusus Village Residence −10%.
+- **45 reservasi** tersebar −60 s.d. +45 hari, semua status (25 selesai,
+  8 sedang menginap, 6 terkonfirmasi termasuk 2 kedatangan hari ini,
+  3 menunggu bayar, 2 dibatalkan, 1 no-show) dan semua sumber
+  (walk-in, website, OTA, telepon, korporat), sebagian 2 kamar dan
+  memakai extra bed. Unit kamar ditetapkan tanpa tabrakan tanggal.
+- **179 baris folio**: tagihan kamar, extra bed, diskon, F&B (menu asli dari
+  keempat restoran), aktivitas (sepeda listrik, berkuda, playground, sampan,
+  panahan), laundry, denda, serta pembayaran sesuai status (lunas saat
+  check-out, DP 50% untuk terkonfirmasi, refund untuk yang dibatalkan).
+- **Status housekeeping campuran**: kamar terisi, siap dijual, perlu
+  dibersihkan, dan 2 kamar perbaikan — supaya papan Front Office tidak kosong.
+
+Total nilai reservasi demo sekitar Rp 293 juta.
+
+### 3. `npm run db:seed:dusun-bambu-fnb` — `database/seeders/dusun-bambu-fnb.js`
 
 Satuan per perusahaan, 38 bahan baku (protein, sayur & lalapan, bumbu Sunda,
 bahan kering, minuman, kemasan) dengan konversi satuan beli; 5 resep bahan
@@ -53,7 +74,7 @@ kampung, base bandrek); 2 produk WIP ungkep (ayam & bebek); **18 menu jadi**
 per outlet dengan BOM bertingkat, stok awal, dan sinkron POS; 8 contoh
 produksi prep dapur.
 
-### 3. `npm run db:seed:dusun-bambu-ticketing` — `database/seeders/dusun-bambu-ticketing.js`
+### 4. `npm run db:seed:dusun-bambu-ticketing` — `database/seeders/dusun-bambu-ticketing.js`
 
 Pengaturan venue (kuota 2.500 orang/hari), 3 kanal (loket, website, OTA), 3
 sesi waktu, kuota musim; **8 produk tiket** (masuk dewasa/anak, Bandung
@@ -73,9 +94,12 @@ npm run db:seed:dusun-bambu      # menjalankan ketiga bagian berurutan
 
 Lalu login sebagai `demo@dusunbambu.id` / `dusunbambu`:
 
-- **Resort → Front Office**: okupansi 30 kamar, kedatangan & keberangkatan.
-- **Resort → Reservasi**: 5 reservasi contoh, buat reservasi baru dengan cek
-  ketersediaan.
+- **Resort → Front Office**: okupansi ±33% dari 30 kamar, kedatangan,
+  tamu menginap dengan sisa tagihan, papan status kamar.
+- **Resort → Reservasi**: 45 reservasi lintas status, filter periode, dan
+  pembuatan reservasi baru dengan cek ketersediaan.
+- **Resort → Kamar & Tipe**: 6 tipe kamar dengan tarif weekday/weekend serta
+  daftar musim tarif aktif.
 - **Ticketing**: master tiket, booking, loket, gate, Dusun Pass.
 - **Items → Produk → Produksi Internal**: prep dapur `PROD-DB-*`.
 - **Point of Sales**: menu Sunda/Nusantara per outlet.
