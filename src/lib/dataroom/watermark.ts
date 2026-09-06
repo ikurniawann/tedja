@@ -1,3 +1,4 @@
+import { brandName } from "@/lib/branding";
 import { isWatermarkable } from "@/lib/dataroom/config";
 
 /*
@@ -14,8 +15,8 @@ import { isWatermarkable } from "@/lib/dataroom/config";
  * dipratinjau — file asli di storage tidak pernah diubah.
  */
 
-export function buildWatermarkText(input: { label?: string | null; date?: Date }): string {
-  const label = String(input.label ?? "").trim() || "Sulu in Wounderland";
+export function buildWatermarkText(input: { label?: string | null; date?: Date; brand?: string | null }): string {
+  const label = String(input.label ?? "").trim() || String(input.brand ?? "").trim() || brandName();
   const d = input.date ?? new Date();
   const stamp = d.toLocaleString("id-ID", {
     day: "2-digit", month: "2-digit", year: "numeric",

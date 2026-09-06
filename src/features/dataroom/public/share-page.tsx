@@ -8,6 +8,7 @@ import { Toaster, toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { apiGet, apiPost } from "@/lib/api-client";
+import { brandName } from "@/lib/branding";
 import { formatBytes, isPreviewable } from "@/lib/dataroom/config";
 import { cn } from "@/lib/utils";
 import { ItemIcon } from "@/features/dataroom/components/item-icon";
@@ -67,7 +68,7 @@ export function SharePage({ token }: { token: string }) {
         <div className="mx-auto flex max-w-5xl items-center gap-3 px-4 py-3">
           <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground"><FolderOpen className="h-5 w-5" /></div>
           <div className="min-w-0">
-            <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Sulu in Wounderland · Dataroom</p>
+            <p className="text-[11px] uppercase tracking-wider text-muted-foreground">{brandName()} · Dataroom</p>
             <h1 className="truncate text-base font-semibold">{meta?.name ?? "Berkas dibagikan"}</h1>
           </div>
           {meta && (
