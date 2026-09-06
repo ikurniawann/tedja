@@ -46,8 +46,13 @@ deploying-dev · ready-for-qa · blocked · done).
 | [EPIC-035](./EPIC-035-habitat-instance-kedua.md) | Habitat — Duplikasi Instance Kedua (Fork Repo, DB Baru, Deploy GitLab CI) | ready-for-qa | 2026-07-28 |
 | [EPIC-037](./EPIC-037-desktop-owner-insight.md) | Desktop Arkiv OS — Widget Report & Insight Owner | on-progress | 2026-07-29 |
 | [EPIC-039](./EPIC-039-merchandise-ecommerce-omnichannel.md) | Merchandise & E-commerce — Storefront, Kurir, Xendit & Omnichannel Shopee | ready-for-qa | 2026-08-02 |
+| [EPIC-044](./EPIC-044-mobile-app-member.md) | Mobile App Member — Expo/React Native (QR Member & Push Notif) | on-progress | 2026-08-25 |
+| [EPIC-045](./EPIC-045-resort-akomodasi.md) | Resort & Akomodasi (`MODULE-RESORT`) | deploying-dev | 2026-09-06 |
+| [EPIC-046](./EPIC-046-tenant-dusun-bambu.md) | Tenant Dusun Bambu (`MODULE-DUSUN-BAMBU`) | ready-for-qa | 2026-09-06 |
 
 Aturan:
 - Epic + registry ini adalah sumber kebenaran status pekerjaan (canonical).
 - Keputusan durable dicatat di bagian **Automation Log** masing-masing epic.
 - Satu task group = satu unit kerja PR-sized.
+
+Registry modul yang bisa dipanggil untuk deploy: [docs/modules/README.md](../modules/README.md).
