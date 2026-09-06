@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPosSession } from "@/lib/api/auth";
 import { getApiUserScope } from "@/lib/api/scope";
+import { resolveBrandName } from "@/lib/branding-server";
 import {
   parseReportDateRange,
   resolveReportStallFilter,
@@ -56,7 +57,7 @@ export async function GET(request: NextRequest) {
       : "Semua stall";
 
     const buffer = buildRushHourXlsx(report, {
-      companyName: "Sulu in Wounderland",
+      companyName: await resolveBrandName(scope?.companyId),
       periodLabel: `${range.dateFrom} s.d. ${range.dateTo}`,
       stallLabel,
       rangeFrom,
