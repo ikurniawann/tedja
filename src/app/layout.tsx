@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { brandName, brandOsName } from "@/lib/branding";
 import "quill/dist/quill.snow.css";
 import QueryProvider from "@/components/providers/query-provider";
 import { ThemeProvider } from "@/components/providers/theme-provider";
@@ -9,8 +10,8 @@ import { ActivityLogProvider } from "@/contexts/ActivityLogContext";
 import { ErrorBoundary } from "@/components/error-boundary";
 
 export const metadata: Metadata = {
-  title: "Sulu In Wounderland",
-  description: "Sulu In Wounderland OS — ERP terintegrasi untuk operasional bisnis",
+  title: brandName(),
+  description: `${brandOsName()} — ERP terintegrasi untuk operasional bisnis`,
   icons: {
     icon: "/favicon.svg",
   },

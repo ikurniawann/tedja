@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { brandOsName } from "@/lib/branding";
 import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
 import { IAM } from "@/lib/iam/prefixes";
 import { getSetting } from "@/lib/settings/app-settings";
@@ -48,7 +49,7 @@ export async function POST(request: Request) {
     });
 
     let message =
-      `Sulu In Wounderland OS — pesan uji notifikasi.\n` +
+      `${brandOsName()} — pesan uji notifikasi.\n` +
       `Nomor ini akan menerima notifikasi bisnis otomatis.\n${now} WIB`;
     if (body.flash) {
       const { buildFlashReportMessage, gatherFlashReportData } = await import(

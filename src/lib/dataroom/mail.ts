@@ -1,7 +1,8 @@
+import { brandName } from "@/lib/branding";
 import { sendEmail } from "@/lib/resend";
 
 const FROM = process.env.DATAROOM_FROM_EMAIL ?? process.env.FROM_EMAIL ?? "Dataroom <onboarding@resend.dev>";
-const BRAND = process.env.NEXT_PUBLIC_APP_NAME ?? "Sulu in Wounderland";
+const BRAND = brandName();
 
 export function shareUrl(token: string): string {
   const base = (process.env.NEXT_PUBLIC_APP_URL ?? "").replace(/\/+$/, "");

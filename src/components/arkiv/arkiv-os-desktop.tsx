@@ -20,6 +20,7 @@ import {
   type MonitorWidgetKey,
 } from "./desktop-monitor";
 import type { DesktopOverview as DesktopOverviewData } from "@/lib/desktop/overview";
+import { brandName, brandOsName } from "@/lib/branding";
 import { REPORT_EXPORTS, type ReportExportKey } from "@/lib/pos/report-excel/builders";
 import { DriveDataroomBrowser } from "@/features/dataroom/components/drive-browser";
 import type { DataroomItem, DataroomListing } from "@/features/dataroom/types";
@@ -122,6 +123,9 @@ type DesktopIconPosition = { left: number; top: number };
 type WidgetVisibility = { calendar: boolean } & Record<MonitorWidgetKey, boolean>;
 
 const pinkAccent = "from-pink-300 via-pink-500 to-rose-600";
+// Merek instance (multi-perusahaan) — jangan tulis nama langsung di JSX.
+const BRAND = brandName();
+const BRAND_OS = brandOsName();
 
 const modules: DesktopModule[] = [
   {
@@ -167,7 +171,7 @@ const modules: DesktopModule[] = [
 ];
 
 const wallpapers = [
-  { id: "arkiv", name: "Sulu In Wounderland Aurora", src: "/bg.avif" },
+  { id: "arkiv", name: `${BRAND} Aurora`, src: "/bg.avif" },
   { id: "pink", name: "Pink Dusk", src: "linear-gradient(135deg,#16091d,#5b1239 45%,#111827)" },
   { id: "midnight", name: "Midnight", src: "linear-gradient(135deg,#030712,#111827 52%,#1e1b4b)" },
   { id: "glass", name: "Glass Blue", src: "linear-gradient(135deg,#082f49,#0f172a 48%,#312e81)" },
@@ -278,7 +282,7 @@ export default function ArkivOsDesktop() {
   const desktopIcons = useMemo(
     () => [
       { id: "assistant", name: "Do", subtitle: "Super User", icon: Bot, action: "assistant" as const },
-      { id: "drive", name: "Sulu In Wounderland Drive", subtitle: "Files", icon: Folder, action: "files" as const },
+      { id: "drive", name: `${BRAND} Drive`, subtitle: "Files", icon: Folder, action: "files" as const },
       { id: "Application", name: "Application", subtitle: "All Modules", icon: Grid3X3, action: "folder" as const },
       {
         id: "userManagement",
@@ -490,7 +494,7 @@ export default function ArkivOsDesktop() {
 
       setUserAccount({
         email: data.user.email ?? "",
-        fullName: profile?.full_name ?? data.user.email ?? "Sulu In Wounderland User",
+        fullName: profile?.full_name ?? data.user.email ?? `${BRAND} User`,
         role: profile?.role ?? "authenticated",
       });
     });
@@ -1039,8 +1043,8 @@ function ModuleOpenChoiceModal({
               <MonitorDot className="size-5" />
             </div>
             <div className="min-w-0 flex-1">
-              <div className="text-sm font-semibold text-white">Buka di Sulu In Wounderland OS</div>
-              <div className="mt-1 text-xs leading-5 text-white/55">Module tampil sebagai window di desktop Sulu In Wounderland OS.</div>
+              <div className="text-sm font-semibold text-white">Buka di {BRAND_OS}</div>
+              <div className="mt-1 text-xs leading-5 text-white/55">Module tampil sebagai window di desktop {BRAND_OS}.</div>
             </div>
             <ChevronRight className="size-4 text-white/45 transition group-hover:translate-x-0.5 group-hover:text-white" />
           </button>
@@ -1092,7 +1096,7 @@ function CommandPalette({
 }) {
   const actions = [
     { label: "System Settings", subtitle: "Theme, widgets, sound, account", icon: Settings, run: onSettings },
-    { label: "Sulu In Wounderland Drive", subtitle: "Open file explorer", icon: Folder, run: onFiles },
+    { label: `${BRAND} Drive`, subtitle: "Open file explorer", icon: Folder, run: onFiles },
     { label: "Tanya Do", subtitle: "Buka asisten Do", icon: Bot, run: onAssistant },
     { label: "Notification Center", subtitle: "Review alerts and approvals", icon: Bell, run: onNotifications },
     { label: "Widgets", subtitle: "Turn desktop widgets on or off", icon: Activity, run: onWidgets },
@@ -1249,7 +1253,7 @@ function ComingSoonModal({ title, onClose }: { title: string; onClose: () => voi
             <div className="mt-0.5 size-2.5 rounded-full bg-pink-300" />
             <div>
               <div>Module {title} sedang disiapkan dan akan tersedia pada update berikutnya.</div>
-              <div className="mt-1 text-xs text-white/40">Sulu In Wounderland OS · Coming Soon</div>
+              <div className="mt-1 text-xs text-white/40">{BRAND_OS} · Coming Soon</div>
             </div>
           </div>
         </div>
@@ -1301,7 +1305,7 @@ function IntegrationSettingsNative() {
           );
         })}
         <div className="mt-5 rounded-3xl border border-white/10 bg-white/8 p-3 text-xs leading-5 text-white/50">
-          Native Sulu In Wounderland OS settings untuk koneksi Game, Photobox, Payment Gateway, API, dan webhook.
+          Native {BRAND_OS} settings untuk koneksi Game, Photobox, Payment Gateway, API, dan webhook.
         </div>
       </aside>
 
@@ -1309,7 +1313,7 @@ function IntegrationSettingsNative() {
         <div className="mb-5 flex items-center justify-between">
           <div>
             <h2 className="text-xl font-semibold">Integration Center</h2>
-            <p className="text-xs text-white/45">Sulu In Wounderland OS · native settings</p>
+            <p className="text-xs text-white/45">{BRAND_OS} · native settings</p>
           </div>
           <button className="rounded-2xl border border-white/10 bg-white/8 px-3 py-2 text-xs font-semibold text-white/70 hover:bg-white/12">Add Integration</button>
         </div>
@@ -1440,7 +1444,7 @@ function FileExplorer({ onClose, isLoggedIn }: { onClose: () => void; isLoggedIn
   );
 
   return (
-    <WindowShell title="Sulu In Wounderland Drive" onClose={onClose} className="left-1/2 top-16 h-[min(620px,calc(100vh-120px))] w-[min(860px,calc(100vw-32px))] -translate-x-1/2">
+    <WindowShell title={`${BRAND} Drive`} onClose={onClose} className="left-1/2 top-16 h-[min(620px,calc(100vh-120px))] w-[min(860px,calc(100vw-32px))] -translate-x-1/2">
       <div className="flex h-full min-h-[420px]">
         <aside className="flex w-56 flex-col border-r border-white/10 bg-black/12 p-3">
           <div className="mb-3 px-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/35">Locations</div>
@@ -1460,7 +1464,7 @@ function FileExplorer({ onClose, isLoggedIn }: { onClose: () => void; isLoggedIn
             {locButton(location.kind === "reports", "Reports", () => setLocation({ kind: "reports" }), "reports")}
           </div>
           <div className="mt-3 rounded-3xl border border-white/10 bg-white/8 p-3 text-xs leading-5 text-white/50">
-            {isLoggedIn ? "Connected to Sulu In Wounderland workspace." : "Login required to open or download real files."}
+            {isLoggedIn ? `Connected to ${BRAND} workspace.` : "Login required to open or download real files."}
           </div>
         </aside>
         <section className="min-w-0 flex-1 overflow-y-auto p-5">
@@ -2528,7 +2532,7 @@ function OsAccountPopup({
         <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
           <div>
             <h2 className="text-base font-semibold">Account</h2>
-            <p className="text-xs text-white/50">Sulu In Wounderland OS session</p>
+            <p className="text-xs text-white/50">{BRAND_OS} session</p>
           </div>
           <button onClick={onClose} className="rounded-full p-2 text-white/55 transition hover:bg-white/10 hover:text-white">
             <X className="size-4" />
@@ -2559,7 +2563,7 @@ function OsAccountPopup({
               </>
             ) : (
               <button onClick={onLogin} className="rounded-2xl bg-pink-600 px-4 py-3 text-sm font-semibold transition hover:bg-pink-500">
-                Log In to Sulu In Wounderland OS
+                Log In to {BRAND_OS}
               </button>
             )}
           </div>
@@ -2640,7 +2644,7 @@ function SystemSettings({
   onClose: () => void;
 }) {
   const settings = [
-    { title: "Desktop & Wallpaper", description: "Pilih wallpaper Sulu In Wounderland OS.", icon: MonitorDot, action: onOpenWallpaper },
+    { title: "Desktop & Wallpaper", description: `Pilih wallpaper ${BRAND_OS}.`, icon: MonitorDot, action: onOpenWallpaper },
     { title: "Widgets", description: "Atur Calendar dan System Widgets.", icon: Activity, action: onOpenWidgets },
     { title: "Notifikasi WA", description: "Kabar penting bisnis dikirim otomatis ke WhatsApp.", icon: Bell, action: onOpenWaNotif },
   ];
@@ -2653,7 +2657,7 @@ function SystemSettings({
       <div className="grid gap-4 p-5 md:grid-cols-[220px_1fr]">
         <aside className="rounded-3xl border border-white/10 bg-white/8 p-4">
           <div className={`mb-4 grid size-12 place-items-center rounded-2xl bg-gradient-to-br ${pinkAccent}`}><Settings className="size-6" /></div>
-          <div className="font-semibold">Sulu In Wounderland OS Settings</div>
+          <div className="font-semibold">{BRAND_OS} Settings</div>
           <div className="mt-1 text-xs leading-5 text-white/50">Theme, widgets, sound, Do, dan desktop preferences.</div>
         </aside>
         <section className="space-y-3">
@@ -2874,10 +2878,10 @@ function WidgetSettings({
 
 function AboutArkiv({ onClose }: { onClose: () => void }) {
   return (
-    <WindowShell title="About Sulu In Wounderland" onClose={onClose} className="left-1/2 top-24 w-[min(420px,calc(100vw-32px))] -translate-x-1/2">
+    <WindowShell title={`About ${BRAND}`} onClose={onClose} className="left-1/2 top-24 w-[min(420px,calc(100vw-32px))] -translate-x-1/2">
       <div className="p-6 text-center">
         <div className={`mx-auto mb-4 grid size-16 place-items-center rounded-3xl bg-gradient-to-br ${pinkAccent}`}><MonitorDot className="size-8" /></div>
-        <h2 className="text-xl font-semibold">Sulu In Wounderland</h2>
+        <h2 className="text-xl font-semibold">{BRAND}</h2>
         <p className="mt-2 text-sm leading-6 text-white/60">Desktop portal untuk HRIS, Procurement, POS, CRM, dan Do.</p>
         <div className="mt-5 rounded-2xl bg-white/8 p-3 text-xs text-white/50">Version 1.0 · macOS-inspired shell</div>
       </div>
@@ -2892,7 +2896,7 @@ function DesktopContextMenu({ x, y, onWallpaper, onWidgets, onApps, onSettings, 
       <button onClick={onWidgets} className="block w-full rounded-xl px-3 py-2 text-left hover:bg-white/10">Widgets</button>
       <button onClick={onSettings} className="block w-full rounded-xl px-3 py-2 text-left hover:bg-white/10">System Settings</button>
       <button onClick={onWallpaper} className="block w-full rounded-xl px-3 py-2 text-left hover:bg-white/10">Change Wallpaper</button>
-      <button onClick={onAbout} className="block w-full rounded-xl px-3 py-2 text-left hover:bg-white/10">About Sulu In Wounderland OS</button>
+      <button onClick={onAbout} className="block w-full rounded-xl px-3 py-2 text-left hover:bg-white/10">About {BRAND_OS}</button>
     </div>
   );
 }

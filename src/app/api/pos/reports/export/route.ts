@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPosSession } from "@/lib/api/auth";
+import { getApiUserScope } from "@/lib/api/scope";
+import { resolveBrandName } from "@/lib/branding-server";
 import { REPORT_EXPORTS, buildReportWorkbook, isReportExportKey } from "@/lib/pos/report-excel/builders";
 import { workbookBuffer } from "@/lib/pos/report-excel/workbook";
 import { validateReportRange } from "@/lib/pos/report-period";
@@ -58,8 +60,10 @@ export async function GET(request: NextRequest) {
       ? data.stall_options?.find((s) => s.id === data.filters?.warehouse_id)?.name ?? "Stall terpilih"
       : "Semua stall";
 
+    const scope = await getApiUserScope();
+    const companyName = await resolveBrandName(scope?.companyId);
     const wb = await buildReportWorkbook(key, json.data, {
-      companyName: "Sulu in Wounderland", stallLabel, generatedAt: new Date(),
+      companyName, stallLabel, generatedAt: new Date(),
     });
     const buffer = await workbookBuffer(wb);
     const filename = `${REPORT_EXPORTS[key].label.toLowerCase().replace(/\s+/g, "-")}_${dateFrom}_${dateTo}.xlsx`;
