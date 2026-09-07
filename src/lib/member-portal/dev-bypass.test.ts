@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { isDevBypassCode, isLocalDatabase, memberOtpDevCode } from "./dev-bypass";
+import { canBypassOtp, isDevBypassActive, isLocalDatabase, memberOtpDevCode } from "./dev-bypass";
 
 const ENV = { ...process.env };
 afterEach(() => {
@@ -36,7 +36,7 @@ describe("memberOtpDevCode — tiga lapis pengaman", () => {
   it("MATI di production walau env lain benar", () => {
     setEnv("production", "000000", LOCAL);
     expect(memberOtpDevCode()).toBeNull();
-    expect(isDevBypassCode("000000")).toBe(false);
+    expect(canBypassOtp("000000")).toBe(false);
   });
 
   it("MATI bila MEMBER_OTP_DEV_CODE tidak disetel — tidak ada default", () => {
@@ -49,15 +49,23 @@ describe("memberOtpDevCode — tiga lapis pengaman", () => {
   it("MATI bila DATABASE_URL bukan localhost", () => {
     setEnv("development", "000000", REMOTE);
     expect(memberOtpDevCode()).toBeNull();
-    expect(isDevBypassCode("000000")).toBe(false);
+    expect(canBypassOtp("000000")).toBe(false);
   });
 });
 
-describe("isDevBypassCode", () => {
-  it("hanya menerima kode yang sama persis", () => {
+describe("canBypassOtp", () => {
+  it("menerima kode kosong (isi nomor langsung masuk) dan kode dev", () => {
     setEnv("development", "000000", LOCAL);
-    expect(isDevBypassCode("000000")).toBe(true);
-    expect(isDevBypassCode("000001")).toBe(false);
-    expect(isDevBypassCode("")).toBe(false);
+    expect(canBypassOtp("")).toBe(true);
+    expect(canBypassOtp("000000")).toBe(true);
+    expect(canBypassOtp("000001")).toBe(false);
+  });
+
+  it("kode kosong TIDAK diterima bila bypass mati", () => {
+    setEnv("production", "000000", LOCAL);
+    expect(canBypassOtp("")).toBe(false);
+    setEnv("development", "000000", REMOTE);
+    expect(canBypassOtp("")).toBe(false);
+    expect(isDevBypassActive()).toBe(false);
   });
 });

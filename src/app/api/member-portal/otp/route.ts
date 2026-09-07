@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPool } from "@/lib/db";
 import { sendWhatsAppOtp } from "@/lib/whatsapp";
+import { isDevBypassActive } from "@/lib/member-portal/dev-bypass";
 import {
   generateOtpCode,
   hashSecret,
@@ -95,6 +96,8 @@ export async function POST(request: NextRequest) {
       success: true,
       message: "Kode OTP dikirim ke WhatsApp Anda",
       wa_delivered: sent.success,
+      // Dev lokal: portal melompati layar kode dan langsung verify.
+      dev_bypass: isDevBypassActive(),
     });
   } catch (error) {
     console.error("Error requesting member OTP:", error);
