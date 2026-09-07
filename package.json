@@ -40,6 +40,7 @@
     "db:seed:footwear-only": "npm run db:seed:items-footwear-reset-fnb && npm run db:seed:items-footwear",
     "db:seed:items-fnb-restaurant": "node database/seeders/items-fnb-restaurant.js",
     "db:seed:ticketing-demo": "node database/seeders/ticketing-demo.js",
+    "db:seed:resort-demo": "node database/seeders/resort-demo.js",
     "db:seed:dusun-bambu-business": "node database/seeders/dusun-bambu.js",
     "db:seed:dusun-bambu-fnb": "node database/seeders/dusun-bambu-fnb.js",
     "db:seed:dusun-bambu-ticketing": "node database/seeders/dusun-bambu-ticketing.js",
