@@ -208,6 +208,24 @@ export function NoxPortal() {
     setLoginBusy(true);
     setLoginError(null);
     try {
+      /* Dev lokal: coba verify tanpa kode lebih dulu. Server yang memutuskan
+       * (lib/member-portal/dev-bypass) — bila bypass mati, permintaan ini
+       * ditolak dan alur OTP normal di bawah tetap berjalan. Dicoba sebelum
+       * /otp supaya tidak terganjal rate limit endpoint itu. */
+      const bypassRes = await fetch("/api/member-portal/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: loginPhone }),
+      });
+      if (bypassRes.ok) {
+        const bypassJson = await bypassRes.json();
+        if (bypassJson.success) {
+          reload();
+          showToast("Masuk tanpa OTP (mode dev lokal)");
+          return;
+        }
+      }
+
       const res = await fetch("/api/member-portal/otp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -222,7 +240,7 @@ export function NoxPortal() {
     } finally {
       setLoginBusy(false);
     }
-  }, [loginPhone, showToast]);
+  }, [loginPhone, reload, showToast]);
 
   const verifyOtp = useCallback(async () => {
     if (!/^\d{6}$/.test(loginCode.trim())) {
