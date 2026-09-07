@@ -19,6 +19,36 @@ export interface DataroomActor {
 
 export interface DepartmentRef { id: string; name: string }
 
+/**
+ * Tabel konfigurasi departemen datang dari migration
+ * `20260905110000_dataroom_folder_departments.sql`. Bila sebuah instance belum
+ * dimigrasi, Dataroom TIDAK boleh mati total — modul kembali ke perilaku
+ * sebelum fitur ini ada: semua folder terbuka untuk pengguna menu Dataroom.
+ */
+const MISSING_TABLE = "42P01";
+const MIGRATION_HINT =
+  "[dataroom] tabel dataroom.folder_departments belum ada — jalankan migration " +
+  "20260905110000_dataroom_folder_departments.sql. Akses per departemen nonaktif sementara.";
+let migrationWarned = false;
+
+function isMissingTable(error: unknown): boolean {
+  return typeof error === "object" && error !== null && (error as { code?: string }).code === MISSING_TABLE;
+}
+
+/** SELECT ke folder_departments yang aman bila tabelnya belum ada. */
+async function selectConfigs<T extends Record<string, unknown>>(sql: string, params: unknown[]): Promise<T[]> {
+  try {
+    return await query<T>(sql, params);
+  } catch (error) {
+    if (!isMissingTable(error)) throw error;
+    if (!migrationWarned) {
+      migrationWarned = true;
+      console.warn(MIGRATION_HINT);
+    }
+    return [];
+  }
+}
+
 export function isDataroomAdminRole(role: string | null | undefined): boolean {
   return role === "super_admin";
 }
@@ -66,7 +96,7 @@ export async function listDepartments(): Promise<DepartmentRef[]> {
 export async function getDepartmentsForNodes(nodeIds: string[]): Promise<Map<string, DepartmentRef[]>> {
   const map = new Map<string, DepartmentRef[]>();
   if (nodeIds.length === 0) return map;
-  const rows = await query<{ node_id: string; id: string; name: string }>(
+  const rows = await selectConfigs<{ node_id: string; id: string; name: string }>(
     `SELECT fd.node_id, d.id, d.name
      FROM dataroom.folder_departments fd JOIN hris.departments d ON d.id = fd.department_id
      WHERE fd.node_id = ANY($1::uuid[]) ORDER BY d.name`,
@@ -81,13 +111,21 @@ export async function getDepartmentsForNodes(nodeIds: string[]): Promise<Map<str
 }
 
 export async function setNodeDepartments(nodeId: string, departmentIds: string[], userId: string): Promise<void> {
-  await query(`DELETE FROM dataroom.folder_departments WHERE node_id = $1`, [nodeId]);
-  if (departmentIds.length > 0) {
-    await query(
-      `INSERT INTO dataroom.folder_departments (node_id, department_id, created_by)
-       SELECT $1, d.id, $3 FROM hris.departments d WHERE d.id = ANY($2::uuid[])
-       ON CONFLICT DO NOTHING`,
-      [nodeId, departmentIds, userId]
+  try {
+    await query(`DELETE FROM dataroom.folder_departments WHERE node_id = $1`, [nodeId]);
+    if (departmentIds.length > 0) {
+      await query(
+        `INSERT INTO dataroom.folder_departments (node_id, department_id, created_by)
+         SELECT $1, d.id, $3 FROM hris.departments d WHERE d.id = ANY($2::uuid[])
+         ON CONFLICT DO NOTHING`,
+        [nodeId, departmentIds, userId]
+      );
+    }
+  } catch (error) {
+    if (!isMissingTable(error)) throw error;
+    throw new Error(
+      "Pengaturan akses departemen belum aktif di server ini. Jalankan migration " +
+        "20260905110000_dataroom_folder_departments.sql lebih dahulu."
     );
   }
 }
@@ -115,8 +153,9 @@ export async function createAccessResolver(actor: DataroomActor): Promise<Access
     );
     for (const f of folders) parentOf.set(f.id, f.parent_id);
   }
-  const rows = await query<{ node_id: string; department_id: string }>(
-    `SELECT node_id, department_id FROM dataroom.folder_departments`
+  const rows = await selectConfigs<{ node_id: string; department_id: string }>(
+    `SELECT node_id, department_id FROM dataroom.folder_departments`,
+    []
   );
   for (const r of rows) {
     const list = configs.get(r.node_id) ?? [];
