@@ -56,14 +56,18 @@ sehingga dijalankan ulang menghasilkan angka yang sama:
   3 menunggu bayar, 2 dibatalkan, 1 no-show) dan semua sumber
   (walk-in, website, OTA, telepon, korporat), sebagian 2 kamar dan
   memakai extra bed. Unit kamar ditetapkan tanpa tabrakan tanggal.
-- **179 baris folio**: tagihan kamar, extra bed, diskon, F&B (menu asli dari
+- **185 baris folio**: tagihan kamar, extra bed, diskon, F&B (menu asli dari
   keempat restoran), aktivitas (sepeda listrik, berkuda, playground, sampan,
   panahan), laundry, denda, serta pembayaran sesuai status (lunas saat
   check-out, DP 50% untuk terkonfirmasi, refund untuk yang dibatalkan).
 - **Status housekeeping campuran**: kamar terisi, siap dijual, perlu
   dibersihkan, dan 2 kamar perbaikan — supaya papan Front Office tidak kosong.
 
-Total nilai reservasi demo sekitar Rp 293 juta.
+Total nilai reservasi demo sekitar Rp 281 juta.
+
+Logika pembangkitannya ada di `database/seeders/lib/resort-demo.js`, dipakai
+bersama dengan seeder venue utama (`npm run db:seed:resort-demo`) — lihat
+[EPIC-045](EPIC-045-resort-akomodasi.md#data-contoh-lokal).
 
 ### 3. `npm run db:seed:dusun-bambu-fnb` — `database/seeders/dusun-bambu-fnb.js`
 

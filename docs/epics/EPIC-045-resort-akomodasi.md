@@ -85,6 +85,29 @@ Tipe) dengan grant `super_admin`, `direksi`, `admin`.
   pelunasan → check-out → kamar berstatus `kotor`, ketersediaan pulih.
 - UI: Front Office (okupansi, kedatangan, status kamar), Reservasi (filter,
   ringkasan, dialog buat reservasi dengan cek ketersediaan), Kamar & Tipe.
+- Sebagai **super admin** setelah `npm run db:seed:resort-demo`: 24 kamar,
+  44 reservasi, Front Office terisi (7 tamu menginap, 2 kedatangan).
+
+## Data contoh lokal
+
+Modul membaca venue dari **scope bisnis user**. Super admin tidak ber-scope,
+jadi ia jatuh ke default venue di CRM Settings
+(`crm_settings.default_company_id` / `default_branch_id`) — bukan cabang tenant
+mana pun. Karena itu halaman Resort tampak kosong bagi super admin sampai venue
+itu sendiri diisi.
+
+Generator datanya dipakai bersama di `database/seeders/lib/resort-demo.js`
+(tipe & unit kamar, musim tarif, reservasi deterministik lintas status,
+penetapan kamar tanpa tabrakan tanggal, folio, status housekeeping), dengan dua
+pemanggil:
+
+| Seeder | Perintah | Venue |
+|--------|----------|-------|
+| `database/seeders/resort-demo.js` | `npm run db:seed:resort-demo` | Default venue CRM — **yang dilihat super admin**. Bisa ditimpa dengan `RESORT_COMPANY_CODE` + `RESORT_BRANCH_CODE`. 5 tipe kamar / 24 unit |
+| `database/seeders/dusun-bambu-resort.js` | `npm run db:seed:dusun-bambu-resort` | Cabang tenant Dusun Bambu Lembang. 6 tipe kamar / 30 unit |
+
+Keduanya memanggil `assertLocalTarget()` — berhenti bila `DATABASE_URL` bukan
+database lokal, jadi **tidak akan pernah** menyentuh production.
 
 ## Checklist rilis ke production
 

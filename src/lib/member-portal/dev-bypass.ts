@@ -42,8 +42,21 @@ export function memberOtpDevCode(): string | null {
   return code;
 }
 
-/** True bila `code` adalah kode bypass dev yang sah. */
-export function isDevBypassCode(code: string): boolean {
+/** True bila ketiga lapis pengaman lolos — server adalah satu-satunya otoritas. */
+export function isDevBypassActive(): boolean {
+  return memberOtpDevCode() !== null;
+}
+
+/**
+ * True bila permintaan verify boleh melewati pemeriksaan OTP.
+ *
+ * Saat bypass aktif, kode BOLEH kosong — owner ingin "isi nomor langsung
+ * masuk" di lokal. Klien tidak perlu mengirim rahasia apa pun; keputusan
+ * sepenuhnya di server, jadi klien yang memalsukan permintaan pun tidak
+ * mendapat apa-apa di lingkungan yang pengamannya tidak lolos.
+ */
+export function canBypassOtp(code: string): boolean {
   const devCode = memberOtpDevCode();
-  return devCode !== null && code === devCode;
+  if (devCode === null) return false;
+  return code === "" || code === devCode;
 }

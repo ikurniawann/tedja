@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPool } from "@/lib/db";
-import { isDevBypassCode } from "@/lib/member-portal/dev-bypass";
+import { canBypassOtp } from "@/lib/member-portal/dev-bypass";
 import {
   hashSecret,
   normalizePhoneDigits,
@@ -15,13 +15,26 @@ import {
 /**
  * POST /api/member-portal/verify { phone, code } — verifikasi OTP →
  * buat sesi member (cookie member_session) + stempel wa_verified_at.
+ *
+ * EPIC-044 (mobile app): klien app mengirim header `x-app-client: 1` →
+ * token sesi juga dikembalikan di body JSON untuk disimpan di SecureStore
+ * (cookie httpOnly tidak berguna bagi klien native). Portal web TIDAK mengirim
+ * header itu dan tetap menerima jawaban lama tanpa token di body.
  */
 export async function POST(request: NextRequest) {
+  const appClient = request.headers.get("x-app-client") === "1";
   try {
     const body = await request.json().catch(() => ({}));
     const phone = normalizePhoneDigits(body.phone);
     const code = String(body.code ?? "").trim();
-    if (!phone || !/^\d{6}$/.test(code)) {
+
+    /* Bypass dev lokal (lihat lib/member-portal/dev-bypass): melewati
+     * pemeriksaan record OTP — kode boleh kosong. TIDAK melewati pencarian
+     * member: nomor yang bukan member tetap ditolak. Mati total di produksi.
+     * Dievaluasi sebelum validasi format karena kode kosong itu sah di sini. */
+    const devBypass = canBypassOtp(code);
+
+    if (!phone || (!devBypass && !/^\d{6}$/.test(code))) {
       return NextResponse.json(
         { success: false, error: "Nomor/kode tidak valid" },
         { status: 400 }
@@ -30,10 +43,6 @@ export async function POST(request: NextRequest) {
 
     const pool = getPool();
 
-    /* Bypass dev lokal (lihat lib/member-portal/dev-bypass): melewati
-     * pemeriksaan record OTP, TIDAK melewati pencarian member — nomor yang
-     * bukan member tetap ditolak. Mati total di produksi. */
-    const devBypass = isDevBypassCode(code);
     if (devBypass) {
       console.warn(`[member-portal] OTP dev bypass dipakai untuk ${phone}`);
     }
@@ -104,7 +113,10 @@ export async function POST(request: NextRequest) {
     const token = await createMemberSession(customers[0].id);
     const response = NextResponse.json({
       success: true,
-      data: { name: customers[0].name },
+      data: {
+        name: customers[0].name,
+        ...(appClient ? { token } : {}),
+      },
     });
     response.cookies.set(MEMBER_SESSION_COOKIE, token, memberSessionCookieOptions(request));
     return response;
