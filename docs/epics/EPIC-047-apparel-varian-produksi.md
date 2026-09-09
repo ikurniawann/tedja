@@ -61,18 +61,18 @@ Hasil audit kode & database lokal bersama owner. Semua sudah dikunci:
 
 ## Tasks
 
-### Fase 0 — Company `SULU-APPAREL` + master dasar (seeder lokal)
+### Fase 0 — Company `SULU-APPAREL` + master dasar (seeder lokal) ✅
 
 Turunan `items-footwear.js` + `dusun-bambu.js` / `lib/dusun-bambu-scope.js`.
 Tidak ada kode aplikasi yang berubah di fase ini.
 
-- [ ] `database/seeders/lib/apparel-scope.js`: kode `PROLOGE` / `SULU-APPAREL` /
+- [x] `database/seeders/lib/apparel-scope.js`: kode `PROLOGE` / `SULU-APPAREL` /
       `SA-WORKSHOP`, `loadEnv`, `ensureScope` (company + branch + gudang
       produksi `MAIN` + outlet `Workshop Store`), `assertLocalTarget`.
-- [ ] `database/seeders/apparel.js` (`npm run db:seed:apparel-business`):
+- [x] `database/seeders/apparel.js` (`npm run db:seed:apparel-business`):
       user demo `demo@suluapparel.id` (role `admin`, scope cabang), departemen
       HRIS *Produksi & Jahit*, *Gudang & QC*, *Toko*.
-- [ ] `database/seeders/apparel-items.js` (`npm run db:seed:apparel-items`):
+- [x] `database/seeders/apparel-items.js` (`npm run db:seed:apparel-items`):
       unit per company (PCS, LUSIN, M, ROLL, KG, CONE, PASANG); kategori bahan
       KAIN, BENANG, AKSESORIS (kancing/resleting/eyelet), LABEL, KEMASAN, SOL,
       KULIT, PEREKAT, WIP; ±30 bahan baku dengan konversi satuan beli; kategori
@@ -80,11 +80,56 @@ Tidak ada kode aplikasi yang berubah di fase ini.
       kaos potong-jahit, upper sepatu); ±12 produk jadi dengan BOM bertingkat
       memakai `components: [kode | "WIP:<kode>", qty, waste]`; stok awal; sinkron
       `pos_products` dengan `product_kind = 'merchandise'` + `source_product_id`.
-- [ ] Update `EPIC-047` + `docs/modules/README.md` dengan hasil jalankan
+- [x] Update `EPIC-047` + `docs/modules/README.md` dengan hasil jalankan
       (jumlah bahan/produk/BOM), dan catatan bahwa harga adalah asumsi.
 
 **Done signal:** login `demo@suluapparel.id` → Items menampilkan master
 apparel, F&B Sulu tidak terlihat, super admin Sulu tidak terganggu.
+
+**Hasil jalankan (2026-09-09, lokal, `npm run db:seed:apparel-business` lalu
+`npm run db:seed:apparel-items`, idempoten — dijalankan 2× tanpa duplikasi):**
+
+- Company `SULU-APPAREL` (holding `PROLOGE`) → cabang `SA-WORKSHOP` (Sulu
+  Apparel Workshop) → gudang produksi `MAIN` (default) + outlet
+  `WORKSHOP-STORE` (Workshop Store).
+- Departemen HRIS baru: `SA-PRODUKSI` (Produksi & Jahit), `SA-GUDANG-QC`
+  (Gudang & QC), `SA-TOKO` (Toko).
+- User demo `demo@suluapparel.id` / `suluapparel` (role `admin`, scope
+  cabang).
+- Unit per company: 7 (`PCS, LUSIN, M, ROLL, KG, CONE, PASANG`).
+- Kategori bahan baku per company: 9 (`KAIN, BENANG, AKSESORIS, LABEL,
+  KEMASAN, SOL, KULIT, PEREKAT, WIP`).
+- Bahan baku: 35 total = 32 dibeli manual + 3 bahan WIP otomatis (hasil
+  produk WIP di bawah), dengan konversi satuan beli (LUSIN/ROLL) tercatat di
+  `raw_material_unit_conversions`. Stok awal masuk di 35 baris
+  `inventory.inventory` (gudang MAIN) lengkap dengan mutasi pembukaan.
+- Kategori produk (template global, dipakai bersama `items-footwear.js`
+  untuk `SANDAL`/`SEPATU`/`WIP`): 6 (`KAOS, KEMEJA, CELANA, SANDAL, SEPATU,
+  WIP`).
+- Produk WIP: 3 (`WIP-BADAN-KAOS`, `WIP-BADAN-KEMEJA`, `WIP-UPPER-SEPATU`).
+- Produk jadi: 12 (3 KAOS, 2 KEMEJA, 2 CELANA, 2 SANDAL, 3 SEPATU), 3
+  di antaranya memakai resep bertingkat (`WIP:<kode>`) — `KAOS-001` →
+  `WIP-BADAN-KAOS`, `KMJ-001` → `WIP-BADAN-KEMEJA`, `SPT-001` →
+  `WIP-UPPER-SEPATU`.
+- Total baris `manufacturing.bom_items`: 80 (produk WIP + produk jadi).
+  `manufacturing.raw_material_bom_items`: sengaja 0 — Fase 0 tidak memakai
+  resep bahan-ke-bahan (beda dari `items-footwear.js` yang punya campuran
+  lem).
+- Stok awal produk jadi: 12 baris `inventory.finished_goods_inventory`.
+- Sinkron POS: 12 `pos.pos_products` dengan `product_kind = 'merchandise'`,
+  `source_product_id` ke produk apparel, SKU prefix `APL-<kode>` (sengaja
+  beda dari prefix `PUR-` yang dipakai `items-footwear.js`/Dusun Bambu agar
+  tidak bentrok — kode produk `SND-00x`/`SPT-00x` kebetulan sama dengan
+  footwear Sulu tapi scoped per company, sedangkan SKU POS bersifat global).
+- Isolasi terbukti: `item.products` SULU tetap 108 baris dan Dusun Bambu
+  tetap 20 baris sebelum & sesudah seeding; `pos_products` footwear
+  (`PUR-SND-001`, `PUR-SPT-001`, dst.) tidak berubah `source_product_id`.
+- **Harga bahan baku & harga jual adalah ASUMSI demo lokal**, bukan hasil
+  survei pasar (dicatat di header `apparel-items.js`).
+- Dilewati secara sengaja: bagian "contoh produksi" (`production_orders`)
+  milik `items-footwear.js` — Fase 0 hanya master data, sesuai instruksi
+  task. Juga tidak ada resep bahan-ke-bahan (`raw_material_bom_items`)
+  karena tidak diminta epic untuk Fase 0.
 
 ### Fase 1A — Matriks varian di master produk → auto-SKU
 
@@ -238,3 +283,13 @@ Jalankan hanya bila owner memanggil `MODULE-APPAREL`:
 
 - 2026-09-09 — Epic dibuat dari audit kode & DB bersama owner; status
   `backlog` sampai owner menyalakan.
+- 2026-09-09 /task-work EPIC-047 #1 "Fase 0 — Company `SULU-APPAREL` + master
+  dasar (seeder lokal)" → PASS (attempts: 1). Gate: review-qa PASS (3 catatan
+  LOW/INFO), security PASS (assertLocalTarget sebelum koneksi di ketiga entry
+  point, bcrypt, semua DELETE/UPDATE ber-scope), test PASS (node --check,
+  seeder end-to-end + rerun idempoten, isolasi SULU=108 / Dusun Bambu=20 tetap,
+  vitest 221 berkas / 1828 test). Verifikasi browser sebagai
+  `demo@suluapparel.id`: 35 bahan baku dan 15 produk apparel tampil di Items.
+  MR dibuat via `push -o merge_request.create` ke `development` (nomor dicatat
+  saat merge). Tidak ada GitLab issue yang cocok dengan judul task — dilanjutkan
+  tanpa referensi penutup.
