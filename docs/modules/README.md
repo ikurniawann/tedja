@@ -13,6 +13,7 @@ Prosedurnya mengikuti bagian **Checklist rilis** di dokumen modul.
 | `MODULE-RESORT` | Resort & Akomodasi (booking kamar, front office, folio) | `dev` | [EPIC-045](../epics/EPIC-045-resort-akomodasi.md) | `20260906130000_resort_booking.sql` | Menu baru **Resort**; tidak mengubah modul lain |
 | `MODULE-RESORT-DEMO` | Data contoh Resort untuk venue utama (lokal) | `dev-only` | [EPIC-045](../epics/EPIC-045-resort-akomodasi.md#data-contoh-lokal) | — | **Tidak pernah** ke production: seeder menolak database non-lokal |
 | `MODULE-DUSUN-BAMBU` | Tenant Dusun Bambu (data demo lokal: bisnis, resort penuh, F&B, ticketing) | `dev-only` | [EPIC-046](../epics/EPIC-046-tenant-dusun-bambu.md) | — | **Tidak pernah** ke production: seeder menolak database non-lokal |
+| `MODULE-APPAREL` | Apparel & alas kaki — varian ukuran/warna dari master produk sampai produksi (reuse Items/Purchasing/Manufacturing + `pos_product_skus`) | `backlog` | [EPIC-047](../epics/EPIC-047-apparel-varian-produksi.md) | `production_variant_output` (Fase 1B, belum dibuat) | Bukan modul baru; company `SULU-APPAREL` terpisah. Seeder `apparel*.js` tinggal di `development` |
 
 ## Arti status
 
