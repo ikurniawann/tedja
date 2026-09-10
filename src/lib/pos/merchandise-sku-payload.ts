@@ -40,6 +40,7 @@ export function normalizeSkuPayload(
 
   if (body.barcode !== undefined) {
     const barcode = String(body.barcode || '').trim();
+    if (barcode.length > 64) return { ok: false, error: 'Barcode maksimal 64 karakter' };
     columns.barcode = barcode || null;
   }
 

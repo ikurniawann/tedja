@@ -373,6 +373,15 @@ export function ProductsPage() {
                                 Perlu update
                               </Badge>
                             ) : null}
+                            {/* EPIC-047 Fase 1A — badge varian SKU POS merchandise tertaut */}
+                            {(product.variant_count ?? 0) > 0 ? (
+                              <Badge
+                                variant="outline"
+                                className="border-indigo-200/80 bg-indigo-50 text-indigo-700"
+                              >
+                                {product.variant_count} varian
+                              </Badge>
+                            ) : null}
                           </div>
                         </td>
                         <td className="px-4 py-3 text-gray-700">{getStallLabel(product)}</td>

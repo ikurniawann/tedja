@@ -131,25 +131,25 @@ apparel, F&B Sulu tidak terlihat, super admin Sulu tidak terganggu.
   task. Juga tidak ada resep bahan-ke-bahan (`raw_material_bom_items`)
   karena tidak diminta epic untuk Fase 0.
 
-### Fase 1A — Matriks varian di master produk → auto-SKU
+### Fase 1A — Matriks varian di master produk → auto-SKU ✅
 
-- [ ] `src/lib/pos/merchandise-variants.ts` (murni, teruji): tipe
+- [x] `src/lib/pos/merchandise-variants.ts` (murni, teruji): tipe
       `VariantAxis { key: "ukuran" | "warna" | string; values: string[] }`,
       `expandMatrix(axes)` → daftar kombinasi `options`, `buildSkuCode(baseSku,
       options)` deterministik (mis. `KAOS-001-M-HTM`), `buildSkuName`,
       `diffMatrix(existing, wanted)` → `{ create, deactivate, keep }`.
-- [ ] `POST /api/pos/products/[id]/skus/matrix`: body `{ axes, price_override?,
+- [x] `POST /api/pos/products/[id]/skus/matrix`: body `{ axes, price_override?,
       barcode_prefix? }`; gate `product_kind = 'merchandise'` (reuse cek yang
       ada); satu transaksi: buat SKU yang belum ada lewat `normalizeSkuPayload`,
       **nonaktifkan** (bukan hapus) SKU yang tidak lagi ada di matriks bila
       `stock_quantity = 0`, tolak dengan 409 bila SKU ber-stok akan hilang.
       Idempoten: kirim matriks yang sama dua kali = no-op.
-- [ ] UI master produk POS (`src/features/pos/products`): panel *Varian* —
+- [x] UI master produk POS (`src/features/pos/products`): panel *Varian* —
       chip input per sumbu (Ukuran: S M L XL; Warna: Hitam Putih), pratinjau
       jumlah SKU, tombol *Generate*, tabel SKU hasil (kode, nama, barcode,
       harga override, stok, aktif). Reuse endpoint per-SKU yang ada untuk
       edit satu baris.
-- [ ] Tampilkan ringkasan varian di daftar produk Items (`/dashboard/items`)
+- [x] Tampilkan ringkasan varian di daftar produk Items (`/dashboard/items`)
       untuk produk yang tertaut ke POS merchandise: badge `12 varian`.
 
 **Acceptance:** produk *Kaos Sulu Basic* dengan sumbu 4 ukuran × 2 warna →
@@ -293,3 +293,31 @@ Jalankan hanya bila owner memanggil `MODULE-APPAREL`:
   MR dibuat via `push -o merge_request.create` ke `development` (nomor dicatat
   saat merge). Tidak ada GitLab issue yang cocok dengan judul task — dilanjutkan
   tanpa referensi penutup.
+- 2026-09-09 — Fase 0: **MR !204 merged** ke `development`
+  (tag `v0.61.0-development`). Nomor dicatat di sini karena baru ada setelah
+  push.
+- 2026-09-10 /task-work EPIC-047 #2 "Fase 1A — Matriks varian di master produk
+  → auto-SKU" → PASS (attempts: 3).
+  - Attempt 1 (`96a6e0f4`): review PASS; security FAIL — HIGH matriks tak
+    terbatas, MEDIUM `barcode_prefix` tanpa batas, MEDIUM UPDATE nonaktif belum
+    ber-scope `product_id`; test FAIL — varian yang dihapus tidak bisa ditambah
+    lagi (409 "Kode SKU sudah dipakai").
+  - Attempt 2: review PASS; security FAIL — HIGH `expandMatrix` dipanggil
+    sebelum `validateMatrixSize` (repro: body 1,4 KB 5×40 → heap OOM), MEDIUM
+    barcode gabungan gagal di dalam transaksi, MEDIUM `values` bukan array →
+    500 bocor TypeError; test FAIL — implicit `any` di baris map baru.
+  - Attempt 3 (`9cb1c0aa`): **review PASS, security PASS, test PASS.**
+    Perbaikan struktural: validasi ukuran sebelum ekspansi DAN `expandMatrix`
+    melempar `MatrixTooLargeError` sebelum alokasi (repro → 400 dalam 19–31
+    ms, server hidup); bentuk rusak → 400; barcode gabungan dicek sebelum
+    transaksi (GET identik byte demi byte); urutan 401 → 404 → merchandise →
+    body → transaksi; reaktivasi + nonaktif masing-masing satu UPDATE batch
+    ber-scope; 5 test level route memastikan `expandMatrix` dan
+    `withTransaction` tidak dipanggil di jalur rentan. Vitest 224 berkas /
+    1891 test. Isolasi F&B: `pos_product_variants` tidak pernah disentuh,
+    produk regular hanya mendapat 400.
+  - MR dibuat via `push -o merge_request.create` ke `development`; nomor
+    dicatat saat merge. Tidak ada GitLab issue yang cocok — tanpa referensi
+    penutup. Catatan di luar cakupan: data seed KAOS-001 punya kunci `options`
+    campur huruf besar-kecil (ditangani `optionsKey()`); KAOS-002 di DB lokal
+    tercemar ±898 baris SKU nonaktif dari pembuktian — data lokal saja.

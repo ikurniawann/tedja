@@ -4,6 +4,7 @@
 
 import { NextRequest } from "next/server";
 import { createServerPgClient } from "@/lib/pg/create-client";
+import { query as dbQuery } from "@/lib/db";
 import { z } from "zod";
 import {
   getApiUserScope,
@@ -14,7 +15,32 @@ import {
 import { getApiStallScope } from "@/lib/api/stall-scope";
 import { syncPurchasingProductToPos } from "@/lib/pos/purchasing-sync";
 import { resolvePosStation } from "@/lib/pos/kitchen-station";
-import { withProductHppReview } from "@/lib/purchasing/product-hpp-review";
+import { withProductHppReview, type ProductHppReviewSource } from "@/lib/purchasing/product-hpp-review";
+
+// EPIC-047 T1 fix — bentuk baris minimal v_products_cogs dipakai untuk
+// meng-anotasi eksplisit callback baru di bawah (row implisit `any` /
+// TS7006); TIDAK dipakai untuk baris pre-existing lain di file ini.
+type ProductCogsRow = { id: string } & ProductHppReviewSource;
+
+// EPIC-047 Fase 1A — badge "N varian" di Items: hitung SKU POS merchandise
+// aktif per produk (join via pos_products.source_product_id), tanpa
+// menyentuh view v_products_cogs (4 migrasi grants/backfill).
+async function attachVariantCounts<T extends { id: string }>(
+  rows: T[]
+): Promise<(T & { variant_count: number })[]> {
+  if (rows.length === 0) return rows as (T & { variant_count: number })[];
+  const ids = rows.map((row) => row.id);
+  const counts = await dbQuery<{ product_id: string; variant_count: number }>(
+    `SELECT p.source_product_id AS product_id, COUNT(s.id)::int AS variant_count
+     FROM pos.pos_products p
+     JOIN pos.pos_product_skus s ON s.product_id = p.id AND s.is_active = true
+     WHERE p.source_product_id = ANY($1::uuid[])
+     GROUP BY p.source_product_id`,
+    [ids]
+  );
+  const countMap = new Map(counts.map((row) => [row.product_id, row.variant_count]));
+  return rows.map((row) => ({ ...row, variant_count: countMap.get(row.id) ?? 0 }));
+}
 
 const productSchema = z.object({
   kode: z.string().max(20).optional(),
@@ -122,10 +148,11 @@ export async function GET(request: NextRequest) {
         .map((row) => withProductHppReview(row))
         .filter((row) => row.hpp_perlu_review);
       const total = reviewed.length;
+      const pageRows = await attachVariantCounts(reviewed.slice(from, to + 1));
 
       return Response.json({
         success: true,
-        data: reviewed.slice(from, to + 1),
+        data: pageRows,
         pagination: {
           page,
           limit,
@@ -141,9 +168,13 @@ export async function GET(request: NextRequest) {
 
     if (error) throw error;
 
+    const pageRows = await attachVariantCounts(
+      (data || []).map((row: ProductCogsRow) => withProductHppReview(row))
+    );
+
     return Response.json({
       success: true,
-      data: (data || []).map((row) => withProductHppReview(row)),
+      data: pageRows,
       pagination: {
         page,
         limit,

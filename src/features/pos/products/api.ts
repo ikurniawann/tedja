@@ -150,6 +150,81 @@ export async function deleteProductSku(productId: string, skuId: string) {
   await parsePosResponse(response, "Gagal menghapus varian");
 }
 
+// EPIC-047 Fase 1A — matriks varian (ukuran x warna x ...) -> auto-generate SKU
+export type MatrixAxisPayload = {
+  key: string;
+  values: string[];
+};
+
+export type SkuMatrixRow = {
+  id: string;
+  sku: string;
+  name: string;
+  options: Record<string, string> | null;
+  barcode: string | null;
+  price_override: number | string | null;
+  stock_quantity: number | string;
+  is_active: boolean;
+};
+
+export type CreateSkuMatrixPayload = {
+  axes: MatrixAxisPayload[];
+  price_override?: number | null;
+  barcode_prefix?: string;
+};
+
+// F5 fix — baris yang dihidupkan lagi (is_active=false -> true). RETURNING
+// server dibatasi ke 4 kolom ini (sku/name/options/barcode/stok lama TIDAK
+// ditimpa, jadi tidak perlu dikirim balik lagi di sini).
+export type ReactivatedSkuMatrixRow = Pick<SkuMatrixRow, "id" | "sku" | "name" | "options">;
+
+export type CreateSkuMatrixResult = {
+  created: SkuMatrixRow[];
+  reactivated: ReactivatedSkuMatrixRow[];
+  deactivated: SkuMatrixRow[];
+  kept: SkuMatrixRow[];
+  skus: SkuMatrixRow[];
+};
+
+export type BlockedSkuMatrixRow = {
+  id: string;
+  sku: string;
+  name: string;
+  stock_quantity: number | string;
+};
+
+/** 409: SKU ber-stok tidak bisa dinonaktifkan otomatis — bawa daftar SKU yang diblokir. */
+export class SkuMatrixConflictError extends Error {
+  blocked: BlockedSkuMatrixRow[];
+  constructor(message: string, blocked: BlockedSkuMatrixRow[]) {
+    super(message);
+    this.name = "SkuMatrixConflictError";
+    this.blocked = blocked;
+  }
+}
+
+export async function createSkuMatrix(
+  productId: string,
+  payload: CreateSkuMatrixPayload
+): Promise<CreateSkuMatrixResult> {
+  const response = await fetch(`/api/pos/products/${productId}/skus/matrix`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const json = await response.json();
+  if (!response.ok || !json.success) {
+    if (response.status === 409 && Array.isArray(json.blocked)) {
+      throw new SkuMatrixConflictError(
+        json.error || "SKU ber-stok tidak bisa dinonaktifkan otomatis",
+        json.blocked
+      );
+    }
+    throw new Error(json.error || "Gagal membuat matriks varian");
+  }
+  return json.data as CreateSkuMatrixResult;
+}
+
 export async function patchPosProduct(
   id: string,
   payload: PatchPosProductPayload
