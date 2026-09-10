@@ -24,6 +24,11 @@ type POItemRow = ProductPOFormInput["items"][number] & {
   unit_name?: string;
 };
 
+/** EPIC-047 Fase 2 — produk ber-varian: >=1 SKU merchandise aktif. */
+function isVariantProduct(product?: ProductPOFormProduct) {
+  return Boolean(product?.pos_skus && product.pos_skus.length > 0);
+}
+
 interface ProductPOFormProps {
   vendors: ProductPOFormVendor[];
   products: ProductPOFormProduct[];
@@ -106,6 +111,8 @@ export function ProductPOForm({
           ? {
               ...row,
               product_id: productId,
+              // Produk berganti → SKU lama (kalau ada) sudah tidak relevan.
+              pos_sku_id: null,
               satuan_id: product.satuan_id || undefined,
               product_name: product.nama,
               unit_name: product.satuan_nama || units.find((u) => u.id === product.satuan_id)?.nama,
@@ -117,6 +124,12 @@ export function ProductPOForm({
     );
   }
 
+  function applySku(index: number, posSkuId: string) {
+    setItems((prev) =>
+      prev.map((row, i) => (i === index ? { ...row, pos_sku_id: posSkuId || null } : row))
+    );
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!vendorId) {
@@ -125,6 +138,15 @@ export function ProductPOForm({
     }
     if (items.some((item) => !item.product_id)) {
       toast.error("All line items must have a product.");
+      return;
+    }
+    // EPIC-047 Fase 2 — produk ber-varian wajib memilih SKU per baris.
+    const missingSkuRow = items.find((item) => {
+      const product = products.find((p) => p.id === item.product_id);
+      return isVariantProduct(product) && !item.pos_sku_id;
+    });
+    if (missingSkuRow) {
+      toast.error("Produk ber-varian wajib memilih SKU (ukuran/warna) pada setiap baris.");
       return;
     }
 
@@ -145,6 +167,7 @@ export function ProductPOForm({
         qty_ordered: Number(item.qty_ordered),
         harga_satuan: Number(item.harga_satuan),
         notes: item.notes,
+        pos_sku_id: item.pos_sku_id || undefined,
       })),
     });
   }
@@ -292,6 +315,27 @@ export function ProductPOForm({
                         {formatAmount((item.qty_ordered || 0) * (item.harga_satuan || 0))}
                       </p>
                     </div>
+                    {isVariantProduct(products.find((p) => p.id === item.product_id)) && (
+                      <div className="md:col-span-4 space-y-1.5">
+                        <Label className="text-xs">
+                          SKU / Varian <span className="text-red-500">*</span>
+                        </Label>
+                        <Combobox
+                          options={(products.find((p) => p.id === item.product_id)?.pos_skus || []).map(
+                            (sku) => ({
+                              value: sku.id,
+                              label: `${sku.sku} — ${sku.name}`,
+                            })
+                          )}
+                          value={item.pos_sku_id || ""}
+                          onChange={(value) => applySku(index, value)}
+                          placeholder="Pilih SKU (ukuran/warna)..."
+                          searchPlaceholder="Cari SKU..."
+                          emptyMessage="SKU tidak ditemukan"
+                          className="h-9 text-sm"
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}

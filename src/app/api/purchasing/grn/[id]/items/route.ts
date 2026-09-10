@@ -17,7 +17,8 @@ export async function GET(
         *,
         raw_material:raw_materials!raw_material_id(*),
         satuan:units!satuan_id(*),
-        purchase_order_item:purchase_order_items!purchase_order_item_id(*)
+        purchase_order_item:purchase_order_items!purchase_order_item_id(*),
+        pos_sku:pos_product_skus!pos_sku_id(id, sku, name)
       `
       )
       .eq("grn_id", id)

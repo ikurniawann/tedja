@@ -214,16 +214,16 @@ regresi.
 **Acceptance:** setelah Fase 1B, kasir menjual *Kaos Sulu Basic M Hitam* →
 stok SKU M-Hitam turun 1, SKU lain utuh, void mengembalikan ke SKU yang sama.
 
-### Fase 2 — GRN per varian (beli barang jadi dari vendor)
+### Fase 2 — GRN per varian (beli barang jadi dari vendor) ✅
 
 Ditandai *fase lanjut* oleh migration Fase B §6. Dikerjakan **setelah** 1A–1C
 stabil.
 
-- [ ] `purchase_order_items` + `grn_items`: kolom `pos_sku_id` nullable.
-- [ ] Form PO/GRN untuk produk ber-varian: baris per SKU.
-- [ ] `pos_receive_merchandise_stock` versi per-SKU (atau fungsi baru
+- [x] `purchase_order_items` + `grn_items`: kolom `pos_sku_id` nullable.
+- [x] Form PO/GRN untuk produk ber-varian: baris per SKU.
+- [x] `pos_receive_merchandise_stock` versi per-SKU (atau fungsi baru
       `pos_receive_merchandise_sku_stock`) dipanggil dari `grn-qc.ts`.
-- [ ] Guard: GRN produk ber-varian tanpa `pos_sku_id` → ditolak (bukan
+- [x] Guard: GRN produk ber-varian tanpa `pos_sku_id` → ditolak (bukan
       menambah stok level produk secara diam-diam seperti sekarang).
 
 ## Acceptance Criteria
@@ -395,5 +395,44 @@ Jalankan hanya bila owner memanggil `MODULE-APPAREL`:
     `suluin123` setelahnya 401. Diff tidak menyentuh `auth`. Owner
     diberi tahu; pemulihan lewat `npm run db:seed:super-admin` (lokal
     saja) adalah keputusan owner. Semua gate dilarang menyentuh akun itu.
+  - MR dibuat via `push -o merge_request.create` ke `development`; nomor
+    dicatat saat merge. Tidak ada GitLab issue yang cocok.
+- 2026-09-10 — Fase 1C: **MR !207 merged** ke `development` pukul 15:57 saat
+  pipeline cabangnya masih `pending` (antrian runner, bukan gagal). Pipeline
+  `development` pasca-merge selesai sendiri → tag `v0.64.0-development`.
+- 2026-09-11 /task-work EPIC-047 #5 "Fase 2 — GRN per varian (beli barang
+  jadi dari vendor)" → PASS (attempts: 2).
+  - Attempt 1: keempat sub-step diimplementasikan + embed `pos_sku` di
+    `grn/[id]`, `grn/[id]/items`, `po/[id]/items` (dipaksa orkestrator sebelum
+    gate agar label "Varian: sku — name" benar-benar tampil di layar GRN/QC).
+    review PASS; security PASS — SKU produk lain di baris PO → 400 nol
+    tulisan, `pos_sku_id` tak sesuai baris PO → 400, identitas dari baris DB;
+    test **FAIL** pada "buat GRN": DB `grn_party_check` 500.
+  - Akar (pre-existing, di file yang memang diubah task ini): route GRN
+    mengambil `module_type` dari body (default `raw_material`) lalu menulis
+    kolom pihak dari tebakan itu — GRN produk tanpa `module_type` menulis
+    `supplier_id` dan `vendor_id` null. Implementer sebelumnya kebetulan
+    mengirim field itu; gate test tidak. **Attempt 2**: modul diturunkan dari
+    PO milik delivery; body yang bertentangan → 400 "module_type tidak sesuai
+    purchase order"; dihilangkan → diwarisi; semua cabang hilir memakai nilai
+    efektif; 3 test route GRN dengan mock berurutan sesuai panggilan sungguhan.
+    Bukti hidup pada fixture yang gagal: GRN tanpa `module_type` → 201 dengan
+    `vendor_id`, S-Merah/M-Navy +4/+6 persis, 14 SKU lain tetap; bahan baku
+    eksplisit & tanpa modul → 201 dengan `supplier_id`.
+  - Attempt 2 gate: review PASS (tidak ada cabang body-driven yang tersisa;
+    kasus umum identik untuk ketiga modul); security PASS (konflik → 400 nol
+    tulisan; batas kepercayaan justru diperketat); test PASS — lint 0 baru,
+    tsc scoped, 12 berkas / 75 test, suite penuh **231 berkas / 1957 test**.
+    **Catatan jujur:** langkah fungsional gate test attempt 2 hanya parsial
+    (login + form-data); bukti E2E hidup untuk tree ini berasal dari
+    pembuktian ulang implementer attempt 2 dan reproduksi gate security.
+  - Observasi pre-existing (bukan dari diff ini, tidak diperbaiki di sini):
+    GRN berstatus `partially_received` walau semua baris diterima penuh
+    (`computeGrnStatusAfterQc`/`recalculatePoReceivedQty`, tereproduksi juga
+    di jalur bahan baku); `console.log` debug lama di `grn/route.ts:562`;
+    insert GRN mempercayai `raw_material_id`/`product_id` dari klien bila
+    `product_id` dihilangkan (LOW — tidak bisa menyuntikkan SKU).
+  - Satu-satunya item epic yang masih terbuka: **stock opname per SKU**
+    (lihat Tidak termasuk) — dikerjakan sebagai task terpisah.
   - MR dibuat via `push -o merge_request.create` ke `development`; nomor
     dicatat saat merge. Tidak ada GitLab issue yang cocok.

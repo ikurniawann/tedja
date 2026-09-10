@@ -55,6 +55,8 @@ export interface ProductPOItemFormInput {
   qty_ordered: number;
   harga_satuan: number;
   notes?: string;
+  /** EPIC-047 Fase 2 — SKU varian, wajib untuk produk ber-varian. */
+  pos_sku_id?: string | null;
 }
 
 export interface ProductPOFormInput {
@@ -74,6 +76,15 @@ export interface ProductPOFormPayload extends ProductPOFormInput {
   module_type?: "product";
 }
 
+/** EPIC-047 Fase 2 — SKU merchandise aktif milik satu produk (untuk baris PO per varian). */
+export interface ProductPOFormProductSku {
+  id: string;
+  sku: string;
+  name: string;
+  options?: Record<string, string> | null;
+  stock_quantity?: number | null;
+}
+
 export interface ProductPOFormProduct {
   id: string;
   kode: string;
@@ -81,6 +92,8 @@ export interface ProductPOFormProduct {
   satuan_id?: string | null;
   satuan_nama?: string | null;
   harga_modal?: number | null;
+  /** Kosong untuk produk tanpa varian; >=1 baris = produk ber-varian, SKU wajib dipilih di form. */
+  pos_skus?: ProductPOFormProductSku[];
 }
 
 export interface ProductPOFormVendor {

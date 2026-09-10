@@ -20,7 +20,8 @@ import {
   resolveOverallQcStatus,
   submitGrnQcInspection,
 } from "@/lib/purchasing/grn-qc";
-import { parsePurchasingModuleType } from "@/lib/purchasing/module-scope";
+import { parsePurchasingModuleType, type PurchasingModuleType } from "@/lib/purchasing/module-scope";
+import { resolveGrnItemSku } from "@/lib/purchasing/variant-po-lines";
 import { validatePOCanDelivery } from "@/lib/purchasing/delivery";
 import {
   getApiUserScope,
@@ -43,6 +44,8 @@ const grnItemSchema = z.object({
   raw_material_id: z.string().uuid().optional(),
   product_id: z.string().uuid().optional(),
   supply_item_id: z.string().uuid().optional(),
+  // EPIC-047 Fase 2 — SKU varian; kalau dikirim harus sama dengan milik item PO.
+  pos_sku_id: z.string().uuid().optional().nullable(),
   qty_diterima: z.number().min(0, "Qty diterima minimal 0"),
   qty_ditolak: z.number().min(0, "Qty ditolak minimal 0"),
   /** QC accepted qty — defaults to qty_diterima when omitted (RM/product combined receive). */
@@ -123,6 +126,7 @@ type POQtyValidationItem = {
   raw_material_id?: string | null;
   product_id?: string | null;
   supply_item_id?: string | null;
+  pos_sku_id?: string | null;
   qty_ordered?: number | null;
   qty_received?: number | null;
   harga_satuan?: number | null;
@@ -296,16 +300,11 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const validated = createGrnSchema.parse(body);
     const moduleType = parsePurchasingModuleType(validated.module_type);
-    const normalizedItems =
-      moduleType === "general"
-        ? validated.items
-        : validated.items.map((item) => normalizeQcOnItem(item));
-    // Scope general/product menerima lewat vendor; raw_material lewat supplier.
-    const usesVendor = moduleType !== "raw_material";
 
     // Scope general: TANPA langkah delivery manual. Delivery dibuat otomatis dari
     // PO saat penerimaan, lalu dipakai untuk membuat GRN pada jalur yang sama.
     let deliveryId = validated.delivery_id ?? null;
+    let deliveryWasAutoCreated = false;
     if (!deliveryId) {
       if (moduleType !== "general" || !validated.po_id) {
         throw ApiError.badRequest("Delivery wajib dipilih untuk penerimaan ini");
@@ -352,6 +351,7 @@ export async function POST(request: NextRequest) {
         throw ApiError.server("Gagal menyiapkan penerimaan barang operasional");
       }
       deliveryId = autoDelivery.id as string;
+      deliveryWasAutoCreated = true;
     }
 
     if (!deliveryId) {
@@ -367,6 +367,40 @@ export async function POST(request: NextRequest) {
     if (!delivery?.purchase_order_id) {
       throw ApiError.badRequest(errors.join("; ") || "Delivery tidak valid untuk penerimaan barang");
     }
+
+    // EPIC-047 Fase 2 — module_type harus mengikuti PO induk delivery, bukan body
+    // request. Body yang tidak mengirim module_type (default raw_material) pada GRN
+    // product-PO sebelumnya menulis supplier_id DAN vendor_id null sekaligus, yang
+    // melanggar constraint grn_party_check. Jalur auto-delivery general di atas
+    // sudah memvalidasi poForDelivery.module_type === "general", jadi dipercaya
+    // apa adanya; jalur delivery_id yang sudah ada wajib menurunkan ulang dari PO.
+    let effectiveModuleType: PurchasingModuleType = moduleType;
+    if (!deliveryWasAutoCreated) {
+      const { data: poForModule, error: poForModuleError } = await adminDb
+        .from("purchase_orders")
+        .select("module_type")
+        .eq("id", delivery.purchase_order_id)
+        .maybeSingle();
+
+      if (poForModuleError || !poForModule) {
+        throw ApiError.badRequest("Purchase order tidak ditemukan untuk delivery ini");
+      }
+
+      const poModuleType = parsePurchasingModuleType(poForModule.module_type);
+      if (validated.module_type && validated.module_type !== poModuleType) {
+        throw ApiError.badRequest(
+          `module_type tidak sesuai purchase order (${poModuleType})`
+        );
+      }
+      effectiveModuleType = poModuleType;
+    }
+
+    const normalizedItems =
+      effectiveModuleType === "general"
+        ? validated.items
+        : validated.items.map((item) => normalizeQcOnItem(item));
+    // Scope general/product menerima lewat vendor; raw_material lewat supplier.
+    const usesVendor = effectiveModuleType !== "raw_material";
 
     const scope = await getApiUserScope();
 
@@ -422,6 +456,7 @@ export async function POST(request: NextRequest) {
         raw_material_id,
         product_id,
         supply_item_id,
+        pos_sku_id,
         qty_ordered,
         qty_received,
         harga_satuan
@@ -452,18 +487,33 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    for (const item of normalizedItems) {
+    // EPIC-047 Fase 2 — pos_sku_id per baris GRN, diwariskan dari item PO
+    // yang dirujuk (indeks sejajar dengan normalizedItems, dipakai lagi saat
+    // membangun grnItemsPayload di bawah).
+    const resolvedPosSkuIdByIndex: (string | null)[] = new Array(normalizedItems.length).fill(null);
+
+    normalizedItems.forEach((item, index) => {
       const key =
         item.purchase_order_item_id || item.raw_material_id || item.product_id || item.supply_item_id;
-      const poItem = effectivePoItems.find((p) =>
-        item.purchase_order_item_id
-          ? p.id === item.purchase_order_item_id
-          : item.product_id
-            ? p.product_id === item.product_id
-            : item.supply_item_id
-              ? p.supply_item_id === item.supply_item_id
-              : p.raw_material_id === item.raw_material_id
-      );
+
+      let poItem: POQtyValidationItem | undefined;
+      if (item.purchase_order_item_id) {
+        poItem = effectivePoItems.find((p) => p.id === item.purchase_order_item_id);
+      } else if (item.product_id) {
+        // Produk ber-varian bisa punya >1 baris PO (satu per SKU) — mencocokkan
+        // hanya lewat product_id jadi ambigu, GRN wajib merujuk baris PO-nya.
+        const matches = effectivePoItems.filter((p) => p.product_id === item.product_id);
+        if (matches.length > 1) {
+          throw ApiError.badRequest(
+            "Item PO ber-varian harus dirujuk lewat purchase_order_item_id"
+          );
+        }
+        poItem = matches[0];
+      } else if (item.supply_item_id) {
+        poItem = effectivePoItems.find((p) => p.supply_item_id === item.supply_item_id);
+      } else {
+        poItem = effectivePoItems.find((p) => p.raw_material_id === item.raw_material_id);
+      }
 
       if (!poItem) {
         throw ApiError.badRequest("Item PO tidak ditemukan untuk validasi penerimaan");
@@ -476,7 +526,18 @@ export async function POST(request: NextRequest) {
           `Qty ${getMaterialLabel(poItem)} melebihi sisa PO. Maksimal ${formatQty(remainingQty)}, tetapi diinput ${formatQty(processedQty)} (diterima + ditolak).`
         );
       }
-    }
+
+      if (item.product_id) {
+        const skuResolution = resolveGrnItemSku(
+          { pos_sku_id: item.pos_sku_id ?? null },
+          { pos_sku_id: poItem.pos_sku_id ?? null }
+        );
+        if (!skuResolution.ok) {
+          throw ApiError.badRequest(skuResolution.error);
+        }
+        resolvedPosSkuIdByIndex[index] = skuResolution.pos_sku_id;
+      }
+    });
 
     // Generate GRN number
     const grnNumber = await generateGrnNumber(adminDb);
@@ -503,7 +564,7 @@ export async function POST(request: NextRequest) {
     // General: received immediately (no QC).
     // RM/product: start as pending, then auto-finalize QC+stock in the same request
     // (unless all items rejected at the door).
-    let grnStatus: GrnStatus = moduleType === "general" ? "received" : "pending";
+    let grnStatus: GrnStatus = effectiveModuleType === "general" ? "received" : "pending";
 
     if (totals.total_diterima === 0 && totals.total_ditolak > 0) {
       grnStatus = "rejected";
@@ -543,13 +604,14 @@ export async function POST(request: NextRequest) {
     }
 
     // Create GRN items
-    const grnItemsPayload = normalizedItems.map((item) => ({
+    const grnItemsPayload = normalizedItems.map((item, index) => ({
       grn_id: grn.id,
       delivery_id: deliveryId,
       purchase_order_item_id: item.purchase_order_item_id,
       raw_material_id: item.raw_material_id || null,
       product_id: item.product_id || null,
       supply_item_id: item.supply_item_id || null,
+      pos_sku_id: resolvedPosSkuIdByIndex[index],
       qty_diterima: item.qty_diterima,
       qty_ditolak: item.qty_ditolak,
       satuan_id: item.satuan_id,
@@ -577,7 +639,7 @@ export async function POST(request: NextRequest) {
     // EPIC-026 C1 — Posting stok riil barang operasional. Hanya untuk scope
     // general + item stockable=true; item stockable=false di-expense (tak ada stok).
     // Non-fatal: kegagalan inventory tidak membatalkan penerimaan.
-    if (moduleType === "general" && grnStatus !== "rejected") {
+    if (effectiveModuleType === "general" && grnStatus !== "rejected") {
       try {
         const supplyIds = Array.from(
           new Set(
@@ -633,7 +695,7 @@ export async function POST(request: NextRequest) {
     let finalizedStatus: GrnStatus = grnStatus;
     let accountingNote: string | null = null;
     if (
-      (moduleType === "raw_material" || moduleType === "product") &&
+      (effectiveModuleType === "raw_material" || effectiveModuleType === "product") &&
       grnStatus === "pending"
     ) {
       const qcItems = buildInlineQcItemsFromCreatedGrn({
@@ -673,7 +735,7 @@ export async function POST(request: NextRequest) {
 
     // Physical receipt recorded — mark delivery arrived.
     // After inline QC, submitGrnQcInspection already updates delivery/PO status.
-    if (finalizedStatus === "pending" || moduleType === "general") {
+    if (finalizedStatus === "pending" || effectiveModuleType === "general") {
       if (finalizedStatus !== "rejected") {
         await adminDb
           .from("deliveries")
@@ -701,7 +763,7 @@ export async function POST(request: NextRequest) {
     }
 
     // General: post accounting here (RM/product already via submitGrnQcInspection).
-    if (moduleType === "general" && finalizedStatus !== "rejected") {
+    if (effectiveModuleType === "general" && finalizedStatus !== "rejected") {
       const { postGrnAccountingJournals } = await import(
         "@/lib/purchasing/accounting-posting"
       );
@@ -716,7 +778,7 @@ export async function POST(request: NextRequest) {
     const successMessage =
       finalizedStatus === "rejected"
         ? `GRN ${grnNumber} berhasil dibuat — semua item ditolak`
-        : moduleType === "general"
+        : effectiveModuleType === "general"
           ? `GRN ${grnNumber} berhasil dibuat`
           : `GRN ${grnNumber} berhasil dibuat — QC selesai dan stok sudah diperbarui`;
 

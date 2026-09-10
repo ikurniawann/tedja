@@ -14,6 +14,8 @@ import {
 } from "@/lib/purchasing/grn-qc-utils";
 import { createBaseUnitResolver } from "@/lib/purchasing/raw-material-units";
 import { syncQcRejectCredits } from "@/lib/purchasing/vendor-credit-service";
+import { requiresSkuOnGrn } from "@/lib/purchasing/variant-po-lines";
+import { ApiError } from "@/lib/api/auth";
 
 export type { QcOverallStatus } from "@/lib/purchasing/grn-qc-utils";
 export { resolveOverallQcStatus } from "@/lib/purchasing/grn-qc-utils";
@@ -107,6 +109,82 @@ async function postProductMerchStock(
   }
 }
 
+/**
+ * EPIC-047 Fase 2 — versi per-SKU dari `postProductMerchStock`. Berbeda dari
+ * jalur level-produk di atas: 0 baris ter-update di sini BUKAN kondisi
+ * non-fatal — SKU sudah wajib dipilih (guard `requiresSkuOnGrn` di
+ * `submitGrnQcInspection`), jadi 0 hanya berarti SKU dinonaktifkan di antara
+ * pembuatan GRN dan QC-nya. Itu error nyata, bukan warning yang ditelan.
+ */
+async function postProductMerchSkuStock(
+  db: DbClient,
+  skuId: string,
+  qty: number
+): Promise<void> {
+  if (qty <= 0) return;
+
+  const { data: updatedCount, error: stockError } = await db.rpc(
+    "pos_receive_merchandise_sku_stock",
+    { p_sku_id: skuId, p_qty: qty }
+  );
+
+  if (stockError) {
+    throw new Error(
+      stockError instanceof Error
+        ? stockError.message
+        : `Gagal memposting stok SKU ${skuId}`
+    );
+  }
+
+  if (Number(updatedCount) === 0) {
+    throw new Error(
+      `SKU ${skuId} tidak aktif atau tidak ditemukan — stok tidak dapat diposting`
+    );
+  }
+}
+
+/**
+ * EPIC-047 Fase 2 — produk POS merchandise dengan >=1 SKU aktif = produk
+ * ber-varian (pola `variant_required` yang sama dipakai di Fase 1A/1B/1C).
+ * Satu query gabungan untuk semua productId dalam batch QC ini.
+ */
+async function resolveVariantProductIds(
+  db: DbClient,
+  productIds: string[]
+): Promise<Set<string>> {
+  if (productIds.length === 0) return new Set();
+
+  const { data: posProducts, error: posProductsError } = await db
+    .from("pos_products")
+    .select("id, source_product_id")
+    .eq("product_kind", "merchandise")
+    .in("source_product_id", productIds);
+  if (posProductsError) throw posProductsError;
+
+  type PosProductRow = { id: string; source_product_id: string };
+  const typedPosProducts = (posProducts || []) as PosProductRow[];
+  const sourceProductIdByPosProductId = new Map(
+    typedPosProducts.map((p) => [p.id, p.source_product_id])
+  );
+  const posProductIds = typedPosProducts.map((p) => p.id);
+  if (posProductIds.length === 0) return new Set();
+
+  const { data: activeSkus, error: activeSkusError } = await db
+    .from("pos_product_skus")
+    .select("product_id")
+    .eq("is_active", true)
+    .in("product_id", posProductIds);
+  if (activeSkusError) throw activeSkusError;
+
+  type ActiveSkuRow = { product_id: string };
+  const variantProductIds = new Set<string>();
+  for (const row of (activeSkus || []) as ActiveSkuRow[]) {
+    const sourceProductId = sourceProductIdByPosProductId.get(row.product_id);
+    if (sourceProductId) variantProductIds.add(sourceProductId);
+  }
+  return variantProductIds;
+}
+
 type GrnItemForQc = {
   id: string;
   raw_material_id?: string | null;
@@ -117,6 +195,7 @@ type GrnItemForQc = {
   qty_qc_posted?: number | null;
   purchase_order_item_id?: string | null;
   purchase_order_item?: { id?: string; harga_satuan?: number | null } | null;
+  pos_sku_id?: string | null;
 };
 export async function submitGrnQcInspection(
   db: DbClient,
@@ -167,6 +246,7 @@ export async function submitGrnQcInspection(
       warehouse_id,
       qty_qc_posted,
       purchase_order_item_id,
+      pos_sku_id,
       purchase_order_item:purchase_order_items!purchase_order_item_id(
         id,
         harga_satuan
@@ -180,6 +260,23 @@ export async function submitGrnQcInspection(
 
   const typedGrnItems = (grnItems || []) as GrnItemForQc[];
   const grnItemMap = new Map(typedGrnItems.map((item) => [item.id, item]));
+
+  // EPIC-047 Fase 2 — Guard: GRN produk ber-varian TANPA pos_sku_id ditolak
+  // di sini, sebelum grn_qc_inspections/inspection_items ditulis dan sebelum
+  // loop posting stok di bawah berjalan sama sekali — bukan diam-diam nol
+  // seperti pos_receive_merchandise_stock versi lama (lihat migration
+  // 20260910233939_grn_variant_sku.sql). Satu query gabungan untuk semua
+  // productId di batch QC ini.
+  const productIdsInBatch = Array.from(
+    new Set(
+      items
+        .map((item) => item.product_id ?? grnItemMap.get(item.grn_item_id)?.product_id ?? null)
+        .filter((id): id is string => Boolean(id))
+    )
+  );
+  const variantProductIds = skipInventoryPosting
+    ? new Set<string>()
+    : await resolveVariantProductIds(db, productIdsInBatch);
 
   for (const item of items) {
     const grnItem = grnItemMap.get(item.grn_item_id);
@@ -213,6 +310,16 @@ export async function submitGrnQcInspection(
 
     if (accepted > receivedQty + 0.0001) {
       throw new Error("Accepted quantity cannot exceed received good quantity");
+    }
+
+    if (
+      !skipInventoryPosting &&
+      productId &&
+      requiresSkuOnGrn(variantProductIds.has(productId), grnItem.pos_sku_id)
+    ) {
+      throw ApiError.badRequest(
+        "GRN produk ber-varian wajib menyebut SKU (pos_sku_id)"
+      );
     }
   }
 
@@ -321,7 +428,14 @@ export async function submitGrnQcInspection(
         warehouseId
       );
     } else if (productId) {
-      await postProductMerchStock(db, productId, qtyToPost);
+      if (grnItem.pos_sku_id) {
+        // EPIC-047 Fase 2 — produk ber-varian: stok naik pada SKU-nya, bukan
+        // level produk. Guard di atas sudah memastikan pos_sku_id ada untuk
+        // setiap produk ber-varian sebelum baris ini pernah tercapai.
+        await postProductMerchSkuStock(db, grnItem.pos_sku_id, qtyToPost);
+      } else {
+        await postProductMerchStock(db, productId, qtyToPost);
+      }
     }
   }
 
