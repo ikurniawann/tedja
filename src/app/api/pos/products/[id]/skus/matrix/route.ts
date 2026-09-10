@@ -16,8 +16,11 @@ import {
   blockedDeactivations,
   buildSkuCode,
   buildSkuName,
+  composedBarcodeTooLong,
   diffMatrix,
   expandMatrix,
+  MatrixTooLargeError,
+  validateMatrixSize,
   type ExistingSku,
   type VariantAxis,
 } from '@/lib/pos/merchandise-variants';
@@ -62,7 +65,43 @@ export async function POST(
     const { id } = await params;
     const body = (await request.json().catch(() => ({}))) as MatrixBody;
 
-    const wanted = expandMatrix(Array.isArray(body.axes) ? body.axes : []);
+    const db = createPgClient();
+
+    // EPIC-047 security fix (S4) — urutan validasi: sesi → params → produk
+    // (404) → gerbang merchandise (400) → validasi body (bentuk/ukuran
+    // matriks, harga, prefix barcode, barcode gabungan) → transaksi. Cek
+    // yang tidak bergantung pada produk pindah SETELAH lookup produk, jadi
+    // matriks besar terhadap produk yang tidak ada berhenti di 404, bukan
+    // divalidasi ukurannya dulu.
+    const { data: product, error: productError } = await db
+      .from('pos_products')
+      .select('id, sku, name, product_kind')
+      .eq('id', id)
+      .maybeSingle();
+    if (productError) throw productError;
+    if (!product) {
+      return NextResponse.json({ success: false, error: 'Produk tidak ditemukan' }, { status: 404 });
+    }
+    const productRow = product as { id: string; sku: string; name: string; product_kind?: string };
+    if (productRow.product_kind !== 'merchandise') {
+      return NextResponse.json(
+        { success: false, error: 'Varian SKU hanya untuk produk merchandise' },
+        { status: 400 }
+      );
+    }
+
+    // EPIC-047 security fix (S1) — validateMatrixSize (aritmetik, tanpa
+    // alokasi) berjalan SEBELUM expandMatrix, agar body raksasa (mis. 5
+    // sumbu x 40 nilai = 102 juta kombinasi) tidak pernah di-cartesian-kan
+    // di memori sebelum ditolak. Juga menangani S3: bentuk axes yang salah
+    // (bukan array, values bukan array, dst.) ditolak di sini dengan pesan
+    // spesifik, bukan menabrak TypeError yang bocor jadi 500.
+    const sizeCheck = validateMatrixSize(body.axes as VariantAxis[]);
+    if (!sizeCheck.ok) {
+      return NextResponse.json({ success: false, error: sizeCheck.error }, { status: 400 });
+    }
+    const rawAxes = (body.axes ?? []) as VariantAxis[];
+    const wanted = expandMatrix(rawAxes);
     if (wanted.length === 0) {
       return NextResponse.json(
         { success: false, error: 'Sumbu varian (axes) wajib diisi, minimal satu sumbu dengan nilai' },
@@ -82,26 +121,27 @@ export async function POST(
     }
     const barcodePrefix =
       typeof body.barcode_prefix === 'string' ? body.barcode_prefix.trim() : '';
-
-    const db = createPgClient();
-
-    // SKU hanya untuk produk merchandise — jaga invariant di server (sama
-    // dengan POST /api/pos/products/[id]/skus).
-    const { data: product, error: productError } = await db
-      .from('pos_products')
-      .select('id, sku, name, product_kind')
-      .eq('id', id)
-      .maybeSingle();
-    if (productError) throw productError;
-    if (!product) {
-      return NextResponse.json({ success: false, error: 'Produk tidak ditemukan' }, { status: 404 });
-    }
-    const productRow = product as { id: string; sku: string; name: string; product_kind?: string };
-    if (productRow.product_kind !== 'merchandise') {
+    // EPIC-047 security fix (F2) — cap panjang prefix barcode.
+    if (barcodePrefix.length > 20) {
       return NextResponse.json(
-        { success: false, error: 'Varian SKU hanya untuk produk merchandise' },
+        { success: false, error: 'Prefix barcode maksimal 20 karakter' },
         { status: 400 }
       );
+    }
+    // EPIC-047 security fix (S2) — barcode gabungan (prefix + kode SKU) bisa
+    // melebihi 64 karakter walau prefix ≤20 & SKU ≤60 masing-masing lolos.
+    // Dicek PRA-transaksi (deterministik, murni) supaya matriks yang valid
+    // tidak gagal mendadak di tengah transaksi (setelah FOR UPDATE lock &
+    // reactivate UPDATE) — normalizeSkuPayload's 64-char cap tetap ada
+    // sebagai defense-in-depth kalau baris ini pernah dilewati.
+    if (barcodePrefix) {
+      const skuCodes = wanted.map((options) => buildSkuCode(productRow.sku, options));
+      if (composedBarcodeTooLong(barcodePrefix, skuCodes)) {
+        return NextResponse.json(
+          { success: false, error: 'Barcode gabungan melebihi 64 karakter; perpendek prefix' },
+          { status: 400 }
+        );
+      }
     }
 
     const txResult = await withTransaction(async (client) => {
@@ -129,6 +169,25 @@ export async function POST(
       // perubahan.
       if (blocked.length > 0) {
         return { kind: 'blocked' as const, blocked };
+      }
+
+      // F5 fix — varian yang sempat di-drop (is_active=false) tapi diminta
+      // lagi di matriks ini dihidupkan kembali, BUKAN di-insert ulang (kode
+      // `sku` lama masih unik & akan tabrakan kalau di-INSERT lagi). SKU,
+      // nama, barcode, price_override, dan stok baris lama TIDAK ditimpa.
+      // Dijalankan sebelum insert `create` supaya urutan tulisan konsisten
+      // dengan diffMatrix: reactivate -> create -> deactivate.
+      const reactivateIds = diff.reactivate.map((row) => row.id);
+      let reactivated: Array<Pick<SkuRow, 'id' | 'sku' | 'name' | 'options'>> = [];
+      if (reactivateIds.length > 0) {
+        const reactivateRes = await client.query<Pick<SkuRow, 'id' | 'sku' | 'name' | 'options'>>(
+          `UPDATE pos.pos_product_skus
+           SET is_active = true, updated_at = now()
+           WHERE product_id = $1 AND id = ANY($2::uuid[]) AND is_active = false
+           RETURNING id, sku, name, options`,
+          [id, reactivateIds]
+        );
+        reactivated = reactivateRes.rows;
       }
 
       const created: SkuRow[] = [];
@@ -171,17 +230,19 @@ export async function POST(
         created.push(insertRes.rows[0]);
       }
 
-      const deactivated: SkuRow[] = [];
-      for (const row of diff.deactivate) {
-        const updRes = await client.query<SkuRow>(
+      // EPIC-047 security fix (F3) — satu UPDATE batched & discope ke
+      // product_id (defense-in-depth), bukan loop per-id tanpa scoping.
+      let deactivated: SkuRow[] = [];
+      if (deactivateIds.length > 0) {
+        const deactivateRes = await client.query<SkuRow>(
           `UPDATE pos.pos_product_skus
            SET is_active = false, updated_at = now()
-           WHERE id = $1
+           WHERE product_id = $1 AND id = ANY($2::uuid[]) AND is_active = true
            RETURNING id, product_id, sku, name, options, barcode, price_override,
                      stock_quantity, is_active, created_at, updated_at`,
-          [row.id]
+          [id, deactivateIds]
         );
-        deactivated.push(updRes.rows[0]);
+        deactivated = deactivateRes.rows;
       }
 
       const allRes = await client.query<SkuRow>(
@@ -196,6 +257,7 @@ export async function POST(
       return {
         kind: 'ok' as const,
         created,
+        reactivated,
         deactivated,
         kept: diff.keep,
         skus: allRes.rows,
@@ -222,12 +284,21 @@ export async function POST(
       success: true,
       data: {
         created: txResult.created,
+        reactivated: txResult.reactivated,
         deactivated: txResult.deactivated,
         kept: txResult.kept,
         skus: txResult.skus,
       },
     });
   } catch (error: unknown) {
+    // EPIC-047 security fix (S1) — defense-in-depth: kalau expandMatrix
+    // sendiri pernah dipanggil dengan matriks kebesaran (mis. urutan di
+    // atas berubah lagi di masa depan), tangkap self-guard-nya sebagai 400
+    // yang sopan, bukan 500. Tidak diharapkan tercapai di jalur normal
+    // karena validateMatrixSize sudah menolak lebih dulu.
+    if (error instanceof MatrixTooLargeError) {
+      return NextResponse.json({ success: false, error: error.message }, { status: 400 });
+    }
     if (error instanceof SkuValidationError) {
       return NextResponse.json({ success: false, error: error.message }, { status: 400 });
     }

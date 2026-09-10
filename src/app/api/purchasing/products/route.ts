@@ -15,7 +15,12 @@ import {
 import { getApiStallScope } from "@/lib/api/stall-scope";
 import { syncPurchasingProductToPos } from "@/lib/pos/purchasing-sync";
 import { resolvePosStation } from "@/lib/pos/kitchen-station";
-import { withProductHppReview } from "@/lib/purchasing/product-hpp-review";
+import { withProductHppReview, type ProductHppReviewSource } from "@/lib/purchasing/product-hpp-review";
+
+// EPIC-047 T1 fix — bentuk baris minimal v_products_cogs dipakai untuk
+// meng-anotasi eksplisit callback baru di bawah (row implisit `any` /
+// TS7006); TIDAK dipakai untuk baris pre-existing lain di file ini.
+type ProductCogsRow = { id: string } & ProductHppReviewSource;
 
 // EPIC-047 Fase 1A — badge "N varian" di Items: hitung SKU POS merchandise
 // aktif per produk (join via pos_products.source_product_id), tanpa
@@ -163,7 +168,9 @@ export async function GET(request: NextRequest) {
 
     if (error) throw error;
 
-    const pageRows = await attachVariantCounts((data || []).map((row) => withProductHppReview(row)));
+    const pageRows = await attachVariantCounts(
+      (data || []).map((row: ProductCogsRow) => withProductHppReview(row))
+    );
 
     return Response.json({
       success: true,

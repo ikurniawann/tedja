@@ -173,8 +173,14 @@ export type CreateSkuMatrixPayload = {
   barcode_prefix?: string;
 };
 
+// F5 fix — baris yang dihidupkan lagi (is_active=false -> true). RETURNING
+// server dibatasi ke 4 kolom ini (sku/name/options/barcode/stok lama TIDAK
+// ditimpa, jadi tidak perlu dikirim balik lagi di sini).
+export type ReactivatedSkuMatrixRow = Pick<SkuMatrixRow, "id" | "sku" | "name" | "options">;
+
 export type CreateSkuMatrixResult = {
   created: SkuMatrixRow[];
+  reactivated: ReactivatedSkuMatrixRow[];
   deactivated: SkuMatrixRow[];
   kept: SkuMatrixRow[];
   skus: SkuMatrixRow[];

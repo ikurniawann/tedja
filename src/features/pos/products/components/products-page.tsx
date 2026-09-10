@@ -32,7 +32,7 @@ import { PurchasingPageHeader } from '@/modules/purchasing/components/page/purch
 import { PurchasingListSection } from '@/modules/purchasing/components/list/PurchasingListSection';
 import { formatAmount } from '@/lib/purchasing/utils';
 import { PosProductThumbnail } from '@/components/pos/PosProductThumbnail';
-import { expandMatrix } from '@/lib/pos/merchandise-variants';
+import { expandMatrix, validateMatrixSize } from '@/lib/pos/merchandise-variants';
 import type { PosCatalogProduct, PosProductModifier, PosProductModifierGroup, PosProductVariant } from '../types';
 import { usePosCatalogProducts } from '../queries';
 import { usePatchPosProduct } from '../mutations';
@@ -478,9 +478,24 @@ export function ProductsPage() {
     () => matrixAxes.filter((axis) => axis.values.length > 0),
     [matrixAxes]
   );
-  const matrixPreviewCombos = useMemo(
-    () => expandMatrix(matrixActiveAxes.map((axis) => ({ key: axis.key, values: axis.values }))),
+  // EPIC-047 security fix (F1) — cap ukuran matriks juga di client, supaya
+  // pengguna tidak "kena" 400 dari server tanpa peringatan lebih dulu.
+  const matrixSizeCheck = useMemo(
+    () => validateMatrixSize(matrixActiveAxes.map((axis) => ({ key: axis.key, values: axis.values }))),
     [matrixActiveAxes]
+  );
+  // EPIC-047 security fix (S1) — expandMatrix sekarang melempar
+  // MatrixTooLargeError kalau dipanggil di atas MAX_COMBOS (self-guard di
+  // lib). matrixSizeCheck WAJIB dicek lebih dulu di sini juga, supaya
+  // preview di client tidak crash saat pengguna mengetik matriks kebesaran
+  // — di atas batas cukup tampilkan 0 kombinasi & pesan error dari
+  // matrixSizeCheck (lihat render di bawah).
+  const matrixPreviewCombos = useMemo(
+    () =>
+      matrixSizeCheck.ok
+        ? expandMatrix(matrixActiveAxes.map((axis) => ({ key: axis.key, values: axis.values })))
+        : [],
+    [matrixActiveAxes, matrixSizeCheck]
   );
 
   const addMatrixAxisValues = (axisKey: string, raw: string) => {
@@ -559,6 +574,10 @@ export function ProductsPage() {
       toast.error('Isi minimal satu sumbu (mis. Ukuran) dengan nilai sebelum generate');
       return;
     }
+    if (!matrixSizeCheck.ok) {
+      toast.error(matrixSizeCheck.error);
+      return;
+    }
     const priceOverrideTrimmed = matrixPriceOverride.trim();
     if (priceOverrideTrimmed !== '' && (!Number.isFinite(Number(priceOverrideTrimmed)) || Number(priceOverrideTrimmed) < 0)) {
       toast.error('Harga override harus angka ≥ 0');
@@ -573,8 +592,9 @@ export function ProductsPage() {
         price_override: priceOverrideTrimmed === '' ? null : Number(priceOverrideTrimmed),
         barcode_prefix: matrixBarcodePrefix.trim() || undefined,
       });
+      const reactivatedCount = result.reactivated.length;
       toast.success(
-        `${result.created.length} SKU dibuat, ${result.deactivated.length} dinonaktifkan, ${result.kept.length} tidak berubah`
+        `${result.created.length} SKU dibuat${reactivatedCount > 0 ? `, ${reactivatedCount} diaktifkan kembali` : ''}, ${result.deactivated.length} dinonaktifkan, ${result.kept.length} tidak berubah`
       );
       // Refresh tabel "Varian ber-SKU" dari hasil generate — pola sama
       // dengan openMerchModal saat memuat product.merchSkus.
@@ -1126,14 +1146,16 @@ export function ProductsPage() {
                 </div>
 
                 <div className="flex items-center justify-between gap-3 pt-1">
-                  <p className="text-xs text-gray-500">
-                    {matrixPreviewCombos.length} SKU akan dibuat/dicek
+                  <p className={`text-xs ${matrixSizeCheck.ok ? 'text-gray-500' : 'text-red-600'}`}>
+                    {matrixSizeCheck.ok
+                      ? `${matrixPreviewCombos.length} SKU akan dibuat/dicek`
+                      : matrixSizeCheck.error}
                   </p>
                   <Button
                     type="button"
                     size="sm"
                     onClick={generateMatrix}
-                    disabled={matrixGenerating || matrixPreviewCombos.length === 0}
+                    disabled={matrixGenerating || matrixPreviewCombos.length === 0 || !matrixSizeCheck.ok}
                     className="purchasing-main-button"
                   >
                     {matrixGenerating ? (
