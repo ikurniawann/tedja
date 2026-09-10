@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type KeyboardEvent } from 'react';
 import {
   Search,
   Package,
@@ -13,6 +13,7 @@ import {
   Trash2,
   Loader2,
   X,
+  Wand2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -31,10 +32,18 @@ import { PurchasingPageHeader } from '@/modules/purchasing/components/page/purch
 import { PurchasingListSection } from '@/modules/purchasing/components/list/PurchasingListSection';
 import { formatAmount } from '@/lib/purchasing/utils';
 import { PosProductThumbnail } from '@/components/pos/PosProductThumbnail';
+import { expandMatrix } from '@/lib/pos/merchandise-variants';
 import type { PosCatalogProduct, PosProductModifier, PosProductModifierGroup, PosProductVariant } from '../types';
 import { usePosCatalogProducts } from '../queries';
 import { usePatchPosProduct } from '../mutations';
-import { createProductSku, patchProductSku, deleteProductSku } from '../api';
+import {
+  createProductSku,
+  patchProductSku,
+  deleteProductSku,
+  createSkuMatrix,
+  SkuMatrixConflictError,
+  type BlockedSkuMatrixRow,
+} from '../api';
 
 const generateId = () => Math.random().toString(36).slice(2, 11);
 
@@ -77,6 +86,19 @@ type MerchSkuRow = {
   active: boolean;
   deleted?: boolean;
 };
+
+// EPIC-047 Fase 1A — panel "Matriks Varian" (auto-generate SKU)
+type MatrixAxisRow = {
+  key: string;
+  label: string;
+  values: string[];
+  custom: boolean;
+};
+
+const DEFAULT_MATRIX_AXES: MatrixAxisRow[] = [
+  { key: 'ukuran', label: 'Ukuran', values: [], custom: false },
+  { key: 'warna', label: 'Warna', values: [], custom: false },
+];
 
 function merchStockLabel(product: PosCatalogProduct) {
   const activeSkus = product.merchSkus.filter((sku) => sku.active);
@@ -132,6 +154,17 @@ export function ProductsPage() {
     webDistributed: false,
   });
   const [merchSkuRows, setMerchSkuRows] = useState<MerchSkuRow[]>([]);
+
+  // EPIC-047 Fase 1A — panel "Matriks Varian" (auto-generate SKU)
+  const [matrixAxes, setMatrixAxes] = useState<MatrixAxisRow[]>(DEFAULT_MATRIX_AXES);
+  const [matrixChipDrafts, setMatrixChipDrafts] = useState<Record<string, string>>({});
+  const [newAxisName, setNewAxisName] = useState('');
+  const [showAddAxis, setShowAddAxis] = useState(false);
+  const [matrixPriceOverride, setMatrixPriceOverride] = useState('');
+  const [matrixBarcodePrefix, setMatrixBarcodePrefix] = useState('');
+  const [matrixGenerating, setMatrixGenerating] = useState(false);
+  const [matrixBlocked, setMatrixBlocked] = useState<BlockedSkuMatrixRow[]>([]);
+
   const [purchasingOptions, setPurchasingOptions] = useState<PurchasingProductOption[]>([]);
   const [purchasingOptionsLoading, setPurchasingOptionsLoading] = useState(false);
   const [localEdits, setLocalEdits] = useState<
@@ -378,6 +411,14 @@ export function ProductsPage() {
         active: sku.active,
       }))
     );
+    // EPIC-047 Fase 1A — reset panel Matriks Varian tiap dialog dibuka
+    setMatrixAxes(DEFAULT_MATRIX_AXES);
+    setMatrixChipDrafts({});
+    setNewAxisName('');
+    setShowAddAxis(false);
+    setMatrixPriceOverride('');
+    setMatrixBarcodePrefix('');
+    setMatrixBlocked([]);
     if (purchasingOptions.length === 0) {
       setPurchasingOptionsLoading(true);
       try {
@@ -430,6 +471,138 @@ export function ProductsPage() {
         )
         .filter((row): row is MerchSkuRow => row !== null)
     );
+  };
+
+  // EPIC-047 Fase 1A — panel "Matriks Varian" (chip input per sumbu + generate)
+  const matrixActiveAxes = useMemo(
+    () => matrixAxes.filter((axis) => axis.values.length > 0),
+    [matrixAxes]
+  );
+  const matrixPreviewCombos = useMemo(
+    () => expandMatrix(matrixActiveAxes.map((axis) => ({ key: axis.key, values: axis.values }))),
+    [matrixActiveAxes]
+  );
+
+  const addMatrixAxisValues = (axisKey: string, raw: string) => {
+    const parts = raw
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean);
+    if (parts.length === 0) return;
+    setMatrixAxes((prev) =>
+      prev.map((axis) => {
+        if (axis.key !== axisKey) return axis;
+        const seen = new Set(axis.values.map((value) => value.toLowerCase()));
+        const nextValues = [...axis.values];
+        for (const part of parts) {
+          const dedupeKey = part.toLowerCase();
+          if (seen.has(dedupeKey)) continue;
+          seen.add(dedupeKey);
+          nextValues.push(part);
+        }
+        return { ...axis, values: nextValues };
+      })
+    );
+  };
+
+  const removeMatrixAxisValue = (axisKey: string, value: string) => {
+    setMatrixAxes((prev) =>
+      prev.map((axis) =>
+        axis.key === axisKey ? { ...axis, values: axis.values.filter((v) => v !== value) } : axis
+      )
+    );
+  };
+
+  const handleMatrixChipChange = (axisKey: string, value: string) => {
+    if (value.includes(',')) {
+      const segments = value.split(',');
+      const trailing = segments.pop() ?? '';
+      addMatrixAxisValues(axisKey, segments.join(','));
+      setMatrixChipDrafts((prev) => ({ ...prev, [axisKey]: trailing }));
+    } else {
+      setMatrixChipDrafts((prev) => ({ ...prev, [axisKey]: value }));
+    }
+  };
+
+  const handleMatrixChipKeyDown = (axisKey: string, event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    addMatrixAxisValues(axisKey, matrixChipDrafts[axisKey] || '');
+    setMatrixChipDrafts((prev) => ({ ...prev, [axisKey]: '' }));
+  };
+
+  const addCustomMatrixAxis = () => {
+    const name = newAxisName.trim();
+    if (!name) return;
+    const dedupeKey = name.toLowerCase();
+    if (matrixAxes.some((axis) => axis.key.toLowerCase() === dedupeKey)) {
+      toast.error('Sumbu dengan nama itu sudah ada');
+      return;
+    }
+    setMatrixAxes((prev) => [...prev, { key: name, label: name, values: [], custom: true }]);
+    setNewAxisName('');
+    setShowAddAxis(false);
+  };
+
+  const removeCustomMatrixAxis = (axisKey: string) => {
+    setMatrixAxes((prev) => prev.filter((axis) => axis.key !== axisKey));
+    setMatrixChipDrafts((prev) => {
+      const next = { ...prev };
+      delete next[axisKey];
+      return next;
+    });
+  };
+
+  const generateMatrix = async () => {
+    if (!merchModalProduct || matrixGenerating) return;
+    if (matrixActiveAxes.length === 0 || matrixPreviewCombos.length === 0) {
+      toast.error('Isi minimal satu sumbu (mis. Ukuran) dengan nilai sebelum generate');
+      return;
+    }
+    const priceOverrideTrimmed = matrixPriceOverride.trim();
+    if (priceOverrideTrimmed !== '' && (!Number.isFinite(Number(priceOverrideTrimmed)) || Number(priceOverrideTrimmed) < 0)) {
+      toast.error('Harga override harus angka ≥ 0');
+      return;
+    }
+
+    setMatrixGenerating(true);
+    setMatrixBlocked([]);
+    try {
+      const result = await createSkuMatrix(merchModalProduct.id, {
+        axes: matrixActiveAxes.map((axis) => ({ key: axis.key, values: axis.values })),
+        price_override: priceOverrideTrimmed === '' ? null : Number(priceOverrideTrimmed),
+        barcode_prefix: matrixBarcodePrefix.trim() || undefined,
+      });
+      toast.success(
+        `${result.created.length} SKU dibuat, ${result.deactivated.length} dinonaktifkan, ${result.kept.length} tidak berubah`
+      );
+      // Refresh tabel "Varian ber-SKU" dari hasil generate — pola sama
+      // dengan openMerchModal saat memuat product.merchSkus.
+      setMerchSkuRows(
+        result.skus.map((sku) => ({
+          rowId: sku.id,
+          id: sku.id,
+          sku: sku.sku,
+          name: sku.name,
+          barcode: sku.barcode ?? '',
+          stock: String(sku.stock_quantity),
+          price:
+            sku.price_override === null || sku.price_override === undefined
+              ? ''
+              : String(sku.price_override),
+          active: sku.is_active,
+        }))
+      );
+    } catch (error) {
+      if (error instanceof SkuMatrixConflictError) {
+        setMatrixBlocked(error.blocked);
+        toast.error(error.message);
+      } else {
+        toast.error(getErrorMessage(error, 'Gagal membuat matriks varian'));
+      }
+    } finally {
+      setMatrixGenerating(false);
+    }
   };
 
   const saveMerchSettings = async () => {
@@ -826,6 +999,169 @@ export function ProductsPage() {
               />
               Tampilkan di toko online (katalog web)
             </label>
+
+            {/* EPIC-047 Fase 1A — Matriks Varian: chip input per sumbu -> auto-generate SKU */}
+            {merchModalProduct?.productKind === 'merchandise' ? (
+              <div className="space-y-3 rounded-lg border border-indigo-100 bg-indigo-50/40 p-3">
+                <div className="flex items-center gap-2">
+                  <Wand2 className="h-4 w-4 text-indigo-600" />
+                  <p className="text-sm font-medium text-gray-700">Matriks Varian</p>
+                </div>
+                <p className="text-xs text-gray-500">
+                  Isi nilai tiap sumbu (mis. Ukuran: S, M, L, XL), lalu Generate untuk membuat
+                  SKU otomatis. Generate ulang aman — SKU yang sudah ada tidak diduplikasi, dan
+                  SKU ber-stok tidak akan hilang.
+                </p>
+
+                {matrixAxes.map((axis) => (
+                  <div key={axis.key}>
+                    <div className="mb-1 flex items-center justify-between">
+                      <label className="text-xs text-gray-500">{axis.label}</label>
+                      {axis.custom ? (
+                        <button
+                          type="button"
+                          onClick={() => removeCustomMatrixAxis(axis.key)}
+                          className="text-xs text-red-500 hover:underline"
+                        >
+                          Hapus sumbu
+                        </button>
+                      ) : null}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-gray-200/80 bg-white p-1.5">
+                      {axis.values.map((value) => (
+                        <span
+                          key={value}
+                          className="inline-flex items-center gap-1 rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-700"
+                        >
+                          {value}
+                          <button
+                            type="button"
+                            onClick={() => removeMatrixAxisValue(axis.key, value)}
+                            aria-label={`Hapus ${value} dari ${axis.label}`}
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </span>
+                      ))}
+                      <input
+                        value={matrixChipDrafts[axis.key] || ''}
+                        onChange={(event) => handleMatrixChipChange(axis.key, event.target.value)}
+                        onKeyDown={(event) => handleMatrixChipKeyDown(axis.key, event)}
+                        onBlur={(event) => {
+                          if (!event.target.value.trim()) return;
+                          addMatrixAxisValues(axis.key, event.target.value);
+                          setMatrixChipDrafts((prev) => ({ ...prev, [axis.key]: '' }));
+                        }}
+                        placeholder={axis.values.length === 0 ? `${axis.label}, koma/Enter` : ''}
+                        className="min-w-[100px] flex-1 border-none px-1 py-0.5 text-xs text-gray-700 outline-none"
+                      />
+                    </div>
+                  </div>
+                ))}
+
+                {showAddAxis ? (
+                  <div className="flex items-center gap-1.5">
+                    <Input
+                      value={newAxisName}
+                      onChange={(event) => setNewAxisName(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') {
+                          event.preventDefault();
+                          addCustomMatrixAxis();
+                        }
+                      }}
+                      placeholder="Nama sumbu (mis. Bahan)"
+                      className="h-8 text-xs"
+                    />
+                    <Button type="button" size="sm" variant="outline" onClick={addCustomMatrixAxis}>
+                      Tambah
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        setShowAddAxis(false);
+                        setNewAxisName('');
+                      }}
+                    >
+                      Batal
+                    </Button>
+                  </div>
+                ) : (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setShowAddAxis(true)}
+                    className="text-xs text-indigo-700"
+                  >
+                    <PlusCircle className="mr-1 h-3 w-3" />+ sumbu
+                  </Button>
+                )}
+
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-xs text-gray-500">
+                      Harga override (opsional, semua SKU baru)
+                    </label>
+                    <Input
+                      type="number"
+                      min={0}
+                      placeholder="ikut harga produk"
+                      value={matrixPriceOverride}
+                      onChange={(event) => setMatrixPriceOverride(event.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs text-gray-500">
+                      Prefix barcode (opsional)
+                    </label>
+                    <Input
+                      value={matrixBarcodePrefix}
+                      placeholder="mis. 89960"
+                      onChange={(event) => setMatrixBarcodePrefix(event.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between gap-3 pt-1">
+                  <p className="text-xs text-gray-500">
+                    {matrixPreviewCombos.length} SKU akan dibuat/dicek
+                  </p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={generateMatrix}
+                    disabled={matrixGenerating || matrixPreviewCombos.length === 0}
+                    className="purchasing-main-button"
+                  >
+                    {matrixGenerating ? (
+                      <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Wand2 className="mr-1.5 h-3.5 w-3.5" />
+                    )}
+                    Generate
+                  </Button>
+                </div>
+
+                {matrixBlocked.length > 0 ? (
+                  <div className="rounded-lg border border-red-200 bg-red-50 p-2 text-xs text-red-700">
+                    <p className="mb-1 font-medium">
+                      SKU berikut masih ada stoknya — kosongkan dulu sebelum menghapus variannya
+                      dari matriks:
+                    </p>
+                    <ul className="list-disc space-y-0.5 pl-4">
+                      {matrixBlocked.map((row) => (
+                        <li key={row.id}>
+                          {row.sku} — {row.name} (stok {row.stock_quantity})
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
 
             {/* EPIC-039 Fase B — varian ber-SKU: stok/barcode/harga per varian */}
             <div className="space-y-3 border-t border-gray-100 pt-4">

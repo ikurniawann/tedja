@@ -302,6 +302,8 @@ export interface ProductWithCOGS {
   warehouse_id?: string;
   warehouse_name?: string | null;
   warehouse_code?: string | null;
+  /** EPIC-047 Fase 1A — jumlah SKU aktif POS merchandise tertaut (source_product_id) */
+  variant_count?: number;
 }
 
 export type Product = ProductWithCOGS;
