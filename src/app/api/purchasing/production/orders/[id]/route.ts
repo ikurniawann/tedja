@@ -33,7 +33,7 @@ const updateProductionSchema = z.object({
   variant_output: z.array(z.object({
     pos_sku_id: z.string().uuid(),
     qty: z.number().positive(),
-  })).optional(),
+  })).max(100).optional(),
 });
 
 function toNumber(value: unknown) {

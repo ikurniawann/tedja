@@ -59,6 +59,20 @@ async function loadForeignKeys(pool: Pool): Promise<ForeignKey[]> {
 
 const qid = (id: string) => `"${id.replace(/"/g, '""')}"`;
 
+/** Peta operator simbolik PostgREST -> operator SQL, dipakai oleh `.not()`. */
+const NOT_OP_TRANSLATE: Record<string, string> = {
+  eq: "=",
+  neq: "<>",
+  gt: ">",
+  gte: ">=",
+  lt: "<",
+  lte: "<=",
+  like: "LIKE",
+  ilike: "ILIKE",
+  is: "IS",
+  in: "IN",
+};
+
 /** Parse PostgREST-style IN list: ('a','b') atau ["a","b"] */
 export function parseInValues(value: unknown): unknown[] {
   if (Array.isArray(value)) return value;
@@ -237,7 +251,17 @@ export class QueryBuilder<T = any> implements PromiseLike<PgResult<T>> {
   is(col: string, value: any) { return this.addFilter(col, "IS", value); }
   in(col: string, value: any[]) { return this.addFilter(col, "IN", value); }
   contains(col: string, value: any) { return this.addFilter(col, "@>", value); }
-  not(col: string, op: string, value: any) { return this.addFilter(col, `NOT ${op.toUpperCase()}`, value); }
+  /**
+   * .not(col, op, value) — PostgREST-style: op boleh simbolik ('eq', 'neq',
+   * 'gt', 'gte', 'lt', 'lte', 'like', 'ilike', 'is', 'in') atau operator SQL
+   * mentah ('=', '<>', 'IN', dst). Simbolik diterjemahkan ke operator SQL
+   * sebelum di-uppercase supaya `.not('status', 'eq', 'x')` menghasilkan
+   * `NOT (status = $1)`, bukan `NOT (status EQ $1)` yang bukan SQL valid.
+   */
+  not(col: string, op: string, value: any) {
+    const sqlOp = NOT_OP_TRANSLATE[op.toLowerCase()] ?? op.toUpperCase();
+    return this.addFilter(col, `NOT ${sqlOp}`, value);
+  }
   or(expr: string) { this.orFilters.push(expr); return this; }
 
   order(col: string, opts?: { ascending?: boolean; nullsFirst?: boolean }) {

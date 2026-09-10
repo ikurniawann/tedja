@@ -332,4 +332,26 @@ describe("PATCH .../orders/[id] action complete — EPIC-047 Fase 1B variant_out
     expect(recordFinishedGoodsMovementMock).not.toHaveBeenCalled();
     expect(queryOneMock).not.toHaveBeenCalled();
   });
+
+  it("400 kalau variant_output berisi 101 baris — melewati batas .max(100), ditolak zod sebelum sentuh db", async () => {
+    fakeDbRef = createFakeDb({});
+
+    const { PATCH } = await import("./route");
+    const res = await PATCH(
+      makeRequest({
+        action: "complete",
+        actual_qty: 101,
+        variant_output: Array.from({ length: 101 }, (_, i) => ({
+          pos_sku_id: `00000000-0000-4000-8000-${String(i).padStart(12, "0")}`,
+          qty: 1,
+        })),
+      }),
+      makeParams()
+    );
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.success).toBe(false);
+    expect(body.message).toBe("Validasi gagal");
+    expect(fakeDbRef.db.from).not.toHaveBeenCalled();
+  });
 });

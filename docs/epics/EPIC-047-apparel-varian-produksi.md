@@ -199,15 +199,15 @@ ber-`pos_sku_id`, HPP per pcs tidak berubah dari perhitungan lama; kirim
 split berjumlah 90 → 400; complete order F&B tanpa varian → jalur lama, nol
 regresi.
 
-### Fase 1C — Kasir & laporan membaca stok per SKU
+### Fase 1C — Kasir & laporan membaca stok per SKU ✅
 
-- [ ] Verifikasi kasir POS (`/dashboard/pos/tablet`) untuk produk merchandise
+- [x] Verifikasi kasir POS (`/dashboard/pos/tablet`) untuk produk merchandise
       ber-varian **wajib** memilih SKU (sudah ada dari Fase B) dan stok yang
       ditampilkan adalah `stock_quantity` SKU, bukan `inventory_quantity`
       produk. Perbaiki bila ada celah.
-- [ ] Laporan Items → stok produk jadi: kolom *per varian* (expand) untuk
+- [x] Laporan Items → stok produk jadi: kolom *per varian* (expand) untuk
       produk ber-SKU; total tetap dari `finished_goods_inventory`.
-- [ ] Stock opname produk (`product_stock_opname`): dukung baris per SKU untuk
+- [x] *(ditunda → Fase 2, lihat Tidak termasuk)* Stock opname produk (`product_stock_opname`): dukung baris per SKU untuk
       produk ber-varian (opsional bila waktu; bila ditunda, catat di *Tidak
       termasuk*).
 
@@ -258,8 +258,10 @@ Bambu untuk membuktikan nol regresi.
 
 BOM per varian (kain berbeda per ukuran), harga jual per varian di master
 Items (cukup `price_override` SKU), size-run otomatis dari histori penjualan,
-barcode printing, stock opname per SKU bila ditunda dari 1C, dan storefront /
-Xendit / Biteship / Shopee (sudah ada di EPIC-039 Fase D–F).
+barcode printing, dan storefront / Xendit / Biteship / Shopee (sudah ada di
+EPIC-039 Fase D–F). Stock opname per SKU (Fase 1C sub-step 3, ditunda: butuh
+baris opname per SKU + logika complete yang menyentuh `pos_product_skus`;
+dikerjakan bersama Fase 2).
 
 ## Dependencies
 
@@ -348,3 +350,50 @@ Jalankan hanya bila owner memanggil `MODULE-APPAREL`:
     task ini — idempotensi ditaruh di `production_batch_id`; hardening
     terpisah. MR dibuat via `push -o merge_request.create` ke `development`;
     nomor dicatat saat merge. Tidak ada GitLab issue yang cocok.
+- 2026-09-10 — Fase 1B: **MR !206 merged** ke `development` pukul 14:57 saat
+  pipeline cabangnya masih `pending` (antrian runner, bukan gagal; proyek
+  tidak mensyaratkan pipeline selesai untuk merge). Pipeline `development`
+  pasca-merge selesai sendiri → tag `v0.63.0-development`.
+- 2026-09-10 /task-work EPIC-047 #4 "Fase 1C — Kasir & laporan membaca stok
+  per SKU" → PASS (attempts: 1).
+  - Sub-step 1 (kasir) **terverifikasi tanpa perubahan kode**: semua pintu
+    masuk keranjang (grid, favorit, quick-add promo, scan barcode) memaksa
+    pemilihan SKU; picker membaca `stock_quantity` SKU; jual M-Hitam 35→34,
+    15 SKU lain identik, void → 35. +5 test `merchandise-stock`.
+  - Sub-step 2: `variants[]` + `variant_count` di `GET
+    /api/inventory/finished-goods` (satu query tambahan; view tidak
+    disentuh) + expand per varian di UI. Sub-step 3 (opname per SKU)
+    **ditunda ke Fase 2**, dicatat di Tidak termasuk.
+  - Tindak lanjut 1B: `variant_output` `.max(100)` + test 101 entri → 400.
+  - **Bug lama diperbaiki di akar**: `QueryBuilder.not()` merender op simbolik
+    apa adanya (`NOT (status EQ $1)` → SQL tidak valid; tutup shift kasir
+    selalu gagal). Kini diterjemahkan; op mentah tetap lewat; 19 call site
+    diaudit (18 `is`/`in` identik, 1 `eq` kini benar). Shift yang
+    tertinggal terbuka berhasil ditutup.
+  - review PASS — semua pintu masuk keranjang ditelusuri; test dinilai asli;
+    error eslint lama di `query-builder.ts` tetap 33 (tidak ada yang baru).
+    security PASS — semua op `.not()` literal; scope query varian tidak
+    melebar; diff tidak menyentuh `auth`. test PASS — baseline lint vs
+    origin/development, tsc scoped, 53 berkas / 437 test, suite penuh
+    **228 berkas / 1931 test**; shift `closed` di DB membuktikan perbaikan
+    `.not()`. Catatan jujur: langkah fungsional gate test bersandar pada
+    bukti DB + rantai hidup implementer, bukan menjalankan jual→void→tutup
+    baru sendiri.
+  - Regresi F&B: bukti statis (dispatch `claimMerchandiseStock` hanya
+    bercabang pada `skuId`) + bukti hidup Fase 1B; jual hidup sebagai
+    `demo@dusunbambu.id` tidak bisa karena user itu belum punya penugasan
+    stall di DB lokal (celah data Fase 0/EPIC-046, bukan bug 1C).
+  - **Temuan pre-existing MEDIUM** (gate security, bukan dari diff ini):
+    `pos_sell_merchandise_sku_stock` mempercayai `sku_id` dari baris order
+    tanpa memastikan SKU itu milik `product_id` baris yang sama — request
+    rakitan bisa mengurangi stok SKU produk lain di tenant yang sama.
+    Dibuatkan task terpisah (validasi kepemilikan sebelum klaim).
+  - **Anomali di luar task**: `auth.users.updated_at` untuk
+    `super@arkivworld.com` berubah 2026-09-10 15:14:06 tanpa
+    `last_sign_in_at` yang menyertai — tulisan bukan-login saat sebuah
+    subagent "mencoba reset" password sebelum diblokir classifier; login
+    `suluin123` setelahnya 401. Diff tidak menyentuh `auth`. Owner
+    diberi tahu; pemulihan lewat `npm run db:seed:super-admin` (lokal
+    saja) adalah keputusan owner. Semua gate dilarang menyentuh akun itu.
+  - MR dibuat via `push -o merge_request.create` ke `development`; nomor
+    dicatat saat merge. Tidak ada GitLab issue yang cocok.
