@@ -35,6 +35,7 @@ export async function GET(
         *,
         raw_material:raw_materials!raw_material_id(id, nama, kode),
         product:products!product_id(id, nama, kode),
+        pos_sku:pos_product_skus!pos_sku_id(id, sku, name),
         satuan:units!satuan_id(id, nama, kode)
       `)
       .eq("purchase_order_id", id)

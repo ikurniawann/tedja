@@ -13,6 +13,10 @@ import {
   effectiveBranchId,
 } from "@/lib/api/scope";
 import { isOpenDeliveryStatus } from "@/lib/purchasing/delivery";
+import {
+  validatePoLinesAgainstSkus,
+  type SkuOwnershipRow,
+} from "@/lib/purchasing/variant-po-lines";
 
 const optionalDateSchema = z
   .union([z.string().regex(/^\d{4}-\d{2}-\d{2}$/), z.literal(""), z.null()])
@@ -63,6 +67,8 @@ const productPoSchema = z.object({
       qty_ordered: z.number().min(0.0001, "Order quantity must be at least 0.0001"),
       harga_satuan: z.number().min(0, "Price cannot be negative"),
       notes: z.string().optional(),
+      // EPIC-047 Fase 2 — baris produk ber-varian memilih SKU spesifik.
+      pos_sku_id: z.string().uuid().optional().nullable(),
     })
   ).min(1, "At least one PO item is required"),
 });
@@ -368,6 +374,62 @@ export async function POST(request: NextRequest) {
     }
 
     const { items, ...poPayload } = validated;
+
+    // EPIC-047 Fase 2 — baris PO produk ber-varian wajib memilih SKU yang
+    // benar-benar milik produk itu. Divalidasi SEBELUM insert apa pun supaya
+    // gagal 400 tidak meninggalkan PO draft yatim.
+    if (moduleType === "product") {
+      const productItems = items as Array<{ product_id: string; pos_sku_id?: string | null }>;
+      const productIds = Array.from(new Set(productItems.map((item) => item.product_id)));
+
+      const { data: posProducts, error: posProductsError } = productIds.length
+        ? await db
+            .from("pos_products")
+            .select("id, source_product_id")
+            .eq("product_kind", "merchandise")
+            .in("source_product_id", productIds)
+        : { data: [], error: null };
+      if (posProductsError) throw posProductsError;
+
+      type PosProductRow = { id: string; source_product_id: string };
+      const typedPosProducts = (posProducts || []) as PosProductRow[];
+      const sourceProductIdByPosProductId = new Map(
+        typedPosProducts.map((p) => [p.id, p.source_product_id])
+      );
+      const posProductIds = typedPosProducts.map((p) => p.id);
+
+      const { data: skuRows, error: skuRowsError } = posProductIds.length
+        ? await db
+            .from("pos_product_skus")
+            .select("id, product_id, is_active")
+            .in("product_id", posProductIds)
+        : { data: [], error: null };
+      if (skuRowsError) throw skuRowsError;
+
+      type SkuRow = { id: string; product_id: string; is_active: boolean };
+      const skuOwnershipRows: SkuOwnershipRow[] = ((skuRows || []) as SkuRow[]).map((row) => ({
+        id: row.id,
+        source_product_id: sourceProductIdByPosProductId.get(row.product_id) ?? "",
+        is_active: Boolean(row.is_active),
+      }));
+      const variantProductIds = new Set(
+        skuOwnershipRows.filter((row) => row.is_active).map((row) => row.source_product_id)
+      );
+
+      const validation = validatePoLinesAgainstSkus(
+        productItems.map((item) => ({
+          product_id: item.product_id,
+          pos_sku_id: item.pos_sku_id ?? null,
+        })),
+        skuOwnershipRows,
+        variantProductIds
+      );
+
+      if (!validation.ok) {
+        return Response.json({ success: false, message: validation.error }, { status: 400 });
+      }
+    }
+
     const subtotal = items.reduce((sum, item) => sum + item.qty_ordered * item.harga_satuan, 0);
     const diskonNominal = poPayload.diskon_persen
       ? (subtotal * poPayload.diskon_persen) / 100
@@ -416,6 +478,7 @@ export async function POST(request: NextRequest) {
           qty_ordered: item.qty_ordered,
           harga_satuan: item.harga_satuan,
           catatan: item.notes || null,
+          pos_sku_id: "pos_sku_id" in item ? item.pos_sku_id || null : null,
           is_active: true,
         };
       }

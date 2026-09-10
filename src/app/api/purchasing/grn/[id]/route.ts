@@ -30,6 +30,7 @@ const GRN_ITEM_DETAIL_SELECT = `
   delivery_id,
   purchase_order_item_id,
   raw_material_id,
+  pos_sku_id,
   qty_diterima,
   qty_ditolak,
   kondisi,
@@ -45,6 +46,7 @@ const GRN_ITEM_DETAIL_SELECT = `
     satuan_besar:units!satuan_besar_id(id, nama, kode)
   ),
   satuan:units!satuan_id(id, nama, kode),
+  pos_sku:pos_product_skus!pos_sku_id(id, sku, name),
   purchase_order_item:purchase_order_items!purchase_order_item_id(
     id,
     qty_ordered,

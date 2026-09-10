@@ -62,12 +62,17 @@ type QcLineState = {
   materialName: string;
   materialCode: string;
   unitLabel: string;
+  /** EPIC-047 Fase 2 — "SKU — nama varian", kosong untuk produk tanpa varian. */
+  variantLabel: string;
   qtyReceived: number;
   qty_inspected: string;
   qty_accepted: string;
   qty_rejected: string;
   catatan: string;
 };
+
+/** EPIC-047 Fase 2 — label read-only varian (SKU) untuk produk ber-varian. */
+type PosSkuRef = { id?: string; sku?: string | null; name?: string | null } | null;
 
 type GrnInspectionItem = {
   id: string;
@@ -87,7 +92,10 @@ type GrnInspectionItem = {
   satuan?: { nama?: string | null; kode?: string | null } | null;
   purchase_order_item?: {
     satuan?: { nama?: string | null; kode?: string | null } | null;
+    pos_sku?: PosSkuRef;
   } | null;
+  pos_sku_id?: string | null;
+  pos_sku?: PosSkuRef;
 };
 
 type GrnInspection = {
@@ -202,6 +210,8 @@ export function QCInspectionPage({
             item.raw_material?.satuan_besar?.kode ||
             item.purchase_order_item?.satuan?.kode ||
             "-";
+          const posSku = item.pos_sku || item.purchase_order_item?.pos_sku;
+          const variantLabel = posSku?.sku ? `${posSku.sku} — ${posSku.name || ""}` : "";
 
           return {
             grn_item_id: item.id,
@@ -216,6 +226,7 @@ export function QCInspectionPage({
               item.product?.kode ||
               "-",
             unitLabel: unit,
+            variantLabel,
             qtyReceived: qty,
             qty_inspected: String(qty),
             qty_accepted: String(qty),
@@ -502,6 +513,9 @@ export function QCInspectionPage({
                             <p className="text-xs text-gray-500">
                               {line.materialCode} · {line.unitLabel}
                             </p>
+                            {line.variantLabel && (
+                              <p className="text-xs text-gray-500">Varian: {line.variantLabel}</p>
+                            )}
                           </td>
                           <td className="px-4 py-3 text-right font-medium text-gray-900">
                             {formatNumber(line.qtyReceived)}

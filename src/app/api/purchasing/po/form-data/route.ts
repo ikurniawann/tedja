@@ -6,6 +6,16 @@ import {
   branchScopeOr,
 } from "@/lib/api/scope";
 
+// EPIC-047 Fase 2 — SKU merchandise aktif dilampirkan per produk di form PO.
+type PoFormSkuRow = {
+  id: string;
+  product_id: string;
+  sku: string;
+  name: string;
+  options?: Record<string, string> | null;
+  stock_quantity?: number | null;
+};
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -43,11 +53,54 @@ export async function GET(request: NextRequest) {
         db.from("units").select("id, nama, kode").eq("is_active", true).order("nama"),
       ]);
 
+      // EPIC-047 Fase 2 — lampirkan SKU merchandise aktif per produk (kosong
+      // untuk produk tanpa varian) supaya form PO produk bisa menampilkan
+      // baris per SKU untuk produk ber-varian.
+      type PoFormProductRow = { id: string; [key: string]: unknown };
+      const typedProducts = (products || []) as PoFormProductRow[];
+      const productIds = typedProducts.map((p) => p.id);
+      const { data: posProducts } = productIds.length
+        ? await db
+            .from("pos_products")
+            .select("id, source_product_id")
+            .eq("product_kind", "merchandise")
+            .in("source_product_id", productIds)
+        : { data: [] };
+
+      type PosProductRow = { id: string; source_product_id: string };
+      const typedPosProducts = (posProducts || []) as PosProductRow[];
+      const posProductIdByProductId = new Map(
+        typedPosProducts.map((p) => [p.source_product_id, p.id])
+      );
+      const posProductIds = typedPosProducts.map((p) => p.id);
+
+      const { data: skuRows } = posProductIds.length
+        ? await db
+            .from("pos_product_skus")
+            .select("id, product_id, sku, name, options, stock_quantity")
+            .eq("is_active", true)
+            .in("product_id", posProductIds)
+            .order("name")
+        : { data: [] as PoFormSkuRow[] };
+
+      const skusByPosProductId = new Map<string, PoFormSkuRow[]>();
+      for (const row of (skuRows || []) as PoFormSkuRow[]) {
+        const list = skusByPosProductId.get(row.product_id) || [];
+        list.push(row);
+        skusByPosProductId.set(row.product_id, list);
+      }
+
+      const productsWithSkus = typedProducts.map((product) => {
+        const posProductId = posProductIdByProductId.get(product.id);
+        const skus = posProductId ? skusByPosProductId.get(posProductId) || [] : [];
+        return { ...product, pos_skus: skus };
+      });
+
       return NextResponse.json({
         success: true,
         data: {
           vendors: vendors || [],
-          products: products || [],
+          products: productsWithSkus,
           units: units || [],
         },
       });

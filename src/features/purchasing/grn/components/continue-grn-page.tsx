@@ -25,6 +25,13 @@ import {
   TruckIcon,
 } from "lucide-react";
 
+/** EPIC-047 Fase 2 — label read-only varian (SKU) untuk produk ber-varian. */
+interface PosSkuRef {
+  id?: string;
+  sku?: string | null;
+  name?: string | null;
+}
+
 interface GrnItem {
   id: string;
   grn_id?: string;
@@ -37,6 +44,8 @@ interface GrnItem {
   previous_qty_ditolak: number;
   catatan: string;
   satuan?: string;
+  pos_sku_id?: string | null;
+  pos_sku?: PosSkuRef | null;
 }
 
 interface POItem {
@@ -46,6 +55,8 @@ interface POItem {
   qty_ordered: number;
   qty_received: number;
   satuan?: string;
+  pos_sku_id?: string | null;
+  pos_sku?: PosSkuRef | null;
 }
 
 interface GRNData {
@@ -105,7 +116,11 @@ type ApiLineItem = {
     qty_received?: number;
     raw_material?: ApiRawMaterial;
     satuan?: ApiUnit;
+    pos_sku_id?: string | null;
+    pos_sku?: PosSkuRef | null;
   } | null;
+  pos_sku_id?: string | null;
+  pos_sku?: PosSkuRef | null;
 };
 
 const GUIDELINES = [
@@ -225,6 +240,8 @@ export function ContinueGrnPage({
     qty_ordered: toNumber(item.qty_ordered),
     qty_received: toNumber(item.qty_received),
     satuan: getUnitName(item.satuan || item.raw_material?.satuan_besar),
+    pos_sku_id: item.pos_sku_id ?? null,
+    pos_sku: item.pos_sku ?? null,
   }), []);
 
   const loadPoItems = useCallback(async (poId: string) => {
@@ -295,6 +312,8 @@ export function ContinueGrnPage({
               qty_ordered: toNumber(poItem.qty_ordered),
               qty_received: toNumber(poItem.qty_received),
               satuan: getUnitName(poItem.satuan || item.satuan || item.raw_material?.satuan_besar),
+              pos_sku_id: poItem.pos_sku_id ?? item.pos_sku_id ?? null,
+              pos_sku: poItem.pos_sku ?? item.pos_sku ?? null,
             };
           });
       }
@@ -314,6 +333,12 @@ export function ContinueGrnPage({
           previous_qty_ditolak: toNumber(item.qty_ditolak),
           catatan: "",
           satuan: getUnitName(item.satuan || poItem?.satuan || rawMaterial?.satuan_besar),
+          // EPIC-047 Fase 2 — label read-only "Varian: sku — name" di bawah
+          // nama produk (lihat itemRows di render). pos_sku_id sudah ikut
+          // select("*") di /api/purchasing/po/[id]/items; objek pos_sku
+          // (sku+name) baru terisi kalau endpoint itu ikut di-embed juga.
+          pos_sku_id: item.pos_sku_id ?? poItem?.pos_sku_id ?? null,
+          pos_sku: item.pos_sku ?? poItem?.pos_sku ?? null,
         };
       });
 
@@ -581,6 +606,12 @@ export function ContinueGrnPage({
                             <tr key={item.id} className="bg-white hover:bg-gray-50/80">
                               <td className="px-4 py-3 align-top">
                                 <div className="font-medium text-gray-900">{item.nama_bahan}</div>
+                                {(item.pos_sku || poItem?.pos_sku) && (
+                                  <div className="mt-0.5 text-xs text-gray-500">
+                                    Varian: {(item.pos_sku || poItem?.pos_sku)?.sku} —{" "}
+                                    {(item.pos_sku || poItem?.pos_sku)?.name}
+                                  </div>
+                                )}
                                 {qtyOrdered > 0 && (
                                   <div className="mt-0.5 text-xs text-gray-500">
                                     PO: {formatQty(qtyOrdered)} {satuan}
