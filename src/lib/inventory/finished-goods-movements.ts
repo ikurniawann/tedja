@@ -51,6 +51,9 @@ export async function recordFinishedGoodsMovement(
     userId?: string | null;
     warehouseId?: string | null;
     branchId?: string | null;
+    // EPIC-047 Fase 1B — diisi untuk baris rincian per varian
+    // (pos.pos_product_skus); null/undefined untuk baris level produk lama.
+    posSkuId?: string | null;
   }
 ) {
   const qtyBefore = toNumber(params.qtyBefore);
@@ -88,6 +91,7 @@ export async function recordFinishedGoodsMovement(
       reference_number: params.referenceNumber ?? null,
       alasan: params.alasan ?? null,
       catatan: params.catatan ?? null,
+      pos_sku_id: params.posSkuId ?? null,
       is_active: true,
       created_by: params.userId ?? null,
       updated_by: params.userId ?? null,
@@ -119,6 +123,9 @@ export async function insertFinishedGoodsMovementSql(
     alasan?: string | null;
     catatan?: string | null;
     userId?: string | null;
+    // EPIC-047 Fase 1B — diisi untuk baris rincian per varian
+    // (pos.pos_product_skus); null/undefined untuk baris level produk lama.
+    posSkuId?: string | null;
   }
 ) {
   const qtyBefore = toNumber(params.qtyBefore);
@@ -140,8 +147,8 @@ export async function insertFinishedGoodsMovementSql(
        (inventory_id, product_id, warehouse_id, branch_id, tipe, jumlah,
         qty_before, qty_after, unit_cost, total_cost,
         reference_type, reference_id, reference_number, alasan, catatan,
-        is_active, created_by, updated_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,true,$16,$16)`,
+        pos_sku_id, is_active, created_by, updated_by)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,true,$17,$17)`,
     [
       params.inventoryId,
       params.productId,
@@ -158,6 +165,7 @@ export async function insertFinishedGoodsMovementSql(
       params.referenceNumber ?? null,
       params.alasan ?? null,
       params.catatan ?? null,
+      params.posSkuId ?? null,
       params.userId ?? null,
     ]
   );

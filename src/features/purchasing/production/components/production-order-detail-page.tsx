@@ -33,6 +33,8 @@ import {
 import { toast } from "sonner";
 import { useProductionOrder } from "../queries";
 import { useUpdateProductionOrder } from "../mutations";
+import type { ProductionPosSku } from "../types";
+import { splitEvenly } from "@/lib/manufacturing/variant-output";
 
 type ProductionMaterial = {
   id: string;
@@ -58,6 +60,16 @@ type ProductionMaterial = {
   } | null;
 };
 
+// EPIC-047 Fase 1B — rincian output per SKU POS yang sudah diposting untuk
+// satu batch produksi.
+type ProductionBatchVariantOutput = {
+  pos_sku_id: string;
+  sku: string | null;
+  name: string | null;
+  options: Record<string, string> | null;
+  qty: number | string;
+};
+
 type ProductionBatch = {
   id: string;
   batch_number: string;
@@ -66,6 +78,7 @@ type ProductionBatch = {
   total_cost: number | string;
   output_type?: "FINISHED_GOOD" | "WIP";
   created_at: string;
+  variant_outputs?: ProductionBatchVariantOutput[];
 };
 
 type ProductionDetail = {
@@ -97,6 +110,10 @@ type ProductionDetail = {
     insufficient_materials: number;
     can_release: boolean;
   };
+  // EPIC-047 Fase 1B — SKU POS aktif produk (kalau tertaut merchandise) +
+  // apakah rincian per varian wajib diisi saat complete.
+  pos_skus?: ProductionPosSku[];
+  variant_required?: boolean;
 };
 
 type CompleteForm = {
@@ -116,7 +133,20 @@ type CompleteForm = {
     unitCost: number;
     stockQty: number;
   }>;
+  // EPIC-047 Fase 1B — rincian output per SKU (hanya dipakai kalau produk
+  // ber-varian; kosong untuk F&B/WIP seperti biasa).
+  variantOutput: Array<{
+    posSkuId: string;
+    sku: string;
+    name: string;
+    qty: string;
+  }>;
 };
+
+function optionsLabel(options?: Record<string, string> | null) {
+  if (!options) return "";
+  return Object.values(options).filter(Boolean).join(" / ");
+}
 
 function toNumber(value: unknown) {
   const numeric = Number(value);
@@ -197,6 +227,18 @@ export function ProductionOrderDetailPage({
     [order]
   );
 
+  // EPIC-047 Fase 1B — sisa = actual_qty − Σ qty rincian varian; harus 0
+  // sebelum submit boleh berjalan kalau produk ini ber-varian.
+  const variantSplitTotal = useMemo(
+    () =>
+      (completeForm?.variantOutput || []).reduce((sum, row) => sum + toNumber(row.qty), 0),
+    [completeForm]
+  );
+  const variantSisa = useMemo(
+    () => toNumber(completeForm?.actualQty) - variantSplitTotal,
+    [completeForm, variantSplitTotal]
+  );
+
   const loadOrder = () => orderQuery.refetch();
 
   useEffect(() => {
@@ -242,8 +284,28 @@ export function ProductionOrderDetailPage({
         unitCost: toNumber(material.unit_cost),
         stockQty: toNumber(material.stock?.qty_onhand),
       })),
+      variantOutput: (order.pos_skus || []).map((sku) => ({
+        posSkuId: sku.id,
+        sku: sku.sku,
+        name: sku.name,
+        qty: "0",
+      })),
     });
     setCompleteOpen(true);
+  };
+
+  const applySplitEvenly = () => {
+    if (!completeForm) return;
+    const skuIds = completeForm.variantOutput.map((row) => row.posSkuId);
+    const split = splitEvenly(toNumber(completeForm.actualQty), skuIds);
+    const qtyBySkuId = new Map(split.map((row) => [row.pos_sku_id, row.qty]));
+    setCompleteForm({
+      ...completeForm,
+      variantOutput: completeForm.variantOutput.map((row) => ({
+        ...row,
+        qty: String(qtyBySkuId.get(row.posSkuId) ?? 0),
+      })),
+    });
   };
 
   const submitComplete = async () => {
@@ -263,6 +325,13 @@ export function ProductionOrderDetailPage({
             qty_actual: toNumber(material.qtyActual),
             waste_qty: toNumber(material.wasteQty),
           })),
+          ...(order?.variant_required
+            ? {
+                variant_output: completeForm.variantOutput
+                  .filter((row) => toNumber(row.qty) > 0)
+                  .map((row) => ({ pos_sku_id: row.posSkuId, qty: toNumber(row.qty) })),
+              }
+            : {}),
         },
       });
       if (result.ok) {
@@ -633,6 +702,23 @@ export function ProductionOrderDetailPage({
                     <span>{formatAmount(batch.hpp_per_unit)}/satuan</span>
                     <span>{formatDate(batch.created_at)}</span>
                   </div>
+                  {batch.variant_outputs && batch.variant_outputs.length > 0 && (
+                    <div className="mt-3 space-y-1.5 border-t border-gray-200/70 pt-3">
+                      <p className="text-xs font-semibold text-gray-600">Rincian per varian</p>
+                      {batch.variant_outputs.map((variant) => (
+                        <div
+                          key={variant.pos_sku_id}
+                          className="flex items-center justify-between gap-3 text-xs text-gray-600"
+                        >
+                          <span>
+                            {variant.sku || variant.pos_sku_id}
+                            {optionsLabel(variant.options) ? ` — ${optionsLabel(variant.options)}` : ""}
+                          </span>
+                          <span className="font-semibold text-gray-900">{formatQty(variant.qty)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               ))
             )}
@@ -673,7 +759,7 @@ export function ProductionOrderDetailPage({
                     <div key={key} className="space-y-1.5">
                       <Label className="text-xs text-gray-500">{label}</Label>
                       <Input
-                        value={completeForm[key as keyof Omit<CompleteForm, "materials">]}
+                        value={completeForm[key as keyof Omit<CompleteForm, "materials" | "variantOutput">]}
                         onChange={(event) =>
                           setCompleteForm({ ...completeForm, [key]: event.target.value })
                         }
@@ -685,6 +771,72 @@ export function ProductionOrderDetailPage({
                   ))}
                 </CardContent>
               </Card>
+
+              {order.variant_required && (
+                <Card className="border-gray-200/70 shadow-xs">
+                  <CardHeader className="flex flex-row items-center justify-between border-b border-gray-200/70 pb-3">
+                    <div>
+                      <CardTitle className="text-sm">Rincian per Varian</CardTitle>
+                      <p className="mt-1 text-xs text-gray-500">
+                        Produk ini ber-varian — bagi output aktual ke tiap SKU sebelum diterima.
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={applySplitEvenly}
+                      className="h-8 gap-1.5 rounded-lg px-3 text-xs"
+                    >
+                      Bagi Rata
+                    </Button>
+                  </CardHeader>
+                  <CardContent className="space-y-3 p-4">
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full text-sm">
+                        <thead className="border-b border-gray-100 text-xs uppercase tracking-wide text-gray-500">
+                          <tr>
+                            <th className="py-2 text-left font-semibold">SKU</th>
+                            <th className="py-2 text-right font-semibold">Qty</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {completeForm.variantOutput.map((row, index) => (
+                            <tr key={row.posSkuId}>
+                              <td className="py-2 pr-3">
+                                <p className="font-medium text-gray-900">{row.sku}</p>
+                                <p className="text-xs text-gray-500">{row.name}</p>
+                              </td>
+                              <td className="py-2">
+                                <Input
+                                  value={row.qty}
+                                  onChange={(event) => {
+                                    const variantOutput = [...completeForm.variantOutput];
+                                    variantOutput[index] = { ...row, qty: event.target.value };
+                                    setCompleteForm({ ...completeForm, variantOutput });
+                                  }}
+                                  type="number"
+                                  min="0"
+                                  className="h-9 w-28 text-right text-sm focus:border-pink-400 focus:ring-2 focus:ring-pink-100"
+                                />
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div
+                      className={`flex items-center justify-between rounded-lg px-3 py-2 text-sm font-semibold ${
+                        Math.round(variantSisa * 100) / 100 === 0
+                          ? "bg-emerald-50 text-emerald-700"
+                          : "bg-red-50 text-red-700"
+                      }`}
+                    >
+                      <span>Sisa</span>
+                      <span>{formatQty(variantSisa)}</span>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
 
               <div className="grid gap-5 xl:grid-cols-[1fr_300px]">
                 <Card className="border-gray-200/70 shadow-xs">
@@ -858,7 +1010,12 @@ export function ProductionOrderDetailPage({
               <Button
                 type="button"
                 onClick={() => void submitComplete()}
-                disabled={loading || completePreview.actualQty <= 0 || completePreview.shortageItems.length > 0}
+                disabled={
+                  loading ||
+                  completePreview.actualQty <= 0 ||
+                  completePreview.shortageItems.length > 0 ||
+                  (!!order.variant_required && Math.round(variantSisa * 100) / 100 !== 0)
+                }
                 className={`${PAGE_MAIN_ACTION} sm:w-auto`}
               >
                 {loading ? (

@@ -1,12 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createPgClient } from "@/lib/pg/create-client";
+import { queryOne } from "@/lib/db";
 import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
 import { IAM } from "@/lib/iam/prefixes";
 import { PRODUCTION_API_ROLES } from "@/lib/manufacturing/constants";
 import { addInventoryFromProduction } from "@/lib/inventory";
 import { recordFinishedGoodsMovement } from "@/lib/inventory/finished-goods-movements";
 import { syncProductionHppToPos } from "@/lib/pos/purchasing-sync";
+import {
+  requiresVariantSplit,
+  validateVariantSplit,
+  type ActiveSku,
+  type VariantSplitRow,
+} from "@/lib/manufacturing/variant-output";
 
 const updateProductionSchema = z.object({
   action: z.enum(["recheck_stock", "release", "start", "complete", "cancel"]),
@@ -19,6 +26,13 @@ const updateProductionSchema = z.object({
     id: z.string().uuid(),
     qty_actual: z.number().min(0),
     waste_qty: z.number().min(0).optional(),
+  })).optional(),
+  // EPIC-047 Fase 1B — rincian output per SKU POS (produk merchandise
+  // ber-varian) saat action "complete". Diabaikan sepenuhnya untuk WIP /
+  // raw_material / produk tanpa SKU aktif (lihat requiresVariantSplit).
+  variant_output: z.array(z.object({
+    pos_sku_id: z.string().uuid(),
+    qty: z.number().positive(),
   })).optional(),
 });
 
@@ -140,6 +154,44 @@ async function validateMaterialStock(
   };
 }
 
+type ActiveSkuRow = ActiveSku & { stock_quantity?: number | string | null };
+
+/**
+ * EPIC-047 Fase 1B — resolve link resmi produk → POS merchandise
+ * (`pos_products.source_product_id = productId AND product_kind =
+ * 'merchandise'`, FK EPIC-039) dan SKU aktifnya. TIDAK memakai pencocokan
+ * string `PUR-<kode>` legacy (`syncPurchasingProductToPos`) — itu jalur POS
+ * lain yang tidak menjamin identitas produk yang sama.
+ */
+async function resolveVariantContext(
+  db: import("@/lib/pg/types").DbClient,
+  productId?: string | null
+): Promise<{ posProductId: string | null; activeSkus: ActiveSkuRow[] }> {
+  if (!productId) return { posProductId: null, activeSkus: [] };
+
+  const { data: posProduct, error: posProductError } = await db
+    .from("pos_products")
+    .select("id")
+    .eq("source_product_id", productId)
+    .eq("product_kind", "merchandise")
+    .maybeSingle();
+  if (posProductError) throw posProductError;
+  if (!posProduct?.id) return { posProductId: null, activeSkus: [] };
+
+  const { data: skus, error: skusError } = await db
+    .from("pos_product_skus")
+    .select("id, sku, name, options, stock_quantity")
+    .eq("product_id", posProduct.id)
+    .eq("is_active", true)
+    .order("name", { ascending: true });
+  if (skusError) throw skusError;
+
+  return {
+    posProductId: posProduct.id as string,
+    activeSkus: (skus || []) as ActiveSkuRow[],
+  };
+}
+
 function buildWipCode(productCode?: string | null) {
   const base = (productCode || "WIP").replace(/[^A-Za-z0-9]/g, "").slice(0, 17);
   return `WP${base}`.slice(0, 20).toUpperCase();
@@ -250,11 +302,53 @@ export async function GET(
     );
     const coverageByMaterialId = new Map(stockCoverage.map((item) => [item.id, item]));
 
+    // EPIC-047 Fase 1B — SKU aktif produk (kalau produk ini tertaut POS
+    // merchandise) + rincian varian yang sudah diposting per batch.
+    const variantContext = await resolveVariantContext(db, order.product_id);
+    const variantRequired = requiresVariantSplit(variantContext.activeSkus);
+
+    const variantOutputsByBatch = new Map<
+      string,
+      Array<{ pos_sku_id: string; sku: string | null; name: string | null; options: Record<string, string> | null; qty: number | string }>
+    >();
+    if ((batches || []).length > 0) {
+      const { data: variantOutputs, error: variantOutputsError } = await db
+        .from("production_output_variants")
+        .select("production_batch_id, pos_sku_id, qty, sku:pos_product_skus!pos_sku_id(sku,name,options)")
+        .eq("production_order_id", id);
+      if (variantOutputsError) throw variantOutputsError;
+
+      for (const row of (variantOutputs || []) as Array<{
+        production_batch_id: string;
+        pos_sku_id: string;
+        qty: number | string;
+        sku?: { sku?: string | null; name?: string | null; options?: Record<string, string> | null } | null;
+      }>) {
+        const list = variantOutputsByBatch.get(row.production_batch_id) || [];
+        list.push({
+          pos_sku_id: row.pos_sku_id,
+          sku: row.sku?.sku ?? null,
+          name: row.sku?.name ?? null,
+          options: row.sku?.options ?? null,
+          qty: row.qty,
+        });
+        variantOutputsByBatch.set(row.production_batch_id, list);
+      }
+    }
+
     return NextResponse.json({
       success: true,
       data: {
         ...order,
         output_satuan_nama: outputSatuanNama,
+        pos_skus: variantContext.activeSkus.map((sku) => ({
+          id: sku.id,
+          sku: sku.sku,
+          name: sku.name,
+          options: sku.options ?? null,
+          stock_quantity: sku.stock_quantity,
+        })),
+        variant_required: variantRequired,
         materials: (materials || []).map((material) => {
           const stockRow = stockMap.get(material.raw_material_id);
           const unitName =
@@ -273,7 +367,10 @@ export async function GET(
             stock: coverageByMaterialId.get(material.id) || null,
           };
         }),
-        batches: batches || [],
+        batches: (batches || []).map((batch) => ({
+          ...batch,
+          variant_outputs: variantOutputsByBatch.get(batch.id) || [],
+        })),
         stock_coverage: stockCoverage,
         stock_summary: {
           total_materials: stockCoverage.length,
@@ -450,6 +547,46 @@ export async function PATCH(
       );
     }
 
+    // EPIC-047 Fase 1B — gerbang rincian per varian. Dijalankan SEBELUM
+    // tulisan apa pun (loop konsumsi bahan di bawah adalah tulisan pertama)
+    // supaya split yang tidak valid tidak pernah menyisakan perubahan
+    // sebagian. `outputType` dihitung di sini (dipakai lagi di bawah untuk
+    // WIP/batch) karena hanya bergantung pada `order.output_type`.
+    const outputType = order.output_type || "FINISHED_GOOD";
+    const isFinishedGoodProduct = order.production_context === "product" && outputType === "FINISHED_GOOD";
+    let variantContext: { posProductId: string | null; activeSkus: ActiveSkuRow[] } = {
+      posProductId: null,
+      activeSkus: [],
+    };
+    let variantSplitRows: VariantSplitRow[] = [];
+    if (isFinishedGoodProduct) {
+      variantContext = await resolveVariantContext(db, order.product_id);
+      if (requiresVariantSplit(variantContext.activeSkus)) {
+        const activeSkusForValidation: ActiveSku[] = variantContext.activeSkus.map((sku) => ({
+          id: sku.id,
+          sku: sku.sku,
+          name: sku.name,
+          options: sku.options,
+        }));
+        const splitResult = validateVariantSplit(
+          actualQty,
+          validated.variant_output ?? null,
+          activeSkusForValidation
+        );
+        if (!splitResult.ok) {
+          return NextResponse.json(
+            {
+              success: false,
+              message: splitResult.error,
+              available_skus: activeSkusForValidation,
+            },
+            { status: 400 }
+          );
+        }
+        variantSplitRows = splitResult.rows;
+      }
+    }
+
     const actualByMaterialId = new Map((validated.materials || []).map((item) => [item.id, item]));
     const stockCheck = await validateMaterialStock(db, id, "actual", actualByMaterialId);
     if (stockCheck.shortages.length > 0) {
@@ -574,7 +711,6 @@ export async function PATCH(
     const hppPerUnit = totalCost / actualQty;
     const now = new Date().toISOString();
 
-    const outputType = order.output_type || "FINISHED_GOOD";
     const wipRawMaterialId = outputType === "WIP" && order.product
       ? await ensureWipRawMaterial(db, order.product, user.id)
       : null;
@@ -642,6 +778,51 @@ export async function PATCH(
         user.id
       );
     } else {
+      // EPIC-047 Fase 1B — posting per SKU, SETELAH insert/update
+      // production_batches (butuh batch.id) dan SEBELUM upsert
+      // finished_goods_inventory (butuh hasilnya untuk baris movement per
+      // varian di bawah). `ON CONFLICT DO NOTHING` (satu-satunya unique
+      // constraint di tabel ini adalah (production_batch_id, pos_sku_id))
+      // membuat posting idempoten: batch_number deterministik per order,
+      // jadi complete kedua kali menemukan batch yang sama dan tidak
+      // menyisipkan baris baru atau menaikkan stok SKU lagi.
+      const postedVariants: Array<{ posSkuId: string; qtyBefore: number; qtyAfter: number }> = [];
+      if (variantSplitRows.length > 0 && variantContext.posProductId) {
+        const { data: insertedVariants, error: variantInsertError } = await db
+          .from("production_output_variants")
+          .upsert(
+            variantSplitRows.map((row) => ({
+              production_order_id: id,
+              production_batch_id: batch.id,
+              pos_sku_id: row.pos_sku_id,
+              qty: row.qty,
+              created_by: user.id,
+            }))
+          )
+          .select("pos_sku_id, qty");
+        if (variantInsertError) throw variantInsertError;
+
+        for (const row of (insertedVariants || []) as Array<{ pos_sku_id: string; qty: number | string }>) {
+          const qty = toNumber(row.qty);
+          const skuUpdate = await queryOne<{ stock_quantity: string }>(
+            `UPDATE pos.pos_product_skus
+               SET stock_quantity = stock_quantity + $1, updated_at = now()
+             WHERE id = $2 AND product_id = $3
+             RETURNING stock_quantity`,
+            [qty, row.pos_sku_id, variantContext.posProductId]
+          );
+          if (!skuUpdate) {
+            throw new Error(`SKU ${row.pos_sku_id} tidak ditemukan untuk produk ini`);
+          }
+          const qtyAfterSku = toNumber(skuUpdate.stock_quantity);
+          postedVariants.push({
+            posSkuId: row.pos_sku_id,
+            qtyBefore: qtyAfterSku - qty,
+            qtyAfter: qtyAfterSku,
+          });
+        }
+      }
+
       const { data: finishedInventory } = await db
         .from("finished_goods_inventory")
         .select("id, qty_available, unit_cost")
@@ -704,6 +885,28 @@ export async function PATCH(
         alasan: "Production completed",
         userId: user.id,
       });
+
+      // EPIC-047 Fase 1B — satu baris finished_goods_movements TAMBAHAN per
+      // varian yang baru diposting (pos_sku_id diisi), DI ATAS baris level
+      // produk di atas (yang tetap sumber kebenaran total persediaan). Lihat
+      // catatan double-counting di laporan kartu stok pada report task ini.
+      for (const posted of postedVariants) {
+        await recordFinishedGoodsMovement(db, {
+          inventoryId,
+          productId: order.product_id,
+          tipe: "in",
+          qtyBefore: posted.qtyBefore,
+          qtyAfter: posted.qtyAfter,
+          unitCost: unitCostForMovement,
+          referenceType: "production_order",
+          referenceId: id,
+          referenceNumber: order.nomor_produksi,
+          alasan: "Production completed",
+          catatan: "rincian varian",
+          userId: user.id,
+          posSkuId: posted.posSkuId,
+        });
+      }
     }
 
     const { data: updatedOrder, error: completeError } = await db

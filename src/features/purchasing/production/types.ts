@@ -32,6 +32,17 @@ export type CogsData = {
   breakdown_bahan: CogsMaterial[];
 };
 
+// EPIC-047 Fase 1B — SKU POS aktif produk merchandise ber-varian (dari
+// matriks Fase 1A). Dipakai form complete + detail order untuk rincian
+// output per varian.
+export type ProductionPosSku = {
+  id: string;
+  sku: string;
+  name: string;
+  options?: Record<string, string> | null;
+  stock_quantity?: number | string | null;
+};
+
 export type ProductionOrder = {
   id: string;
   nomor_produksi: string;

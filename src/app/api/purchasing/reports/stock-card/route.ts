@@ -414,6 +414,10 @@ async function getProductStockCard(
   if (params.tipe !== "all") movementsQuery = movementsQuery.eq("tipe", params.tipe);
   if (dateFrom) movementsQuery = movementsQuery.gte("created_at", dateFrom);
   if (dateTo) movementsQuery = movementsQuery.lte("created_at", dateTo);
+  // EPIC-047 Fase 1B — baris varian (pos_sku_id terisi) adalah rincian dari
+  // baris level produk di atasnya, jangan dihitung dua kali di kartu stok
+  // per produk. Fase 1C membaca baris varian secara terpisah (per SKU).
+  movementsQuery = movementsQuery.is("pos_sku_id", null);
 
   const { data: movementsData, error: movementsError } = await movementsQuery;
   if (movementsError) throw movementsError;
@@ -459,6 +463,9 @@ async function getProductStockCard(
       .select("qty_after")
       .eq("product_id", selectedId)
       .eq("is_active", true)
+      // EPIC-047 Fase 1B — sama seperti di atas: kecualikan baris rincian
+      // varian supaya opening balance produk tidak ikut kepotong angka SKU.
+      .is("pos_sku_id", null)
       .lt("created_at", dateFrom)
       .order("created_at", { ascending: false })
       .limit(1);
