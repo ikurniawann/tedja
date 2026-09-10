@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,6 +11,8 @@ import { formatAmount, formatDate } from "@/lib/purchasing/utils";
 import { STALL_LABELS } from "@/lib/configuration/stall-labels";
 import {
   CheckCircle2,
+  ChevronDown,
+  ChevronRight,
   Package,
   Search,
   ShoppingBag,
@@ -20,8 +22,15 @@ import {
 import { PRODUCT_ROUTES } from "@/modules/purchasing/constants/item-routes";
 import { PurchasingListSection } from "@/modules/purchasing/components/list/PurchasingListSection";
 import { PurchasingTablePagination } from "@/modules/purchasing/components/pagination/PurchasingTablePagination";
+import type { ProductStockVariant } from "../types";
 import { useProductStock } from "../queries";
 import { listStockWarehouses } from "../api";
+
+/** EPIC-047 Fase 1C — label baris varian: nilai opsi (mis. "M / Hitam"), fallback nama SKU. */
+function variantLabel(variant: ProductStockVariant) {
+  const values = Object.values(variant.options ?? {}).filter(Boolean);
+  return values.length > 0 ? values.join(" / ") : variant.name;
+}
 
 const STATUS_OPTIONS = [
   { value: "all", label: "Semua Status" },
@@ -44,9 +53,25 @@ export function ProductStockTab() {
   const [loadingWarehouses, setLoadingWarehouses] = useState(true);
   const [page, setPage] = useState(1);
   const limit = 10;
+  // EPIC-047 Fase 1C — baris produk mana yang expand rincian per varian.
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+
+  const toggleVariants = (id: string) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
 
   useEffect(() => {
-    setLoadingWarehouses(true);
+    // loadingWarehouses sudah true di useState awal — tidak perlu di-set
+    // ulang di sini (react-hooks/set-state-in-effect: no setState sync di
+    // badan efek).
     listStockWarehouses()
       .then(setWarehouses)
       .catch((e) => console.error("Error loading stalls:", e))
@@ -226,65 +251,118 @@ export function ProductStockTab() {
                 items.map((item) => {
                   const qty = Number(item.qty_available) || 0;
                   const isOut = qty <= 0;
+                  const variants = item.variants ?? [];
+                  const variantCount = item.variant_count ?? variants.length;
+                  const hasVariants = variantCount > 0;
+                  const isExpanded = hasVariants && expandedIds.has(item.id);
+                  const variantSum = variants.reduce(
+                    (sum, v) => sum + (Number(v.stock_quantity) || 0),
+                    0
+                  );
+                  const sumMismatch = hasVariants && variantSum !== qty;
+
                   return (
-                    <tr key={item.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 font-mono text-xs text-gray-600">
-                        {item.product_kode}
-                      </td>
-                      <td className="px-4 py-3">
-                        {item.product_id ? (
-                          <Link
-                            href={PRODUCT_ROUTES.productsDetail(item.product_id)}
-                            className="font-medium text-pink-700 hover:underline"
-                          >
-                            {item.product_nama}
-                          </Link>
-                        ) : (
-                          <span className="font-medium text-gray-900">{item.product_nama}</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-xs text-gray-600">
-                        {item.warehouse_name || item.warehouse_code || "—"}
-                      </td>
-                      <td className="px-4 py-3 text-xs text-gray-500">
-                        {item.product_kategori || "—"}
-                      </td>
-                      <td className="px-4 py-3 text-right font-semibold text-pink-700">
-                        {formatQty(qty)}
-                      </td>
-                      <td className="px-4 py-3 text-gray-600">{item.satuan_nama || "—"}</td>
-                      <td className="px-4 py-3 text-right text-gray-700">
-                        {formatAmount(Number(item.unit_cost) || 0)}
-                      </td>
-                      <td className="px-4 py-3 text-right text-gray-700">
-                        {formatAmount(Number(item.harga_jual) || 0)}
-                      </td>
-                      <td className="px-4 py-3 text-right font-medium text-gray-800">
-                        {formatAmount(Number(item.total_value) || 0)}
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        {isOut ? (
-                          <Badge
-                            variant="outline"
-                            className="border-red-200 bg-red-50 text-red-700"
-                          >
-                            <XCircle className="mr-1 inline h-3 w-3" />
-                            Habis
-                          </Badge>
-                        ) : (
-                          <Badge
-                            variant="outline"
-                            className="border-emerald-200 bg-emerald-50 text-emerald-700"
-                          >
-                            <CheckCircle2 className="mr-1 inline h-3 w-3" />
-                            Tersedia
-                          </Badge>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-xs text-gray-500">
-                        {item.last_movement_at ? formatDate(item.last_movement_at) : "—"}
-                      </td>
-                    </tr>
+                    <Fragment key={item.id}>
+                      <tr className="hover:bg-gray-50">
+                        <td className="px-4 py-3 font-mono text-xs text-gray-600">
+                          {item.product_kode}
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-1.5">
+                            {hasVariants && (
+                              <button
+                                type="button"
+                                onClick={() => toggleVariants(item.id)}
+                                className="shrink-0 rounded p-0.5 text-gray-400 transition hover:bg-gray-100 hover:text-gray-700"
+                                aria-label={isExpanded ? "Sembunyikan varian" : "Tampilkan varian"}
+                              >
+                                {isExpanded ? (
+                                  <ChevronDown className="h-3.5 w-3.5" />
+                                ) : (
+                                  <ChevronRight className="h-3.5 w-3.5" />
+                                )}
+                              </button>
+                            )}
+                            {item.product_id ? (
+                              <Link
+                                href={PRODUCT_ROUTES.productsDetail(item.product_id)}
+                                className="font-medium text-pink-700 hover:underline"
+                              >
+                                {item.product_nama}
+                              </Link>
+                            ) : (
+                              <span className="font-medium text-gray-900">{item.product_nama}</span>
+                            )}
+                            {hasVariants && (
+                              <button
+                                type="button"
+                                onClick={() => toggleVariants(item.id)}
+                                className="shrink-0 rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500 transition hover:bg-gray-200"
+                              >
+                                {variantCount} varian
+                              </button>
+                            )}
+                          </div>
+                          {sumMismatch && (
+                            <p className="mt-0.5 text-[10px] text-amber-600">Σ varian ≠ total</p>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-xs text-gray-600">
+                          {item.warehouse_name || item.warehouse_code || "—"}
+                        </td>
+                        <td className="px-4 py-3 text-xs text-gray-500">
+                          {item.product_kategori || "—"}
+                        </td>
+                        <td className="px-4 py-3 text-right font-semibold text-pink-700">
+                          {formatQty(qty)}
+                        </td>
+                        <td className="px-4 py-3 text-gray-600">{item.satuan_nama || "—"}</td>
+                        <td className="px-4 py-3 text-right text-gray-700">
+                          {formatAmount(Number(item.unit_cost) || 0)}
+                        </td>
+                        <td className="px-4 py-3 text-right text-gray-700">
+                          {formatAmount(Number(item.harga_jual) || 0)}
+                        </td>
+                        <td className="px-4 py-3 text-right font-medium text-gray-800">
+                          {formatAmount(Number(item.total_value) || 0)}
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          {isOut ? (
+                            <Badge
+                              variant="outline"
+                              className="border-red-200 bg-red-50 text-red-700"
+                            >
+                              <XCircle className="mr-1 inline h-3 w-3" />
+                              Habis
+                            </Badge>
+                          ) : (
+                            <Badge
+                              variant="outline"
+                              className="border-emerald-200 bg-emerald-50 text-emerald-700"
+                            >
+                              <CheckCircle2 className="mr-1 inline h-3 w-3" />
+                              Tersedia
+                            </Badge>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-xs text-gray-500">
+                          {item.last_movement_at ? formatDate(item.last_movement_at) : "—"}
+                        </td>
+                      </tr>
+                      {isExpanded &&
+                        variants.map((variant) => (
+                          <tr key={variant.sku_id} className="bg-gray-50/60 text-xs text-gray-500">
+                            <td className="px-4 py-2 pl-8 font-mono">{variant.sku}</td>
+                            <td className="px-4 py-2" colSpan={3}>
+                              {variantLabel(variant)}
+                            </td>
+                            <td className="px-4 py-2 text-right font-medium text-gray-600">
+                              {formatQty(variant.stock_quantity)}
+                            </td>
+                            <td colSpan={6} />
+                          </tr>
+                        ))}
+                    </Fragment>
                   );
                 })
               )}
