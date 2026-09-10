@@ -157,40 +157,40 @@ tepat 8 baris `pos_product_skus`, kode unik, `options = {ukuran, warna}`;
 generate ulang dengan warna ketiga → +4 baris, 8 lama utuh; hapus satu ukuran
 yang ber-stok → 409 dengan pesan jelas.
 
-### Fase 1B — Output produksi per varian → stok per SKU
+### Fase 1B — Output produksi per varian → stok per SKU ✅
 
 Jahitan utama epic ini. Semua di rute
 `src/app/api/purchasing/production/orders/[id]/route.ts` + lib pendamping.
 
-- [ ] Migration `2026MMDDHHMMSS_production_variant_output.sql`:
+- [x] Migration `20260910120000_production_variant_output.sql`:
       `manufacturing.production_output_variants` (`production_order_id`,
       `production_batch_id`, `pos_sku_id` → `pos.pos_product_skus`, `qty`,
       `created_*`), unique `(production_batch_id, pos_sku_id)`; kolom
       `pos_sku_id` nullable di `inventory.finished_goods_movements` untuk jejak
       per varian. Idempoten (`IF NOT EXISTS`), dev.
-- [ ] `src/lib/manufacturing/variant-output.ts` (murni, teruji):
+- [x] `src/lib/manufacturing/variant-output.ts` (murni, teruji):
       `validateVariantSplit(actualQty, rows)` — jumlah split **harus sama**
       dengan `actual_qty`, setiap `pos_sku_id` milik produk order, aktif, tidak
       duplikat; `requiresVariantSplit(product)` = produk tertaut POS
       merchandise **dan** punya SKU aktif (pola `variant_required` Fase B).
-- [ ] API: `PATCH …/orders/[id]` menerima `variant_output: [{ pos_sku_id, qty }]`
+- [x] API: `PATCH …/orders/[id]` menerima `variant_output: [{ pos_sku_id, qty }]`
       saat aksi **complete**. Bila `requiresVariantSplit` true dan split tidak
       dikirim/tidak valid → 400 dengan daftar SKU yang tersedia. Bila false →
       perilaku lama utuh (F&B, WIP, raw_material tidak berubah sama sekali).
-- [ ] Posting stok di cabang FINISHED_GOOD, **setelah** insert
+- [x] Posting stok di cabang FINISHED_GOOD, **setelah** insert
       `production_batches` dan **sebelum/selain** upsert
       `finished_goods_inventory`: simpan `production_output_variants`, lalu per
       SKU `UPDATE pos_product_skus SET stock_quantity = stock_quantity + qty`
       dalam transaksi yang sama; `finished_goods_inventory` level produk tetap
       dinaikkan sejumlah total (sumber HPP & laporan persediaan), dengan
       `finished_goods_movements.pos_sku_id` diisi per baris varian.
-- [ ] Guard idempoten: complete dua kali pada order yang sama tidak menggandakan
+- [x] Guard idempoten: complete dua kali pada order yang sama tidak menggandakan
       stok SKU (kunci pada `production_batch_id`).
-- [ ] UI production order (`src/features/purchasing/production` atau lokasi
+- [x] UI production order (`src/features/purchasing/production` atau lokasi
       form complete yang ada): saat produk ber-varian, form complete menampilkan
       tabel *Rincian per varian* (SKU, ukuran/warna, qty) dengan auto-hitung sisa
       = `actual_qty − Σ`, tombol *Bagi rata*, dan validasi sisa harus 0.
-- [ ] Detail production order menampilkan rincian varian yang sudah diposting.
+- [x] Detail production order menampilkan rincian varian yang sudah diposting.
 
 **Acceptance:** PO produksi *Kaos Sulu Basic* 100 pcs, complete dengan
 S 20 / M 30 / L 30 / XL 20 → `pos_product_skus.stock_quantity` bertambah
@@ -321,3 +321,30 @@ Jalankan hanya bila owner memanggil `MODULE-APPAREL`:
     penutup. Catatan di luar cakupan: data seed KAOS-001 punya kunci `options`
     campur huruf besar-kecil (ditangani `optionsKey()`); KAOS-002 di DB lokal
     tercemar ±898 baris SKU nonaktif dari pembuktian — data lokal saja.
+- 2026-09-10 — Fase 1A: **MR !205 merged** ke `development`
+  (tag `v0.62.0-development`). Satu-satunya pipeline di cabang itu (37673)
+  `success`; pesan "pipeline failed" dari `glab` selama auto-merge menunggu
+  adalah bacaan keliru, bukan kegagalan nyata.
+- 2026-09-10 /task-work EPIC-047 #3 "Fase 1B — Output produksi per varian →
+  stok per SKU" → PASS (attempts: 1).
+  - Implementer menemukan sendiri bahwa laporan **stock card produk
+    menghitung dua kali** (baris produk 100 + 4 baris varian = 200) dan
+    menundanya ke 1C; orkestrator memaksa perbaikannya **sebelum gate**
+    (filter `pos_sku_id IS NULL` di query pergerakan dan saldo awal; audit
+    semua pembaca `finished_goods_movements`: tidak ada agregator per produk
+    lain). Baris varian memakai `qty_before/qty_after` level SKU.
+  - review PASS — gate split sebelum tulisan apa pun; cabang WIP/raw_material
+    identik byte demi byte; HPP tak berubah; kedua test route dinilai asli.
+  - security PASS — IDOR `pos_sku_id` produk lain → 400 nol tulisan (direpro);
+    replay → 400; FK `pos_sku_id` tanpa cascade; runner hanya lokal.
+    MEDIUM non-pemblokir: array `variant_output` belum ber-`.max(N)` (pola sama
+    dengan array `materials` yang sudah ada) — tindak lanjut di 1C.
+  - test PASS — delta persis +40 produk / +10 × 4 SKU / +4 baris varian; 400
+    dan replay nol delta; stock card `jumlah` 40 bukan 80, saldo akhir =
+    persediaan hidup; Dusun Bambu `variant_required: false`; vitest 227
+    berkas / 1914 test. Semua pembuktian dihitung sebagai delta terhadap
+    snapshot sendiri karena gate security membuat order KAOS-001 bersamaan.
+  - Catatan: jalur complete produksi memang belum transaksional sejak sebelum
+    task ini — idempotensi ditaruh di `production_batch_id`; hardening
+    terpisah. MR dibuat via `push -o merge_request.create` ke `development`;
+    nomor dicatat saat merge. Tidak ada GitLab issue yang cocok.
