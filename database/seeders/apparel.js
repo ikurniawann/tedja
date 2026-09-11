@@ -13,6 +13,9 @@
  *     gudang produksi MAIN + outlet Workshop Store
  *   - hris.departments                            : Produksi & Jahit, Gudang & QC, Toko
  *   - auth.users + configuration.users            : demo@suluapparel.id (role admin, scope cabang)
+ *                                                   apparel@arkivworld.com (role admin, scope COMPANY —
+ *                                                   "super admin" Sulu Apparel: semua menu admin,
+ *                                                   semua cabang apparel, tidak melihat company lain)
  *
  * Master item/produk dibuat seeder terpisah (apparel-items.js).
  *
@@ -31,6 +34,14 @@ const {
 
 const DEMO_EMAIL = process.env.SULU_APPAREL_EMAIL || "demo@suluapparel.id";
 const DEMO_PASSWORD = process.env.SULU_APPAREL_PASSWORD || "suluapparel";
+// Akun pemilik Sulu Apparel: role `admin` (222/223 menu — hanya tanpa
+// Notifikasi WA milik owner holding), business_scope `company` sehingga
+// melihat seluruh cabang SULU-APPAREL tetapi bukan SULU (F&B) / DUSUN-BAMBU.
+// Sengaja BUKAN role `super_admin`: role itu selalu unscoped (lihat
+// src/lib/api/scope.ts → isUnscoped). Default password mengikuti pola
+// database/seeders/super-admin.js; hanya berlaku di database lokal.
+const OWNER_EMAIL = process.env.SULU_APPAREL_OWNER_EMAIL || "apparel@arkivworld.com";
+const OWNER_PASSWORD = process.env.SULU_APPAREL_OWNER_PASSWORD || "Arkiv2026*#";
 
 // ── Departemen HRIS (kode harus unik global — lihat hris.departments) ──────
 const DEPARTMENTS = [
@@ -53,11 +64,11 @@ async function seedDepartments(c) {
   return added;
 }
 
-async function seedDemoUser(c, scope) {
-  const hash = await bcrypt.hash(DEMO_PASSWORD, 10);
-  const userMeta = JSON.stringify({ full_name: "Demo Sulu Apparel", role: "admin" });
+async function upsertAdminUser(c, scope, { email, password, fullName, businessScope, branchId }) {
+  const hash = await bcrypt.hash(password, 10);
+  const userMeta = JSON.stringify({ full_name: fullName, role: "admin" });
   const appMeta = JSON.stringify({ role: "admin", provider: "email" });
-  const existing = await c.query(`SELECT id FROM auth.users WHERE lower(email) = lower($1)`, [DEMO_EMAIL]);
+  const existing = await c.query(`SELECT id FROM auth.users WHERE lower(email) = lower($1)`, [email]);
   let userId = existing.rows[0]?.id;
   if (userId) {
     await c.query(
@@ -69,18 +80,18 @@ async function seedDemoUser(c, scope) {
     const ins = await c.query(
       `INSERT INTO auth.users (email, password_hash, email_verified_at, raw_user_meta_data, raw_app_meta_data)
        VALUES ($1, $2, NOW(), $3::jsonb, $4::jsonb) RETURNING id`,
-      [DEMO_EMAIL, hash, userMeta, appMeta]
+      [email, hash, userMeta, appMeta]
     );
     userId = ins.rows[0].id;
   }
   await c.query(
     `INSERT INTO configuration.users (id, full_name, role, email, status, business_scope, holding_id, company_id, branch_id, default_warehouse_id)
-     VALUES ($1, 'Demo Sulu Apparel', 'admin', $2, 'active', 'branch', $3, $4, $5, $6)
+     VALUES ($1, $2, 'admin', $3, 'active', $4, $5, $6, $7, $8)
      ON CONFLICT (id) DO UPDATE SET
        full_name = EXCLUDED.full_name, role = EXCLUDED.role, email = EXCLUDED.email, status = 'active',
-       business_scope = 'branch', holding_id = EXCLUDED.holding_id, company_id = EXCLUDED.company_id,
+       business_scope = EXCLUDED.business_scope, holding_id = EXCLUDED.holding_id, company_id = EXCLUDED.company_id,
        branch_id = EXCLUDED.branch_id, default_warehouse_id = EXCLUDED.default_warehouse_id, updated_at = NOW()`,
-    [userId, DEMO_EMAIL, scope.holding_id, scope.company_id, scope.branch_id, scope.warehouse_main_id]
+    [userId, fullName, email, businessScope, scope.holding_id, scope.company_id, branchId, scope.warehouse_main_id]
   );
   const role = await c.query(`SELECT id FROM iam.roles WHERE code = 'admin' AND deleted_at IS NULL LIMIT 1`);
   if (role.rows[0]) {
@@ -91,6 +102,26 @@ async function seedDemoUser(c, scope) {
     );
   }
   return userId;
+}
+
+function seedDemoUser(c, scope) {
+  return upsertAdminUser(c, scope, {
+    email: DEMO_EMAIL,
+    password: DEMO_PASSWORD,
+    fullName: "Demo Sulu Apparel",
+    businessScope: "branch",
+    branchId: scope.branch_id,
+  });
+}
+
+function seedOwnerUser(c, scope) {
+  return upsertAdminUser(c, scope, {
+    email: OWNER_EMAIL,
+    password: OWNER_PASSWORD,
+    fullName: "Admin Sulu Apparel",
+    businessScope: "company",
+    branchId: scope.branch_id, // cabang default; scope company tetap melihat semua cabang
+  });
 }
 
 async function main() {
@@ -115,6 +146,8 @@ async function main() {
 
     const demoUser = await seedDemoUser(c, scope);
     console.log(`✓ User demo: ${DEMO_EMAIL} / ${DEMO_PASSWORD} (role admin, scope cabang ${BRANCH_NAME})`);
+    const ownerUser = await seedOwnerUser(c, scope);
+    console.log(`✓ User pemilik: ${OWNER_EMAIL} (role admin, scope company ${COMPANY_CODE}; password: default seeder / SULU_APPAREL_OWNER_PASSWORD) id ${ownerUser}`);
 
     await c.query("COMMIT");
     console.log(`\nSelesai bagian 1. User demo id ${demoUser}.`);

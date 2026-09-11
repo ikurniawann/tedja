@@ -96,6 +96,12 @@ apparel, F&B Sulu tidak terlihat, super admin Sulu tidak terganggu.
   (Gudang & QC), `SA-TOKO` (Toko).
 - User demo `demo@suluapparel.id` / `suluapparel` (role `admin`, scope
   cabang).
+- User pemilik `apparel@arkivworld.com` (ditambah 2026-09-11): role `admin`
+  (222/223 menu — hanya tanpa Notifikasi WA milik owner holding) dengan
+  `business_scope = 'company'` → "super admin" Sulu Apparel: semua cabang
+  apparel, tidak melihat SULU (F&B) / DUSUN-BAMBU. Sengaja bukan role
+  `super_admin` karena role itu selalu unscoped. Password default seeder
+  (override `SULU_APPAREL_OWNER_PASSWORD`), lokal saja.
 - Unit per company: 7 (`PCS, LUSIN, M, ROLL, KG, CONE, PASANG`).
 - Kategori bahan baku per company: 9 (`KAIN, BENANG, AKSESORIS, LABEL,
   KEMASAN, SOL, KULIT, PEREKAT, WIP`).
@@ -499,3 +505,13 @@ Jalankan hanya bila owner memanggil `MODULE-APPAREL`:
     2; 2 error `react-hooks/set-state-in-effect` lama di create page.
   - MR dibuat via `push -o merge_request.create` ke `development`; nomor
     dicatat saat merge. Tidak ada GitLab issue yang cocok.
+- 2026-09-11 — Akun pemilik `apparel@arkivworld.com` (role `admin`, scope
+  `company`) ditambahkan ke `apparel.js`. User ber-scope `company` pertama di
+  database ini menyingkap celah lama: `GET /api/purchasing/warehouses` dan
+  `validateWarehouseForReceivingScope` hanya membatasi scope `branch`, jadi
+  scope `company` melihat/boleh memakai 29 gudang semua company. Diperbaiki
+  di akar (`resolveWarehouseCompanyFilter` di `src/lib/api/scope.ts`; daftar
+  gudang `IN` cabang company; validator gudang penerimaan cek `company_id`
+  cabang). Bukti lokal: apparel@ → 2 gudang (MAIN, WORKSHOP-STORE),
+  demo cabang tetap 2, Dusun Bambu tetap 8; produk 15 / bahan 35 / opname 3
+  = apparel saja. Unit test `scope.test.ts`; vitest penuh hijau.
