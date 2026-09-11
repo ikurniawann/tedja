@@ -226,6 +226,38 @@ stabil.
 - [x] Guard: GRN produk ber-varian tanpa `pos_sku_id` → ditolak (bukan
       menambah stok level produk secara diam-diam seperti sekarang).
 
+### Fase 3 — Stock opname per SKU
+
+Ditunda dari 1C sub-step 3. Produk ber-varian dihitung fisik **per SKU**;
+total produk tetap milik `finished_goods_inventory`.
+
+- [ ] Migration `20260911081906_opname_variant_sku.sql`: kolom `pos_sku_id`
+      nullable (FK ke `pos.pos_product_skus`, tanpa cascade) di
+      `inventory.product_stock_opname_lines` + index; idempoten.
+- [ ] `listProductInventoryForOpname`: produk merchandise ber-SKU aktif
+      (via `pos_products.source_product_id`) diekspansi jadi satu baris
+      pratinjau **per SKU** (`pos_sku_id`, label `sku — name`,
+      `qty_system` = `stock_quantity` SKU); produk tanpa varian tidak berubah.
+      `ProductOpnamePreviewLine` + tipe fitur mendapat `pos_sku_id?`/`pos_sku?`.
+- [ ] Create opname (`POST /api/inventory/product-stock-opnames`) menulis
+      `pos_sku_id` per baris; `fetchProductStockOpnameDetail` mengembalikan
+      `pos_sku_id` + label; PATCH hitung tidak berubah (per `line.id`).
+- [ ] Complete (`…/[id]/complete`): baris ber-`pos_sku_id` → set
+      `pos_product_skus.stock_quantity = qty_counted` (absolut, `FOR UPDATE`)
+      + satu `finished_goods_movements` dengan `pos_sku_id` dan
+      before/after level SKU; `finished_goods_inventory` produk ber-varian
+      disesuaikan sebesar **Σ selisih SKU** (tetap total). Baris tanpa
+      `pos_sku_id` → jalur lama identik.
+- [ ] UI detail opname: label "Varian: sku — name" di bawah nama produk pada
+      baris SKU; ringkasan `lines_with_variance` tetap per baris.
+
+**Acceptance:** opname gudang MAIN apparel → KAOS-001 tampil 16 baris SKU
+(bukan 1), KAOS-003 1 baris; hitung M-Hitam = stok − 2 dan S-Putih = stok + 1,
+sisanya = sistem → complete → `stock_quantity` M-Hitam −2, S-Putih +1, 14 SKU
+lain tetap; `finished_goods_inventory` KAOS-001 −1; 2 baris
+`finished_goods_movements` ber-`pos_sku_id` + 1 baris produk; opname produk
+Dusun Bambu (tanpa varian) selesai persis seperti sebelumnya.
+
 ## Acceptance Criteria
 
 - Apparel hidup sebagai company `SULU-APPAREL` terpisah; data Sulu F&B dan
@@ -259,9 +291,9 @@ Bambu untuk membuktikan nol regresi.
 BOM per varian (kain berbeda per ukuran), harga jual per varian di master
 Items (cukup `price_override` SKU), size-run otomatis dari histori penjualan,
 barcode printing, dan storefront / Xendit / Biteship / Shopee (sudah ada di
-EPIC-039 Fase D–F). Stock opname per SKU (Fase 1C sub-step 3, ditunda: butuh
-baris opname per SKU + logika complete yang menyentuh `pos_product_skus`;
-dikerjakan bersama Fase 2).
+EPIC-039 Fase D–F). Stock opname per SKU (Fase 1C sub-step 3, ditunda: butuh baris opname per
+SKU + logika complete yang menyentuh `pos_product_skus`; **dikerjakan di
+Fase 3**).
 
 ## Dependencies
 
