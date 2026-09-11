@@ -14,6 +14,11 @@ export interface ProductStockOpnamePreviewLine {
   satuan: string | null;
   qty_system: number;
   unit_cost: number;
+  // EPIC-047 Fase 3 — terisi saat baris ini mewakili satu SKU (produk
+  // merchandise POS ber-varian); null/undefined = baris level produk lama.
+  pos_sku_id?: string | null;
+  pos_sku_code?: string | null;
+  pos_sku_name?: string | null;
 }
 
 export interface ProductStockOpname {
@@ -49,6 +54,11 @@ export interface ProductStockOpnameLine {
   product_kode?: string | null;
   product_nama?: string | null;
   satuan?: string | null;
+  // EPIC-047 Fase 3 — terisi saat baris ini mewakili satu SKU (produk
+  // merchandise POS ber-varian); null/undefined = baris level produk lama.
+  pos_sku_id?: string | null;
+  pos_sku_code?: string | null;
+  pos_sku_name?: string | null;
 }
 
 export interface ProductStockOpnameDetail extends ProductStockOpname {

@@ -38,7 +38,16 @@ type CountLine = {
   satuan: string | null;
   qty_system: number;
   qty_counted_input: string;
+  // EPIC-047 Fase 3 — terisi saat baris ini mewakili satu SKU (produk
+  // merchandise POS ber-varian); null/undefined = baris level produk lama.
+  pos_sku_id?: string | null;
+  pos_sku_code?: string | null;
+  pos_sku_name?: string | null;
 };
+
+function buildLineKey(productId: string, posSkuId?: string | null) {
+  return `${productId}::${posSkuId ?? ""}`;
+}
 
 interface ProductStockOpnameCreatePageProps {
   opnameId?: string;
@@ -102,6 +111,9 @@ export function ProductStockOpnameCreatePage({ opnameId }: ProductStockOpnameCre
           line.qty_counted === null || line.qty_counted === undefined
             ? ""
             : String(line.qty_counted),
+        pos_sku_id: line.pos_sku_id ?? null,
+        pos_sku_code: line.pos_sku_code ?? null,
+        pos_sku_name: line.pos_sku_name ?? null,
       }))
     );
     setInitialized(true);
@@ -117,13 +129,16 @@ export function ProductStockOpnameCreatePage({ opnameId }: ProductStockOpnameCre
     const items = previewQuery.data ?? [];
     setLines(
       items.map((item) => ({
-        key: item.product_id,
+        key: buildLineKey(item.product_id, item.pos_sku_id),
         product_id: item.product_id,
         product_kode: item.product_kode,
         product_nama: item.product_nama,
         satuan: item.satuan,
         qty_system: item.qty_system,
         qty_counted_input: "",
+        pos_sku_id: item.pos_sku_id ?? null,
+        pos_sku_code: item.pos_sku_code ?? null,
+        pos_sku_name: item.pos_sku_name ?? null,
       }))
     );
   }, [isContinue, warehouseId, previewQuery.data, previewQuery.isLoading]);
@@ -193,12 +208,16 @@ export function ProductStockOpnameCreatePage({ opnameId }: ProductStockOpnameCre
     return true;
   };
 
-  const buildLineUpdates = (lineRecords: { id: string; product_id: string }[]) => {
-    const byProduct = new Map(lineRecords.map((l) => [l.product_id, l.id]));
+  const buildLineUpdates = (
+    lineRecords: { id: string; product_id: string; pos_sku_id?: string | null }[]
+  ) => {
+    const byKey = new Map(
+      lineRecords.map((l) => [buildLineKey(l.product_id, l.pos_sku_id), l.id])
+    );
     return lines
       .filter((line) => line.qty_counted_input !== "")
       .map((line) => ({
-        id: line.lineId || byProduct.get(line.product_id)!,
+        id: line.lineId || byKey.get(buildLineKey(line.product_id, line.pos_sku_id))!,
         qty_counted: resolveQty(line) ?? 0,
       }))
       .filter((line) => line.id);
@@ -242,6 +261,7 @@ export function ProductStockOpnameCreatePage({ opnameId }: ProductStockOpnameCre
         (created.lines || []).map((l) => ({
           id: l.id,
           product_id: l.product_id,
+          pos_sku_id: l.pos_sku_id,
         }))
       );
 
@@ -286,7 +306,10 @@ export function ProductStockOpnameCreatePage({ opnameId }: ProductStockOpnameCre
           id: sessionId,
           input: {
             lines: lines.map((line) => {
-              const createdLine = created.lines?.find((l) => l.product_id === line.product_id);
+              const createdLine = created.lines?.find(
+                (l) =>
+                  l.product_id === line.product_id && (l.pos_sku_id ?? null) === (line.pos_sku_id ?? null)
+              );
               if (!createdLine) {
                 throw new Error(`Baris tidak ditemukan untuk ${line.product_kode}`);
               }
@@ -540,6 +563,11 @@ export function ProductStockOpnameCreatePage({ opnameId }: ProductStockOpnameCre
                         </td>
                         <td className="px-4 py-3 font-medium text-gray-900">
                           {line.product_nama}
+                          {line.pos_sku_id && (
+                            <p className="mt-0.5 text-xs font-normal text-gray-400">
+                              Varian: {line.pos_sku_code || "—"} — {line.pos_sku_name || "—"}
+                            </p>
+                          )}
                         </td>
                         <td className="px-4 py-3 text-gray-600">{line.satuan || "—"}</td>
                         <td className="px-4 py-3 text-right text-gray-700">

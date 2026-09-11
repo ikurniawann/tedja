@@ -237,6 +237,10 @@ export async function POST(request: NextRequest) {
         product_stock_opname_id: header.id,
         inventory_id: inventoryId,
         product_id: row.product_id,
+        // EPIC-047 Fase 3 — null untuk produk tanpa varian (jalur lama);
+        // terisi per baris untuk produk merchandise ber-SKU aktif (baris
+        // ini mewakili SATU SKU, lihat listProductInventoryForOpname).
+        pos_sku_id: row.pos_sku_id ?? null,
         qty_system: row.qty_system,
         qty_counted: null,
         qty_variance: null,
