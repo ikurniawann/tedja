@@ -226,29 +226,32 @@ stabil.
 - [x] Guard: GRN produk ber-varian tanpa `pos_sku_id` → ditolak (bukan
       menambah stok level produk secara diam-diam seperti sekarang).
 
-### Fase 3 — Stock opname per SKU
+### Fase 3 — Stock opname per SKU ✅
 
 Ditunda dari 1C sub-step 3. Produk ber-varian dihitung fisik **per SKU**;
 total produk tetap milik `finished_goods_inventory`.
 
-- [ ] Migration `20260911081906_opname_variant_sku.sql`: kolom `pos_sku_id`
+- [x] Migration `20260911081906_opname_variant_sku.sql`: kolom `pos_sku_id`
       nullable (FK ke `pos.pos_product_skus`, tanpa cascade) di
       `inventory.product_stock_opname_lines` + index; idempoten.
-- [ ] `listProductInventoryForOpname`: produk merchandise ber-SKU aktif
+      Ditambah `20260911083000_opname_variant_sku_unique_fix.sql`: UNIQUE
+      lama `(opname_id, product_id)` diganti dua index parsial (tanpa SKU /
+      dengan SKU) — tanpa ini baris ke-2 SKU produk yang sama ditolak.
+- [x] `listProductInventoryForOpname`: produk merchandise ber-SKU aktif
       (via `pos_products.source_product_id`) diekspansi jadi satu baris
       pratinjau **per SKU** (`pos_sku_id`, label `sku — name`,
       `qty_system` = `stock_quantity` SKU); produk tanpa varian tidak berubah.
       `ProductOpnamePreviewLine` + tipe fitur mendapat `pos_sku_id?`/`pos_sku?`.
-- [ ] Create opname (`POST /api/inventory/product-stock-opnames`) menulis
+- [x] Create opname (`POST /api/inventory/product-stock-opnames`) menulis
       `pos_sku_id` per baris; `fetchProductStockOpnameDetail` mengembalikan
       `pos_sku_id` + label; PATCH hitung tidak berubah (per `line.id`).
-- [ ] Complete (`…/[id]/complete`): baris ber-`pos_sku_id` → set
+- [x] Complete (`…/[id]/complete`): baris ber-`pos_sku_id` → set
       `pos_product_skus.stock_quantity = qty_counted` (absolut, `FOR UPDATE`)
       + satu `finished_goods_movements` dengan `pos_sku_id` dan
       before/after level SKU; `finished_goods_inventory` produk ber-varian
       disesuaikan sebesar **Σ selisih SKU** (tetap total). Baris tanpa
       `pos_sku_id` → jalur lama identik.
-- [ ] UI detail opname: label "Varian: sku — name" di bawah nama produk pada
+- [x] UI detail opname: label "Varian: sku — name" di bawah nama produk pada
       baris SKU; ringkasan `lines_with_variance` tetap per baris.
 
 **Acceptance:** opname gudang MAIN apparel → KAOS-001 tampil 16 baris SKU
@@ -291,9 +294,8 @@ Bambu untuk membuktikan nol regresi.
 BOM per varian (kain berbeda per ukuran), harga jual per varian di master
 Items (cukup `price_override` SKU), size-run otomatis dari histori penjualan,
 barcode printing, dan storefront / Xendit / Biteship / Shopee (sudah ada di
-EPIC-039 Fase D–F). Stock opname per SKU (Fase 1C sub-step 3, ditunda: butuh baris opname per
-SKU + logika complete yang menyentuh `pos_product_skus`; **dikerjakan di
-Fase 3**).
+EPIC-039 Fase D–F). Stock opname per SKU sudah
+selesai di Fase 3 (bukan lagi pengecualian).
 
 ## Dependencies
 
@@ -466,5 +468,34 @@ Jalankan hanya bila owner memanggil `MODULE-APPAREL`:
     `product_id` dihilangkan (LOW — tidak bisa menyuntikkan SKU).
   - Satu-satunya item epic yang masih terbuka: **stock opname per SKU**
     (lihat Tidak termasuk) — dikerjakan sebagai task terpisah.
+  - MR dibuat via `push -o merge_request.create` ke `development`; nomor
+    dicatat saat merge. Tidak ada GitLab issue yang cocok.
+- 2026-09-11 /task-work EPIC-047 #6 "Fase 3 — Stock opname per SKU" → PASS
+  (attempts: 2). Gate: review-qa PASS ×2 (LOW: index SKU memakai
+  `(opname_id, pos_sku_id)` tanpa `product_id` — setara karena SKU adalah PK
+  global), security attempt 1 **FAIL** (CRITICAL pre-existing: rute
+  `GET/PATCH …/[id]` dan `POST …/[id]/complete` mencari opname hanya dengan
+  `id` tanpa cek company/branch, sedangkan Fase 3 mengalirkan penulisan
+  `pos_product_skus.stock_quantity` lewat jalur itu) → attempt 2 menambah
+  `isOpnameInScope` (semantik identik `buildOpnameScopeFilter`), 404 untuk
+  lintas scope, dan guard `status <> 'completed'` + rowCount pada transisi
+  akhir (double-complete → 400, rollback) → security PASS, test PASS (tsc 0
+  error di berkas opname — 5 error tipe mock di test complete diperbaiki
+  dengan `vi.fn<…>` bertipe; vitest 234 berkas / 1974 test).
+  - Bukti hidup sebagai `demo@suluapparel.id` (server lokal): POPN-2026-001
+    16 baris SKU KAOS-001, M-Hitam −2 / S-Putih +1 → SKU tepat, fgi −1,
+    3 mutasi (2 SKU + 1 Σ); POPN-2026-002 produk tanpa varian +2 identik jalur
+    lama; POPN-2026-003 XL-Hitam 20→19, M-Hitam tetap 33, fgi 233→232, kartu
+    stok satu baris produk. Scope: `demo@dusunbambu.id` GET/PATCH/complete
+    opname apparel → 404 JSON; pemilik → 200.
+  - Perluasan scope yang disetujui: migration follow-up
+    `20260911083000_opname_variant_sku_unique_fix.sql`; halaman
+    create/hitung (`product-stock-opname-create-page.tsx`) — kunci baris
+    `product_id` diganti komposit `product_id::pos_sku_id` / `line.id`
+    agar 16 baris SKU tidak saling timpa saat dihitung dari browser.
+  - Catatan: dev server yang dijalankan ulang oleh preview sempat 404 HTML
+    untuk semua rute API bertingkat (turbopack) — restart menyembuhkan.
+  - Pre-existing yang tetap terbuka (di luar scope): 3 temuan GRN dari Fase
+    2; 2 error `react-hooks/set-state-in-effect` lama di create page.
   - MR dibuat via `push -o merge_request.create` ke `development`; nomor
     dicatat saat merge. Tidak ada GitLab issue yang cocok.

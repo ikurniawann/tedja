@@ -15,6 +15,54 @@ export interface ProductOpnamePreviewLine {
   satuan: string | null;
   qty_system: number;
   unit_cost: number;
+  // EPIC-047 Fase 3 — diisi saat produk ini merchandise POS ber-SKU aktif;
+  // baris ini lalu mewakili SATU SKU (bukan produk), qty_system = stok SKU.
+  pos_sku_id?: string | null;
+  pos_sku_code?: string | null;
+  pos_sku_name?: string | null;
+}
+
+/** Satu SKU aktif milik sebuah produk (item.products.id), dipakai untuk
+ *  ekspansi baris preview opname per varian. */
+export interface OpnameSkuOption {
+  pos_sku_id: string;
+  pos_sku_code: string;
+  pos_sku_name: string;
+  stock_quantity: number;
+}
+
+/**
+ * EPIC-047 Fase 3 — murni (tanpa I/O). Produk yang punya ≥1 SKU aktif di
+ * `skusByProductId` diekspansi jadi satu baris preview PER SKU (field produk
+ * sama, `qty_system` diganti stok SKU); produk tanpa SKU (peta kosong/tidak
+ * ada entri) dikembalikan APA ADANYA. Urutan produk asal + urutan SKU
+ * (sesuai `skusByProductId`) dijaga stabil.
+ */
+export function expandOpnameLinesBySku(
+  rows: ProductOpnamePreviewLine[],
+  skusByProductId: Map<string, OpnameSkuOption[]>
+): ProductOpnamePreviewLine[] {
+  const expanded: ProductOpnamePreviewLine[] = [];
+
+  for (const row of rows) {
+    const skus = skusByProductId.get(row.product_id);
+    if (!skus || skus.length === 0) {
+      expanded.push(row);
+      continue;
+    }
+
+    for (const sku of skus) {
+      expanded.push({
+        ...row,
+        pos_sku_id: sku.pos_sku_id,
+        pos_sku_code: sku.pos_sku_code,
+        pos_sku_name: sku.pos_sku_name,
+        qty_system: sku.stock_quantity,
+      });
+    }
+  }
+
+  return expanded;
 }
 
 type PgClient = Awaited<
@@ -110,7 +158,7 @@ export async function listProductInventoryForOpname(
     values
   );
 
-  return rows.map((row) => ({
+  const baseRows: ProductOpnamePreviewLine[] = rows.map((row) => ({
     inventory_id: row.inventory_id,
     product_id: row.product_id,
     product_kode: row.product_kode,
@@ -119,6 +167,61 @@ export async function listProductInventoryForOpname(
     qty_system: toNumber(row.qty_system),
     unit_cost: toNumber(row.unit_cost),
   }));
+
+  const skusByProductId = await fetchActiveSkusByProductId(
+    baseRows.map((row) => row.product_id)
+  );
+
+  return expandOpnameLinesBySku(baseRows, skusByProductId);
+}
+
+/**
+ * EPIC-047 Fase 3 — two-hop `item.products` → `pos.pos_products`
+ * (merchandise) → `pos.pos_product_skus` (aktif), dipola dari
+ * `resolveVariantProductIds` (src/lib/purchasing/grn-qc.ts). Produk tanpa
+ * link POS merchandise atau tanpa SKU aktif tidak muncul di map (peta
+ * kosong untuknya), sehingga `expandOpnameLinesBySku` membiarkan barisnya
+ * apa adanya.
+ */
+async function fetchActiveSkusByProductId(
+  productIds: string[]
+): Promise<Map<string, OpnameSkuOption[]>> {
+  const map = new Map<string, OpnameSkuOption[]>();
+  if (productIds.length === 0) return map;
+
+  const rows = await query<{
+    product_id: string;
+    pos_sku_id: string;
+    pos_sku_code: string;
+    pos_sku_name: string;
+    stock_quantity: number | string | null;
+  }>(
+    `SELECT pp.source_product_id AS product_id,
+            s.id AS pos_sku_id,
+            s.sku AS pos_sku_code,
+            s.name AS pos_sku_name,
+            s.stock_quantity AS stock_quantity
+     FROM pos.pos_products pp
+     JOIN pos.pos_product_skus s
+       ON s.product_id = pp.id AND s.is_active = true
+     WHERE pp.product_kind = 'merchandise'
+       AND pp.source_product_id = ANY($1::uuid[])
+     ORDER BY pp.source_product_id ASC, s.sku ASC`,
+    [productIds]
+  );
+
+  for (const row of rows) {
+    const list = map.get(row.product_id) ?? [];
+    list.push({
+      pos_sku_id: row.pos_sku_id,
+      pos_sku_code: row.pos_sku_code,
+      pos_sku_name: row.pos_sku_name,
+      stock_quantity: toNumber(row.stock_quantity),
+    });
+    map.set(row.product_id, list);
+  }
+
+  return map;
 }
 
 export async function ensureProductInventoryId(
@@ -197,6 +300,7 @@ export async function fetchProductStockOpnameDetail(id: string) {
     product_stock_opname_id: string;
     inventory_id: string;
     product_id: string;
+    pos_sku_id: string | null;
     qty_system: number | string;
     qty_counted: number | string | null;
     qty_variance: number | string | null;
@@ -205,16 +309,21 @@ export async function fetchProductStockOpnameDetail(id: string) {
     product_kode: string | null;
     product_nama: string | null;
     satuan: string | null;
+    pos_sku_code: string | null;
+    pos_sku_name: string | null;
   }>(
     `SELECT psol.*,
             p.kode AS product_kode,
             p.nama AS product_nama,
-            u.nama AS satuan
+            u.nama AS satuan,
+            sk.sku AS pos_sku_code,
+            sk.name AS pos_sku_name
      FROM inventory.product_stock_opname_lines psol
      JOIN products p ON p.id = psol.product_id
      LEFT JOIN units u ON u.id = p.satuan_id
+     LEFT JOIN pos.pos_product_skus sk ON sk.id = psol.pos_sku_id
      WHERE psol.product_stock_opname_id = $1
-     ORDER BY p.nama ASC`,
+     ORDER BY p.nama ASC, sk.sku ASC NULLS FIRST`,
     [id]
   );
 
@@ -267,6 +376,9 @@ export async function fetchProductStockOpnameDetail(id: string) {
       product_kode: line.product_kode,
       product_nama: line.product_nama,
       satuan: line.satuan,
+      pos_sku_id: line.pos_sku_id,
+      pos_sku_code: line.pos_sku_code,
+      pos_sku_name: line.pos_sku_name,
     })),
   };
 }
@@ -278,4 +390,128 @@ export function resolveOpnameScopeIds(scope: UserScope | null) {
   };
 }
 
-export { buildOpnameScopeFilter };
+/**
+ * Guard for the single-record fetch path (GET/PATCH/complete on
+ * `[id]`) — `fetchProductStockOpnameDetail` itself has no scope predicate,
+ * so callers MUST check this before trusting the detail. Mirrors the exact
+ * fields/semantics of `buildOpnameScopeFilter` (branch scope → branch_id
+ * only; otherwise → company_id only; unscoped/super_admin → always true).
+ */
+function isOpnameInScope(
+  scope: UserScope | null,
+  opname: { company_id: string | null; branch_id: string | null }
+): boolean {
+  if (!scope || scope.isUnscoped) return true;
+
+  if (scope.businessScope === "branch" && scope.branchId) {
+    return opname.branch_id === scope.branchId;
+  }
+  if (scope.companyId) {
+    return opname.company_id === scope.companyId;
+  }
+  return true;
+}
+
+export { buildOpnameScopeFilter, isOpnameInScope };
+
+// ---------------------------------------------------------------------------
+// EPIC-047 Fase 3 — complete: per-line decision + Σ-selisih per produk ber-
+// varian. Murni (tanpa I/O); route yang men-supply `qty_before` (untuk baris
+// SKU: stok live `pos_product_skus` hasil `SELECT ... FOR UPDATE`; untuk
+// baris non-SKU: `qty_system` opname, jalur lama byte-identical).
+// ---------------------------------------------------------------------------
+
+export interface OpnameCompleteLineInput {
+  id: string;
+  product_id: string;
+  pos_sku_id: string | null;
+  qty_before: number;
+  qty_counted: number;
+}
+
+export interface OpnameSkuLineSummary {
+  id: string;
+  product_id: string;
+  pos_sku_id: string;
+  qty_before: number;
+  qty_after: number;
+  delta: number;
+}
+
+export interface OpnameProductLineSummary {
+  id: string;
+  product_id: string;
+  qty_before: number;
+  qty_after: number;
+  delta: number;
+}
+
+export interface OpnameProductDelta {
+  product_id: string;
+  delta: number;
+}
+
+export interface OpnameSkuDeltaSummary {
+  skuLines: OpnameSkuLineSummary[];
+  productLines: OpnameProductLineSummary[];
+  /** Σ selisih per produk ber-varian, HANYA produk dengan Σ ≠ 0 (zero-delta
+   *  di-skip — tidak ada penyesuaian `finished_goods_inventory` / movement). */
+  productDeltas: OpnameProductDelta[];
+}
+
+/**
+ * Guard: produk ber-varian (punya ≥1 baris `pos_sku_id`) tidak boleh JUGA
+ * punya baris level produk (`pos_sku_id` null) di opname yang sama —
+ * ekspansi preview (`expandOpnameLinesBySku`) menjamin ini, tapi kita
+ * asersi di sini supaya data korup (mis. hasil migrasi manual) tidak lolos
+ * diam-diam saat complete.
+ */
+export function summarizeOpnameSkuDeltas(
+  lines: OpnameCompleteLineInput[]
+): OpnameSkuDeltaSummary {
+  const variantProductIds = new Set(
+    lines.filter((line) => line.pos_sku_id).map((line) => line.product_id)
+  );
+  const conflict = lines.find(
+    (line) => !line.pos_sku_id && variantProductIds.has(line.product_id)
+  );
+  if (conflict) {
+    throw new Error(
+      `Produk ${conflict.product_id} punya baris SKU dan baris level produk sekaligus dalam satu opname`
+    );
+  }
+
+  const skuLines: OpnameSkuLineSummary[] = [];
+  const productLines: OpnameProductLineSummary[] = [];
+  const deltaByProduct = new Map<string, number>();
+
+  for (const line of lines) {
+    const delta = toNumber(line.qty_counted) - toNumber(line.qty_before);
+
+    if (line.pos_sku_id) {
+      skuLines.push({
+        id: line.id,
+        product_id: line.product_id,
+        pos_sku_id: line.pos_sku_id,
+        qty_before: toNumber(line.qty_before),
+        qty_after: toNumber(line.qty_counted),
+        delta,
+      });
+      deltaByProduct.set(line.product_id, (deltaByProduct.get(line.product_id) ?? 0) + delta);
+    } else {
+      productLines.push({
+        id: line.id,
+        product_id: line.product_id,
+        qty_before: toNumber(line.qty_before),
+        qty_after: toNumber(line.qty_counted),
+        delta,
+      });
+    }
+  }
+
+  const productDeltas = Array.from(deltaByProduct.entries())
+    .filter(([, delta]) => delta !== 0)
+    .map(([product_id, delta]) => ({ product_id, delta }));
+
+  return { skuLines, productLines, productDeltas };
+}

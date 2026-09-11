@@ -215,6 +215,11 @@ export function ProductStockOpnameDetailPage({ id }: ProductStockOpnameDetailPag
                       </td>
                       <td className="px-4 py-3 font-medium text-gray-900">
                         {line.product_nama}
+                        {line.pos_sku_id && (
+                          <p className="mt-0.5 text-xs font-normal text-gray-400">
+                            Varian: {line.pos_sku_code || "—"} — {line.pos_sku_name || "—"}
+                          </p>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-gray-600">{line.satuan || "—"}</td>
                       <td className="px-4 py-3 text-right text-gray-700">
