@@ -4,6 +4,7 @@ import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
 import {
   getApiUserScope,
   resolveWarehouseBranchFilter,
+  resolveWarehouseCompanyFilter,
 } from "@/lib/api/scope";
 import { z } from "zod";
 
@@ -27,6 +28,7 @@ export async function GET(request: NextRequest) {
     const params = querySchema.parse(Object.fromEntries(searchParams));
 
     const branchFilter = resolveWarehouseBranchFilter(scope, params.branch_id);
+    const companyFilter = resolveWarehouseCompanyFilter(scope);
 
     let query = db
       .from("warehouses", "configuration")
@@ -35,6 +37,18 @@ export async function GET(request: NextRequest) {
 
     if (branchFilter) {
       query = query.eq("branch_id", branchFilter);
+    } else if (companyFilter) {
+      // User bercope company: hanya gudang milik cabang company-nya.
+      const { data: branches, error: branchError } = await db
+        .from("branches", "configuration")
+        .select("id")
+        .eq("company_id", companyFilter);
+      if (branchError) throw branchError;
+      const branchIds = (branches ?? []).map((b: { id: string }) => b.id);
+      if (branchIds.length === 0) {
+        return Response.json({ success: true, data: [] });
+      }
+      query = query.in("branch_id", branchIds);
     }
 
     const { data, error } = await query.order("name", { ascending: true });

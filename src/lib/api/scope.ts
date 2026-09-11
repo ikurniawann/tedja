@@ -212,6 +212,19 @@ export function resolveWarehouseBranchFilter(
   return contextBranchId ?? null;
 }
 
+/**
+ * Company filter untuk daftar/validasi gudang:
+ * - User bercope company → hanya gudang milik cabang company itu.
+ * - User branch sudah dibatasi lewat `resolveWarehouseBranchFilter`;
+ *   user unscoped/holding → null (semua).
+ */
+export function resolveWarehouseCompanyFilter(scope: UserScope | null): string | null {
+  if (scope && !scope.isUnscoped && scope.businessScope === "company" && scope.companyId) {
+    return scope.companyId;
+  }
+  return null;
+}
+
 export type WarehouseReceivingScopeError =
   | "not_found"
   | "inactive"
@@ -224,20 +237,27 @@ export async function validateWarehouseForReceivingScope(
 ): Promise<{ branch_id: string } | { error: WarehouseReceivingScopeError }> {
   const expectedBranchId = resolveWarehouseBranchFilter(scope, contextBranchId);
 
+  const expectedCompanyId = resolveWarehouseCompanyFilter(scope);
+
   const warehouse = await queryOne<{
     id: string;
     branch_id: string;
     is_active: boolean;
+    company_id: string | null;
   }>(
-    `SELECT id, branch_id, is_active
-     FROM configuration.warehouses
-     WHERE id = $1`,
+    `SELECT w.id, w.branch_id, w.is_active, b.company_id
+     FROM configuration.warehouses w
+     LEFT JOIN configuration.branches b ON b.id = w.branch_id
+     WHERE w.id = $1`,
     [warehouseId]
   );
 
   if (!warehouse) return { error: "not_found" };
   if (!warehouse.is_active) return { error: "inactive" };
   if (expectedBranchId && warehouse.branch_id !== expectedBranchId) {
+    return { error: "branch_mismatch" };
+  }
+  if (expectedCompanyId && warehouse.company_id !== expectedCompanyId) {
     return { error: "branch_mismatch" };
   }
 
