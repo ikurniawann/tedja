@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { PlusIcon } from "@heroicons/react/24/outline";
-import { Loader2, RefreshCw, Search, Table2, X } from "lucide-react";
+import { Loader2, QrCode, RefreshCw, Search, Table2, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -38,6 +38,7 @@ import { generateTableQrCode } from "../qr-code";
 import { FLOOR_LABEL, FLOOR_PRESETS } from "../floor-options";
 import type { PosTablePayload, PosTableRow, PosTableStatus } from "../types";
 import { TablesFloorPlan } from "./tables-floor-plan";
+import { TableQrDialog } from "./table-qr-dialog";
 
 type ViewMode = "list" | "denah";
 
@@ -80,7 +81,7 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 function mergeOptions(
-  presets: { value: string; label: string }[],
+  presets: readonly { value: string; label: string }[],
   extras: Array<string | null | undefined>
 ) {
   const map = new Map(presets.map((o) => [o.value, o]));
@@ -120,6 +121,7 @@ export function TablesPage() {
   const [selected, setSelected] = useState<PosTableRow | null>(null);
   const [form, setForm] = useState<PosTablePayload>(EMPTY_FORM);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [qrTable, setQrTable] = useState<PosTableRow | null>(null);
 
   const isSaving = createMutation.isPending || updateMutation.isPending;
   const isDeleting = deleteMutation.isPending;
@@ -389,10 +391,23 @@ export function TablesPage() {
                         </span>
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <MasterTableActions
-                          onEdit={() => openEdit(table)}
-                          onDelete={() => setDeleteId(table.id)}
-                        />
+                        <div className="flex items-center justify-end gap-1">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setQrTable(table)}
+                            className="h-8 w-8 p-0 text-gray-600 hover:bg-gray-100 hover:text-primary"
+                            aria-label="QR self-order"
+                            title="QR self-order"
+                          >
+                            <QrCode className="h-4 w-4" />
+                          </Button>
+                          <MasterTableActions
+                            onEdit={() => openEdit(table)}
+                            onDelete={() => setDeleteId(table.id)}
+                          />
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -427,6 +442,8 @@ export function TablesPage() {
           <TablesFloorPlan tables={tables} onEdit={openEdit} />
         </div>
       )}
+
+      <TableQrDialog table={qrTable} onClose={() => setQrTable(null)} />
 
       <Dialog
         open={dialog !== null}
@@ -522,7 +539,6 @@ export function TablesPage() {
                         status: value as PosTableStatus,
                       }))
                     }
-                    searchPlaceholder="Search status…"
                     searchPlaceholder="Search status…"
                     className={formComboboxClassName}
                   />

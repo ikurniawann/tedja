@@ -1,10 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createPgClient } from "@/lib/pg/create-client";
+import { getMemberSession } from "@/lib/member-portal/session";
+import { loadTableByCode, loadVenueContext, tableLabel } from "@/lib/table-order/server";
 
-function isUuid(value: string) {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
-}
+export const dynamic = "force-dynamic";
 
+/**
+ * GET /api/table-order/session/[tableCode] — konteks sesi self-order utk satu meja:
+ * identitas meja (resolve qr_code / nomor meja → table_id), profil billing venue
+ * (pajak/service yang berlaku), brand, ketersediaan QRIS, rate ARK, dan apakah
+ * pemesan sedang login sebagai member (cookie portal member).
+ *
+ * Kode meja yang tidak terdaftar tetap boleh memesan (table_resolved=false) —
+ * nomor meja disimpan di catatan order supaya kasir tetap tahu asalnya.
+ */
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ tableCode: string }> }
@@ -13,49 +21,46 @@ export async function GET(
   const code = decodeURIComponent(tableCode || "").trim();
 
   if (!code) {
-    return NextResponse.json({ success: false, error: "Table code wajib diisi" }, { status: 400 });
+    return NextResponse.json({ success: false, error: "Kode meja wajib diisi" }, { status: 400 });
   }
 
   try {
-    const db = createPgClient();
-    let table: { id: string; table_number?: string | null; qr_code?: string | null; status?: string | null } | null = null;
+    const [table, venue, member] = await Promise.all([
+      loadTableByCode(code).catch((error) => {
+        console.warn("Table order table lookup warning:", error instanceof Error ? error.message : error);
+        return null;
+      }),
+      loadVenueContext(),
+      getMemberSession().catch(() => null),
+    ]);
 
-    const query = db
-      .from("pos_tables")
-      .select("id, table_number, qr_code, status")
-      .limit(1);
-
-    const { data, error } = isUuid(code)
-      ? await query.eq("id", code).maybeSingle()
-      : await query.or(`table_number.eq.${code},qr_code.eq.${code}`).maybeSingle();
-
-    if (!error && data) {
-      table = data;
-    }
+    const inactiveTable = Boolean(table && table.is_active === false);
 
     return NextResponse.json({
       success: true,
       data: {
-        table_id: table?.id ?? null,
+        table_id: table && !inactiveTable ? table.id : null,
         table_code: code.toUpperCase(),
-        table_label: table?.table_number || table?.qr_code || code.toUpperCase(),
+        table_label: tableLabel(inactiveTable ? null : table, code),
+        table_area: table?.area ?? null,
+        table_resolved: Boolean(table && !inactiveTable),
+        status: table?.status ?? "available",
         order_type: "dine_in",
-        status: table?.status ?? "active",
-        table_resolved: Boolean(table?.id),
+        brand_name: venue.brandName,
+        billing: {
+          profile: venue.billingProfileName,
+          charges: venue.charges,
+        },
+        qris_available: venue.qrisAvailable,
+        ark_rate: venue.arkRate,
+        member_logged_in: Boolean(member),
       },
     });
   } catch (error) {
     console.error("Table order session error:", error);
-    return NextResponse.json({
-      success: true,
-      data: {
-        table_id: null,
-        table_code: code.toUpperCase(),
-        table_label: code.toUpperCase(),
-        order_type: "dine_in",
-        status: "active",
-        table_resolved: false,
-      },
-    });
+    return NextResponse.json(
+      { success: false, error: error instanceof Error ? error.message : "Gagal memuat sesi meja" },
+      { status: 500 }
+    );
   }
 }

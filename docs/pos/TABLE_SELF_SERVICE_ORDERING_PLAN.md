@@ -1,208 +1,78 @@
 # Table Self-Service Ordering Plan
 
-Last updated: 2026-05-23
+Last updated: 2026-09-12 (EPIC-048 — status live ada di `docs/epics/EPIC-048-self-order-meja-qr.md`)
 
-Dokumen ini menjelaskan rencana POS self-service untuk customer/member yang order dari meja lewat QR Code.
+Dokumen ini menjelaskan POS self-service untuk customer/member yang order dari meja lewat QR Code.
 
 ## Ringkasan
 
-Setiap meja akan punya QR Code. Saat customer scan QR, customer diarahkan ke halaman ordering yang otomatis membawa table code/table id. Customer bisa masuk sebagai member lewat nomor HP atau order sebagai guest, memilih menu, memilih pembayaran, lalu submit order.
+Setiap meja punya QR Code (Dashboard → POS → Tables → tombol **QR self-order**: tampil, salin, unduh PNG, cetak kartu). Saat customer scan QR, customer diarahkan ke `/table-order/[qr_code]` yang otomatis membawa identitas meja. Customer bisa masuk sebagai member lewat OTP WhatsApp atau order sebagai tamu, memilih menu, memilih pembayaran, lalu submit order.
 
-Flow ini terpisah dari POS cashier, tetapi order tetap masuk ke POS dan KDS/printer kitchen/bar.
+Flow ini terpisah dari POS cashier, tetapi order tetap masuk ke POS (open bill / paid) dan KDS per station.
 
 ## Route
 
-Baseline UI:
-
 ```text
-/table-order/[tableCode]
+/table-order/[tableCode]      ← tableCode = pos_tables.qr_code (fallback: table_number / uuid)
 ```
 
-Contoh:
-
-```text
-/table-order/T-01
-/table-order/VIP-02
-```
+Contoh: `/table-order/TBL-T01-9F3A2C1D`, `/table-order/T-01`.
 
 ## Flow Customer
 
 ```text
 Scan QR meja
   -> buka /table-order/[tableCode]
-  -> table otomatis dine-in
-  -> customer input nomor member atau guest
-  -> customer pilih menu
-  -> setiap produk menampilkan XP
-  -> customer pilih pembayaran
-     -> QRIS
-     -> ARK Coin
-     -> Virtual Account
-     -> Bayar di kasir
-  -> submit order
-  -> order masuk POS
-  -> item otomatis masuk kitchen/bar
+  -> pilih Makan di tempat / Bawa pulang
+  -> (opsional) Masuk Member: nomor WA -> OTP -> sesi member
+  -> pilih menu (kategori sticky, cari, varian via sheet)
+  -> keranjang: catatan dapur, ringkasan pajak/service sesuai profil billing
+  -> pilih pembayaran
+     -> QRIS (bila gateway Xendit aktif) — QR tampil di HP pemesan
+     -> ARK Coin (member ber-sesi, saldo cukup) — langsung lunas
+     -> Bayar di kasir — open bill, sebut nomor antrean
+  -> submit -> layar pelacakan (antrean, progres dapur, status bayar)
+  -> item otomatis masuk KDS sesuai station produk
 ```
 
-## Payment Options
+## Kode
 
-- QRIS: customer bayar langsung.
-- ARK Coin: customer member memakai saldo ARK Coin.
-- Virtual Account: customer bayar mandiri melalui VA.
-- Bayar di kasir: order masuk sebagai unpaid/open bill dan kasir memproses pembayaran.
+- Halaman: `src/app/table-order/[tableCode]/page.tsx` → `src/features/table-order/components/table-order-app.tsx`
+- Komponen: `menu-item-row` (baris gaya referensi GoFood), `variant-sheet`, `cart-sheet`, `member-sheet` (OTP), `order-tracking`, `sheet`
+- Lib murni: `src/lib/table-order/{menu,pricing,order-status}.ts` (teruji), server: `server.ts`, `qris.ts`
+- Admin QR meja: `src/features/pos/tables/components/table-qr-dialog.tsx`
 
-## UI Baseline
+## API
 
-File:
+| Endpoint | Fungsi |
+|----------|--------|
+| `GET /api/table-order/products` | Katalog `pos_products` aktif+tersedia, `categories`, `meta` diagnosa (kenapa kosong) |
+| `GET /api/table-order/session/[tableCode]` | Identitas meja, profil billing (charges), brand, `qris_available`, `ark_rate`, status login member |
+| `POST /api/table-order/orders` | Buat order — harga/XP/station dihitung server; `payment_method` `qris \| ark_coin \| cashier`; `order_type` `dine_in \| takeaway` |
+| `GET /api/table-order/orders/[id]?qr=1` | Status pesanan + item; cek & settle QRIS otomatis; `qr=1` kirim ulang `qr_string` |
+| `POST /api/member-portal/otp` · `/verify` · `GET /me` · `POST /logout` | Login member (reuse portal member) |
 
-- `src/app/table-order/[tableCode]/page.tsx`
+`POST /api/table-order/customers/lookup` **dihapus** (membuat member tanpa verifikasi).
 
-Yang sudah dibuat:
+## Keamanan
 
-- Mobile-first table ordering page.
-- Table code otomatis dari URL.
-- Member phone input tersambung ke customer lookup.
-- Guest checkout.
-- Menu list dari `pos_products` dengan XP per produk.
-- Cart dengan subtotal, tax, total XP, total amount.
-- Payment method selection.
-- Submit order ke POS order backend.
-- Success state.
-- Kitchen/bar routing melalui order item KDS.
+- Klien hanya mengirim `product_id`, `variant_id`, `quantity` — harga dari DB.
+- ARK Coin hanya dengan cookie sesi member (OTP); `customer_id` dari body diabaikan.
+- QRIS: konfigurasi gateway dicek sebelum order dibuat; QR terikat order sehingga webhook Xendit yang ada (`/api/payments/xendit/webhook` → `settleOrderQrisPayment`) melunasi otomatis; polling pemesan sebagai cadangan.
+- Rate limit per IP: buat order 20/menit, status 90/menit.
+- Order id (UUID acak) = token akses layar pelacakan; respons tanpa data pribadi.
 
-## Data Yang Perlu Disambungkan
+## Prasyarat Operasional (QA T-10)
 
-### Products
+1. `pos.pos_products` terisi, `is_active` & `is_available` true (menu kosong → layar menampilkan diagnosa).
+2. Settings → Payment Gateways: Xendit aktif + secret key + callback URL ke `/api/payments/xendit/webhook`.
+3. Fonnte/WhatsApp aktif untuk OTP member (nomor harus terdaftar sebagai member).
+4. Meja punya `qr_code` (otomatis saat dibuat) — cetak dari tombol QR.
+5. `crm_settings.default_company_id/default_branch_id` terisi (nomor antrean & jurnal).
 
-Menu mengambil data dari:
+## Belum Dikerjakan
 
-- `pos_products`
-- `pos_categories`
-- `xp_points`
-
-Product harus menampilkan:
-
-- name
-- description
-- price
-- image
-- category
-- station kitchen/bar
-- XP per product
-
-### Table
-
-QR Code harus membawa table identity.
-
-Rekomendasi:
-
-- table code tidak langsung expose raw database id.
-- gunakan signed table token atau public table code.
-- sistem resolve table code ke `table_id`.
-- jika table code belum terdaftar, order tetap bisa dibuat dengan table code di notes/special request.
-
-### Customer
-
-Member lookup:
-
-- by phone
-- optional member card/NFC di fase berikut
-
-Guest:
-
-- tetap bisa order
-- tidak menyimpan XP ke member
-
-### Order
-
-Order dibuat sebagai:
-
-- `order_type = dine_in`
-- `table_id` dari QR
-- `status = pending` untuk unpaid/open bill
-- `status = confirmed` untuk ARK Coin yang langsung paid
-- `payment_status`:
-  - `paid` untuk ARK Coin sukses
-  - `unpaid` untuk QRIS/VA/kasir sebelum gateway atau kasir memproses pembayaran
-
-### Kitchen/Bar
-
-Setelah order berhasil:
-
-- item kitchen masuk kitchen KDS/printer
-- item bar masuk bar KDS/printer
-
-Baseline existing KDS sudah bisa filter station dari nama produk. Ke depan lebih proper jika product punya station mapping eksplisit.
-
-## API Yang Dibutuhkan
-
-```text
-GET  /api/table-order/session/[tableCode]
-GET  /api/table-order/products
-POST /api/table-order/customers/lookup
-POST /api/table-order/orders
-POST /api/table-order/orders/[id]/pay/qris
-POST /api/table-order/orders/[id]/pay/va
-```
-
-Status:
-
-- `GET /api/table-order/session/[tableCode]`: done.
-- `GET /api/table-order/products`: done.
-- `POST /api/table-order/customers/lookup`: done.
-- `POST /api/table-order/orders`: done.
-- QRIS/VA payment callback: pending gateway integration.
-
-## Development Phases
-
-### Phase 1 - UI Baseline
-
-Status: Done
-
-- Route `/table-order/[tableCode]`.
-- Member/guest step.
-- Menu step.
-- Payment step.
-- Success step.
-- XP per product visible.
-
-### Phase 2 - Products API
-
-Status: Done
-
-- Product source dari `pos_products`.
-- Tampilkan `xp_points`.
-- Filter unavailable product.
-- Category filter.
-
-### Phase 3 - Table Session
-
-Status: Baseline Done
-
-- Resolve QR table code ke `table_id`.
-- Validate table aktif.
-- Prevent fake/random table code masih perlu signed token atau table registry strict mode.
-
-### Phase 4 - Submit Order
-
-Status: Baseline Done
-
-- Create order dine-in.
-- Support bayar di kasir sebagai open bill.
-- Push item ke KDS/printer.
-
-### Phase 5 - Payment
-
-Status: Partial
-
-- QRIS: order dibuat unpaid, gateway belum disambungkan.
-- ARK Coin: langsung deduct balance, order paid, CRM XP awarded.
-- Virtual Account: order dibuat unpaid, gateway belum disambungkan.
-- Payment callback/status polling.
-
-### Phase 6 - Admin Monitoring
-
-- Kasir lihat self-service order.
-- Retry print.
-- Void/cancel.
-- Table order history.
+- Virtual Account (tidak ada integrasi VA di repo).
+- Modifier group (hanya varian yang didukung di self-order).
+- Mode strict kode meja / signed token (kode tak terdaftar masih boleh memesan, `table_id` null).
+- Promo code di self-order (engine promo EPIC-032 baru untuk kasir & tiket).
