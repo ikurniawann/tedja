@@ -112,3 +112,11 @@ sticky, tombol **Menu** mengambang, bar keranjang di bawah.
   ganda `searchPlaceholder` & `FLOOR_PRESETS` readonly — ikut diperbaiki),
   test PASS (vitest 4 berkas / 31 test). Status → `ready-for-qa`; T-10 butuh
   akses DB/gateway produksi yang tidak tersedia di workspace ini.
+- 2026-09-12 11:09 WIB — Deploy produksi (`docker compose build/up tedja-app`
+  di `/home/wit/docker-infra/tedja`, image `tedja:local`, container healthy).
+  Verifikasi: `GET /api/table-order/session/TBL-501-SEED` → meja resolve
+  (Table 5-01, Indoor), brand Tedja Coffee, `qris_available=false` (Xendit
+  belum aktif); `GET /api/table-order/products` → `meta.total_products=0`
+  (katalog POS produksi kosong — menu baru tampil setelah produk diisi).
+  Halaman `/table-order/TBL-501-SEED` HTTP 200. T-10 tersisa: isi
+  `pos_products`, aktifkan Xendit + callback webhook, Fonnte OTP.
