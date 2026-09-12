@@ -120,3 +120,10 @@ sticky, tombol **Menu** mengambang, bar keranjang di bawah.
   (katalog POS produksi kosong — menu baru tampil setelah produk diisi).
   Halaman `/table-order/TBL-501-SEED` HTTP 200. T-10 tersisa: isi
   `pos_products`, aktifkan Xendit + callback webhook, Fonnte OTP.
+- 2026-09-12 — Seeder demo `database/seeders/tedja-self-order-demo.{sql,js}`
+  (`npm run db:seed:tedja-self-order`): 4 kategori, 12 produk TDJ-* ber-varian
+  /XP/station/foto (1 khusus member `min_xp=100`), 2 member demo
+  (081200000001 bronze · 081200000002 gold). Dijalankan di DB produksi
+  (`docker exec tedja-db psql --single-transaction`) → API publik 12 produk
+  (Kopi 5 · Non-Kopi 2 · Makanan 3 · Dessert & Pastry 2). Sisa T-10: Xendit
+  + callback webhook, Fonnte OTP.
