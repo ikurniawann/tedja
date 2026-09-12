@@ -133,3 +133,10 @@ sticky, tombol **Menu** mengambang, bar keranjang di bawah.
   `/products/*` dan `/qris/*` di-redirect ke /login oleh middleware auth →
   ditambahkan ke `PUBLIC_AUTH_PREFIXES` (+ test). Perlu rebuild container
   agar foto & logo QRIS tampil di halaman publik.
+- 2026-09-12 — Bug QA owner: setelah memilih 1 menu lalu scroll ke bawah,
+  halaman tidak bisa di-scroll kembali ke atas (HP). Penyebab: kunci scroll
+  `body.style.overflow="hidden"` di BottomSheet rawan tidak pulih di Chrome
+  Android/Safari iOS. Fix: `lockPageScroll()` (position fixed + simpan/pulihkan
+  scrollY, efek hanya bergantung `open`, onClose via ref) + `overscroll-contain`;
+  3 test jsdom (lock/unlock, tidak re-lock saat re-render, unmount). Vitest
+  self-order 6 berkas / 38 test hijau. Perlu rebuild container.
