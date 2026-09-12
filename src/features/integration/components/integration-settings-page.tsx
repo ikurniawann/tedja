@@ -15,6 +15,7 @@ import {
   Wifi,
   Zap,
 } from 'lucide-react';
+import { GobizSettingsPanel } from '@/features/gobiz/components/gobiz-settings-panel';
 
 const sidebar = [
   { label: 'Game', icon: Gamepad2, active: true },
@@ -112,7 +113,7 @@ export function IntegrationSettingsPage() {
             <div className="mx-auto max-w-4xl">
               <div className="mb-6">
                 <h1 className="text-4xl font-semibold tracking-tight">Integration</h1>
-                <p className="mt-2 text-sm text-black/50">Kelola integrasi Sulu In Wounderland OS dengan layanan eksternal.</p>
+                <p className="mt-2 text-sm text-black/50">Kelola integrasi Tedja Coffee OS dengan layanan eksternal.</p>
               </div>
 
               {/* Hero Card */}
@@ -132,6 +133,9 @@ export function IntegrationSettingsPage() {
                   </button>
                 </div>
               </div>
+
+              {/* GoBiz / GoFood (EPIC-049) — konfigurasi nyata */}
+              <GobizSettingsPanel />
 
               {/* Integration cards */}
               <div className="mb-6 grid gap-4 sm:grid-cols-2">

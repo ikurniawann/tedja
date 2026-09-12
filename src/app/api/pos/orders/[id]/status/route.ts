@@ -4,6 +4,7 @@ import { requirePosMenu } from '@/lib/api/auth';
 import { IAM } from '@/lib/iam/prefixes';
 import { restoreMerchandiseStockForOrder } from '@/lib/pos/merchandise-stock';
 import { normalizeStation } from '@/lib/pos/kitchen-station';
+import { notifyGofoodFoodReadyForPosOrder } from '@/lib/gobiz/service';
 import {
   deriveOrderKitchenStatus,
   isFnbStation,
@@ -195,6 +196,13 @@ export async function PATCH(
       `Status updated to ${status}${station ? ` (${station})` : ''}${itemHint}`,
     changed_at: now,
   });
+
+  // EPIC-049: order GoFood yang siap → beri tahu driver/pelanggan via GoBiz
+  // (best-effort; kegagalan dicatat di gofood_orders.last_error, tidak
+  // menggagalkan bump KDS).
+  if (derived.orderStatus === 'ready' || derived.orderStatus === 'served' || derived.orderStatus === 'completed') {
+    await notifyGofoodFoodReadyForPosOrder(orderId);
+  }
 
   return NextResponse.json({
     success: true,

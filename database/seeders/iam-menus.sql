@@ -95,6 +95,7 @@ INSERT INTO iam.menus (code, menu_name, route_path, icon, menu_type, order_numbe
   ('items.raw-material.purchasing', 'Pembelian', NULL, 'shopping', 'group', 30, '{"actions":["read"]}'::jsonb),
   ('pos.kitchen.printer-settings', 'Printer', '/dashboard/pos/printer-settings', 'settings', 'sidebar', 30, '{"actions":["read"]}'::jsonb),
   ('pos.operations.orders', 'Orders', '/dashboard/pos/orders', 'clipboard', 'sidebar', 30, '{"actions":["read"]}'::jsonb),
+  ('pos.operations.gofood', 'GoFood', '/dashboard/pos/gofood', 'truck', 'sidebar', 32, '{"actions":["read","update"]}'::jsonb),
   ('hris.master.employment-statuses', 'Status Karyawan', '/dashboard/master/employment-statuses', 'identification', 'sidebar', 30, '{"actions":["read"]}'::jsonb),
   ('hris.performance.review', 'Performance Review', '/dashboard/hris/performance', 'chart', 'sidebar', 40, '{"actions":["read"]}'::jsonb),
   ('hris.recruitment.job-portal', 'Job Portal', '/dashboard/hris/job-portal', 'briefcase', 'sidebar', 40, '{"actions":["read"]}'::jsonb),
@@ -233,6 +234,22 @@ WHERE deleted_at IS NULL
     'crm.members.inbox',
     'settings.wa_gateway', 'settings.payment-gateways',
     'crm.members.reviews',
+    -- Modul Ticketing / Dataroom / Resort / Shop / Promo(CRM) / Items General / dll
+    -- (ditambahkan 12 Sep 2026 — seeder ini sempat menyapu 52 menu di deploy Tedja
+    -- karena kode-kodenya belum ada di daftar canonical):
+    'crm.badges', 'crm.campaigns', 'crm.promo', 'crm.wallpapers',
+    'dataroom', 'ess.requests', 'hris.kepegawaian.holidays', 'items.general',
+    'items.general.inventory', 'items.general.inventory.adjustment', 'items.general.inventory.stock', 'items.general.inventory.usage',
+    'items.general.master', 'items.general.master.categories', 'items.general.master.items', 'items.general.purchasing',
+    'items.general.purchasing.approval-po', 'items.general.purchasing.approval-pr', 'items.general.purchasing.invoice', 'items.general.purchasing.po',
+    'items.general.purchasing.pr', 'items.general.purchasing.receive', 'pos.loyalty.payment-methods', 'pos.loyalty.unlink-card',
+    'pos.operations.customer-display', 'pos.settings', 'pos.settings.supervisors', 'promo.campaigns',
+    'promo.offers.bundling', 'promo.offers.bxgy', 'promo.offers.volume', 'resort',
+    'resort.front-office', 'resort.reservations', 'resort.rooms', 'settings.billing',
+    'settings.shipping', 'settings.wa_notifications', 'shop', 'shop.marketplace',
+    'shop.orders', 'ticketing', 'ticketing.booking', 'ticketing.channel-manager',
+    'ticketing.gate', 'ticketing.gate_pass', 'ticketing.loket', 'ticketing.mapping',
+    'ticketing.passes', 'ticketing.reports', 'ticketing.settings', 'ticketing.tickets',
     -- EPIC-022 Sales Funneling (21 Jul 2026):
     'sales-funnel', 'sales-funnel.leads',
     'sales-funnel.pipeline', 'sales-funnel.settings',
@@ -268,4 +285,6 @@ WHERE deleted_at IS NULL
     'accounting.reports.cash-flow', 'accounting.reports.equity', 'accounting.reports.budget',
     -- POS TV Antrian (9 Aug 2026):
     'pos.cashier.central',
-    'pos.kitchen.queue-board');
+    'pos.kitchen.queue-board',
+    -- GoFood / GoBiz (EPIC-049, 12 Sep 2026):
+    'pos.operations.gofood');

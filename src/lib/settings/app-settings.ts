@@ -46,6 +46,16 @@ export const SETTING_KEYS = {
   // Identitas merchant di tampilan QRIS kasir (dialog QR bergaya standar
   // QRIS Indonesia). Kosong = nama jatuh ke COMPANY_LEGAL_NAME, NMID disembunyikan.
   QRIS_MERCHANT_NAME: "qris_merchant_name",
+  // GoBiz / GoFood (EPIC-049)
+  GOBIZ_ENABLED: "gobiz_enabled",
+  GOBIZ_ENVIRONMENT: "gobiz_environment",
+  GOBIZ_CLIENT_ID: "gobiz_client_id",
+  GOBIZ_CLIENT_SECRET: "gobiz_client_secret",
+  GOBIZ_OUTLET_ID: "gobiz_outlet_id",
+  GOBIZ_WEBHOOK_TOKEN: "gobiz_webhook_token",
+  GOBIZ_AUTO_ACCEPT: "gobiz_auto_accept",
+  GOBIZ_OAUTH_URL: "gobiz_oauth_url",
+  GOBIZ_API_BASE_URL: "gobiz_api_base_url",
   QRIS_NMID: "qris_nmid",
   // Penerima laporan tutup kasir via WA — JSON array nomor `628xx`, boleh
   // lebih dari satu. Terpisah dari recipients notifikasi owner (EPIC-020)

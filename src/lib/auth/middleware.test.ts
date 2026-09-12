@@ -13,6 +13,12 @@ describe("isPublicAuthPath", () => {
     expect(isPublicAuthPath("/api/table-order/products")).toBe(true);
   });
 
+  it("allows the GoBiz webhook receiver (token in path) but not its settings API", () => {
+    expect(isPublicAuthPath("/api/integrations/gobiz/webhook/abc123")).toBe(true);
+    expect(isPublicAuthPath("/api/settings/gobiz")).toBe(false);
+    expect(isPublicAuthPath("/api/pos/gofood/orders")).toBe(false);
+  });
+
   it("does not open dashboard product pages by accident", () => {
     expect(isPublicAuthPath("/dashboard/pos/products")).toBe(false);
     expect(isPublicAuthPath("/api/pos/products")).toBe(false);

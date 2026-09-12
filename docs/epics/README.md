@@ -51,6 +51,7 @@ deploying-dev · ready-for-qa · blocked · done).
 | [EPIC-046](./EPIC-046-tenant-dusun-bambu.md) | Tenant Dusun Bambu (`MODULE-DUSUN-BAMBU`) | ready-for-qa | 2026-09-06 |
 | [EPIC-047](./EPIC-047-apparel-varian-produksi.md) | Apparel & Alas Kaki — Varian dari Master sampai Produksi (`MODULE-APPAREL`) | on-progress | 2026-09-09 |
 | [EPIC-048](./EPIC-048-self-order-meja-qr.md) | Self-Order Meja via QR — Aktivasi Penuh & UI Daftar Menu | ready-for-qa | 2026-09-12 |
+| [EPIC-049](./EPIC-049-integrasi-gobiz-gofood.md) | Integrasi GoBiz / GoFood — Order Masuk POS & KDS | ready-for-qa | 2026-09-12 |
 
 Aturan:
 - Epic + registry ini adalah sumber kebenaran status pekerjaan (canonical).
