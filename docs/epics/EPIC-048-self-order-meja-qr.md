@@ -127,3 +127,9 @@ sticky, tombol **Menu** mengambang, bar keranjang di bawah.
   (`docker exec tedja-db psql --single-transaction`) → API publik 12 produk
   (Kopi 5 · Non-Kopi 2 · Makanan 3 · Dessert & Pastry 2). Sisa T-10: Xendit
   + callback webhook, Fonnte OTP.
+- 2026-09-12 — Foto produk: seeder diringkas ke 8 produk = 8 foto yang sudah
+  ada di `public/products/*.png` (permintaan owner "ambil yang ada aja");
+  produk TDJ-* lama tanpa foto lokal dihapus (belum pernah dipesan). Temuan:
+  `/products/*` dan `/qris/*` di-redirect ke /login oleh middleware auth →
+  ditambahkan ke `PUBLIC_AUTH_PREFIXES` (+ test). Perlu rebuild container
+  agar foto & logo QRIS tampil di halaman publik.

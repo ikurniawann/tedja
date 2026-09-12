@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Seeder: data demo ringkas self-order meja Tedja (EPIC-048) —
- * 4 kategori, 12 produk ber-varian/XP/station/foto (1 khusus member), 2 member demo.
+ * 4 kategori, 8 produk ber-varian/XP/station dgn foto public/products, 2 member demo.
  * Idempotent; meja tidak disentuh. Detail di tedja-self-order-demo.sql.
  *
  * Usage:

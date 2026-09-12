@@ -2,6 +2,17 @@ import { NextResponse, type NextRequest } from "next/server";
 import { SESSION_COOKIE } from "@/lib/auth/constants";
 
 const PUBLIC_AUTH_PREFIXES = [
+  // Aset branding statis: dibutuhkan halaman /login dan halaman publik
+  // (favicon, logo, manifest PWA) sebelum user punya sesi.
+  "/logos/",
+  "/logo.png",
+  "/favicon.svg",
+  "/manifest-pos.webmanifest",
+  "/bg.",
+  // Foto produk (public/products) & logo QRIS/GPN (public/qris) dipakai
+  // halaman publik self-order meja (EPIC-048) sebelum ada sesi.
+  "/products/",
+  "/qris/",
   "/arkiv-os",
   "/qa",
   "/login",
