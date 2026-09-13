@@ -169,14 +169,17 @@ export interface ForecastDeal {
 export interface ForecastResponse {
   month: string;
   rows: ForecastRow[];
+  /** Target perusahaan bulan ini (user_id null); null bila belum diatur. */
+  company_target: { target_value: number; target_deals: number | null } | null;
   total: ForecastRow;
   deals: ForecastDeal[];
 }
 
 export interface TargetRow {
   id: string;
-  user_id: string;
-  full_name: string;
+  /** null = target perusahaan */
+  user_id: string | null;
+  full_name: string | null;
   period_month: string;
   target_value: string | number;
   target_deals: number | null;

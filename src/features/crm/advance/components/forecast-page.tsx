@@ -38,6 +38,7 @@ export function ForecastPage() {
   const [month, setMonth] = useState(() => monthKey(new Date()));
   const [pipelineId, setPipelineId] = useState("");
   const [editTargets, setEditTargets] = useState<Record<string, string> | null>(null);
+  const [editCompany, setEditCompany] = useState("");
   const forecastQuery = useForecast(month, pipelineId);
   const targetsQuery = useTargets(month);
   const pipelinesQuery = usePipelines();
@@ -45,17 +46,22 @@ export function ForecastPage() {
   const data = forecastQuery.data;
   const rows = useMemo(() => data?.rows ?? [], [data]);
   const total = data?.total;
+  const companyTarget = data?.company_target ?? null;
+  const allocated = total?.allocated_target_value ?? 0;
+  const allocationPct = companyTarget && companyTarget.target_value > 0 ? Math.round((allocated / companyTarget.target_value) * 1000) / 10 : null;
 
   const startEdit = () => {
     const map: Record<string, string> = {};
     for (const r of rows) if (r.user_id && r.user_id !== "total") map[r.user_id] = r.target_value ? String(r.target_value) : "";
     setEditTargets(map);
+    setEditCompany(companyTarget?.target_value ? String(companyTarget.target_value) : "");
   };
   const saveEdit = () => {
     if (!editTargets) return;
-    const targets = Object.entries(editTargets)
+    const targets: Array<{ user_id: string | null; period_month: string; target_value: number }> = Object.entries(editTargets)
       .filter(([, v]) => v !== "")
       .map(([user_id, v]) => ({ user_id, period_month: month, target_value: Number(v) || 0 }));
+    if (editCompany !== "" || companyTarget) targets.push({ user_id: null, period_month: month, target_value: Number(editCompany) || 0 });
     if (targets.length === 0) { setEditTargets(null); return; }
     saveMutation.mutate(targets, { onSuccess: () => setEditTargets(null) });
   };
@@ -86,7 +92,7 @@ export function ForecastPage() {
       {total ? (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
           {[
-            ["Target", rupiah(total.target_value)],
+            [total.company_target_set ? "Target perusahaan" : "Target (Σ salesperson)", rupiah(total.target_value)],
             ["Menang", `${rupiah(total.won_value)} · ${total.won_deals} deal`],
             ["Weighted pipeline", rupiah(total.weighted_value)],
             ["Proyeksi", `${rupiah(total.won_value + total.weighted_value)} (${total.attainment_percent}%)`],
@@ -100,13 +106,24 @@ export function ForecastPage() {
         </div>
       ) : null}
 
+      {total?.company_target_set && allocationPct !== null ? (
+        <p className={`text-sm ${allocationPct < 100 ? "text-amber-700" : allocationPct > 100 ? "text-red-700" : "text-emerald-700"}`}>
+          Teralokasi ke salesperson: {rupiah(allocated)} ({allocationPct}% dari target perusahaan)
+          {allocationPct < 100 ? ` · sisa ${rupiah(companyTarget!.target_value - allocated)} belum dibagi` : allocationPct > 100 ? " · melebihi target perusahaan" : ""}
+        </p>
+      ) : null}
+
       <PurchasingListSection
         icon={ChartBarIcon}
         title="Per Salesperson"
         description="Attainment = (menang + weighted) ÷ target."
         toolbar={
           editTargets ? (
-            <div className="flex gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="flex items-center gap-2 text-xs text-gray-600">
+                Target perusahaan
+                <Input type="number" min={0} value={editCompany} onChange={(e) => setEditCompany(e.target.value)} placeholder="kosong = Σ salesperson" className="h-9 w-44" />
+              </label>
               <Button type="button" variant="outline" size="sm" className="h-9" onClick={() => setEditTargets(null)}>Batal</Button>
               <Button type="button" size="sm" className="h-9 gap-1 bg-pink-600 text-white hover:bg-pink-700" onClick={saveEdit} disabled={saveMutation.isPending}>
                 <Save className="h-4 w-4" /> Simpan target
@@ -142,7 +159,7 @@ export function ForecastPage() {
                 {rows.map((r) => <ForecastRowView key={r.user_id ?? "none"} row={r} edit={editTargets} onEdit={(v) => editTargets && r.user_id && setEditTargets({ ...editTargets, [r.user_id]: v })} />)}
                 {total ? (
                   <tr className="bg-gray-50/80 font-semibold">
-                    <td className="px-4 py-3">Total</td>
+                    <td className="px-4 py-3">Total{total.company_target_set ? <span className="ml-1 text-xs font-normal text-gray-500">(target perusahaan)</span> : null}</td>
                     <td className="px-4 py-3 text-right">{rupiah(total.target_value)}</td>
                     <td className="px-4 py-3 text-right text-emerald-700">{rupiah(total.won_value)}</td>
                     <td className="px-4 py-3 text-right">{rupiah(total.commit_value)}</td>

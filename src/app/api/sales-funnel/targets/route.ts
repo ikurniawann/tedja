@@ -6,7 +6,7 @@ import { query } from "@/lib/db";
 import { monthRange, targetSchema } from "@/lib/sales-funnel/forecast";
 import { requireCompanyScope, requireSalesFunnelRole, resolveSalesVenue } from "@/lib/sales-funnel/server";
 
-/** EPIC-050 T-3.2 — target per salesperson per bulan. GET ?month=YYYY-MM · PUT { targets: [...] } */
+/** EPIC-050 T-3.2 — target per salesperson + target perusahaan (user_id null) per bulan. GET ?month=YYYY-MM · PUT { targets: [...] } */
 export async function GET(request: NextRequest) {
   const { error, user } = await requireSalesFunnelRole();
   if (error) return error;
@@ -18,10 +18,10 @@ export async function GET(request: NextRequest) {
   const { from } = monthRange(month);
   const rows = await query(
     `SELECT t.id, t.user_id, u.full_name, t.period_month::text AS period_month, t.target_value, t.target_deals, t.pipeline_id
-     FROM crm.crm_sales_targets t JOIN configuration.users u ON u.id = t.user_id
+     FROM crm.crm_sales_targets t LEFT JOIN configuration.users u ON u.id = t.user_id
      WHERE t.period_month = $1::date AND ($2::uuid IS NULL OR t.company_id = $2)
-       ${user.role === "sales" ? "AND t.user_id = $3" : ""}
-     ORDER BY u.full_name`,
+       ${user.role === "sales" ? "AND (t.user_id = $3 OR t.user_id IS NULL)" : ""}
+     ORDER BY t.user_id IS NOT NULL, u.full_name`,
     user.role === "sales" ? [from, scope?.companyId ?? null, user.id] : [from, scope?.companyId ?? null]
   );
   return successResponse(rows);
@@ -48,7 +48,7 @@ export async function PUT(request: NextRequest) {
     await query(
       `INSERT INTO crm.crm_sales_targets (company_id, user_id, period_month, target_value, target_deals, pipeline_id, created_by)
        VALUES ($1, $2, $3::date, $4, $5, $6, $7)
-       ON CONFLICT (company_id, user_id, period_month, COALESCE(pipeline_id, '00000000-0000-0000-0000-000000000000'::uuid))
+       ON CONFLICT (company_id, COALESCE(user_id, '00000000-0000-0000-0000-000000000000'::uuid), period_month, COALESCE(pipeline_id, '00000000-0000-0000-0000-000000000000'::uuid))
        DO UPDATE SET target_value = EXCLUDED.target_value, target_deals = EXCLUDED.target_deals, updated_at = now()`,
       [companyId, t.user_id, from, t.target_value, t.target_deals ?? null, t.pipeline_id ?? null, user.id]
     );

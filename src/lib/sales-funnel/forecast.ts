@@ -26,7 +26,8 @@ export function categoryFromStage(stage: { is_won: boolean; is_lost: boolean; pr
 }
 
 export const targetSchema = z.object({
-  user_id: z.string().uuid(),
+  /** null = target perusahaan (seluruh tim) */
+  user_id: z.string().uuid().nullable(),
   period_month: z.string().regex(/^\d{4}-\d{2}$/, "format YYYY-MM"),
   target_value: z.number().min(0).max(99_999_999_999),
   target_deals: z.number().int().min(0).max(10_000).optional().nullable(),
@@ -66,6 +67,30 @@ export interface ForecastRow {
   /** won + weighted vs target */
   attainment_percent: number;
   gap: number;
+  /** Hanya di baris total: jumlah target salesperson (bila target perusahaan dipakai). */
+  allocated_target_value?: number;
+  /** Hanya di baris total: true bila target_value berasal dari target perusahaan. */
+  company_target_set?: boolean;
+}
+
+export interface TargetSource {
+  user_id: string | null;
+  target_value: number;
+  target_deals: number | null;
+}
+
+/** Pisahkan target perusahaan (user_id null) dari target salesperson. */
+export function splitTargets(targets: TargetSource[]): { company: { target_value: number; target_deals: number | null } | null; users: Array<TargetSource & { user_id: string }> } {
+  let company: { target_value: number; target_deals: number | null } | null = null;
+  const users: Array<TargetSource & { user_id: string }> = [];
+  for (const t of targets) {
+    if (t.user_id === null) {
+      company = company ?? { target_value: 0, target_deals: null };
+      company.target_value += Number(t.target_value) || 0;
+      if (t.target_deals != null) company.target_deals = (company.target_deals ?? 0) + t.target_deals;
+    } else users.push({ ...t, user_id: t.user_id });
+  }
+  return { company, users };
 }
 
 /**
@@ -74,9 +99,10 @@ export interface ForecastRow {
  */
 export function aggregateForecast(
   deals: ForecastDealRow[],
-  targets: Array<{ user_id: string; target_value: number; target_deals: number | null }>,
+  targets: TargetSource[],
   users: Array<{ id: string; name: string }>
 ): ForecastRow[] {
+  const { users: userTargets } = splitTargets(targets);
   const rows = new Map<string | null, ForecastRow>();
   const ensure = (userId: string | null, name: string) => {
     let r = rows.get(userId);
@@ -90,7 +116,7 @@ export function aggregateForecast(
     return r;
   };
   for (const u of users) ensure(u.id, u.name);
-  for (const t of targets) {
+  for (const t of userTargets) {
     const r = ensure(t.user_id, users.find((u) => u.id === t.user_id)?.name ?? "—");
     r.target_value += Number(t.target_value) || 0;
     if (t.target_deals != null) r.target_deals = (r.target_deals ?? 0) + t.target_deals;
@@ -126,7 +152,11 @@ export function aggregateForecast(
   });
 }
 
-export function sumForecast(rows: ForecastRow[]): ForecastRow {
+/**
+ * Baris total. Bila target perusahaan diisi, target total = target perusahaan
+ * dan allocated_target_value = Σ target salesperson; jika tidak, total = Σ salesperson.
+ */
+export function sumForecast(rows: ForecastRow[], companyTarget?: { target_value: number; target_deals: number | null } | null): ForecastRow {
   const total: ForecastRow = {
     user_id: "total", user_name: "Total", target_value: 0, target_deals: null, won_value: 0, won_deals: 0,
     commit_value: 0, best_case_value: 0, pipeline_value: 0, weighted_value: 0, open_deals: 0, attainment_percent: 0, gap: 0,
@@ -141,6 +171,12 @@ export function sumForecast(rows: ForecastRow[]): ForecastRow {
     total.pipeline_value += r.pipeline_value;
     total.weighted_value += r.weighted_value;
     total.open_deals += r.open_deals;
+  }
+  total.allocated_target_value = total.target_value;
+  total.company_target_set = Boolean(companyTarget && companyTarget.target_value > 0);
+  if (total.company_target_set && companyTarget) {
+    total.target_value = Number(companyTarget.target_value) || 0;
+    total.target_deals = companyTarget.target_deals;
   }
   const projected = total.won_value + total.weighted_value;
   total.attainment_percent = total.target_value > 0 ? Math.round((projected / total.target_value) * 1000) / 10 : 0;

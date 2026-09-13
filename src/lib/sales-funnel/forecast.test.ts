@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { aggregateForecast, categoryFromStage, monthRange, sumForecast, targetSchema } from "./forecast";
+import { aggregateForecast, categoryFromStage, monthRange, splitTargets, sumForecast, targetSchema } from "./forecast";
 
 describe("forecast & target (EPIC-050 T-3.2)", () => {
   test("kategori dari tahap: menang/kalah/commit≥75/best_case≥50/pipeline", () => {
@@ -46,7 +46,37 @@ describe("forecast & target (EPIC-050 T-3.2)", () => {
     expect(total.weighted_value).toBe(19_400_000);
   });
 
-  test("targetSchema format bulan", () => {
+  test("target perusahaan (user_id null): dipisah, jadi total, alokasi = Σ salesperson", () => {
+    const targets = [
+      { user_id: "u1", target_value: 30_000_000, target_deals: 2 },
+      { user_id: "u2", target_value: 20_000_000, target_deals: null },
+      { user_id: null, target_value: 80_000_000, target_deals: 5 },
+    ];
+    const { company, users } = splitTargets(targets);
+    expect(company).toEqual({ target_value: 80_000_000, target_deals: 5 });
+    expect(users.map((u) => u.user_id)).toEqual(["u1", "u2"]);
+    const rows = aggregateForecast(
+      [{ owner_user_id: "u1", owner_name: "Ani", pipeline_id: null, value: 40_000_000, probability: 100, category: "closed_won" }],
+      targets,
+      [{ id: "u1", name: "Ani" }, { id: "u2", name: "Budi" }]
+    );
+    expect(rows.find((r) => r.user_id === null)).toBeUndefined();
+    expect(rows.find((r) => r.user_id === "u1")!.target_value).toBe(30_000_000);
+    const total = sumForecast(rows, company);
+    expect(total.company_target_set).toBe(true);
+    expect(total.target_value).toBe(80_000_000);
+    expect(total.target_deals).toBe(5);
+    expect(total.allocated_target_value).toBe(50_000_000);
+    expect(total.attainment_percent).toBe(50);
+    expect(total.gap).toBe(40_000_000);
+    const noCompany = sumForecast(rows, null);
+    expect(noCompany.company_target_set).toBe(false);
+    expect(noCompany.target_value).toBe(50_000_000);
+    expect(noCompany.allocated_target_value).toBe(50_000_000);
+  });
+
+  test("targetSchema format bulan & user_id null (perusahaan)", () => {
+    expect(targetSchema.safeParse({ user_id: null, period_month: "2026-09", target_value: 100 }).success).toBe(true);
     expect(targetSchema.safeParse({ user_id: "11111111-1111-4111-8111-111111111111", period_month: "2026-09", target_value: 1 }).success).toBe(true);
     expect(targetSchema.safeParse({ user_id: "11111111-1111-4111-8111-111111111111", period_month: "2026-9", target_value: 1 }).success).toBe(false);
   });

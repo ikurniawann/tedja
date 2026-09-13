@@ -77,5 +77,5 @@ export const deleteCustomField = async (id: string) => { const r = await fetch(`
 export const fetchForecast = (month: string, pipelineId?: string) =>
   fetch(`/api/sales-funnel/forecast?month=${month}${pipelineId ? `&pipeline_id=${pipelineId}` : ""}`).then((r) => json<ForecastResponse>(r, "Gagal memuat forecast"));
 export const fetchTargets = (month: string) => fetch(`/api/sales-funnel/targets?month=${month}`).then((r) => json<TargetRow[]>(r, "Gagal memuat target"));
-export const saveTargets = (targets: Array<{ user_id: string; period_month: string; target_value: number; target_deals?: number | null }>) =>
+export const saveTargets = (targets: Array<{ user_id: string | null; period_month: string; target_value: number; target_deals?: number | null }>) =>
   fetch("/api/sales-funnel/targets", jsonInit("PUT", { targets })).then(async (r) => { if (!r.ok) await parseError(r, "Gagal menyimpan target"); return (await r.json()) as { message?: string }; });

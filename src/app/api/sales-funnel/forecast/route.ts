@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { successResponse } from "@/lib/api/auth";
 import { getApiUserScope } from "@/lib/api/scope";
 import { query } from "@/lib/db";
-import { aggregateForecast, monthRange, sumForecast, type ForecastDealRow } from "@/lib/sales-funnel/forecast";
+import { aggregateForecast, monthRange, splitTargets, sumForecast, type ForecastDealRow } from "@/lib/sales-funnel/forecast";
 import { requireCompanyScope, requireSalesFunnelRole } from "@/lib/sales-funnel/server";
 
 /**
@@ -49,7 +49,7 @@ export async function GET(request: NextRequest) {
      ORDER BY d.event_date NULLS LAST`,
     params
   );
-  const targets = await query<{ user_id: string; target_value: number; target_deals: number | null }>(
+  const targets = await query<{ user_id: string | null; target_value: number; target_deals: number | null }>(
     `SELECT user_id, target_value, target_deals FROM crm.crm_sales_targets
      WHERE period_month = $1::date AND ($2::uuid IS NULL OR company_id = $2)
        AND ($3::uuid IS NULL OR pipeline_id IS NULL OR pipeline_id = $3)`,
@@ -62,15 +62,18 @@ export async function GET(request: NextRequest) {
      ORDER BY full_name`,
     user.role === "sales" ? [scope?.companyId ?? null, user.id] : [scope?.companyId ?? null]
   );
+  const normalizedTargets = targets.map((t) => ({ ...t, target_value: Number(t.target_value) }));
+  const { company: companyTarget } = splitTargets(normalizedTargets);
   const rows = aggregateForecast(
     deals.map((d) => ({ ...d, value: Number(d.value) })),
-    targets.map((t) => ({ ...t, target_value: Number(t.target_value) })),
+    normalizedTargets,
     users
   );
   return successResponse({
     month,
     rows,
-    total: sumForecast(rows),
+    company_target: companyTarget,
+    total: sumForecast(rows, companyTarget),
     deals: deals.map((d) => ({ id: d.deal_id, title: d.title, org_name: d.org_name, owner_user_id: d.owner_user_id, owner_name: d.owner_name,
       value: Number(d.value), probability: d.probability, category: d.category, stage_name: d.stage_name, event_date: d.event_date, pipeline_id: d.pipeline_id })),
   });

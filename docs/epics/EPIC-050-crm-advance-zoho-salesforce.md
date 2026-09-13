@@ -378,6 +378,7 @@ Urutan final setelah keputusan owner 2026-09-13 (email ditunda ke akhir).
 - [x] T-3.1 Multi-pipeline (default: Event & Booking Venue, B2B Kopi & Katering)
       + probability per tahap + deal team; kanban per pipeline.
 - [x] T-3.2 Target per salesperson per bulan (Rupiah, opsional jumlah deal) +
+      target perusahaan per bulan (user_id NULL) + indikator alokasi +
       halaman Forecast (weighted, kategori commit/best-case/pipeline).
 - [x] T-3.3 Custom fields registry + renderer + validasi + dipakai filter/report.
 - [x] T-3.4 Versi quotation + expiry reminder (WA).
@@ -512,3 +513,13 @@ Urutan final setelah keputusan owner 2026-09-13 (email ditunda ke akhir).
   (revise → v+1, lama = superseded) + pengingat kedaluwarsa H-3 (watcher per
   jam, WA + in-app). Bukti: 9 tes unit baru (custom fields, forecast) — 201
   total lulus; tsc & eslint bersih untuk file yang disentuh; E2E API di deploy.
+- 2026-09-13 — **Target perusahaan (lanjutan T-3.2, permintaan owner).**
+  crm_sales_targets.user_id jadi nullable: NULL = target perusahaan per
+  bulan/pipeline; unique index ber-COALESCE(user_id) + constraint UNIQUE
+  bawaan (nama terpotong) dibuang. Forecast: bila target perusahaan diisi,
+  baris Total memakai target perusahaan dan menampilkan alokasi Σ target
+  salesperson (% teralokasi, sisa/melebihi); bila kosong, total = Σ
+  salesperson (perilaku lama). Input "Target perusahaan" di mode Atur target.
+  Sales hanya melihat target sendiri + target perusahaan. Bukti: tes unit
+  splitTargets/sumForecast; E2E API: simpan 80jt perusahaan + 30jt sales →
+  total 80jt, allocated 30jt; upsert ulang tetap 1 baris; 0 → kembali Σ sales.

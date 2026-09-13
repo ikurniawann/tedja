@@ -69,7 +69,7 @@ export const useForecast = (month: string, pipelineId = "") =>
   useQuery({ queryKey: K.forecast(month, pipelineId), queryFn: () => api.fetchForecast(month, pipelineId || undefined) });
 export const useTargets = (month: string) => useQuery({ queryKey: K.targets(month), queryFn: () => api.fetchTargets(month) });
 export const useSaveTargets = mutation(
-  (targets: Array<{ user_id: string; period_month: string; target_value: number; target_deals?: number | null }>) => api.saveTargets(targets),
+  (targets: Array<{ user_id: string | null; period_month: string; target_value: number; target_deals?: number | null }>) => api.saveTargets(targets),
   [["sales-funnel", "targets"], ["sales-funnel", "forecast"]],
   "Target disimpan"
 );
