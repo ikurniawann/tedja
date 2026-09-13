@@ -52,6 +52,7 @@ deploying-dev · ready-for-qa · blocked · done).
 | [EPIC-047](./EPIC-047-apparel-varian-produksi.md) | Apparel & Alas Kaki — Varian dari Master sampai Produksi (`MODULE-APPAREL`) | on-progress | 2026-09-09 |
 | [EPIC-048](./EPIC-048-self-order-meja-qr.md) | Self-Order Meja via QR — Aktivasi Penuh & UI Daftar Menu | ready-for-qa | 2026-09-12 |
 | [EPIC-049](./EPIC-049-integrasi-gobiz-gofood.md) | Integrasi GoBiz / GoFood — Order Masuk POS & KDS | ready-for-qa | 2026-09-12 |
+| [EPIC-050](./EPIC-050-crm-advance-zoho-salesforce.md) | CRM Advance — Menuju Setara Zoho / Salesforce (Account, Tasks, Scoring, Workflow, Forecast, Report Builder; Email ditunda) | on-progress | 2026-09-13 |
 
 Aturan:
 - Epic + registry ini adalah sumber kebenaran status pekerjaan (canonical).
