@@ -41,6 +41,9 @@ export interface SalesLead {
   account_id?: string | null;
   contact_id?: string | null;
   account_name?: string | null;
+  score?: number;
+  score_breakdown?: Array<{ rule_id: string; name: string; points: number; count?: number }>;
+  score_updated_at?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -51,6 +54,7 @@ export interface LeadFilters {
   org_type: string;
   source: string;
   page: number;
+  sort?: "score" | "newest";
 }
 
 export interface LeadFormValues {

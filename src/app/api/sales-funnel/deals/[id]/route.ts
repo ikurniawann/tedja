@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { successResponse, noContentResponse } from "@/lib/api/auth";
+import { emitCrmEvent } from "@/lib/crm/events";
 import { queryOne, withTransaction } from "@/lib/db";
 import { findAccessibleDeal } from "@/lib/sales-funnel/access";
 import {
@@ -189,6 +190,33 @@ export async function PATCH(
       return updated.rows[0] ?? null;
     });
 
+    // EPIC-050 Fase 2: event bus
+    if (isStageMove) {
+      const toStage = await queryOne<{ code: string; name: string; is_won: boolean; is_lost: boolean }>(
+        `SELECT code, name, is_won, is_lost FROM crm.crm_sales_stages WHERE id = $1`,
+        [body.stage_id]
+      );
+      await emitCrmEvent({
+        event_type: "deal.stage_changed",
+        subject_type: "deal",
+        subject_id: id,
+        company_id: deal.company_id,
+        branch_id: deal.branch_id,
+        actor_user_id: user.id,
+        payload: { from_stage_id: deal.stage_id, to_stage_id: body.stage_id, to_stage: toStage?.code, to_stage_name: toStage?.name, is_won: toStage?.is_won, is_lost: toStage?.is_lost },
+        changes: { stage_id: { from: deal.stage_id, to: body.stage_id }, stage_code: { from: undefined, to: toStage?.code } },
+      });
+    } else {
+      await emitCrmEvent({
+        event_type: "deal.updated",
+        subject_type: "deal",
+        subject_id: id,
+        company_id: deal.company_id,
+        branch_id: deal.branch_id,
+        actor_user_id: user.id,
+        payload: { changed_fields: Object.keys(body).filter((k) => (body as Record<string, unknown>)[k] !== undefined) },
+      });
+    }
     return successResponse(row, "Deal diperbarui");
   } catch (err) {
     console.error("[sales-funnel] update deal error:", err);

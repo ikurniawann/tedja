@@ -26,6 +26,7 @@ import { DealFormDialog } from "@/features/sales-funnel/pipeline";
 import { useDeleteLead, useLeads } from "../queries";
 import { LeadFormDialog } from "./lead-form-dialog";
 import { LeadImportDialog } from "./lead-import-dialog";
+import { ScoreBadge } from "./score-badge";
 import {
   ORG_TYPE_LABELS,
   SOURCE_LABELS,
@@ -57,6 +58,7 @@ export function SalesFunnelLeadsPage() {
   const [status, setStatus] = useState(ALL);
   const [orgType, setOrgType] = useState(ALL);
   const [source, setSource] = useState(ALL);
+  const [sort, setSort] = useState<"score" | "newest">("score");
   const [page, setPage] = useState(1);
   const [formOpen, setFormOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
@@ -76,8 +78,9 @@ export function SalesFunnelLeadsPage() {
       org_type: orgType === ALL ? "" : orgType,
       source: source === ALL ? "" : source,
       page,
+      sort,
     }),
-    [search, status, orgType, source, page]
+    [search, status, orgType, source, page, sort]
   );
 
   const { data, isLoading } = useLeads(filters);
@@ -226,6 +229,11 @@ export function SalesFunnelLeadsPage() {
                     <th className="px-4 py-3 text-left font-semibold">Kota</th>
                     <th className="px-4 py-3 text-left font-semibold">Sumber</th>
                     <th className="px-4 py-3 text-left font-semibold">Suhu</th>
+                    <th className="px-4 py-3 text-left font-semibold">
+                      <button type="button" onClick={() => setSort((v) => (v === "score" ? "newest" : "score"))} title="Klik untuk ganti urutan" className="uppercase tracking-wide hover:text-pink-700">
+                        Skor {sort === "score" ? "↓" : ""}
+                      </button>
+                    </th>
                     <th className="px-4 py-3 text-left font-semibold">Status</th>
                     <th className="px-4 py-3 text-left font-semibold">Penanggung Jawab</th>
                     <th className="px-4 py-3 text-right font-semibold">Aksi</th>
@@ -268,6 +276,9 @@ export function SalesFunnelLeadsPage() {
                         <Badge className={TEMPERATURE_BADGE[lead.temperature]}>
                           {TEMPERATURE_LABELS[lead.temperature]}
                         </Badge>
+                      </td>
+                      <td className="px-4 py-3">
+                        <ScoreBadge score={lead.score ?? 0} />
                       </td>
                       <td className="px-4 py-3">
                         <Badge className={STATUS_BADGE[lead.status]}>

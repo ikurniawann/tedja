@@ -28,6 +28,10 @@ export interface Quotation {
   use_ppn: boolean;
   ppn_persen: string | number;
   subtotal: string | number;
+  discount_percent?: string | number;
+  discount_nominal?: string | number;
+  approval_status?: "none" | "pending" | "approved" | "rejected";
+  approval_request_id?: string | null;
   ppn_nominal: string | number;
   total: string | number;
   notes: string | null;
@@ -83,6 +87,8 @@ export interface QuotationTermForm {
 export interface QuotationFormValues {
   use_ppn: boolean;
   ppn_persen: string;
+  /** EPIC-050 Fase 2: diskon header (% subtotal) — > ambang butuh approval */
+  discount_percent: string;
   notes: string;
   valid_until: string;
   items: QuotationItemForm[];
@@ -127,6 +133,7 @@ export const DEFAULT_TERMS_PRESET: QuotationTermForm[] = [
 export const EMPTY_QUOTATION_FORM: QuotationFormValues = {
   use_ppn: true,
   ppn_persen: "11",
+  discount_percent: "0",
   notes: "",
   valid_until: "",
   items: [{ ...EMPTY_ITEM_FORM }],
@@ -149,16 +156,20 @@ export function itemLineTotal(item: QuotationItemForm): number {
 
 export function formTotals(form: QuotationFormValues): {
   subtotal: number;
+  discount: number;
   ppn: number;
   total: number;
 } {
   const subtotal =
     Math.round(form.items.reduce((acc, item) => acc + itemLineTotal(item), 0) * 100) /
     100;
+  const pct = Math.min(100, Math.max(0, Number(form.discount_percent) || 0));
+  const discount = Math.round(subtotal * pct) / 100;
+  const dpp = Math.round((subtotal - discount) * 100) / 100;
   const ppn = form.use_ppn
-    ? Math.round(subtotal * (Number(form.ppn_persen) || 0)) / 100
+    ? Math.round(dpp * (Number(form.ppn_persen) || 0)) / 100
     : 0;
-  return { subtotal, ppn, total: Math.round((subtotal + ppn) * 100) / 100 };
+  return { subtotal, discount, ppn, total: Math.round((dpp + ppn) * 100) / 100 };
 }
 
 /** Payload API dari nilai form (angka dikonversi, baris kosong dibuang). */
@@ -166,6 +177,7 @@ export function formToPayload(form: QuotationFormValues) {
   return {
     use_ppn: form.use_ppn,
     ppn_persen: Number(form.ppn_persen) || 0,
+    discount_percent: Math.min(100, Math.max(0, Number(form.discount_percent) || 0)),
     notes: form.notes || null,
     valid_until: form.valid_until || null,
     items: form.items
@@ -186,3 +198,16 @@ export function formToPayload(form: QuotationFormValues) {
       })),
   };
 }
+
+export const APPROVAL_STATUS_LABELS: Record<NonNullable<Quotation["approval_status"]>, string> = {
+  none: "",
+  pending: "Menunggu approval diskon",
+  approved: "Diskon disetujui",
+  rejected: "Diskon ditolak",
+};
+export const APPROVAL_STATUS_BADGES: Record<NonNullable<Quotation["approval_status"]>, string> = {
+  none: "",
+  pending: "border-0 bg-amber-100 font-normal text-amber-700",
+  approved: "border-0 bg-emerald-100 font-normal text-emerald-700",
+  rejected: "border-0 bg-red-100 font-normal text-red-700",
+};

@@ -45,6 +45,8 @@ export const quotationTermSchema = z.object({
 export const quotationPayloadSchema = z.object({
   use_ppn: z.boolean().default(true),
   ppn_persen: z.number().min(0).max(100).default(11),
+  // EPIC-050 Fase 2: diskon header (% dari subtotal) — > ambang butuh approval
+  discount_percent: z.number().min(0).max(100).default(0),
   notes: z.string().trim().max(2000).optional().nullable(),
   valid_until: z
     .string()
@@ -68,9 +70,11 @@ export const quotationPayloadSchema = z.object({
 
 export type QuotationPayload = z.infer<typeof quotationPayloadSchema>;
 
-/** Hitung total server-side — jangan pernah percaya angka dari klien. */
+/** Hitung total server-side — jangan pernah percaya angka dari klien.
+ *  Diskon dihitung dari subtotal; PPN dari DPP (subtotal − diskon). */
 export function computeTotals(payload: QuotationPayload): {
   subtotal: number;
+  discountNominal: number;
   ppnNominal: number;
   total: number;
   lines: Array<QuotationPayload["items"][number] & { line_total: number }>;
@@ -81,14 +85,16 @@ export function computeTotals(payload: QuotationPayload): {
   }));
   const subtotal =
     Math.round(lines.reduce((acc, line) => acc + line.line_total, 0) * 100) / 100;
+  const pct = Math.min(100, Math.max(0, payload.discount_percent ?? 0));
+  const discountNominal = Math.round(subtotal * pct) / 100;
+  const dpp = Math.round((subtotal - discountNominal) * 100) / 100;
   const ppnNominal = payload.use_ppn
-    ? Math.round(subtotal * payload.ppn_persen) / 100
+    ? Math.round(dpp * payload.ppn_persen) / 100
     : 0;
-  const total = Math.round((subtotal + ppnNominal) * 100) / 100;
-  return { subtotal, ppnNominal, total, lines };
+  const total = Math.round((dpp + ppnNominal) * 100) / 100;
+  return { subtotal, discountNominal, ppnNominal, total, lines };
 }
 
-/** Validasi semua product_id baris produk ada & aktif di katalog. */
 export async function validateProducts(
   client: PoolClient,
   payload: QuotationPayload

@@ -45,6 +45,8 @@ export interface QuotationPdfData {
   use_ppn: boolean;
   ppn_persen: number;
   subtotal: number;
+  discount_percent?: number;
+  discount_nominal?: number;
   ppn_nominal: number;
   total: number;
   notes: string | null;
@@ -207,6 +209,9 @@ export async function buildQuotationPdf(data: QuotationPdfData): Promise<Buffer>
     doc.moveDown(0.25);
   };
   totalRow("Subtotal", rupiah(data.subtotal));
+  if (data.discount_nominal && Number(data.discount_nominal) > 0) {
+    totalRow(`Diskon ${Number(data.discount_percent ?? 0).toLocaleString("id-ID")}%`, `- ${rupiah(Number(data.discount_nominal))}`);
+  }
   if (data.use_ppn) {
     totalRow(`PPN ${data.ppn_persen}%`, rupiah(data.ppn_nominal));
   }

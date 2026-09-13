@@ -4,6 +4,7 @@ import { createdResponse, paginatedResponse } from "@/lib/api/auth";
 import { getApiUserScope } from "@/lib/api/scope";
 import { query, queryOne } from "@/lib/db";
 import { syncLeadAccountContact } from "@/lib/sales-funnel/account-sync";
+import { emitCrmEvent } from "@/lib/crm/events";
 import {
   LEAD_ORG_TYPES,
   LEAD_SOURCES,
@@ -23,7 +24,7 @@ const LEAD_COLUMNS = `
   l.id, l.company_id, l.branch_id, l.org_name, l.org_type, l.pic_name,
   l.pic_title, l.pic_phone, l.pic_email, l.city, l.source, l.temperature,
   l.status, l.notes, l.owner_user_id, l.customer_id, l.created_at,
-  l.updated_at, u.full_name AS owner_name`;
+  l.updated_at, l.score, l.account_id, l.contact_id, u.full_name AS owner_name`;
 
 const createLeadSchema = z.object({
   org_name: z.string().trim().min(1).max(200),
@@ -55,6 +56,8 @@ export async function GET(request: NextRequest) {
     const source = url.searchParams.get("source") ?? "";
     const temperature = url.searchParams.get("temperature") ?? "";
     const owner = url.searchParams.get("owner_user_id") ?? "";
+    // EPIC-050 Fase 2: urut skor (lead panas dulu) atau terbaru
+    const sort = url.searchParams.get("sort") === "score" ? "l.score DESC, l.created_at DESC" : "l.created_at DESC";
     const page = Math.max(1, Number(url.searchParams.get("page")) || 1);
     const limit = Math.min(100, Math.max(1, Number(url.searchParams.get("limit")) || 20));
 
@@ -103,7 +106,7 @@ export async function GET(request: NextRequest) {
        FROM crm.crm_sales_leads l
        LEFT JOIN configuration.users u ON u.id = l.owner_user_id
        WHERE ${where}
-       ORDER BY l.created_at DESC
+       ORDER BY ${sort}
        LIMIT $${params.length - 1} OFFSET $${params.length}`,
       params
     );
@@ -231,6 +234,16 @@ export async function POST(request: NextRequest) {
       await syncLeadAccountContact(String(row.id)).catch((e) =>
         console.error("[sales-funnel] sync account/contact gagal:", e)
       );
+      // EPIC-050 Fase 2: event bus → scoring + workflow
+      await emitCrmEvent({
+        event_type: "lead.created",
+        subject_type: "lead",
+        subject_id: String(row.id),
+        company_id: companyId,
+        branch_id: branchId,
+        actor_user_id: user.id,
+        payload: { source: body.source, org_type: body.org_type, temperature: body.temperature },
+      });
     }
     return createdResponse(row, "Lead berhasil dibuat");
   } catch (err) {

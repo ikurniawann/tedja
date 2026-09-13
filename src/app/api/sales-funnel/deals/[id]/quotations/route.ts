@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { syncQuotationApproval } from "@/lib/crm/approvals-server";
+import { emitCrmEvent } from "@/lib/crm/events";
 import { createdResponse, successResponse } from "@/lib/api/auth";
 import { query, withTransaction } from "@/lib/db";
 import { findAccessibleDeal } from "@/lib/sales-funnel/access";
@@ -32,6 +34,7 @@ export async function GET(
     const rows = await query(
       `SELECT q.id, q.quote_number, q.status, q.use_ppn, q.ppn_persen,
               q.subtotal, q.ppn_nominal, q.total, q.notes, q.valid_until,
+              q.discount_percent, q.discount_nominal, q.approval_status, q.approval_request_id,
               q.stock_deducted_at, q.bom_status, q.created_at,
               COALESCE(
                 (SELECT json_agg(json_build_object(
@@ -95,7 +98,7 @@ export async function POST(
       );
     }
     const payload = parsed.data;
-    const { subtotal, ppnNominal, total, lines } = computeTotals(payload);
+    const { subtotal, discountNominal, ppnNominal, total, lines } = computeTotals(payload);
 
     const row = await withTransaction(async (client) => {
       const productError = await validateProducts(client, payload);
@@ -109,11 +112,11 @@ export async function POST(
         `INSERT INTO crm.crm_sales_quotations
            (company_id, branch_id, deal_id, quote_number, use_ppn,
             ppn_persen, subtotal, ppn_nominal, total, notes, valid_until,
-            created_by)
+            created_by, discount_percent, discount_nominal)
          VALUES ($1, $2, $3,
                  'QT-' || to_char(now(), 'YYMM') || '-' ||
                    lpad(nextval('crm.crm_sales_quotation_number_seq')::text, 4, '0'),
-                 $4, $5, $6, $7, $8, $9, $10, $11)
+                 $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
          RETURNING id, quote_number, total`,
         [
           deal.company_id,
@@ -127,6 +130,8 @@ export async function POST(
           payload.notes || null,
           payload.valid_until || null,
           user.id,
+          payload.discount_percent ?? 0,
+          discountNominal,
         ]
       );
       const quotation = inserted.rows[0];
@@ -143,6 +148,11 @@ export async function POST(
       return quotation;
     });
 
+    // EPIC-050 Fase 2: approval diskon + event bus
+    if (row?.id) {
+      await syncQuotationApproval(String(row.id), user.id).catch((e) => console.error("[crm-approval] sync gagal:", e));
+      await emitCrmEvent({ event_type: "quotation.created", subject_type: "quotation", subject_id: String(row.id), company_id: deal.company_id, branch_id: deal.branch_id, actor_user_id: user.id, payload: { total, discount_percent: payload.discount_percent ?? 0 } });
+    }
     return createdResponse(row, `Quotation ${row.quote_number} dibuat`);
   } catch (err) {
     const message =

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createdResponse, successResponse } from "@/lib/api/auth";
+import { emitCrmEvent } from "@/lib/crm/events";
 import { getApiUserScope } from "@/lib/api/scope";
 import { query, queryOne, withTransaction } from "@/lib/db";
 import {
@@ -261,6 +262,18 @@ export async function POST(request: NextRequest) {
       return deal;
     });
 
+    // EPIC-050 Fase 2: event bus
+    if (row?.id) {
+      await emitCrmEvent({
+        event_type: "deal.created",
+        subject_type: "deal",
+        subject_id: String(row.id),
+        company_id: lead.company_id,
+        branch_id: lead.branch_id,
+        actor_user_id: user.id,
+        payload: { title: row.title, event_type: body.event_type },
+      });
+    }
     return createdResponse(row, `Deal untuk ${lead.org_name} berhasil dibuat`);
   } catch (err) {
     console.error("[sales-funnel] create deal error:", err);

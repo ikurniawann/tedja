@@ -24,6 +24,7 @@ export async function fetchLeads(filters: LeadFilters): Promise<LeadListResponse
   if (filters.status) params.set("status", filters.status);
   if (filters.org_type) params.set("org_type", filters.org_type);
   if (filters.source) params.set("source", filters.source);
+  if (filters.sort === "score") params.set("sort", "score");
   params.set("page", String(filters.page));
   params.set("limit", "20");
 

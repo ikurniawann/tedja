@@ -49,6 +49,7 @@ function quotationToForm(quotation: Quotation): QuotationFormValues {
   return {
     use_ppn: quotation.use_ppn,
     ppn_persen: String(Number(quotation.ppn_persen)),
+    discount_percent: String(Number(quotation.discount_percent ?? 0)),
     notes: quotation.notes ?? "",
     valid_until: quotation.valid_until?.slice(0, 10) ?? "",
     items: quotation.items.map((item) => ({
@@ -311,6 +312,20 @@ export function QuotationBuilderDialog({
                 className="h-8 w-16 text-sm"
               />
               <span className="text-gray-500">%</span>
+              <span className="ml-3 text-gray-700">Diskon</span>
+              <Input
+                type="number"
+                min={0}
+                max={100}
+                step="0.5"
+                value={form.discount_percent}
+                onChange={(e) =>
+                  setForm((prev) => ({ ...prev, discount_percent: e.target.value }))
+                }
+                className="h-8 w-16 text-sm"
+                title="Diskon > 10% butuh persetujuan admin, > 20% owner (bisa diubah di Pengaturan CRM → Approval Rules)"
+              />
+              <span className="text-gray-500">%</span>
             </label>
             <div className="space-y-0.5 text-right text-sm">
               <p className="text-gray-500">
@@ -319,6 +334,12 @@ export function QuotationBuilderDialog({
                   {formatRupiah(totals.subtotal)}
                 </span>
               </p>
+              {totals.discount > 0 ? (
+                <p className="text-gray-500">
+                  Diskon {Number(form.discount_percent) || 0}%:{" "}
+                  <span className="font-medium text-red-600">- {formatRupiah(totals.discount)}</span>
+                </p>
+              ) : null}
               {form.use_ppn ? (
                 <p className="text-gray-500">
                   PPN {form.ppn_persen}%:{" "}

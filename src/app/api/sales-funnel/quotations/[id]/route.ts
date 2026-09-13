@@ -1,4 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { syncQuotationApproval } from "@/lib/crm/approvals-server";
+import { canReleaseQuotation } from "@/lib/crm/approvals";
+import { emitCrmEvent } from "@/lib/crm/events";
 import { z } from "zod";
 import { successResponse, noContentResponse } from "@/lib/api/auth";
 import { queryOne, withTransaction } from "@/lib/db";
@@ -24,6 +27,8 @@ const updateSchema = z.object({
 type QuotationRow = {
   id: string;
   deal_id: string;
+  company_id: string;
+  branch_id: string;
   status: string;
   stock_deducted_at: string | null;
 };
@@ -34,7 +39,7 @@ async function findAccessibleQuotation(
   user: SalesFunnelUser
 ): Promise<{ quotation: QuotationRow | null; forbidden: boolean }> {
   const quotation = await queryOne<QuotationRow>(
-    `SELECT id, deal_id, status, stock_deducted_at
+    `SELECT id, deal_id, status, stock_deducted_at, company_id, branch_id
      FROM crm.crm_sales_quotations WHERE id = $1 AND deleted_at IS NULL`,
     [id]
   );
@@ -93,7 +98,7 @@ export async function PATCH(
       if (payload) {
         const productError = await validateProducts(client, payload);
         if (productError) throw new Error(productError);
-        const { subtotal, ppnNominal, total, lines } = computeTotals(payload);
+        const { subtotal, discountNominal, ppnNominal, total, lines } = computeTotals(payload);
 
         // Guard beku DI DALAM tulis (bukan hanya pre-check) — menutup race
         // dengan tombol Realisasi F3 yang mengisi stock_deducted_at
@@ -101,7 +106,8 @@ export async function PATCH(
           `UPDATE crm.crm_sales_quotations
            SET use_ppn = $1, ppn_persen = $2, subtotal = $3,
                ppn_nominal = $4, total = $5, notes = $6,
-               valid_until = $7, updated_at = now()
+               valid_until = $7, discount_percent = $9, discount_nominal = $10,
+               updated_at = now()
            WHERE id = $8 AND stock_deducted_at IS NULL`,
           [
             payload.use_ppn,
@@ -112,6 +118,8 @@ export async function PATCH(
             payload.notes || null,
             payload.valid_until || null,
             id,
+            payload.discount_percent ?? 0,
+            discountNominal,
           ]
         );
         if (updated.rowCount === 0) {
@@ -137,6 +145,21 @@ export async function PATCH(
         );
       }
       if (status) {
+        // EPIC-050 Fase 2: diskon > ambang wajib disetujui sebelum dikirim/diterima
+        if (status === "terkirim" || status === "diterima") {
+          const gate = await client.query<{ approval_status: string }>(
+            `SELECT approval_status FROM crm.crm_sales_quotations WHERE id = $1`,
+            [id]
+          );
+          const approvalStatus = (gate.rows[0]?.approval_status ?? "none") as "none" | "pending" | "approved" | "rejected";
+          if (!canReleaseQuotation(approvalStatus)) {
+            throw new Error(
+              approvalStatus === "pending"
+                ? "Quotation menunggu approval diskon — belum boleh dikirim/diterima"
+                : "Approval diskon quotation DITOLAK — ubah diskon lalu ajukan lagi"
+            );
+          }
+        }
         await client.query(
           `UPDATE crm.crm_sales_quotations
            SET status = $1, updated_at = now() WHERE id = $2`,
@@ -162,16 +185,22 @@ export async function PATCH(
       return result.rows[0];
     });
 
+    // EPIC-050 Fase 2: approval diskon + event bus
+    if (payload) await syncQuotationApproval(id, user.id).catch((e) => console.error("[crm-approval] sync gagal:", e));
+    await emitCrmEvent({ event_type: status ? "quotation.status_changed" : "quotation.updated", subject_type: "quotation", subject_id: id, company_id: quotation.company_id, branch_id: quotation.branch_id, actor_user_id: user.id, payload: { status: status ?? null } });
     return successResponse(row, "Quotation diperbarui");
   } catch (err) {
     const raw = err instanceof Error ? err.message : "";
     const isKnown =
-      raw.startsWith("Ada produk") || raw.startsWith("Quotation sudah direalisasi");
+      raw.startsWith("Ada produk") ||
+      raw.startsWith("Quotation sudah direalisasi") ||
+      raw.startsWith("Quotation menunggu approval") ||
+      raw.startsWith("Approval diskon quotation");
     const message = isKnown ? raw : "Gagal memperbarui quotation";
     console.error("[sales-funnel] update quotation error:", err);
     return NextResponse.json(
       { success: false, error: message },
-      { status: isKnown ? (raw.startsWith("Quotation") ? 409 : 400) : 500 }
+      { status: isKnown ? (raw.startsWith("Quotation") || raw.startsWith("Approval") ? 409 : 400) : 500 }
     );
   }
 }

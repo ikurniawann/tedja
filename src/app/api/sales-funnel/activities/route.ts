@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createdResponse, successResponse } from "@/lib/api/auth";
+import { emitCrmEvent } from "@/lib/crm/events";
 import { getApiUserScope } from "@/lib/api/scope";
 import { query } from "@/lib/db";
 import { findAccessibleSubject } from "@/lib/sales-funnel/access";
@@ -281,6 +282,16 @@ export async function POST(request: NextRequest) {
         user.id,
       ]
     );
+    // EPIC-050 Fase 2: event bus (task selesai saat dibuat = task.done)
+    await emitCrmEvent({
+      event_type: status === "done" ? "task.done" : "task.created",
+      subject_type: "task",
+      subject_id: String(rows[0].id),
+      company_id: companyId,
+      branch_id: branchId,
+      actor_user_id: user.id,
+      payload: { activity_type: body.activity_type, subject_type: subject.subject_type, subject_id: subject.subject_id },
+    });
     return createdResponse(rows[0], "Task dicatat");
   } catch (err) {
     console.error("[sales-funnel] create activity error:", err);

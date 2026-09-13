@@ -2,7 +2,7 @@
 
 status: on-progress
 environment: dev
-phase: 2 (Fase 1 selesai & deploy dev 2026-09-13 → lanjut Fase 2 Scoring/Automation/Approval)
+phase: 3 (Fase 1 & 2 selesai, deploy dev 2026-09-13 → lanjut Fase 3 Pipeline/Forecast/Custom Field)
 priority: P1
 area: Fullstack
 module: `MODULE-CRM`
@@ -367,11 +367,11 @@ Urutan final setelah keputusan owner 2026-09-13 (email ditunda ke akhir).
 - [x] T-1.6 Test: migrasi data, timeline union, recurrence, reminder watcher.
 
 ### Fase 2 — Scoring, Automation & Approval (P0-b)
-- [ ] T-2.1 Event bus `emitCrmEvent` + tabel event log; hook di server action yang ada.
-- [ ] T-2.2 Lead scoring rules (tanpa sinyal email) + recalculation + UI badge/urutan.
-- [ ] T-2.3 Workflow rules (trigger/kondisi/aksi WA, task, assign, ubah field,
+- [x] T-2.1 Event bus `emitCrmEvent` + tabel event log; hook di server action yang ada.
+- [x] T-2.2 Lead scoring rules (tanpa sinyal email) + recalculation + UI badge/urutan.
+- [x] T-2.3 Workflow rules (trigger/kondisi/aksi WA, task, assign, ubah field,
       notif in-app, webhook) + scheduled actions watcher + log run.
-- [ ] T-2.4 Approval diskon quotation berjenjang (default 10% / 20%, konfigurable)
+- [x] T-2.4 Approval diskon quotation berjenjang (default 10% / 20%, konfigurable)
       + notifikasi WA/in-app + UI approver.
 
 ### Fase 3 — Pipeline, Forecast, Custom Field (P1-a)
@@ -400,6 +400,15 @@ Urutan final setelah keputusan owner 2026-09-13 (email ditunda ke akhir).
 - [ ] T-6.2 Outbound webhooks + document generation dari template.
 - [ ] T-6.3 AI prediktif (lead/deal/churn/next-best-action) batch harian.
 - [ ] T-6.4 Marketing journey builder di atas workflow engine.
+
+### Fase 8 — Kemampuan Salesforce di luar rencana awal (disetujui owner 2026-09-13)
+- [ ] T-8.1 Lead assignment rules & round-robin (wilayah / jenis instansi / giliran) — dipakai form publik & WA masuk.
+- [ ] T-8.2 Duplicate management & merge (lead/contact/account) dengan riwayat ikut tergabung.
+- [ ] T-8.3 Field history / audit trail per record (nilai deal, tahap, owner, diskon).
+- [ ] T-8.4 Products & price book B2B (harga per segmen: korporat/sekolah/…) terhubung quotation.
+- [ ] T-8.5 Sharing rules & hirarki (manajer melihat deal anak buah; sales hanya miliknya).
+- [ ] T-8.6 Activity capture otomatis: WA masuk/keluar & telepon tertaut ke lead/deal tanpa input manual.
+- [ ] T-8.7 Import wizard (account/contact/deal dari Excel, pemetaan kolom, pratinjau duplikat).
 
 ### Fase 7 — Email (DITUNDA — dikerjakan saat owner memberi lampu hijau)
 - [ ] T-7.1 Verifikasi domain Resend + webhook events (delivered/opened/clicked/bounced).
@@ -464,3 +473,26 @@ Urutan final setelah keputusan owner 2026-09-13 (email ditunda ke akhir).
   kanal WA + in-app (`public.notifications`, deep-link `?task=`). Bukti: 34 tes
   unit lulus (tasks, timeline, kalender, quotation), tsc & eslint bersih untuk
   file yang disentuh, migrasi data diuji dengan sampel di transaksi rollback.
+- 2026-09-13 — Owner menyetujui penambahan Fase 8 (assignment rules, duplicate
+  merge, field history, price book, sharing rules, activity capture, import
+  wizard). Fase 2 dimulai.
+- 2026-09-13 — **Fase 2 selesai (deploy dev).** (a) Event bus `emitCrmEvent`
+  (crm_events) dipanggil dari route lead/deal/task/quotation yang ada; setiap
+  event menghitung ulang skor lead terdampak dan menjalankan workflow rules;
+  perubahan skor memancarkan `lead.score_changed` (trigger score_reached).
+  (b) Scoring rule-based: 13 aturan default (sumber, jenis instansi, suhu,
+  email PIC, balasan WA, meeting/telepon selesai, deal dibuat, quotation
+  terkirim); sinyal email ditunda sesuai keputusan owner. Kolom skor + urut
+  di daftar lead, rincian di detail. (c) Workflow: trigger created/updated/
+  stage_changed/status_changed/score_reached/inactive_days/due_soon, kondisi
+  AND (eq/in/contains/gt/…/changed_to), aksi send_wa/create_task/assign_owner
+  (fixed/round-robin)/update_field (whitelist)/notify_in_app/webhook (HMAC)/
+  wait → crm_scheduled_actions + watcher 5 menit; log di crm_workflow_runs.
+  (d) Approval diskon quotation: kolom discount_percent/discount_nominal (PPN
+  dari DPP setelah diskon), aturan default >10% admin & >20% super_admin
+  (konfigurable), request+steps berjenjang, notifikasi in-app + WA approver,
+  kirim WA / tandai terkirim-diterima diblokir saat pending/rejected, inbox
+  Approval di Sales. Bukti: 18 tes unit baru (scoring, workflow, approvals) +
+  192 total lulus; tsc & eslint bersih pada file yang disentuh; E2E API di
+  deploy (skor 40→60 setelah meeting, rule referral memicu notif+task+wait,
+  approval 15% satu tingkat & 25% dua tingkat).

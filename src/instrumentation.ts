@@ -35,5 +35,8 @@ export async function register() {
     // crm_campaign_config; aman terdaftar walau belum dipakai)
     const { startCampaignWatcher } = await import("@/lib/crm/campaign-watcher");
     startCampaignWatcher();
+    // EPIC-050 Fase 2 — workflow automation: aksi terjadwal + trigger waktu
+    const { startCrmWorkflowWatcher } = await import("@/lib/crm/workflow-watcher");
+    startCrmWorkflowWatcher();
   }
 }

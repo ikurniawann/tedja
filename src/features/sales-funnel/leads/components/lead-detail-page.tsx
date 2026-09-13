@@ -27,6 +27,7 @@ import {
 import { LeadFormDialog } from "./lead-form-dialog";
 import { MemberLoyaltyCard } from "./member-loyalty-card";
 import { RecordTimeline } from "@/features/sales-funnel/timeline";
+import { ScoreBadge } from "./score-badge";
 import { useUpdateTask } from "@/features/sales-funnel/tasks/queries";
 import { TaskFormDialog } from "@/features/sales-funnel/tasks/components/task-form-dialog";
 
@@ -152,6 +153,7 @@ export function LeadDetailPage({ leadId }: { leadId: string }) {
               <Badge className="border-0 bg-blue-100 font-normal text-blue-700">
                 {STATUS_LABELS[lead.status]}
               </Badge>
+              <ScoreBadge score={lead.score ?? 0} />
               <span className="text-xs text-gray-500">
                 Sumber: {SOURCE_LABELS[lead.source]}
                 {lead.city ? ` · ${lead.city}` : ""}
@@ -297,6 +299,26 @@ export function LeadDetailPage({ leadId }: { leadId: string }) {
 
         {/* ── Member loyalty ── */}
         <div>
+          {lead.score_breakdown && lead.score_breakdown.length > 0 ? (
+            <div className="mb-4 rounded-xl border border-gray-200/80 bg-white p-4 text-sm">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                Rincian skor ({lead.score ?? 0})
+              </p>
+              <ul className="space-y-1">
+                {lead.score_breakdown.map((item) => (
+                  <li key={item.rule_id} className="flex justify-between text-gray-700">
+                    <span>
+                      {item.name}
+                      {item.count && item.count > 1 ? ` ×${item.count}` : ""}
+                    </span>
+                    <span className={item.points >= 0 ? "font-medium text-emerald-700" : "font-medium text-red-600"}>
+                      {item.points >= 0 ? "+" : ""}{item.points}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
           <MemberLoyaltyCard
             lead={lead as SalesLead}
             customer={customer}

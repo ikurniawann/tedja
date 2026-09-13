@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { canReleaseQuotation } from "@/lib/crm/approvals";
 import { successResponse } from "@/lib/api/auth";
 import { query, queryOne, withTransaction } from "@/lib/db";
 import { findAccessibleDeal } from "@/lib/sales-funnel/access";
@@ -74,10 +75,13 @@ export async function POST(
       pic_name: string;
       pic_phone: string;
       branch_name: string | null;
+      discount_percent: string | number;
+      discount_nominal: string | number;
+      approval_status: string;
     }>(
       `SELECT q.id, q.deal_id, q.quote_number, q.status, q.use_ppn,
               q.ppn_persen, q.subtotal, q.ppn_nominal, q.total, q.notes,
-              q.valid_until,
+              q.valid_until, q.discount_percent, q.discount_nominal, q.approval_status,
               d.title AS deal_title, d.event_date,
               l.org_name, l.pic_name, l.pic_phone, b.name AS branch_name
        FROM crm.crm_sales_quotations q
@@ -91,6 +95,20 @@ export async function POST(
       return NextResponse.json(
         { success: false, error: "Quotation tidak ditemukan" },
         { status: 404 }
+      );
+    }
+
+    // EPIC-050 Fase 2: diskon > ambang wajib disetujui sebelum dikirim ke PIC
+    if (!canReleaseQuotation((quotation.approval_status ?? "none") as "none" | "pending" | "approved" | "rejected")) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            quotation.approval_status === "pending"
+              ? "Quotation menunggu approval diskon — belum boleh dikirim"
+              : "Approval diskon quotation DITOLAK — ubah diskon lalu ajukan lagi",
+        },
+        { status: 409 }
       );
     }
 

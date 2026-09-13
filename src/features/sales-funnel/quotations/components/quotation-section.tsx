@@ -25,6 +25,8 @@ import {
 } from "../queries";
 import {
   QUOTATION_STATUS_BADGES,
+  APPROVAL_STATUS_BADGES,
+  APPROVAL_STATUS_LABELS,
   QUOTATION_STATUS_LABELS,
   type Quotation,
   type RealizeConflictError,
@@ -134,6 +136,12 @@ export function QuotationSection({ dealId, enabled }: QuotationSectionProps) {
                   <Badge className={QUOTATION_STATUS_BADGES[quotation.status]}>
                     {QUOTATION_STATUS_LABELS[quotation.status]}
                   </Badge>
+                  {quotation.approval_status && quotation.approval_status !== "none" ? (
+                    <Badge className={APPROVAL_STATUS_BADGES[quotation.approval_status]} title="EPIC-050: diskon di atas ambang wajib disetujui">
+                      {APPROVAL_STATUS_LABELS[quotation.approval_status]}
+                      {Number(quotation.discount_percent) ? ` (${Number(quotation.discount_percent)}%)` : ""}
+                    </Badge>
+                  ) : null}
                 </div>
                 <p className="mt-0.5 text-sm font-semibold text-gray-900">
                   {formatRupiah(quotation.total)}
@@ -153,8 +161,18 @@ export function QuotationSection({ dealId, enabled }: QuotationSectionProps) {
                   <button
                     type="button"
                     onClick={() => sendWaMutation.mutate(quotation.id)}
-                    disabled={sendWaMutation.isPending}
-                    title="Kirim summary ke WA PIC"
+                    disabled={
+                      sendWaMutation.isPending ||
+                      quotation.approval_status === "pending" ||
+                      quotation.approval_status === "rejected"
+                    }
+                    title={
+                      quotation.approval_status === "pending"
+                        ? "Menunggu approval diskon"
+                        : quotation.approval_status === "rejected"
+                          ? "Diskon ditolak — ubah diskon lalu ajukan lagi"
+                          : "Kirim summary ke WA PIC"
+                    }
                     className="text-gray-400 hover:text-emerald-600 disabled:opacity-40"
                   >
                     <Send className="h-4 w-4" />

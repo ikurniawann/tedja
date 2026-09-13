@@ -4,6 +4,7 @@ import { successResponse, noContentResponse } from "@/lib/api/auth";
 import { query, queryOne } from "@/lib/db";
 import { findAccessibleLead } from "@/lib/sales-funnel/access";
 import { syncLeadAccountContact } from "@/lib/sales-funnel/account-sync";
+import { emitCrmEvent } from "@/lib/crm/events";
 import {
   LEAD_ORG_TYPES,
   LEAD_SOURCES,
@@ -62,7 +63,7 @@ export async function GET(
       `SELECT l.id, l.company_id, l.branch_id, l.org_name, l.org_type,
               l.pic_name, l.pic_title, l.pic_phone, l.pic_email, l.city,
               l.source, l.temperature, l.status, l.notes, l.owner_user_id,
-              l.customer_id, l.account_id, l.contact_id, l.created_at, l.updated_at,
+              l.customer_id, l.account_id, l.contact_id, l.score, l.score_breakdown, l.score_updated_at, l.created_at, l.updated_at,
               u.full_name AS owner_name, b.name AS branch_name, acc.name AS account_name
        FROM crm.crm_sales_leads l
        LEFT JOIN configuration.users u ON u.id = l.owner_user_id
@@ -176,6 +177,12 @@ export async function PATCH(
     }
 
     const body = { ...parsed.data };
+    // EPIC-050 Fase 2: snapshot sebelum update utk kondisi workflow changed/changed_to
+    const before = (await queryOne<Record<string, unknown>>(
+      `SELECT org_name, org_type, pic_name, pic_phone, pic_email, city, source, temperature,
+              status, notes, owner_user_id FROM crm.crm_sales_leads WHERE id = $1`,
+      [id]
+    )) ?? {};
     if (body.pic_phone !== undefined) {
       body.pic_phone = normalizePhone(body.pic_phone);
       if (!isValidNormalizedPhone(body.pic_phone)) {
@@ -257,6 +264,25 @@ export async function PATCH(
     await syncLeadAccountContact(id).catch((e) =>
       console.error("[sales-funnel] sync account/contact gagal:", e)
     );
+    // EPIC-050 Fase 2: event bus (perubahan field utk kondisi changed/changed_to)
+    {
+      const changes: Record<string, { from: unknown; to: unknown }> = {};
+      for (const [key, value] of Object.entries(body)) {
+        if (value === undefined) continue;
+        if (key in before && before[key] !== value) changes[key] = { from: before[key], to: value };
+        else if (!(key in before)) changes[key] = { from: undefined, to: value };
+      }
+      await emitCrmEvent({
+        event_type: "lead.updated",
+        subject_type: "lead",
+        subject_id: id,
+        company_id: lead.company_id,
+        branch_id: lead.branch_id,
+        actor_user_id: user.id,
+        payload: { changed_fields: Object.keys(changes) },
+        changes,
+      });
+    }
     return successResponse(row, "Lead diperbarui");
   } catch (err) {
     if ((err as { code?: string }).code === "23505") {

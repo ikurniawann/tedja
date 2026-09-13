@@ -56,6 +56,8 @@ export async function GET(
       use_ppn: boolean;
       ppn_persen: string;
       subtotal: string;
+      discount_percent: string;
+      discount_nominal: string;
       ppn_nominal: string;
       total: string;
       notes: string | null;
@@ -73,6 +75,7 @@ export async function GET(
     }>(
       `SELECT q.id, q.deal_id, q.quote_number, q.status, q.use_ppn,
               q.ppn_persen, q.subtotal, q.ppn_nominal, q.total, q.notes,
+              q.discount_percent, q.discount_nominal,
               q.valid_until, q.created_at,
               d.title AS deal_title, d.event_type, d.event_date,
               l.org_name, l.pic_name, l.pic_title,
@@ -137,6 +140,8 @@ export async function GET(
       use_ppn: quotation.use_ppn,
       ppn_persen: Number(quotation.ppn_persen),
       subtotal: Number(quotation.subtotal),
+      discount_percent: Number(quotation.discount_percent ?? 0),
+      discount_nominal: Number(quotation.discount_nominal ?? 0),
       ppn_nominal: Number(quotation.ppn_nominal),
       total: Number(quotation.total),
       notes: quotation.notes,

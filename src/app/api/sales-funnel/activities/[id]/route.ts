@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { successResponse, noContentResponse } from "@/lib/api/auth";
+import { emitCrmEvent } from "@/lib/crm/events";
 import { query, queryOne } from "@/lib/db";
 import { findAccessibleActivity } from "@/lib/sales-funnel/access";
 import { requireSalesFunnelRole, validateAssignableOwner } from "@/lib/sales-funnel/server";
@@ -179,6 +180,18 @@ export async function PATCH(
     let nextTaskId: string | null = null;
     if (row && status === "done" && row.recurrence && !isTaskOpen(row.status as never)) {
       nextTaskId = await spawnRecurringSuccessor(row);
+    }
+    // EPIC-050 Fase 2: event bus
+    if (row) {
+      await emitCrmEvent({
+        event_type: status === "done" ? "task.done" : "task.updated",
+        subject_type: "task",
+        subject_id: id,
+        company_id: row.company_id,
+        branch_id: row.branch_id,
+        actor_user_id: user.id,
+        payload: { activity_type: row.activity_type, status: row.status, subject_type: row.subject_type, subject_id: row.subject_id },
+      });
     }
     return successResponse(
       { ...row, next_task_id: nextTaskId },
