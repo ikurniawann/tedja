@@ -127,8 +127,8 @@ export function ApiTokensPage() {
 
       {migrationPending && (
         <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
-          Tabel token belum ada di database ini — jalankan{" "}
-          <code>migrations/013_api_tokens.sql</code> lebih dulu.
+          Tabel token belum ada di database ini — jalankan migrasi lebih dulu:{" "}
+          <code>node database/scripts/apply-migrations.js --apply</code>.
         </div>
       )}
 

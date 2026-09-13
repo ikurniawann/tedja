@@ -135,7 +135,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           success: false,
-          error: "Tabel api_tokens belum ada — jalankan migrations/013_api_tokens.sql dulu",
+          error:
+            "Tabel api_tokens belum ada — jalankan migrasi database dulu: " +
+            "node database/scripts/apply-migrations.js --apply",
         },
         { status: 503 }
       );
