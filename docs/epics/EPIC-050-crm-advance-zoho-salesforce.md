@@ -2,7 +2,7 @@
 
 status: on-progress
 environment: dev
-phase: 4 (Fase 1–3 selesai, deploy dev 2026-09-13 → lanjut Fase 4 Reports & Dashboards)
+phase: 5 (Fase 1–4 selesai, deploy dev 2026-09-13 → lanjut Fase 5 Marketing & Form Publik)
 priority: P1
 area: Fullstack
 module: `MODULE-CRM`
@@ -384,9 +384,9 @@ Urutan final setelah keputusan owner 2026-09-13 (email ditunda ke akhir).
 - [x] T-3.4 Versi quotation + expiry reminder (WA).
 
 ### Fase 4 — Reports & Dashboards (P1-b)
-- [ ] T-4.1 Report builder (objek → kolom → filter → group → chart) + export XLSX.
-- [ ] T-4.2 Dashboard builder (widget dari report) + set sebagai Overview.
-- [ ] T-4.3 Report terjadwal (WA; email menyusul) via watcher.
+- [x] T-4.1 Report builder (objek → kolom → filter → group → chart) + export XLSX.
+- [x] T-4.2 Dashboard builder (widget dari report) + set sebagai Overview.
+- [x] T-4.3 Report terjadwal (WA; email menyusul) via watcher.
 
 ### Fase 5 — Marketing & Form Publik (P1-c)
 - [ ] T-5.1 Segmen dinamis tersimpan + RFM + preview jumlah; dipakai kampanye WA.
@@ -523,3 +523,33 @@ Urutan final setelah keputusan owner 2026-09-13 (email ditunda ke akhir).
   Sales hanya melihat target sendiri + target perusahaan. Bukti: tes unit
   splitTargets/sumForecast; E2E API: simpan 80jt perusahaan + 30jt sales →
   total 80jt, allocated 30jt; upsert ulang tetap 1 baris; 0 → kembali Σ sales.
+- 2026-09-13 — **Fase 4 selesai (deploy dev).** (a) Report builder generik
+  (src/lib/crm/report-builder.ts): registry 6 dataset (lead, deal, quotation,
+  task, account, contact) berisi label + ekspresi SQL; pengguna hanya memilih
+  KUNCI field sehingga tidak ada string pengguna yang masuk ke SQL, nilai filter
+  selalu lewat parameter. Mode tabel & agregasi (count/count_distinct/sum/avg/
+  min/max), group by termasuk bucket tanggal (harian s/d tahunan), 12 operator
+  filter, 11 preset periode yang dihitung saat report DIJALANKAN (bukan saat
+  disimpan), 7 tipe tampilan. Role sales otomatis dibatasi ke record miliknya.
+  Halaman Report Builder + simpan/bagikan report + ekspor XLSX (sheet Data +
+  Info). (b) Dashboard CRM: crm_dashboards + crm_dashboard_widgets, widget
+  chart/tabel/KPI dengan lebar 1–3 kolom, satu dashboard bisa ditandai Overview
+  (unique index per company). Report yang tidak boleh dilihat pemakai tampil
+  kosong, tidak menggagalkan dashboard. (c) Laporan terjadwal:
+  crm_report_schedules + watcher tiap 15 menit dengan klaim atomik
+  (next_run_at digeser dulu) supaya tidak terkirim ganda; harian/mingguan/
+  bulanan pada jam WIB, kanal WA + notifikasi aplikasi, tombol "Kirim sekarang"
+  tidak menggeser jadwal rutin. Email tetap ditunda ke Fase 7.
+  Menu baru: crm.reports.builder, crm.reports.dashboards, crm.reports.schedules
+  (allowlist seeder ikut diperbarui). Bukti: 20 tes unit baru (237 total lulus);
+  tsc & eslint bersih untuk file yang disentuh; E2E API di deploy — injeksi
+  kolom/sort ditolak (hanya field registry yang lolos, tabel tetap utuh),
+  dataset asing 400, XLSX 2 sheet terunduh, widget report palsu 400, jadwal
+  mingguan tanpa hari 400, kirim uji coba terkirim tanpa menggeser next_run_at.
+  Cacat yang ditemukan & diperbaiki saat verifikasi: (1) nilai enum registry
+  ditulis dalam bahasa Inggris padahal CHECK constraint memakai bahasa
+  Indonesia (panas/hangat/dingin dst.) — kini ada tes penjaga; (2) opsi
+  ApexCharts `labels: undefined` membuat grafik gagal digambar; (3) seri rupiah
+  dan cacah pada satu sumbu membuat batang cacah tak terlihat — kini sumbu
+  ganda; (4) batang horizontal menampilkan label kategori NaN; (5) kartu KPI
+  memilih kolom cacah, kini mengutamakan kolom rupiah.

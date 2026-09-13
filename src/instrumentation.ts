@@ -41,5 +41,8 @@ export async function register() {
     // EPIC-050 Fase 3 — pengingat quotation mendekati kedaluwarsa
     const { startQuotationExpiryWatcher } = await import("@/lib/sales-funnel/quotation-expiry-watcher");
     startQuotationExpiryWatcher();
+    // EPIC-050 Fase 4 — pengirim report terjadwal (WA / notifikasi aplikasi)
+    const { startReportScheduleWatcher } = await import("@/lib/crm/report-schedule-watcher");
+    startReportScheduleWatcher();
   }
 }
