@@ -257,6 +257,7 @@ WHERE deleted_at IS NULL
     -- EPIC-050 Fase 3 (13 Sep 2026): forecast & custom fields
     'sales-funnel.forecast', 'crm.settings.custom-fields',
     'crm.reports.builder', 'crm.reports.dashboards', 'crm.reports.schedules',
+    'crm.marketing.segments', 'crm.marketing.forms', 'crm.marketing.attribution',
     -- EPIC-022 Sales Funneling (21 Jul 2026):
     'sales-funnel', 'sales-funnel.leads',
     'sales-funnel.pipeline', 'sales-funnel.settings',

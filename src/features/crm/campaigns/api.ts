@@ -48,6 +48,8 @@ export interface CreateCampaignInput {
   name: string;
   message_template: string;
   segment: CampaignSegmentForm;
+  /** Segmen tersimpan (EPIC-050 T-5.1); null = pakai segmen sederhana. */
+  segment_id?: string | null;
   promo_campaign_id?: string | null;
   promo_mode?: "public" | "batch" | null;
   voucher_prefix?: string | null;
@@ -62,11 +64,11 @@ export const createCampaign = (values: CreateCampaignInput) =>
     "Gagal membuat kampanye"
   );
 
-export const previewSegment = (segment: CampaignSegmentForm) =>
+export const previewSegment = (segment: CampaignSegmentForm, segmentId?: string | null) =>
   sendJson<SegmentPreview>(
     "/api/crm/campaigns/preview",
     "POST",
-    { segment },
+    { segment, segment_id: segmentId ?? null },
     "Gagal menghitung segmen"
   );
 

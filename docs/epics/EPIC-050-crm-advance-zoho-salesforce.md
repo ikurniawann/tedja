@@ -2,7 +2,7 @@
 
 status: on-progress
 environment: dev
-phase: 5 (Fase 1–4 selesai, deploy dev 2026-09-13 → lanjut Fase 5 Marketing & Form Publik)
+phase: 6 (Fase 1–5 selesai, deploy dev 2026-09-13 → lanjut Fase 6 Pelengkap)
 priority: P1
 area: Fullstack
 module: `MODULE-CRM`
@@ -389,9 +389,9 @@ Urutan final setelah keputusan owner 2026-09-13 (email ditunda ke akhir).
 - [x] T-4.3 Report terjadwal (WA; email menyusul) via watcher.
 
 ### Fase 5 — Marketing & Form Publik (P1-c)
-- [ ] T-5.1 Segmen dinamis tersimpan + RFM + preview jumlah; dipakai kampanye WA.
-- [ ] T-5.2 Attribution UTM & laporan sumber → deal → revenue.
-- [ ] T-5.3 Halaman publik `tedja.reddie.id/public`: form permintaan penawaran/
+- [x] T-5.1 Segmen dinamis tersimpan + RFM + preview jumlah; dipakai kampanye WA.
+- [x] T-5.2 Attribution UTM & laporan sumber → deal → revenue.
+- [x] T-5.3 Halaman publik `tedja.reddie.id/public`: form permintaan penawaran/
       kontak (field dari custom fields, anti-spam honeypot + rate limit),
       endpoint `POST /api/public/crm/forms/[slug]`, auto-create lead + scoring +
       workflow + WA ke sales; branding Tedja Coffee.
@@ -553,3 +553,39 @@ Urutan final setelah keputusan owner 2026-09-13 (email ditunda ke akhir).
   dan cacah pada satu sumbu membuat batang cacah tak terlihat — kini sumbu
   ganda; (4) batang horizontal menampilkan label kategori NaN; (5) kartu KPI
   memilih kolom cacah, kini mengutamakan kolom rupiah.
+- 2026-09-13 — **Fase 5 selesai (deploy dev).** (a) Segmen dinamis
+  (crm_segments): registry 3 sumber (member/lead/contact) bergaya report-builder
+  — pengguna hanya memilih kunci field, nilai lewat parameter. RFM memakai
+  NTILE(5) atas populasi terpilih sehingga skor relatif (5 = terbaik) dan tetap
+  masuk akal saat basis pelanggan tumbuh; 6 preset siap pakai (Champions, Loyal,
+  Belanja Besar, Berisiko Hilang, Tidur, Baru). Pratinjau jumlah + contoh
+  anggota. Kampanye WA kini bisa memakai segmen tersimpan lewat kolom
+  crm_campaigns.segment_id; segmen inline lama tetap jalan (segment_id NULL),
+  dan segmen yang hilang/nonaktif otomatis jatuh balik ke segmen inline agar
+  kampanye tidak diam-diam mengirim ke seluruh basis pelanggan. (b) Atribusi
+  UTM: 7 kolom baru di lead (utm_source/medium/campaign/content/term,
+  landing_page, referrer), terisi otomatis dari tautan iklan ke form publik;
+  utm_source dipetakan ke daftar sumber yang sah (nilai asing jatuh ke default,
+  tidak pernah masuk mentah). Halaman Atribusi Sumber menampilkan lead dan
+  nilai deal per sumber/UTM, blok "Asal Lead" muncul di detail lead. (c) Form
+  publik (crm_forms + crm_form_submissions) di tedja.reddie.id/public: field
+  builder, validasi ulang di server (kunci tak terdaftar dibuang), honeypot +
+  ambang waktu pengisian + rate limit 5 per 5 menit per IP, kiriman selalu
+  dicatat (ok/duplicate/rejected + alasan), lead otomatis dengan scoring &
+  workflow, notifikasi WA + aplikasi ke sales. Kiriman berulang dari nomor &
+  instansi sama digabung ke lead lama sebagai catatan, bukan ditolak.
+  Menu baru: crm.marketing.{segments,forms,attribution}; path publik /public dan
+  /api/public/crm/forms ditambahkan ke PUBLIC_AUTH_PREFIXES (berkas middleware
+  bernama src/proxy.ts sejak Next 16). Bukti: 26 tes unit baru (243 total
+  lulus); tsc & eslint bersih untuk file yang disentuh; E2E di deploy —
+  /public 200 tanpa login, slug berbahaya 404, kiriman sah membuat lead dengan
+  UTM & skor 30, honeypot dan kiriman terlalu cepat tidak membuat lead,
+  isian tak lengkap 400, kiriman ke-6 kena 429, sumber segmen asing & skor RFM
+  di luar 1–5 ditolak 400. Cacat yang ditemukan & diperbaiki saat verifikasi:
+  (1) isian angka "abc" diam-diam jadi 0; (2) galat kontak terduplikasi;
+  (3) stempel waktu dari masa depan dilaporkan sebagai "terlalu cepat" padahal
+  payload dipalsukan; (4) kolom UTM tersimpan tapi tidak dipilih API detail
+  lead sehingga tak terlihat sales; (5) aturan global `.flex.min-h-screen` di
+  globals.css menimpa latar halaman publik dengan page-mesh terang — diganti
+  min-h-dvh; (6) daftar form menampilkan "0 field" karena field bawaan hanya
+  dipakai saat render.

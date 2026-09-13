@@ -16,6 +16,7 @@ const patchSchema = z.object({
   name: z.string().trim().min(2).max(120).optional(),
   message_template: z.string().trim().min(10).max(2000).optional(),
   segment: z.unknown().optional(),
+  segment_id: z.string().uuid().nullable().optional(),
   daily_cap: z.number().int().positive().max(2000).nullable().optional(),
 });
 
@@ -25,6 +26,7 @@ interface CampaignRow {
   branch_id: string;
   status: string;
   segment: unknown;
+  segment_id: string | null;
   promo_campaign_id: string | null;
   promo_mode: "public" | "batch" | null;
   voucher_prefix: string | null;
@@ -50,7 +52,7 @@ export async function PATCH(
     const body = parsed.data;
     const venue = await getCrmDefaultVenue(createPgClient());
     const campaign = await queryOne<CampaignRow>(
-      `SELECT id, company_id, branch_id, status, segment, promo_campaign_id,
+      `SELECT id, company_id, branch_id, status, segment, segment_id, promo_campaign_id,
               promo_mode, voucher_prefix, recipients_built
        FROM crm.crm_campaigns WHERE id = $1 AND branch_id = $2`,
       [id, venue.branchId]
@@ -76,6 +78,7 @@ export async function PATCH(
           companyId: campaign.company_id,
           branchId: campaign.branch_id,
           segment: normalizeSegment(campaign.segment),
+          segmentId: campaign.segment_id,
           promoCampaignId: campaign.promo_campaign_id,
           promoMode: campaign.promo_mode,
           voucherPrefix: campaign.voucher_prefix,
@@ -129,6 +132,7 @@ export async function PATCH(
     if (body.message_template !== undefined) {
       add("message_template", body.message_template);
     }
+    if (body.segment_id !== undefined) add("segment_id", body.segment_id ?? null);
     if (body.segment !== undefined) {
       add("segment", JSON.stringify(normalizeSegment(body.segment)));
     }

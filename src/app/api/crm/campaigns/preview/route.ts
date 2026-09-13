@@ -13,7 +13,7 @@ export async function POST(request: NextRequest) {
   if (error) return error;
 
   try {
-    const body = (await request.json()) as { segment?: unknown };
+    const body = (await request.json()) as { segment?: unknown; segment_id?: string | null };
     const venue = await getCrmDefaultVenue(createPgClient());
     if (!venue.companyId || !venue.branchId) {
       return NextResponse.json(
@@ -23,7 +23,8 @@ export async function POST(request: NextRequest) {
     }
     const preview = await previewSegment(
       { companyId: venue.companyId, branchId: venue.branchId },
-      normalizeSegment(body.segment)
+      normalizeSegment(body.segment),
+      body.segment_id ?? null
     );
     return successResponse(preview);
   } catch (err) {

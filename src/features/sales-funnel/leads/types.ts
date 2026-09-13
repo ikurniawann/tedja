@@ -45,6 +45,14 @@ export interface SalesLead {
   score?: number;
   score_breakdown?: Array<{ rule_id: string; name: string; points: number; count?: number }>;
   score_updated_at?: string | null;
+  /** Atribusi dari form publik / tautan iklan (EPIC-050 T-5.2). */
+  utm_source?: string | null;
+  utm_medium?: string | null;
+  utm_campaign?: string | null;
+  utm_content?: string | null;
+  utm_term?: string | null;
+  landing_page?: string | null;
+  referrer?: string | null;
   created_at: string;
   updated_at: string;
 }

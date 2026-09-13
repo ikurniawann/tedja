@@ -31,6 +31,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { TableRow } from "@/components/ui/table";
 import { PurchasingListSection } from "@/modules/purchasing/components/list/PurchasingListSection";
 import { previewSegment } from "../api";
+import { useSegments } from "@/features/crm/marketing/queries";
 import {
   useAddOptout,
   useCampaignAction,
@@ -68,6 +69,8 @@ interface CampaignForm {
   last_visit_days: string;
   min_xp: string;
   tiers: string;
+  /** "" = pakai segmen sederhana di bawah; selain itu id segmen tersimpan. */
+  segment_id: string;
   promo_campaign_id: string;
   promo_mode: "public" | "batch";
   voucher_prefix: string;
@@ -81,6 +84,7 @@ const EMPTY_FORM: CampaignForm = {
   last_visit_days: "60",
   min_xp: "",
   tiers: "",
+  segment_id: "",
   promo_campaign_id: "",
   promo_mode: "batch",
   voucher_prefix: "WIN",
@@ -102,6 +106,7 @@ export function CampaignsPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [form, setForm] = useState<CampaignForm>(EMPTY_FORM);
   const [preview, setPreview] = useState<SegmentPreview | null>(null);
+  const savedSegments = useSegments().data ?? [];
   const [previewBusy, setPreviewBusy] = useState(false);
   const [reportId, setReportId] = useState<string | null>(null);
   const [capEdit, setCapEdit] = useState<string | null>(null);
@@ -131,7 +136,7 @@ export function CampaignsPage() {
   const runPreview = async () => {
     setPreviewBusy(true);
     try {
-      setPreview(await previewSegment(segmentPayload()));
+      setPreview(await previewSegment(segmentPayload(), form.segment_id || null));
     } catch {
       setPreview(null);
     } finally {
@@ -155,6 +160,7 @@ export function CampaignsPage() {
       name: form.name.trim(),
       message_template: form.message_template.trim(),
       segment: segmentPayload(),
+      segment_id: form.segment_id || null,
       promo_campaign_id: withPromo ? form.promo_campaign_id : null,
       promo_mode: withPromo ? form.promo_mode : null,
       voucher_prefix:
@@ -430,7 +436,25 @@ export function CampaignsPage() {
 
             <div className="rounded-xl border border-gray-200/70 p-3">
               <Label>Segmen Penerima</Label>
-              <div className="mt-2 grid grid-cols-3 gap-2">
+              <div className="mt-2">
+                <Label className="text-xs text-gray-500">Segmen tersimpan (Marketing → Segmen)</Label>
+                <select
+                  className="mt-1 h-9 w-full rounded-md border border-gray-300 bg-white px-2 text-sm"
+                  value={form.segment_id}
+                  onChange={(e) => set({ segment_id: e.target.value })}
+                >
+                  <option value="">Pakai segmen sederhana di bawah</option>
+                  {savedSegments
+                    .filter((sg) => sg.is_active && sg.source === "member")
+                    .map((sg) => (
+                      <option key={sg.id} value={sg.id}>
+                        {sg.name}
+                        {sg.last_count !== null ? ` (${sg.last_count} anggota)` : ""}
+                      </option>
+                    ))}
+                </select>
+              </div>
+              <div className={`mt-2 grid grid-cols-3 gap-2 ${form.segment_id ? "pointer-events-none opacity-40" : ""}`}>
                 <div>
                   <Label className="text-xs text-gray-500">
                     Tak datang ≥ (hari)

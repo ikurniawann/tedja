@@ -48,6 +48,9 @@ const PUBLIC_AUTH_PREFIXES = [
   "/pass",
   "/shop",
   "/api/public/shop",
+  // EPIC-050 T-5.3 — form publik CRM (web-to-lead)
+  "/public",
+  "/api/public/crm/forms",
 ];
 
 export function isPublicAuthPath(pathname: string): boolean {

@@ -4,7 +4,7 @@
 // jalur kirim riil berhenti di config.enabled sebelum menyentuh gateway.
 
 import type { PoolClient } from "pg";
-import { query, withTransaction } from "@/lib/db";
+import { query, queryOne, withTransaction } from "@/lib/db";
 import { getSetting } from "@/lib/settings/app-settings";
 import { generateVoucherCode } from "@/lib/promo/server";
 import {
@@ -13,6 +13,8 @@ import {
   type CampaignConfig,
   type CampaignSegment,
 } from "./campaigns";
+import { buildSegmentWhere } from "./segments";
+import { parseStoredSegment, type SegmentRow } from "./segments-server";
 
 export const CAMPAIGN_CONFIG_KEY = "crm_campaign_config";
 
@@ -30,6 +32,38 @@ export async function getCampaignConfig(): Promise<CampaignConfig> {
   }
 }
 
+/**
+ * EPIC-050 T-5.1 — penerima kampanye boleh berasal dari segmen tersimpan.
+ * Bila `segmentId` diisi dan segmennya bersumber member, filternya dipakai;
+ * jika tidak, kampanye jatuh ke segmen inline lama (tetap kompatibel).
+ */
+export async function resolveCampaignFilter(
+  segment: CampaignSegment,
+  startIndex: number,
+  segmentId: string | null | undefined
+): Promise<{ where: string; params: unknown[]; savedName: string | null }> {
+  if (!segmentId) {
+    const f = buildSegmentFilter(segment, startIndex);
+    return { ...f, savedName: null };
+  }
+  const row = await queryOne<SegmentRow>(
+    `SELECT id, company_id, name, description, source, definition, is_active,
+            last_count, last_counted_at, created_by, created_at, updated_at
+     FROM crm.crm_segments WHERE id = $1 AND deleted_at IS NULL AND is_active`,
+    [segmentId]
+  );
+  if (!row || row.source !== "member") {
+    // Segmen hilang/nonaktif/bukan member → jangan diam-diam mengirim ke
+    // seluruh basis pelanggan; pakai segmen inline seperti sebelumnya.
+    const f = buildSegmentFilter(segment, startIndex);
+    return { ...f, savedName: null };
+  }
+  const def = parseStoredSegment("member", row.definition);
+  const f = buildSegmentWhere(def, { alias: "c", startIndex, companyId: null });
+  // Penjaga nomor minimal tetap dipertahankan seperti jalur lama.
+  return { where: `${f.where} AND length(trim(c.phone)) >= 8`, params: f.params, savedName: row.name };
+}
+
 export interface SegmentPreview {
   count: number;
   optedOut: number;
@@ -43,9 +77,10 @@ export interface SegmentPreview {
  */
 export async function previewSegment(
   scope: CampaignVenueScope,
-  segment: CampaignSegment
+  segment: CampaignSegment,
+  segmentId?: string | null
 ): Promise<SegmentPreview> {
-  const filter = buildSegmentFilter(segment, 2);
+  const filter = await resolveCampaignFilter(segment, 2, segmentId);
   const optoutJoin = `LEFT JOIN crm.crm_marketing_optouts o
        ON o.branch_id = $1
       AND regexp_replace(o.phone, '\\D', '', 'g')
@@ -91,12 +126,13 @@ export async function buildCampaignRecipients(
     companyId: string;
     branchId: string;
     segment: CampaignSegment;
+    segmentId?: string | null;
     promoCampaignId: string | null;
     promoMode: "public" | "batch" | null;
     voucherPrefix: string | null;
   }
 ): Promise<{ inserted: number }> {
-  const filter = buildSegmentFilter(campaign.segment, 4);
+  const filter = await resolveCampaignFilter(campaign.segment, 4, campaign.segmentId);
   const inserted = await client.query<{ id: string; customer_id: string }>(
     `INSERT INTO crm.crm_campaign_recipients
        (company_id, branch_id, campaign_id, customer_id, name, phone)

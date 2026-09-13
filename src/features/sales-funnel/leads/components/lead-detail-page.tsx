@@ -299,6 +299,34 @@ export function LeadDetailPage({ leadId }: { leadId: string }) {
 
         {/* ── Member loyalty ── */}
         <div>
+          {/* EPIC-050 T-5.2 — asal lead dari tautan iklan / form publik. */}
+          {lead.utm_source || lead.utm_campaign || lead.landing_page || lead.referrer ? (
+            <div className="mb-4 rounded-xl border border-gray-200/80 bg-white p-4 text-sm">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Asal Lead</p>
+              <dl className="space-y-1 text-gray-700">
+                {([
+                  ["Sumber (utm_source)", lead.utm_source],
+                  ["Media (utm_medium)", lead.utm_medium],
+                  ["Kampanye (utm_campaign)", lead.utm_campaign],
+                  ["Konten (utm_content)", lead.utm_content],
+                  ["Kata kunci (utm_term)", lead.utm_term],
+                ] as Array<[string, string | null | undefined]>)
+                  .filter(([, v]) => Boolean(v))
+                  .map(([label, v]) => (
+                    <div key={label} className="flex justify-between gap-3">
+                      <dt className="text-gray-500">{label}</dt>
+                      <dd className="font-medium">{v}</dd>
+                    </div>
+                  ))}
+              </dl>
+              {lead.landing_page ? (
+                <p className="mt-2 break-all text-xs text-gray-500">Halaman masuk: {lead.landing_page}</p>
+              ) : null}
+              {lead.referrer ? (
+                <p className="mt-1 break-all text-xs text-gray-500">Referrer: {lead.referrer}</p>
+              ) : null}
+            </div>
+          ) : null}
           {lead.score_breakdown && lead.score_breakdown.length > 0 ? (
             <div className="mb-4 rounded-xl border border-gray-200/80 bg-white p-4 text-sm">
               <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">

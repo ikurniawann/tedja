@@ -67,6 +67,7 @@ export async function GET(
               l.pic_name, l.pic_title, l.pic_phone, l.pic_email, l.city,
               l.source, l.temperature, l.status, l.notes, l.owner_user_id,
               l.customer_id, l.account_id, l.contact_id, l.score, l.score_breakdown, l.score_updated_at, l.custom, l.created_at, l.updated_at,
+              l.utm_source, l.utm_medium, l.utm_campaign, l.utm_content, l.utm_term, l.landing_page, l.referrer,
               u.full_name AS owner_name, b.name AS branch_name, acc.name AS account_name
        FROM crm.crm_sales_leads l
        LEFT JOIN configuration.users u ON u.id = l.owner_user_id
