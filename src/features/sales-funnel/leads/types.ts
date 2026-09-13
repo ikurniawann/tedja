@@ -38,6 +38,9 @@ export interface SalesLead {
   owner_user_id: string | null;
   owner_name: string | null;
   customer_id: string | null;
+  account_id?: string | null;
+  contact_id?: string | null;
+  account_name?: string | null;
   created_at: string;
   updated_at: string;
 }

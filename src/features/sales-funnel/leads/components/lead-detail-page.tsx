@@ -15,7 +15,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DealFormDialog } from "../../pipeline";
 import { formatRupiah } from "../../pipeline/types";
-import { ACTIVITY_TYPE_LABELS } from "../../activities/types";
 import { useLeadDetail, usePicLookup } from "../queries";
 import {
   ORG_TYPE_LABELS,
@@ -27,6 +26,9 @@ import {
 } from "../types";
 import { LeadFormDialog } from "./lead-form-dialog";
 import { MemberLoyaltyCard } from "./member-loyalty-card";
+import { RecordTimeline } from "@/features/sales-funnel/timeline";
+import { useUpdateTask } from "@/features/sales-funnel/tasks/queries";
+import { TaskFormDialog } from "@/features/sales-funnel/tasks/components/task-form-dialog";
 
 function formatDate(value: string | null): string {
   if (!value) return "—";
@@ -67,8 +69,10 @@ function DealRow({ deal }: { deal: LeadDealSummary }) {
 export function LeadDetailPage({ leadId }: { leadId: string }) {
   const [editOpen, setEditOpen] = useState(false);
   const [dealFormOpen, setDealFormOpen] = useState(false);
+  const [taskOpen, setTaskOpen] = useState(false);
 
   const detailQuery = useLeadDetail(leadId);
+  const completeTask = useUpdateTask();
   const detail = detailQuery.data;
   // Instansi lain yang dibawa PIC yang sama (satu PIC bisa banyak leads)
   const picLookup = usePicLookup(detail?.lead.pic_phone ?? "");
@@ -117,7 +121,7 @@ export function LeadDetailPage({ leadId }: { leadId: string }) {
     );
   }
 
-  const { lead, deals, activities, customer, recent_orders } = detail;
+  const { lead, deals, customer, recent_orders } = detail;
   const wonDeals = deals.filter((d) => d.is_won);
   const openDeals = deals.filter((d) => !d.closed_at);
   const totalWonValue = wonDeals.reduce(
@@ -171,6 +175,17 @@ export function LeadDetailPage({ leadId }: { leadId: string }) {
                 <span className="text-gray-500"> · PJ: {lead.owner_name}</span>
               ) : null}
             </p>
+            {lead.account_id ? (
+              <p className="mt-1 text-xs text-gray-500">
+                Account:{" "}
+                <Link
+                  href={`/dashboard/sales-funnel/accounts/${lead.account_id}`}
+                  className="font-medium text-pink-600 hover:underline"
+                >
+                  {lead.account_name ?? lead.org_name}
+                </Link>
+              </p>
+            ) : null}
             {otherLeads.length > 0 ? (
               <p className="mt-1 text-xs text-gray-500">
                 PIC ini juga membawa:{" "}
@@ -189,6 +204,14 @@ export function LeadDetailPage({ leadId }: { leadId: string }) {
             ) : null}
           </div>
           <div className="flex shrink-0 gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setTaskOpen(true)}
+              className="h-9 gap-1.5 rounded-lg"
+            >
+              <CalendarDays className="h-3.5 w-3.5" /> Task
+            </Button>
             <Button
               type="button"
               variant="outline"
@@ -251,43 +274,16 @@ export function LeadDetailPage({ leadId }: { leadId: string }) {
             </ul>
           )}
 
-          {/* ── Timeline gabungan ── */}
+          {/* ── Timeline terpadu (EPIC-050 T-1.4): task, tahap deal, quotation, invoice, WA ── */}
           <p className="mb-2.5 mt-6 inline-flex items-center gap-1.5 text-sm font-semibold text-gray-900">
-            <CalendarDays className="h-4 w-4 text-pink-500" /> Timeline Aktivitas
+            <CalendarDays className="h-4 w-4 text-pink-500" /> Timeline
           </p>
-          {activities.length === 0 ? (
-            <p className="rounded-xl border border-dashed border-gray-300 py-8 text-center text-sm text-gray-400">
-              Belum ada aktivitas tercatat.
-            </p>
-          ) : (
-            <ul className="space-y-2">
-              {activities.map((activity) => (
-                <li
-                  key={activity.id}
-                  className="rounded-xl border border-gray-200/80 bg-white p-3 text-sm"
-                >
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <Badge className="border-0 bg-gray-100 font-normal text-gray-600">
-                      {ACTIVITY_TYPE_LABELS[
-                        activity.activity_type as keyof typeof ACTIVITY_TYPE_LABELS
-                      ] ?? activity.activity_type}
-                    </Badge>
-                    {activity.deal_title ? (
-                      <span className="text-xs text-gray-500">
-                        {activity.deal_title}
-                      </span>
-                    ) : null}
-                    <span className="ml-auto text-xs text-gray-400">
-                      {formatDate(activity.done_at ?? activity.due_at ?? activity.created_at)}
-                    </span>
-                  </div>
-                  {activity.notes ? (
-                    <p className="mt-1 text-gray-700">{activity.notes}</p>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          )}
+          <RecordTimeline
+            subjectType="lead"
+            subjectId={leadId}
+            onCompleteTask={(taskId) => completeTask.mutate({ id: taskId, values: { status: "done" } })}
+            emptyText="Belum ada aktivitas tercatat."
+          />
 
           {lead.notes ? (
             <div className="mt-6 rounded-xl bg-amber-50/70 p-4 text-sm text-amber-900">
@@ -319,6 +315,11 @@ export function LeadDetailPage({ leadId }: { leadId: string }) {
         onOpenChange={setDealFormOpen}
         deal={null}
         initialLead={lead as SalesLead}
+      />
+      <TaskFormDialog
+        open={taskOpen}
+        onOpenChange={setTaskOpen}
+        subject={{ subject_type: "lead", subject_id: leadId, label: lead.org_name }}
       />
     </div>
   );

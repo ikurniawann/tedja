@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
+import { RecordTimeline } from "@/features/sales-funnel/timeline";
 import { useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
@@ -949,6 +950,18 @@ export function CrmMemberDetailPage() {
             Member tidak ditemukan.
           </div>
         )}
+
+        {member?.customer_id ? (
+          <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="mb-3 text-sm font-semibold text-slate-950">Timeline CRM</div>
+            <RecordTimeline
+              subjectType="member"
+              subjectId={member.customer_id}
+              hideOnForbidden
+              emptyText="Belum ada task atau percakapan tercatat untuk member ini."
+            />
+          </div>
+        ) : null}
       </div>
     </div>
   );

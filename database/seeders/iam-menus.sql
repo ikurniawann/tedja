@@ -250,6 +250,8 @@ WHERE deleted_at IS NULL
     'shop.orders', 'ticketing', 'ticketing.booking', 'ticketing.channel-manager',
     'ticketing.gate', 'ticketing.gate_pass', 'ticketing.loket', 'ticketing.mapping',
     'ticketing.passes', 'ticketing.reports', 'ticketing.settings', 'ticketing.tickets',
+    -- EPIC-050 Fase 1 (13 Sep 2026): CRM Advance — Accounts, Contacts, grup Marketing
+    'sales-funnel.accounts', 'sales-funnel.contacts', 'crm.marketing',
     -- EPIC-022 Sales Funneling (21 Jul 2026):
     'sales-funnel', 'sales-funnel.leads',
     'sales-funnel.pipeline', 'sales-funnel.settings',

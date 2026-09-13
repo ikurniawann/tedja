@@ -131,6 +131,12 @@ const nextConfig: NextConfig = {
   },
   async redirects() {
     return [
+      // EPIC-050 Fase 1: "Follow-up Hari Ini" → Tasks & Kalender (bookmark lama)
+      {
+        source: "/dashboard/sales-funnel/followups",
+        destination: "/dashboard/sales-funnel/tasks",
+        permanent: false,
+      },
       {
         source: "/dashboard/finance/invoices",
         destination: "/dashboard/accounting/receivable/invoices-b2b",

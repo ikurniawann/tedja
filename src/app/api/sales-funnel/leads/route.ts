@@ -3,6 +3,7 @@ import { z } from "zod";
 import { createdResponse, paginatedResponse } from "@/lib/api/auth";
 import { getApiUserScope } from "@/lib/api/scope";
 import { query, queryOne } from "@/lib/db";
+import { syncLeadAccountContact } from "@/lib/sales-funnel/account-sync";
 import {
   LEAD_ORG_TYPES,
   LEAD_SOURCES,
@@ -225,6 +226,12 @@ export async function POST(request: NextRequest) {
       ]
     );
 
+    // EPIC-050: tautkan ke Account/Contact (upsert by nama/nomor WA)
+    if (row?.id) {
+      await syncLeadAccountContact(String(row.id)).catch((e) =>
+        console.error("[sales-funnel] sync account/contact gagal:", e)
+      );
+    }
     return createdResponse(row, "Lead berhasil dibuat");
   } catch (err) {
     // Race dua request lolos cek duplikat bersamaan → unique index menolak;

@@ -2,7 +2,7 @@
 
 status: on-progress
 environment: dev
-phase: 1 (Fondasi objek & menu — keputusan owner 2026-09-13 sudah ada)
+phase: 2 (Fase 1 selesai & deploy dev 2026-09-13 → lanjut Fase 2 Scoring/Automation/Approval)
 priority: P1
 area: Fullstack
 module: `MODULE-CRM`
@@ -355,15 +355,16 @@ invoice, case events — satu komponen `<RecordTimeline subject=…/>`.
 Urutan final setelah keputusan owner 2026-09-13 (email ditunda ke akhir).
 
 ### Fase 1 — Fondasi objek & menu (P0-a)
-- [ ] T-1.1 Migrasi `crm_accounts`, `crm_contacts`, kolom `account_id/contact_id`
+- [x] T-1.1 Migrasi `crm_accounts`, `crm_contacts`, kolom `account_id/contact_id`
       di leads; skrip migrasi data org_name/PIC → account/contact (idempoten).
-- [ ] T-1.2 Restrukturisasi menu (struktur di atas), redirect route lama,
+- [x] T-1.2 Restrukturisasi menu (struktur di atas), redirect route lama,
       permission per role, update daftar canonical seeder.
-- [ ] T-1.3 Halaman Accounts & Contacts (list, form, import, 360° view).
-- [ ] T-1.4 Timeline terpadu `<RecordTimeline>` dipakai di lead/deal/account/contact/member.
-- [ ] T-1.5 Tasks & Kalender: generalisasi activities, prioritas/status/recurring,
+- [x] T-1.3 Halaman Accounts & Contacts (list, form, 360° view). Import CSV account
+      ditunda — lead import yang ada sudah otomatis membuat account/contact.
+- [x] T-1.4 Timeline terpadu `<RecordTimeline>` dipakai di lead/deal/account/contact/member.
+- [x] T-1.5 Tasks & Kalender: generalisasi activities, prioritas/status/recurring,
       view kalender, reminder WA + in-app; halaman "Tasks Saya".
-- [ ] T-1.6 Test: migrasi data, timeline union, recurrence, reminder watcher.
+- [x] T-1.6 Test: migrasi data, timeline union, recurrence, reminder watcher.
 
 ### Fase 2 — Scoring, Automation & Approval (P0-b)
 - [ ] T-2.1 Event bus `emitCrmEvent` + tabel event log; hook di server action yang ada.
@@ -446,3 +447,20 @@ Urutan final setelah keputusan owner 2026-09-13 (email ditunda ke akhir).
   dalam Rupiah) karena owner minta penjelasan; (5) approval diskon SETUJU,
   default 10%/20%; (6) web-to-lead = halaman publik tedja.reddie.id/public.
   Status → on-progress, mulai Fase 1.
+- 2026-09-13 — **Fase 1 selesai (deploy dev).** Keputusan implementasi:
+  (a) KODE menu & route Sales Funneling TIDAK diganti (`sales-funnel.*`,
+  `/dashboard/sales-funnel/*`) — hanya pohon/label yang dipindah ke bawah CRM,
+  sehingga gate IAM prefix, role `sales` route-aware, dan bookmark tetap berlaku;
+  `/followups` → redirect ke `/tasks`. (b) Tasks = generalisasi
+  `crm_sales_activities` (subject_type/subject_id, title, priority, status,
+  recurrence, reminder_at, reminder_channels) — klien lama (deal dialog) tetap
+  jalan lewat kolom lead_id/deal_id. (c) Lead create/update/import otomatis
+  meng-upsert Account (by nama, case-insensitive) & Contact (by nomor WA) lewat
+  `syncLeadAccountContact`, logika sama dengan migrasi data. (d) Timeline
+  terpadu = endpoint `/api/sales-funnel/timeline` + `<RecordTimeline>` (task,
+  tahap deal, quotation, invoice, WA by nomor, lead/deal dibuat) dipakai di lead
+  detail, account 360°, contact (dialog), member detail (hideOnForbidden).
+  (e) Reminder: watcher lama diperluas → `COALESCE(reminder_at, due_at)`,
+  kanal WA + in-app (`public.notifications`, deep-link `?task=`). Bukti: 34 tes
+  unit lulus (tasks, timeline, kalender, quotation), tsc & eslint bersih untuk
+  file yang disentuh, migrasi data diuji dengan sampel di transaksi rollback.

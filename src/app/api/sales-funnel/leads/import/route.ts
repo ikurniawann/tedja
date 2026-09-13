@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getApiUserScope } from "@/lib/api/scope";
 import { query, queryOne } from "@/lib/db";
+import { syncLeadAccountContact } from "@/lib/sales-funnel/account-sync";
 import {
   LEAD_ORG_TYPES,
   LEAD_SOURCES,
@@ -161,6 +162,21 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // EPIC-050: tautkan lead hasil import ke Account/Contact (upsert by nama/nomor WA)
+    if (imported > 0) {
+      try {
+        const untied = await query<{ id: string }>(
+          `SELECT id FROM crm.crm_sales_leads
+           WHERE company_id = $1 AND deleted_at IS NULL
+             AND (account_id IS NULL OR contact_id IS NULL)
+           ORDER BY created_at DESC LIMIT 1000`,
+          [companyId]
+        );
+        for (const lead of untied) await syncLeadAccountContact(lead.id);
+      } catch (e) {
+        console.error("[sales-funnel] sync account/contact import gagal:", e);
+      }
+    }
     return NextResponse.json({
       success: true,
       imported,

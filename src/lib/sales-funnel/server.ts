@@ -66,7 +66,11 @@ export const DEAL_EVENT_TYPES = [
   "lainnya",
 ] as const;
 
-export const ACTIVITY_TYPES = ["telepon", "wa", "meeting", "catatan"] as const;
+// EPIC-050 Fase 1: + "tugas" (task umum) & "email" (log manual; kirim email Fase 7)
+export const ACTIVITY_TYPES = ["telepon", "wa", "meeting", "catatan", "tugas", "email"] as const;
+
+/** Jenis account = jenis instansi lead (satu kosakata, EPIC-050 Fase 1). */
+export const ACCOUNT_TYPES = LEAD_ORG_TYPES;
 
 /**
  * Render template pesan WA — substitusi placeholder {pic} {instansi} {acara}

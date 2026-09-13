@@ -3,6 +3,7 @@ import { z } from "zod";
 import { successResponse, noContentResponse } from "@/lib/api/auth";
 import { query, queryOne } from "@/lib/db";
 import { findAccessibleLead } from "@/lib/sales-funnel/access";
+import { syncLeadAccountContact } from "@/lib/sales-funnel/account-sync";
 import {
   LEAD_ORG_TYPES,
   LEAD_SOURCES,
@@ -61,11 +62,12 @@ export async function GET(
       `SELECT l.id, l.company_id, l.branch_id, l.org_name, l.org_type,
               l.pic_name, l.pic_title, l.pic_phone, l.pic_email, l.city,
               l.source, l.temperature, l.status, l.notes, l.owner_user_id,
-              l.customer_id, l.created_at, l.updated_at,
-              u.full_name AS owner_name, b.name AS branch_name
+              l.customer_id, l.account_id, l.contact_id, l.created_at, l.updated_at,
+              u.full_name AS owner_name, b.name AS branch_name, acc.name AS account_name
        FROM crm.crm_sales_leads l
        LEFT JOIN configuration.users u ON u.id = l.owner_user_id
        LEFT JOIN configuration.branches b ON b.id = l.branch_id
+       LEFT JOIN crm.crm_accounts acc ON acc.id = l.account_id
        WHERE l.id = $1`,
       [id]
     );
@@ -250,6 +252,10 @@ export async function PATCH(
        WHERE id = $${values.length}
        RETURNING id, org_name, pic_name, pic_phone, status`,
       values
+    );
+    // EPIC-050: nama instansi / PIC berubah → sinkronkan Account/Contact
+    await syncLeadAccountContact(id).catch((e) =>
+      console.error("[sales-funnel] sync account/contact gagal:", e)
     );
     return successResponse(row, "Lead diperbarui");
   } catch (err) {
