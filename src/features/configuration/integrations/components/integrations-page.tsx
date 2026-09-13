@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { FadeIn } from "@/components/motion";
 import { ApiTokensPage } from "@/features/configuration/api-tokens/api-tokens-page";
+import { GobizSettingsPanel } from "@/features/gobiz/components/gobiz-settings-panel";
 
 interface ProviderConfig {
   api_key_masked: string | null;
@@ -250,6 +251,13 @@ export function IntegrationsPage() {
           <ProviderCard provider="openai" config={data.openai} onSaved={setData} />
         </>
       )}
+
+      {/* EPIC-049 — GoBiz / GoFood. Menu Settings → Integrasi membuka halaman ini,
+          bukan /dashboard/integration (Integration Center lama tanpa tautan menu),
+          jadi panelnya harus ada di sini. */}
+      <div className="border-t pt-6">
+        <GobizSettingsPanel />
+      </div>
 
       {/* EPIC-042 — Open API tokens utk agent eksternal; owner minta dikelola
           dari halaman Integrasi ini (2026-08-23), bukan halaman terpisah. */}
