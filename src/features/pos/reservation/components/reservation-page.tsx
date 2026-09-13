@@ -372,7 +372,7 @@ export function ReservationPage() {
         timeLabel: String(reservation.time_slot || "").slice(0, 5),
         paxCount: reservation.pax_count,
         tableLabel: reservation.table?.table_number || null,
-        merchantName: "Sulu In Wounderland",
+        merchantName: "Tedja Coffee",
       });
     }
     const dateObj = new Date(`${reservation.reservation_date}T00:00:00`);

@@ -16,7 +16,7 @@ export default function SwaggerClientWrapper({ url }: { url: string }) {
         }}
       >
         <h1 style={{ fontSize: "20px", fontWeight: 700, margin: 0 }}>
-          Sulu In Wounderland OS — Purchasing Module API
+          Tedja Coffee OS — Purchasing Module API
         </h1>
         <p style={{ fontSize: "14px", color: "#666", margin: "4px 0 0" }}>
           OpenAPI 3.0 / Swagger Documentation

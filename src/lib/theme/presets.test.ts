@@ -7,8 +7,8 @@ describe("THEME_PRESETS", () => {
   it("includes wonderland as the default with the current pink", () => {
     const wonderland = getPreset(DEFAULT_PRESET_ID);
     expect(wonderland).toBeDefined();
-    expect(wonderland!.primary).toBe("#db2777");
-    expect(wonderland!.secondary).toBe("#ec4899");
+    expect(wonderland!.primary).toBe("#741a1a");
+    expect(wonderland!.secondary).toBe("#9b2c2c");
   });
   it("has unique ids and valid hex values", () => {
     const ids = new Set<string>();

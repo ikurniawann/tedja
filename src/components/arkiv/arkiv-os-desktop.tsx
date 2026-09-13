@@ -247,8 +247,8 @@ const modules: DesktopModule[] = [
 ];
 
 const wallpapers = [
-  { id: "arkiv", name: `${BRAND} Aurora`, src: "/bg.avif" },
-  { id: "pink", name: "Pink Dusk", src: "linear-gradient(135deg,#16091d,#5b1239 45%,#111827)" },
+  { id: "arkiv", name: `${BRAND} Café`, src: "/bg.avif" },
+  { id: "pink", name: "Maroon Dusk", src: "linear-gradient(135deg,#1a0b0b,#5c1616 45%,#111827)" },
   { id: "midnight", name: "Midnight", src: "linear-gradient(135deg,#030712,#111827 52%,#1e1b4b)" },
   { id: "glass", name: "Glass Blue", src: "linear-gradient(135deg,#082f49,#0f172a 48%,#312e81)" },
 ];

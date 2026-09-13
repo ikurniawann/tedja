@@ -352,7 +352,7 @@ function KdsPageContent() {
             Ready: {grouped['ready']?.length || 0}
           </span>
         </div>
-        <div className="font-mono">Sulu In Wounderland POS KDS</div>
+        <div className="font-mono">Tedja Coffee POS KDS</div>
       </footer>
     </div>
   );

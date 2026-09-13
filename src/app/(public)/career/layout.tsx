@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Careers | Sulu In Wounderland",
+  title: "Careers | Tedja Coffee",
   description:
-    "Explore open roles and apply to join the Sulu In Wounderland team.",
+    "Explore open roles and apply to join the Tedja Coffee team.",
 };
 
 export default function CareerLayout({

@@ -13,7 +13,7 @@ import {
   MapPin,
 } from "lucide-react";
 
-const logoUrl = "/logos/sulu-in-wounderland-logo.png";
+const logoUrl = "/logos/tedja-coffee-logo.png";
 
 const studioImages = [
   "https://lh3.googleusercontent.com/aida-public/AB6AXuDJr8IKAu_mCH2MXuI0aBsNIWp2CsmUx2bPP--qivo51UWxxyAdNGCKrk_1XY7XHmZ_wAZLFWYTKuFjdHi0-4zAZanbIiUxWbpBU-ZkJedhWA7FCcObdBkJaLGL3PHefi86Y984mxF1mw843hAo6Ip1R4ia5c_LN2Pv1hLYMDdwBC9rQEjdxterd171OS-FTEK2sYSDoW1aagus7Gp-WoN9KGhI5NmQt8HqbJmn9xoVU5Om859B60lbw67wnqYWuS7LhAnmXiLIeGc",
@@ -74,12 +74,12 @@ export default function CareerPage() {
     <div id="top" className="min-h-screen bg-[#f8f9fa] text-[#191c1d] career-roundo">
       <nav className="fixed top-0 z-50 w-full border-b border-[#e1bec6] bg-[#f8f9fa]/95 backdrop-blur">
         <div className="mx-auto flex h-20 max-w-[1280px] items-center justify-between px-4 sm:px-6 lg:px-10">
-          <Link href="/career" className="flex h-full items-center" aria-label="Sulu In Wounderland careers">
-            <img src={logoUrl} alt="Sulu In Wounderland Logo" className="h-full w-auto object-contain" />
+          <Link href="/career" className="flex h-full items-center" aria-label="Tedja Coffee careers">
+            <img src={logoUrl} alt="Tedja Coffee Logo" className="h-full w-auto object-contain" />
           </Link>
           <a
             href="#open-roles"
-            className="rounded-full bg-[#db2777] px-6 py-2 text-sm font-semibold uppercase tracking-[0.08em] text-white transition hover:bg-[#b7005e] active:scale-95"
+            className="rounded-full bg-[#741a1a] px-6 py-2 text-sm font-semibold uppercase tracking-[0.08em] text-white transition hover:bg-[#b7005e] active:scale-95"
           >
             Open Roles
           </a>
@@ -93,7 +93,7 @@ export default function CareerPage() {
           </h1>
           <div className="mx-auto max-w-3xl space-y-6 text-lg leading-relaxed text-[#594047]">
             <p>
-              Sulu In Wounderland is growing a team that builds warm, imaginative, and precise experiences across hospitality,
+              Tedja Coffee is growing a team that builds warm, imaginative, and precise experiences across hospitality,
               media, design, and technology.
             </p>
             <p>
@@ -112,7 +112,7 @@ export default function CareerPage() {
               {[...studioImages, ...studioImages].map((src, index) => (
                 <div key={`${src}-${index}`} className="group relative mx-2 aspect-[3/4] w-[58vw] shrink-0 cursor-crosshair sm:w-[35vw] md:w-[25vw]">
                   <img src={src} alt={`Studio ${index + 1}`} className="h-full w-full object-cover grayscale" />
-                  <div className="absolute inset-0 bg-[#db2777] opacity-60 mix-blend-multiply transition-opacity duration-700 group-hover:opacity-20" />
+                  <div className="absolute inset-0 bg-[#741a1a] opacity-60 mix-blend-multiply transition-opacity duration-700 group-hover:opacity-20" />
                 </div>
               ))}
             </div>
@@ -219,12 +219,12 @@ export default function CareerPage() {
         <div className="mx-auto grid max-w-[1280px] grid-cols-1 gap-10 px-4 sm:px-6 md:grid-cols-2 lg:px-10">
           <div className="space-y-6">
             <div className="flex h-12 items-center">
-              <img src={logoUrl} alt="Sulu In Wounderland Logo" className="h-full w-auto object-contain" />
+              <img src={logoUrl} alt="Tedja Coffee Logo" className="h-full w-auto object-contain" />
             </div>
             <p className="max-w-sm text-base leading-relaxed text-[#594047]">
               Designing emotional experiences at the intersection of technology, art, and service.
             </p>
-            <p className="text-base text-[#594047]">© 2026 Sulu In Wounderland. All rights reserved.</p>
+            <p className="text-base text-[#594047]">© 2026 Tedja Coffee. All rights reserved.</p>
           </div>
           <div className="flex flex-col justify-between gap-10 md:items-end">
             <div className="flex flex-wrap gap-6">

@@ -1,6 +1,6 @@
 /**
  * Nama merek instance (owner 2026-09-06). Satu basis kode dipakai beberapa
- * perusahaan (Sulu in Wounderland, Dusun Bambu, …) lewat deployment terpisah,
+ * perusahaan (Tedja Coffee, Sulu in Wounderland, Dusun Bambu, …) lewat deployment terpisah,
  * jadi nama merek TIDAK boleh ditulis langsung di komponen/dokumen.
  *
  * Sumber (paling spesifik dulu): nama perusahaan di DB (lihat
@@ -8,14 +8,14 @@
  * env NEXT_PUBLIC_APP_NAME → default di bawah.
  */
 
-export const DEFAULT_BRAND_NAME = "Sulu in Wounderland";
+export const DEFAULT_BRAND_NAME = "Tedja Coffee";
 
 /** Aman dipanggil di client & server (hanya membaca env build-time). */
 export function brandName(): string {
   return (process.env.NEXT_PUBLIC_APP_NAME || "").trim() || DEFAULT_BRAND_NAME;
 }
 
-/** Nama produk desktop/ERP, mis. "Sulu in Wounderland OS". */
+/** Nama produk desktop/ERP, mis. "Tedja Coffee OS". */
 export function brandOsName(): string {
   return `${brandName()} OS`;
 }

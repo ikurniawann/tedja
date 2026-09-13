@@ -96,10 +96,10 @@ export async function GET() {
   const spec = {
     openapi: "3.0.3",
     info: {
-      title: "Sulu In Wounderland OS API",
+      title: "Tedja Coffee OS API",
       version: "1.0.0",
       description:
-        "Seluruh endpoint /api/* Sulu In Wounderland OS. Autentikasi: header 'Authorization: Bearer arkiv_...' (Open API token, dikelola admin di dashboard) atau cookie sesi. Scope token: '*' atau '<modul>:read|write' (modul: pos, member, hris, inventory, crm, config, reports, other). Method GET=read, selainnya write.",
+        "Seluruh endpoint /api/* Tedja Coffee OS. Autentikasi: header 'Authorization: Bearer arkiv_...' (Open API token, dikelola admin di dashboard) atau cookie sesi. Scope token: '*' atau '<modul>:read|write' (modul: pos, member, hris, inventory, crm, config, reports, other). Method GET=read, selainnya write.",
     },
     servers: [{ url: "https://dashboard.suluinwounderland.com" }],
     components: {
