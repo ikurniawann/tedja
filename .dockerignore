@@ -13,3 +13,7 @@ Dockerfile
 .dockerignore
 database/
 seeders/
+# pnpm-workspace.yaml hanya berisi allowBuilds untuk pnpm >=10 di host. Dockerfile
+# memakai pnpm 9, yang membaca file ini sebagai definisi workspace dan gagal
+# dengan "packages field missing or empty" saat `pnpm build`.
+pnpm-workspace.yaml
