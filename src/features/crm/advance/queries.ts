@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import * as api from "./api";
-import type { ApprovalRuleInput, ScoringRuleInput } from "./types";
+import type { ApprovalRuleInput, CustomFieldInput, ScoringRuleInput } from "./types";
 
 const K = {
   scoring: ["crm", "advance", "scoring-rules"] as const,
@@ -12,6 +12,9 @@ const K = {
   approvalRules: ["crm", "advance", "approval-rules"] as const,
   approvals: (view: string, status: string) => ["crm", "advance", "approvals", view, status] as const,
   owners: ["sales-funnel", "owners"] as const,
+  customFields: ["crm", "advance", "custom-fields"] as const,
+  forecast: (month: string, pipelineId: string) => ["sales-funnel", "forecast", month, pipelineId] as const,
+  targets: (month: string) => ["sales-funnel", "targets", month] as const,
 };
 
 function mutation<TArgs>(fn: (args: TArgs) => Promise<unknown>, keys: readonly (readonly string[])[], okMessage: string, onSuccess?: () => void) {
@@ -56,3 +59,17 @@ export const useDecideApproval = mutation(
 );
 
 export const useOwners = () => useQuery({ queryKey: K.owners, queryFn: api.fetchOwners, staleTime: 5 * 60_000 });
+
+export const useCustomFields = () => useQuery({ queryKey: K.customFields, queryFn: api.fetchCustomFields });
+export const useCreateCustomField = mutation((v: CustomFieldInput) => api.createCustomField(v), [K.customFields, ["crm", "custom-fields"]], "Field dibuat");
+export const useUpdateCustomField = mutation(({ id, values }: { id: string; values: Partial<CustomFieldInput> }) => api.updateCustomField(id, values), [K.customFields, ["crm", "custom-fields"]], "Field diperbarui");
+export const useDeleteCustomField = mutation((id: string) => api.deleteCustomField(id), [K.customFields, ["crm", "custom-fields"]], "Field dihapus");
+
+export const useForecast = (month: string, pipelineId = "") =>
+  useQuery({ queryKey: K.forecast(month, pipelineId), queryFn: () => api.fetchForecast(month, pipelineId || undefined) });
+export const useTargets = (month: string) => useQuery({ queryKey: K.targets(month), queryFn: () => api.fetchTargets(month) });
+export const useSaveTargets = mutation(
+  (targets: Array<{ user_id: string; period_month: string; target_value: number; target_deals?: number | null }>) => api.saveTargets(targets),
+  [["sales-funnel", "targets"], ["sales-funnel", "forecast"]],
+  "Target disimpan"
+);

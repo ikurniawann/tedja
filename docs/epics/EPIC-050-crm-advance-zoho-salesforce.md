@@ -2,7 +2,7 @@
 
 status: on-progress
 environment: dev
-phase: 3 (Fase 1 & 2 selesai, deploy dev 2026-09-13 → lanjut Fase 3 Pipeline/Forecast/Custom Field)
+phase: 4 (Fase 1–3 selesai, deploy dev 2026-09-13 → lanjut Fase 4 Reports & Dashboards)
 priority: P1
 area: Fullstack
 module: `MODULE-CRM`
@@ -375,12 +375,12 @@ Urutan final setelah keputusan owner 2026-09-13 (email ditunda ke akhir).
       + notifikasi WA/in-app + UI approver.
 
 ### Fase 3 — Pipeline, Forecast, Custom Field (P1-a)
-- [ ] T-3.1 Multi-pipeline (default: Event & Booking Venue, B2B Kopi & Katering)
+- [x] T-3.1 Multi-pipeline (default: Event & Booking Venue, B2B Kopi & Katering)
       + probability per tahap + deal team; kanban per pipeline.
-- [ ] T-3.2 Target per salesperson per bulan (Rupiah, opsional jumlah deal) +
+- [x] T-3.2 Target per salesperson per bulan (Rupiah, opsional jumlah deal) +
       halaman Forecast (weighted, kategori commit/best-case/pipeline).
-- [ ] T-3.3 Custom fields registry + renderer + validasi + dipakai filter/report.
-- [ ] T-3.4 Versi quotation + expiry reminder (WA).
+- [x] T-3.3 Custom fields registry + renderer + validasi + dipakai filter/report.
+- [x] T-3.4 Versi quotation + expiry reminder (WA).
 
 ### Fase 4 — Reports & Dashboards (P1-b)
 - [ ] T-4.1 Report builder (objek → kolom → filter → group → chart) + export XLSX.
@@ -496,3 +496,19 @@ Urutan final setelah keputusan owner 2026-09-13 (email ditunda ke akhir).
   192 total lulus; tsc & eslint bersih pada file yang disentuh; E2E API di
   deploy (skor 40→60 setelah meeting, rule referral memicu notif+task+wait,
   approval 15% satu tingkat & 25% dua tingkat).
+- 2026-09-13 — **Fase 3 selesai (deploy dev).** (a) Multi-pipeline: tabel
+  crm_pipelines, stages.pipeline_id + probability, deals.pipeline_id +
+  forecast_category (otomatis dari probability tahap: commit ≥75, best_case
+  ≥50), deal team (crm_deal_members); dua pipeline default (Event & Booking
+  Venue; B2B Kopi & Katering) — tab di kanban, pipeline dipilih saat buat deal,
+  pipeline & tahap baru dari Pengaturan Funnel. (b) Target per salesperson per
+  bulan (crm_sales_targets, Rupiah + jumlah deal opsional) + halaman Forecast:
+  target vs menang vs weighted (Σ nilai × probability), kategori commit/best
+  case/pipeline, attainment & gap, filter pipeline. (c) Custom fields: registry
+  crm_custom_fields (10 tipe, wajib, validasi min/max/regex, picklist), nilai di
+  kolom custom jsonb lead/deal/account/contact, validasi server pada
+  create/update, render otomatis di semua form, halaman Pengaturan CRM → Custom
+  Fields; page layout drag-drop tetap ditunda (P2). (d) Versi quotation
+  (revise → v+1, lama = superseded) + pengingat kedaluwarsa H-3 (watcher per
+  jam, WA + in-app). Bukti: 9 tes unit baru (custom fields, forecast) — 201
+  total lulus; tsc & eslint bersih untuk file yang disentuh; E2E API di deploy.

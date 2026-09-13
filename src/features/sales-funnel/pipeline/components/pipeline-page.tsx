@@ -20,7 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useLinkLeadCustomer } from "../../leads/queries";
-import { useDeals, useDeleteDeal, useStages, useUpdateDeal } from "../queries";
+import { useDeals, useDeleteDeal, usePipelines, useStages, useUpdateDeal } from "../queries";
 import {
   EVENT_TYPE_LABELS,
   formatRupiah,
@@ -44,6 +44,10 @@ export function SalesFunnelPipelinePage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [search, setSearch] = useState("");
   const [eventType, setEventType] = useState(ALL);
+  const [pipelineId, setPipelineId] = useState("");
+  const pipelinesQuery = usePipelines();
+  const pipelines = pipelinesQuery.data ?? [];
+  const activePipelineId = pipelineId || pipelines.find((p) => p.is_default)?.id || pipelines[0]?.id || "";
   const [formOpen, setFormOpen] = useState(false);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [detailSnapshot, setDetailSnapshot] = useState<SalesDeal | null>(null);
@@ -57,11 +61,11 @@ export function SalesFunnelPipelinePage() {
   }, [searchQuery]);
 
   const filters: DealFilters = useMemo(
-    () => ({ q: search, event_type: eventType === ALL ? "" : eventType }),
-    [search, eventType]
+    () => ({ q: search, event_type: eventType === ALL ? "" : eventType, pipeline_id: activePipelineId }),
+    [search, eventType, activePipelineId]
   );
 
-  const stagesQuery = useStages();
+  const stagesQuery = useStages(false, activePipelineId || undefined);
   const dealsQuery = useDeals(filters);
   const updateMutation = useUpdateDeal(filters, () => setCloseTarget(null));
   const deleteMutation = useDeleteDeal();
@@ -113,6 +117,21 @@ export function SalesFunnelPipelinePage() {
 
   return (
     <div className="space-y-5">
+      {pipelines.length > 1 ? (
+        <div className="flex flex-wrap gap-1 rounded-xl border border-gray-200 bg-white p-1">
+          {pipelines.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => setPipelineId(p.id)}
+              className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${activePipelineId === p.id ? "bg-pink-600 text-white" : "text-gray-600 hover:bg-gray-100"}`}
+            >
+              {p.name}
+              <span className={`ml-1.5 text-xs ${activePipelineId === p.id ? "text-pink-100" : "text-gray-400"}`}>{p.open_deals}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Pipeline Deals</h1>
@@ -197,6 +216,7 @@ export function SalesFunnelPipelinePage() {
                       </p>
                       <p className="text-xs text-gray-500">
                         {stageDeals.length} deal · {formatRupiah(stageValue)}
+                        {typeof stage.probability === "number" && !stage.is_won && !stage.is_lost ? ` · ${stage.probability}%` : ""}
                       </p>
                     </div>
                   </div>
@@ -253,6 +273,7 @@ export function SalesFunnelPipelinePage() {
         onEdit={(deal) => setEditingDeal(deal)}
       />
       <DealFormDialog
+        defaultPipelineId={activePipelineId}
         open={formOpen || editingDeal !== null}
         onOpenChange={(open) => {
           if (!open) {

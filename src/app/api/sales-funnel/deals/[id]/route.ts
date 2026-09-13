@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { successResponse, noContentResponse } from "@/lib/api/auth";
 import { emitCrmEvent } from "@/lib/crm/events";
+import { validateCustomPayload, loadExistingCustom } from "@/lib/crm/custom-fields-server";
 import { queryOne, withTransaction } from "@/lib/db";
 import { findAccessibleDeal } from "@/lib/sales-funnel/access";
 import {
@@ -27,6 +28,9 @@ const updateDealSchema = z.object({
   owner_user_id: z.string().uuid().nullable().optional(),
   stage_id: z.string().uuid().optional(),
   lost_reason_id: z.string().uuid().nullable().optional(),
+  // EPIC-050 Fase 3
+  forecast_category: z.enum(["pipeline", "best_case", "commit"]).optional(),
+  custom: z.record(z.string(), z.unknown()).optional(),
 });
 
 type StageRow = {
@@ -35,6 +39,8 @@ type StageRow = {
   is_won: boolean;
   is_lost: boolean;
   is_active: boolean;
+  pipeline_id: string | null;
+  probability: number;
 };
 
 export async function PATCH(
@@ -110,7 +116,7 @@ export async function PATCH(
     const isStageMove = body.stage_id !== undefined && body.stage_id !== deal.stage_id;
     if (isStageMove) {
       const stage = await queryOne<StageRow>(
-        `SELECT id, name, is_won, is_lost, is_active
+        `SELECT id, name, is_won, is_lost, is_active, pipeline_id, probability
          FROM crm.crm_sales_stages WHERE id = $1`,
         [body.stage_id]
       );
@@ -118,6 +124,21 @@ export async function PATCH(
         return NextResponse.json(
           { success: false, error: "Tahap tujuan tidak valid" },
           { status: 400 }
+        );
+      }
+      // EPIC-050 Fase 3: tahap harus dalam pipeline deal (pindah pipeline = set pipeline_id ikut)
+      const currentPipeline = await queryOne<{ pipeline_id: string | null }>(
+        `SELECT pipeline_id FROM crm.crm_sales_deals WHERE id = $1`,
+        [id]
+      );
+      if (stage.pipeline_id && currentPipeline?.pipeline_id && stage.pipeline_id !== currentPipeline.pipeline_id) {
+        set("pipeline_id", stage.pipeline_id);
+      }
+      // kategori forecast mengikuti probability tahap (override manual hanya utk tahap terbuka)
+      if (body.forecast_category === undefined) {
+        set(
+          "forecast_category",
+          stage.is_won ? "closed_won" : stage.is_lost ? "closed_lost" : stage.probability >= 75 ? "commit" : stage.probability >= 50 ? "best_case" : "pipeline"
         );
       }
 
@@ -158,6 +179,14 @@ export async function PATCH(
       set("entered_stage_at", new Date().toISOString());
     }
 
+    if (body.custom !== undefined) {
+      const existingCustom = await loadExistingCustom("crm.crm_sales_deals", id);
+      const customCheck = await validateCustomPayload("deal", deal.company_id, body.custom, existingCustom);
+      if (customCheck.error) return customCheck.error;
+      values.push(JSON.stringify(customCheck.values));
+      sets.push(`custom = $${values.length}::jsonb`);
+      delete body.custom;
+    }
     for (const [key, value] of Object.entries(body)) {
       if (value === undefined) continue;
       set(key, value);

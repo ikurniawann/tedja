@@ -41,6 +41,7 @@ export interface SalesLead {
   account_id?: string | null;
   contact_id?: string | null;
   account_name?: string | null;
+  custom?: Record<string, unknown>;
   score?: number;
   score_breakdown?: Array<{ rule_id: string; name: string; points: number; count?: number }>;
   score_updated_at?: string | null;
@@ -69,6 +70,7 @@ export interface LeadFormValues {
   temperature: LeadTemperature;
   status: LeadStatus;
   notes: string;
+  custom?: Record<string, unknown>;
 }
 
 export interface LeadListResponse {

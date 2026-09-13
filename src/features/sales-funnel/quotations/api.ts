@@ -99,3 +99,10 @@ export async function sendQuotationWa(id: string): Promise<{ message?: string }>
   if (!res.ok) await parseError(res, "Gagal mengirim quotation");
   return res.json();
 }
+
+/** EPIC-050 T-3.4 — buat versi baru (revisi) dari quotation. */
+export async function reviseQuotation(id: string): Promise<{ data: { id: string; version: number }; message?: string }> {
+  const res = await fetch(`/api/sales-funnel/quotations/${id}/revise`, { method: "POST" });
+  if (!res.ok) await parseError(res, "Gagal membuat revisi");
+  return res.json();
+}

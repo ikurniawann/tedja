@@ -18,6 +18,7 @@ import { Switch } from "@/components/ui/switch";
 import { TableRow } from "@/components/ui/table";
 import { PurchasingListSection } from "@/modules/purchasing/components/list/PurchasingListSection";
 import { useStages, useUpdateStage } from "../../pipeline/queries";
+import { PipelinesSection } from "./pipelines-section";
 import type { SalesStage, StageUpdatePayload } from "../../pipeline/types";
 import { RecipesSection } from "./recipes-section";
 import { WaTemplatesSection } from "./wa-templates-section";
@@ -26,6 +27,7 @@ interface StageForm {
   name: string;
   sort_order: string;
   stuck_threshold_days: string;
+  probability: string;
   is_active: boolean;
 }
 
@@ -35,6 +37,7 @@ export function FunnelSettingsPage() {
     name: "",
     sort_order: "0",
     stuck_threshold_days: "7",
+    probability: "10",
     is_active: true,
   });
 
@@ -48,6 +51,7 @@ export function FunnelSettingsPage() {
       name: editingStage.name,
       sort_order: String(editingStage.sort_order),
       stuck_threshold_days: String(editingStage.stuck_threshold_days),
+      probability: String(editingStage.probability ?? 0),
       is_active: editingStage.is_active,
     });
   }, [editingStage]);
@@ -62,6 +66,7 @@ export function FunnelSettingsPage() {
       sort_order: Number(form.sort_order) || 0,
       stuck_threshold_days: Number(form.stuck_threshold_days) || 0,
       is_active: form.is_active,
+      probability: Math.min(100, Math.max(0, Number(form.probability) || 0)),
     };
     updateMutation.mutate({ id: editingStage.id, values });
   };
@@ -74,6 +79,8 @@ export function FunnelSettingsPage() {
           Konfigurasi tahap pipeline: nama, urutan, dan ambang hari deal macet.
         </p>
       </div>
+
+      <PipelinesSection />
 
       <PurchasingListSection
         icon={Cog6ToothIcon}
@@ -122,6 +129,7 @@ export function FunnelSettingsPage() {
                       )}
                     </td>
                     <td className="px-4 py-3 text-gray-500">
+                      {typeof stage.probability === "number" ? `${stage.probability}% · ` : ""}
                       {stage.stuck_threshold_days > 0
                         ? `> ${stage.stuck_threshold_days} hari`
                         : "—"}
@@ -207,6 +215,18 @@ export function FunnelSettingsPage() {
                 />
                 <p className="text-xs text-gray-500">0 = tanpa badge macet</p>
               </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="stage_probability">Probability (%) — bobot forecast</Label>
+              <Input
+                id="stage_probability"
+                type="number"
+                min={0}
+                max={100}
+                value={form.probability}
+                onChange={(e) => setForm((p) => ({ ...p, probability: e.target.value }))}
+                disabled={Boolean(isClosing)}
+              />
+            </div>
             </div>
             {!isClosing ? (
               <div className="flex items-center justify-between rounded-lg border border-gray-200/70 px-3 py-2.5">

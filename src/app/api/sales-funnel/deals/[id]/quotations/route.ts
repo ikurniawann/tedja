@@ -35,6 +35,7 @@ export async function GET(
       `SELECT q.id, q.quote_number, q.status, q.use_ppn, q.ppn_persen,
               q.subtotal, q.ppn_nominal, q.total, q.notes, q.valid_until,
               q.discount_percent, q.discount_nominal, q.approval_status, q.approval_request_id,
+              q.version, q.parent_quotation_id, q.superseded_at,
               q.stock_deducted_at, q.bom_status, q.created_at,
               COALESCE(
                 (SELECT json_agg(json_build_object(

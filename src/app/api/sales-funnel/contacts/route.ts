@@ -4,6 +4,7 @@ import { getApiUserScope } from "@/lib/api/scope";
 import { query, queryOne } from "@/lib/db";
 import { findAccessibleAccount } from "@/lib/sales-funnel/access";
 import { contactSchema } from "@/lib/sales-funnel/accounts";
+import { validateCustomPayload, loadExistingCustom } from "@/lib/crm/custom-fields-server";
 import {
   isValidNormalizedPhone,
   normalizePhone,
@@ -143,6 +144,8 @@ export async function POST(request: NextRequest) {
       const ownerError = await validateAssignableOwner(body.owner_user_id, companyId);
       if (ownerError) return NextResponse.json({ success: false, error: ownerError }, { status: 400 });
     }
+    const customCheck = await validateCustomPayload("contact", companyId, body.custom);
+    if (customCheck.error) return customCheck.error;
     const duplicate = await queryOne<{ id: string; name: string }>(
       `SELECT id, name FROM crm.crm_contacts WHERE company_id = $1 AND phone = $2 AND deleted_at IS NULL`,
       [companyId, phone]
@@ -178,7 +181,7 @@ export async function POST(request: NextRequest) {
         body.customer_id ?? null,
         body.notes || null,
         body.owner_user_id || (user.role === "sales" ? user.id : null),
-        JSON.stringify(body.custom ?? {}),
+        JSON.stringify(customCheck.values ?? {}),
         user.id,
       ]
     );

@@ -19,8 +19,12 @@ async function parseError(res: Response, fallback: string): Promise<never> {
   throw new Error(message);
 }
 
-export async function fetchStages(all = false): Promise<SalesStage[]> {
-  const res = await fetch(`/api/sales-funnel/stages${all ? "?all=1" : ""}`);
+export async function fetchStages(all = false, pipelineId?: string): Promise<SalesStage[]> {
+  const params = new URLSearchParams();
+  if (all) params.set("all", "1");
+  if (pipelineId) params.set("pipeline_id", pipelineId);
+  const qs = params.toString();
+  const res = await fetch(`/api/sales-funnel/stages${qs ? `?${qs}` : ""}`);
   if (!res.ok) await parseError(res, "Gagal memuat tahap pipeline");
   const body = (await res.json()) as { data: SalesStage[] };
   return body.data;
@@ -47,6 +51,7 @@ export async function fetchDeals(filters: DealFilters): Promise<SalesDeal[]> {
   const params = new URLSearchParams();
   if (filters.q) params.set("q", filters.q);
   if (filters.event_type) params.set("event_type", filters.event_type);
+  if (filters.pipeline_id) params.set("pipeline_id", filters.pipeline_id);
   const qs = params.toString();
   const res = await fetch(`/api/sales-funnel/deals${qs ? `?${qs}` : ""}`);
   if (!res.ok) await parseError(res, "Gagal memuat deals");
@@ -66,6 +71,8 @@ export async function createDeal(values: DealFormValues) {
       is_event_date_fixed: values.is_event_date_fixed,
       pax_estimate: values.pax_estimate ? Number(values.pax_estimate) : null,
       value_estimate: values.value_estimate ? Number(values.value_estimate) : null,
+      pipeline_id: values.pipeline_id || null,
+      custom: values.custom ?? {},
     }),
   });
   if (!res.ok) await parseError(res, "Gagal membuat deal");
@@ -207,4 +214,50 @@ export async function fetchDealPayments(dealId: string): Promise<DealPaymentData
   if (!res.ok) await parseError(res, "Gagal memuat pembayaran");
   const body = (await res.json()) as { data: DealPaymentData };
   return body.data;
+}
+
+// ── EPIC-050 Fase 3: pipelines, tahap baru, deal team ──
+import type { DealMember, SalesPipeline } from "./types";
+
+export async function fetchPipelines(all = false): Promise<SalesPipeline[]> {
+  const res = await fetch(`/api/sales-funnel/pipelines${all ? "?all=1" : ""}`);
+  if (!res.ok) await parseError(res, "Gagal memuat pipeline");
+  const body = (await res.json()) as { data: SalesPipeline[] };
+  return body.data;
+}
+
+export async function createPipeline(values: { name: string; description?: string | null; stages: Array<{ name: string; probability: number }> }) {
+  const res = await fetch("/api/sales-funnel/pipelines", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(values) });
+  if (!res.ok) await parseError(res, "Gagal membuat pipeline");
+  return res.json();
+}
+
+export async function updatePipeline(id: string, values: Partial<{ name: string; description: string | null; is_default: boolean; is_active: boolean; sort_order: number }>) {
+  const res = await fetch(`/api/sales-funnel/pipelines/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(values) });
+  if (!res.ok) await parseError(res, "Gagal memperbarui pipeline");
+  return res.json();
+}
+
+export async function createStage(values: { pipeline_id: string; name: string; probability: number; stuck_threshold_days?: number }) {
+  const res = await fetch("/api/sales-funnel/stages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(values) });
+  if (!res.ok) await parseError(res, "Gagal menambah tahap");
+  return res.json();
+}
+
+export async function fetchDealMembers(dealId: string): Promise<DealMember[]> {
+  const res = await fetch(`/api/sales-funnel/deals/${dealId}/members`);
+  if (!res.ok) await parseError(res, "Gagal memuat tim deal");
+  const body = (await res.json()) as { data: DealMember[] };
+  return body.data;
+}
+
+export async function addDealMember(dealId: string, values: { user_id: string; role: DealMember["role"]; split_percent?: number }) {
+  const res = await fetch(`/api/sales-funnel/deals/${dealId}/members`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(values) });
+  if (!res.ok) await parseError(res, "Gagal menambah anggota tim");
+  return res.json();
+}
+
+export async function removeDealMember(dealId: string, memberId: string) {
+  const res = await fetch(`/api/sales-funnel/deals/${dealId}/members?member_id=${memberId}`, { method: "DELETE" });
+  if (!res.ok && res.status !== 204) await parseError(res, "Gagal menghapus anggota tim");
 }

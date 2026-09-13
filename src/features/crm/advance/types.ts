@@ -140,3 +140,45 @@ export const CONDITION_FIELDS: Record<WorkflowObject, string[]> = {
   task: ["activity_type", "priority", "status", "owner_user_id"],
   quotation: ["status", "approval_status", "discount_percent", "total"],
 };
+
+// ── EPIC-050 Fase 3 ──
+import type { CustomFieldDef, CustomFieldInput } from "@/lib/crm/custom-fields";
+import type { ForecastRow } from "@/lib/sales-funnel/forecast";
+export type { CustomFieldDef, CustomFieldInput, ForecastRow };
+
+export interface CustomFieldRow extends CustomFieldDef {
+  company_id: string | null;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface ForecastDeal {
+  id: string;
+  title: string;
+  org_name: string;
+  owner_user_id: string | null;
+  owner_name: string | null;
+  value: number;
+  probability: number;
+  category: "pipeline" | "best_case" | "commit" | "closed_won" | "closed_lost";
+  stage_name: string;
+  event_date: string | null;
+  pipeline_id: string | null;
+}
+
+export interface ForecastResponse {
+  month: string;
+  rows: ForecastRow[];
+  total: ForecastRow;
+  deals: ForecastDeal[];
+}
+
+export interface TargetRow {
+  id: string;
+  user_id: string;
+  full_name: string;
+  period_month: string;
+  target_value: string | number;
+  target_deals: number | null;
+  pipeline_id: string | null;
+}

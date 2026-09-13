@@ -16,6 +16,9 @@ export interface SalesStage {
   is_lost: boolean;
   stuck_threshold_days: number;
   is_active: boolean;
+  // EPIC-050 Fase 3
+  pipeline_id?: string | null;
+  probability?: number;
 }
 
 export interface SalesDeal {
@@ -49,6 +52,12 @@ export interface SalesDeal {
   stuck_threshold_days: number;
   owner_name: string | null;
   lost_reason_name: string | null;
+  // EPIC-050 Fase 3
+  pipeline_id?: string | null;
+  forecast_category?: "pipeline" | "best_case" | "commit" | "closed_won" | "closed_lost";
+  probability?: number;
+  stage_name?: string;
+  custom?: Record<string, unknown>;
 }
 
 export interface SalesLostReason {
@@ -61,10 +70,13 @@ export interface SalesLostReason {
 export interface DealFilters {
   q: string;
   event_type: string;
+  pipeline_id?: string;
 }
 
 export interface DealFormValues {
   lead_id: string;
+  pipeline_id?: string;
+  custom?: Record<string, unknown>;
   title: string;
   event_type: DealEventType;
   event_date: string;
@@ -74,6 +86,8 @@ export interface DealFormValues {
 }
 
 export interface DealUpdatePayload {
+  forecast_category?: "pipeline" | "best_case" | "commit";
+  custom?: Record<string, unknown>;
   title?: string;
   event_type?: DealEventType;
   event_date?: string | null;
@@ -86,6 +100,7 @@ export interface DealUpdatePayload {
 }
 
 export interface StageUpdatePayload {
+  probability?: number;
   name?: string;
   sort_order?: number;
   stuck_threshold_days?: number;
@@ -133,3 +148,43 @@ export function isDealStuck(deal: SalesDeal): boolean {
   if (!deal.stuck_threshold_days) return false;
   return daysInStage(deal.entered_stage_at) > deal.stuck_threshold_days;
 }
+
+// ── EPIC-050 Fase 3: pipelines & deal team ──
+export interface SalesPipeline {
+  id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  is_default: boolean;
+  sort_order: number;
+  is_active: boolean;
+  company_id: string | null;
+  open_deals: number;
+  stages: SalesStage[];
+}
+
+export interface DealMember {
+  id: string;
+  user_id: string;
+  role: "owner" | "support" | "pre_sales" | "account_manager" | "finance";
+  split_percent: string | number;
+  created_at: string;
+  full_name: string;
+  user_role: string;
+}
+
+export const DEAL_MEMBER_ROLE_LABELS: Record<DealMember["role"], string> = {
+  owner: "Owner",
+  support: "Support",
+  pre_sales: "Pre-sales",
+  account_manager: "Account manager",
+  finance: "Finance",
+};
+
+export const FORECAST_LABELS: Record<NonNullable<SalesDeal["forecast_category"]>, string> = {
+  pipeline: "Pipeline",
+  best_case: "Best case",
+  commit: "Commit",
+  closed_won: "Menang",
+  closed_lost: "Kalah",
+};

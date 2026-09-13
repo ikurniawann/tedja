@@ -48,6 +48,7 @@ export interface AccountFormValues {
   website: string;
   npwp: string;
   notes: string;
+  custom?: Record<string, unknown>;
 }
 
 export const EMPTY_ACCOUNT_FORM: AccountFormValues = {
@@ -132,5 +133,6 @@ export function accountToForm(account: SalesAccount): AccountFormValues {
     website: account.website ?? "",
     npwp: account.npwp ?? "",
     notes: account.notes ?? "",
+    custom: account.custom ?? {},
   };
 }

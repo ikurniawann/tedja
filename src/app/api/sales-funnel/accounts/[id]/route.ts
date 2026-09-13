@@ -3,6 +3,7 @@ import { noContentResponse, successResponse } from "@/lib/api/auth";
 import { query, queryOne } from "@/lib/db";
 import { findAccessibleAccount } from "@/lib/sales-funnel/access";
 import { updateAccountSchema } from "@/lib/sales-funnel/accounts";
+import { validateCustomPayload, loadExistingCustom } from "@/lib/crm/custom-fields-server";
 import {
   isValidNormalizedPhone,
   normalizePhone,
@@ -180,7 +181,10 @@ export async function PATCH(
         continue;
       }
       if (key === "custom") {
-        push("custom", JSON.stringify(raw ?? {}), "::jsonb");
+        const existingCustom = await loadExistingCustom("crm.crm_accounts", id);
+        const customCheck = await validateCustomPayload("account", account.company_id, raw as Record<string, unknown>, existingCustom);
+        if (customCheck.error) return customCheck.error;
+        push("custom", JSON.stringify(customCheck.values), "::jsonb");
         continue;
       }
       push(key, raw === "" ? null : raw);

@@ -35,6 +35,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { ORG_TYPE_LABELS } from "../../leads/types";
 import { QuotationSection } from "../../quotations";
+import { DealTeamSection } from "./deal-team-section";
 import { InvoiceSection } from "./invoice-section";
 import { PaymentSection } from "./payment-section";
 import {
@@ -211,6 +212,7 @@ export function DealDetailDialog({ deal, onClose, onEdit }: DealDetailDialogProp
                 </div>
 
                 {/* ── Quotation (Fase F1) ── */}
+                <DealTeamSection dealId={deal.id} enabled={open} ownerUserId={deal.owner_user_id} />
                 <QuotationSection dealId={deal.id} enabled={open} />
 
                 {/* ── Invoice dari kesepakatan termin ── */}

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createdResponse, successResponse } from "@/lib/api/auth";
 import { emitCrmEvent } from "@/lib/crm/events";
+import { validateCustomPayload, loadExistingCustom } from "@/lib/crm/custom-fields-server";
 import { getApiUserScope } from "@/lib/api/scope";
 import { query, queryOne, withTransaction } from "@/lib/db";
 import {
@@ -26,6 +27,7 @@ const DEAL_COLUMNS = `
   d.event_date, d.is_event_date_fixed, d.pax_estimate, d.stage_id,
   d.value_estimate, d.value_final, d.owner_user_id, d.lost_reason_id,
   d.entered_stage_at, d.closed_at, d.created_at, d.updated_at,
+  d.pipeline_id, d.forecast_category, d.custom, s.probability, s.name AS stage_name,
   l.org_name, l.org_type, l.pic_name, l.pic_phone, l.customer_id,
   s.code AS stage_code, s.is_won, s.is_lost, s.stuck_threshold_days,
   u.full_name AS owner_name, lr.name AS lost_reason_name`;
@@ -39,6 +41,9 @@ const createDealSchema = z.object({
   pax_estimate: z.number().int().min(1).max(100000).optional().nullable(),
   value_estimate: z.number().min(0).max(99_999_999_999).optional().nullable(),
   owner_user_id: z.string().uuid().optional().nullable(),
+  // EPIC-050 Fase 3
+  pipeline_id: z.string().uuid().optional().nullable(),
+  custom: z.record(z.string(), z.unknown()).optional(),
 });
 
 export async function GET(request: NextRequest) {
@@ -54,6 +59,7 @@ export async function GET(request: NextRequest) {
     const q = url.searchParams.get("q")?.trim() ?? "";
     const eventType = url.searchParams.get("event_type") ?? "";
     const owner = url.searchParams.get("owner_user_id") ?? "";
+    const pipelineId = url.searchParams.get("pipeline_id") ?? "";
 
     const conditions: string[] = [
       "d.deleted_at IS NULL",
@@ -77,6 +83,7 @@ export async function GET(request: NextRequest) {
       add("d.event_type = ?", eventType);
     }
     if (owner && UUID_RE.test(owner)) add("d.owner_user_id = ?", owner);
+    if (pipelineId && UUID_RE.test(pipelineId)) add("d.pipeline_id = ?", pipelineId);
     if (q) {
       params.push(`%${q}%`);
       const idx = `$${params.length}`;
@@ -201,11 +208,24 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // EPIC-050 Fase 3: pipeline dipilih (default = pipeline is_default) → tahap pertamanya
+    const pipeline = await queryOne<{ id: string }>(
+      body.pipeline_id
+        ? `SELECT id FROM crm.crm_pipelines WHERE id = $1 AND is_active`
+        : `SELECT id FROM crm.crm_pipelines WHERE is_active ORDER BY is_default DESC, sort_order LIMIT 1`,
+      body.pipeline_id ? [body.pipeline_id] : []
+    );
+    if (!pipeline) {
+      return NextResponse.json({ success: false, error: "Pipeline tidak ditemukan / nonaktif" }, { status: 400 });
+    }
+    const customCheck = await validateCustomPayload("deal", lead.company_id, body.custom);
+    if (customCheck.error) return customCheck.error;
     // Deal baru selalu masuk tahap pertama pipeline (bukan menang/kalah)
-    const firstStage = await queryOne<{ id: string }>(
-      `SELECT id FROM crm.crm_sales_stages
-       WHERE is_active = true AND is_won = false AND is_lost = false
-       ORDER BY sort_order ASC LIMIT 1`
+    const firstStage = await queryOne<{ id: string; probability: number }>(
+      `SELECT id, probability FROM crm.crm_sales_stages
+       WHERE is_active = true AND is_won = false AND is_lost = false AND pipeline_id = $1
+       ORDER BY sort_order ASC LIMIT 1`,
+      [pipeline.id]
     );
     if (!firstStage) {
       return NextResponse.json(
@@ -222,8 +242,8 @@ export async function POST(request: NextRequest) {
         `INSERT INTO crm.crm_sales_deals
            (company_id, branch_id, lead_id, title, event_type, event_date,
             is_event_date_fixed, pax_estimate, value_estimate, stage_id,
-            owner_user_id, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+            owner_user_id, created_by, pipeline_id, forecast_category, custom)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::jsonb)
          RETURNING id, title, stage_id`,
         [
           lead.company_id,
@@ -238,6 +258,9 @@ export async function POST(request: NextRequest) {
           firstStage.id,
           body.owner_user_id || (user.role === "sales" ? user.id : lead.owner_user_id),
           user.id,
+          pipeline.id,
+          firstStage.probability >= 75 ? "commit" : firstStage.probability >= 50 ? "best_case" : "pipeline",
+          JSON.stringify(customCheck.values ?? {}),
         ]
       );
       const deal = inserted.rows[0];

@@ -3,6 +3,7 @@ import { createdResponse, paginatedResponse } from "@/lib/api/auth";
 import { getApiUserScope } from "@/lib/api/scope";
 import { query, queryOne } from "@/lib/db";
 import { accountSchema } from "@/lib/sales-funnel/accounts";
+import { validateCustomPayload, loadExistingCustom } from "@/lib/crm/custom-fields-server";
 import {
   ACCOUNT_TYPES,
   isValidNormalizedPhone,
@@ -152,6 +153,8 @@ export async function POST(request: NextRequest) {
       const ownerError = await validateAssignableOwner(body.owner_user_id, companyId);
       if (ownerError) return NextResponse.json({ success: false, error: ownerError }, { status: 400 });
     }
+    const customCheck = await validateCustomPayload("account", companyId, body.custom);
+    if (customCheck.error) return customCheck.error;
     const duplicate = await queryOne<{ id: string }>(
       `SELECT id FROM crm.crm_accounts
        WHERE company_id = $1 AND lower(name) = lower($2) AND deleted_at IS NULL`,
@@ -183,7 +186,7 @@ export async function POST(request: NextRequest) {
         body.npwp || null,
         body.notes || null,
         body.owner_user_id || (user.role === "sales" ? user.id : null),
-        JSON.stringify(body.custom ?? {}),
+        JSON.stringify(customCheck.values ?? {}),
         user.id,
       ]
     );

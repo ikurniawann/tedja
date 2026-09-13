@@ -22,6 +22,8 @@ import {
 } from "@/components/ui/select";
 import { useAccounts } from "../../accounts/queries";
 import { useCreateContact, useUpdateContact } from "../queries";
+import { CustomFieldsSection } from "@/features/crm/custom-fields";
+
 import { EMPTY_CONTACT_FORM, contactToForm, type ContactFormValues, type SalesContact } from "../types";
 
 const NO_ACCOUNT = "none";
@@ -125,6 +127,7 @@ function ContactFormBody({ onOpenChange, contact, defaultAccountId }: Omit<Conta
             <Checkbox checked={form.is_primary} onCheckedChange={(v) => set("is_primary", Boolean(v))} />
             Jadikan contact utama account ini
           </label>
+          <CustomFieldsSection object="contact" values={form.custom ?? {}} onChange={(next) => set("custom", next)} />
           <div className="space-y-1.5 sm:col-span-2">
             <Label htmlFor="ct_notes">Catatan</Label>
             <Textarea id="ct_notes" rows={3} value={form.notes} onChange={(e) => set("notes", e.target.value)} />

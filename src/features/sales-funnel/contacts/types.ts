@@ -35,6 +35,7 @@ export interface ContactFormValues {
   email: string;
   is_primary: boolean;
   notes: string;
+  custom?: Record<string, unknown>;
 }
 
 export const EMPTY_CONTACT_FORM: ContactFormValues = {
@@ -62,5 +63,6 @@ export function contactToForm(contact: SalesContact): ContactFormValues {
     email: contact.email ?? "",
     is_primary: contact.is_primary,
     notes: contact.notes ?? "",
+    custom: contact.custom ?? {},
   };
 }

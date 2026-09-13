@@ -9,6 +9,8 @@ const updateStageSchema = z.object({
   sort_order: z.number().int().min(0).max(1000).optional(),
   stuck_threshold_days: z.number().int().min(0).max(365).optional(),
   is_active: z.boolean().optional(),
+  // EPIC-050 Fase 3
+  probability: z.number().int().min(0).max(100).optional(),
 });
 
 type StageRow = {

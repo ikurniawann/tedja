@@ -27,7 +27,9 @@ import type {
 
 export const pipelineQueryKeys = {
   all: ["sales-funnel", "pipeline"] as const,
-  stages: (all: boolean) => ["sales-funnel", "pipeline", "stages", all] as const,
+  stages: (all: boolean, pipelineId?: string) => ["sales-funnel", "pipeline", "stages", all, pipelineId ?? ""] as const,
+  pipelines: (all: boolean) => ["sales-funnel", "pipeline", "pipelines", all] as const,
+  members: (dealId: string) => ["sales-funnel", "pipeline", "members", dealId] as const,
   lostReasons: ["sales-funnel", "pipeline", "lost-reasons"] as const,
   deals: (filters: DealFilters) =>
     ["sales-funnel", "pipeline", "deals", filters] as const,
@@ -84,10 +86,10 @@ export const useDealPayments = (dealId: string, enabled: boolean) =>
     enabled: enabled && dealId !== "",
   });
 
-export const useStages = (all = false) =>
+export const useStages = (all = false, pipelineId?: string) =>
   useQuery({
-    queryKey: pipelineQueryKeys.stages(all),
-    queryFn: () => fetchStages(all),
+    queryKey: pipelineQueryKeys.stages(all, pipelineId),
+    queryFn: () => fetchStages(all, pipelineId),
     staleTime: 5 * 60 * 1000,
   });
 
@@ -199,6 +201,84 @@ export function useUpdateStage(onSuccess?: () => void) {
       queryClient.invalidateQueries({ queryKey: pipelineQueryKeys.all });
       onSuccess?.();
     },
+    onError: (error: Error) => toast.error(error.message),
+  });
+}
+
+// ── EPIC-050 Fase 3: pipelines, tahap baru, deal team ──
+import {
+  addDealMember,
+  createPipeline,
+  createStage,
+  fetchDealMembers,
+  fetchPipelines,
+  removeDealMember,
+  updatePipeline,
+} from "./api";
+import type { DealMember } from "./types";
+
+export const usePipelines = (all = false) =>
+  useQuery({ queryKey: pipelineQueryKeys.pipelines(all), queryFn: () => fetchPipelines(all), staleTime: 5 * 60 * 1000 });
+
+export function useCreatePipeline(onSuccess?: () => void) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (values: { name: string; description?: string | null; stages: Array<{ name: string; probability: number }> }) => createPipeline(values),
+    onSuccess: () => {
+      toast.success("Pipeline dibuat");
+      queryClient.invalidateQueries({ queryKey: pipelineQueryKeys.all });
+      onSuccess?.();
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+}
+
+export function useUpdatePipeline(onSuccess?: () => void) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, values }: { id: string; values: Partial<{ name: string; description: string | null; is_default: boolean; is_active: boolean; sort_order: number }> }) => updatePipeline(id, values),
+    onSuccess: () => {
+      toast.success("Pipeline diperbarui");
+      queryClient.invalidateQueries({ queryKey: pipelineQueryKeys.all });
+      onSuccess?.();
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+}
+
+export function useCreateStage(onSuccess?: () => void) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (values: { pipeline_id: string; name: string; probability: number; stuck_threshold_days?: number }) => createStage(values),
+    onSuccess: () => {
+      toast.success("Tahap ditambahkan");
+      queryClient.invalidateQueries({ queryKey: pipelineQueryKeys.all });
+      onSuccess?.();
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+}
+
+export const useDealMembers = (dealId: string, enabled: boolean) =>
+  useQuery({ queryKey: pipelineQueryKeys.members(dealId), queryFn: () => fetchDealMembers(dealId), enabled: enabled && dealId !== "" });
+
+export function useAddDealMember(dealId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (values: { user_id: string; role: DealMember["role"]; split_percent?: number }) => addDealMember(dealId, values),
+    onSuccess: () => {
+      toast.success("Anggota tim ditambahkan");
+      queryClient.invalidateQueries({ queryKey: pipelineQueryKeys.members(dealId) });
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+}
+
+export function useRemoveDealMember(dealId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (memberId: string) => removeDealMember(dealId, memberId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: pipelineQueryKeys.members(dealId) }),
     onError: (error: Error) => toast.error(error.message),
   });
 }

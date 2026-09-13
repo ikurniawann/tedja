@@ -21,7 +21,8 @@ import {
 } from "@/components/ui/select";
 import { useLeads } from "../../leads/queries";
 import { ORG_TYPE_LABELS, type SalesLead } from "../../leads/types";
-import { useCreateDeal, useUpdateDeal } from "../queries";
+import { useCreateDeal, usePipelines, useUpdateDeal } from "../queries";
+import { CustomFieldsSection } from "@/features/crm/custom-fields";
 import {
   EMPTY_DEAL_FORM,
   EVENT_TYPE_LABELS,
@@ -31,6 +32,8 @@ import {
 } from "../types";
 
 interface DealFormDialogProps {
+  /** EPIC-050 Fase 3: pipeline aktif di kanban → default deal baru */
+  defaultPipelineId?: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** null = mode tambah; terisi = mode edit */
@@ -54,6 +57,8 @@ function dealToForm(deal: SalesDeal): DealFormValues {
     is_event_date_fixed: deal.is_event_date_fixed,
     pax_estimate: deal.pax_estimate?.toString() ?? "",
     value_estimate: deal.value_estimate ?? "",
+    pipeline_id: deal.pipeline_id ?? "",
+    custom: deal.custom ?? {},
   };
 }
 
@@ -64,6 +69,7 @@ export function DealFormDialog({
   initialLead = null,
   filters = { q: "", event_type: "" },
   onDelete,
+  defaultPipelineId,
 }: DealFormDialogProps) {
   const [form, setForm] = useState<DealFormValues>(EMPTY_DEAL_FORM);
   const [leadSearch, setLeadSearch] = useState("");
@@ -83,13 +89,14 @@ export function DealFormDialog({
     } else {
       setForm({
         ...EMPTY_DEAL_FORM,
+        pipeline_id: defaultPipelineId ?? "",
         lead_id: initialLead?.id ?? "",
         title: initialLead ? `Acara ${initialLead.org_name}` : "",
       });
     }
     setLeadSearch("");
     setLeadQuery("");
-  }, [open, deal, initialLead]);
+  }, [open, deal, initialLead, defaultPipelineId]);
 
   // Picker lead hanya untuk mode tambah tanpa prefill
   const needsLeadPicker = !isEdit && !initialLead;
@@ -109,6 +116,8 @@ export function DealFormDialog({
   const close = () => onOpenChange(false);
   const createMutation = useCreateDeal(close);
   const updateMutation = useUpdateDeal(filters, close);
+  const pipelinesQuery = usePipelines();
+  const pipelines = pipelinesQuery.data ?? [];
   const isPending = createMutation.isPending || updateMutation.isPending;
 
   const set = <K extends keyof DealFormValues>(key: K, value: DealFormValues[K]) =>
@@ -128,6 +137,7 @@ export function DealFormDialog({
           is_event_date_fixed: form.is_event_date_fixed,
           pax_estimate: form.pax_estimate ? Number(form.pax_estimate) : null,
           value_estimate: form.value_estimate ? Number(form.value_estimate) : null,
+          custom: form.custom ?? {},
         },
       });
     } else {
@@ -188,6 +198,20 @@ export function DealFormDialog({
             </div>
           ) : null}
 
+          {!isEdit && pipelines.length > 1 ? (
+            <div className="space-y-1.5">
+              <Label>Pipeline</Label>
+              <Select
+                value={form.pipeline_id || pipelines.find((p) => p.is_default)?.id || pipelines[0]?.id || ""}
+                onValueChange={(v) => set("pipeline_id", v)}
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {pipelines.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : null}
           <div className="space-y-1.5">
             <Label htmlFor="deal_title">Judul Deal *</Label>
             <Input
@@ -260,6 +284,7 @@ export function DealFormDialog({
                 placeholder="15000000"
               />
             </div>
+            <CustomFieldsSection object="deal" values={form.custom ?? {}} onChange={(next) => set("custom", next)} columns={1} />
           </div>
         </div>
 

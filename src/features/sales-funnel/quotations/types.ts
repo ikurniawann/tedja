@@ -1,4 +1,4 @@
-export type QuotationStatus = "draft" | "terkirim" | "diterima" | "ditolak";
+export type QuotationStatus = "draft" | "terkirim" | "diterima" | "ditolak" | "superseded";
 export type QuotationItemType = "produk" | "bebas";
 
 export interface QuotationItem {
@@ -32,6 +32,9 @@ export interface Quotation {
   discount_nominal?: string | number;
   approval_status?: "none" | "pending" | "approved" | "rejected";
   approval_request_id?: string | null;
+  version?: number;
+  parent_quotation_id?: string | null;
+  superseded_at?: string | null;
   ppn_nominal: string | number;
   total: string | number;
   notes: string | null;
@@ -101,6 +104,7 @@ export const QUOTATION_STATUS_LABELS: Record<QuotationStatus, string> = {
   terkirim: "Terkirim",
   diterima: "Diterima",
   ditolak: "Ditolak",
+  superseded: "Digantikan",
 };
 
 export const QUOTATION_STATUS_BADGES: Record<QuotationStatus, string> = {
@@ -108,6 +112,7 @@ export const QUOTATION_STATUS_BADGES: Record<QuotationStatus, string> = {
   terkirim: "border-0 bg-blue-100 font-normal text-blue-700",
   diterima: "border-0 bg-emerald-100 font-normal text-emerald-700",
   ditolak: "border-0 bg-red-100 font-normal text-red-700",
+  superseded: "border-0 bg-gray-100 font-normal text-gray-400 line-through",
 };
 
 export const EMPTY_ITEM_FORM: QuotationItemForm = {

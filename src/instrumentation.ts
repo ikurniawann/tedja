@@ -38,5 +38,8 @@ export async function register() {
     // EPIC-050 Fase 2 — workflow automation: aksi terjadwal + trigger waktu
     const { startCrmWorkflowWatcher } = await import("@/lib/crm/workflow-watcher");
     startCrmWorkflowWatcher();
+    // EPIC-050 Fase 3 — pengingat quotation mendekati kedaluwarsa
+    const { startQuotationExpiryWatcher } = await import("@/lib/sales-funnel/quotation-expiry-watcher");
+    startQuotationExpiryWatcher();
   }
 }

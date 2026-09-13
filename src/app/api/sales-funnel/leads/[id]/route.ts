@@ -5,6 +5,7 @@ import { query, queryOne } from "@/lib/db";
 import { findAccessibleLead } from "@/lib/sales-funnel/access";
 import { syncLeadAccountContact } from "@/lib/sales-funnel/account-sync";
 import { emitCrmEvent } from "@/lib/crm/events";
+import { validateCustomPayload, loadExistingCustom } from "@/lib/crm/custom-fields-server";
 import {
   LEAD_ORG_TYPES,
   LEAD_SOURCES,
@@ -17,6 +18,8 @@ import {
 } from "@/lib/sales-funnel/server";
 
 const updateLeadSchema = z.object({
+  // EPIC-050 Fase 3
+  custom: z.record(z.string(), z.unknown()).optional(),
   org_name: z.string().trim().min(1).max(200).optional(),
   org_type: z.enum(LEAD_ORG_TYPES).optional(),
   pic_name: z.string().trim().min(1).max(150).optional(),
@@ -63,7 +66,7 @@ export async function GET(
       `SELECT l.id, l.company_id, l.branch_id, l.org_name, l.org_type,
               l.pic_name, l.pic_title, l.pic_phone, l.pic_email, l.city,
               l.source, l.temperature, l.status, l.notes, l.owner_user_id,
-              l.customer_id, l.account_id, l.contact_id, l.score, l.score_breakdown, l.score_updated_at, l.created_at, l.updated_at,
+              l.customer_id, l.account_id, l.contact_id, l.score, l.score_breakdown, l.score_updated_at, l.custom, l.created_at, l.updated_at,
               u.full_name AS owner_name, b.name AS branch_name, acc.name AS account_name
        FROM crm.crm_sales_leads l
        LEFT JOIN configuration.users u ON u.id = l.owner_user_id
@@ -241,6 +244,14 @@ export async function PATCH(
 
     const sets: string[] = ["updated_at = now()"];
     const values: unknown[] = [];
+    if (body.custom !== undefined) {
+      const existingCustom = await loadExistingCustom("crm.crm_sales_leads", id);
+      const customCheck = await validateCustomPayload("lead", lead.company_id, body.custom, existingCustom);
+      if (customCheck.error) return customCheck.error;
+      values.push(JSON.stringify(customCheck.values));
+      sets.push(`custom = $${values.length}::jsonb`);
+      delete body.custom;
+    }
     for (const [key, value] of Object.entries(body)) {
       if (value === undefined) continue;
       values.push(value);

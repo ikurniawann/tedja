@@ -5,6 +5,7 @@ import { getApiUserScope } from "@/lib/api/scope";
 import { query, queryOne } from "@/lib/db";
 import { syncLeadAccountContact } from "@/lib/sales-funnel/account-sync";
 import { emitCrmEvent } from "@/lib/crm/events";
+import { validateCustomPayload, loadExistingCustom } from "@/lib/crm/custom-fields-server";
 import {
   LEAD_ORG_TYPES,
   LEAD_SOURCES,
@@ -39,6 +40,8 @@ const createLeadSchema = z.object({
   status: z.enum(LEAD_STATUSES).default("baru"),
   notes: z.string().trim().max(2000).optional().nullable(),
   owner_user_id: z.string().uuid().optional().nullable(),
+  // EPIC-050 Fase 3
+  custom: z.record(z.string(), z.unknown()).optional(),
 });
 
 export async function GET(request: NextRequest) {
@@ -203,12 +206,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const customCheck = await validateCustomPayload("lead", companyId, body.custom);
+    if (customCheck.error) return customCheck.error;
     const row = await queryOne(
       `INSERT INTO crm.crm_sales_leads
          (company_id, branch_id, org_name, org_type, pic_name, pic_title,
           pic_phone, pic_email, city, source, temperature, status, notes,
-          owner_user_id, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+          owner_user_id, created_by, custom)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16::jsonb)
        RETURNING id, org_name, pic_name, pic_phone, status`,
       [
         companyId,
@@ -226,6 +231,7 @@ export async function POST(request: NextRequest) {
         body.notes || null,
         body.owner_user_id || (user.role === "sales" ? user.id : null),
         user.id,
+        JSON.stringify(customCheck.values ?? {}),
       ]
     );
 

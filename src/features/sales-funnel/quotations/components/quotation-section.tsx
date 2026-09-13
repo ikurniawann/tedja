@@ -10,8 +10,7 @@ import {
   Plus,
   Send,
   Trash2,
-  X,
-} from "lucide-react";
+  X, Copy } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -21,6 +20,7 @@ import {
   useQuotations,
   useRealizeQuotation,
   useSendQuotationWa,
+  useReviseQuotation,
   useUpdateQuotation,
 } from "../queries";
 import {
@@ -50,6 +50,7 @@ export function QuotationSection({ dealId, enabled }: QuotationSectionProps) {
   const quotationsQuery = useQuotations(dealId, enabled);
   const deleteMutation = useDeleteQuotation();
   const sendWaMutation = useSendQuotationWa();
+  const reviseMutation = useReviseQuotation(dealId);
   const statusMutation = useUpdateQuotation();
   const realizeMutation = useRealizeQuotation((error, quotationId) => {
     setConflict(Object.assign(error, { quotationId }));
@@ -136,6 +137,9 @@ export function QuotationSection({ dealId, enabled }: QuotationSectionProps) {
                   <Badge className={QUOTATION_STATUS_BADGES[quotation.status]}>
                     {QUOTATION_STATUS_LABELS[quotation.status]}
                   </Badge>
+                  {quotation.version && quotation.version > 1 ? (
+                    <Badge className="border-0 bg-violet-100 font-normal text-violet-700">v{quotation.version}</Badge>
+                  ) : null}
                   {quotation.approval_status && quotation.approval_status !== "none" ? (
                     <Badge className={APPROVAL_STATUS_BADGES[quotation.approval_status]} title="EPIC-050: diskon di atas ambang wajib disetujui">
                       {APPROVAL_STATUS_LABELS[quotation.approval_status]}
@@ -177,6 +181,17 @@ export function QuotationSection({ dealId, enabled }: QuotationSectionProps) {
                   >
                     <Send className="h-4 w-4" />
                   </button>
+                  {quotation.status !== "superseded" ? (
+                    <button
+                      type="button"
+                      onClick={() => reviseMutation.mutate(quotation.id)}
+                      disabled={reviseMutation.isPending}
+                      title="Buat revisi (versi baru; versi ini ditandai digantikan)"
+                      className="text-gray-400 hover:text-violet-600 disabled:opacity-40"
+                    >
+                      <Copy className="h-4 w-4" />
+                    </button>
+                  ) : null}
                   {!quotation.stock_deducted_at ? (
                     <button
                       type="button"

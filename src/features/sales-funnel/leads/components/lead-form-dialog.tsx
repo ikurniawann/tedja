@@ -21,6 +21,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useCreateLead, usePicLookup, useUpdateLead } from "../queries";
+import { CustomFieldsSection } from "@/features/crm/custom-fields";
+
 import {
   EMPTY_LEAD_FORM,
   ORG_TYPE_LABELS,
@@ -52,6 +54,7 @@ function leadToForm(lead: SalesLead): LeadFormValues {
     temperature: lead.temperature,
     status: lead.status,
     notes: lead.notes ?? "",
+    custom: lead.custom ?? {},
   };
 }
 
@@ -276,6 +279,7 @@ export function LeadFormDialog({ open, onOpenChange, lead }: LeadFormDialogProps
             </div>
           )}
 
+          <CustomFieldsSection object="lead" values={form.custom ?? {}} onChange={(next) => set("custom", next)} />
           <div className="space-y-1.5 sm:col-span-2">
             <Label htmlFor="notes">Catatan</Label>
             <Textarea

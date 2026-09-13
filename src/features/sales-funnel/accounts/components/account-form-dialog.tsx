@@ -21,6 +21,8 @@ import {
 } from "@/components/ui/select";
 import { ORG_TYPE_LABELS } from "../../leads/types";
 import { useCreateAccount, useUpdateAccount } from "../queries";
+import { CustomFieldsSection } from "@/features/crm/custom-fields";
+
 import { EMPTY_ACCOUNT_FORM, accountToForm, type AccountFormValues, type SalesAccount } from "../types";
 
 interface AccountFormDialogProps {
@@ -116,6 +118,7 @@ function AccountFormBody({ onOpenChange, account, onCreated }: Omit<AccountFormD
             <Label htmlFor="acc_address">Alamat</Label>
             <Textarea id="acc_address" rows={2} value={form.address} onChange={(e) => set("address", e.target.value)} />
           </div>
+          <CustomFieldsSection object="account" values={form.custom ?? {}} onChange={(next) => set("custom", next)} />
           <div className="space-y-1.5 sm:col-span-2">
             <Label htmlFor="acc_notes">Catatan</Label>
             <Textarea id="acc_notes" rows={3} value={form.notes} onChange={(e) => set("notes", e.target.value)} />

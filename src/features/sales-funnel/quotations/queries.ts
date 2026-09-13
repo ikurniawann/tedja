@@ -10,6 +10,7 @@ import {
   realizeQuotation,
   sendQuotationWa,
   updateQuotation,
+  reviseQuotation,
 } from "./api";
 import type { QuotationFormValues, QuotationStatus } from "./types";
 import { RealizeConflictError } from "./types";
@@ -123,6 +124,19 @@ export function useSendQuotationWa() {
       invalidateQuotationCaches(queryClient);
       // kirim WA tercatat sebagai aktivitas di timeline deal
       queryClient.invalidateQueries({ queryKey: ["sales-funnel", "activities"] });
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+}
+
+export function useReviseQuotation(dealId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => reviseQuotation(id),
+    onSuccess: (body) => {
+      toast.success(body.message ?? "Revisi dibuat");
+      queryClient.invalidateQueries({ queryKey: quotationQueryKeys.byDeal(dealId) });
+      queryClient.invalidateQueries({ queryKey: ["sales-funnel", "pipeline"] });
     },
     onError: (error: Error) => toast.error(error.message),
   });
