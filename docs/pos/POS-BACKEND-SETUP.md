@@ -10,13 +10,15 @@ Backend POS menggunakan **Next.js API Routes** + **PostgreSQL** (`pg`).
 
 Buka admin database → SQL Editor, lalu run:
 
-```sql
--- Migration 1: Core Schema
--- Copy paste isi file: migrations/001_pos_core_schema.sql
+Skema POS kini bagian dari migrasi standar — tidak perlu copy-paste manual:
 
--- Migration 2: Seed Data
--- Copy paste isi file: migrations/002_pos_seed_data.sql
+```bash
+node database/scripts/apply-migrations.js            # dry-run
+node database/scripts/apply-migrations.js --apply    # eksekusi
 ```
+
+(Folder legacy `migrations/` yang dulu dirujuk di sini sudah dihapus
+2026-09-14; isinya sudah ada di `database/migrations/`.)
 
 **Atau via CLI:**
 

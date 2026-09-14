@@ -54,9 +54,14 @@ langsung — CRUD penuh — tanpa membajak sesi manusia.
 
 ## Migrasi
 
-`migrations/013_api_tokens.sql` — WAJIB dijalankan di DB production sebelum
-fitur dipakai (tanpa itu: token auth diam-diam nonaktif, cookie auth normal,
-halaman admin menampilkan peringatan migrasi).
+`database/migrations/deltas/20260914090000_api_tokens_port_from_legacy.sql`
+— dijalankan bersama migrasi lain lewat `node database/scripts/apply-migrations.js --apply`.
+Tanpa tabelnya: token auth diam-diam nonaktif, cookie auth normal, halaman
+admin menampilkan peringatan migrasi.
+
+Catatan 2026-09-14: berkas ini dulu berada di `migrations/013_api_tokens.sql`,
+folder yang TIDAK pernah dibaca runner, sehingga tabelnya tidak ikut terpasang
+di deploy baru dan pembuatan token gagal 503. Folder legacy itu sudah dihapus.
 
 ## Integrasi OpenClaw (ringkas)
 

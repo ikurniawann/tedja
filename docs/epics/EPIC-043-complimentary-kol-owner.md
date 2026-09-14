@@ -48,7 +48,8 @@ total 0, dibayar 0 — plus `comp_type` dan `comp_approved_by/name`.
 
 ## Migrasi
 
-`migrations/015_comp_orders.sql` — WAJIB di DB production:
+`database/migrations/` (dulu `migrations/015_comp_orders.sql`; folder legacy
+dihapus 2026-09-14) — dijalankan lewat `node database/scripts/apply-migrations.js --apply`:
 pos_customers.is_kol + kol_monthly_limit_idr; pos_orders.comp_type +
 comp_approved_by + comp_approved_name (+index partial).
 Menandai KOL: `UPDATE pos.pos_customers SET is_kol=true,

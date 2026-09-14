@@ -32,8 +32,9 @@ merangkai daripada membangun dari nol:
   `src/features/pos/cashier/nfc-scan-action.ts`.
 - **POS F&B lengkap**: `pos_orders` + `pos_order_items` +
   `pos_split_payments`, katalog `pos_products` + varian/modifier, resep
-  `pos_recipes` + pengurangan stok via RPC transaksi
-  (`migrations/004_pos_transaction_rpc.sql`). Penjualan F&B di dalam park
+  `pos_recipes` + pengurangan stok (dulu lewat RPC
+  `pos_create_order_transaction`; sejak 2026-09-14 transaksi ditangani kode
+  aplikasi dengan `withTransaction`, RPC-nya tidak dipakai lagi). Penjualan F&B di dalam park
   = order POS biasa, hanya metode bayarnya baru ("NFC Tab").
 - **Ledger stored-value**: `pos_wallet_transactions`
   (balance_before/after) — pola ledger dicontoh untuk tab postpaid, tapi
