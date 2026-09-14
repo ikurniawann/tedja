@@ -33,6 +33,7 @@
     "db:seed:items-raw-material-categories": "node database/seeders/items-raw-material-categories.js",
     "db:seed:items-product-categories": "node database/seeders/items-product-categories.js",
     "db:seed:items-raw-materials": "node database/seeders/items-raw-materials.js",
+    "db:seed:items-raw-materials-tedja": "node database/seeders/items-raw-materials-tedja-coffee.js",
     "db:seed:items-products": "node database/seeders/items-products.js",
     "db:seed:items-product-bom": "node database/seeders/items-product-bom.js",
     "db:seed:items-footwear": "node database/seeders/items-footwear.js",
