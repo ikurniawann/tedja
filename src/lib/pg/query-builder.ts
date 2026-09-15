@@ -25,6 +25,73 @@ interface ForeignKey {
 
 let fkCache: ForeignKey[] | null = null;
 
+/**
+ * Kolom bertipe json/jsonb per tabel.
+ *
+ * node-postgres menyerialkan Array JavaScript sebagai LITERAL ARRAY Postgres,
+ * bukan JSON. Untuk kolom jsonb akibatnya:
+ *   []                   → "{}"      tersimpan sebagai objek kosong (salah bentuk)
+ *   [{ id: 1 }]          → "{...}"   error 22P02 invalid input syntax for type json
+ * Jadi nilai untuk kolom json/jsonb harus di-JSON.stringify lebih dulu. Daftar
+ * ini dipakai agar hanya kolom json yang diperlakukan begitu — kolom array asli
+ * (text[], uuid[]) tetap dikirim apa adanya.
+ */
+let jsonColsCache: Map<string, Set<string>> | null = null;
+
+async function loadJsonColumns(pool: Pool): Promise<Map<string, Set<string>>> {
+  if (jsonColsCache) return jsonColsCache;
+  const { rows } = await pool.query<{ table_schema: string; table_name: string; column_name: string }>(
+    `SELECT table_schema, table_name, column_name
+     FROM information_schema.columns
+     WHERE data_type IN ('json', 'jsonb')
+       AND table_schema NOT IN ('pg_catalog', 'information_schema')`
+  );
+  const map = new Map<string, Set<string>>();
+  for (const r of rows) {
+    const key = `${r.table_schema}.${r.table_name}`;
+    if (!map.has(key)) map.set(key, new Set());
+    map.get(key)!.add(r.column_name);
+  }
+  jsonColsCache = map;
+  return jsonColsCache;
+}
+
+/**
+ * Skema sebenarnya untuk nama tabel tanpa kualifikasi.
+ *
+ * Pemanggil umumnya menulis .from("pos_order_items") tanpa skema dan
+ * mengandalkan search_path; tabelnya sendiri ada di skema `pos`. Tanpa
+ * resolusi ini, pencarian kolom json meleset dan nilai jsonb kembali dikirim
+ * sebagai array Postgres.
+ */
+let tableSchemaCache: Map<string, string | null> | null = null;
+
+async function resolveTableSchema(pool: Pool, table: string): Promise<string | null> {
+  if (!tableSchemaCache) tableSchemaCache = new Map();
+  if (tableSchemaCache.has(table)) return tableSchemaCache.get(table) ?? null;
+  const { rows } = await pool.query<{ nspname: string | null }>(
+    `SELECT n.nspname
+     FROM pg_class c
+     JOIN pg_namespace n ON n.oid = c.relnamespace
+     WHERE c.oid = to_regclass($1)`,
+    [table]
+  );
+  const schema = rows[0]?.nspname ?? null;
+  tableSchemaCache.set(table, schema);
+  return schema;
+}
+
+/** Nilai siap-kirim untuk satu kolom: kolom json menerima string JSON. */
+function pgValue(value: unknown, isJsonCol: boolean): unknown {
+  if (value === undefined) return null;
+  if (!isJsonCol) return value;
+  if (value === null) return null;
+  // String dianggap sudah berbentuk JSON (mis. hasil JSON.stringify pemanggil).
+  if (typeof value === "string") return value;
+  if (typeof value === "object") return JSON.stringify(value);
+  return value;
+}
+
 async function loadForeignKeys(pool: Pool): Promise<ForeignKey[]> {
   if (fkCache) return fkCache;
   const { rows } = await pool.query(
@@ -313,6 +380,32 @@ export class QueryBuilder<T = any> implements PromiseLike<PgResult<T>> {
   // Schema default ("public") dibiarkan "bare" agar search_path me-resolve ke
   // schema domain yang benar (mis. hris.employees). Schema eksplisit non-public
   // (mis. "iam") tetap di-qualify.
+  /** Kolom json/jsonb tabel ini; diisi sebelum membangun INSERT/UPDATE. */
+  private jsonCols: Set<string> = new Set();
+
+  private async primeJsonCols() {
+    // Hanya nilai objek/array yang bisa salah serialisasi. Bila payload hanya
+    // berisi skalar, katalog tidak perlu dibaca sama sekali — menghemat satu
+    // round-trip untuk mayoritas insert/update.
+    const rows = Array.isArray(this.payload) ? this.payload : [this.payload];
+    const hasObjectValue = rows.some(
+      (r) =>
+        r &&
+        typeof r === "object" &&
+        Object.values(r as Record<string, unknown>).some(
+          (v) => v !== null && typeof v === "object"
+        )
+    );
+    if (!hasObjectValue) {
+      this.jsonCols = new Set();
+      return;
+    }
+    const map = await loadJsonColumns(this.pool);
+    const explicit = this.schema && this.schema !== "public" ? this.schema : null;
+    const schema = explicit ?? (await resolveTableSchema(this.pool, this.table)) ?? "public";
+    this.jsonCols = map.get(`${schema}.${this.table}`) ?? new Set();
+  }
+
   private qt() {
     return this.schema && this.schema !== "public"
       ? `${qid(this.schema)}.${qid(this.table)}`
@@ -446,12 +539,15 @@ export class QueryBuilder<T = any> implements PromiseLike<PgResult<T>> {
         const selectList = await this.buildSelectList(this.selectStr, params);
         sql = `SELECT ${selectList} FROM ${this.qt()} ${this.buildWhere(params)}${this.buildOrderLimit(params)}`;
       } else if (this.action === "insert") {
+        await this.primeJsonCols();
         const rows = Array.isArray(this.payload) ? this.payload : [this.payload];
         sql = this.buildInsert(rows, params);
       } else if (this.action === "upsert") {
+        await this.primeJsonCols();
         const rows = Array.isArray(this.payload) ? this.payload : [this.payload];
         sql = this.buildInsert(rows, params, true);
       } else if (this.action === "update") {
+        await this.primeJsonCols();
         sql = this.buildUpdate(params);
       } else if (this.action === "delete") {
         sql = `DELETE FROM ${this.qt()} ${this.buildWhere(params)}`;
@@ -498,7 +594,7 @@ export class QueryBuilder<T = any> implements PromiseLike<PgResult<T>> {
     const cols = Array.from(new Set(rows.flatMap((r) => Object.keys(r))));
     const colSql = cols.map(qid).join(", ");
     const valuesSql = rows
-      .map((r) => `(${cols.map((c) => { params.push(r[c] === undefined ? null : r[c]); return `$${params.length}`; }).join(", ")})`)
+      .map((r) => `(${cols.map((c) => { params.push(pgValue(r[c], this.jsonCols.has(c))); return `$${params.length}`; }).join(", ")})`)
       .join(", ");
     let sql = `INSERT INTO ${this.qt()} (${colSql}) VALUES ${valuesSql}`;
     if (upsert) {
@@ -518,7 +614,7 @@ export class QueryBuilder<T = any> implements PromiseLike<PgResult<T>> {
 
   private buildUpdate(params: any[]): string {
     const entries = Object.entries(this.payload);
-    const setSql = entries.map(([k, v]) => { params.push(v === undefined ? null : v); return `${qid(k)} = $${params.length}`; }).join(", ");
+    const setSql = entries.map(([k, v]) => { params.push(pgValue(v, this.jsonCols.has(k))); return `${qid(k)} = $${params.length}`; }).join(", ");
     let sql = `UPDATE ${this.qt()} SET ${setSql} ${this.buildWhere(params)}`;
     if (this.returningSelect || this.singleMode) {
       sql += ` RETURNING ${this.buildReturning(this.returningSelect ?? "*")}`;
@@ -537,4 +633,6 @@ export class QueryBuilder<T = any> implements PromiseLike<PgResult<T>> {
 
 export function resetFkCache() {
   fkCache = null;
+  jsonColsCache = null;
+  tableSchemaCache = null;
 }
