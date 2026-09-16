@@ -13,6 +13,8 @@ import { SETTING_KEYS, getSettings } from "@/lib/settings/app-settings";
 import { extractSseData, readOpenAiDelta, splitSseEvents } from "@/lib/assistant/sse";
 import { contextSizeChars, selectContextForIntent, type AssistantIntent } from "@/lib/assistant/context";
 import { parseToolArguments, runTool, toolDefinitions } from "@/lib/assistant/tools";
+import { allowedToolNames } from "@/lib/assistant/tool-scope";
+import { loadGrantedMenuCodesForUser } from "@/lib/iam/has-menu";
 import {
   isWriteActionName,
   proposeWriteAction,
@@ -216,13 +218,15 @@ export async function POST(request: NextRequest) {
       .eq("id", user.id)
       .single();
 
-    // Gate yang selama ini hanya ada di UI ("Only super_admin can use this
-    // assistant") ditegakkan juga di server — temuan review Fase E: tanpa ini,
-    // user login role lain bisa memakai Do (termasuk tool pencari kandidat/
-    // karyawan) langsung lewat API.
-    if (profile?.role !== "super_admin") {
-      return NextResponse.json({ error: "Do hanya untuk super_admin" }, { status: 403 });
-    }
+    /**
+     * Do terbuka untuk semua yang login, TAPI alatnya mengikuti hak menu IAM
+     * (lihat tool-scope). Dulu dikunci super_admin karena alat bisa membaca
+     * data karyawan/penjualan; sekarang pembatasnya per-alat, bukan per-orang,
+     * sehingga kasir bisa bertanya soal stok tanpa bisa menarik data HRIS.
+     * Gate tetap ditegakkan di SERVER, bukan hanya di UI.
+     */
+    const grantedMenus = await loadGrantedMenuCodesForUser(user.id, profile?.role ?? "");
+    const toolAllowList = allowedToolNames(profile?.role, grantedMenus);
 
     const admin = createPgClient();
 
@@ -304,6 +308,7 @@ export async function POST(request: NextRequest) {
               model,
               attachments,
               actionCtx: { userId: user.id, userName, sessionId },
+              toolAllowList,
               onDelta: (text) => send({ type: "delta", text }),
             });
             // Penyimpanan dilakukan SETELAH stream selesai, memakai teks utuh
@@ -342,6 +347,7 @@ export async function POST(request: NextRequest) {
       model,
       attachments,
       actionCtx: { userId: user.id, userName, sessionId },
+      toolAllowList,
     });
 
     // Persist messages
@@ -779,6 +785,8 @@ async function runToolRounds(
   model: string,
   messages: ChatMsg[],
   actionCtx: { userId: string; userName: string; sessionId?: string },
+  /** Alat yang boleh dipakai user ini (hasil pemetaan IAM). */
+  toolAllowList: string[],
   maxRounds = 3
 ): Promise<{ messages: ChatMsg[]; toolsUsed: string[]; pendingAction: PendingActionMeta | null }> {
   const { apiKey, baseUrl, timeoutMs } = await resolveOpenAiCall();
@@ -793,7 +801,10 @@ async function runToolRounds(
       body: JSON.stringify({
         model: stripOpenAiPrefix(model),
         ...(modelSupportsTemperature(model) ? { temperature: 0.7 } : {}),
-        tools: [...toolDefinitions(), ...writeToolDefinitions()],
+        // Model hanya ditawari alat yang memang boleh dipakai user ini.
+        tools: [...toolDefinitions(), ...writeToolDefinitions()].filter((def) =>
+          toolAllowList.includes(def.function?.name ?? "")
+        ),
         messages: working,
       }),
       signal: AbortSignal.timeout(timeoutMs),
@@ -822,7 +833,11 @@ async function runToolRounds(
       const name = call.function?.name ?? "";
       const args = parseToolArguments(call.function?.arguments);
       let result: unknown;
-      if (isWriteActionName(name)) {
+      if (!toolAllowList.includes(name)) {
+        // Pertahanan kedua: model bisa saja mengarang nama alat di luar daftar
+        // yang ditawarkan. Eksekusi tetap ditolak di sisi server.
+        result = { error: "Alat ini di luar hak akses Anda." };
+      } else if (isWriteActionName(name)) {
         // Aksi tulis TIDAK dieksekusi di sini — hanya jadi usulan pending yang
         // menunggu tombol konfirmasi user di UI (EPIC-017 Fase E). Satu usulan
         // per giliran supaya kartu konfirmasi tidak menumpuk.
@@ -942,6 +957,7 @@ async function generateAnswer({
   model,
   attachments,
   actionCtx,
+  toolAllowList,
   onDelta,
 }: {
   message: string;
@@ -955,6 +971,8 @@ async function generateAnswer({
   attachments?: SafeAttachment[];
   /** Identitas pemilik giliran ini — dipakai usulan aksi tulis (Fase E). */
   actionCtx: { userId: string; userName: string; sessionId?: string };
+  /** Alat yang boleh dipakai user ini (dipetakan dari menu IAM). */
+  toolAllowList: string[];
   /** Bila diisi, jawaban dialirkan potong demi potong lewat callback ini. */
   onDelta?: (text: string) => void;
 }): Promise<LlmResult> {
@@ -1011,7 +1029,7 @@ async function generateAnswer({
   let pendingAction: PendingActionMeta | null = null;
   if (includeProjectData) {
     try {
-      const rounds = await runToolRounds(model, messages, actionCtx);
+      const rounds = await runToolRounds(model, messages, actionCtx, toolAllowList);
       working = rounds.messages;
       toolsUsed = rounds.toolsUsed;
       pendingAction = rounds.pendingAction;

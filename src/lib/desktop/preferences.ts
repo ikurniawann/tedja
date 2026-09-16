@@ -6,7 +6,7 @@
  * hanya jadi cache supaya render pertama tidak berkedip.
  */
 
-import { MONITOR_WIDGETS, type MonitorWidgetKey } from "@/components/arkiv/desktop-monitor";
+import { MONITOR_WIDGETS, type MonitorWidgetKey } from "@/lib/desktop/widgets";
 
 export const DESKTOP_PREFS_STORAGE_KEY = "arkiv-desktop-prefs";
 

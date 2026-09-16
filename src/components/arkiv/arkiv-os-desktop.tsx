@@ -41,6 +41,8 @@ import {
 import type { ComponentType, CSSProperties, FormEvent as ReactFormEvent, MouseEvent as ReactMouseEvent } from "react";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { isSearchable } from "@/lib/desktop/search";
+import { statusLabel, type StatusItem, type StatusLevel } from "@/lib/desktop/status";
+import type { InboxSection } from "@/lib/desktop/inbox";
 import { parseDeepLink } from "@/lib/desktop/deep-link";
 import {
   DESKTOP_PREFS_STORAGE_KEY,
@@ -376,6 +378,36 @@ export default function ArkivOsDesktop() {
     setNotifHistory((prev) => [...fresh, ...prev].slice(0, MAX_NOTIFICATION_HISTORY));
     setNotifPopups((prev) => [...prev, ...fresh]);
   }, [overview.data]);
+  /* Notifikasi LANGSUNG lewat Server-Sent Events. Polling 60 detik tetap
+   * jalan sebagai jaring pengaman bila SSE diputus proxy. */
+  useEffect(() => {
+    if (!isLoggedIn) return;
+    let source: EventSource | null = null;
+    try {
+      source = new EventSource("/api/desktop/stream");
+    } catch {
+      return;
+    }
+    const onOverview = (event: Event) => {
+      try {
+        const payload = JSON.parse((event as MessageEvent).data) as { overview: DesktopOverviewData };
+        if (!payload?.overview) return;
+        const fresh = diffOverviewNotifications(prevOverviewRef.current, payload.overview);
+        prevOverviewRef.current = payload.overview;
+        if (fresh.length === 0) return;
+        setNotifHistory((prev) => [...fresh, ...prev].slice(0, MAX_NOTIFICATION_HISTORY));
+        setNotifPopups((prev) => [...prev, ...fresh]);
+      } catch {
+        /* payload rusak — biarkan poll berikutnya yang mengoreksi */
+      }
+    };
+    source.addEventListener("overview", onOverview);
+    return () => {
+      source?.removeEventListener("overview", onOverview);
+      source?.close();
+    };
+  }, [isLoggedIn]);
+
   const dismissPopup = useCallback((id: string) => {
     setNotifPopups((prev) => prev.filter((n) => n.id !== id));
   }, []);
@@ -415,9 +447,11 @@ export default function ArkivOsDesktop() {
   const windowManager = useWindowManager();
   const contextMenuRef = useRef<typeof contextMenu>(null);
   const showCommandRef = useRef(false);
+  const showTodayRef = useRef(false);
   useEffect(() => {
     contextMenuRef.current = contextMenu;
     showCommandRef.current = showCommand;
+    showTodayRef.current = showToday;
   });
   const { windows: openWindows, order: windowOrder } = windowManager.state;
   const openWindowList = useMemo(
@@ -471,7 +505,11 @@ export default function ArkivOsDesktop() {
           setLocked(true);
           return;
         case "dismiss": {
-          // Urutan tutup: menu konteks → palet → jendela paling depan.
+          // Urutan tutup: panel Hari Ini → menu konteks → palet → jendela.
+          if (showTodayRef.current) {
+            setShowToday(false);
+            return;
+          }
           if (contextMenuRef.current) {
             setContextMenu(null);
             return;
@@ -935,6 +973,7 @@ export default function ArkivOsDesktop() {
             {notifHistory.length > 0 && <button onClick={() => setShowNotifications(true)}>Notifications</button>}
             <button onClick={() => setShowWidgetSettings(true)}>Widgets</button>
             <button onClick={() => setShowCommand(true)}>Search</button>
+            {isLoggedIn && <button onClick={() => setShowToday(true)}>Hari Ini</button>}
           </nav>
         </div>
 
@@ -945,6 +984,7 @@ export default function ArkivOsDesktop() {
           <button type="button" onClick={() => setShowCommand(true)} className="rounded-full p-1 transition hover:bg-white/10" aria-label="Open Spotlight Search" title="Search">
             <Search className="size-4" />
           </button>
+          {isLoggedIn && <SystemStatusChip onOpenToday={() => setShowToday(true)} />}
           <Wifi className="size-4" />
           <Cloud className="size-4" />
           <span className="hidden sm:inline">{now ? formatDate(now) : "--"}</span>
@@ -960,6 +1000,7 @@ export default function ArkivOsDesktop() {
             visibility={widgetVisibility}
             order={widgetOrder}
             onAskDo={askDoFromWidget}
+          onOpenInbox={() => setShowToday(true)}
             periode={periode}
             onPilihPeriode={pilihPeriode}
           />
@@ -1174,6 +1215,16 @@ export default function ArkivOsDesktop() {
         />
       )}
       {showShortcuts && <ShortcutCheatSheet onClose={() => setShowShortcuts(false)} />}
+      {showToday && (
+        <TodayPanel
+          overview={overview.data}
+          onClose={() => setShowToday(false)}
+          onOpenPath={(path, title) => {
+            setShowToday(false);
+            openPath(path, title);
+          }}
+        />
+      )}
       {contextMenu?.desktop && <DesktopContextMenu x={contextMenu.x} y={contextMenu.y} onWallpaper={() => setShowWallpaperPicker(true)} onWidgets={() => setShowWidgetSettings(true)} onApps={() => setShowLibrary(true)} onSettings={() => setShowSettings(true)} onAbout={() => setShowAbout(true)} />}
     </main>
     </WindowStateContext.Provider>
@@ -2426,7 +2477,10 @@ function AiAssistantWindow({
   const stickToBottomRef = useRef(true);
   const skipSessionRestoreRef = useRef(Boolean(initialPrompt?.trim()));
   const initialPromptSentRef = useRef(false);
-  const isAllowed = account?.role === "super_admin";
+  // Do terbuka untuk semua yang login. Yang dibatasi bukan ORANGNYA, tapi
+  // ALAT-nya: server hanya menawarkan alat sesuai menu IAM (tool-scope.ts),
+  // jadi kasir bisa bertanya stok tanpa bisa menarik data HRIS.
+  const isAllowed = Boolean(account);
   const activeScope = AI_ASSISTANT_SCOPES.find((item) => item.id === settings.scope) ?? AI_ASSISTANT_SCOPES[0];
   const activeModel = AI_ASSISTANT_MODELS.find((item) => item.id === settings.model) ?? AI_ASSISTANT_MODELS[0];
 
@@ -2912,7 +2966,7 @@ function AiAssistantWindow({
               <div className="min-w-0 flex-1">
                 <div className="font-semibold">Do</div>
                 <div className="truncate text-xs text-white/50">
-                  {isAllowed ? `${activeScope.label} · ${activeModel.label}` : account ? "Only super_admin can use this assistant" : "Login as super_admin required"}
+                  {isAllowed ? `${activeScope.label} · ${activeModel.label}` : "Masuk dulu untuk memakai Do"}
                 </div>
               </div>
               {view === "chat" && (
@@ -2943,7 +2997,7 @@ function AiAssistantWindow({
             <div className="flex flex-1 flex-col items-center justify-center p-6 text-center">
               <Bot className="mb-4 size-12 text-pink-200" />
               <h3 className="text-lg font-semibold">Akses dibatasi</h3>
-              <p className="mt-2 text-sm leading-6 text-white/60">Do hanya bisa digunakan setelah login sebagai akun super_admin.</p>
+              <p className="mt-2 text-sm leading-6 text-white/60">Masuk dulu untuk memakai Do. Data yang bisa dibacakan Do mengikuti hak akses menu Anda.</p>
               <Link href="/login?redirect=/arkiv-os" className="mt-5 rounded-2xl bg-pink-600 px-5 py-3 text-sm font-semibold hover:bg-pink-500">
                 Login Super User
               </Link>
@@ -2955,7 +3009,7 @@ function AiAssistantWindow({
               </div>
               <h3 className="text-xl font-bold text-white/90">Do</h3>
               <p className="mt-2 max-w-sm text-sm leading-6 text-white/55">
-                Asisten cerdas untuk super_admin. Mode {activeScope.label} memakai {activeModel.label}.
+                Asisten operasional Tedja. Data yang bisa diakses mengikuti hak menu Anda. Mode {activeScope.label} memakai {activeModel.label}.
               </p>
               <button
                 onClick={startNewChat}
@@ -3691,6 +3745,245 @@ function WidgetSettings({
         </DragDropContext>
       </div>
     </WindowShell>
+  );
+}
+
+/**
+ * Lampu status operasional di menubar: database, antrian cetak, WhatsApp.
+ * Sekali lihat kasir/owner tahu ada layanan yang mati sebelum pelanggan
+ * yang memberi tahu.
+ */
+function SystemStatusChip({ onOpenToday }: { onOpenToday: () => void }) {
+  const [status, setStatus] = useState<{ items: StatusItem[]; level: StatusLevel } | null>(null);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = () => {
+      fetch("/api/desktop/status")
+        .then((res) => (res.ok ? res.json() : null))
+        .then((json) => {
+          if (!cancelled && json?.data) setStatus(json.data);
+        })
+        .catch(() => {});
+    };
+    load();
+    const timer = window.setInterval(load, 60_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, []);
+
+  const level = status?.level ?? "unknown";
+  const tone =
+    level === "ok"
+      ? "bg-emerald-400"
+      : level === "warn"
+        ? "bg-amber-300"
+        : level === "down"
+          ? "bg-rose-400"
+          : "bg-white/40";
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        title={statusLabel(level)}
+        aria-label={statusLabel(level)}
+        className="flex items-center gap-1.5 rounded-full px-2 py-1 transition hover:bg-white/10"
+      >
+        <span className={`size-2 rounded-full ${tone}`} />
+        <span className="hidden text-[11px] text-white/70 lg:inline">Status</span>
+      </button>
+      {open && (
+        <div className="absolute right-0 top-[calc(100%+6px)] z-[90] w-64 overflow-hidden rounded-2xl border border-white/15 bg-slate-950/90 p-1.5 text-left shadow-2xl backdrop-blur-2xl">
+          {(status?.items ?? []).map((item) => (
+            <div key={item.key} className="flex items-start gap-2 rounded-xl px-2.5 py-2">
+              <span
+                className={`mt-1 size-2 shrink-0 rounded-full ${
+                  item.level === "ok"
+                    ? "bg-emerald-400"
+                    : item.level === "warn"
+                      ? "bg-amber-300"
+                      : item.level === "down"
+                        ? "bg-rose-400"
+                        : "bg-white/40"
+                }`}
+              />
+              <span className="min-w-0">
+                <span className="block text-xs font-semibold">{item.label}</span>
+                <span className="block text-[11px] text-white/45">{item.detail ?? "—"}</span>
+              </span>
+            </div>
+          ))}
+          {!status && <div className="px-2.5 py-2 text-[11px] text-white/45">Memeriksa layanan…</div>}
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false);
+              onOpenToday();
+            }}
+            className="mt-1 w-full rounded-xl bg-white/10 px-2.5 py-2 text-xs font-semibold transition hover:bg-white/18"
+          >
+            Buka panel Hari Ini
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Panel "Hari Ini" (⌘⇧J): ringkasan operasional + KOTAK KEPUTUSAN yang bisa
+ * langsung ditindaklanjuti. Cuti disetujui di tempat lewat API approval resmi
+ * (potong kuota + notifikasi); PO dan stok membuka halaman yang tepat karena
+ * keputusannya butuh konteks penuh.
+ */
+function TodayPanel({
+  overview,
+  onClose,
+  onOpenPath,
+}: {
+  overview: DesktopOverviewData | null;
+  onClose: () => void;
+  onOpenPath: (path: string, title: string) => void;
+}) {
+  const [sections, setSections] = useState<InboxSection[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  // Tidak menyalakan `loading` di awal: nilai awalnya sudah true, dan
+  // memanggil setState serentak dari effect memicu render berantai.
+  const load = useCallback(() => {
+    fetch("/api/desktop/inbox")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json) => setSections(Array.isArray(json?.data?.sections) ? json.data.sections : []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const decideLeave = async (id: string, action: "approve" | "reject") => {
+    setBusyId(id);
+    try {
+      const res = await fetch("/api/hris/leaves/approve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          leave_id: id,
+          action,
+          ...(action === "reject" ? { rejection_reason: "Ditolak dari panel Hari Ini" } : {}),
+        }),
+      });
+      if (!res.ok) {
+        const json = await res.json().catch(() => null);
+        throw new Error(json?.error ?? "Gagal memproses");
+      }
+      load();
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Gagal memproses");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const pulsa = overview?.pulsaBisnis;
+  const tim = overview?.timHariIni;
+  const tamu = overview?.tamuDiMeja;
+
+  return (
+    <div className="fixed inset-0 z-[90] flex justify-end bg-black/30 backdrop-blur-sm" onClick={onClose}>
+      <aside
+        className="h-full w-[min(420px,100vw)] overflow-y-auto border-l border-white/12 bg-slate-950/90 p-5 text-white shadow-2xl backdrop-blur-2xl"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="mb-4 flex items-center justify-between">
+          <div>
+            <h2 className="text-base font-semibold">Hari Ini</h2>
+            <p className="text-xs text-white/45">Ringkasan operasional & keputusan yang menunggu</p>
+          </div>
+          <button onClick={onClose} className="rounded-full p-2 text-white/55 transition hover:bg-white/10 hover:text-white">
+            <X className="size-4" />
+          </button>
+        </div>
+
+        <div className="grid grid-cols-3 gap-2">
+          {[
+            { label: "Omzet", value: pulsa ? `Rp ${Math.round(pulsa.hariIni.omzet).toLocaleString("id-ID")}` : "–" },
+            { label: "Pesanan", value: pulsa ? String(pulsa.hariIni.pesanan) : "–" },
+            { label: "Tamu duduk", value: tamu ? String(tamu.tamu) : "–" },
+          ].map((stat) => (
+            <div key={stat.label} className="rounded-2xl border border-white/10 bg-white/6 p-3">
+              <div className="text-[10px] uppercase tracking-wide text-white/45">{stat.label}</div>
+              <div className="mt-1 truncate text-sm font-bold">{stat.value}</div>
+            </div>
+          ))}
+        </div>
+        {tim && (
+          <div className="mt-2 rounded-2xl border border-white/10 bg-white/6 p-3 text-xs text-white/70">
+            Tim: {tim.hadir} hadir · {tim.terlambat} terlambat · {tim.cuti} cuti
+          </div>
+        )}
+
+        <h3 className="mb-2 mt-5 text-xs font-semibold uppercase tracking-[0.18em] text-white/40">Perlu keputusan</h3>
+        {loading && <div className="rounded-2xl bg-white/6 p-4 text-xs text-white/50">Memuat…</div>}
+        {!loading && sections.length === 0 && (
+          <div className="rounded-2xl bg-white/6 p-4 text-xs text-white/50">
+            Tidak ada yang menunggu keputusan Anda. 🎉
+          </div>
+        )}
+        {sections.map((section) => (
+          <div key={section.key} className="mb-3">
+            <div className="mb-1.5 flex items-center justify-between text-xs">
+              <span className="font-semibold text-white/75">{section.label}</span>
+              <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-bold">{section.total}</span>
+            </div>
+            <div className="space-y-1.5">
+              {section.items.map((item) => (
+                <div key={item.id} className="rounded-2xl border border-white/10 bg-white/6 p-3">
+                  <div className="truncate text-sm font-semibold">{item.title}</div>
+                  {item.subtitle && <div className="truncate text-[11px] text-white/45">{item.subtitle}</div>}
+                  <div className="mt-2 flex gap-1.5">
+                    {item.actionable ? (
+                      <>
+                        <button
+                          type="button"
+                          disabled={busyId === item.id}
+                          onClick={() => void decideLeave(item.id, "approve")}
+                          className="rounded-lg bg-emerald-600 px-3 py-1.5 text-[11px] font-bold transition hover:bg-emerald-500 disabled:opacity-50"
+                        >
+                          {busyId === item.id ? "…" : "Setujui"}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={busyId === item.id}
+                          onClick={() => void decideLeave(item.id, "reject")}
+                          className="rounded-lg bg-rose-700 px-3 py-1.5 text-[11px] font-bold transition hover:bg-rose-600 disabled:opacity-50"
+                        >
+                          Tolak
+                        </button>
+                      </>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => onOpenPath(item.href, section.label)}
+                      className="rounded-lg bg-white/10 px-3 py-1.5 text-[11px] font-semibold transition hover:bg-white/18"
+                    >
+                      Buka
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </aside>
+    </div>
   );
 }
 

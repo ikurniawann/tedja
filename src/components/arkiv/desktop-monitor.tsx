@@ -27,41 +27,16 @@ const REFRESH_MS = 60_000; // keputusan owner: 60 detik
 /** Permukaan kartu — identik dengan WindowShell/Calendar Widget. */
 const CARD = "rounded-3xl border border-white/18 bg-slate-950/55 shadow-2xl backdrop-blur-2xl";
 
-export type MonitorWidgetKey =
-  | "omzet"
-  | "promo"
-  | "tamu"
-  | "pulsa"
-  | "tim"
-  | "keputusan"
-  | "stok"
-  | "member";
+// Daftar widget kini tinggal di @/lib/desktop/widgets supaya kode server
+// bisa memakainya tanpa menarik komponen klien ini. Re-export agar pemakai
+// lama (import dari desktop-monitor) tetap jalan.
+import {
+  MONITOR_WIDGETS,
+  normalizeWidgetOrder,
+  type MonitorWidgetKey,
+} from "@/lib/desktop/widgets";
 
-export const MONITOR_WIDGETS: Array<{ key: MonitorWidgetKey; title: string; description: string }> = [
-  { key: "omzet", title: "Pendapatan", description: "Total per periode, komposisi sumber & proyeksi." },
-  { key: "promo", title: "Dampak Promo", description: "Diskon yang keluar vs omzet yang dibawanya." },
-  { key: "tamu", title: "Tamu di Meja", description: "Jumlah tamu yang sedang duduk saat ini." },
-  { key: "pulsa", title: "Ringkasan Transaksi", description: "Omzet & pesanan hari ini vs kemarin." },
-  { key: "tim", title: "Tim Hari Ini", description: "Hadir, terlambat, belum absen, dan cuti." },
-  { key: "keputusan", title: "Perlu Keputusan", description: "Pengajuan & dokumen yang menunggu approval." },
-  { key: "stok", title: "Stok Menipis", description: "Bahan baku di bawah batas minimum." },
-  { key: "member", title: "Member & Loyalty", description: "Member baru, XP, dan penukaran reward 7 hari." },
-];
-
-const MONITOR_KEYS = MONITOR_WIDGETS.map((w) => w.key);
-
-/**
- * Urutan tersimpan bisa basi (widget dihapus/ditambah antar-versi): buang key
- * asing, lalu sisipkan key baru di belakang sesuai urutan default — widget baru
- * tidak boleh hilang hanya karena user pernah menyimpan urutan lama.
- */
-export function normalizeWidgetOrder(saved: unknown): MonitorWidgetKey[] {
-  const valid = Array.isArray(saved)
-    ? (saved.filter((k): k is MonitorWidgetKey => MONITOR_KEYS.includes(k as MonitorWidgetKey)) as MonitorWidgetKey[])
-    : [];
-  const unik = [...new Set(valid)];
-  return [...unik, ...MONITOR_KEYS.filter((k) => !unik.includes(k))];
-}
+export { MONITOR_WIDGETS, normalizeWidgetOrder, type MonitorWidgetKey };
 
 export interface OverviewState {
   status: "loading" | "ready" | "forbidden" | "error";
@@ -400,6 +375,7 @@ export function DesktopMonitorBoard({
   visibility,
   order,
   onAskDo,
+  onOpenInbox,
   periode = "today",
   onPilihPeriode,
 }: {
@@ -408,6 +384,8 @@ export function DesktopMonitorBoard({
   /** Urutan render widget pilihan user; key hilang jatuh ke urutan default. */
   order?: MonitorWidgetKey[];
   onAskDo: (prompt: string) => void;
+  /** Buka panel Hari Ini berisi daftar keputusan yang bisa ditindaklanjuti. */
+  onOpenInbox?: () => void;
   /** Periode papan aktif (EPIC-037 Fase A). */
   periode?: PeriodKind;
   onPilihPeriode?: (next: PeriodKind) => void;
@@ -734,6 +712,15 @@ export function DesktopMonitorBoard({
           askDoPrompt={buildAskDoPrompt("keputusan", d)}
           failed={failedSet.has("perluKeputusan")}
         >
+          {onOpenInbox && (d.perluKeputusan?.total ?? 0) > 0 && (
+            <button
+              type="button"
+              onClick={onOpenInbox}
+              className="mb-2 w-full rounded-xl bg-pink-600/85 px-3 py-2 text-xs font-bold text-white transition hover:bg-pink-500"
+            >
+              Tangani sekarang
+            </button>
+          )}
           {d.perluKeputusan && (
             <div className="-mx-1 flex flex-col">
               {(

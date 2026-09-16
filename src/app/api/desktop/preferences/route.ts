@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ApiError, requireApiUser } from "@/lib/api/auth";
-import { createPgClient } from "@/lib/pg";
+import { createPgClient } from "@/lib/pg/create-client";
 import {
   DEFAULT_DESKTOP_PREFERENCES,
   normalizeDesktopPreferences,
