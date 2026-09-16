@@ -40,6 +40,33 @@ import {
 } from "@/lib/desktop/notifications";
 import type { ComponentType, CSSProperties, FormEvent as ReactFormEvent, MouseEvent as ReactMouseEvent } from "react";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { isSearchable } from "@/lib/desktop/search";
+import { parseDeepLink } from "@/lib/desktop/deep-link";
+import {
+  DESKTOP_PREFS_STORAGE_KEY,
+  normalizeDesktopPreferences,
+  readLocalPreferences,
+  writeLocalPreferences,
+  type DesktopPreferences,
+} from "@/lib/desktop/preferences";
+import {
+  MENUBAR_H,
+  MIN_WINDOW_H,
+  MIN_WINDOW_W,
+  SHORTCUT_HINTS,
+  WINDOW_GEOMETRY_STORAGE_KEY,
+  clampGeometry,
+  detectSnapEdge,
+  matchDesktopShortcut,
+  nextWindowInCycle,
+  parseGeometryMap,
+  rememberGeometry,
+  restoreGeometry,
+  snapGeometry,
+  type GeometryMap,
+  type SnapEdge,
+  type WindowGeometry,
+} from "@/lib/desktop/window-manager";
 import {
   Activity,
   AlertCircle,
@@ -247,6 +274,9 @@ const modules: DesktopModule[] = [
 ];
 
 type WallpaperItem = { id: string; name: string; src: string; custom?: boolean };
+type SearchGroup = { source: string; label: string; items: Array<{ id: string; title: string; subtitle?: string | null; href: string }> };
+/** Jendela yang dibuka dari deep link / hasil Spotlight (bisa banyak sekaligus). */
+type PathWindow = { id: string; title: string; path: string };
 
 /** Wallpaper bawaan; wallpaper unggahan admin ditambahkan dari /api/desktop/wallpapers. */
 const wallpapers: WallpaperItem[] = [
@@ -310,6 +340,10 @@ export default function ArkivOsDesktop() {
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [assistantSettings, setAssistantSettings] = useState<AiAssistantSettings>(DEFAULT_AI_ASSISTANT_SETTINGS);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; module?: DesktopModule; desktop?: boolean } | null>(null);
+  const [locked, setLocked] = useState(false);
+  const [showToday, setShowToday] = useState(false);
+  const [showShortcuts, setShowShortcuts] = useState(false);
+  const [pathWindows, setPathWindows] = useState<PathWindow[]>([]);
   const assistantShortcutRef = useRef<HTMLFormElement>(null);
   const assistantShortcutInputRef = useRef<HTMLInputElement>(null);
 
@@ -377,6 +411,146 @@ export default function ArkivOsDesktop() {
     ],
     [],
   );
+
+  const windowManager = useWindowManager();
+  const contextMenuRef = useRef<typeof contextMenu>(null);
+  const showCommandRef = useRef(false);
+  useEffect(() => {
+    contextMenuRef.current = contextMenu;
+    showCommandRef.current = showCommand;
+  });
+  const { windows: openWindows, order: windowOrder } = windowManager.state;
+  const openWindowList = useMemo(
+    () => windowOrder.map((id) => ({ id, ...openWindows[id] })).filter((w) => w.title),
+    [windowOrder, openWindows]
+  );
+  const minimizedWindows = useMemo(() => openWindowList.filter((w) => w.minimized), [openWindowList]);
+
+  /** Ikon dock: sudah terbuka → fokuskan (bukan tutup); belum → buka. */
+  const focusOrOpen = useCallback(
+    (ids: string[], open: () => void) => {
+      const hit = ids.find((id) => openWindows[id]);
+      if (hit) {
+        windowManager.api.focus(hit);
+        return;
+      }
+      open();
+    },
+    [openWindows, windowManager.api]
+  );
+  const anyOpen = useCallback((ids: string[]) => ids.some((id) => Boolean(openWindows[id])), [openWindows]);
+
+  /* Pintasan papan ketik ala desktop. Kombinasi yang dirampas browser
+   * (⌘W/⌘M/⌘Tab) sengaja dihindari — lihat matchDesktopShortcut. */
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const action = matchDesktopShortcut(event);
+      if (!action) return;
+      const target = event.target as HTMLElement | null;
+      const typing =
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        Boolean(target?.isContentEditable);
+      // Saat mengetik hanya Escape yang boleh lewat.
+      if (typing && action !== "dismiss") return;
+
+      const api = windowManager.api;
+      const top = windowManager.topWindowId;
+
+      switch (action) {
+        case "search":
+          event.preventDefault();
+          setShowCommand(true);
+          return;
+        case "today":
+          event.preventDefault();
+          setShowToday((value) => !value);
+          return;
+        case "lock":
+          event.preventDefault();
+          setLocked(true);
+          return;
+        case "dismiss": {
+          // Urutan tutup: menu konteks → palet → jendela paling depan.
+          if (contextMenuRef.current) {
+            setContextMenu(null);
+            return;
+          }
+          if (showCommandRef.current) {
+            setShowCommand(false);
+            return;
+          }
+          if (top) api.closeById(top);
+          return;
+        }
+        case "close-window":
+          if (!top) return;
+          event.preventDefault();
+          api.closeById(top);
+          return;
+        case "minimize-window":
+          if (!top) return;
+          event.preventDefault();
+          api.setMinimized(top, true);
+          return;
+        case "cycle-next":
+        case "cycle-prev": {
+          const next = nextWindowInCycle(
+            windowManager.visibleOrder,
+            top,
+            action === "cycle-next" ? 1 : -1
+          );
+          if (!next) return;
+          event.preventDefault();
+          api.focus(next);
+          return;
+        }
+        default:
+          if (!top) return;
+          event.preventDefault();
+          api.send(top, action as "snap-left" | "snap-right" | "maximize" | "restore");
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [windowManager.api, windowManager.topWindowId, windowManager.visibleOrder]);
+
+  /**
+   * Buka satu halaman dashboard sebagai jendela. Dipakai hasil Spotlight dan
+   * deep link (?open=). Id unik per instans → halaman yang sama boleh dibuka
+   * dua kali (mis. dua laporan periode berbeda), seperti desktop sungguhan.
+   */
+  const openPath = useCallback((path: string, title: string) => {
+    setPathWindows((prev) => {
+      const existing = prev.find((win) => win.path === path);
+      if (existing) {
+        windowManager.api.focus(existing.id);
+        return prev;
+      }
+      const id = `path:${path}:${prev.length}:${Math.random().toString(36).slice(2, 7)}`;
+      return [...prev, { id, title, path }];
+    });
+  }, [windowManager.api]);
+
+  const closePathWindow = useCallback((id: string) => {
+    setPathWindows((prev) => prev.filter((win) => win.id !== id));
+  }, []);
+
+  /* Deep link: /arkiv-os?open=/dashboard/... membuka jendelanya langsung,
+   * lalu parameter dibersihkan supaya refresh tidak menumpuk jendela. */
+  useEffect(() => {
+    const target = parseDeepLink(new URLSearchParams(window.location.search));
+    if (!target) return;
+    // Dibuka pada frame berikutnya: desktop selesai render dulu, baru jendela.
+    const frame = requestAnimationFrame(() => {
+      openPath(target.path, target.title);
+      const url = new URL(window.location.href);
+      url.searchParams.delete("open");
+      url.searchParams.delete("title");
+      window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [openPath]);
 
   const moduleHref = (module: DesktopModule) => module.externalHref ?? (isLoggedIn ? module.dashboardHref : module.loginHref);
 
@@ -579,6 +753,59 @@ export default function ArkivOsDesktop() {
     };
   }, []);
 
+  /* Preferensi desktop ikut AKUN. Server jadi sumber kebenaran; localStorage
+   * tinggal cache supaya render pertama tidak berkedip saat ganti perangkat. */
+  const prefsReadyRef = useRef(false);
+  useEffect(() => {
+    if (!userAccount) return;
+    let cancelled = false;
+    fetch("/api/desktop/preferences")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json) => {
+        if (cancelled) return;
+        prefsReadyRef.current = true;
+        const server = json?.data ? normalizeDesktopPreferences(json.data) : null;
+        if (!server) return;
+        if (server.wallpaper) {
+          const found = allWallpapers.find((item) => item.id === server.wallpaper);
+          if (found) setWallpaper(found);
+        }
+        if (Object.keys(server.widgetVisibility).length > 0) {
+          setWidgetVisibility((prev) => ({ ...prev, ...server.widgetVisibility }) as WidgetVisibility);
+        }
+        if (server.widgetOrder.length > 0) setWidgetOrder(normalizeWidgetOrder(server.widgetOrder));
+        setSoundEnabled(server.soundEnabled);
+      })
+      .catch(() => {
+        // Server tak terjangkau: jangan kunci penyimpanan, pakai pilihan lokal.
+        prefsReadyRef.current = true;
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [userAccount, allWallpapers]);
+
+  useEffect(() => {
+    if (!userAccount || !prefsReadyRef.current) return;
+    const prefs: DesktopPreferences = {
+      wallpaper: wallpaper.id,
+      widgetVisibility: widgetVisibility as unknown as Record<string, boolean>,
+      widgetOrder,
+      soundEnabled,
+      period: null,
+    };
+    writeLocalPreferences(prefs);
+    // Ditunda sebentar: menggeser urutan widget tidak boleh jadi badai request.
+    const timer = window.setTimeout(() => {
+      void fetch("/api/desktop/preferences", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(prefs),
+      }).catch(() => {});
+    }, 900);
+    return () => window.clearTimeout(timer);
+  }, [userAccount, wallpaper, widgetVisibility, widgetOrder, soundEnabled]);
+
   useEffect(() => {
     const db = createBrowserClient();
 
@@ -653,7 +880,8 @@ export default function ArkivOsDesktop() {
   }, []);
 
   return (
-    <WindowManagerProvider>
+    <WindowApiContext.Provider value={windowManager.api}>
+    <WindowStateContext.Provider value={windowManager.state}>
     <main
       ref={desktopRef}
       onMouseMove={handleMouseMove}
@@ -688,8 +916,20 @@ export default function ArkivOsDesktop() {
             <span className="grid size-5 place-items-center rounded-md bg-white/15 text-[10px] uppercase">
               {userAccount?.email?.charAt(0) || "A"}
             </span>
-            {userAccount?.email || "Guest"}
+            {userAccount?.email || "Tamu"}
           </button>
+          {!isLoggedIn && (
+            <span className="hidden items-center gap-2 rounded-full bg-amber-400/20 px-2.5 py-0.5 text-[11px] font-semibold text-amber-100 sm:flex">
+              Mode tamu — sebagian aplikasi perlu masuk
+              <button
+                type="button"
+                onClick={() => router.push("/login?redirect=/arkiv-os")}
+                className="rounded-full bg-amber-300/90 px-2 py-0.5 text-[11px] font-bold text-amber-950 transition hover:bg-amber-200"
+              >
+                Masuk
+              </button>
+            </span>
+          )}
           <nav className="hidden items-center gap-4 text-white/72 md:flex">
             <button onClick={() => setShowLibrary(true)}>Applications</button>
             {notifHistory.length > 0 && <button onClick={() => setShowNotifications(true)}>Notifications</button>}
@@ -728,15 +968,45 @@ export default function ArkivOsDesktop() {
 
       <nav className="fixed bottom-3 left-1/2 z-30 flex max-w-[calc(100vw-12px)] -translate-x-1/2 items-end gap-1 overflow-x-auto rounded-3xl border border-white/18 bg-white/14 p-1.5 shadow-[0_24px_80px_rgba(0,0,0,.38)] backdrop-blur-2xl sm:bottom-5 sm:gap-2 sm:rounded-[28px] sm:p-2">
         <DockButton label="Launchpad" icon={MonitorDot} active={showLibrary} onClick={() => setShowLibrary((value) => !value)} />
-        {modules.filter((module) => !module.disabled).map((module) => <DockButton key={module.name} label={module.name} icon={module.icon} active={previewModule?.name === module.name} onClick={() => setPreviewModule((current) => current?.name === module.name ? null : module)} />)}
-        <DockButton label="Do" icon={Bot} active={showAssistant} onClick={() => setShowAssistant((value) => !value)} />
+        {modules.filter((module) => !module.disabled).map((module) => {
+          const ids = [module.name, `${module.name} Preview`];
+          return (
+            <DockButton
+              key={module.name}
+              label={module.name}
+              icon={module.icon}
+              active={previewModule?.name === module.name || openAppModule?.name === module.name}
+              running={anyOpen(ids)}
+              onClick={() => focusOrOpen(ids, () => setPreviewModule(module))}
+            />
+          );
+        })}
+        <DockButton label="Do" icon={Bot} active={showAssistant} running={anyOpen(["Do"])} onClick={() => focusOrOpen(["Do"], () => setShowAssistant(true))} />
         <DockButton label="Apps" icon={Grid3X3} active={showLibrary} onClick={() => setShowLibrary((value) => !value)} />
         <div className="mx-0.5 h-7 w-px shrink-0 bg-white/18 sm:mx-1 sm:h-9" />
         {notifHistory.length > 0 && (
           <DockButton label={`Notifications (${notifHistory.length})`} icon={Bell} active={showNotifications} onClick={() => setShowNotifications((value) => !value)} />
         )}
-        <DockButton label="Files" icon={Folder} active={showFiles} onClick={() => setShowFiles((value) => !value)} />
-        <DockButton label="Settings" icon={Settings} active={showSettings} onClick={() => setShowSettings((value) => !value)} />
+        <DockButton label="Files" icon={Folder} active={showFiles} running={anyOpen([`${BRAND} Drive`])} onClick={() => focusOrOpen([`${BRAND} Drive`], () => setShowFiles(true))} />
+        <DockButton label="Settings" icon={Settings} active={showSettings} running={anyOpen(["System Settings"])} onClick={() => focusOrOpen(["System Settings"], () => setShowSettings(true))} />
+        {minimizedWindows.length > 0 && (
+          <>
+            <div className="mx-0.5 h-7 w-px shrink-0 bg-white/18 sm:mx-1 sm:h-9" />
+            {/* Jendela yang dikecilkan mendarat di sini (seperti dock macOS). */}
+            {minimizedWindows.map((win) => (
+              <button
+                key={win.id}
+                type="button"
+                title={`Tampilkan ${win.title}`}
+                aria-label={`Tampilkan ${win.title}`}
+                onClick={() => windowManager.api.focus(win.id)}
+                className="group relative grid h-10 shrink-0 place-items-center rounded-xl border border-white/14 bg-white/10 px-2.5 text-[11px] font-semibold text-white/85 shadow-lg transition duration-200 hover:-translate-y-1 hover:bg-white/24 sm:h-12 sm:rounded-2xl sm:px-3"
+              >
+                <span className="max-w-[92px] truncate">{win.title}</span>
+              </button>
+            ))}
+          </>
+        )}
       </nav>
 
       {showAssistantShortcut && (
@@ -807,8 +1077,13 @@ export default function ArkivOsDesktop() {
           onWidgets={() => setShowWidgetSettings(true)}
           onFiles={() => setShowFiles(true)}
           onSettings={() => setShowSettings(true)}
+          onOpenPath={openPath}
+          isLoggedIn={isLoggedIn}
         />
       )}
+      {pathWindows.map((win) => (
+        <PathWindowFrame key={win.id} window={win} onClose={() => closePathWindow(win.id)} />
+      ))}
       {showWaNotif && (
         <WindowShell title="Notifikasi WA" onClose={() => setShowWaNotif(false)} className="left-1/2 top-14 max-h-[calc(100vh-140px)] w-[min(560px,calc(100vw-32px))] -translate-x-1/2 overflow-y-auto">
           <WaNotifSettingsPanel />
@@ -851,6 +1126,7 @@ export default function ArkivOsDesktop() {
           onAssistantSettingsChange={updateAssistantSettings}
           onOpenWallpaper={() => setShowWallpaperPicker(true)}
           onOpenWidgets={() => setShowWidgetSettings(true)}
+          onOpenShortcuts={() => setShowShortcuts(true)}
           onClose={() => setShowSettings(false)}
         />
       )}
@@ -880,12 +1156,28 @@ export default function ArkivOsDesktop() {
           onClose={() => setShowAccount(false)}
           onLogin={() => router.push("/login?redirect=/arkiv-os")}
           onDashboard={() => router.push("/dashboard")}
+          onLock={() => {
+            setShowAccount(false);
+            setLocked(true);
+          }}
         />
       )}
       {contextMenu?.module && <ContextMenu x={contextMenu.x} y={contextMenu.y} module={contextMenu.module} onOpen={() => openModule(contextMenu.module!)} onInfo={() => setPreviewModule(contextMenu.module!)} />}
+      {locked && userAccount && (
+        <LockScreen
+          account={userAccount}
+          onUnlock={() => setLocked(false)}
+          onSwitchUser={async () => {
+            await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
+            router.push("/login?redirect=/arkiv-os");
+          }}
+        />
+      )}
+      {showShortcuts && <ShortcutCheatSheet onClose={() => setShowShortcuts(false)} />}
       {contextMenu?.desktop && <DesktopContextMenu x={contextMenu.x} y={contextMenu.y} onWallpaper={() => setShowWallpaperPicker(true)} onWidgets={() => setShowWidgetSettings(true)} onApps={() => setShowLibrary(true)} onSettings={() => setShowSettings(true)} onAbout={() => setShowAbout(true)} />}
     </main>
-    </WindowManagerProvider>
+    </WindowStateContext.Provider>
+    </WindowApiContext.Provider>
   );
 }
 
@@ -941,7 +1233,7 @@ function CalendarWidget({ date, onClose }: { date: Date; onClose: () => void }) 
   );
 }
 
-function DockButton({ label, icon: Icon, onClick, active = false }: { label: string; icon: ComponentType<{ className?: string }>; onClick: () => void; active?: boolean }) {
+function DockButton({ label, icon: Icon, onClick, active = false, running = false }: { label: string; icon: ComponentType<{ className?: string }>; onClick: () => void; active?: boolean; running?: boolean }) {
   return (
     <button
       type="button"
@@ -951,71 +1243,230 @@ function DockButton({ label, icon: Icon, onClick, active = false }: { label: str
       className={`group relative grid size-10 shrink-0 place-items-center rounded-xl border border-white/14 text-white shadow-lg transition duration-200 hover:-translate-y-3 hover:scale-125 hover:bg-white/24 sm:size-12 sm:rounded-2xl ${active ? "bg-white/24 ring-1 ring-pink-200/50" : "bg-white/14"}`}
     >
       <Icon className="size-4 transition group-hover:scale-110 sm:size-5" />
-      {active && <span className="absolute -bottom-1 size-1.5 rounded-full bg-pink-200 shadow-[0_0_12px_rgba(244,114,182,.9)]" />}
+      {/* Titik = jendelanya memang terbuka (running), bukan sekadar sedang di-hover. */}
+      {(active || running) && (
+        <span className={`absolute -bottom-1 size-1.5 rounded-full ${active ? "bg-pink-200 shadow-[0_0_12px_rgba(244,114,182,.9)]" : "bg-white/70"}`} />
+      )}
     </button>
   );
 }
 
 /**
- * Manajer jendela ala desktop sungguhan: urutan fokus disimpan di satu
- * tempat, jendela yang baru dibuka / diklik selalu ke depan, hanya satu
- * jendela yang aktif (ring pink). z-index = 40 + posisi dalam urutan.
+ * Manajer jendela ala desktop sungguhan: urutan fokus, minimize ke dock,
+ * snap ke tepi, dan ingatan posisi/ukuran per jendela. Logika murninya ada di
+ * `@/lib/desktop/window-manager` (teruji); di sini hanya perekatan ke React.
  */
 const WINDOW_Z_BASE = 40;
-type WindowApi = { focus: (id: string) => void; release: (id: string) => void };
-const WindowApiContext = createContext<WindowApi | null>(null);
-const WindowOrderContext = createContext<string[]>([]);
 
-function WindowManagerProvider({ children }: { children: React.ReactNode }) {
-  const [order, setOrder] = useState<string[]>([]);
-  const focus = useCallback((id: string) => {
-    setOrder((prev) => (prev[prev.length - 1] === id ? prev : [...prev.filter((item) => item !== id), id]));
-  }, []);
-  const release = useCallback((id: string) => {
-    setOrder((prev) => (prev.includes(id) ? prev.filter((item) => item !== id) : prev));
-  }, []);
-  const api = useMemo(() => ({ focus, release }), [focus, release]);
-  return (
-    <WindowApiContext.Provider value={api}>
-      <WindowOrderContext.Provider value={order}>{children}</WindowOrderContext.Provider>
-    </WindowApiContext.Provider>
-  );
+type WindowCommand = "snap-left" | "snap-right" | "maximize" | "restore";
+type WindowRecord = { title: string; minimized: boolean };
+
+type WindowApi = {
+  register: (id: string, title: string, onClose: () => void) => void;
+  release: (id: string) => void;
+  focus: (id: string) => void;
+  setMinimized: (id: string, value: boolean) => void;
+  closeById: (id: string) => void;
+  send: (id: string, kind: WindowCommand) => void;
+};
+
+type WindowManagerState = {
+  order: string[];
+  windows: Record<string, WindowRecord>;
+  command: { id: string; kind: WindowCommand; nonce: number } | null;
+};
+
+const WindowApiContext = createContext<WindowApi | null>(null);
+const WindowStateContext = createContext<WindowManagerState>({
+  order: [],
+  windows: {},
+  command: null,
+});
+
+function loadGeometryMap(): GeometryMap {
+  try {
+    return parseGeometryMap(window.localStorage.getItem(WINDOW_GEOMETRY_STORAGE_KEY));
+  } catch {
+    return {};
+  }
 }
 
-function WindowShell({ title, children, onClose, className = "" }: { title: string; children: React.ReactNode; onClose: () => void; className?: string }) {
+function persistGeometry(id: string, geo: WindowGeometry) {
+  try {
+    const next = rememberGeometry(loadGeometryMap(), id, geo);
+    window.localStorage.setItem(WINDOW_GEOMETRY_STORAGE_KEY, JSON.stringify(next));
+  } catch {
+    /* penyimpanan terkunci (mode privat) — jendela tetap jalan tanpa ingatan */
+  }
+}
+
+function useWindowManager() {
+  const [order, setOrder] = useState<string[]>([]);
+  const [windows, setWindows] = useState<Record<string, WindowRecord>>({});
+  const [command, setCommand] = useState<WindowManagerState["command"]>(null);
+  const closers = useRef<Record<string, () => void>>({});
+  const nonce = useRef(0);
+
+  const focus = useCallback((id: string) => {
+    setOrder((prev) => (prev[prev.length - 1] === id ? prev : [...prev.filter((item) => item !== id), id]));
+    // Fokus selalu memunculkan kembali jendela yang dikecilkan (klik ikon dock).
+    setWindows((prev) =>
+      prev[id]?.minimized ? { ...prev, [id]: { ...prev[id], minimized: false } } : prev
+    );
+  }, []);
+
+  const register = useCallback(
+    (id: string, title: string, onClose: () => void) => {
+      closers.current[id] = onClose;
+      setWindows((prev) => ({ ...prev, [id]: { title, minimized: prev[id]?.minimized ?? false } }));
+      focus(id);
+    },
+    [focus]
+  );
+
+  const release = useCallback((id: string) => {
+    delete closers.current[id];
+    setOrder((prev) => (prev.includes(id) ? prev.filter((item) => item !== id) : prev));
+    setWindows((prev) => {
+      if (!(id in prev)) return prev;
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  }, []);
+
+  const setMinimized = useCallback((id: string, value: boolean) => {
+    setWindows((prev) => (prev[id] ? { ...prev, [id]: { ...prev[id], minimized: value } } : prev));
+    // Dikecilkan = tidak lagi paling depan; jendela di bawahnya mengambil alih.
+    if (value) setOrder((prev) => (prev[prev.length - 1] === id ? [id, ...prev.filter((i) => i !== id)] : prev));
+  }, []);
+
+  const closeById = useCallback((id: string) => {
+    closers.current[id]?.();
+  }, []);
+
+  const send = useCallback((id: string, kind: WindowCommand) => {
+    nonce.current += 1;
+    setCommand({ id, kind, nonce: nonce.current });
+  }, []);
+
+  const api = useMemo<WindowApi>(
+    () => ({ register, release, focus, setMinimized, closeById, send }),
+    [register, release, focus, setMinimized, closeById, send]
+  );
+  const state = useMemo<WindowManagerState>(() => ({ order, windows, command }), [order, windows, command]);
+
+  /** Jendela paling depan yang benar-benar terlihat (bukan yang dikecilkan). */
+  const topWindowId = useMemo(() => {
+    for (let i = order.length - 1; i >= 0; i--) {
+      const id = order[i];
+      if (windows[id] && !windows[id].minimized) return id;
+    }
+    return null;
+  }, [order, windows]);
+
+  const visibleOrder = useMemo(
+    () => order.filter((id) => windows[id] && !windows[id].minimized),
+    [order, windows]
+  );
+
+  return { api, state, topWindowId, visibleOrder, windows };
+}
+
+function WindowShell({
+  title,
+  children,
+  onClose,
+  className = "",
+  windowId: windowIdProp,
+}: {
+  title: string;
+  children: React.ReactNode;
+  onClose: () => void;
+  className?: string;
+  /** Id unik bila satu judul bisa terbuka lebih dari satu (deep link / multi-instance). */
+  windowId?: string;
+}) {
   const windowRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ offsetX: number; offsetY: number } | null>(null);
   const resizeRef = useRef<{ startX: number; startY: number; width: number; height: number } | null>(null);
-  const [rect, setRect] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
-  const [minimized, setMinimized] = useState(false);
-  const [maximized, setMaximized] = useState(false);
+  const onCloseRef = useRef(onClose);
+  const [rect, setRect] = useState<WindowGeometry | null>(() => {
+    if (typeof window === "undefined") return null;
+    return restoreGeometry(loadGeometryMap(), windowIdProp ?? title, {
+      width: window.innerWidth,
+      height: window.innerHeight,
+    });
+  });
+  const [snapped, setSnapped] = useState<SnapEdge | null>(null);
+  const [snapHint, setSnapHint] = useState<SnapEdge | null>(null);
+  const preSnapRect = useRef<WindowGeometry | null>(null);
   const windowApi = useContext(WindowApiContext);
-  const windowOrder = useContext(WindowOrderContext);
-  const windowId = title;
-  const orderIndex = windowOrder.indexOf(windowId);
+  const { order, windows, command } = useContext(WindowStateContext);
+  const windowId = windowIdProp ?? title;
+  const minimized = windows[windowId]?.minimized ?? false;
+  const orderIndex = order.indexOf(windowId);
   const zIndex = WINDOW_Z_BASE + Math.max(0, orderIndex);
-  const isActive = orderIndex >= 0 && orderIndex === windowOrder.length - 1;
+  const visible = order.filter((id) => windows[id] && !windows[id].minimized);
+  const isActive = !minimized && visible[visible.length - 1] === windowId;
 
-  /* Jendela baru (atau judul berganti, mis. preview modul lain) langsung ke
-   * depan; saat ditutup, dilepas dari urutan agar jendela di bawahnya aktif. */
   useEffect(() => {
-    windowApi?.focus(windowId);
-    return () => windowApi?.release(windowId);
-  }, [windowApi, windowId]);
+    onCloseRef.current = onClose;
+  });
 
-  const captureRect = () => {
+  /* Daftarkan jendela ke manajer (dock + pintasan), lalu lepas saat ditutup. */
+  useEffect(() => {
+    windowApi?.register(windowId, title, () => onCloseRef.current());
+    return () => windowApi?.release(windowId);
+  }, [windowApi, windowId, title]);
+
+  const viewport = () => ({ width: window.innerWidth, height: window.innerHeight });
+
+  const captureRect = useCallback(() => {
     const box = windowRef.current?.getBoundingClientRect();
     if (!box) return null;
     const next = { left: box.left, top: box.top, width: box.width, height: box.height };
     setRect(next);
     return next;
-  };
+  }, []);
+
+  const applySnap = useCallback(
+    (edge: SnapEdge) => {
+      const current = rect ?? captureRect();
+      if (current && !snapped) preSnapRect.current = current;
+      const geo = snapGeometry(edge, viewport());
+      setRect(geo);
+      setSnapped(edge);
+      persistGeometry(windowId, geo);
+    },
+    [captureRect, rect, snapped, windowId]
+  );
+
+  const restoreSnap = useCallback(() => {
+    const previous = preSnapRect.current;
+    setSnapped(null);
+    if (previous) {
+      const geo = clampGeometry(previous, viewport());
+      setRect(geo);
+      persistGeometry(windowId, geo);
+    }
+  }, [windowId]);
+
+  /* Perintah dari pintasan papan ketik / menu (⌘←, ⌘↑, dst). */
+  useEffect(() => {
+    if (!command || command.id !== windowId) return;
+    const kind = command.kind;
+    const frame = requestAnimationFrame(() => {
+      if (kind === "restore") restoreSnap();
+      else applySnap(kind === "maximize" ? "maximize" : kind === "snap-left" ? "left" : "right");
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [command, windowId, applySnap, restoreSnap]);
 
   const focusWindow = () => windowApi?.focus(windowId);
 
   const startDrag = (event: ReactMouseEvent<HTMLDivElement>) => {
     focusWindow();
-    if (maximized) return;
     const current = rect ?? captureRect();
     if (!current) return;
     dragRef.current = {
@@ -1030,12 +1481,14 @@ function WindowShell({ title, children, onClose, className = "" }: { title: stri
       const drag = dragRef.current;
       const resize = resizeRef.current;
       if (drag) {
+        // Seret ke tepi layar = pratinjau snap (Aero Snap / Rectangle).
+        setSnapHint(detectSnapEdge({ x: event.clientX, y: event.clientY }, { width: window.innerWidth, height: window.innerHeight }));
         setRect((current) => {
           if (!current) return current;
           return {
             ...current,
             left: Math.max(8, Math.min(window.innerWidth - current.width - 8, event.clientX - drag.offsetX)),
-            top: Math.max(44, Math.min(window.innerHeight - 56, event.clientY - drag.offsetY)),
+            top: Math.max(MENUBAR_H, Math.min(window.innerHeight - 56, event.clientY - drag.offsetY)),
           };
         });
       }
@@ -1044,15 +1497,31 @@ function WindowShell({ title, children, onClose, className = "" }: { title: stri
           if (!current) return current;
           return {
             ...current,
-            width: Math.max(300, Math.min(window.innerWidth - current.left - 8, resize.width + event.clientX - resize.startX)),
-            height: Math.max(180, Math.min(window.innerHeight - current.top - 72, resize.height + event.clientY - resize.startY)),
+            width: Math.max(MIN_WINDOW_W, Math.min(window.innerWidth - current.left - 8, resize.width + event.clientX - resize.startX)),
+            height: Math.max(MIN_WINDOW_H, Math.min(window.innerHeight - current.top - 72, resize.height + event.clientY - resize.startY)),
           };
         });
       }
     };
-    const handleUp = () => {
+    const handleUp = (event: MouseEvent) => {
+      const wasDragging = Boolean(dragRef.current);
+      const wasResizing = Boolean(resizeRef.current);
       dragRef.current = null;
       resizeRef.current = null;
+      if (!wasDragging && !wasResizing) return;
+      const edge = wasDragging
+        ? detectSnapEdge({ x: event.clientX, y: event.clientY }, { width: window.innerWidth, height: window.innerHeight })
+        : null;
+      setSnapHint(null);
+      if (edge) {
+        applySnap(edge);
+        return;
+      }
+      if (wasDragging) setSnapped(null);
+      setRect((current) => {
+        if (current) persistGeometry(windowId, current);
+        return current;
+      });
     };
 
     window.addEventListener("mousemove", handleMove);
@@ -1061,66 +1530,68 @@ function WindowShell({ title, children, onClose, className = "" }: { title: stri
       window.removeEventListener("mousemove", handleMove);
       window.removeEventListener("mouseup", handleUp);
     };
-  }, []);
+  }, [applySnap, windowId]);
 
-  const floatingStyle: CSSProperties | undefined = maximized
-    ? { left: 16, top: 48, right: 16, bottom: 92, width: "auto", height: "auto" }
-    : rect
-      ? { left: rect.left, top: rect.top, width: rect.width, height: minimized ? "auto" : rect.height }
-      : undefined;
+  const floatingStyle: CSSProperties | undefined = rect
+    ? { left: rect.left, top: rect.top, width: rect.width, height: rect.height }
+    : undefined;
 
-  const activeClassName = maximized || rect ? "" : className;
+  const activeClassName = rect ? "" : className;
 
   return (
-    <div
-      ref={windowRef}
-      style={{ ...floatingStyle, zIndex }}
-      onMouseDown={focusWindow}
-      className={`fixed overflow-hidden rounded-3xl border bg-slate-950/55 shadow-2xl backdrop-blur-2xl max-sm:inset-x-2! max-sm:top-11! max-sm:bottom-[72px]! max-sm:h-auto! max-sm:max-h-none! max-sm:w-auto! max-sm:translate-x-0! max-sm:translate-y-0! max-sm:rounded-2xl! ${minimized ? "max-sm:bottom-auto!" : ""} ${isActive ? "border-pink-200/35 ring-1 ring-pink-300/20" : "border-white/18"} ${activeClassName}`}
-    >
-      <div className="flex h-11 cursor-move items-center justify-between border-b border-white/10 px-4" onMouseDown={startDrag}>
-        <div className="flex items-center gap-2" onMouseDown={(event) => event.stopPropagation()}>
-          <button className="size-3 rounded-full bg-red-400 transition hover:scale-125" onClick={onClose} aria-label="Close" title="Close" />
-          <button
-            className="size-3 rounded-full bg-amber-300 transition hover:scale-125"
-            onClick={() => {
-              if (!rect) captureRect();
-              setMinimized((value) => !value);
-              setMaximized(false);
-            }}
-            aria-label="Minimize"
-            title="Minimize"
-          />
-          <button
-            className="size-3 rounded-full bg-emerald-400 transition hover:scale-125"
-            onClick={() => {
-              if (!maximized && !rect) captureRect();
-              setMinimized(false);
-              setMaximized((value) => !value);
-            }}
-            aria-label="Maximize"
-            title="Maximize"
-          />
-        </div>
-        <span className="select-none text-xs font-medium text-white/65">{title}</span>
-        <button onClick={onClose} onMouseDown={(event) => event.stopPropagation()}><X className="size-4 text-white/60" /></button>
-      </div>
-      {!minimized && <div className={maximized ? "h-[calc(100%-44px)] overflow-auto" : "h-[calc(100%-44px)] overflow-auto"}>{children}</div>}
-      {!minimized && !maximized && (
-        <button
-          aria-label="Resize"
-          title="Resize"
-          className="absolute bottom-2 right-2 size-4 cursor-nwse-resize rounded-sm border-b-2 border-r-2 border-white/35"
-          onMouseDown={(event) => {
-            event.stopPropagation();
-            focusWindow();
-            const current = rect ?? captureRect();
-            if (!current) return;
-            resizeRef.current = { startX: event.clientX, startY: event.clientY, width: current.width, height: current.height };
-          }}
+    <>
+      {snapHint ? (
+        <div
+          aria-hidden
+          style={{ ...snapGeometry(snapHint, { width: typeof window === "undefined" ? 1440 : window.innerWidth, height: typeof window === "undefined" ? 900 : window.innerHeight }), zIndex: WINDOW_Z_BASE - 1 }}
+          className="pointer-events-none fixed rounded-3xl border-2 border-pink-200/50 bg-pink-200/10 backdrop-blur-sm transition-all"
         />
-      )}
-    </div>
+      ) : null}
+      <div
+        ref={windowRef}
+        style={{ ...floatingStyle, zIndex, display: minimized ? "none" : undefined }}
+        onMouseDown={focusWindow}
+        className={`fixed overflow-hidden rounded-3xl border bg-slate-950/55 shadow-2xl backdrop-blur-2xl max-sm:inset-x-2! max-sm:top-11! max-sm:bottom-[72px]! max-sm:h-auto! max-sm:max-h-none! max-sm:w-auto! max-sm:translate-x-0! max-sm:translate-y-0! max-sm:rounded-2xl! ${isActive ? "border-pink-200/35 ring-1 ring-pink-300/20" : "border-white/18"} ${activeClassName}`}
+      >
+        <div className="flex h-11 cursor-move items-center justify-between border-b border-white/10 px-4" onMouseDown={startDrag} onDoubleClick={() => (snapped ? restoreSnap() : applySnap("maximize"))}>
+          <div className="flex items-center gap-2" onMouseDown={(event) => event.stopPropagation()}>
+            <button className="size-3 rounded-full bg-red-400 transition hover:scale-125" onClick={onClose} aria-label="Close" title="Tutup" />
+            <button
+              className="size-3 rounded-full bg-amber-300 transition hover:scale-125"
+              onClick={() => {
+                if (!rect) captureRect();
+                windowApi?.setMinimized(windowId, true);
+              }}
+              aria-label="Minimize"
+              title="Kecilkan ke dock"
+            />
+            <button
+              className="size-3 rounded-full bg-emerald-400 transition hover:scale-125"
+              onClick={() => (snapped ? restoreSnap() : applySnap("maximize"))}
+              aria-label="Maximize"
+              title={snapped ? "Pulihkan ukuran" : "Layar penuh"}
+            />
+          </div>
+          <span className="select-none text-xs font-medium text-white/65">{title}</span>
+          <button onClick={onClose} onMouseDown={(event) => event.stopPropagation()}><X className="size-4 text-white/60" /></button>
+        </div>
+        <div className="h-[calc(100%-44px)] overflow-auto">{children}</div>
+        {!snapped && (
+          <button
+            aria-label="Resize"
+            title="Ubah ukuran"
+            className="absolute bottom-2 right-2 size-4 cursor-nwse-resize rounded-sm border-b-2 border-r-2 border-white/35"
+            onMouseDown={(event) => {
+              event.stopPropagation();
+              focusWindow();
+              const current = rect ?? captureRect();
+              if (!current) return;
+              resizeRef.current = { startX: event.clientX, startY: event.clientY, width: current.width, height: current.height };
+            }}
+          />
+        )}
+      </div>
+    </>
   );
 }
 
@@ -1242,12 +1713,16 @@ function CommandPalette({
   onWidgets,
   onFiles,
   onSettings,
+  onOpenPath,
+  isLoggedIn,
 }: {
   query: string;
   setQuery: (value: string) => void;
   modules: DesktopModule[];
   onClose: () => void;
   onOpen: (module: DesktopModule) => void;
+  onOpenPath: (path: string, title: string) => void;
+  isLoggedIn: boolean;
   onAssistant: () => void;
   onNotifications: () => void;
   onWallpaper: () => void;
@@ -1269,15 +1744,59 @@ function CommandPalette({
     onClose();
   };
 
+  /* Spotlight juga mencari DATA (transaksi, member, produk, karyawan,
+   * dokumen) lewat /api/desktop/search — dibatasi menu IAM pengguna. */
+  const [hits, setHits] = useState<SearchGroup[]>([]);
+  const [searching, setSearching] = useState(false);
+  useEffect(() => {
+    const controller = new AbortController();
+    // Diketik cepat → hanya kueri terakhir yang benar-benar dikirim.
+    const timer = window.setTimeout(() => {
+      if (!isLoggedIn || !isSearchable(query)) {
+        setHits([]);
+        return;
+      }
+      setSearching(true);
+      fetch(`/api/desktop/search?q=${encodeURIComponent(query.trim())}`, { signal: controller.signal })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((json) => setHits(Array.isArray(json?.data?.groups) ? json.data.groups : []))
+        .catch(() => {})
+        .finally(() => setSearching(false));
+    }, 220);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [query, isLoggedIn]);
+
   return (
     <div className="fixed inset-0 z-[80] bg-black/35 p-4 backdrop-blur-sm" onClick={onClose}>
       <div className="mx-auto mt-20 max-w-xl overflow-hidden rounded-3xl border border-white/18 bg-slate-950/80 shadow-2xl" onClick={(event) => event.stopPropagation()}>
         <div className="flex items-center gap-3 border-b border-white/10 px-4 py-3">
           <Search className="size-5 text-white/50" />
-          <input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search modules, e.g. HRIS, POS..." className="w-full rounded-xl bg-white px-3 py-2 text-sm text-black outline-none placeholder:text-gray-600" />
+          <input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Cari aplikasi, transaksi, member, produk, karyawan…" className="w-full rounded-xl bg-white px-3 py-2 text-sm text-black outline-none placeholder:text-gray-600" />
           <kbd className="rounded-md bg-white/10 px-2 py-1 text-[10px] text-white/50">ESC</kbd>
         </div>
         <div className="max-h-96 overflow-y-auto p-2">
+          {searching && <div className="px-3 pt-2 text-[10px] uppercase tracking-[0.18em] text-white/35">Mencari data…</div>}
+          {hits.map((group) => (
+            <div key={group.source}>
+              <div className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/35">{group.label}</div>
+              {group.items.map((item) => (
+                <button
+                  key={`${group.source}-${item.id}`}
+                  onClick={() => runAction(() => onOpenPath(item.href, `${group.label}: ${item.title}`))}
+                  className="flex w-full items-center justify-between rounded-2xl px-3 py-2.5 text-left transition hover:bg-white/10"
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-medium">{item.title}</span>
+                    {item.subtitle ? <span className="block truncate text-xs text-white/45">{item.subtitle}</span> : null}
+                  </span>
+                  <ChevronRight className="size-4 shrink-0 text-white/35" />
+                </button>
+              ))}
+            </div>
+          ))}
           {actions.length > 0 && <div className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/35">Quick Actions</div>}
           {actions.map((action) => {
             const Icon = action.icon;
@@ -1563,6 +2082,37 @@ function ApplicationWindow({ module, url, onClose }: { module: DesktopModule; ur
             />
           </>
         )}
+      </div>
+    </WindowShell>
+  );
+}
+
+/**
+ * Jendela untuk satu halaman dashboard (hasil Spotlight / deep link).
+ * windowId unik supaya beberapa instans bisa hidup berdampingan.
+ */
+function PathWindowFrame({ window: win, onClose }: { window: PathWindow; onClose: () => void }) {
+  const [isLoading, setIsLoading] = useState(true);
+  return (
+    <WindowShell
+      windowId={win.id}
+      title={win.title}
+      onClose={onClose}
+      className="left-1/2 top-16 h-[min(700px,calc(100vh-120px))] w-[min(1200px,calc(100vw-32px))] -translate-x-1/2"
+    >
+      <div className="relative flex h-full flex-col">
+        {isLoading && (
+          <div className="absolute inset-0 z-10 grid place-items-center bg-slate-100">
+            <Loader2 className="size-8 animate-spin text-pink-500" />
+          </div>
+        )}
+        <iframe
+          src={win.path}
+          className="h-full w-full bg-white"
+          onLoad={() => setIsLoading(false)}
+          title={win.title}
+          sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+        />
       </div>
     </WindowShell>
   );
@@ -2670,11 +3220,13 @@ function OsAccountPopup({
   onClose,
   onLogin,
   onDashboard,
+  onLock,
 }: {
   account: OsUserAccount | null;
   onClose: () => void;
   onLogin: () => void;
   onDashboard: () => void;
+  onLock: () => void;
 }) {
   const isLoggedIn = Boolean(account);
 
@@ -2718,8 +3270,11 @@ function OsAccountPopup({
                 <button onClick={onDashboard} className="rounded-2xl bg-pink-600 px-4 py-3 text-sm font-semibold transition hover:bg-pink-500">
                   Go to Dashboard
                 </button>
+                <button onClick={onLock} className="rounded-2xl border border-white/15 bg-white/8 px-4 py-3 text-sm font-semibold text-white/85 transition hover:bg-white/12">
+                  Kunci Layar <span className="text-white/45">⌘⇧L</span>
+                </button>
                 <button onClick={handleLogout} className="rounded-2xl border border-white/15 bg-white/8 px-4 py-3 text-sm font-semibold text-white/85 transition hover:bg-white/12">
-                  Logout
+                  Keluar / Ganti user
                 </button>
               </>
             ) : (
@@ -2892,6 +3447,7 @@ function SystemSettings({
   onOpenWallpaper,
   onOpenWidgets,
   onOpenWaNotif,
+  onOpenShortcuts,
   onClose,
 }: {
   soundEnabled: boolean;
@@ -2901,12 +3457,14 @@ function SystemSettings({
   onOpenWallpaper: () => void;
   onOpenWidgets: () => void;
   onOpenWaNotif: () => void;
+  onOpenShortcuts: () => void;
   onClose: () => void;
 }) {
   const settings = [
     { title: "Desktop & Wallpaper", description: `Pilih wallpaper ${BRAND_OS}.`, icon: MonitorDot, action: onOpenWallpaper },
     { title: "Widgets", description: "Atur Calendar dan System Widgets.", icon: Activity, action: onOpenWidgets },
     { title: "Notifikasi WA", description: "Kabar penting bisnis dikirim otomatis ke WhatsApp.", icon: Bell, action: onOpenWaNotif },
+    { title: "Pintasan Papan Ketik", description: "Tutup, kecilkan, pindah, dan tempel jendela tanpa mouse.", icon: Command, action: onOpenShortcuts },
   ];
   const SoundIcon = soundEnabled ? Volume2 : VolumeX;
   const [showModelMenu, setShowModelMenu] = useState(false);
@@ -3131,6 +3689,103 @@ function WidgetSettings({
             )}
           </Droppable>
         </DragDropContext>
+      </div>
+    </WindowShell>
+  );
+}
+
+/**
+ * Kunci layar — perangkat kasir/tablet sering dipakai bergantian. Membuka
+ * kunci = login ulang ke server (bukan sekadar cocokkan string di klien),
+ * jadi sesi yang sudah kedaluwarsa ikut ketahuan di sini.
+ */
+function LockScreen({
+  account,
+  onUnlock,
+  onSwitchUser,
+}: {
+  account: OsUserAccount;
+  onUnlock: () => void;
+  onSwitchUser: () => void;
+}) {
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = async (event: ReactFormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!password || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: account.email, password }),
+      });
+      if (!res.ok) throw new Error("Kata sandi salah");
+      setPassword("");
+      onUnlock();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Kata sandi salah");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[200] grid place-items-center bg-slate-950/80 backdrop-blur-2xl">
+      <div className="w-[min(380px,calc(100vw-32px))] text-center text-white">
+        <div className="mx-auto mb-4 grid size-20 place-items-center rounded-full bg-gradient-to-br from-pink-300 via-pink-500 to-rose-600 text-2xl font-bold shadow-2xl">
+          {account.fullName.slice(0, 1).toUpperCase()}
+        </div>
+        <div className="text-lg font-semibold">{account.fullName}</div>
+        <div className="mt-1 text-sm text-white/55">{account.email}</div>
+        <form onSubmit={submit} className="mt-6">
+          <input
+            autoFocus
+            type="password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            placeholder="Kata sandi"
+            className="h-12 w-full rounded-2xl border border-white/18 bg-white/10 px-4 text-center text-base outline-none placeholder:text-white/40 focus:border-pink-200/60"
+          />
+          {error && <div className="mt-2 text-sm text-rose-300">{error}</div>}
+          <button
+            type="submit"
+            disabled={busy || !password}
+            className="mt-3 h-12 w-full rounded-2xl bg-pink-600 text-sm font-semibold transition hover:bg-pink-500 disabled:opacity-50"
+          >
+            {busy ? "Membuka…" : "Buka Kunci"}
+          </button>
+        </form>
+        <button
+          type="button"
+          onClick={onSwitchUser}
+          className="mt-4 text-sm text-white/55 underline-offset-4 transition hover:text-white hover:underline"
+        >
+          Ganti user
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ShortcutCheatSheet({ onClose }: { onClose: () => void }) {
+  return (
+    <WindowShell title="Pintasan Papan Ketik" onClose={onClose} className="left-1/2 top-24 w-[min(460px,calc(100vw-32px))] -translate-x-1/2">
+      <div className="p-5">
+        <p className="mb-3 text-xs text-white/50">
+          Kombinasi sengaja menghindari pintasan yang dipakai browser (⌘W menutup tab, ⌘Tab pindah aplikasi).
+        </p>
+        <div className="space-y-1.5">
+          {SHORTCUT_HINTS.map((hint) => (
+            <div key={hint.combo} className="flex items-center justify-between rounded-xl bg-white/6 px-3 py-2 text-sm">
+              <span className="text-white/75">{hint.label}</span>
+              <kbd className="rounded-md border border-white/15 bg-white/10 px-2 py-0.5 font-mono text-xs">{hint.combo}</kbd>
+            </div>
+          ))}
+        </div>
       </div>
     </WindowShell>
   );
