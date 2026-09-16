@@ -14,13 +14,18 @@ import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import {
   CheckCircle2,
+  CloudOff,
   Home,
+  Loader2,
   Maximize2,
   Minimize2,
   Minus,
   Plus,
   Printer,
+  RefreshCw,
   Search,
+  Store,
+  Trash2,
   User,
   Wifi,
   WifiOff,
@@ -43,9 +48,19 @@ import { usePosCheckout } from '@/hooks/use-pos-checkout';
 import { usePosCustomers } from '@/hooks/use-pos-customers';
 import { usePosShift } from '@/hooks/use-pos-shift';
 import { usePosOnline } from '@/hooks/use-pos-online';
+import { usePosOfflineQueue } from '@/hooks/use-pos-offline';
+import {
+  buildOfflineOrderPayload,
+  canPayOffline,
+  isOfflineReceiptNumber,
+  offlineReceiptNumber,
+} from '@/lib/pos/offline-sync';
 import { useLoyaltySettings } from '@/features/pos/loyalty-settings';
 import { useResolvedBillingProfile } from '@/features/pos/billing-settings';
-import { useCanUseCentralCashier } from '@/components/pos/confirm-stall-switch-dialog';
+import {
+  useCanUseCentralCashier,
+  useConfirmAndSwitchStall,
+} from '@/components/pos/confirm-stall-switch-dialog';
 import { PaymentModal } from '@/components/pos/PaymentModal';
 import { CustomizationModal, type SelectedCustomization } from '@/components/pos/CustomizationModal';
 import { printThermalReceipt, type ReceiptPayload } from '@/components/pos/PrintReceipt';
@@ -62,12 +77,16 @@ import {
 } from '@/components/ui/alert-dialog';
 
 import { CLASSIC_KEYPAD, CLASSIC_ORDER_TYPES, CLASSIC_PALETTE } from '../constants';
+import { PosOfflineRegistrar } from './pos-offline-registrar';
 
 const CASHIER_ID = '00000000-0000-0000-0000-000000000001';
 const LAST_RECEIPT_KEY = 'pos:lastReceipt';
 const ALL_CATEGORY = 'All';
 
 type OrderType = ReturnType<typeof usePosCart>['orderType'];
+type StallOption = { id: string; name: string; code?: string };
+type StallInfo = { active: StallOption | null; stalls: StallOption[]; canSwitch: boolean };
+const AUTO_STALL_KEY = 'pos-classic:auto-stall';
 
 const fmtRp = (v: number) => `Rp ${formatAmount(v)}`;
 
@@ -91,6 +110,7 @@ export function ClassicCashierPage() {
   const { checkout, submitting } = usePosCheckout();
   const shiftState = usePosShift(CASHIER_ID);
   const { isOnline } = usePosOnline();
+  const offlineQueue = usePosOfflineQueue();
   const canUseCentralCashier = useCanUseCentralCashier();
   const { data: loyaltySettings } = useLoyaltySettings();
   const billingQuery = useResolvedBillingProfile({});
@@ -106,6 +126,15 @@ export function ClassicCashierPage() {
   const [showCustomer, setShowCustomer] = useState(false);
   const [customerSearch, setCustomerSearch] = useState('');
   const [confirmClear, setConfirmClear] = useState(false);
+  const [showQueue, setShowQueue] = useState(false);
+  const [showStall, setShowStall] = useState(false);
+  const [stallInfo, setStallInfo] = useState<StallInfo | null>(null);
+  const {
+    confirmAndSwitchStall,
+    switching: stallSwitching,
+    dialog: stallSwitchDialog,
+  } = useConfirmAndSwitchStall();
+  const [discardQueueId, setDiscardQueueId] = useState<number | null>(null);
   const [lastReceipt, setLastReceipt] = useState<ReceiptPayload | null>(null);
 
   /* Jam dinding — hanya diperbarui dari interval, bukan saat render. */
@@ -113,6 +142,41 @@ export function ClassicCashierPage() {
     const id = window.setInterval(() => setClock(formatClock(new Date())), 1000);
     return () => window.clearInterval(id);
   }, []);
+
+  /* Stall aktif: server menolak transaksi bila user ber-akses semua stall
+   * belum memilih satu stall (cookie). Sidebar (tempat switcher biasa)
+   * disembunyikan di sini, jadi Classic punya pemilihnya sendiri. */
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/auth/stall-options')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json) => {
+        if (cancelled || !json?.data) return;
+        setStallInfo({
+          active: json.data.active ?? null,
+          stalls: Array.isArray(json.data.stalls) ? json.data.stalls : [],
+          canSwitch: json.data.can_switch !== false,
+        });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  /* Hanya ada satu stall → pilih otomatis sekali, tanpa bertanya. */
+  useEffect(() => {
+    if (!stallInfo || stallInfo.active || !stallInfo.canSwitch || stallInfo.stalls.length !== 1) return;
+    if (!navigator.onLine) return;
+    const only = stallInfo.stalls[0];
+    try {
+      if (window.sessionStorage.getItem(AUTO_STALL_KEY) === only.id) return;
+      window.sessionStorage.setItem(AUTO_STALL_KEY, only.id);
+    } catch {
+      /* tanpa sessionStorage tetap coba sekali */
+    }
+    void confirmAndSwitchStall(only.id);
+  }, [stallInfo, confirmAndSwitchStall]);
 
   useEffect(() => {
     const onChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
@@ -394,16 +458,72 @@ export function ClassicCashierPage() {
       return;
     }
     if (!requireActiveShift()) return;
-    if (!isOnline) {
-      toast.error('Sedang offline — POS Classic belum mendukung antrian offline, gunakan POS utama');
-      return;
-    }
     setShowPayment(true);
-  }, [cart.items.length, isOnline, requireActiveShift]);
+  }, [cart.items.length, requireActiveShift]);
 
   const handleConfirmPayment = useCallback(
     async (payload: Parameters<NonNullable<React.ComponentProps<typeof PaymentModal>['onConfirm']>>[0]) => {
       if (submitting) return;
+
+      /* Offline: simpan ke antrian IndexedDB, struk sementara OFFLINE-…;
+       * dikirim otomatis saat koneksi pulih (usePosOfflineQueue). */
+      if (!isOnline) {
+        if (!canPayOffline(payload.method)) {
+          toast.error('Metode ini butuh koneksi — saat offline pakai tunai, QRIS, atau kartu');
+          return;
+        }
+        const orderPayload = buildOfflineOrderPayload({
+          items: cart.items,
+          orderType: cart.orderType,
+          cashierId: CASHIER_ID,
+          customerId: selectedCustomer?.id ?? null,
+          method: payload.method,
+          cashReceived: payload.cashReceived,
+          discountStack,
+          billCharges,
+          includeTax: cart.includeTax,
+          membershipDiscountPct: membershipDiscount,
+          manualDiscountType: cart.manual_discount_type,
+          manualDiscountValue: cart.manual_discount_value,
+          notes: cart.notes,
+          shiftId: shiftState.shift?.id ?? null,
+          paymentMethodCode: payload.paymentMethodCode,
+          paymentMethodName: payload.paymentMethodName,
+        });
+        await offlineQueue.enqueue(orderPayload, 'order');
+        const offlineNumber = offlineReceiptNumber(Date.now());
+        const cash = Number.parseFloat(payload.cashReceived);
+        const receipt: ReceiptPayload = {
+          orderId: offlineNumber,
+          orderNumber: offlineNumber,
+          orderType: cart.orderType,
+          table: null,
+          items: [...cart.items],
+          notes: cart.notes,
+          subtotal: discountStack.items_subtotal,
+          total,
+          change: payload.method === 'cash' && Number.isFinite(cash) ? Math.max(0, cash - total) : 0,
+          paymentMethod: payload.paymentMethodName ?? PAYMENT_LABEL[payload.method] ?? payload.method,
+          customerName: selectedCustomer?.name,
+          discountAmount,
+          taxAmount: billCharges.tax_amount,
+          chargesBreakdown: billCharges.breakdown,
+          arkPaid: 0,
+        };
+        try {
+          window.sessionStorage.setItem(LAST_RECEIPT_KEY, JSON.stringify(receipt));
+        } catch {
+          /* struk tetap tampil di layar */
+        }
+        toast.success('Tersimpan offline — dikirim otomatis saat koneksi pulih');
+        setShowPayment(false);
+        setLastReceipt(receipt);
+        cart.clearCart();
+        setSelectedId(null);
+        setBuffer('');
+        return;
+      }
+
       const res = await checkout({
         cart: cart.items,
         orderType: cart.orderType,
@@ -468,11 +588,15 @@ export function ClassicCashierPage() {
       cart,
       checkout,
       discountAmount,
-      discountStack.items_subtotal,
+      discountStack,
+      isOnline,
+      membershipDiscount,
+      offlineQueue,
       refetchCustomers,
       selectedCustomer,
       shiftState.shift?.id,
       submitting,
+      total,
     ]
   );
 
@@ -488,6 +612,9 @@ export function ClassicCashierPage() {
 
   const blockedMessage =
     stallBlockedReason ||
+    (stallInfo && !stallInfo.active && stallInfo.stalls.length > 1
+      ? 'Pilih stall aktif dulu (tombol Stall di kanan atas) — server menolak transaksi sebelum stall dipilih.'
+      : null) ||
     (shiftState.enabled && !shiftState.isActive && !shiftState.loading
       ? 'Shift belum dibuka — buka shift dulu di POS utama, lalu kembali ke sini.'
       : null);
@@ -496,6 +623,7 @@ export function ClassicCashierPage() {
 
   return (
     <div className="fixed inset-0 z-30 flex flex-col overflow-hidden bg-slate-900 text-slate-100 select-none">
+      <PosOfflineRegistrar />
       {/* ===== Header ===== */}
       <header className="flex h-14 shrink-0 items-center gap-3 border-b border-slate-700 bg-slate-950 px-4">
         <div className="flex items-baseline gap-2">
@@ -503,6 +631,21 @@ export function ClassicCashierPage() {
           <span className="text-xs uppercase tracking-widest text-slate-400">Tedja Coffee</span>
         </div>
         <div className="ml-auto flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => (stallInfo?.canSwitch ? setShowStall(true) : undefined)}
+            disabled={!stallInfo || stallSwitching}
+            className={cn(
+              'flex h-10 items-center gap-2 rounded-lg px-3 text-sm font-semibold',
+              stallInfo && !stallInfo.active
+                ? 'bg-rose-600 text-white hover:bg-rose-500'
+                : 'bg-slate-800 text-slate-200 hover:bg-slate-700'
+            )}
+            title="Stall aktif"
+          >
+            <Store className="h-4 w-4" />
+            {stallSwitching ? 'Mengganti…' : stallInfo?.active ? stallInfo.active.name : stallInfo ? 'Pilih stall' : 'Stall…'}
+          </button>
           <span
             className={cn(
               'flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold',
@@ -512,6 +655,24 @@ export function ClassicCashierPage() {
             {isOnline ? <Wifi className="h-3.5 w-3.5" /> : <WifiOff className="h-3.5 w-3.5" />}
             {isOnline ? 'Online' : 'Offline'}
           </span>
+          {offlineQueue.queueItems.length > 0 || offlineQueue.isSyncing ? (
+            <button
+              type="button"
+              onClick={() => setShowQueue(true)}
+              className={cn(
+                'flex h-10 items-center gap-2 rounded-lg px-3 text-sm font-bold',
+                offlineQueue.failedCount > 0 ? 'bg-rose-600 text-white' : 'bg-amber-500 text-slate-900'
+              )}
+            >
+              {offlineQueue.isSyncing ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <CloudOff className="h-4 w-4" />
+              )}
+              {offlineQueue.isSyncing ? 'Mengirim…' : `${offlineQueue.pendingCount} menunggu sinkron`}
+              {offlineQueue.failedCount > 0 ? ` · ${offlineQueue.failedCount} gagal` : ''}
+            </button>
+          ) : null}
           <span className="rounded-md bg-slate-800 px-3 py-1 font-mono text-lg tabular-nums text-slate-100">
             {clock}
           </span>
@@ -536,6 +697,12 @@ export function ClassicCashierPage() {
       {blockedMessage ? (
         <div className="shrink-0 bg-rose-600 px-4 py-2 text-center text-sm font-semibold text-white">
           {blockedMessage}
+        </div>
+      ) : null}
+      {!isOnline ? (
+        <div className="shrink-0 bg-amber-500 px-4 py-1.5 text-center text-sm font-semibold text-slate-900">
+          Mode offline — transaksi disimpan di perangkat ini dan dikirim otomatis saat koneksi pulih.
+          Tunai / QRIS / kartu saja; ARK, gift card, dan NFC butuh koneksi.
         </div>
       ) : null}
 
@@ -925,6 +1092,164 @@ export function ClassicCashierPage() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={showStall} onOpenChange={setShowStall}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Pilih Stall Aktif</DialogTitle>
+          </DialogHeader>
+          {!isOnline ? (
+            <p className="rounded-lg bg-amber-100 px-3 py-2 text-sm text-amber-900">
+              Ganti stall butuh koneksi — pilihan tersimpan di server.
+            </p>
+          ) : null}
+          <div className="space-y-2">
+            {(stallInfo?.stalls ?? []).map((stall) => (
+              <button
+                key={stall.id}
+                type="button"
+                disabled={!isOnline || stallSwitching}
+                onClick={() => {
+                  setShowStall(false);
+                  void confirmAndSwitchStall(stall.id);
+                }}
+                className={cn(
+                  'flex h-14 w-full items-center justify-between rounded-lg px-4 text-left text-base font-semibold hover:bg-amber-50 disabled:opacity-50',
+                  stallInfo?.active?.id === stall.id ? 'bg-amber-100 ring-2 ring-amber-500' : 'bg-slate-100'
+                )}
+              >
+                <span>{stall.name}</span>
+                {stall.code ? <span className="text-xs text-slate-500">{stall.code}</span> : null}
+              </button>
+            ))}
+            {stallInfo && stallInfo.stalls.length === 0 ? (
+              <p className="text-sm text-slate-500">Tidak ada stall yang bisa dipilih untuk akun ini.</p>
+            ) : null}
+          </div>
+        </DialogContent>
+      </Dialog>
+      {stallSwitchDialog}
+
+      <Dialog open={showQueue} onOpenChange={setShowQueue}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Antrian Transaksi Offline</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-slate-500">
+            {offlineQueue.pendingCount} menunggu dikirim
+            {offlineQueue.failedCount > 0 ? `, ${offlineQueue.failedCount} ditolak server` : ''}.
+            Pengiriman berjalan otomatis saat online; tombol di bawah untuk memaksa sekarang.
+          </p>
+          <div className="max-h-80 space-y-2 overflow-y-auto">
+            {offlineQueue.queueItems.length === 0 ? (
+              <div className="rounded-lg bg-slate-100 p-4 text-center text-sm text-slate-500">
+                Antrian kosong — semua transaksi sudah masuk server.
+              </div>
+            ) : (
+              offlineQueue.queueItems.map((item) => {
+                const payload = item.orderPayload ?? {};
+                const itemCount = Array.isArray(payload.items)
+                  ? payload.items.reduce((n: number, it: { quantity?: number }) => n + (Number(it.quantity) || 0), 0)
+                  : 0;
+                return (
+                  <div
+                    key={item.queueId}
+                    className={cn(
+                      'rounded-lg border p-3 text-sm',
+                      item.status === 'failed' ? 'border-rose-300 bg-rose-50' : 'border-slate-200'
+                    )}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-semibold">
+                        {new Date(item.createdAt).toLocaleString('id-ID', {
+                          day: '2-digit',
+                          month: 'short',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                        {' · '}
+                        {itemCount} item · {fmtRp(Number(payload.total_amount) || 0)}
+                      </span>
+                      <span
+                        className={cn(
+                          'rounded px-2 py-0.5 text-xs font-bold uppercase',
+                          item.status === 'failed'
+                            ? 'bg-rose-600 text-white'
+                            : item.status === 'syncing'
+                              ? 'bg-sky-600 text-white'
+                              : 'bg-amber-500 text-slate-900'
+                        )}
+                      >
+                        {item.status === 'failed' ? 'Ditolak' : item.status === 'syncing' ? 'Mengirim' : 'Menunggu'}
+                      </span>
+                    </div>
+                    {item.errorMessage ? (
+                      <div className="mt-1 text-xs text-rose-700">{item.errorMessage}</div>
+                    ) : null}
+                    {item.status === 'failed' && item.queueId != null ? (
+                      <button
+                        type="button"
+                        onClick={() => setDiscardQueueId(item.queueId ?? null)}
+                        className="mt-2 flex h-9 items-center gap-1 rounded-md bg-white px-3 text-xs font-bold text-rose-700 ring-1 ring-rose-300 hover:bg-rose-100"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" /> Buang transaksi ini
+                      </button>
+                    ) : null}
+                  </div>
+                );
+              })
+            )}
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              disabled={!isOnline || offlineQueue.isSyncing || offlineQueue.pendingCount === 0}
+              onClick={async () => {
+                const { synced, failed } = await offlineQueue.syncQueue();
+                toast.message(`Sinkron selesai: ${synced} terkirim, ${failed} ditolak`);
+              }}
+              className="flex h-12 items-center justify-center gap-2 rounded-lg bg-emerald-600 text-sm font-bold text-white hover:bg-emerald-500 disabled:bg-slate-300 disabled:text-slate-500"
+            >
+              <RefreshCw className={cn('h-4 w-4', offlineQueue.isSyncing && 'animate-spin')} /> Sinkron Sekarang
+            </button>
+            <button
+              type="button"
+              disabled={!isOnline || offlineQueue.isSyncing || offlineQueue.failedCount === 0}
+              onClick={async () => {
+                const { synced, failed } = await offlineQueue.retryFailed();
+                toast.message(`Coba lagi: ${synced} terkirim, ${failed} masih ditolak`);
+              }}
+              className="h-12 rounded-lg bg-amber-500 text-sm font-bold text-slate-900 hover:bg-amber-400 disabled:bg-slate-300 disabled:text-slate-500"
+            >
+              Coba Lagi yang Ditolak
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={discardQueueId !== null} onOpenChange={(open) => (!open ? setDiscardQueueId(null) : undefined)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Buang transaksi offline ini?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Transaksi TIDAK akan pernah masuk ke server — penjualan dan pemakaian stoknya hilang dari
+              laporan. Lakukan hanya bila transaksi memang batal.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="h-12 px-6 text-base">Kembali</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                if (discardQueueId !== null) await offlineQueue.discardItem(discardQueueId);
+                setDiscardQueueId(null);
+              }}
+              className="h-12 bg-rose-600 px-6 text-base hover:bg-rose-500"
+            >
+              Ya, Buang
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <AlertDialog open={confirmClear} onOpenChange={setConfirmClear}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -951,6 +1276,11 @@ export function ClassicCashierPage() {
               {lastReceipt.orderNumber}
               {lastReceipt.queueNumber ? ` · Antrian ${lastReceipt.queueNumber}` : ''}
             </p>
+            {isOfflineReceiptNumber(lastReceipt.orderNumber) ? (
+              <p className="mt-2 rounded-lg bg-amber-100 px-3 py-2 text-xs font-semibold text-amber-900">
+                Tersimpan offline. Nomor order resmi terbit saat transaksi terkirim ke server.
+              </p>
+            ) : null}
             <div className="mt-5 grid grid-cols-2 gap-3 text-left">
               <div className="rounded-xl bg-slate-100 p-3">
                 <div className="text-xs uppercase text-slate-500">Total</div>
