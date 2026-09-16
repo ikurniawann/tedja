@@ -463,7 +463,15 @@ export function RawMaterialsPage() {
                   <tbody className="divide-y divide-gray-200/70">
                     {materials.map((material) => {
                       const unitInfo = getRawMaterialUnitInfo(material);
-                      const qtyOnHand = material.qty_onhand ?? 0;
+                      // qty_onhand & stok_minimum sama-sama tersimpan dalam SATUAN BESAR,
+                      // sementara kolom ini dilabeli satuan dasar. Sebelumnya hanya
+                      // stok minimum yang dikonversi, sehingga mis. beras 8 karung
+                      // tampil sebagai "8 Kilogram" berdampingan dengan minimum
+                      // "50 Kilogram" — terbaca seolah stok di bawah minimum.
+                      const qtyOnHand = largeToBaseUnit(
+                        material.qty_onhand ?? 0,
+                        unitInfo.konversiFactor
+                      );
                       const minStock = largeToBaseUnit(
                         material.stok_minimum ?? 0,
                         unitInfo.konversiFactor

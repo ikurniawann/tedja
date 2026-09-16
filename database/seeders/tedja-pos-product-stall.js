@@ -126,10 +126,28 @@ async function main() {
     const stall = await resolveTargetStall(c, scope.branch_id, argValue("stall"));
 
     const { rows: posProducts } = await c.query(
-      `SELECT id, sku, name, description, base_price, cost_price, station, source_product_id
-       FROM pos.pos_products
-       ORDER BY name`
+      `SELECT p.id, p.sku, p.name, p.description, p.base_price, p.cost_price, p.station,
+              p.source_product_id, c.name AS kategori_nama
+       FROM pos.pos_products p
+       LEFT JOIN pos.pos_categories c ON c.id = p.category_id
+       ORDER BY p.name`
     );
+
+    // Kategori POS ikut dibawa ke katalog item supaya filter kategori di
+    // halaman Stok Produk & laporan persediaan tidak kosong.
+    const kategoriKode = new Map();
+    for (const nama of [...new Set(posProducts.map((p) => p.kategori_nama).filter(Boolean))]) {
+      const kode = nama.toUpperCase().replace(/[^A-Z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 30);
+      await c.query(
+        `INSERT INTO item.product_categories (code, nama, company_id, is_active)
+         VALUES ($1, $2, $3, true)
+         ON CONFLICT (company_id, code) WHERE deleted_at IS NULL AND company_id IS NOT NULL
+         DO UPDATE SET nama = EXCLUDED.nama, is_active = true, deleted_at = NULL, updated_at = NOW()`,
+        [kode, nama, scope.company_id]
+      );
+      kategoriKode.set(nama, kode);
+      console.log(`  ✓ kategori produk ${kode} — ${nama}`);
+    }
     if (posProducts.length === 0) {
       console.log("Tidak ada produk POS untuk dipetakan.");
       await c.query("COMMIT");
@@ -146,7 +164,7 @@ async function main() {
         kode,
         p.name,
         p.description ?? null,
-        null,
+        kategoriKode.get(p.kategori_nama) ?? null,
         Number(p.base_price) || 0,
         Number(p.cost_price) || 0,
         p.station || "kitchen",

@@ -135,6 +135,20 @@ const MATERIALS = [
   ["TDJ-NON-004", "Sarung Tangan Food Grade", "NONPANG", "BOX", "PCS", 100, 3, 15, 1095, "SUHU_RUANG", "Sarung tangan plastik sekali pakai", 18000],
   ["TDJ-NON-005", "Kertas Filter V60", "NONPANG", "PACK", "PCS", 100, 3, 18, 1095, "SUHU_RUANG", "Filter kertas manual brew ukuran 02", 42000],
 
+  // ── Dapur: bahan menu makanan ────────────────────────────────────────────
+  // Kedai ini juga menjual nasi/mie/ayam, jadi bahannya ikut di-stok supaya
+  // resep produk (BOM) bisa menghitung pemakaian sampai ke bahan baku.
+  ["TDJ-DPR-001", "Beras Premium", "KERING", "SACK", "KG", 25, 2, 10, 365, "SUHU_RUANG", "Beras pulen karung 25kg untuk nasi goreng", 380000],
+  ["TDJ-DPR-002", "Mie Telur Kering", "KERING", "DOS", "PACK", 30, 1, 8, 365, "SUHU_RUANG", "Mie telur kering, dos isi 30 pack", 285000],
+  ["TDJ-DPR-003", "Ayam Fillet Dada", "DAGING", "KG", "GR", 1000, 3, 20, 3, "DINGIN", "Fillet dada ayam tanpa tulang", 55000],
+  ["TDJ-DPR-004", "Kentang Beku Potong", "BEKU", "PACK", "GR", 1000, 3, 20, 365, "BEKU", "Kentang goreng beku siap olah", 62000],
+  ["TDJ-DPR-005", "Alpukat Mentega", "SAYUR", "KG", "GR", 1000, 3, 18, 7, "DINGIN", "Alpukat mentega untuk jus", 38000],
+  ["TDJ-DPR-006", "Minyak Goreng", "OIL", "L", "ML", 1000, 4, 24, 365, "SUHU_RUANG", "Minyak goreng kemasan untuk deep fry", 19000],
+  ["TDJ-DPR-007", "Bawang Merah", "SAYUR", "KG", "GR", 1000, 2, 12, 21, "SUHU_RUANG", "Bawang merah segar", 42000],
+  ["TDJ-DPR-008", "Bawang Putih", "SAYUR", "KG", "GR", 1000, 2, 10, 30, "SUHU_RUANG", "Bawang putih segar", 38000],
+  ["TDJ-DPR-009", "Cabai Merah", "SAYUR", "KG", "GR", 1000, 1, 8, 10, "DINGIN", "Cabai merah keriting", 55000],
+  ["TDJ-DPR-010", "Kecap Manis", "SAUS", "BTL", "ML", 600, 3, 18, 540, "SUHU_RUANG", "Kecap manis botol 600ml", 24000],
+
   // ── Bahan bakar ──────────────────────────────────────────────────────────
   ["TDJ-BAR-001", "Gas LPG 12kg", "BAKAR", "PCS", "KG", 12, 2, 8, 1095, "KHUSUS", "Tabung LPG 12kg — simpan berventilasi, jauh dari panas", 220000],
 ];

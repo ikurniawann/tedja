@@ -1,21 +1,26 @@
 #!/usr/bin/env node
 /**
- * Seeder: beri akun super admin akses POS ke SEMUA stall.
+ * Seeder: pastikan akun super admin bisa membuka POS di SEMUA stall.
  *
- * Peran super_admin sebenarnya sudah lolos pemeriksaan izin stall lewat
- * isSellStallAllowed() (src/lib/users/stall-assignment.ts). Yang belum:
+ * Temuan saat verifikasi: peran super_admin SUDAH lolos pemeriksaan izin stall
+ * (isSellStallAllowed di src/lib/users/stall-assignment.ts) dan pemilih stall di
+ * POS pun sudah terisi dari hak akses penuh itu — tanpa perlu baris penugasan
+ * apa pun di configuration.user_warehouses.
  *
- *   1. configuration.user_warehouses kosong → pemilih stall di POS tidak punya
- *      daftar stall untuk ditampilkan.
- *   2. users.can_switch_stall = false → tombol ganti stall tidak aktif untuk
- *      akun non-super-admin yang nanti diberi hak serupa.
- *   3. users.default_warehouse_id kosong → tidak ada stall awal saat membuka POS.
+ * Yang justru MERUGIKAN adalah menambahkan penugasan stall untuk super admin:
+ * getUser() memakai stall pertama yang ditugaskan sebagai stall bawaan saat
+ * cookie kosong, sehingga seluruh dashboard terkunci ke satu stall. Efek
+ * paling terasa di daftar bahan baku — mode per-stall hanya memuat bahan yang
+ * dipakai resep produk stall tersebut (28 dari 66 bahan pada data demo ini).
  *
- * Seeder ini mengisi ketiganya untuk setiap akun super_admin aktif, jadi POS
- * bisa dibuka di stall mana pun dan berpindah stall tanpa menyentuh kode.
+ * Karena itu seeder ini hanya menyalakan can_switch_stall dan TIDAK membuat
+ * penugasan stall; super admin tetap berada di "Semua Stall" dan bebas memilih
+ * stall mana pun saat membuka POS.
  *
- * Idempotent: menambah penugasan yang belum ada, mengaktifkan kembali yang
- * pernah dinonaktifkan, dan TIDAK menghapus penugasan stall milik akun lain.
+ * Untuk akun NON super admin (mis. kasir), penugasan stall memang cara yang
+ * benar untuk memberi akses — itu di luar cakupan seeder ini.
+ *
+ * Idempotent.
  *
  * Usage:
  *   node database/seeders/tedja-superadmin-all-stalls.js
@@ -99,47 +104,43 @@ async function main() {
       throw new Error(email ? `Super admin "${email}" tidak ditemukan.` : "Tidak ada akun super_admin aktif.");
     }
 
-    console.log(`Memberi akses ${stalls.length} stall ke ${admins.length} akun super admin...`);
+    console.log(`Menyiapkan akses POS semua stall (${stalls.length}) untuk ${admins.length} super admin...`);
     for (const admin of admins) {
-      for (const stall of stalls) {
-        await c.query(
-          `INSERT INTO configuration.user_warehouses (user_id, warehouse_id, is_active)
-           VALUES ($1, $2, true)
-           ON CONFLICT (user_id, warehouse_id)
-           DO UPDATE SET is_active = true, updated_at = NOW()`,
-          [admin.id, stall.id]
-        );
-      }
-      // Stall awal hanya diisi bila masih kosong — jangan menimpa pilihan user.
       await c.query(
         `UPDATE configuration.users
-         SET can_switch_stall = true,
-             default_warehouse_id = COALESCE(default_warehouse_id, $2),
-             updated_at = NOW()
+         SET can_switch_stall = true, updated_at = NOW()
          WHERE id = $1`,
-        [admin.id, stalls[0].id]
+        [admin.id]
       );
-      console.log(`  ✓ ${admin.full_name} <${admin.email}> — ${stalls.map((s) => s.code).join(", ")}`);
+      // Penugasan stall untuk super admin dibersihkan: keberadaannya mengunci
+      // dashboard ke satu stall tanpa menambah akses apa pun.
+      const { rowCount } = await c.query(
+        `DELETE FROM configuration.user_warehouses WHERE user_id = $1`,
+        [admin.id]
+      );
+      console.log(
+        `  ✓ ${admin.full_name} <${admin.email}> — bisa ganti stall` +
+          (rowCount ? `, ${rowCount} penugasan lama dibersihkan` : "")
+      );
     }
 
     const { rows: check } = await c.query(
-      `SELECT u.email,
-              count(uw.id) FILTER (WHERE uw.is_active) AS stall_aktif,
-              u.can_switch_stall,
-              u.default_warehouse_id IS NOT NULL AS punya_stall_awal
+      `SELECT u.email, u.can_switch_stall,
+              (SELECT count(*) FROM configuration.user_warehouses uw WHERE uw.user_id = u.id) AS penugasan
        FROM configuration.users u
-       LEFT JOIN configuration.user_warehouses uw ON uw.user_id = u.id
-       WHERE u.role = 'super_admin' AND u.status = 'active'
-       GROUP BY u.id, u.email, u.can_switch_stall, u.default_warehouse_id`
+       WHERE u.role = 'super_admin' AND u.status = 'active'`
     );
     for (const row of check) {
-      if (Number(row.stall_aktif) < stalls.length || !row.can_switch_stall || !row.punya_stall_awal) {
+      if (!row.can_switch_stall || Number(row.penugasan) > 0) {
         throw new Error(`Verifikasi gagal untuk ${row.email} — dibatalkan.`);
       }
     }
 
     await c.query("COMMIT");
-    console.log(`\nSelesai: ${admins.length} super admin bisa membuka POS di semua stall (${stalls.length}).`);
+    console.log(
+      `\nSelesai: ${admins.length} super admin bisa membuka POS di semua stall (${stalls.length}), ` +
+        `dan dashboard tetap di mode "Semua Stall".`
+    );
   } catch (err) {
     await c.query("ROLLBACK").catch(() => {});
     console.error("Gagal:", err.message);
