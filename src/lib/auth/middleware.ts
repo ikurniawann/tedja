@@ -37,6 +37,8 @@ const PUBLIC_AUTH_PREFIXES = [
   "/api/auth/login",
   "/api/auth/logout",
   "/api/settings/appearance",
+  // Daftar wallpaper desktop Arkiv OS — desktop tampil juga untuk pengunjung.
+  "/api/desktop/wallpapers",
   "/api/files",
   "/member",
   "/api/member-portal",

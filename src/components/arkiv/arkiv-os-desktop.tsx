@@ -246,7 +246,10 @@ const modules: DesktopModule[] = [
   },
 ];
 
-const wallpapers = [
+type WallpaperItem = { id: string; name: string; src: string; custom?: boolean };
+
+/** Wallpaper bawaan; wallpaper unggahan admin ditambahkan dari /api/desktop/wallpapers. */
+const wallpapers: WallpaperItem[] = [
   { id: "arkiv", name: `${BRAND} Café`, src: "/bg.avif" },
   { id: "pink", name: "Maroon Dusk", src: "linear-gradient(135deg,#1a0b0b,#5c1616 45%,#111827)" },
   { id: "midnight", name: "Midnight", src: "linear-gradient(135deg,#030712,#111827 52%,#1e1b4b)" },
@@ -299,7 +302,9 @@ export default function ArkivOsDesktop() {
   const [assistantShortcutInput, setAssistantShortcutInput] = useState("");
   const [queuedAssistantPrompt, setQueuedAssistantPrompt] = useState<string | null>(null);
   const [assistantShortcutFocused, setAssistantShortcutFocused] = useState(false);
-  const [wallpaper, setWallpaper] = useState(wallpapers[0]);
+  const [wallpaper, setWallpaper] = useState<WallpaperItem>(wallpapers[0]);
+  const [customWallpapers, setCustomWallpapers] = useState<WallpaperItem[]>([]);
+  const allWallpapers = useMemo(() => [...wallpapers, ...customWallpapers], [customWallpapers]);
   const [widgetVisibility, setWidgetVisibility] = useState<WidgetVisibility>(defaultWidgetVisibility);
   const [widgetOrder, setWidgetOrder] = useState<MonitorWidgetKey[]>(() => normalizeWidgetOrder(null));
   const [soundEnabled, setSoundEnabled] = useState(false);
@@ -553,6 +558,27 @@ export default function ArkivOsDesktop() {
     };
   }, []);
 
+  /* Wallpaper unggahan admin — publik, jadi pengunjung pun melihat pilihan
+   * yang sama. Pilihan tersimpan (localStorage) yang menunjuk wallpaper
+   * unggahan baru bisa dipulihkan setelah daftar ini datang. */
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/desktop/wallpapers")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json) => {
+        if (cancelled || !Array.isArray(json?.data)) return;
+        const items: WallpaperItem[] = json.data.map((item: WallpaperItem) => ({ ...item, custom: true }));
+        setCustomWallpapers(items);
+        const savedWallpaper = window.localStorage.getItem("arkiv-wallpaper");
+        const match = savedWallpaper ? items.find((item) => item.id === savedWallpaper) : null;
+        if (match) setWallpaper(match);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   useEffect(() => {
     const db = createBrowserClient();
 
@@ -792,7 +818,28 @@ export default function ArkivOsDesktop() {
       )}
       <NotificationPopups popups={notifPopups} onDismiss={dismissPopup} onOpen={openNotification} />
       {showFiles && <FileExplorer onClose={() => setShowFiles(false)} isLoggedIn={isLoggedIn} />}
-      {showWallpaperPicker && <WallpaperPicker selected={wallpaper.id} onSelect={(item) => { setWallpaper(item); window.localStorage.setItem("arkiv-wallpaper", item.id); }} onClose={() => setShowWallpaperPicker(false)} />}
+      {showWallpaperPicker && (
+        <WallpaperPicker
+          items={allWallpapers}
+          selected={wallpaper.id}
+          canManage={userAccount?.role === "super_admin" || userAccount?.role === "admin"}
+          onSelect={(item) => { setWallpaper(item); window.localStorage.setItem("arkiv-wallpaper", item.id); }}
+          onUploaded={(item) => {
+            const next = { ...item, custom: true };
+            setCustomWallpapers((prev) => [next, ...prev.filter((row) => row.id !== next.id)]);
+            setWallpaper(next);
+            window.localStorage.setItem("arkiv-wallpaper", next.id);
+          }}
+          onDeleted={(id) => {
+            setCustomWallpapers((prev) => prev.filter((row) => row.id !== id));
+            if (wallpaper.id === id) {
+              setWallpaper(wallpapers[0]);
+              window.localStorage.setItem("arkiv-wallpaper", wallpapers[0].id);
+            }
+          }}
+          onClose={() => setShowWallpaperPicker(false)}
+        />
+      )}
       {showWidgetSettings && <WidgetSettings visibility={widgetVisibility} order={widgetOrder} onChange={updateWidgetVisibility} onMove={moveWidget} onReorder={reorderWidget} onClose={() => setShowWidgetSettings(false)} />}
       {showSettings && (
         <SystemSettings
@@ -2649,17 +2696,116 @@ function OsAccountPopup({
   );
 }
 
-function WallpaperPicker({ selected, onSelect, onClose }: { selected: string; onSelect: (wallpaper: (typeof wallpapers)[number]) => void; onClose: () => void }) {
+function WallpaperPicker({
+  items,
+  selected,
+  canManage,
+  onSelect,
+  onUploaded,
+  onDeleted,
+  onClose,
+}: {
+  items: WallpaperItem[];
+  selected: string;
+  canManage: boolean;
+  onSelect: (wallpaper: WallpaperItem) => void;
+  onUploaded: (wallpaper: WallpaperItem) => void;
+  onDeleted: (id: string) => void;
+  onClose: () => void;
+}) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const upload = async (file: File) => {
+    setUploading(true);
+    setError(null);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch("/api/desktop/wallpapers", { method: "POST", body: form });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) throw new Error(json?.error ?? "Upload gagal");
+      onUploaded(json.data as WallpaperItem);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Upload gagal");
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  };
+
+  const remove = async (item: WallpaperItem) => {
+    if (!window.confirm(`Hapus wallpaper "${item.name}"? Berkasnya ikut dihapus dari server.`)) return;
+    setDeletingId(item.id);
+    setError(null);
+    try {
+      const res = await fetch(`/api/desktop/wallpapers?id=${encodeURIComponent(item.id)}`, { method: "DELETE" });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) throw new Error(json?.error ?? "Gagal menghapus");
+      onDeleted(item.id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Gagal menghapus");
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   return (
-    <WindowShell title="Desktop & Wallpaper" onClose={onClose} className="left-1/2 top-20 w-[min(640px,calc(100vw-32px))] -translate-x-1/2">
-      <div className="grid gap-3 p-5 sm:grid-cols-2">
-        {wallpapers.map((item) => (
-          <button key={item.id} onClick={() => onSelect(item)} className={`rounded-3xl border p-3 text-left transition hover:bg-white/10 ${selected === item.id ? "border-pink-200/60 bg-white/14" : "border-white/10 bg-white/8"}`}>
-            <div className="mb-3 h-24 rounded-2xl bg-cover bg-center" style={item.src.startsWith("/") ? { backgroundImage: `url('${item.src}')` } : { background: item.src }} />
-            <div className="text-sm font-semibold">{item.name}</div>
-            <div className="text-xs text-white/45">Mac-style desktop wallpaper</div>
-          </button>
-        ))}
+    <WindowShell title="Desktop & Wallpaper" onClose={onClose} className="left-1/2 top-20 w-[min(720px,calc(100vw-32px))] -translate-x-1/2">
+      <div className="p-5">
+        {canManage && (
+          <div className="mb-4 flex flex-wrap items-center gap-3 rounded-3xl border border-white/10 bg-white/8 p-4">
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-semibold">Wallpaper sendiri</div>
+              <div className="text-xs text-white/50">JPG / PNG / WebP, maks 8 MB. Tampil untuk semua pengguna desktop.</div>
+            </div>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              className="hidden"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) void upload(file);
+              }}
+            />
+            <button
+              type="button"
+              disabled={uploading}
+              onClick={() => fileRef.current?.click()}
+              className="rounded-2xl bg-white/15 px-4 py-2 text-sm font-semibold transition hover:bg-white/25 disabled:opacity-50"
+            >
+              {uploading ? "Mengunggah…" : "Unggah wallpaper"}
+            </button>
+          </div>
+        )}
+        {error && <div className="mb-3 rounded-2xl border border-red-300/40 bg-red-500/15 px-4 py-2 text-xs text-red-100">{error}</div>}
+        <div className="grid max-h-[60vh] gap-3 overflow-y-auto pr-1 sm:grid-cols-2">
+          {items.map((item) => (
+            <div
+              key={item.id}
+              className={`group relative rounded-3xl border p-3 text-left transition hover:bg-white/10 ${selected === item.id ? "border-pink-200/60 bg-white/14" : "border-white/10 bg-white/8"}`}
+            >
+              <button type="button" onClick={() => onSelect(item)} className="block w-full text-left">
+                <div className="mb-3 h-24 rounded-2xl bg-cover bg-center" style={item.src.startsWith("/") ? { backgroundImage: `url('${item.src}')` } : { background: item.src }} />
+                <div className="truncate text-sm font-semibold">{item.name}</div>
+                <div className="text-xs text-white/45">{item.custom ? "Wallpaper unggahan" : "Mac-style desktop wallpaper"}</div>
+              </button>
+              {canManage && item.custom && (
+                <button
+                  type="button"
+                  disabled={deletingId === item.id}
+                  onClick={() => void remove(item)}
+                  className="absolute right-5 top-5 rounded-full bg-black/55 px-2.5 py-1 text-[11px] font-semibold text-white/90 opacity-0 transition group-hover:opacity-100 hover:bg-red-500/80 disabled:opacity-50"
+                >
+                  {deletingId === item.id ? "…" : "Hapus"}
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
       </div>
     </WindowShell>
   );
