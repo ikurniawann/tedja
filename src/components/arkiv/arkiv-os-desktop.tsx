@@ -39,7 +39,7 @@ import {
   type ActivityNotification,
 } from "@/lib/desktop/notifications";
 import type { ComponentType, CSSProperties, FormEvent as ReactFormEvent, MouseEvent as ReactMouseEvent } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   AlertCircle,
@@ -653,6 +653,7 @@ export default function ArkivOsDesktop() {
   }, []);
 
   return (
+    <WindowManagerProvider>
     <main
       ref={desktopRef}
       onMouseMove={handleMouseMove}
@@ -884,6 +885,7 @@ export default function ArkivOsDesktop() {
       {contextMenu?.module && <ContextMenu x={contextMenu.x} y={contextMenu.y} module={contextMenu.module} onOpen={() => openModule(contextMenu.module!)} onInfo={() => setPreviewModule(contextMenu.module!)} />}
       {contextMenu?.desktop && <DesktopContextMenu x={contextMenu.x} y={contextMenu.y} onWallpaper={() => setShowWallpaperPicker(true)} onWidgets={() => setShowWidgetSettings(true)} onApps={() => setShowLibrary(true)} onSettings={() => setShowSettings(true)} onAbout={() => setShowAbout(true)} />}
     </main>
+    </WindowManagerProvider>
   );
 }
 
@@ -954,7 +956,31 @@ function DockButton({ label, icon: Icon, onClick, active = false }: { label: str
   );
 }
 
-let topWindowZ = 40;
+/**
+ * Manajer jendela ala desktop sungguhan: urutan fokus disimpan di satu
+ * tempat, jendela yang baru dibuka / diklik selalu ke depan, hanya satu
+ * jendela yang aktif (ring pink). z-index = 40 + posisi dalam urutan.
+ */
+const WINDOW_Z_BASE = 40;
+type WindowApi = { focus: (id: string) => void; release: (id: string) => void };
+const WindowApiContext = createContext<WindowApi | null>(null);
+const WindowOrderContext = createContext<string[]>([]);
+
+function WindowManagerProvider({ children }: { children: React.ReactNode }) {
+  const [order, setOrder] = useState<string[]>([]);
+  const focus = useCallback((id: string) => {
+    setOrder((prev) => (prev[prev.length - 1] === id ? prev : [...prev.filter((item) => item !== id), id]));
+  }, []);
+  const release = useCallback((id: string) => {
+    setOrder((prev) => (prev.includes(id) ? prev.filter((item) => item !== id) : prev));
+  }, []);
+  const api = useMemo(() => ({ focus, release }), [focus, release]);
+  return (
+    <WindowApiContext.Provider value={api}>
+      <WindowOrderContext.Provider value={order}>{children}</WindowOrderContext.Provider>
+    </WindowApiContext.Provider>
+  );
+}
 
 function WindowShell({ title, children, onClose, className = "" }: { title: string; children: React.ReactNode; onClose: () => void; className?: string }) {
   const windowRef = useRef<HTMLDivElement>(null);
@@ -963,7 +989,19 @@ function WindowShell({ title, children, onClose, className = "" }: { title: stri
   const [rect, setRect] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
   const [minimized, setMinimized] = useState(false);
   const [maximized, setMaximized] = useState(false);
-  const [zIndex, setZIndex] = useState(40);
+  const windowApi = useContext(WindowApiContext);
+  const windowOrder = useContext(WindowOrderContext);
+  const windowId = title;
+  const orderIndex = windowOrder.indexOf(windowId);
+  const zIndex = WINDOW_Z_BASE + Math.max(0, orderIndex);
+  const isActive = orderIndex >= 0 && orderIndex === windowOrder.length - 1;
+
+  /* Jendela baru (atau judul berganti, mis. preview modul lain) langsung ke
+   * depan; saat ditutup, dilepas dari urutan agar jendela di bawahnya aktif. */
+  useEffect(() => {
+    windowApi?.focus(windowId);
+    return () => windowApi?.release(windowId);
+  }, [windowApi, windowId]);
 
   const captureRect = () => {
     const box = windowRef.current?.getBoundingClientRect();
@@ -973,7 +1011,7 @@ function WindowShell({ title, children, onClose, className = "" }: { title: stri
     return next;
   };
 
-  const focusWindow = () => setZIndex(++topWindowZ);
+  const focusWindow = () => windowApi?.focus(windowId);
 
   const startDrag = (event: ReactMouseEvent<HTMLDivElement>) => {
     focusWindow();
@@ -1038,7 +1076,7 @@ function WindowShell({ title, children, onClose, className = "" }: { title: stri
       ref={windowRef}
       style={{ ...floatingStyle, zIndex }}
       onMouseDown={focusWindow}
-      className={`fixed overflow-hidden rounded-3xl border bg-slate-950/55 shadow-2xl backdrop-blur-2xl max-sm:inset-x-2! max-sm:top-11! max-sm:bottom-[72px]! max-sm:h-auto! max-sm:max-h-none! max-sm:w-auto! max-sm:translate-x-0! max-sm:translate-y-0! max-sm:rounded-2xl! ${minimized ? "max-sm:bottom-auto!" : ""} ${zIndex === topWindowZ ? "border-pink-200/35 ring-1 ring-pink-300/20" : "border-white/18"} ${activeClassName}`}
+      className={`fixed overflow-hidden rounded-3xl border bg-slate-950/55 shadow-2xl backdrop-blur-2xl max-sm:inset-x-2! max-sm:top-11! max-sm:bottom-[72px]! max-sm:h-auto! max-sm:max-h-none! max-sm:w-auto! max-sm:translate-x-0! max-sm:translate-y-0! max-sm:rounded-2xl! ${minimized ? "max-sm:bottom-auto!" : ""} ${isActive ? "border-pink-200/35 ring-1 ring-pink-300/20" : "border-white/18"} ${activeClassName}`}
     >
       <div className="flex h-11 cursor-move items-center justify-between border-b border-white/10 px-4" onMouseDown={startDrag}>
         <div className="flex items-center gap-2" onMouseDown={(event) => event.stopPropagation()}>
@@ -1130,7 +1168,7 @@ function ModuleOpenChoiceModal({
   const Icon = module.icon;
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/45 p-4 backdrop-blur-xl" onClick={onClose}>
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/45 p-4 backdrop-blur-xl" onClick={onClose}>
       <div
         className="w-[min(420px,calc(100vw-32px))] overflow-hidden rounded-[28px] border border-white/18 bg-slate-950/88 shadow-[0_28px_90px_rgba(0,0,0,.55)]"
         onClick={(event) => event.stopPropagation()}
@@ -1232,7 +1270,7 @@ function CommandPalette({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/35 p-4 backdrop-blur-sm" onClick={onClose}>
+    <div className="fixed inset-0 z-[80] bg-black/35 p-4 backdrop-blur-sm" onClick={onClose}>
       <div className="mx-auto mt-20 max-w-xl overflow-hidden rounded-3xl border border-white/18 bg-slate-950/80 shadow-2xl" onClick={(event) => event.stopPropagation()}>
         <div className="flex items-center gap-3 border-b border-white/10 px-4 py-3">
           <Search className="size-5 text-white/50" />
@@ -1295,7 +1333,7 @@ function ApplicationFolderModal({ onClose, onOpen, onComingSoon }: { onClose: ()
   ];
   
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={onClose}>
+    <div className="fixed inset-0 z-[80] flex items-center justify-center" onClick={onClose}>
       {/* Backdrop dengan blur */}
       <div className="absolute inset-0 bg-black/40 backdrop-blur-3xl" />
       
@@ -2647,7 +2685,7 @@ function OsAccountPopup({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/25 backdrop-blur-sm" onClick={onClose}>
+    <div className="fixed inset-0 z-[80] bg-black/25 backdrop-blur-sm" onClick={onClose}>
       <div
         className="absolute left-1/2 top-1/2 w-[min(360px,calc(100vw-24px))] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-3xl border border-white/18 bg-slate-950/75 text-white shadow-2xl backdrop-blur-2xl"
         onClick={(event) => event.stopPropagation()}
@@ -3113,7 +3151,7 @@ function AboutArkiv({ onClose }: { onClose: () => void }) {
 
 function DesktopContextMenu({ x, y, onWallpaper, onWidgets, onApps, onSettings, onAbout }: { x: number; y: number; onWallpaper: () => void; onWidgets: () => void; onApps: () => void; onSettings: () => void; onAbout: () => void }) {
   return (
-    <div className="fixed z-50 w-52 overflow-hidden rounded-2xl border border-white/15 bg-slate-950/80 p-1 text-sm shadow-2xl backdrop-blur-xl" style={{ left: x, top: y }}>
+    <div className="fixed z-[80] w-52 overflow-hidden rounded-2xl border border-white/15 bg-slate-950/80 p-1 text-sm shadow-2xl backdrop-blur-xl" style={{ left: x, top: y }}>
       <button onClick={onApps} className="block w-full rounded-xl px-3 py-2 text-left hover:bg-white/10">Open Launchpad</button>
       <button onClick={onWidgets} className="block w-full rounded-xl px-3 py-2 text-left hover:bg-white/10">Widgets</button>
       <button onClick={onSettings} className="block w-full rounded-xl px-3 py-2 text-left hover:bg-white/10">System Settings</button>
@@ -3125,7 +3163,7 @@ function DesktopContextMenu({ x, y, onWallpaper, onWidgets, onApps, onSettings, 
 
 function ContextMenu({ x, y, module, onOpen, onInfo }: { x: number; y: number; module: DesktopModule; onOpen: () => void; onInfo: () => void }) {
   return (
-    <div className="fixed z-50 w-44 overflow-hidden rounded-2xl border border-white/15 bg-slate-950/80 p-1 text-sm shadow-2xl backdrop-blur-xl" style={{ left: x, top: y }}>
+    <div className="fixed z-[80] w-44 overflow-hidden rounded-2xl border border-white/15 bg-slate-950/80 p-1 text-sm shadow-2xl backdrop-blur-xl" style={{ left: x, top: y }}>
       <button disabled={module.disabled} onClick={onOpen} className="block w-full rounded-xl px-3 py-2 text-left hover:bg-white/10 disabled:opacity-50">Open</button>
       <button onClick={onInfo} className="block w-full rounded-xl px-3 py-2 text-left hover:bg-white/10">View Info</button>
       <button className="block w-full rounded-xl px-3 py-2 text-left text-white/45">Pin to Dock</button>
