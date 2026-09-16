@@ -48,8 +48,10 @@ total 0, dibayar 0 — plus `comp_type` dan `comp_approved_by/name`.
 
 ## Migrasi
 
-`database/migrations/` (dulu `migrations/015_comp_orders.sql`; folder legacy
-dihapus 2026-09-14) — dijalankan lewat `node database/scripts/apply-migrations.js --apply`:
+`database/migrations/deltas/20260916100500_pos_comp_orders_port_from_legacy.sql`
+(dulu `migrations/015_comp_orders.sql`; folder legacy dihapus 2026-09-14 tetapi
+berkas ini baru diport 2026-09-16 setelah live gagal "column is_kol does not
+exist") — dijalankan lewat `node database/scripts/apply-migrations.js --apply`:
 pos_customers.is_kol + kol_monthly_limit_idr; pos_orders.comp_type +
 comp_approved_by + comp_approved_name (+index partial).
 Menandai KOL: `UPDATE pos.pos_customers SET is_kol=true,
