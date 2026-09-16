@@ -7,8 +7,11 @@ import { cn } from "@/lib/utils";
 import { buildFloorNodePositions, clampPercent } from "../floor-layout";
 import { TableSilhouette } from "./table-silhouette";
 
-export const FLOOR_NODE_W = 96;
-export const FLOOR_NODE_H = 96;
+// Ukuran node meja. Diperbesar (96 → 136) supaya nomor meja terbaca dari
+// jarak kasir/pelayan di layar restoran; posisi tersimpan dalam persen, jadi
+// denah lama tetap valid.
+export const FLOOR_NODE_W = 136;
+export const FLOOR_NODE_H = 136;
 const CLICK_THRESHOLD_PX = 4;
 
 export type FloorPlanNode = {
@@ -236,7 +239,7 @@ export function FloorPlanCanvas(props: FloorPlanCanvasProps) {
     });
   }
 
-  const canvasHeight = Math.max(220, Math.ceil(tables.length / 5) * 130 + 40);
+  const canvasHeight = Math.max(260, Math.ceil(tables.length / 5) * (FLOOR_NODE_H + 40) + 40);
   const savingId = mode === "edit" ? props.savingId ?? null : null;
 
   return (

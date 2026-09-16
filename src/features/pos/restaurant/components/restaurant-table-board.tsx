@@ -63,7 +63,10 @@ function groupTablesByFloor(tables: PosTable[]): TableFloorGroup[] {
 function toNode(table: PosTable): FloorPlanNode {
   return {
     id: table.id,
-    table_number: getTableDisplayName(table),
+    // Di denah cukup NOMOR meja (mis. "5-01") — nama panjang ("Table 5-01")
+    // terpotong dan tidak terbaca dari jauh. Nama lengkap tetap dipakai di
+    // daftar/tooltip lewat getTableDisplayName.
+    table_number: table.table_number || getTableDisplayName(table),
     capacity: table.capacity,
     status: table.status,
     is_active: table.is_active,

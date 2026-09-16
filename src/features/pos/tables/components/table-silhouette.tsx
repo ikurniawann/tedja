@@ -4,6 +4,14 @@ import { cn } from "@/lib/utils";
 
 const MAX_VISIBLE_CHAIRS = 12;
 
+/** Nomor pendek ("12", "5-01") ditulis besar; label panjang mengecil agar muat di meja. */
+function labelFontSize(label: string): number {
+  if (label.length <= 2) return 24;
+  if (label.length <= 4) return 17;
+  if (label.length <= 6) return 13;
+  return 11;
+}
+
 type TableSilhouetteProps = {
   capacity: number;
   className?: string;
@@ -78,10 +86,10 @@ export function TableSilhouette({
 
       {/* Central table on top so label stays readable */}
       <rect
-        x="31"
-        y="31"
-        width="38"
-        height="38"
+        x="28"
+        y="28"
+        width="44"
+        height="44"
         rx="5"
         ry="5"
         fill="currentColor"
@@ -95,10 +103,11 @@ export function TableSilhouette({
           textAnchor="middle"
           dominantBaseline="middle"
           fill="#ffffff"
-          fontSize="11"
-          fontWeight="700"
+          fontSize={labelFontSize(label)}
+          fontWeight="800"
+          letterSpacing="-0.5"
         >
-          {label.length > 5 ? `${label.slice(0, 4)}…` : label}
+          {label.length > 7 ? `${label.slice(0, 6)}…` : label}
         </text>
       ) : null}
     </svg>
