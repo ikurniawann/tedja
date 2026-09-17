@@ -1,15 +1,14 @@
 import { NextResponse } from "next/server";
 import { authenticateCredentials, createSession, setSessionCookie } from "@/lib/auth/session";
-import { checkRateLimit, clientIpFrom } from "@/lib/public/rate-limit";
+import { clientIpFrom } from "@/lib/public/rate-limit";
+import {
+  clearLoginFailures,
+  isLoginBlocked,
+  normalizeAccountKey,
+  recordLoginFailure,
+} from "@/lib/auth/login-throttle";
 
 export const dynamic = "force-dynamic";
-
-// Rate limit login (audit 2026-09-17): sebelumnya tanpa proteksi brute force.
-// Batas PER-AKUN ketat (menahan penebakan password satu akun), plus batas
-// PER-IP yang LONGGAR — banyak kasir bisa berada di balik satu IP kantor
-// (NAT), jadi IP tidak boleh jadi satu-satunya kunci yang ketat.
-const PER_ACCOUNT: { limit: number; windowMs: number } = { limit: 8, windowMs: 5 * 60_000 };
-const PER_IP: { limit: number; windowMs: number } = { limit: 60, windowMs: 5 * 60_000 };
 
 export async function POST(request: Request) {
   try {
@@ -19,12 +18,12 @@ export async function POST(request: Request) {
     }
 
     const ip = clientIpFrom(request.headers);
-    const account = String(email).trim().toLowerCase();
-    // Pesan sama untuk semua kasus limit — jangan bocorkan akun mana yang ada.
-    if (
-      !checkRateLimit(`login:acc:${account}`, PER_ACCOUNT) ||
-      !checkRateLimit(`login:ip:${ip}`, PER_IP)
-    ) {
+    const account = normalizeAccountKey(email);
+
+    // Rate limit DURABLE (tabel auth.login_attempts) — bertahan melewati
+    // restart & konsisten bila multi-instance. Pesan sengaja generik: jangan
+    // bocorkan apakah akunnya ada.
+    if (await isLoginBlocked(account, ip)) {
       return NextResponse.json(
         { error: "Terlalu banyak percobaan masuk. Coba lagi beberapa menit lagi." },
         { status: 429 }
@@ -33,8 +32,13 @@ export async function POST(request: Request) {
 
     const { user, error } = await authenticateCredentials(email, password);
     if (error || !user) {
+      await recordLoginFailure(account, ip);
       return NextResponse.json({ error: error?.message ?? "Invalid login credentials" }, { status: 401 });
     }
+
+    // Sukses → bersihkan catatan gagal akun ini supaya salah ketik beberapa
+    // kali lalu berhasil tidak menyisakan hitungan menuju blokir.
+    await clearLoginFailures(account);
 
     const { token, expiresAt } = await createSession(user.id, {
       userAgent: request.headers.get("user-agent") ?? undefined,

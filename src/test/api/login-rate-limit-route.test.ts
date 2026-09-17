@@ -1,12 +1,15 @@
 /**
  * Route-level: brute force login benar-benar diblokir oleh handler
- * /api/auth/login (audit 2026-09-17). Sebelumnya route ini tanpa proteksi.
- * Autentikasi di-mock gagal supaya yang diuji murni pembatas lajunya.
+ * /api/auth/login (audit 2026-09-17). Throttle di-mock dengan tiruan berbasis
+ * hitungan supaya yang diuji adalah PERKABELAN route (cek sebelum auth,
+ * catat saat gagal, bersihkan saat sukses) tanpa menyentuh database.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { resetRateLimits } from "@/lib/public/rate-limit";
+import { LOGIN_MAX_PER_ACCOUNT } from "@/lib/auth/login-throttle";
 
 const authenticateCredentials = vi.fn();
+const failures = new Map<string, number>();
+let cleared: string[] = [];
 
 vi.mock("@/lib/auth/session", () => ({
   authenticateCredentials: (...args: unknown[]) => authenticateCredentials(...args),
@@ -14,52 +17,76 @@ vi.mock("@/lib/auth/session", () => ({
   setSessionCookie: vi.fn(),
 }));
 
-const loginRequest = (email: string, ip = "203.0.113.5") =>
+vi.mock("@/lib/auth/login-throttle", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/auth/login-throttle")>();
+  return {
+    ...actual,
+    isLoginBlocked: async (account: string) =>
+      (failures.get(account) ?? 0) >= actual.LOGIN_MAX_PER_ACCOUNT,
+    recordLoginFailure: async (account: string) => {
+      failures.set(account, (failures.get(account) ?? 0) + 1);
+    },
+    clearLoginFailures: async (account: string) => {
+      cleared.push(account);
+      failures.delete(account);
+    },
+  };
+});
+
+const loginRequest = (email: string, password = "salah") =>
   new Request("http://localhost/api/auth/login", {
     method: "POST",
-    headers: { "Content-Type": "application/json", "cf-connecting-ip": ip },
-    body: JSON.stringify({ email, password: "salah" }),
+    headers: { "Content-Type": "application/json", "cf-connecting-ip": "203.0.113.5" },
+    body: JSON.stringify({ email, password }),
   });
 
 beforeEach(() => {
-  resetRateLimits();
+  failures.clear();
+  cleared = [];
   authenticateCredentials.mockReset();
   authenticateCredentials.mockResolvedValue({ user: null, error: { message: "Invalid login credentials" } });
 });
 
 describe("POST /api/auth/login — rate limit", () => {
-  it("8 percobaan gagal masih 401, percobaan ke-9 diblokir 429", async () => {
+  it(`${LOGIN_MAX_PER_ACCOUNT} percobaan gagal masih 401, berikutnya 429`, async () => {
     const { POST } = await import("@/app/api/auth/login/route");
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < LOGIN_MAX_PER_ACCOUNT; i++) {
       const res = await POST(loginRequest("korban@tedjacoffee.id"));
       expect(res.status, `percobaan ke-${i + 1}`).toBe(401);
     }
     const blocked = await POST(loginRequest("korban@tedjacoffee.id"));
     expect(blocked.status).toBe(429);
-    const body = await blocked.json();
-    expect(body.error).toMatch(/terlalu banyak/i);
+    expect((await blocked.json()).error).toMatch(/terlalu banyak/i);
   });
 
-  it("saat diblokir, autentikasi TIDAK dipanggil lagi (hemat & tak bocorkan timing)", async () => {
+  it("saat diblokir, autentikasi TIDAK dipanggil lagi", async () => {
     const { POST } = await import("@/app/api/auth/login/route");
-    for (let i = 0; i < 8; i++) await POST(loginRequest("a@tedjacoffee.id"));
-    const callsBefore = authenticateCredentials.mock.calls.length;
+    for (let i = 0; i < LOGIN_MAX_PER_ACCOUNT; i++) await POST(loginRequest("a@tedjacoffee.id"));
+    const before = authenticateCredentials.mock.calls.length;
     await POST(loginRequest("a@tedjacoffee.id"));
-    expect(authenticateCredentials.mock.calls.length).toBe(callsBefore);
+    expect(authenticateCredentials.mock.calls.length).toBe(before);
   });
 
-  it("akun lain tidak ikut terkunci (batas per-akun, bukan global)", async () => {
+  it("akun lain tidak ikut terkunci (batas per-akun)", async () => {
     const { POST } = await import("@/app/api/auth/login/route");
-    for (let i = 0; i < 9; i++) await POST(loginRequest("a@tedjacoffee.id"));
-    const other = await POST(loginRequest("b@tedjacoffee.id"));
-    expect(other.status).toBe(401); // bukan 429
+    for (let i = 0; i <= LOGIN_MAX_PER_ACCOUNT; i++) await POST(loginRequest("a@tedjacoffee.id"));
+    expect((await POST(loginRequest("b@tedjacoffee.id"))).status).toBe(401);
   });
 
-  it("pesan blokir generik — tidak membocorkan apakah akun ada", async () => {
+  it("email disamakan huruf kecil — A@x dan a@x dihitung satu akun", async () => {
     const { POST } = await import("@/app/api/auth/login/route");
-    for (let i = 0; i < 8; i++) await POST(loginRequest("tidakada@tedjacoffee.id"));
-    const res = await POST(loginRequest("tidakada@tedjacoffee.id"));
-    const body = await res.json();
-    expect(body.error).not.toMatch(/tidak ditemukan|not found|unknown user/i);
+    for (let i = 0; i < LOGIN_MAX_PER_ACCOUNT; i++) await POST(loginRequest("Korban@Tedjacoffee.ID"));
+    expect((await POST(loginRequest("korban@tedjacoffee.id"))).status).toBe(429);
+  });
+
+  it("login sukses membersihkan hitungan gagal akun itu", async () => {
+    const { POST } = await import("@/app/api/auth/login/route");
+    await POST(loginRequest("c@tedjacoffee.id"));
+    expect(failures.get("c@tedjacoffee.id")).toBe(1);
+    authenticateCredentials.mockResolvedValue({ user: { id: "u1", email: "c@tedjacoffee.id" }, error: null });
+    const ok = await POST(loginRequest("c@tedjacoffee.id", "benar"));
+    expect(ok.status).toBe(200);
+    expect(cleared).toContain("c@tedjacoffee.id");
+    expect(failures.has("c@tedjacoffee.id")).toBe(false);
   });
 });
