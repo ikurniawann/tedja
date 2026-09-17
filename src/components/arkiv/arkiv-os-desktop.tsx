@@ -45,9 +45,7 @@ import { statusLabel, type StatusItem, type StatusLevel } from "@/lib/desktop/st
 import type { InboxSection } from "@/lib/desktop/inbox";
 import { parseDeepLink } from "@/lib/desktop/deep-link";
 import {
-  DESKTOP_PREFS_STORAGE_KEY,
   normalizeDesktopPreferences,
-  readLocalPreferences,
   writeLocalPreferences,
   type DesktopPreferences,
 } from "@/lib/desktop/preferences";
@@ -458,7 +456,6 @@ export default function ArkivOsDesktop() {
     () => windowOrder.map((id) => ({ id, ...openWindows[id] })).filter((w) => w.title),
     [windowOrder, openWindows]
   );
-  const minimizedWindows = useMemo(() => openWindowList.filter((w) => w.minimized), [openWindowList]);
 
   /** Ikon dock: sudah terbuka → fokuskan (bukan tutup); belum → buka. */
   const focusOrOpen = useCallback(
@@ -943,7 +940,7 @@ export default function ArkivOsDesktop() {
       <div className="pointer-events-none absolute -right-24 bottom-16 size-80 rounded-full bg-pink-400/14 blur-3xl transition-transform duration-500 ease-out [transform:translate3d(var(--float-x-reverse),var(--float-y-reverse),0)]" />
       <div className="absolute inset-x-0 top-0 h-72 bg-gradient-to-b from-white/10 to-transparent" />
 
-      <header className="fixed inset-x-0 top-0 z-30 flex h-9 items-center justify-between border-b border-white/10 bg-black/22 px-3 text-[13px] text-white/90 backdrop-blur-2xl">
+      <header className="fixed inset-x-0 top-0 z-[75] flex h-9 items-center justify-between border-b border-white/10 bg-black/22 px-3 text-[13px] text-white/90 backdrop-blur-2xl">
         <div className="flex h-full items-center gap-5">
           <button
             type="button"
@@ -1007,21 +1004,12 @@ export default function ArkivOsDesktop() {
         )}
       </section>
 
-      <nav className="fixed bottom-3 left-1/2 z-30 flex max-w-[calc(100vw-12px)] -translate-x-1/2 items-end gap-1 overflow-x-auto rounded-3xl border border-white/18 bg-white/14 p-1.5 shadow-[0_24px_80px_rgba(0,0,0,.38)] backdrop-blur-2xl sm:bottom-5 sm:gap-2 sm:rounded-[28px] sm:p-2">
+      <nav className="fixed bottom-3 left-1/2 z-[75] flex max-w-[calc(100vw-12px)] -translate-x-1/2 items-end gap-1 overflow-x-auto rounded-3xl border border-white/18 bg-white/14 p-1.5 shadow-[0_24px_80px_rgba(0,0,0,.38)] backdrop-blur-2xl sm:bottom-5 sm:gap-2 sm:rounded-[28px] sm:p-2">
         <DockButton label="Launchpad" icon={MonitorDot} active={showLibrary} onClick={() => setShowLibrary((value) => !value)} />
-        {modules.filter((module) => !module.disabled).map((module) => {
-          const ids = [module.name, `${module.name} Preview`];
-          return (
-            <DockButton
-              key={module.name}
-              label={module.name}
-              icon={module.icon}
-              active={previewModule?.name === module.name || openAppModule?.name === module.name}
-              running={anyOpen(ids)}
-              onClick={() => focusOrOpen(ids, () => setPreviewModule(module))}
-            />
-          );
-        })}
+        {/* Pintasan per-modul sengaja TIDAK ada di dock: daftar lengkapnya
+            sudah di Launchpad / folder Applications, dan 14 ikon membuat dock
+            penuh. Jendela yang sedang terbuka tetap muncul sebagai chip di
+            ujung dock supaya bisa diraih meski tertimbun. */}
         <DockButton label="Do" icon={Bot} active={showAssistant} running={anyOpen(["Do"])} onClick={() => focusOrOpen(["Do"], () => setShowAssistant(true))} />
         <DockButton label="Apps" icon={Grid3X3} active={showLibrary} onClick={() => setShowLibrary((value) => !value)} />
         <div className="mx-0.5 h-7 w-px shrink-0 bg-white/18 sm:mx-1 sm:h-9" />
@@ -1030,22 +1018,35 @@ export default function ArkivOsDesktop() {
         )}
         <DockButton label="Files" icon={Folder} active={showFiles} running={anyOpen([`${BRAND} Drive`])} onClick={() => focusOrOpen([`${BRAND} Drive`], () => setShowFiles(true))} />
         <DockButton label="Settings" icon={Settings} active={showSettings} running={anyOpen(["System Settings"])} onClick={() => focusOrOpen(["System Settings"], () => setShowSettings(true))} />
-        {minimizedWindows.length > 0 && (
+        {openWindowList.length > 0 && (
           <>
             <div className="mx-0.5 h-7 w-px shrink-0 bg-white/18 sm:mx-1 sm:h-9" />
-            {/* Jendela yang dikecilkan mendarat di sini (seperti dock macOS). */}
-            {minimizedWindows.map((win) => (
-              <button
-                key={win.id}
-                type="button"
-                title={`Tampilkan ${win.title}`}
-                aria-label={`Tampilkan ${win.title}`}
-                onClick={() => windowManager.api.focus(win.id)}
-                className="group relative grid h-10 shrink-0 place-items-center rounded-xl border border-white/14 bg-white/10 px-2.5 text-[11px] font-semibold text-white/85 shadow-lg transition duration-200 hover:-translate-y-1 hover:bg-white/24 sm:h-12 sm:rounded-2xl sm:px-3"
-              >
-                <span className="max-w-[92px] truncate">{win.title}</span>
-              </button>
-            ))}
+            {/* Daftar jendela terbuka (seperti dock macOS): yang dikecilkan
+                diredupkan, yang sedang aktif diberi cincin. */}
+            {openWindowList.map((win) => {
+              const isActive = windowManager.topWindowId === win.id;
+              return (
+                <button
+                  key={win.id}
+                  type="button"
+                  title={win.minimized ? `Tampilkan ${win.title}` : `Ke ${win.title}`}
+                  aria-label={win.minimized ? `Tampilkan ${win.title}` : `Ke ${win.title}`}
+                  onClick={() => windowManager.api.focus(win.id)}
+                  className={`group relative grid h-10 shrink-0 place-items-center rounded-xl border px-2.5 text-[11px] font-semibold shadow-lg transition duration-200 hover:-translate-y-1 hover:bg-white/24 sm:h-12 sm:rounded-2xl sm:px-3 ${
+                    isActive
+                      ? "border-pink-200/50 bg-white/22 text-white"
+                      : win.minimized
+                        ? "border-white/10 bg-white/6 text-white/55"
+                        : "border-white/14 bg-white/10 text-white/85"
+                  }`}
+                >
+                  <span className="max-w-[92px] truncate">{win.title}</span>
+                  {!win.minimized && (
+                    <span className={`absolute -bottom-1 size-1.5 rounded-full ${isActive ? "bg-pink-200" : "bg-white/60"}`} />
+                  )}
+                </button>
+              );
+            })}
           </>
         )}
       </nav>
@@ -1457,7 +1458,8 @@ function WindowShell({
   const windowId = windowIdProp ?? title;
   const minimized = windows[windowId]?.minimized ?? false;
   const orderIndex = order.indexOf(windowId);
-  const zIndex = WINDOW_Z_BASE + Math.max(0, orderIndex);
+  // Dibatasi agar tumpukan jendela tidak pernah menyusul dock/menubar (z-75).
+  const zIndex = WINDOW_Z_BASE + Math.min(Math.max(0, orderIndex), 29);
   const visible = order.filter((id) => windows[id] && !windows[id].minimized);
   const isActive = !minimized && visible[visible.length - 1] === windowId;
 

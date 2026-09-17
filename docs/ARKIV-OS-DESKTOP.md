@@ -11,7 +11,9 @@ Logika murni di `src/lib/desktop/window-manager.ts` (teruji), perekatan React di
 |---|---|
 | Urutan tumpukan | Satu daftar `order`; jendela baru / diklik pindah ke belakang daftar, z-index = 40 + posisi. Hanya jendela teratas ber-ring pink. |
 | Minimize | Turun ke **dock** (chip di ujung kanan dock), bukan melipat di tempat. Jendela tetap ter-mount (`display:none`) supaya isi iframe tidak hilang. |
-| Ikon dock | App yang jendelanya terbuka diberi titik; klik = **fokus**, bukan toggle-tutup. |
+| Isi dock | Hanya Launchpad, Do, Apps, Notifikasi, Files, Settings — pintasan per-modul dihapus (2026-09-17, permintaan owner) karena daftar lengkapnya sudah ada di Launchpad/folder Applications. |
+| Daftar jendela | Jendela yang terbuka muncul sebagai chip di ujung dock: aktif diberi cincin, yang dikecilkan diredupkan. Klik = fokus/munculkan. |
+| Lapisan | Dock & menubar `z-75`, di ATAS jendela (`z-40..69`) supaya tidak tertutup jendela tinggi, tapi di bawah modal (`z-80`) dan kunci layar (`z-200`). |
 | Posisi & ukuran | Diingat per jendela di localStorage (`arkiv-window-geometry`, maks 24). Geometri dari layar lebih besar **diabaikan**, tidak dipaksakan. |
 | Snap | Seret ke tepi kiri/kanan/atas → pratinjau lalu tempel setengah/penuh layar. Klik dua kali bilah judul = layar penuh. |
 | Multi-instance | `WindowShell` menerima `windowId`; jendela deep link/Spotlight memakai id unik sehingga halaman sama bisa dibuka lebih dari satu. |
