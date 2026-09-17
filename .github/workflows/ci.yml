@@ -1,0 +1,78 @@
+# CI Tedja — menjaga perlindungan keamanan tetap teruji setiap perubahan.
+#
+# Yang MEMBLOKIR (sudah diverifikasi hijau lokal):
+#   - unit test (2200+), termasuk negative test: gerbang sesi fail-closed,
+#     401/403 + allowlist field route dokumen karyawan, dan login 429.
+#   - audit dependensi produksi pada level high/critical.
+# Yang TIDAK memblokir:
+#   - lint: repo masih punya ~770 error lama; dijalankan agar terlihat dan
+#     bisa dicicil, tapi belum layak jadi gate.
+#   - production build: butuh .env (terverifikasi gagal tanpanya) dan sudah
+#     diuji setiap deploy lewat `docker build`. Menyusul bila env CI disiapkan.
+
+name: CI
+
+on:
+  push:
+    branches: [development, main]
+  pull_request:
+    branches: [development, main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Unit test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        # Versi disamakan dengan Dockerfile supaya resolusi lockfile identik.
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Unit test
+        run: pnpm test
+
+  audit:
+    name: Audit dependensi produksi
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: pnpm audit (gagal bila ada high/critical baru)
+        run: pnpm audit --prod --audit-level=high
+
+  lint:
+    name: Lint (belum memblokir)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
