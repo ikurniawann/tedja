@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import * as XLSX from "xlsx";
+import { parseXlsxToMatrix } from "@/lib/spreadsheet/exceljs-safe";
 import {
   buildAttendancePdf,
   buildAttendanceXlsx,
@@ -50,17 +50,15 @@ describe("statusLabel & formatJamWib", () => {
 });
 
 describe("buildAttendanceXlsx", () => {
-  it("workbook memuat judul, periode, dan baris data", () => {
-    const buffer = buildAttendanceXlsx([contoh()], {
+  it("workbook memuat judul, periode, dan baris data", async () => {
+    const buffer = await buildAttendanceXlsx([contoh()], {
       companyName: "Sulu",
       periodLabel: "1–31 Agustus 2026",
       employeeLabel: "Nanda Romdona",
       generatedAt: new Date("2026-08-28T03:00:00Z"),
     });
-    const wb = XLSX.read(buffer, { type: "buffer" });
-    const sheet = wb.Sheets[wb.SheetNames[0]];
-    const text = JSON.stringify(XLSX.utils.sheet_to_json(sheet, { header: 1 }));
-    expect(wb.SheetNames[0]).toBe("Rekap Absensi");
+    const matrix = await parseXlsxToMatrix(buffer);
+    const text = JSON.stringify(matrix);
     expect(text).toContain("Sulu — Rekap Absensi");
     expect(text).toContain("Periode: 1–31 Agustus 2026");
     expect(text).toContain("Nanda Romdona");

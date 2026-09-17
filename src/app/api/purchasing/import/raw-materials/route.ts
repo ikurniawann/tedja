@@ -244,7 +244,7 @@ export async function POST(request: NextRequest) {
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
-    const rows = parseSpreadsheetFile(buffer, file.name);
+    const rows = await parseSpreadsheetFile(buffer, file.name);
     if (rows.length < 2) {
       return NextResponse.json(
         { message: "File must include a header row and at least one data row" },

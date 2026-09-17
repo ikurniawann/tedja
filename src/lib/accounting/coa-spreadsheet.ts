@@ -1,4 +1,4 @@
-import * as XLSX from "xlsx";
+import { buildXlsxBuffer, parseXlsxToMatrix } from "@/lib/spreadsheet/exceljs-safe";
 import {
   inferAccountLevel,
   normalizeAccountCode,
@@ -290,25 +290,18 @@ export function parseStandardCoaSheet(matrix: unknown[][]): {
   return { rows: staged, issues };
 }
 
-export function parseCoaSpreadsheet(buffer: Buffer, fileName: string) {
-  const workbook = XLSX.read(buffer, { type: "buffer" });
-  // Prefer sheet named COA if present (SULU workbook)
-  const sheetName =
-    workbook.SheetNames.find((n) => n.toLowerCase() === "coa") ||
-    workbook.SheetNames[0];
-  if (!sheetName) {
+export async function parseCoaSpreadsheet(buffer: Buffer, _fileName: string) {
+  // Prefer sheet named COA if present (SULU workbook), else the first sheet.
+  const matrix = await parseXlsxToMatrix(buffer, {
+    pickSheet: (wb) =>
+      wb.worksheets.find((ws) => ws.name.toLowerCase() === "coa") ?? wb.worksheets[0],
+  });
+  if (matrix.length === 0) {
     return {
       rows: [] as ParsedCoaRow[],
       issues: [{ row: 0, message: "Workbook tidak punya sheet" }] as CoaParseIssue[],
     };
   }
-  const sheet = workbook.Sheets[sheetName];
-  const matrix = XLSX.utils.sheet_to_json<unknown[]>(sheet, {
-    header: 1,
-    defval: "",
-    raw: false,
-  }) as unknown[][];
-
   if (isSuluCoaLayout(matrix)) return parseSuluCoaSheet(matrix);
   return parseStandardCoaSheet(matrix);
 }
@@ -334,12 +327,5 @@ export function buildCoaImportTemplateWorkbook() {
     "",
     "",
   ];
-  const ws = XLSX.utils.aoa_to_sheet([headers, sample]);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "COA");
-  return wb;
-}
-
-export function workbookToBuffer(workbook: XLSX.WorkBook) {
-  return XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }) as Buffer;
+  return buildXlsxBuffer([{ name: "COA", rows: [headers, sample] }]);
 }

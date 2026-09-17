@@ -1,5 +1,5 @@
 import PDFDocument from "pdfkit";
-import * as XLSX from "xlsx";
+import { buildXlsxBuffer } from "@/lib/spreadsheet/exceljs-safe";
 
 /**
  * Pembangkit laporan rekap absensi (permintaan owner 2026-08-28):
@@ -103,10 +103,10 @@ export function statusLabel(status: string | null): string {
 /* Excel                                                               */
 /* ================================================================== */
 
-export function buildAttendanceXlsx(
+export async function buildAttendanceXlsx(
   rows: AttendanceReportRow[],
   meta: AttendanceReportMeta
-): Buffer {
+): Promise<Buffer> {
   const header = [
     "Tanggal", "Nama Karyawan", "NIP", "Departemen", "Jabatan",
     "Jam Masuk", "Jam Pulang", "Jam Kerja", "Status",
@@ -141,21 +141,19 @@ export function buildAttendanceXlsx(
     ]),
   ];
 
-  const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws["!cols"] = [
-    { wch: 18 }, { wch: 26 }, { wch: 20 }, { wch: 18 }, { wch: 18 },
-    { wch: 10 }, { wch: 11 }, { wch: 9 }, { wch: 12 }, { wch: 16 },
-    { wch: 30 },
-  ];
   // Judul membentang selebar tabel supaya tidak terpotong kolom A.
-  ws["!merges"] = [0, 1, 2, 3].map((r) => ({
+  const merges = [0, 1, 2, 3].map((r) => ({
     s: { r, c: 0 },
     e: { r, c: header.length - 1 },
   }));
-
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Rekap Absensi");
-  return XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
+  return buildXlsxBuffer([
+    {
+      name: "Rekap Absensi",
+      rows: aoa as (string | number | null | undefined)[][],
+      columnWidths: [18, 26, 20, 18, 18, 10, 11, 9, 12, 16, 30],
+      merges,
+    },
+  ]);
 }
 
 /* ================================================================== */

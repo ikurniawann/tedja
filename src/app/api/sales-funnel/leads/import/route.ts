@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
-    const rows = parseLeadSpreadsheetFile(buffer, file.name);
+    const rows = await parseLeadSpreadsheetFile(buffer, file.name);
     if (rows.length < 2) {
       return NextResponse.json(
         { message: "File harus berisi baris header dan minimal satu baris data" },

@@ -42,14 +42,10 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: true, data: report });
     }
 
-    // Impor dinamis: `xlsx` hanya dimuat saat benar-benar ada permintaan export,
-    // mengikuti pola `src/lib/attachments/extract.ts`.
-    const XLSX = await import("xlsx");
-    const workbook = XLSX.utils.book_new();
-    for (const sheet of buildReportSheets(report)) {
-      XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(sheet.rows), sheet.name);
-    }
-    const buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }) as Buffer;
+    const { buildXlsxBuffer } = await import("@/lib/spreadsheet/exceljs-safe");
+    const buffer = await buildXlsxBuffer(
+      buildReportSheets(report).map((sheet) => ({ name: sheet.name, rows: sheet.rows })),
+    );
 
     return new NextResponse(new Uint8Array(buffer), {
       headers: {

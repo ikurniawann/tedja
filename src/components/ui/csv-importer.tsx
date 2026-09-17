@@ -228,10 +228,14 @@ export const CsvImporter = forwardRef<CsvImporterHandle, CsvImporterProps>(funct
 
         if (isXlsx) {
           const buffer = e.target?.result as ArrayBuffer;
-          const XLSX = await import("xlsx");
-          const workbook = XLSX.read(buffer, { type: "array" });
-          const sheetName = workbook.SheetNames[0];
-          if (!sheetName) {
+          // ExcelJS gantikan `xlsx` (SheetJS) yang rentan prototype pollution/
+          // ReDoS. Dimuat dinamis → hanya masuk bundle saat user pilih .xlsx.
+          const excelMod = await import("exceljs");
+          const ExcelJS = (excelMod as unknown as { default?: typeof excelMod }).default ?? excelMod;
+          const workbook = new ExcelJS.Workbook();
+          await workbook.xlsx.load(buffer);
+          const worksheet = workbook.worksheets[0];
+          if (!worksheet) {
             toast({
               title: "File kosong",
               description: "File Excel tidak memiliki worksheet.",
@@ -239,13 +243,26 @@ export const CsvImporter = forwardRef<CsvImporterHandle, CsvImporterProps>(funct
             });
             return;
           }
-          rows = XLSX.utils
-            .sheet_to_json<(string | number | null)[]>(workbook.Sheets[sheetName], {
-              header: 1,
-              defval: "",
-              raw: false,
+          const matrix: unknown[][] = [];
+          let maxCols = 0;
+          worksheet.eachRow({ includeEmpty: true }, (row) => {
+            const values = (row.values as unknown[]).slice(1); // 1-indeks → buang [0]
+            matrix.push(values);
+            if (values.length > maxCols) maxCols = values.length;
+          });
+          rows = matrix.map((row) =>
+            Array.from({ length: maxCols }, (_, i) => {
+              const cell = row[i];
+              if (cell === null || cell === undefined) return "";
+              if (typeof cell === "object") {
+                const obj = cell as { text?: unknown; result?: unknown; richText?: Array<{ text?: unknown }> };
+                if (Array.isArray(obj.richText)) return obj.richText.map((r) => String(r.text ?? "")).join("").trim();
+                if ("text" in obj) return String(obj.text ?? "").trim();
+                if ("result" in obj) return String(obj.result ?? "").trim();
+              }
+              return String(cell).trim();
             })
-            .map((row) => row.map((cell) => String(cell ?? "").trim()));
+          );
         } else {
           rows = parseCSV(e.target?.result as string);
         }

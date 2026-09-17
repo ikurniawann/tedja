@@ -1,4 +1,4 @@
-import * as XLSX from "xlsx";
+import { parseXlsxToMatrix } from "@/lib/spreadsheet/exceljs-safe";
 import { LEAD_IMPORT_COLUMNS } from "@/features/sales-funnel/leads/import-config";
 
 export const LEAD_SPREADSHEET_HEADERS = LEAD_IMPORT_COLUMNS.map((col) => col.key);
@@ -32,22 +32,34 @@ export function normalizeLeadSpreadsheetHeader(header: string): string {
   return HEADER_ALIASES[key] ?? key;
 }
 
+function parseCsvMatrix(text: string): string[][] {
+  return text
+    .split("\n")
+    .filter((line) => line.trim())
+    .map((line) => {
+      const cells: string[] = [];
+      let cur = "";
+      let quoted = false;
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        if (ch === '"') quoted = !quoted;
+        else if (ch === "," && !quoted) {
+          cells.push(cur.trim());
+          cur = "";
+        } else cur += ch;
+      }
+      cells.push(cur.trim());
+      return cells;
+    });
+}
+
 /** Parse file CSV/XLSX menjadi matriks string (baris pertama = header). */
-export function parseLeadSpreadsheetFile(
+export async function parseLeadSpreadsheetFile(
   buffer: Buffer,
   fileName: string
-): string[][] {
-  const workbook = XLSX.read(buffer, {
-    type: "buffer",
-    raw: false,
-    codepage: fileName.toLowerCase().endsWith(".csv") ? 65001 : undefined,
-  });
-  const sheet = workbook.Sheets[workbook.SheetNames[0]];
-  if (!sheet) return [];
-  const rows = XLSX.utils.sheet_to_json<string[]>(sheet, {
-    header: 1,
-    defval: "",
-    raw: false,
-  });
-  return rows.map((row) => row.map((cell) => String(cell ?? "").trim()));
+): Promise<string[][]> {
+  if (fileName.toLowerCase().endsWith(".csv")) {
+    return parseCsvMatrix(buffer.toString("utf-8"));
+  }
+  return parseXlsxToMatrix(buffer);
 }

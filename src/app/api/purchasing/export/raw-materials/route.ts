@@ -9,8 +9,7 @@ import {
 import { getApiStallScope } from "@/lib/api/stall-scope";
 import { query } from "@/lib/db";
 import {
-  buildRawMaterialWorkbook,
-  workbookToBuffer,
+  buildRawMaterialWorkbookBuffer,
 } from "@/lib/purchasing/raw-material-spreadsheet";
 
 type ExportRow = {
@@ -107,7 +106,7 @@ export async function GET() {
       params
     );
 
-    const workbook = buildRawMaterialWorkbook(
+    const buffer = await buildRawMaterialWorkbookBuffer(
       rows.map((row) => ({
         kode: row.kode,
         nama: row.nama,
@@ -128,10 +127,9 @@ export async function GET() {
       }))
     );
 
-    const buffer = workbookToBuffer(workbook);
     const date = new Date().toISOString().split("T")[0];
 
-    return new NextResponse(buffer, {
+    return new NextResponse(new Uint8Array(buffer), {
       headers: {
         "Content-Type":
           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

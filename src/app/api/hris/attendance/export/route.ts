@@ -148,7 +148,7 @@ export async function GET(request: NextRequest) {
       const stamp = new Date().toISOString().split('T')[0];
 
       if (format === 'xlsx') {
-        const buffer = buildAttendanceXlsx(rows, meta);
+        const buffer = await buildAttendanceXlsx(rows, meta);
         return new NextResponse(new Uint8Array(buffer), {
           headers: {
             'Content-Type':

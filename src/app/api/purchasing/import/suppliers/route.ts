@@ -139,7 +139,7 @@ export async function POST(request: NextRequest) {
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
-    const rows = parseSupplierSpreadsheetFile(buffer, file.name);
+    const rows = await parseSupplierSpreadsheetFile(buffer, file.name);
     if (rows.length < 2) {
       return NextResponse.json(
         { message: "File must include a header row and at least one data row" },

@@ -151,7 +151,7 @@ export async function POST(request: NextRequest) {
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
-    const { rows: parsed, issues } = parseCoaSpreadsheet(buffer, file.name);
+    const { rows: parsed, issues } = await parseCoaSpreadsheet(buffer, file.name);
 
     if (parsed.length === 0) {
       return NextResponse.json({

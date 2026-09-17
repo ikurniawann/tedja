@@ -56,14 +56,10 @@ describe("extractAttachmentText", () => {
   });
 
   it("membaca spreadsheet menjadi CSV per sheet", async () => {
-    const XLSX = await import("xlsx");
-    const book = XLSX.utils.book_new();
-    const sheet = XLSX.utils.aoa_to_sheet([
-      ["produk", "qty"],
-      ["Kopi", 3],
+    const { buildXlsxBuffer } = await import("@/lib/spreadsheet/exceljs-safe");
+    const buffer = await buildXlsxBuffer([
+      { name: "Penjualan", rows: [["produk", "qty"], ["Kopi", 3]] },
     ]);
-    XLSX.utils.book_append_sheet(book, sheet, "Penjualan");
-    const buffer = Buffer.from(XLSX.write(book, { type: "buffer", bookType: "xlsx" }));
 
     const result = await extractAttachmentText(buffer, "laporan.xlsx");
     expect(result.method).toBe("spreadsheet");

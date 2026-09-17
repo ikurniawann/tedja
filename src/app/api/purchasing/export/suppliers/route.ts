@@ -8,8 +8,7 @@ import {
 } from "@/lib/api/scope";
 import { query } from "@/lib/db";
 import {
-  buildSupplierWorkbook,
-  workbookToBuffer,
+  buildSupplierWorkbookBuffer,
 } from "@/lib/purchasing/supplier-spreadsheet";
 
 type ExportRow = {
@@ -85,7 +84,7 @@ export async function GET() {
       params
     );
 
-    const workbook = buildSupplierWorkbook(
+    const buffer = await buildSupplierWorkbookBuffer(
       rows.map((row) => ({
         kode: row.kode,
         nama_supplier: row.nama_supplier,
@@ -108,10 +107,9 @@ export async function GET() {
       }))
     );
 
-    const buffer = workbookToBuffer(workbook);
     const date = new Date().toISOString().split("T")[0];
 
-    return new NextResponse(buffer, {
+    return new NextResponse(new Uint8Array(buffer), {
       headers: {
         "Content-Type":
           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

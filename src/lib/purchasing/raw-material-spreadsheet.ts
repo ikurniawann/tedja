@@ -1,4 +1,4 @@
-import * as XLSX from "xlsx";
+import { buildXlsxBuffer, parseXlsxToMatrix } from "@/lib/spreadsheet/exceljs-safe";
 import { RAW_MATERIAL_IMPORT_COLUMNS } from "@/features/purchasing/raw-materials/import-config";
 
 export const RAW_MATERIAL_EXPORT_COLUMNS = RAW_MATERIAL_IMPORT_COLUMNS;
@@ -54,19 +54,13 @@ export function buildRawMaterialExportRow(row: Record<string, unknown>) {
   return RAW_MATERIAL_SPREADSHEET_HEADERS.map((key) => spreadsheetCell(row[key]));
 }
 
-export function buildRawMaterialWorkbook(rows: Record<string, unknown>[]) {
+/** Bangun buffer .xlsx ekspor Raw Materials (ExcelJS, gantikan xlsx). */
+export async function buildRawMaterialWorkbookBuffer(rows: Record<string, unknown>[]): Promise<Buffer> {
   const sheetRows = [
     RAW_MATERIAL_SPREADSHEET_HEADERS,
     ...rows.map((row) => buildRawMaterialExportRow(row)),
   ];
-  const worksheet = XLSX.utils.aoa_to_sheet(sheetRows);
-  const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, "Raw Materials");
-  return workbook;
-}
-
-export function workbookToBuffer(workbook: XLSX.WorkBook) {
-  return XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }) as Buffer;
+  return buildXlsxBuffer([{ name: "Raw Materials", rows: sheetRows }]);
 }
 
 function parseCSV(text: string): string[][] {
@@ -89,22 +83,11 @@ function parseCSV(text: string): string[][] {
   });
 }
 
-export function parseSpreadsheetFile(buffer: Buffer, fileName: string): string[][] {
+export async function parseSpreadsheetFile(buffer: Buffer, fileName: string): Promise<string[][]> {
   const lower = fileName.toLowerCase();
   if (lower.endsWith(".csv")) {
     return parseCSV(buffer.toString("utf-8"));
   }
-
-  const workbook = XLSX.read(buffer, { type: "buffer" });
-  const sheetName = workbook.SheetNames[0];
-  if (!sheetName) return [];
-
-  const sheet = workbook.Sheets[sheetName];
-  const rows = XLSX.utils.sheet_to_json<(string | number | null)[]>(sheet, {
-    header: 1,
-    defval: "",
-    raw: false,
-  });
-
+  const rows = await parseXlsxToMatrix(buffer);
   return rows.map((row) => row.map((cell) => spreadsheetCell(cell)));
 }

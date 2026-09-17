@@ -122,16 +122,9 @@ async function extractDocx(buffer: Buffer): Promise<string> {
  * hemat token daripada mengirim tiap sel sebagai objek.
  */
 async function extractSpreadsheet(buffer: Buffer): Promise<string> {
-  const XLSX = await import("xlsx");
-  const book = XLSX.read(buffer, { type: "buffer" });
-  const parts: string[] = [];
-  for (const name of book.SheetNames) {
-    const sheet = book.Sheets[name];
-    if (!sheet) continue;
-    const csv = XLSX.utils.sheet_to_csv(sheet, { blankrows: false });
-    if (csv.trim()) parts.push(`### Sheet: ${name}\n${csv.trim()}`);
-  }
-  return parts.join("\n\n");
+  const { parseXlsxToCsvParts } = await import("@/lib/spreadsheet/exceljs-safe");
+  const parts = await parseXlsxToCsvParts(buffer);
+  return parts.map((part) => `### Sheet: ${part.name}\n${part.csv}`).join("\n\n");
 }
 
 function cleanText(raw: string): string {

@@ -56,7 +56,7 @@ export async function GET(request: NextRequest) {
         "Stall terpilih"
       : "Semua stall";
 
-    const buffer = buildRushHourXlsx(report, {
+    const buffer = await buildRushHourXlsx(report, {
       companyName: await resolveBrandName(scope?.companyId),
       periodLabel: `${range.dateFrom} s.d. ${range.dateTo}`,
       stallLabel,

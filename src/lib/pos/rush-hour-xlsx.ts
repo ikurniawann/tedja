@@ -1,4 +1,4 @@
-import * as XLSX from "xlsx";
+import { buildXlsxBuffer, type SheetSpec } from "@/lib/spreadsheet/exceljs-safe";
 import {
   RUSH_HOUR_HEATMAP_HOURS,
   RUSH_HOUR_WEEKDAYS,
@@ -30,11 +30,11 @@ type RushHourReportData = ReturnType<typeof buildRushHourReport>;
 
 const rupiah = (value: number) => Math.round(value);
 
-export function buildRushHourXlsx(
+export async function buildRushHourXlsx(
   report: RushHourReportData,
   meta: RushHourXlsxMeta
-): Buffer {
-  const wb = XLSX.utils.book_new();
+): Promise<Buffer> {
+  const sheets: SheetSpec[] = [];
   const printed = `Dicetak: ${meta.generatedAt.toLocaleString("id-ID", {
     dateStyle: "medium",
     timeStyle: "short",
@@ -89,13 +89,12 @@ export function buildRushHourXlsx(
     ["Quantity / item terjual", range.quantity, report.summary.quantity, range.share_quantity],
     ["Jumlah transaksi", range.transactions, report.summary.transactions, range.share_transactions],
   ];
-  const wsRingkasan = XLSX.utils.aoa_to_sheet(ringkasan);
-  wsRingkasan["!cols"] = [{ wch: 26 }, { wch: 20 }, { wch: 20 }, { wch: 16 }];
-  wsRingkasan["!merges"] = [0, 1, 2, 3, 5, 11, 17].map((r) => ({
-    s: { r, c: 0 },
-    e: { r, c: 3 },
-  }));
-  XLSX.utils.book_append_sheet(wb, wsRingkasan, "Ringkasan");
+  sheets.push({
+    name: "Ringkasan",
+    rows: ringkasan as SheetSpec["rows"],
+    columnWidths: [26, 20, 20, 16],
+    merges: [0, 1, 2, 3, 5, 11, 17].map((r) => ({ s: { r, c: 0 }, e: { r, c: 3 } })),
+  });
 
   /* ---------------- Sheet 2: Per Jam ---------------- */
   const headerJam = [
@@ -128,16 +127,12 @@ export function buildRushHourXlsx(
       report.summary.quantity > 0 ? 100 : 0,
     ],
   ];
-  const wsJam = XLSX.utils.aoa_to_sheet(perJam);
-  wsJam["!cols"] = [
-    { wch: 8 }, { wch: 11 }, { wch: 16 }, { wch: 13 },
-    { wch: 18 }, { wch: 9 }, { wch: 9 },
-  ];
-  wsJam["!merges"] = [0, 1].map((r) => ({
-    s: { r, c: 0 },
-    e: { r, c: headerJam.length - 1 },
-  }));
-  XLSX.utils.book_append_sheet(wb, wsJam, "Per Jam");
+  sheets.push({
+    name: "Per Jam",
+    rows: perJam as SheetSpec["rows"],
+    columnWidths: [8, 11, 16, 13, 18, 9, 9],
+    merges: [0, 1].map((r) => ({ s: { r, c: 0 }, e: { r, c: headerJam.length - 1 } })),
+  });
 
   /* ---------------- Sheet 3: Per Hari ---------------- */
   const perHari: unknown[][] = [
@@ -147,10 +142,12 @@ export function buildRushHourXlsx(
     ["Hari", "Transaksi", "Omzet (Rp)"],
     ...report.weekdays.map((day) => [day.label, day.transactions, rupiah(day.revenue)]),
   ];
-  const wsHari = XLSX.utils.aoa_to_sheet(perHari);
-  wsHari["!cols"] = [{ wch: 10 }, { wch: 11 }, { wch: 16 }];
-  wsHari["!merges"] = [0, 1].map((r) => ({ s: { r, c: 0 }, e: { r, c: 2 } }));
-  XLSX.utils.book_append_sheet(wb, wsHari, "Per Hari");
+  sheets.push({
+    name: "Per Hari",
+    rows: perHari as SheetSpec["rows"],
+    columnWidths: [10, 11, 16],
+    merges: [0, 1].map((r) => ({ s: { r, c: 0 }, e: { r, c: 2 } })),
+  });
 
   /* ---------------- Sheet 4: Heatmap ---------------- */
   const heatHeader = ["Hari \\ Jam", ...RUSH_HOUR_HEATMAP_HOURS.map((h) => formatHourLabel(h))];
@@ -168,13 +165,12 @@ export function buildRushHourXlsx(
     heatHeader,
     ...heatRows,
   ];
-  const wsHeat = XLSX.utils.aoa_to_sheet(heatmap);
-  wsHeat["!cols"] = [{ wch: 11 }, ...RUSH_HOUR_HEATMAP_HOURS.map(() => ({ wch: 7 }))];
-  wsHeat["!merges"] = [0, 1].map((r) => ({
-    s: { r, c: 0 },
-    e: { r, c: heatHeader.length - 1 },
-  }));
-  XLSX.utils.book_append_sheet(wb, wsHeat, "Heatmap");
+  sheets.push({
+    name: "Heatmap",
+    rows: heatmap as SheetSpec["rows"],
+    columnWidths: [11, ...RUSH_HOUR_HEATMAP_HOURS.map(() => 7)],
+    merges: [0, 1].map((r) => ({ s: { r, c: 0 }, e: { r, c: heatHeader.length - 1 } })),
+  });
 
-  return XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
+  return buildXlsxBuffer(sheets);
 }

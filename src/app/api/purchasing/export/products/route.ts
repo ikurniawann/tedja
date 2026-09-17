@@ -8,8 +8,7 @@ import {
 } from "@/lib/api/scope";
 import { query } from "@/lib/db";
 import {
-  buildProductWorkbook,
-  workbookToBuffer,
+  buildProductWorkbookBuffer,
 } from "@/lib/purchasing/product-spreadsheet";
 
 type ExportRow = {
@@ -73,7 +72,7 @@ export async function GET() {
       params
     );
 
-    const workbook = buildProductWorkbook(
+    const buffer = await buildProductWorkbookBuffer(
       rows.map((row) => ({
         kode: row.kode,
         nama: row.nama,
@@ -89,7 +88,6 @@ export async function GET() {
       }))
     );
 
-    const buffer = workbookToBuffer(workbook);
     const date = new Date().toISOString().split("T")[0];
     const arrayBuffer = buffer.buffer.slice(
       buffer.byteOffset,
