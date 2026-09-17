@@ -71,7 +71,22 @@ export function isPublicAuthPath(pathname: string): boolean {
  */
 export async function updateSession(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  const hasSession = Boolean(request.cookies.get(SESSION_COOKIE)?.value);
+  // Audit 2026-09-17: dulu gerbang ini hanya cek KEBERADAAN cookie, sehingga
+  // "Cookie: arkiv_session=apa_saja" lolos ke route yang tak memvalidasi sesi
+  // sendiri. Kini token divalidasi ke DB (indeks unik token_hash, 1 baris).
+  // Fail-OPEN hanya bila query melempar (DB gangguan) supaya blip sesaat tidak
+  // menendang semua kasir keluar; token palsu tetap ditolak saat DB sehat.
+  const sessionToken = request.cookies.get(SESSION_COOKIE)?.value;
+  let hasSession = false;
+  if (sessionToken) {
+    try {
+      const { sessionTokenIsValid } = await import("@/lib/auth/session");
+      hasSession = await sessionTokenIsValid(sessionToken);
+    } catch (err) {
+      console.error("[middleware] validasi sesi gagal (fail-open):", err);
+      hasSession = true;
+    }
+  }
   // EPIC-042: request API dgn Bearer token Open API (arkiv_...) divalidasi DI
   // SINI (proxy Next 16 = Node runtime, DB bisa diakses) — wajib, karena
   // sebagian route lama tidak punya cek sesi sendiri dan mengandalkan gerbang

@@ -15,6 +15,7 @@ import {
   syncUserWarehouses,
 } from "./user-warehouses";
 import { syncIamPrimaryRole } from "@/lib/iam/sync-user-role";
+import { randomBytes } from "node:crypto";
 
 const EMPLOYEE_SELECT = `
   *,
@@ -753,7 +754,10 @@ export async function updateUserEmployee(
 
 export async function resetUserEmployeePassword(userId: string) {
   const db = createPgClient();
-  const tempPassword = `Arkiv${Math.random().toString(36).slice(2, 10)}!`;
+  // Password sementara harus dari PRNG kriptografis (audit 2026-09-17):
+  // Math.random() tidak boleh dipakai untuk secret. ~72 bit entropi (12 char
+  // base64url) + prefiks/suffiks agar lolos aturan kompleksitas.
+  const tempPassword = `Arkiv${randomBytes(9).toString("base64url").slice(0, 12)}!`;
 
   const { error } = await db.auth.admin.updateUserById(userId, {
     password: tempPassword,

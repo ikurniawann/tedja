@@ -78,6 +78,25 @@ async function loadUserBySessionToken(token: string): Promise<SessionUser | null
   };
 }
 
+/**
+ * Validasi cepat token sesi cookie ke DB (audit 2026-09-17): dipakai middleware
+ * agar cookie sampah tidak lolos hanya karena "ada". Query 1 baris pada indeks
+ * unik token_hash + cek kedaluwarsa/ban. Mengembalikan boolean saja — tidak
+ * memuat data user, jadi ringan untuk dijalankan tiap request terproteksi.
+ */
+export async function sessionTokenIsValid(token: string): Promise<boolean> {
+  const row = await queryOne<{ one: number }>(
+    `SELECT 1 AS one
+     FROM auth.sessions s
+     JOIN auth.users u ON u.id = s.user_id
+     WHERE s.token_hash = $1
+       AND s.expires_at > NOW()
+       AND (u.banned_until IS NULL OR u.banned_until < NOW())`,
+    [hashToken(token)]
+  );
+  return Boolean(row);
+}
+
 export async function getSessionUserFromRequest(request: NextRequest) {
   const token = request.cookies.get(SESSION_COOKIE)?.value;
   if (token) return loadUserBySessionToken(token);
