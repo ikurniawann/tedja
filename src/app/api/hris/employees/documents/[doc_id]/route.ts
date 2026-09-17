@@ -13,26 +13,14 @@
 // ============================================================
 
 import { NextRequest, NextResponse } from 'next/server';
-import { z } from 'zod';
 import { createServerPgClient } from "@/lib/pg/create-client";
 import { ApiError, requireIamMenuPrefix } from "@/lib/api/auth";
 import { IAM } from "@/lib/iam/prefixes";
+import { employeeDocumentPatchSchema } from "@/lib/hris/employee-document-schema";
 
 interface RouteParams {
   params: Promise<{ doc_id: string }>;
 }
-
-// Hanya metadata yang memang boleh diubah manual. Verifikasi (is_verified/
-// verified_by/verified_at) punya alurnya sendiri; jangan bisa dititipkan di sini.
-const patchSchema = z
-  .object({
-    document_type: z.string().max(120).optional(),
-    document_name: z.string().max(255).optional(),
-    issue_date: z.string().optional().nullable(),
-    expiry_date: z.string().optional().nullable(),
-    notes: z.string().max(2000).optional().nullable(),
-  })
-  .strip();
 
 export async function DELETE(_request: NextRequest, { params }: RouteParams) {
   try {
@@ -63,7 +51,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     await requireIamMenuPrefix(IAM.hrisKepegawaian);
     const db = await createServerPgClient();
     const { doc_id } = await params;
-    const parsed = patchSchema.safeParse(await request.json().catch(() => ({})));
+    const parsed = employeeDocumentPatchSchema.safeParse(await request.json().catch(() => ({})));
     if (!parsed.success) {
       return NextResponse.json({ error: 'Data tidak valid' }, { status: 400 });
     }

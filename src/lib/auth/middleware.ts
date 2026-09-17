@@ -1,5 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { SESSION_COOKIE } from "@/lib/auth/constants";
+import {
+  rejectionStatus,
+  resolveHasSession,
+  type SessionValidation,
+} from "@/lib/auth/session-gate";
 
 const PUBLIC_AUTH_PREFIXES = [
   // Aset branding statis: dibutuhkan halaman /login dan halaman publik
@@ -77,16 +82,23 @@ export async function updateSession(request: NextRequest) {
   // Fail-OPEN hanya bila query melempar (DB gangguan) supaya blip sesaat tidak
   // menendang semua kasir keluar; token palsu tetap ditolak saat DB sehat.
   const sessionToken = request.cookies.get(SESSION_COOKIE)?.value;
-  let hasSession = false;
+  let validation: SessionValidation = "invalid";
   if (sessionToken) {
     try {
       const { sessionTokenIsValid } = await import("@/lib/auth/session");
-      hasSession = await sessionTokenIsValid(sessionToken);
+      validation = (await sessionTokenIsValid(sessionToken)) ? "valid" : "invalid";
     } catch (err) {
-      console.error("[middleware] validasi sesi gagal (fail-open):", err);
-      hasSession = true;
+      // DB gangguan → fail-CLOSED untuk API & mutasi (lihat session-gate),
+      // fail-open hanya untuk navigasi halaman GET.
+      console.error("[middleware] validasi sesi gagal:", err);
+      validation = "db-error";
     }
   }
+  const hasSession = resolveHasSession({
+    validation,
+    pathname,
+    method: request.method,
+  });
   // EPIC-042: request API dgn Bearer token Open API (arkiv_...) divalidasi DI
   // SINI (proxy Next 16 = Node runtime, DB bisa diakses) — wajib, karena
   // sebagian route lama tidak punya cek sesi sendiri dan mengandalkan gerbang
@@ -112,9 +124,16 @@ export async function updateSession(request: NextRequest) {
 
   if (!hasSession && !hasApiBearer && !isPublicRoute) {
     if (pathname.startsWith("/api/")) {
+      const status = rejectionStatus({ validation, pathname, method: request.method });
       return NextResponse.json(
-        { success: false, error: "Authentication required" },
-        { status: 401 }
+        {
+          success: false,
+          error:
+            status === 503
+              ? "Layanan sedang tidak tersedia, coba lagi"
+              : "Authentication required",
+        },
+        { status }
       );
     }
     const url = request.nextUrl.clone();
